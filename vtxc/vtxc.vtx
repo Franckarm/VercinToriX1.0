@@ -4501,6 +4501,499 @@ fonction placer(c: Ctx, p: Param, ligne) {
     retour o + 1;
 }
 
+// --------------------------------------------------------------------------------------------- épissage
+// Le même épissage que vtx.py (voir EPISSAGE dans vtx.py) : les mots d'une fonction sont relus comme une suite
+// d'opérations simples, et les introns (déplacements de valeurs) retirés par quatre règles : pile, constante, relecture,
+// copie. Chaque règle demande qu'un registre soit mort : l'analyse de vie de R1 à R8 sur le graphe de la fonction le dit.
+
+constante RI_TOUS = 510;            // R1 à R8
+
+// la sorte d'une instruction : 1 d s t (d écrit), 2 d s (d écrit), 3 d écrit seul, 4 d lu (STF), 5 s lu (OUT, PUSH),
+// 6 s t lus (CMP), 7 d s lus (ST), 8 d s t lus (STX), 9 saut, 10 appel, 11 retour, 12 arrêt, 0 autre (barrière)
+fonction ri_sorte(op) {
+    si op == 1 || op == 2 || op == 3 || op == 8 || op == 9 || op == 12 || op == 13 || op == 16 || op == 17 || op == 19
+            || op == 20 || op == 21 || op == 22 || op == 56 || (op >= 64 && op <= 70) || op == 78 || op == 79 || op == 41 {
+        retour 1;
+    }
+    si op == 4 || op == 5 || op == 11 || op == 18 || (op >= 71 && op <= 75) || op == 80 || op == 6 || op == 7 || op == 32 {
+        retour 2;
+    }
+    si op == 10 || op == 37 || op == 35 || op == 40 { retour 3; }
+    si op == 38 { retour 4; }
+    si op == 36 || op == 39 { retour 5; }
+    si op == 14 { retour 6; }
+    si op == 33 { retour 7; }
+    si op == 42 { retour 8; }
+    si op == 48 || op == 49 || op == 50 || op == 53 || op == 54 { retour 9; }
+    si op == 51 { retour 10; }
+    si op == 52 { retour 11; }
+    si op == 63 { retour 12; }
+    retour 0;
+}
+
+fonction ri_bit(r) {
+    si r >= 1 && r <= 8 {
+        retour 1 << r;
+    }
+    retour 0;
+}
+
+// registres écrits (masque de R1 à R8)
+fonction ri_ecr(w) {
+    soit s = ri_sorte(w >> 24);
+    si s == 1 || s == 2 || s == 3 {
+        retour ri_bit((w >> 20) & 15);
+    }
+    retour 0;
+}
+
+// registres lus (masque de R1 à R8) ; une barrière les lit tous
+fonction ri_lus(w) {
+    soit s = ri_sorte(w >> 24);
+    soit d = (w >> 20) & 15;
+    soit sr = (w >> 16) & 15;
+    soit t = (w >> 12) & 15;
+    si s == 1 || s == 8 {
+        soit m = ri_bit(sr) | ri_bit(t);
+        si s == 8 { m = m | ri_bit(d); }
+        retour m;
+    }
+    si s == 2 || s == 5 { retour ri_bit(sr); }
+    si s == 4 { retour ri_bit(d); }
+    si s == 6 { retour ri_bit(sr) | ri_bit(t); }
+    si s == 7 { retour ri_bit(d) | ri_bit(sr); }
+    si s == 0 { retour RI_TOUS; }
+    retour 0;
+}
+
+// tous les registres nommés (R0 à R15), lus ou écrits, d'une instruction simple
+fonction ri_nommes(w) {
+    soit s = ri_sorte(w >> 24);
+    soit d = 1 << ((w >> 20) & 15);
+    soit sr = 1 << ((w >> 16) & 15);
+    soit t = 1 << ((w >> 12) & 15);
+    si s == 1 || s == 8 { retour d | sr | t; }
+    si s == 2 || s == 7 { retour d | sr; }
+    si s == 3 || s == 4 { retour d; }
+    si s == 5 { retour sr; }
+    si s == 6 { retour sr | t; }
+    retour 0;
+}
+
+// les champs registres d'une instruction simple valant a deviennent b
+fonction ri_renommer(w, a, b) {
+    soit s = ri_sorte(w >> 24);
+    soit d = s == 1 || s == 2 || s == 3 || s == 4 || s == 7 || s == 8;
+    soit sr = s == 1 || s == 2 || s == 5 || s == 6 || s == 7 || s == 8;
+    soit t = s == 1 || s == 6 || s == 8;
+    si d && ((w >> 20) & 15) == a { w = (w & ~(15 << 20)) | (b << 20); }
+    si sr && ((w >> 16) & 15) == a { w = (w & ~(15 << 16)) | (b << 16); }
+    si t && ((w >> 12) & 15) == a { w = (w & ~(15 << 12)) | (b << 12); }
+    retour w;
+}
+
+// une instruction dont le premier registre est seulement écrit (pour la règle copie) : comme RI_DEST de vtx.py
+fonction ri_dest(op) {
+    soit s = ri_sorte(op);
+    retour s == 1 || s == 2 || op == 10 || op == 37;
+}
+
+// les instructions d'une fonction : mot, mot suivant (LDI), place d'origine, étiquette avant, vivants après, cible
+structure Ep { w: Liste, x: Liste, p: Liste, e: Liste, v: Liste, av: Liste, t: Liste, r: Liste, n }
+
+fonction ep_ajouter(ep: Ep, w, x, p, e, v, t) {
+    ajouter(ep.w, w);
+    ajouter(ep.x, x);
+    ajouter(ep.p, p);
+    ajouter(ep.e, e);
+    ajouter(ep.v, v);
+    ajouter(ep.av, 0);
+    ajouter(ep.t, t);
+    ajouter(ep.r, 0);
+    ep.n = ep.n + 1;
+}
+
+fonction ep_neuf(): Ep {
+    retour Ep { w: liste(), x: liste(), p: liste(), e: liste(), v: liste(), av: liste(), t: liste(), r: liste() };
+}
+
+// l'indice de la première instruction gardée placée à partir de pos (ep.n s'il n'y en a pas)
+fonction ep_indice(ep: Ep, pos) {
+    soit a = 0;
+    soit b = ep.n;
+    tantque a < b {
+        soit m = (a + b) / 2;
+        si elem(ep.p, m) < pos {
+            a = m + 1;
+        } sinon {
+            b = m;
+        }
+    }
+    retour a;
+}
+
+// l'analyse de vie : les registres de R1 à R8 vivants après chaque instruction
+fonction ep_vie(c: Ctx, ep: Ep) {
+    soit n = ep.n;
+    pour k0 dans 0..n {
+        poser(ep.v, k0, 0);
+        poser(ep.av, k0, 0);
+    }
+    soit change = 1;
+    tantque change {
+        change = 0;
+        soit k = n;
+        tantque k > 0 {
+            k = k - 1;
+            soit w = elem(ep.w, k);
+            soit s = ri_sorte(w >> 24);
+            soit a = 0;
+            soit lus = 0;
+            soit ecr = 0;
+            si s == 9 {
+                si (w >> 24) != 48 && k + 1 < n {
+                    a = elem(ep.av, k + 1);
+                }
+                soit pc = elem(ep.t, k);
+                si pc == 0 - 1 {
+                    lus = RI_TOUS;
+                } sinon {
+                    soit ti = ep_indice(ep, pc);
+                    si ti < n {
+                        a = a | elem(ep.av, ti);
+                    }
+                }
+            } sinon si s == 10 {
+                si k + 1 < n {
+                    a = elem(ep.av, k + 1);
+                }
+                ecr = RI_TOUS;
+            } sinon si s == 11 {
+                lus = 18;                       // R1 et R4
+            } sinon si s == 12 {
+                a = 0;
+            } sinon {
+                si k + 1 < n {
+                    a = elem(ep.av, k + 1);
+                }
+                lus = ri_lus(w);
+                ecr = ri_ecr(w);
+            }
+            soit v = lus | (a & ~ecr);
+            si a != elem(ep.v, k) || v != elem(ep.av, k) {
+                poser(ep.v, k, a);
+                poser(ep.av, k, v);
+                change = 1;
+            }
+        }
+    }
+}
+
+// l'instruction après j s'il n'y a pas d'étiquette entre elles, sinon -1
+// (les instructions retirées pendant un tour restent en place, transparentes, jusqu'au tassement de la fin du tour ;
+// une étiquette posée devant l'une d'elles sépare toujours)
+fonction ep_suivant(ep: Ep, j) {
+    soit k = j + 1;
+    tantque k < ep.n && elem(ep.r, k) == 1 {
+        si elem(ep.e, k) == 1 {
+            retour 0 - 1;
+        }
+        k = k + 1;
+    }
+    si k < ep.n && elem(ep.e, k) == 0 {
+        retour k;
+    }
+    retour 0 - 1;
+}
+
+fonction ep_mort(ep: Ep, j, r) {
+    retour ((elem(ep.v, j) >> r) & 1) == 0;
+}
+
+fonction ep_op(ep: Ep, j) {
+    retour elem(ep.w, j) >> 24;
+}
+
+fonction ep_d(ep: Ep, j) { retour (elem(ep.w, j) >> 20) & 15; }
+fonction ep_s(ep: Ep, j) { retour (elem(ep.w, j) >> 16) & 15; }
+fonction ep_t(ep: Ep, j) { retour (elem(ep.w, j) >> 12) & 15; }
+
+// retire l'instruction j (marquée ; l'étiquette éventuelle passe à la suivante au moment du tassement)
+fonction ep_retirer(ep: Ep, j) {
+    poser(ep.r, j, 1);
+}
+
+// règle pile : PUSH R1 ; S ; MOV R2,R1 ; POP R1  ->  S (R1 devient Rf) ; MOV R2,Rf
+fonction regle_pile(ep: Ep, i) {
+    si ep_op(ep, i) != 39 || ep_s(ep, i) != 1 {
+        retour 0;
+    }
+    soit j = ep_suivant(ep, i);
+    soit ns = 0;
+    tantque j >= 0 && !(ep_op(ep, j) == 11 && ep_d(ep, j) == 2 && ep_s(ep, j) == 1) {
+        soit op = ep_op(ep, j);
+        soit s = ri_sorte(op);
+        si s == 0 || s >= 9 || op == 39 || op == 40 {
+            retour 0;
+        }
+        ns = ns + 1;
+        j = ep_suivant(ep, j);
+    }
+    si j < 0 || ns == 0 {
+        retour 0;
+    }
+    soit jp = ep_suivant(ep, j);
+    si jp < 0 || ep_op(ep, jp) != 40 || ep_d(ep, jp) != 1 {
+        retour 0;
+    }
+    soit vus = 0;
+    pour k dans i + 1..j {
+        si elem(ep.r, k) == 0 {
+            vus = vus | ri_nommes(elem(ep.w, k));
+        }
+    }
+    si (vus & (1 << 13)) != 0 || (vus & (1 << 14)) != 0 {
+        retour 0;
+    }
+    // R1 doit être écrit dans S avant d'y être lu
+    soit vu = 0;
+    pour k dans i + 1..j {
+        si vu == 0 && elem(ep.r, k) == 0 {
+            soit w = elem(ep.w, k);
+            si (ri_lus(w) & 2) != 0 {
+                retour 0;
+            }
+            si (ri_ecr(w) & 2) != 0 {
+                vu = 1;
+            }
+        }
+    }
+    si vu == 0 {
+        retour 0;
+    }
+    soit f = 0;
+    soit cand = 3;
+    tantque f == 0 && cand <= 8 {
+        si cand != 4 && (vus & (1 << cand)) == 0 && ep_mort(ep, jp, cand) {
+            f = cand;
+        }
+        cand = cand + 1;
+    }
+    si f == 0 {
+        retour 0;
+    }
+    pour k dans i + 1..j {
+        si elem(ep.r, k) == 0 {
+            poser(ep.w, k, ri_renommer(elem(ep.w, k), 1, f));
+        }
+    }
+    poser(ep.w, j, mot(11, (2 << 4) | f, 0, 0));
+    // la vie des registres dans le passage réécrit, refaite en remontant depuis la fin
+    soit vivants = elem(ep.v, jp);
+    soit kk = j + 1;
+    tantque kk > i + 1 {
+        kk = kk - 1;
+        si elem(ep.r, kk) == 0 {
+            poser(ep.v, kk, vivants);
+            soit wk = elem(ep.w, kk);
+            vivants = (vivants & ~ri_ecr(wk)) | ri_lus(wk);
+        }
+    }
+    ep_retirer(ep, i);
+    ep_retirer(ep, jp);
+    retour 1;
+}
+
+// règle constante : ADDI Rk,R0,#c ; ADD Rd,Ra,Rk  ->  ADDI Rd,Ra,#c (de même SUB -> SUBI)
+fonction regle_constante(ep: Ep, i) {
+    soit j = ep_suivant(ep, i);
+    si ep_op(ep, i) != 6 || j < 0 || (ep_op(ep, j) != 1 && ep_op(ep, j) != 2) {
+        retour 0;
+    }
+    soit k = ep_d(ep, i);
+    si ep_s(ep, i) != 0 || k == 0 {
+        retour 0;
+    }
+    soit cst = (elem(ep.w, i) >> 8) & 255;
+    soit d = ep_d(ep, j);
+    soit a = ep_s(ep, j);
+    soit b = ep_t(ep, j);
+    soit src = 0 - 1;
+    si b == k && a != k {
+        src = a;
+    } sinon si ep_op(ep, j) == 1 && a == k && b != k {
+        src = b;
+    }
+    si src == 0 - 1 {
+        retour 0;
+    }
+    si k != d && !ep_mort(ep, j, k) {
+        retour 0;
+    }
+    soit nop = 6;
+    si ep_op(ep, j) == 2 {
+        nop = 7;
+    }
+    poser(ep.w, j, mot(nop, (d << 4) | src, cst, 0));
+    ep_retirer(ep, i);
+    retour 1;
+}
+
+// règle relecture : STF Ra,#o ; LDF Rb,#o  ->  STF Ra,#o, puis MOV Rb,Ra si Rb n'est pas Ra
+fonction regle_relecture(ep: Ep, i) {
+    soit j = ep_suivant(ep, i);
+    si ep_op(ep, i) != 38 || j < 0 || ep_op(ep, j) != 37 || ((elem(ep.w, i) >> 8) & 255) != ((elem(ep.w, j) >> 8) & 255) {
+        retour 0;
+    }
+    soit a = ep_d(ep, i);
+    soit b = ep_d(ep, j);
+    si a == b {
+        ep_retirer(ep, j);
+    } sinon {
+        poser(ep.w, j, mot(11, (b << 4) | a, 0, 0));
+    }
+    retour 1;
+}
+
+// règle copie : OP Rx,… ; MOV Ry,Rx  ->  OP Ry,…
+fonction regle_copie(ep: Ep, i) {
+    soit j = ep_suivant(ep, i);
+    si !ri_dest(ep_op(ep, i)) || j < 0 || ep_op(ep, j) != 11 {
+        retour 0;
+    }
+    soit x = ep_d(ep, i);
+    soit y = ep_d(ep, j);
+    si ep_s(ep, j) != x || y == x || x < 1 || x > 8 || y == 0 || y == 13 || y == 14 || y == 15 || !ep_mort(ep, j, x) {
+        retour 0;
+    }
+    poser(ep.w, i, (elem(ep.w, i) & ~(15 << 20)) | (y << 20));
+    poser(ep.v, i, elem(ep.v, j));
+    ep_retirer(ep, j);
+    retour 1;
+}
+
+// les instructions retirées s'en vont ; une étiquette posée devant passe à l'instruction suivante
+fonction ep_tasser(ep: Ep) {
+    soit m = 0;
+    soit report = 0;
+    pour k dans 0..ep.n {
+        si elem(ep.r, k) == 1 {
+            si elem(ep.e, k) == 1 {
+                report = 1;
+            }
+        } sinon {
+            poser(ep.w, m, elem(ep.w, k));
+            poser(ep.x, m, elem(ep.x, k));
+            poser(ep.p, m, elem(ep.p, k));
+            poser(ep.r, m, 0);
+            poser(ep.e, m, elem(ep.e, k) | report);
+            poser(ep.v, m, elem(ep.v, k));
+            poser(ep.t, m, elem(ep.t, k));
+            report = 0;
+            m = m + 1;
+        }
+    }
+    ep.n = m;
+    ep.w.n = m;
+    ep.x.n = m;
+    ep.p.n = m;
+    ep.e.n = m;
+    ep.v.n = m;
+    ep.av.n = m;
+    ep.t.n = m;
+    ep.r.n = m;
+}
+
+// l'épissage d'une fonction dont le code commence à debut ; fdeb : ses premiers renvois de sauts ; edeb : ses premières
+// étiquettes
+fonction episser(c: Ctx, debut, fdeb, edeb) {
+    soit fin = c.code.n;
+    soit ep = ep_neuf();
+    // les étiquettes visées par un saut de la fonction séparent les instructions ; les autres sont transparentes
+    soit marque = liste();
+    pour q dans debut..fin {
+        ajouter(marque, 0);
+    }
+    pour h dans fdeb..c.fix_pos.n {
+        soit pos = elem(c.fix_pos, h);
+        si elem(c.fix_genre, h) == 0 && ri_sorte(elem(c.code, pos) >> 24) == 9 {
+            soit cible = elem(c.etiq, elem(c.fix_etiq, h));
+            si cible != 0 - 1 && cible >= debut && cible < fin {
+                poser(marque, cible - debut, 1);
+            }
+        }
+    }
+    soit h2 = fdeb;
+    soit pos2 = debut;
+    tantque pos2 < fin {
+        soit w = elem(c.code, pos2);
+        soit x = 0;
+        soit lg = 1;
+        si (w >> 24) == 10 {
+            x = elem(c.code, pos2 + 1);
+            lg = 2;
+        }
+        // la cible d'un saut : la place de son étiquette dans la fonction, sinon -1 (inconnue)
+        soit t = 0 - 1;
+        tantque h2 < c.fix_pos.n && elem(c.fix_pos, h2) < pos2 {
+            h2 = h2 + 1;
+        }
+        si h2 < c.fix_pos.n && elem(c.fix_pos, h2) == pos2 && ri_sorte(w >> 24) == 9 {
+            soit cb = elem(c.etiq, elem(c.fix_etiq, h2));
+            si cb != 0 - 1 && cb >= debut && cb <= fin {
+                t = cb;
+            }
+        }
+        ep_ajouter(ep, w, x, pos2, elem(marque, pos2 - debut), 0, t);
+        pos2 = pos2 + lg;
+    }
+    soit change = 1;
+    tantque change {
+        change = 0;
+        ep_vie(c, ep);
+        soit i = 0;
+        tantque i < ep.n {
+            si elem(ep.r, i) == 0 && (regle_pile(ep, i) || regle_constante(ep, i) || regle_relecture(ep, i)
+                                      || regle_copie(ep, i)) {
+                change = 1;
+            } sinon {
+                i = i + 1;
+            }
+        }
+        ep_tasser(ep);
+    }
+    // le code réécrit, puis les étiquettes et les renvois déplacés
+    soit np = liste();
+    c.code.n = debut;
+    pour k dans 0..ep.n {
+        ajouter(np, c.code.n);
+        emettre(c, elem(ep.w, k));
+        si (elem(ep.w, k) >> 24) == 10 {
+            emettre(c, elem(ep.x, k));
+        }
+    }
+    pour id dans edeb..c.etiq.n {
+        soit pe = elem(c.etiq, id);
+        si pe != 0 - 1 && pe >= debut {
+            soit ke = ep_indice(ep, pe);
+            si ke < ep.n {
+                poser(c.etiq, id, elem(np, ke));
+            } sinon {
+                poser(c.etiq, id, c.code.n);
+            }
+        }
+    }
+    pour h3 dans fdeb..c.fix_pos.n {
+        soit pf = elem(c.fix_pos, h3);
+        soit kf = ep_indice(ep, pf);
+        si kf < ep.n && elem(ep.p, kf) == pf {
+            poser(c.fix_pos, h3, elem(np, kf));
+        } sinon {
+            poser(c.fix_pos, h3, elem(np, kf - 1) + 1);
+        }
+    }
+}
+
 // --------------------------------------------------------------------------------------------- variables en registres
 // Les variables les plus utilisées dans les boucles (usages pondérés : x8 par niveau de boucle) vivent dans R9 à R12 ;
 // la fonction garde ces registres dans des cases cachées de son cadre et les remet à la sortie (même règle que vtx.py).
@@ -4672,6 +5165,9 @@ fonction deux_ops(c: Ctx, a: Noeud, b: Noeud) {
 }
 
 fonction fonction_code(c: Ctx, f: Fonction) {
+    soit debut = c.code.n;
+    soit fdeb = c.fix_pos.n;
+    soit edeb = c.etiq.n;
     c.fcour = f;
     c.vars = nul;
     c.boucles = nul;
@@ -4716,6 +5212,10 @@ fonction fonction_code(c: Ctx, f: Fonction) {
     rr(c, 11, 14, 13);
     depiler(c, 13);
     emettre(c, mot(52, 0, 0, 0));
+    // l'épissage : pas au pas à pas, ni dans __init, ni avec des accords, des segments ou une hypothèse
+    si c.optim && c.lignes_dbg != 1 && !texte_egal(f.nom, "__init") && !sans_registres(f.corps) {
+        episser(c, debut, fdeb, edeb);
+    }
 }
 
 // --------------------------------------------------------------------------------------------- partition des tâches

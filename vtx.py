@@ -3243,6 +3243,243 @@ def appelle_pile(x):
     return any(appelle_pile(y) for y in x[1:] if isinstance(y, (list, tuple)))
 
 
+# ------------------------------------------------------------------------------------------------ épissage
+# Après la génération d'une fonction, ses instructions sont relues comme une suite d'opérations simples (la
+# représentation intermédiaire) et « épissées », comme un ARN : on retire les introns, ces instructions qui ne servent
+# qu'à déplacer une valeur. Quatre règles, essayées dans cet ordre à chaque instruction, jusqu'à ce que rien ne change :
+#   pile       PUSH R1 ; S ; MOV R2,R1 ; POP R1  ->  S (R1 y devient Rf) ; MOV R2,Rf   (la pile devient un registre libre)
+#   constante  ADDI Rk,R0,#c ; ADD Rd,Ra,Rk       ->  ADDI Rd,Ra,#c                    (de même SUB -> SUBI)
+#   relecture  STF Ra,#o ; LDF Rb,#o              ->  STF Ra,#o, puis MOV Rb,Ra si Rb n'est pas Ra
+#   copie      OP Rx,… ; MOV Ry,Rx                ->  OP Ry,…
+# Chaque règle demande qu'un registre soit « mort » : sa valeur ne sera plus lue, sur aucun chemin. On le sait par
+# l'analyse de vie des registres R1 à R8 sur le graphe de la fonction (sauts compris), refaite après chaque changement :
+# un appel détruit R1 à R8, un retour lit R1 et R4, une instruction inconnue (barrière) les lit tous. vtxc fait exactement
+# la même chose sur ses mots ; les deux compilateurs produisent toujours les mêmes mots.
+EPISSAGE = True
+RI_RRR = {"ADD", "SUB", "MUL", "SHL", "SHR", "DIV", "MOD", "MIN", "MAX", "ADDM4", "AND", "OR", "XOR", "GDOT", "FADD", "FSUB",
+          "FMUL", "FDIV", "FEQ", "FLT", "FLE", "MULHU", "QEGAL", "LDX"}
+RI_RR = {"SHL4", "SHR4", "MOV", "CMP3", "FSQRT", "ITOF", "ITOFS", "FTOI", "FROUND", "COMPTE", "ADDI", "SUBI", "LD"}
+RI_DEST = RI_RRR | RI_RR | {"LDI", "LDF"}          # le premier registre est seulement écrit
+RI_SAUTS = {"JMP", "JZ", "JNZ", "JC", "JNC", "CALL", "RET", "HALT"}
+RI_TOUS = 0x1FE                                     # R1 à R8
+
+
+def ri_reg(a):
+    a = a.strip().upper()
+    if len(a) >= 2 and a[0] == "R" and a[1:].isdigit():
+        return int(a[1:])
+    return None
+
+
+def ri_acces(op, args):
+    """(registres écrits, registres lus) d'une instruction simple ; None si elle fait autre chose (barrière)."""
+    r = [ri_reg(a) for a in args]
+    if op in RI_RRR:
+        return {r[0]}, {r[1], r[2]}
+    if op in RI_RR:
+        return {r[0]}, {r[1]}
+    if op in ("LDI", "LDF", "IN", "POP"):
+        return {r[0]}, set()
+    if op in ("STF", "OUT", "PUSH"):
+        return set(), {r[0]}
+    if op in ("CMP", "ST"):
+        return set(), {r[0], r[1]}
+    if op == "STX":
+        return set(), {r[0], r[1], r[2]}
+    return None
+
+
+def ri_masque(regs):
+    m = 0
+    for r in regs:
+        if 1 <= r <= 8:
+            m |= 1 << r
+    return m
+
+
+def ri_vie(ins, etiq):
+    """Pour chaque instruction : le masque des registres R1 à R8 vivants après elle."""
+    n = len(ins)
+    lus, ecr, succ = [0] * n, [0] * n, []
+    for k, (op, args) in enumerate(ins):
+        if op in ("JMP", "JZ", "JNZ", "JC", "JNC"):
+            t = etiq.get(args[0].upper())
+            s = ([] if op == "JMP" else [k + 1]) + ([t] if t is not None else [])
+            if t is None:
+                lus[k] = RI_TOUS
+        elif op == "CALL":
+            s, ecr[k] = [k + 1], RI_TOUS
+        elif op == "RET":
+            s, lus[k] = [], (1 << 1) | (1 << 4)
+        elif op == "HALT":
+            s = []
+        else:
+            s = [k + 1]
+            ac = ri_acces(op, args)
+            if ac is None:
+                lus[k] = RI_TOUS
+            else:
+                ecr[k], lus[k] = ri_masque(ac[0]), ri_masque(ac[1])
+        succ.append([x for x in s if x < n])
+    apres, avant = [0] * n, [0] * n
+    change = True
+    while change:
+        change = False
+        for k in range(n - 1, -1, -1):
+            a = 0
+            for x in succ[k]:
+                a |= avant[x]
+            v = lus[k] | (a & ~ecr[k])
+            if a != apres[k] or v != avant[k]:
+                apres[k], avant[k], change = a, v, True
+    return apres
+
+
+def epissage(lignes):
+    """Épisse le code d'une fonction (lignes d'assembleur) ; rend les nouvelles lignes."""
+    el = []                         # [genre, op, args, vivants après] ; genre : "e" étiquette, "d" directive, "i" instruction
+    for l in lignes:
+        t = l.strip()
+        if t.endswith(":") and not t.startswith("."):
+            el.append(["e", t, None, 0])
+        elif t.startswith(".") or not t:
+            el.append(["d", l, None, 0])
+        else:
+            p = t.split(None, 1)
+            el.append(["i", p[0].upper(), [a.strip() for a in p[1].split(",")] if len(p) > 1 else [], 0])
+    # seules les étiquettes visées par un saut séparent deux instructions (une étiquette que rien ne vise est transparente)
+    cibles = {e[2][0].upper() for e in el if e[0] == "i" and e[1] in ("JMP", "JZ", "JNZ", "JC", "JNC")}
+    for e in el:
+        if e[0] == "e" and e[1][:-1].upper() not in cibles:
+            e[0] = "d"
+
+    def analyser():
+        ins, etiq, place = [], {}, []
+        for i, (g, op, args, _) in enumerate(el):
+            if g == "e":
+                etiq[op[:-1].upper()] = len(ins)
+            elif g == "i":
+                place.append(i)
+                ins.append((op, args))
+        for i, v in zip(place, ri_vie(ins, etiq)):
+            el[i][3] = v
+
+    def suivant(j):
+        """L'instruction après j, s'il n'y a ni étiquette ni fin avant : son indice, sinon -1."""
+        j += 1
+        while j < len(el) and el[j][0] == "d":
+            j += 1
+        return j if j < len(el) and el[j][0] == "i" else -1
+
+    def mort_apres(j, r):
+        return not (el[j][3] >> r) & 1
+
+    def regle_pile(i):
+        if el[i][1] != "PUSH" or ri_reg(el[i][2][0]) != 1:
+            return False
+        s, j = [], suivant(i)
+        while j >= 0 and not (el[j][1] == "MOV" and [ri_reg(x) for x in el[j][2]] == [2, 1]):
+            op = el[j][1]
+            if op in RI_SAUTS or op in ("PUSH", "POP") or ri_acces(op, el[j][2]) is None:
+                return False
+            s.append(j)
+            j = suivant(j)
+        if j < 0 or not s:
+            return False
+        jp = suivant(j)
+        if jp < 0 or el[jp][1] != "POP" or ri_reg(el[jp][2][0]) != 1:
+            return False
+        vus = set()
+        for k in s:
+            ecr, lus = ri_acces(el[k][1], el[k][2])
+            vus |= ecr | lus
+        if 13 in vus or 14 in vus:                # la pile ou le cadre lus directement (pile()) : on n'y touche pas
+            return False
+        for k in s:                               # R1 doit être écrit dans S avant d'y être lu
+            ecr, lus = ri_acces(el[k][1], el[k][2])
+            if 1 in lus:
+                return False
+            if 1 in ecr:
+                break
+        else:
+            return False
+        for f in (3, 5, 6, 7, 8):
+            if f not in vus and mort_apres(jp, f):
+                break
+        else:
+            return False
+        for k in s:
+            el[k][2] = [f"R{f}" if ri_reg(x) == 1 else x for x in el[k][2]]
+        el[j][2] = ["R2", f"R{f}"]
+        # la vie des registres dans le passage réécrit : refaite en remontant depuis la fin (le reste reste prudent)
+        vivants = el[jp][3]
+        for k in [j] + s[::-1]:
+            el[k][3] = vivants
+            ecr, lus = ri_acces(el[k][1], el[k][2])
+            vivants = (vivants & ~ri_masque(ecr)) | ri_masque(lus)
+        el[i][0] = el[jp][0] = "x"            # retirées
+        return True
+
+    def regle_constante(i):
+        j = suivant(i)
+        if el[i][1] != "ADDI" or j < 0 or el[j][1] not in ("ADD", "SUB"):
+            return False
+        k, z, c = ri_reg(el[i][2][0]), ri_reg(el[i][2][1]), el[i][2][2]
+        d, a, b = (ri_reg(x) for x in el[j][2])
+        if z != 0 or k == 0:
+            return False
+        if b == k and a != k:
+            src = a
+        elif el[j][1] == "ADD" and a == k and b != k:
+            src = b
+        else:
+            return False
+        if k != d and not mort_apres(j, k):
+            return False
+        el[j] = ["i", "ADDI" if el[j][1] == "ADD" else "SUBI", [f"R{d}", f"R{src}", c], el[j][3]]
+        el[i][0] = "x"
+        return True
+
+    def regle_relecture(i):
+        j = suivant(i)
+        if el[i][1] != "STF" or j < 0 or el[j][1] != "LDF" or el[i][2][1] != el[j][2][1]:
+            return False
+        a, b = ri_reg(el[i][2][0]), ri_reg(el[j][2][0])
+        if a == b:
+            el[j][0] = "x"
+        else:
+            el[j] = ["i", "MOV", [f"R{b}", f"R{a}"], el[j][3]]
+        return True
+
+    def regle_copie(i):
+        j = suivant(i)
+        if el[i][1] not in RI_DEST or j < 0 or el[j][1] != "MOV":
+            return False
+        x = ri_reg(el[i][2][0])
+        y, x2 = ri_reg(el[j][2][0]), ri_reg(el[j][2][1])
+        if x2 != x or y == x or not 1 <= x <= 8 or y in (0, 13, 14, 15) or not mort_apres(j, x):
+            return False
+        el[i][2] = [f"R{y}"] + el[i][2][1:]
+        el[i][3] = el[j][3]
+        el[j][0] = "x"
+        return True
+
+    # chaque tour refait l'analyse de vie, puis essaie les règles d'un bout à l'autre ; une règle appliquée laisse
+    # l'analyse juste (ou prudente) pour la suite du tour
+    change = True
+    while change:
+        change = False
+        analyser()
+        i = 0
+        while i < len(el):
+            if el[i][0] == "i" and (regle_pile(i) or regle_constante(i) or regle_relecture(i) or regle_copie(i)):
+                change = True
+                el = [e for e in el if e[0] != "x"]
+                continue
+            i += 1
+    return [op if g in ("e", "d") else "    " + op + (" " + ",".join(args) if args else "") for g, op, args, _ in el]
+
+
 class Generateur:
     def __init__(self, fonctions, optim=True, blobs=None, reserve=None):
         self.structs, self.types_champs, self.textes = {}, {}, {}
@@ -3482,6 +3719,7 @@ class Generateur:
                 self.locales(s[2], acc)
 
     def fonction(self, f):
+        debut = len(self.sortie)
         self._corps_vus = set()
         self.f, self.vars = f, {}
         self.vtypes, self.vhaut = {}, {}
@@ -3562,6 +3800,10 @@ class Generateur:
         self.emettre("MOV R14,R13")
         self.emettre("POP R13")
         self.emettre("RET")
+        # l'épissage (voir EPISSAGE) : pas au pas à pas, ni dans __init (ses copies gardent des registres au-delà d'une
+        # étiquette), ni avec des accords, des segments ou une hypothèse
+        if EPISSAGE and REGISTRES and self.optim and f.nom != "__init" and not sans_registres(f.corps):
+            self.sortie[debut:] = epissage(self.sortie[debut:])
 
     def variable(self, nom, ligne):
         if nom not in self.vars:
