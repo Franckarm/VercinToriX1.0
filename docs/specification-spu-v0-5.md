@@ -122,12 +122,16 @@ Registres : `R0` (toujours nul) à `R15` de 32 bits, compteur de programme `PC` 
 | 51 | ENTC | lit un mot sur le canal donné par un registre (0 : entrées numériques, 1 : console en texte, 2 et suivants : fichiers) ; 4294967295 si rien à lire |
 | 52 | SORC | écrit un mot sur un canal |
 | 53 | SYS | service de la machine hôte : 1 ouvrir en lecture, 2 ouvrir en écriture (nom = texte en mémoire), 3 fermer, 4 fin atteinte |
+| 54 | LDQ | `LDQ Rd, Rs, Rt, @e` : lit un quit d'un tableau rangé (16 quits par mot, le quit 0 dans les bits bas) : mot `e:[Rs + (Rt >> 4)]`, place `(Rt & 15) × 2` ; Rd reçoit le quit (0 à 3) ; pose Z, remet C à zéro |
+| 55 | STQ | `STQ Rd, Rs, Rt, @e` : écrit `Rd & 3` à la même place, sans toucher aux 15 autres quits du mot ; ne change pas les drapeaux |
 
 Exemple : `ADDI R1, R2, #05` s'encode `#06120510` (le quit A2 de l'alpha vaut 1 : type instruction).
 
 **Flottants et 64 bits, choix retenus.** Les flottants suivent IEEE 754 binary32 : c'est le seul format dont les quatre machines de référence (Python, Java, JavaScript interprété et traduit) donnent les mêmes bits pour chaque opération, NaN compris une fois rendu unique. Les entiers de 64 bits ne demandent pas de registres plus larges : une paire de registres, ADC et SBC pour la retenue et MULHU pour le produit suffisent ; la division et les décalages de 64 bits sont dans le prélude.
 
 **Instructions quaternaires.** QEGAL et COMPTE traitent les 16 quits d'un mot en une instruction : `COMPTE(QEGAL(a, b))` (en vtx : `nb_bits(qegal(a, b))`) donne le nombre de quits égaux, par exemple le nombre de bases communes à deux séquences d'ADN de 16 bases. Comme les autres instructions de calcul, elles posent Z selon le résultat et remettent C à zéro. Les machines de référence sont désormais Python, Rust et les deux machines JavaScript ; la machine Java a été retirée.
+
+**Quits rangés (LDQ, STQ).** Un tableau de quits ou de logiques range 16 éléments par mot. Sans instruction dédiée, lire un élément demandait cinq à six instructions binaires (adresse du mot, décalage, masque) et en écrire un une dizaine ; LDQ et STQ le font en une. L'adresse se calcule comme pour un tableau ordinaire (base dans Rs, indice dans Rt) : la machine prend le mot `Rs + (Rt >> 4)` et la place `(Rt & 15) × 2` dans ce mot. Les compilateurs les emploient pour `t[i]` et `t[i] = v` quand l'indice est simple. Mesure (génome de 16 384 bases, recherche d'un motif base par base) : le tableau de quits coûtait 2,5 fois le tableau « une base par mot » ; il coûte maintenant 1,08 fois, avec 16 fois moins de mémoire.
 
 ## 6. Chaîne logicielle
 

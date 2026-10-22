@@ -576,6 +576,14 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                 ecrire!(v);
             }
             0x29 => res!(mem.lit(rb & 3, ra)),
+            // quaternaire : un quit d'un tableau rangé (mot Rs + (Rt >> 4), place (Rt & 15) × 2)
+            0x54 => res!((mem.lit(etage, ra.wrapping_add(rb >> 4) & ADR) >> ((rb & 15) * 2)) & 3),
+            0x55 => {
+                let adr = ra.wrapping_add(rb >> 4) & ADR;
+                let d = (rb & 15) * 2;
+                let v = (mem.lit(etage, adr) & !(3 << d)) | ((r[rd] & 3) << d);
+                mem.ecrit(etage, adr, v);
+            }
             0x2A => mem.ecrit(rb & 3, r[rd], ra),
             0x30 | 0x31 | 0x32 | 0x33 | 0x35 | 0x36 => {
                 let saut = match op {

@@ -57,6 +57,9 @@ OPS = {
     # et services de la machine hôte (SYS : 1 ouvrir en lecture, 2 ouvrir en écriture, 3 fermer, 4 fin atteinte ?,
     # 5 bruit : 32 bits imprévisibles de la machine hôte)
     "ENTC": (0x51, "rr"), "SORC": (0x52, "rrr"), "SYS": (0x53, "rrr"),
+    # quaternaire : un quit d'un tableau rangé (16 quits par mot, le quit 0 dans les bits bas) ; adresse du mot :
+    # Rs + (Rt >> 4), place dans le mot : (Rt & 15) × 2. LDQ Rd,Rs,Rt,@e lit le quit dans Rd ; STQ y écrit Rd & 3
+    "LDQ": (0x54, "memq"), "STQ": (0x55, "memq"),
 }
 NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
@@ -142,6 +145,9 @@ def _assembler(texte):
         elif forme == "mem":
             etage = int(args[2].lstrip("@")) if len(args) == 3 else 0
             mots.append(mot(code, (reg(args[0]) << 4) | reg(args[1]), 0, etage))
+        elif forme == "memq":
+            etage = int(args[3].lstrip("@")) if len(args) == 4 else 0
+            mots.append(mot(code, (reg(args[0]) << 4) | reg(args[1]), reg(args[2]) << 4, etage))
         elif forme == "in":
             mots.append(mot(code, reg(args[0]) << 4, 0))
         elif forme == "out":
@@ -409,6 +415,16 @@ class CPU:
             e = B & 3
             self.mem[(e, self.r[rd] & 0xFFFFFF)] = A
             self.st[e] += 1
+        elif op == 0x54:
+            v = (self.mem.get((etage, (A + (B >> 4)) & 0xFFFFFF), 0) >> ((B & 15) * 2)) & 3
+            self.ld[etage] += 1
+            self.ecrire(rd, v)
+            self.drapeaux(v)
+        elif op == 0x55:
+            adr, d = (etage, (A + (B >> 4)) & 0xFFFFFF), (B & 15) * 2
+            self.mem[adr] = (self.mem.get(adr, 0) & ~(3 << d) & MASK) | ((self.r[rd] & 3) << d)
+            self.ld[etage] += 1
+            self.st[etage] += 1
         elif op == 0x22:
             raise VtxError("DMA non implémentée (utiliser copier du prélude)")
         elif op == 0x23:
@@ -3257,7 +3273,7 @@ def appelle_pile(x):
 # la même chose sur ses mots ; les deux compilateurs produisent toujours les mêmes mots.
 EPISSAGE = True
 RI_RRR = {"ADD", "SUB", "MUL", "SHL", "SHR", "DIV", "MOD", "MIN", "MAX", "ADDM4", "AND", "OR", "XOR", "GDOT", "FADD", "FSUB",
-          "FMUL", "FDIV", "FEQ", "FLT", "FLE", "MULHU", "QEGAL", "LDX"}
+          "FMUL", "FDIV", "FEQ", "FLT", "FLE", "MULHU", "QEGAL", "LDX", "LDQ"}
 RI_RR = {"SHL4", "SHR4", "MOV", "CMP3", "FSQRT", "ITOF", "ITOFS", "FTOI", "FROUND", "COMPTE", "ADDI", "SUBI", "LD"}
 RI_DEST = RI_RRR | RI_RR | {"LDI", "LDF"}          # le premier registre est seulement écrit
 RI_SAUTS = {"JMP", "JZ", "JNZ", "JC", "JNC", "CALL", "RET", "HALT"}
@@ -3284,7 +3300,7 @@ def ri_acces(op, args):
         return set(), {r[0]}
     if op in ("CMP", "ST"):
         return set(), {r[0], r[1]}
-    if op == "STX":
+    if op in ("STX", "STQ"):
         return set(), {r[0], r[1], r[2]}
     return None
 
@@ -3479,6 +3495,59 @@ def epissage(lignes):
             i += 1
     return [op if g in ("e", "d") else "    " + op + (" " + ",".join(args) if args else "") for g, op, args, _ in el]
 
+
+# ------------------------------------------------------------------------------------------------ quits rangés
+# Un tableau de quits ou de logiques range 16 éléments par mot. Le compilateur traduit t[i] en
+#   (@e[base + (i >> 4)] >> ((i & 15) * 2)) & 3
+# et t[i] = v en lecture du mot, remplacement du quit, écriture. Avec les optimisations, ces formes deviennent les
+# instructions quaternaires LDQ et STQ, quand l'indice est simple : un nombre, une variable, ou a + b, a - b, a × b de
+# ceux-là (le même indice, écrit pareil, à chaque place) ; vtxc fait exactement le même test. Calculer l'indice une
+# seule fois au lieu de deux ne change rien : il n'appelle pas de fonction.
+def indice_simple(x):
+    feuille = lambda y: y[0] in ("nombre", "var")
+    return feuille(x) or (x[0] == "bin" and x[1] in ("+", "-", "*") and feuille(x[2]) and feuille(x[3]))
+
+
+def motif_place(et, adr, dec):
+    """(étage, base, indice) si adr est base + (i >> 4) (ou i >> 4) et dec (i & 15) * 2, avec le même indice simple."""
+    if not (dec[0] == "bin" and dec[1] == "*" and dec[3] == ("nombre", 2) and dec[2][0] == "bin" and dec[2][1] == "&"
+            and dec[2][3] == ("nombre", 15)):
+        return None
+    idx = dec[2][2]
+    if not indice_simple(idx):
+        return None
+    if adr[0] == "bin" and adr[1] == ">>" and adr[2] == idx and adr[3] == ("nombre", 4):
+        return et, 0, idx
+    if (adr[0] == "bin" and adr[1] == "+" and adr[2][0] == "nombre" and adr[3][0] == "bin" and adr[3][1] == ">>"
+            and adr[3][2] == idx and adr[3][3] == ("nombre", 4)):
+        return et, adr[2][1], idx
+    return None
+
+
+def motif_quit(e):
+    """(étage, base, indice) si e est la lecture d'un quit rangé, sinon None."""
+    if not (e[0] == "bin" and e[1] == "&" and e[3] == ("nombre", 3) and e[2][0] == "bin" and e[2][1] == ">>"):
+        return None
+    lu, dec = e[2][2], e[2][3]
+    if not (lu[0] == "lire" and len(lu) >= 3 and isinstance(lu[1], int)):
+        return None
+    return motif_place(lu[1], lu[2], dec)
+
+
+def motif_ecriture_quit(s):
+    """(étage, base, indice, valeur) si s est l'écriture d'un quit rangé, sinon None."""
+    et, adr, nv = s[1], s[2], s[3]
+    if not (isinstance(et, int) and nv[0] == "bin" and nv[1] == "|" and nv[2][0] == "bin" and nv[2][1] == "&"
+            and nv[3][0] == "bin" and nv[3][1] == "<<"):
+        return None
+    lu, garde, mis = nv[2][2], nv[2][3], nv[3]
+    if not (lu[0] == "lire" and lu[1] == et and garde[0] == "non" and garde[1][0] == "bin" and garde[1][1] == "<<"
+            and garde[1][2] == ("nombre", 3) and mis[2][0] == "bin" and mis[2][1] == "&" and mis[2][3] == ("nombre", 3)):
+        return None
+    q = motif_place(et, adr, garde[1][3])
+    if q is None or motif_place(et, lu[2], garde[1][3]) != q or motif_place(et, adr, mis[3]) != q:
+        return None
+    return q + (mis[2][2],)
 
 class Generateur:
     def __init__(self, fonctions, optim=True, blobs=None, reserve=None):
@@ -3925,7 +3994,15 @@ class Generateur:
             if self.typ(s[3]) == "l":
                 raise VtxError(f"ligne {s[4]} : un long occupe deux mots : écrivez bas(x) et haut(x) séparément")
             et = s[1]
-            if isinstance(et, int):
+            q = motif_ecriture_quit(s) if self.optim else None
+            if q:
+                # STQ : le quit i d'un tableau rangé reçoit la valeur, en une instruction
+                et, base, idx, v = q
+                self.deux(v, idx)
+                if base:
+                    self.charger("R3", base)
+                self.emettre(f"STQ R1,{'R3' if base else 'R0'},R2,@{et}")
+            elif isinstance(et, int):
                 self.expr(s[2], "e")
                 self.emettre("PUSH R1")
                 self.expr(s[3])
@@ -4185,6 +4262,15 @@ class Generateur:
 
     def expr_e(self, e):
         g = e[0]
+        q = motif_quit(e) if self.optim and g == "bin" and e[1] == "&" else None
+        if q:
+            # LDQ : le quit i d'un tableau rangé, en une instruction
+            et, base, idx = q
+            self.expr(idx, "e")
+            if base:
+                self.charger("R2", base)
+            self.emettre(f"LDQ R1,{'R2' if base else 'R0'},R1,@{et}")
+            return
         if g == "nombre":
             self.charger("R1", e[1])
         elif g == "var":
@@ -5783,6 +5869,8 @@ def desassembler(cpu):
         ops = f"R{rd}, #{cpu.mem.get((0, cpu.pc + 1), 0):08X}"
     elif nom in ("LD", "ST"):
         ops = f"R{rd}, R{rs}, @{a >> 6}"
+    elif nom in ("LDQ", "STQ"):
+        ops = f"R{rd}, R{rs}, R{rt}, @{a >> 6}"
     elif nom in ("ADDI", "SUBI"):
         ops = f"R{rd}, R{rs}, #{b}"
     elif nom in ("LDF", "STF"):

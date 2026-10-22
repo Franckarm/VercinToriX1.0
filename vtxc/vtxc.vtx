@@ -4019,8 +4019,122 @@ fonction gen_long(c: Ctx, e: Noeud) {
     }
 }
 
+// --------------------------------------------------------------------------------------------- quits rangés
+// t[i] d'un tableau de quits ou de logiques s'écrit (@e[base + (i >> 4)] >> ((i & 15) * 2)) & 3 ; avec les
+// optimisations, cette forme (et celle de l'écriture) devient LDQ (et STQ) quand l'indice est simple : un nombre, une
+// variable, ou a + b, a - b, a × b de ceux-là, le même à chaque place. Comme vtx.py (motif_quit, motif_ecriture_quit).
+structure Quit { etg, base, idx: Noeud, v: Noeud }
+
+fonction est_nombre(e: Noeud, v) {
+    retour e != nul && e.genre == N_NOMBRE && e.val == v;
+}
+
+fonction est_bin(e: Noeud, o) {
+    retour e != nul && e.genre == N_BIN && texte_egal(e.op, o);
+}
+
+fonction feuille_q(e: Noeud) {
+    retour e != nul && (e.genre == N_NOMBRE || e.genre == N_VAR);
+}
+
+fonction indice_simple(e: Noeud) {
+    si feuille_q(e) {
+        retour 1;
+    }
+    retour e != nul && e.genre == N_BIN && (texte_egal(e.op, "+") || texte_egal(e.op, "-") || texte_egal(e.op, "*"))
+        && feuille_q(e.a) && feuille_q(e.b);
+}
+
+fonction meme_feuille(a: Noeud, b: Noeud) {
+    si a.genre != b.genre {
+        retour 0;
+    }
+    si a.genre == N_NOMBRE {
+        retour a.val == b.val;
+    }
+    retour texte_egal(a.nom, b.nom) && a.ligne == b.ligne;
+}
+
+fonction meme_indice(a: Noeud, b: Noeud) {
+    si a.genre != b.genre {
+        retour 0;
+    }
+    si a.genre == N_BIN {
+        retour texte_egal(a.op, b.op) && meme_feuille(a.a, b.a) && meme_feuille(a.b, b.b);
+    }
+    retour meme_feuille(a, b);
+}
+
+// base + (i >> 4) (ou i >> 4) et (i & 15) * 2, avec le même indice simple
+fonction motif_place(etg, adr: Noeud, dec: Noeud): Quit {
+    si !(est_bin(dec, "*") && est_nombre(dec.b, 2) && est_bin(dec.a, "&") && est_nombre(dec.a.b, 15)) {
+        retour nul;
+    }
+    soit idx = dec.a.a;
+    si !indice_simple(idx) {
+        retour nul;
+    }
+    si est_bin(adr, ">>") && meme_indice(adr.a, idx) && est_nombre(adr.b, 4) {
+        retour Quit { etg: etg, base: 0, idx: idx };
+    }
+    si est_bin(adr, "+") && adr.a.genre == N_NOMBRE && est_bin(adr.b, ">>") && meme_indice(adr.b.a, idx)
+            && est_nombre(adr.b.b, 4) {
+        retour Quit { etg: etg, base: adr.a.val, idx: idx };
+    }
+    retour nul;
+}
+
+fonction meme_place(p: Quit, q: Quit) {
+    retour p != nul && q != nul && p.etg == q.etg && p.base == q.base && meme_indice(p.idx, q.idx);
+}
+
+fonction motif_quit(e: Noeud): Quit {
+    si !(est_bin(e, "&") && est_nombre(e.b, 3) && est_bin(e.a, ">>")) {
+        retour nul;
+    }
+    soit lu = e.a.a;
+    si lu.genre != N_LIRE || lu.a != nul {
+        retour nul;
+    }
+    retour motif_place(lu.val, lu.b, e.a.b);
+}
+
+fonction motif_ecriture_quit(s: Noeud): Quit {
+    soit nv = s.c;
+    si s.a != nul || !(est_bin(nv, "|") && est_bin(nv.a, "&") && est_bin(nv.b, "<<")) {
+        retour nul;
+    }
+    soit lu = nv.a.a;
+    soit garde = nv.a.b;
+    soit mis = nv.b;
+    si !(lu.genre == N_LIRE && lu.a == nul && lu.val == s.val && garde.genre == N_NON && est_bin(garde.a, "<<")
+            && est_nombre(garde.a.a, 3) && est_bin(mis.a, "&") && est_nombre(mis.a.b, 3)) {
+        retour nul;
+    }
+    soit q = motif_place(s.val, s.b, garde.a.b);
+    si q == nul || !meme_place(motif_place(s.val, lu.b, garde.a.b), q) || !meme_place(motif_place(s.val, s.b, mis.b), q) {
+        retour nul;
+    }
+    q.v = mis.a.a;
+    retour q;
+}
+
 fonction gen_bin(c: Ctx, e: Noeud) {
     soit o = e.op;
+    si c.optim && texte_egal(o, "&") {
+        soit q = motif_quit(e);
+        si q != nul {
+            // LDQ : le quit i d'un tableau rangé, en une instruction
+            gen_v(c, q.idx, 0);
+            soit rlq = 0;
+            si q.base != 0 {
+                charger(c, 2, q.base);
+                rlq = 2;
+            }
+            emettre(c, mot(84, (1 << 4) | rlq, 1 << 4, q.etg));
+            retour;
+        }
+    }
     si texte_egal(o, "&&") {
         soit lf = nouvelle_etiquette(c);
         soit fin = nouvelle_etiquette(c);
@@ -4230,7 +4344,20 @@ fonction instr(c: Ctx, s: Noeud) {
         si typ(c, s.c) == T_L {
             erreur(c, s.ligne, "un long occupe deux mots : écrivez bas(x) et haut(x) séparément");
         }
-        si s.a == nul {
+        soit qe: Quit = nul;
+        si c.optim {
+            qe = motif_ecriture_quit(s);
+        }
+        si qe != nul {
+            // STQ : le quit i d'un tableau rangé reçoit la valeur, en une instruction
+            deux(c, qe.v, qe.idx);
+            soit rbq = 0;
+            si qe.base != 0 {
+                charger(c, 3, qe.base);
+                rbq = 3;
+            }
+            emettre(c, mot(85, (1 << 4) | rbq, 2 << 4, qe.etg));
+        } sinon si s.a == nul {
             gen(c, s.b);
             pousser(c, 1);
             gen(c, s.c);
@@ -4512,7 +4639,8 @@ constante RI_TOUS = 510;            // R1 à R8
 // 6 s t lus (CMP), 7 d s lus (ST), 8 d s t lus (STX), 9 saut, 10 appel, 11 retour, 12 arrêt, 0 autre (barrière)
 fonction ri_sorte(op) {
     si op == 1 || op == 2 || op == 3 || op == 8 || op == 9 || op == 12 || op == 13 || op == 16 || op == 17 || op == 19
-            || op == 20 || op == 21 || op == 22 || op == 56 || (op >= 64 && op <= 70) || op == 78 || op == 79 || op == 41 {
+            || op == 20 || op == 21 || op == 22 || op == 56 || (op >= 64 && op <= 70) || op == 78 || op == 79 || op == 41
+            || op == 84 {
         retour 1;
     }
     si op == 4 || op == 5 || op == 11 || op == 18 || (op >= 71 && op <= 75) || op == 80 || op == 6 || op == 7 || op == 32 {
@@ -4523,7 +4651,7 @@ fonction ri_sorte(op) {
     si op == 36 || op == 39 { retour 5; }
     si op == 14 { retour 6; }
     si op == 33 { retour 7; }
-    si op == 42 { retour 8; }
+    si op == 42 || op == 85 { retour 8; }
     si op == 48 || op == 49 || op == 50 || op == 53 || op == 54 { retour 9; }
     si op == 51 { retour 10; }
     si op == 52 { retour 11; }

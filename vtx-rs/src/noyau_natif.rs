@@ -226,17 +226,19 @@ struct Es {
     texte: Vec<u32>,
     fichiers: Fichiers,
     dossier: Option<std::path::PathBuf>,
+    /// le clavier se lit (programme lancé par vtx) ; faux pour le corpus de conformité : rien à lire, comme l'interprète
+    clavier: bool,
 }
 
 impl Es {
     fn new(entrees: Vec<u32>, dossier: Option<std::path::PathBuf>) -> Self {
         Es { entrees: std::sync::Arc::new(entrees), ie: 0, sorties: Vec::new(), texte: Vec::new(),
-             fichiers: Default::default(), dossier }
+             fichiers: Default::default(), dossier, clavier: true }
     }
     /// Pour une tâche sur un autre cylindre : mêmes entrées et fichiers, sorties à part.
     fn fil(&self) -> Self {
         Es { entrees: self.entrees.clone(), ie: self.ie, sorties: Vec::new(), texte: Vec::new(),
-             fichiers: self.fichiers.clone(), dossier: self.dossier.clone() }
+             fichiers: self.fichiers.clone(), dossier: self.dossier.clone(), clavier: self.clavier }
     }
     #[inline(always)]
     fn entree(&mut self) -> u32 {
@@ -250,6 +252,7 @@ impl Es {
     fn entc(&mut self, canal: u32) -> u32 {
         match canal {
             0 => self.entree(),
+            1 if !self.clavier => 0xFFFF_FFFF,
             1 => {
                 // le clavier : le texte en attente est montré d'abord (la question avant la réponse)
                 use std::io::{Read, Write};

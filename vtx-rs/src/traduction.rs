@@ -179,6 +179,10 @@ pub fn traduire(mots: &[u32], nom: &str, table: &[u32]) -> Result<String, String
                 0x28 => format!("{{ let v = mem.lit(0, r14); r14 = (r14 + 1) & ADR; {} }}", ecrire("v")),
                 0x29 => res(&format!("mem.lit({} & 3, {})", rb, ra)),
                 0x2A => format!("mem.ecrit({} & 3, {}, {});", rb, reg(rd), ra),
+                0x54 => res(&format!("(mem.lit({}, {}.wrapping_add({} >> 4) & ADR) >> (({} & 15) * 2)) & 3", etage, ra, rb, rb)),
+                0x55 => format!("{{ let a = {}.wrapping_add({} >> 4) & ADR; let d = ({} & 15) * 2; \
+                                 let v = (mem.lit({}, a) & !(3u32 << d)) | (({} & 3) << d); mem.ecrit({}, a, v); }}",
+                                ra, rb, rb, etage, reg(rd), etage),
                 0x38 => res(&format!("dot({}, {}) as u32", ra, rb)),
                 0x39 => "gemv(mem, r14);".to_string(),
                 0x40 => res(&format!("fb(f({}) + f({}))", ra, rb)),
@@ -317,6 +321,7 @@ fn main() {
         mem.effacer();
         charger(&mut mem, &nombres(m));
         let mut es = Es::new(nombres(e), None);
+        es.clavier = false;
         match lancer(k, &mem, &mut es) {
             Ok(pas) => {
                 let s: Vec<String> = es.sorties.iter().map(|v| v.to_string()).collect();
