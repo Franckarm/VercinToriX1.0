@@ -2,8 +2,8 @@
 
 **Vercintorix (vtx), le SPU à cube chromatique et tout le contenu de ce dossier**
 
-Créateur : *(nom à compléter)*
-Contact : *(adresse à compléter)*
+Créateur : *(Combaluzier Franck)*
+Contact : *(franck.comb@proton.me)*
 
 Tous droits réservés.
 
