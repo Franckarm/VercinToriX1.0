@@ -78,7 +78,11 @@ vtx installer
 
 Les fichiers `.vtx` prennent l'icône du cube et s'ouvrent dans l'atelier par un double-clic (Windows : seulement pour votre compte, sans droits d'administrateur ; gardez `vtx.exe` et `atelier.exe` à leur place, ou relancez la commande après les avoir déplacés). Sous Linux, la même commande installe le type de fichier, l'icône et un lanceur (l'atelier s'ouvre dans un terminal). `vtx desinstaller` défait tout.
 
-Le **pas à pas** (F7) ouvre l'atelier en console sur le même fichier : `vtx atelier programme.vtx`, décrit ci-dessous. Il marche aussi seul, dans n'importe quel terminal.
+Le **pas à pas** se fait dans la fenêtre même : **F7** exécute jusqu'à la ligne suivante (en entrant dans les fonctions), **F8** aussi mais sans entrer dans les fonctions appelées, **F9** pose ou enlève un point d'arrêt (●) sur la ligne du curseur, **F5** continue jusqu'au prochain point d'arrêt, **Échap** (ou Maj+F5) arrête. La ligne où la machine s'est arrêtée est marquée ▶ en jaune dans la gouttière. L'onglet **Pas à pas** (sous le cube) montre les registres R1 à R12 et le cadre de la fonction (variables locales −1, −2…, paramètres +2, +3…), chacun en décimal, **en quaternaire** (les 16 quits du mot, du quit 15 au quit 0) et **en logique de Belnap** (· inconnu, f faux, v vrai, ± variable), puis les sorties et la console. Modifier le texte arrête le pas à pas. Quand le programme finit, sa mémoire passe au cube et à l'arbre.
+
+La **vue en quits** (F6 : perspective → à plat → en quits) montre chaque mot de l'étage comme un carré de 4 × 4 cases, ses 16 quits (le quit 15 en haut à gauche), chacun de sa couleur de Belnap : gris inconnu, rouge faux, vert vrai, orange variable ; un clic choisit un mot. En ligne de commande : `vtx quits programme.vtx image.png [ÉTAGE] [BASE] [LARGEUR]`.
+
+L'atelier en console (`vtx atelier programme.vtx`, décrit ci-dessous) reste disponible dans n'importe quel terminal.
 
 ### L'atelier en console (`vtx atelier`)
 

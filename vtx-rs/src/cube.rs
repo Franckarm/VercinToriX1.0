@@ -59,6 +59,36 @@ pub fn rendre_plan(mem: &Memoire, etage: u32, largeur: u32, base: u32, l: usize,
     }
 }
 
+/// En quits : chaque mot est un carré de 4 × 4 cases, ses 16 quits (le quit 15 en haut à gauche, comme on lit le mot
+/// en base 4), chacun de sa couleur de Belnap : inconnu gris, faux rouge, vrai vert, variable orange. Un mot nul (16
+/// inconnus) reste sombre, pour que la mémoire écrite se voie.
+pub fn rendre_quits(mem: &Memoire, etage: u32, largeur: u32, base: u32, l: usize, h: usize, px: &mut [u32]) {
+    const COULEURS: [u32; 4] = [0x0050_5860, 0x00E0_6060, 0x0070_C870, 0x00E8_A840];
+    let bloc = (l as u32 / largeur).max(1) as usize;
+    let separe = bloc >= 8;
+    for y in 0..h {
+        let ligne = (y / bloc) as u64;
+        for x in 0..l {
+            let col = (x / bloc) as u64;
+            let adr = base as u64 + ligne * largeur as u64 + col;
+            px[y * l + x] = if col >= largeur as u64 || adr > 0xFF_FFFF {
+                0x0008_0808
+            } else if separe && (x % bloc == bloc - 1 || y % bloc == bloc - 1) {
+                0x0010_1418
+            } else {
+                let v = mem.lit(etage, adr as u32);
+                if v == 0 {
+                    0x0018_1C20
+                } else {
+                    let (qx, qy) = ((x % bloc) * 4 / bloc, (y % bloc) * 4 / bloc);
+                    let k = 15 - (qy * 4 + qx) as u32;
+                    COULEURS[((v >> (2 * k)) & 3) as usize]
+                }
+            };
+        }
+    }
+}
+
 /// En perspective isométrique : l'étage est un cube de 256 × 256 × 256 mots (adresse = x + 256 y + 65536 z, z vers
 /// le haut) ; chaque mot non nul est un petit cube de sa couleur, les plus proches devant. Le cadrage suit les mots
 /// présents ; la molette zoome.
@@ -383,6 +413,36 @@ pub fn dessin(args: &[String]) {
     rendre_dessin(&mem, l, h, &mut px);
     std::fs::write(&args[1], png_de(&px.iter().map(|&v| v | 0xFF00_0000).collect::<Vec<u32>>(), l, h)).expect("écriture impossible");
     println!("{} : {} × {} points (× {})", args[1], dl, dh, e);
+}
+
+/// vtx quits PROG.vtx SORTIE.png [ÉTAGE] [BASE] [LARGEUR] : lance le programme, puis montre un étage de sa mémoire en
+/// quits (chaque mot en 4 × 4 cases de couleur de Belnap), comme la vue « en quits » de l'atelier.
+pub fn image_quits(args: &[String]) {
+    use super::{compiler_avec, dossier_de, executer_dans, nombres, COMPLET, VTXC};
+    if args.len() < 2 {
+        eprintln!("utilisation : vtx quits PROG.vtx SORTIE.png [ÉTAGE] [BASE] [LARGEUR]");
+        std::process::exit(2);
+    }
+    let source = std::fs::read_to_string(&args[0]).expect("lecture impossible");
+    let base_d = dossier_de(&args[0]);
+    let (mots, _) = compiler_avec(&nombres(VTXC), &source, &base_d, COMPLET).unwrap_or_else(|e| {
+        eprint!("{}", e);
+        std::process::exit(1)
+    });
+    let mut mem = Memoire::new(false);
+    super::charger(&mut mem, &mots);
+    executer_dans(&mem, &[], 5_000_000_000, Some(std::path::Path::new(&base_d)), None).unwrap_or_else(|e| {
+        eprintln!("erreur : {}", e);
+        std::process::exit(1)
+    });
+    let etage: u32 = args.get(2).and_then(|x| x.parse().ok()).unwrap_or(1).min(3);
+    let base: u32 = args.get(3).and_then(|x| x.parse().ok()).unwrap_or(0);
+    let largeur: u32 = args.get(4).and_then(|x| x.parse().ok()).unwrap_or(32).clamp(1, 1024);
+    let (l, h) = (largeur as usize * 16, 512usize);
+    let mut px = vec![0u32; l * h];
+    rendre_quits(&mem, etage, largeur, base, l, h, &mut px);
+    std::fs::write(&args[1], png_de(&px.iter().map(|&v| v | 0xFF00_0000).collect::<Vec<u32>>(), l, h)).expect("écriture impossible");
+    println!("{} : étage {} à partir de @{}[{}], {} mots par ligne, en quits", args[1], etage, etage, base, largeur);
 }
 
 /// Un PNG (sans compression) à partir de pixels 0xAARRGGBB, de haut en bas.

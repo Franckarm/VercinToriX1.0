@@ -5,10 +5,10 @@
 // vu comme un cube de 256 × 256 × 256 mots, les mots non nuls en voxels). En dessous, ce qu'a donné le programme.
 #![allow(non_snake_case, clippy::upper_case_acronyms)]
 
-use super::{compiler_avec, dossier_de, executer_dans, lire_partition, nombres, Memoire, ARRET, ATTENTE_NS, CANAL_ENTREE, CANAL_SORTIE, CLAVIER,
-            COMPLET, DIRECT, VTXC};
+use super::{boucle, compiler_avec, compiler_lignes, dossier_de, executer_dans, lire_partition, nombres, Etat, Fichiers, Memoire, ARRET,
+            ATTENTE_NS, CANAL_ENTREE, CANAL_SORTIE, CLAVIER, COMPLET, DIRECT, PAS_A_PAS, PILE_HAUT, VTXC};
 use super::arbre::{self, Noeud};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use core::ffi::c_void;
@@ -265,6 +265,9 @@ const C_TOUT: u16 = 1105;
 const C_LANCER: u16 = 1201;
 const C_PAS: u16 = 1202;
 const C_ARRETER: u16 = 1203;
+const C_PAS_DESSUS: u16 = 1206;
+const C_POINT: u16 = 1207;
+const C_FIN_PAS: u16 = 1208;
 const C_ASSOCIER: u16 = 1402;
 const C_PURGER: u16 = 1205;
 const C_ETAGE: u16 = 1300; // + 0..3
@@ -273,6 +276,7 @@ const C_LARGEUR: u16 = 1311;
 const C_EFFACER: u16 = 1312;
 const C_ONGLET_SORTIE: u16 = 1313;
 const C_ONGLET_TERMINAL: u16 = 1314;
+const C_ONGLET_PAS: u16 = 1315;
 const C_APROPOS: u16 = 1401;
 
 const FOND: u32 = 0x001E1E1E; // COLORREF : 0x00BBGGRR
@@ -302,6 +306,8 @@ struct Atelier {
     mem: Option<Memoire>,
     etage: u32,
     iso: bool,
+    // la vue en quits : chaque mot en 4 × 4 cases de couleur de Belnap
+    vue_quits: bool,
     largeur: u32,
     base: u32,
     zoom: f32,
@@ -311,7 +317,11 @@ struct Atelier {
     term_entree: H,
     // comme VS Code : l'onglet « Sortie » (le compte rendu de chaque exécution) et l'onglet « Terminal » (interactif)
     journal: H,
-    onglets: [H; 2],
+    onglets: [H; 3],
+    // le pas à pas, dans la fenêtre même : la machine arrêtée entre deux lignes, les points d'arrêt, le panneau
+    pas: Option<Pas>,
+    points: HashSet<usize>,
+    pas_texte: H,
     onglet: usize,
     ancien_proc_term: isize,
     arbre: H,
@@ -328,6 +338,27 @@ struct Atelier {
     tx_entree: Option<mpsc::Sender<u32>>,
     icone: H,
 }
+
+/// Le pas à pas : la machine arrêtée entre deux instructions, et la table adresse -> ligne donnée par vtxc.
+struct Pas {
+    mem: Memoire,
+    et: Etat,
+    fichiers: Fichiers,
+    entrees: Vec<u32>,
+    dossier: PathBuf,
+    debuts: HashMap<u32, usize>,
+    ligne: Option<usize>,
+    fini: bool,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum Avance {
+    Pas,
+    Dessus,
+    Continuer,
+}
+
+const LIMITE_PAS: u64 = 200_000_000;
 
 static mut ATELIER: *mut Atelier = std::ptr::null_mut();
 fn a() -> &'static mut Atelier {
@@ -423,6 +454,7 @@ fn effacer_resultats() {
         return;
     }
     at.mem = None;
+    at.pas = None;
     at.noeuds.clear();
     at.ouverts.clear();
     at.choisi = None;
@@ -513,6 +545,7 @@ fn lancer() {
         etat("un programme tourne déjà");
         return;
     }
+    at.pas = None;
     // sans nom : on lance quand même, depuis un fichier temporaire (rien n'est demandé)
     let fichier = if at.fichier.is_none() {
         let f = std::env::temp_dir().join("sans titre.vtx");
@@ -727,9 +760,22 @@ unsafe extern "system" fn proc_lignes(h: H, m: u32, wp: usize, lp: isize) -> isi
                     break;
                 }
                 let erreur = at.ligne_erreur == Some(n as usize + 1);
-                SetTextColor(mdc, if erreur { 0x0060_60F0 } else { 0x0070_7070 });
+                // le pas à pas : la ligne où la machine s'est arrêtée (▶, en jaune) et les points d'arrêt (●, en rouge)
+                let courante = at.pas.as_ref().and_then(|p| p.ligne) == Some(n as usize);
+                let point = at.points.contains(&(n as usize));
+                SetTextColor(mdc, if erreur { 0x0060_60F0 } else if courante { 0x0040_D0F0 } else { 0x0070_7070 });
                 let t = w(&format!("{:>4}", n + 1));
                 TextOutW(mdc, (4.0 * at.echelle) as i32, y, t.as_ptr(), t.len() as i32 - 1);
+                if point {
+                    SetTextColor(mdc, 0x0040_40E0);
+                    let p = w("●");
+                    TextOutW(mdc, 0, y, p.as_ptr(), 1);
+                }
+                if courante {
+                    SetTextColor(mdc, 0x0040_D0F0);
+                    let p = w("▶");
+                    TextOutW(mdc, (if point { 9.0 } else { 0.0 } * at.echelle) as i32, y, p.as_ptr(), 1);
+                }
                 n += 1;
             }
             BitBlt(dc, 0, 0, r.right, r.bottom, mdc, 0, 0, SRCCOPY);
@@ -773,7 +819,7 @@ fn vider_sortie_programme() {
     ajouter_texte(at.sortie, &t);
 }
 
-/// Montre l'onglet « Sortie » (0) ou « Terminal » (1).
+/// Montre l'onglet « Sortie » (0), « Terminal » (1) ou « Pas à pas » (2).
 fn montrer_onglet(i: usize) {
     let at = a();
     at.onglet = i;
@@ -781,9 +827,11 @@ fn montrer_onglet(i: usize) {
         ShowWindow(at.journal, if i == 0 { 5 } else { 0 });
         ShowWindow(at.sortie, if i == 1 { 5 } else { 0 });
         ShowWindow(at.term_entree, if i == 1 { 5 } else { 0 });
+        ShowWindow(at.pas_texte, if i == 2 { 5 } else { 0 });
         // l'onglet actif est écrit entre crochets
         SetWindowTextW(at.onglets[0], w(if i == 0 { "[ Sortie ]" } else { "Sortie" }).as_ptr());
         SetWindowTextW(at.onglets[1], w(if i == 1 { "[ Terminal ]" } else { "Terminal" }).as_ptr());
+        SetWindowTextW(at.onglets[2], w(if i == 2 { "[ Pas à pas ]" } else { "Pas à pas" }).as_ptr());
         if i == 1 {
             SetFocus(at.term_entree);
         }
@@ -1022,25 +1070,264 @@ unsafe extern "system" fn proc_arbre(h: H, m: u32, wp: usize, lp: isize) -> isiz
     }
 }
 
-/// Le pas à pas reste dans l'atelier en console : il s'ouvre dans sa fenêtre, sur le même fichier.
-fn pas_a_pas() {
-    let at = a();
-    if !enregistrer(false) {
-        return;
+// ------------------------------------------------------------------------------------------------ le pas à pas
+// Dans la fenêtre même : F7 avance d'une ligne (en entrant dans les fonctions), F8 d'une ligne sans y entrer, F5
+// continue jusqu'au prochain point d'arrêt (F9 en pose un sur la ligne du curseur), Échap ou Maj+F5 arrête. La ligne
+// où la machine s'est arrêtée est choisie dans le texte et marquée ▶ ; l'onglet « Pas à pas » montre les registres et
+// le cadre de la fonction, en décimal, en quaternaire (les 16 quits du mot) et en logique de Belnap.
+
+/// Les 16 quits d'un mot, du quit 15 au quit 0 (le mot lu en base 4), par groupes de 4.
+fn quits(v: u32) -> String {
+    let q: Vec<char> = (0..16).rev().map(|k| char::from(b'0' + ((v >> (2 * k)) & 3) as u8)).collect();
+    q.chunks(4).map(|c| c.iter().collect::<String>()).collect::<Vec<_>>().join(" ")
+}
+
+/// Le mot en logique de Belnap : un seul logique (0 à 3) par son nom ; sinon les 16 quits, · inconnu, f faux, v vrai,
+/// ± variable (preuve du vrai et du faux à la fois).
+fn belnap(v: u32) -> String {
+    if v <= 3 {
+        return ["inconnu", "faux", "vrai", "variable"][v as usize].to_string();
     }
-    let vtx = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("vtx.exe")));
-    match vtx {
-        Some(v) if v.exists() => {
-            let f = at.fichier.clone().unwrap();
-            let _ = std::process::Command::new(v).arg("atelier").arg(&f).current_dir(f.parent().unwrap_or(Path::new("."))).spawn();
-            etat("pas à pas : l'atelier en console s'ouvre (F7 avance d'une ligne, F9 point d'arrêt)");
+    let q: Vec<char> = (0..16).rev().map(|k| ['·', 'f', 'v', '±'][((v >> (2 * k)) & 3) as usize]).collect();
+    q.chunks(4).map(|c| c.iter().collect::<String>()).collect::<Vec<_>>().join(" ")
+}
+
+fn ligne_quaternaire(nom: &str, v: u32) -> String {
+    format!("{:<5}{:>12}  {}  {}\n", nom, v as i32, quits(v), belnap(v))
+}
+
+/// Le panneau du pas à pas : registres, cadre de la fonction, sorties et console.
+fn panneau_pas() -> String {
+    let at = a();
+    let d = match &at.pas {
+        Some(d) => d,
+        None => return String::new(),
+    };
+    let r = &d.et.r;
+    let mut t = String::new();
+    let ou = match d.ligne {
+        Some(x) => format!("ligne {}", x + 1),
+        None => if d.fini { "fini".into() } else { "début".into() },
+    };
+    t.push_str(&format!("pas à pas · {} · {} instructions\n", ou, d.et.pas));
+    t.push_str("F7 ligne suivante · F8 sans entrer dans les fonctions · F5 continuer · F9 point d'arrêt · Échap arrêter\n\n");
+    t.push_str(&format!("{:<5}{:>12}  {:<19}  {}\n", "", "décimal", "quaternaire (15→0)", "Belnap (· f v ±)"));
+    for k in 1..13 {
+        t.push_str(&ligne_quaternaire(&format!("R{}", k), r[k]));
+    }
+    t.push_str(&format!("R13 cadre {} · R14 pile {} · Z {} · C {} · pc {}\n", r[13], r[14], d.et.z as u8, d.et.c as u8, d.et.pc));
+    if r[13] != 0 && r[13] < PILE_HAUT {
+        t.push_str("\ncadre de la fonction : variables locales (-1, -2…), paramètres (+2, +3…)\n");
+        let lit = |k: i64| d.mem.lit(0, (r[13] as i64 + k) as u32);
+        for k in 1..9i64 {
+            t.push_str(&ligne_quaternaire(&format!("{}", -k), lit(-k)));
         }
-        _ => message("vtx.exe est introuvable à côté d'atelier.exe : reconstruisez (cargo build --release)."),
+        for k in 2..6i64 {
+            t.push_str(&ligne_quaternaire(&format!("+{}", k), lit(k)));
+        }
+    }
+    if !d.et.sorties.is_empty() {
+        let v: Vec<String> = d.et.sorties.iter().map(|v| v.to_string()).collect();
+        t.push_str(&format!("\nsorties : {}\n", v.join(",")));
+    }
+    let c: String = d.et.texte.iter().filter_map(|&v| char::from_u32(v & 0x1F_FFFF)).collect();
+    if !c.is_empty() {
+        t.push_str("\nce que le programme a écrit :\n");
+        for x in c.lines() {
+            t.push_str(&format!("» {}\n", x));
+        }
+    }
+    t
+}
+
+/// Compile pour le pas à pas (avec la table des lignes) et prépare la machine au début du programme.
+fn debuter_pas() -> bool {
+    let at = a();
+    if at.en_cours {
+        etat("un programme tourne déjà");
+        return false;
+    }
+    let fichier = if at.fichier.is_none() {
+        let f = std::env::temp_dir().join("sans titre.vtx");
+        if std::fs::write(&f, lire_texte(at.source).replace("\r\n", "\n")).is_err() {
+            message("Impossible d'écrire le fichier temporaire.");
+            return false;
+        }
+        f
+    } else {
+        if !enregistrer(false) {
+            return false;
+        }
+        at.fichier.clone().unwrap()
+    };
+    let source = lire_texte(at.source).replace("\r\n", "\n");
+    let base = dossier_de(&fichier.to_string_lossy());
+    let (mots, _, dbg) = match compiler_lignes(&nombres(VTXC), &source, &base, PAS_A_PAS, true) {
+        Ok(r) => r,
+        Err(e) => {
+            let nom = fichier.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            ecrire_texte(at.journal, &e.replace("erreur ligne ", &format!("erreur {}, ligne ", nom)));
+            montrer_onglet(0);
+            at.ligne_erreur = e.find("erreur ligne ").and_then(|p| e[p + 13..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok());
+            at.vue_lignes = (-1, -1);
+            etat("erreur de compilation : le pas à pas ne peut pas commencer");
+            return false;
+        }
+    };
+    let mut mem = Memoire::new(false);
+    super::charger(&mut mem, &mots);
+    let mut debuts = HashMap::new();
+    for p in dbg.chunks(2) {
+        if p.len() == 2 && p[1] >= 1 {
+            debuts.entry(p[0]).or_insert(p[1] as usize - 1);
+        }
+    }
+    let mut et = Etat { r: [0u32; 16], pc: 0, z: false, c: false, pas: 0, ie: 0, sorties: Vec::new(), texte: Vec::new() };
+    et.r[14] = PILE_HAUT;
+    let entrees = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).map(|x| x as u32).collect();
+    at.ligne_erreur = None;
+    at.pas = Some(Pas { mem, et, fichiers: std::sync::Mutex::new(HashMap::new()), entrees, dossier: PathBuf::from(&base), debuts,
+                        ligne: None, fini: false });
+    DIRECT.store(false, Ordering::Relaxed);
+    CLAVIER.store(0, Ordering::Relaxed);
+    true
+}
+
+/// Une instruction de la machine ; Ok(true) quand le programme est fini.
+fn une_instruction(d: &mut Pas) -> Result<bool, String> {
+    let limite = d.et.pas + 1;
+    match boucle(&d.mem, &mut d.et, &d.entrees, limite, Some(&d.dossier), &d.fichiers, u32::MAX, None, 0) {
+        Ok(()) => Ok(true),
+        Err(e) if e.starts_with("limite") => Ok(false),
+        Err(e) => Err(e),
     }
 }
 
+/// La ligne l amenée à l'écran, le curseur à son début (sans rien choisir : une touche ne l'effacerait pas) ; la
+/// gouttière la marque ▶.
+fn montrer_ligne(l: usize) {
+    let at = a();
+    unsafe {
+        let debut = SendMessageW(at.source, EM_LINEINDEX, l, 0);
+        if debut < 0 {
+            return;
+        }
+        SendMessageW(at.source, EM_SETSEL, debut as usize, debut);
+        SendMessageW(at.source, EM_SCROLLCARET, 0, 0);
+    }
+}
+
+fn avancer(mode: Avance) {
+    let at = a();
+    if at.pas.is_none() && !debuter_pas() {
+        return;
+    }
+    let points = at.points.clone();
+    let d = at.pas.as_mut().unwrap();
+    if d.fini {
+        return;
+    }
+    let cadre = d.et.r[13];
+    let depart = d.et.pas;
+    let mut erreur = None;
+    if mode == Avance::Continuer && points.is_empty() {
+        // rien pour l'arrêter : on va jusqu'au bout d'un coup
+        match boucle(&d.mem, &mut d.et, &d.entrees, 5_000_000_000, Some(&d.dossier), &d.fichiers, u32::MAX, None, 0) {
+            Ok(()) => d.fini = true,
+            Err(e) => erreur = Some(e),
+        }
+    } else {
+        loop {
+            match une_instruction(d) {
+                Ok(true) => {
+                    d.fini = true;
+                    break;
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    erreur = Some(e);
+                    break;
+                }
+            }
+            if let Some(&l) = d.debuts.get(&d.et.pc) {
+                d.ligne = Some(l);
+                let arreter = match mode {
+                    Avance::Pas => true,
+                    Avance::Dessus => d.et.r[13] >= cadre,
+                    Avance::Continuer => points.contains(&l),
+                };
+                if arreter {
+                    break;
+                }
+            }
+            if d.et.pas - depart >= LIMITE_PAS {
+                erreur = Some(format!("{} instructions sans atteindre une ligne : arrêt (boucle sans fin ?)", LIMITE_PAS));
+                break;
+            }
+        }
+    }
+    if let Some(e) = erreur {
+        d.fini = true;
+        d.ligne = None;
+        etat(&format!("erreur à l'exécution : {}", e));
+    } else if d.fini {
+        d.ligne = None;
+        etat(&format!("programme fini en {} instructions · le cube et l'arbre montrent sa mémoire · F7 recommence", d.et.pas));
+    } else {
+        etat(&format!("pas à pas · ligne {} · F7 ligne · F8 par-dessus · F5 continuer · F9 point d'arrêt · Échap arrêter",
+                      d.ligne.map(|l| l + 1).unwrap_or(0)));
+    }
+    let (ligne, fini) = (d.ligne, d.fini);
+    ecrire_texte(at.pas_texte, &panneau_pas());
+    if fini {
+        // le programme est fini : sa mémoire passe au cube et à l'arbre, et l'on revient à l'édition
+        if let Some(p) = at.pas.take() {
+            at.dessin = taille_dessin(&p.mem).is_some();
+            at.mem = Some(p.mem);
+            at.choisi = None;
+            rafraichir_arbre();
+            unsafe {
+                InvalidateRect(at.cube, std::ptr::null(), 0);
+            }
+        }
+    }
+    if let Some(l) = ligne {
+        montrer_ligne(l);
+    }
+    montrer_onglet(2);
+    unsafe {
+        SetFocus(at.source);
+    }
+    at.vue_lignes = (-1, -1);
+    suivre_lignes();
+}
+
+/// Fin du pas à pas : retour à l'édition.
+fn arreter_pas(raison: &str) {
+    let at = a();
+    if at.pas.take().is_some() {
+        at.vue_lignes = (-1, -1);
+        suivre_lignes();
+        etat(raison);
+    }
+}
+
+/// Un point d'arrêt sur la ligne du curseur (ou retiré s'il y en avait un).
+fn basculer_point() {
+    let at = a();
+    let l = unsafe { SendMessageW(at.source, EM_LINEFROMCHAR, usize::MAX, 0) }.max(0) as usize;
+    if !at.points.remove(&l) {
+        at.points.insert(l);
+        etat(&format!("point d'arrêt posé ligne {} · F5 pendant le pas à pas continue jusqu'à lui", l + 1));
+    } else {
+        etat(&format!("point d'arrêt retiré ligne {}", l + 1));
+    }
+    at.vue_lignes = (-1, -1);
+    suivre_lignes();
+}
+
 // ------------------------------------------------------------------------------------------------ le cube
-use super::cube::{rendre_dessin, rendre_iso, rendre_plan, taille_dessin};
+use super::cube::{rendre_dessin, rendre_iso, rendre_plan, rendre_quits, taille_dessin};
 
 unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize {
     match m {
@@ -1060,6 +1347,8 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
                 } else if at.iso {
                     let n = rendre_iso(mem, at.etage, at.zoom, l, ht, &mut px);
                     etat(&format!("cube en perspective · étage {} · {} mots non nuls · molette : zoom", at.etage, n));
+                } else if at.vue_quits {
+                    rendre_quits(mem, at.etage, at.largeur, at.base, l, ht, &mut px);
                 } else {
                     rendre_plan(mem, at.etage, at.largeur, at.base, l, ht, &mut px);
                 }
@@ -1087,7 +1376,7 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
                 let adr = at.base + (y.max(0) as u32 / cote) * pas * at.largeur + (x.max(0) as u32 / cote) * pas;
                 if adr <= 0xFF_FFFF && (x.max(0) as u32 / cote) * pas < at.largeur {
                     let v = mem.lit(at.etage, adr);
-                    etat(&format!("@{}[{}] = #{:08X} = {} (signé {})", at.etage, adr, v, v, v as i32));
+                    etat(&format!("@{}[{}] = #{:08X} = {} (signé {}) · quits {} · {}", at.etage, adr, v, v, v as i32, quits(v), belnap(v)));
                     choix = Some((at.etage, adr));
                 }
             }
@@ -1187,7 +1476,10 @@ fn creer_controles(fen: H) {
         at.journal = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
             WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
             0, 0, 10, 10, fen, 18 as H, at.inst, std::ptr::null_mut());
-        for (i, (t, c)) in [("Sortie", C_ONGLET_SORTIE), ("Terminal", C_ONGLET_TERMINAL)].iter().enumerate() {
+        at.pas_texte = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
+            WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
+            0, 0, 10, 10, fen, 19 as H, at.inst, std::ptr::null_mut());
+        for (i, (t, c)) in [("Sortie", C_ONGLET_SORTIE), ("Terminal", C_ONGLET_TERMINAL), ("Pas à pas", C_ONGLET_PAS)].iter().enumerate() {
             at.onglets[i] = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
                                             *c as usize as H, at.inst, std::ptr::null_mut());
         }
@@ -1200,7 +1492,7 @@ fn creer_controles(fen: H) {
         at.etat = CreateWindowExW(0, statique.as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE,
             0, 0, 10, 10, fen, 14 as H, at.inst, std::ptr::null_mut());
         for (t, c) in [("Ouvrir", C_OUVRIR), ("Enregistrer", C_ENREGISTRER), ("▶  Lancer  (F5)", C_LANCER), ("Pas à pas  (F7)", C_PAS),
-                       ("0", C_ETAGE), ("1", C_ETAGE + 1), ("2", C_ETAGE + 2), ("3", C_ETAGE + 3), ("Vue : à plat / perspective  (F6)", C_VUE),
+                       ("0", C_ETAGE), ("1", C_ETAGE + 1), ("2", C_ETAGE + 2), ("3", C_ETAGE + 3), ("Vue : perspective / à plat / quits  (F6)", C_VUE),
                        ("Largeur", C_LARGEUR)] {
             let b = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
                                     c as usize as H, at.inst, std::ptr::null_mut());
@@ -1218,9 +1510,15 @@ fn creer_controles(fen: H) {
         let px = |p: f32| -(p * at.echelle) as i32;
         at.police = CreateFontW(px(15.0), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0x31, w("Consolas").as_ptr());
         at.police_ui = CreateFontW(px(14.0), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, w("Segoe UI").as_ptr());
-        for h in [at.source, at.sortie, at.entrees, at.term_entree, at.journal] {
+        for h in [at.source, at.sortie, at.entrees, at.term_entree, at.journal, at.pas_texte] {
             SendMessageW(h, WM_SETFONT, at.police as usize, 1);
         }
+        ecrire_texte(at.pas_texte, "pas à pas : F7 avance d'une ligne (la machine s'arrête au début de chaque ligne du programme),
+            F8 aussi mais sans entrer dans les fonctions, F5 continue jusqu'au prochain point d'arrêt (F9 en pose un
+            sur la ligne du curseur), Échap arrête. Ici : les registres et le cadre de la fonction, en décimal,
+            en quaternaire (les 16 quits du mot, du quit 15 au quit 0) et en logique de Belnap
+            (· inconnu, f faux, v vrai, ± variable).
+");
         for h in at.onglets {
             SendMessageW(h, WM_SETFONT, at.police_ui as usize, 1);
         }
@@ -1273,8 +1571,8 @@ fn disposer(fen: H) {
             x += px(28.0) + px(2.0);
         }
         x += marge * 2;
-        MoveWindow(at.boutons[8].0, x, marge, px(220.0), barre - 2 * marge, 1);
-        x += px(220.0) + marge;
+        MoveWindow(at.boutons[8].0, x, marge, px(270.0), barre - 2 * marge, 1);
+        x += px(270.0) + marge;
         MoveWindow(at.boutons[9].0, x, marge, px(70.0), barre - 2 * marge, 1);
         // l'éditeur à gauche, le cube et la sortie à droite
         let gauche = (l as f32 * 0.5) as i32;
@@ -1292,9 +1590,11 @@ fn disposer(fen: H) {
         let honglet = px(26.0);
         MoveWindow(at.onglets[0], gauche + marge, yb, px(90.0), honglet, 1);
         MoveWindow(at.onglets[1], gauche + marge + px(92.0), yb, px(90.0), honglet, 1);
+        MoveWindow(at.onglets[2], gauche + marge + px(184.0), yb, px(100.0), honglet, 1);
         let yt = yb + honglet + px(2.0);
         let ht = hb - honglet - px(2.0);
         MoveWindow(at.journal, gauche + marge, yt, lt, ht, 1);
+        MoveWindow(at.pas_texte, gauche + marge, yt, lt, ht, 1);
         MoveWindow(at.sortie, gauche + marge, yt, lt, ht - hligne, 1);
         MoveWindow(at.term_entree, gauche + marge, yt + ht - hligne, lt, hligne, 1);
         MoveWindow(at.arbre, gauche + marge + lt + marge, yb, l - gauche - marge - lt - marge, hb, 1);
@@ -1330,14 +1630,19 @@ fn menus(fen: H) {
         ajouter(executer, "&Lancer\tF5", C_LANCER);
         ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
-        ajouter(executer, "&Pas à pas (atelier en console)\tF7", C_PAS);
+        ajouter(executer, "", 0);
+        ajouter(executer, "&Pas à pas : ligne suivante\tF7", C_PAS);
+        ajouter(executer, "Pas à pas &sans entrer dans les fonctions\tF8", C_PAS_DESSUS);
+        ajouter(executer, "Point d'arrêt sur la &ligne\tF9", C_POINT);
+        ajouter(executer, "&Continuer jusqu'au point d'arrêt\tF5", C_LANCER);
+        ajouter(executer, "Arrêter le pas à pas\tÉchap", C_FIN_PAS);
         let cube = CreatePopupMenu();
         ajouter(cube, "Étage &0 (le code)", C_ETAGE);
         ajouter(cube, "Étage &1", C_ETAGE + 1);
         ajouter(cube, "Étage &2", C_ETAGE + 2);
         ajouter(cube, "Étage &3", C_ETAGE + 3);
         ajouter(cube, "", 0);
-        ajouter(cube, "&Vue à plat / en perspective\tF6", C_VUE);
+        ajouter(cube, "&Vue : perspective, à plat, en quits\tF6", C_VUE);
         ajouter(cube, "&Largeur de l'image (à plat)", C_LARGEUR);
         ajouter(cube, "&Effacer la mémoire affichée", C_EFFACER);
         let aide = CreatePopupMenu();
@@ -1401,13 +1706,21 @@ fn commande(c: u16) {
             C_TOUT => {
                 SendMessageW(cible(), EM_SETSEL, 0, -1);
             }
-            C_LANCER => lancer(),
+            C_LANCER => {
+                if at.pas.is_some() {
+                    avancer(Avance::Continuer);
+                } else {
+                    lancer();
+                }
+            }
             C_PURGER => {
                 effacer_resultats();
                 etat("mémoire du programme rendue (cube et arbre vidés)");
             }
             C_ONGLET_SORTIE => montrer_onglet(0),
             C_ONGLET_TERMINAL => montrer_onglet(1),
+            C_ONGLET_PAS => montrer_onglet(2),
+            C_ARRETER if at.pas.is_some() => arreter_pas("pas à pas arrêté : retour à l'édition"),
             C_ARRETER => {
                 if at.en_cours {
                     ARRET.store(true, Ordering::Relaxed);
@@ -1419,7 +1732,10 @@ fn commande(c: u16) {
                 Ok(m) => message(&m),
                 Err(e) => message(&e),
             },
-            C_PAS => pas_a_pas(),
+            C_PAS => avancer(Avance::Pas),
+            C_PAS_DESSUS => avancer(Avance::Dessus),
+            C_POINT => basculer_point(),
+            C_FIN_PAS => arreter_pas("pas à pas arrêté : retour à l'édition"),
             x if (C_ETAGE..C_ETAGE + 4).contains(&x) => {
                 at.etage = (x - C_ETAGE) as u32;
                 at.base = 0;
@@ -1427,19 +1743,28 @@ fn commande(c: u16) {
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
             C_VUE => {
-                // image du programme (s'il dessine) → cube en perspective → à plat → image…
+                // image du programme (s'il dessine) → cube en perspective → à plat → en quits → image…
                 let a_dessin = at.mem.as_ref().map(|m| taille_dessin(m).is_some()).unwrap_or(false);
                 if at.dessin {
                     at.dessin = false;
                     at.iso = true;
                 } else if at.iso {
                     at.iso = false;
+                    at.vue_quits = false;
+                } else if !at.vue_quits {
+                    at.vue_quits = true;
                 } else {
+                    at.vue_quits = false;
                     at.iso = true;
                     at.dessin = a_dessin;
                 }
-                if !at.iso {
-                    etat(&format!("à plat · étage {} · {} mots par ligne · clic : la valeur d'un mot · molette : défiler", at.etage, at.largeur));
+                if !at.iso && !at.dessin {
+                    if at.vue_quits {
+                        etat(&format!("en quits · étage {} · {} mots par ligne · chaque mot : 16 quits en 4 × 4 (quit 15 en haut à gauche) · \
+                                       gris inconnu, rouge faux, vert vrai, orange variable · clic : un mot", at.etage, at.largeur));
+                    } else {
+                        etat(&format!("à plat · étage {} · {} mots par ligne · clic : la valeur d'un mot · molette : défiler", at.etage, at.largeur));
+                    }
                 }
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
@@ -1454,7 +1779,7 @@ fn commande(c: u16) {
                 at.mem = None;
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
-            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique #RRGGBBAA et de la logique à quatre valeurs.\n\nF5 lance le programme, F7 ouvre le pas à pas, F6 change la vue du cube."),
+            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique #RRGGBBAA et de la logique à quatre valeurs.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
             _ => {}
         }
     }
@@ -1480,10 +1805,12 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
             if lp as H == a().source {
                 if notif == EN_CHANGE {
                     titre();
+                    arreter_pas("le texte a changé : pas à pas arrêté");
                 }
                 return 0;
             }
-            if lp as H == a().entrees || lp as H == a().sortie || lp as H == a().term_entree || lp as H == a().journal {
+            if lp as H == a().entrees || lp as H == a().sortie || lp as H == a().term_entree || lp as H == a().journal
+                || lp as H == a().pas_texte {
                 return 0;
             }
             commande(id);
@@ -1492,7 +1819,7 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
         WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
             // l'éditeur et la sortie en sombre ; le reste garde les couleurs de Windows
             let at = a();
-            if lp as H == at.source || lp as H == at.sortie || lp as H == at.term_entree || lp as H == at.journal {
+            if lp as H == at.source || lp as H == at.sortie || lp as H == at.term_entree || lp as H == at.journal || lp as H == at.pas_texte {
                 SetTextColor(wp as H, TEXTE);
                 SetBkColor(wp as H, FOND);
                 return at.pinceau as isize;
@@ -1534,8 +1861,9 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             inst, fen: std::ptr::null_mut(), source: std::ptr::null_mut(), sortie: std::ptr::null_mut(), entrees: std::ptr::null_mut(),
             cube: std::ptr::null_mut(), etat: std::ptr::null_mut(), boutons: Vec::new(), etiquettes: Vec::new(),
             police: std::ptr::null_mut(), police_ui: std::ptr::null_mut(), pinceau: std::ptr::null_mut(), echelle: 1.0,
-            fichier: None, mem: None, etage: 1, iso: true, largeur: 64, base: 0, zoom: 1.0, en_cours: false, ancien_proc_source: 0,
-            term_entree: std::ptr::null_mut(), journal: std::ptr::null_mut(), onglets: [std::ptr::null_mut(); 2], onglet: 1,
+            fichier: None, mem: None, etage: 1, iso: true, vue_quits: false, largeur: 64, base: 0, zoom: 1.0, en_cours: false, ancien_proc_source: 0,
+            term_entree: std::ptr::null_mut(), journal: std::ptr::null_mut(), onglets: [std::ptr::null_mut(); 3], onglet: 1,
+            pas: None, points: HashSet::new(), pas_texte: std::ptr::null_mut(),
             ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),
             ouverts: HashSet::new(), defile: 0, choisi: None, lignes: std::ptr::null_mut(), vue_lignes: (-1, -1), ligne_erreur: None,
             dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(),
@@ -1607,6 +1935,9 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY | 4, key: 0x74, cmd: C_ARRETER }, // Maj+F5
             Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6
             Accel { fVirt: FVIRTKEY, key: 0x76, cmd: C_PAS },    // F7
+            Accel { fVirt: FVIRTKEY, key: 0x77, cmd: C_PAS_DESSUS }, // F8
+            Accel { fVirt: FVIRTKEY, key: 0x78, cmd: C_POINT },  // F9
+            Accel { fVirt: FVIRTKEY, key: 0x1B, cmd: C_FIN_PAS }, // Échap
         ];
         let table = CreateAcceleratorTableW(raccourcis.as_ptr(), raccourcis.len() as i32);
         let mut msg: Msg = std::mem::zeroed();

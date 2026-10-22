@@ -23,7 +23,7 @@ mod traduction;
 mod atelier;
 mod arbre;
 mod cube;
-#[cfg(windows)]
+#[cfg(any(windows, feature = "verif_fenetre"))]
 mod fenetre;
 
 const MASK: u64 = 0xFFFF_FFFF;
@@ -1135,6 +1135,7 @@ fn main() {
         Some("renouveler") if args.len() > 2 => renouveler(&args[2]),
         Some("image") => cube::image(&args[2..]),
         Some("dessin") => cube::dessin(&args[2..]),
+        Some("quits") => cube::image_quits(&args[2..]),
         Some("icone") if args.len() > 2 => {
             let f = &args[2];
             let o = if f.ends_with(".ico") { cube::ico(&[16, 32, 48, 256]) } else { cube::png(args.get(3).and_then(|t| t.parse().ok()).unwrap_or(64)) };

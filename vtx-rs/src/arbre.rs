@@ -47,6 +47,15 @@ pub fn decoder(v: u32) -> Vec<String> {
         format!("couleur : rouge {}, vert {}, bleu {}, alpha {}", r, g, b, a),
         format!("quits : {} {} {} {}", &quits[0..4], &quits[4..8], &quits[8..12], &quits[12..16]),
     ];
+    // les mêmes quits en logique de Belnap : · inconnu, f faux, v vrai, ± variable
+    let lg: String = (0..16).rev().map(|k| ['·', 'f', 'v', '±'][((v >> (2 * k)) & 3) as usize]).collect();
+    let lg: Vec<char> = lg.chars().collect();
+    let g = |i: usize| lg[i..i + 4].iter().collect::<String>();
+    l.push(if v <= 3 {
+        format!("logique : {}", ["inconnu", "faux", "vrai", "variable"][v as usize])
+    } else {
+        format!("logique (16 quits) : {} {} {} {}", g(0), g(4), g(8), g(12))
+    });
     let f = f32::from_bits(v);
     if f.is_finite() && f != 0.0 && f.abs() > 1e-6 && f.abs() < 1e9 {
         l.push(format!("lu comme flottant : {}", f));
