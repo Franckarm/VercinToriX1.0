@@ -93,6 +93,11 @@ function SPUTraduit(words) {
       case 40: return `r=rd(0,R[14]);R[14]=(R[14]+1)&16777215;${ecr(d, "r")}`;
       case 41: return `r=rd(${B}&3,${A});${ecr(d, "r")}${F}`;
       case 42: return `wr(${B}&3,${Rg(d)},${A});`;
+      case 86: return `r=(((${A}&${B})&0xAAAAAAAA)|((${A}|${B})&0x55555555))>>>0;${ecr(d, "r")}${F}`;
+      case 87: return `r=(((${A}|${B})&0xAAAAAAAA)|((${A}&${B})&0x55555555))>>>0;${ecr(d, "r")}${F}`;
+      case 88: return `r=(((${A}&0xAAAAAAAA)>>>1)|((${A}&0x55555555)<<1))>>>0;${ecr(d, "r")}${F}`;
+      case 89: return `r=(~(((${A}&0xAAAAAAAA)>>>1)|((${A}&0x55555555)<<1)))>>>0;${ecr(d, "r")}${F}`;
+      case 90: return `r=(${A}>>>((${B}&15)*2))&3;${ecr(d, "r")}${F}`;
       case 84: return `r=(rd(${et},(${A}+(${B}>>>4))&16777215)>>>((${B}&15)*2))&3;${ecr(d, "r")}${F}`;
       case 85: return `{const a=(${A}+(${B}>>>4))&16777215,s=(${B}&15)*2;wr(${et},a,((rd(${et},a)&~(3<<s))|((${Rg(d)}&3)<<s))>>>0);}`;
       case 48: return `return ${cible};`;

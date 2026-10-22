@@ -60,6 +60,10 @@ OPS = {
     # quaternaire : un quit d'un tableau rangé (16 quits par mot, le quit 0 dans les bits bas) ; adresse du mot :
     # Rs + (Rt >> 4), place dans le mot : (Rt & 15) × 2. LDQ Rd,Rs,Rt,@e lit le quit dans Rd ; STQ y écrit Rd & 3
     "LDQ": (0x54, "memq"), "STQ": (0x55, "memq"),
+    # logique de Belnap sur les 16 quits d'un mot (bit haut de chaque quit : la preuve du vrai, bit bas : celle du faux) :
+    # ET4 (v = v1 & v2, f = f1 | f2), OU4 (l'inverse), NON4 (échange v et f), ANTI (NON4 puis complément) ;
+    # EXQ Rd,Rs,Rt : le quit Rt & 15 de Rs
+    "ET4": (0x56, "rrr"), "OU4": (0x57, "rrr"), "NON4": (0x58, "rr"), "ANTI": (0x59, "rr"), "EXQ": (0x5A, "rrr"),
 }
 NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
@@ -425,6 +429,20 @@ class CPU:
             self.mem[adr] = (self.mem.get(adr, 0) & ~(3 << d) & MASK) | ((self.r[rd] & 3) << d)
             self.ld[etage] += 1
             self.st[etage] += 1
+        elif op in (0x56, 0x57, 0x58, 0x59, 0x5A):
+            V, F = 0xAAAAAAAA, 0x55555555
+            if op == 0x56:
+                v = ((A & B) & V) | ((A | B) & F)
+            elif op == 0x57:
+                v = ((A | B) & V) | ((A & B) & F)
+            elif op == 0x5A:
+                v = (A >> ((B & 15) * 2)) & 3
+            else:
+                v = ((A & V) >> 1) | ((A & F) << 1)
+                if op == 0x59:
+                    v ^= MASK
+            self.ecrire(rd, v)
+            self.drapeaux(v)
         elif op == 0x22:
             raise VtxError("DMA non implémentée (utiliser copier du prélude)")
         elif op == 0x23:
@@ -2095,6 +2113,19 @@ fonction texte_neuf(n) {
     @(t >> 24)[t & 16777215] = n;
     retour t;
 }
+fonction __texte_tas(t): texte {
+    // un texte rangé dans le tas (champ, tableau, dictionnaire) : un texte écrit dans le programme (gardé avec le code, à
+    // l'étage 0) est recopié dans le tas, pour qu'une mémoire sauvée (sauver_tas) reste juste quand le programme change
+    si t == 0 || (t >> 24) != 0 {
+        retour t;
+    }
+    soit n = longueur(t);
+    soit r = texte_neuf(n);
+    pour i dans 0..n {
+        changer_car(r, i, car(t, i));
+    }
+    retour r;
+}
 fonction __mettre(c, x) {
     si c < 65536 {
         ecrire_car(c, x);
@@ -3273,8 +3304,9 @@ def appelle_pile(x):
 # la même chose sur ses mots ; les deux compilateurs produisent toujours les mêmes mots.
 EPISSAGE = True
 RI_RRR = {"ADD", "SUB", "MUL", "SHL", "SHR", "DIV", "MOD", "MIN", "MAX", "ADDM4", "AND", "OR", "XOR", "GDOT", "FADD", "FSUB",
-          "FMUL", "FDIV", "FEQ", "FLT", "FLE", "MULHU", "QEGAL", "LDX", "LDQ"}
-RI_RR = {"SHL4", "SHR4", "MOV", "CMP3", "FSQRT", "ITOF", "ITOFS", "FTOI", "FROUND", "COMPTE", "ADDI", "SUBI", "LD"}
+          "FMUL", "FDIV", "FEQ", "FLT", "FLE", "MULHU", "QEGAL", "LDX", "LDQ", "ET4", "OU4", "EXQ"}
+RI_RR = {"SHL4", "SHR4", "MOV", "CMP3", "FSQRT", "ITOF", "ITOFS", "FTOI", "FROUND", "COMPTE", "ADDI", "SUBI", "LD", "NON4",
+         "ANTI"}
 RI_DEST = RI_RRR | RI_RR | {"LDI", "LDF"}          # le premier registre est seulement écrit
 RI_SAUTS = {"JMP", "JZ", "JNZ", "JC", "JNC", "CALL", "RET", "HALT"}
 RI_TOUS = 0x1FE                                     # R1 à R8
@@ -4378,12 +4410,9 @@ class Generateur:
             self.expr(e[1])
             self.emettre("PUSH R1")
             self.expr(e[2], "e")
-            self.emettre("ADD R1,R1,R1")
             self.emettre("MOV R2,R1")
             self.emettre("POP R1")
-            self.emettre("SHR R1,R1,R2")
-            self.emettre("ADDI R2,R0,#3")
-            self.emettre("AND R1,R1,R2")
+            self.emettre("EXQ R1,R1,R2")
         elif g == "lire":
             if isinstance(e[1], int):
                 self.expr(e[2], "e")
@@ -4498,32 +4527,18 @@ class Generateur:
             self.paire(args[0], args[1], t)
         else:
             self.expr(args[0], t)
-        if nom in ("et4", "ou4"):                # et4 : v = v1 & v2, f = f1 | f2 ; ou4 : l'inverse
-            self.emettre("AND R6,R1,R2")
-            self.emettre("OR R7,R1,R2")
-            self.emettre(f"LDI R2,{BITS_V}")
-            self.emettre(("AND R6,R6,R2" if nom == "et4" else "AND R7,R7,R2"))
-            self.emettre(f"LDI R2,{BITS_F}")
-            self.emettre(("AND R7,R7,R2" if nom == "et4" else "AND R6,R6,R2"))
-            self.emettre("OR R1,R6,R7")
+        if nom in ("et4", "ou4"):                # et4 : v = v1 & v2, f = f1 | f2 ; ou4 : l'inverse (16 quits d'un coup)
+            self.emettre(f"{nom.upper()} R1,R1,R2")
         elif nom == "fusion":                    # rassembler les preuves : v = v1 | v2, f = f1 | f2
             self.emettre("OR R1,R1,R2")
         elif nom == "consensus":                 # garder les preuves communes
             self.emettre("AND R1,R1,R2")
-        else:                                    # non : échange v et f ; anti : non puis complément (v = ~f, f = ~v)
-            self.emettre(f"LDI R2,{BITS_V}")
-            self.emettre("AND R6,R1,R2")
-            self.emettre(f"LDI R2,{BITS_F}")
-            self.emettre("AND R7,R1,R2")
-            self.emettre("ADDI R2,R0,#1")
-            self.emettre("SHR R6,R6,R2")
-            self.emettre("SHL R7,R7,R2")
-            self.emettre("OR R1,R6,R7")
+        elif nom == "anti" and t != "q":         # anti : non puis complément (v = ~f, f = ~v), sur les 16 quits
+            self.emettre("ANTI R1,R1")
+        else:                                    # non : échange v et f ; anti d'un seul logique : non puis xor 3
+            self.emettre("NON4 R1,R1")
             if nom == "anti":
-                if t == "q":
-                    self.emettre("ADDI R2,R0,#3")
-                else:
-                    self.emettre("LDI R2,4294967295")
+                self.emettre("ADDI R2,R0,#3")
                 self.emettre("XOR R1,R1,R2")
 
     def appel(self, e):
@@ -4862,6 +4877,7 @@ def typer_textes(fs, types_champs):
     champs_texte = {c for c, v in champs.items() if v == {True}}
 
     TABLEAUX_DE_TEXTES = {"decouper", "cles"}
+    TEXTES_RANGES = {"ajouter", "inserer", "ranger", "affirmer", "nier", "__remplir"}   # rangent leurs arguments
     tabtextes = set()
     tabflot = set()
     rtabflot = {f.nom for f in fs if f.rtype == "F"}
@@ -4987,6 +5003,16 @@ def typer_textes(fs, types_champs):
                 return ("appel", "__" + x[1] + "_t", x[2], x[3])
             if x[1] == "texte" and "texte" in du_prelude:
                 return ("appel", "__texte_t", x[2], x[3])
+        # un texte rangé dans le tas y est recopié s'il est écrit dans le programme (voir __texte_tas)
+        tas = lambda v, l: ("appel", "__texte_tas", [v], l) if est_texte(v, env) and "__texte_tas" in du_prelude else v
+        if g == "construire":
+            return x[:2] + ([(ch, tas(v, x[4])) for ch, v in x[2]],) + x[3:]
+        if g == "ecrire_champ":
+            return x[:3] + (tas(x[3], x[4]),) + x[4:]
+        if g == "ecrire" and x[1] == 3 and adresse_poignee(x[2]) is not None:
+            return x[:3] + (tas(x[3], x[4]),) + x[4:]
+        if g == "appel" and x[1] in TEXTES_RANGES and x[1] in du_prelude and len(x[2]) >= 2:
+            return ("appel", x[1], [x[2][0]] + [tas(a, x[3]) for a in x[2][1:]], x[3])
         return x
 
     for f in fs:

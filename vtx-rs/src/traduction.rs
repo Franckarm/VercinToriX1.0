@@ -179,6 +179,11 @@ pub fn traduire(mots: &[u32], nom: &str, table: &[u32]) -> Result<String, String
                 0x28 => format!("{{ let v = mem.lit(0, r14); r14 = (r14 + 1) & ADR; {} }}", ecrire("v")),
                 0x29 => res(&format!("mem.lit({} & 3, {})", rb, ra)),
                 0x2A => format!("mem.ecrit({} & 3, {}, {});", rb, reg(rd), ra),
+                0x56 => res(&format!("(({a} & {b}) & 0xAAAA_AAAA) | (({a} | {b}) & 0x5555_5555)", a = ra, b = rb)),
+                0x57 => res(&format!("(({a} | {b}) & 0xAAAA_AAAA) | (({a} & {b}) & 0x5555_5555)", a = ra, b = rb)),
+                0x58 => res(&format!("(({a} & 0xAAAA_AAAA) >> 1) | (({a} & 0x5555_5555) << 1)", a = ra)),
+                0x59 => res(&format!("!((({a} & 0xAAAA_AAAA) >> 1) | (({a} & 0x5555_5555) << 1))", a = ra)),
+                0x5A => res(&format!("({} >> (({} & 15) * 2)) & 3", ra, rb)),
                 0x54 => res(&format!("(mem.lit({}, {}.wrapping_add({} >> 4) & ADR) >> (({} & 15) * 2)) & 3", etage, ra, rb, rb)),
                 0x55 => format!("{{ let a = {}.wrapping_add({} >> 4) & ADR; let d = ({} & 15) * 2; \
                                  let v = (mem.lit({}, a) & !(3u32 << d)) | (({} & 3) << d); mem.ecrit({}, a, v); }}",

@@ -578,6 +578,12 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
             0x29 => res!(mem.lit(rb & 3, ra)),
             // quaternaire : un quit d'un tableau rangé (mot Rs + (Rt >> 4), place (Rt & 15) × 2)
             0x54 => res!((mem.lit(etage, ra.wrapping_add(rb >> 4) & ADR) >> ((rb & 15) * 2)) & 3),
+            // logique de Belnap sur 16 quits (bit haut : preuve du vrai, bit bas : preuve du faux), quit d'un registre
+            0x56 => res!(((ra & rb) & 0xAAAA_AAAA) | ((ra | rb) & 0x5555_5555)),
+            0x57 => res!(((ra | rb) & 0xAAAA_AAAA) | ((ra & rb) & 0x5555_5555)),
+            0x58 => res!(((ra & 0xAAAA_AAAA) >> 1) | ((ra & 0x5555_5555) << 1)),
+            0x59 => res!(!(((ra & 0xAAAA_AAAA) >> 1) | ((ra & 0x5555_5555) << 1))),
+            0x5A => res!((ra >> ((rb & 15) * 2)) & 3),
             0x55 => {
                 let adr = ra.wrapping_add(rb >> 4) & ADR;
                 let d = (rb & 15) * 2;

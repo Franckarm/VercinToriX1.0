@@ -64,6 +64,11 @@ function SPU(words) {
         case 40: r = rd(0, R[14]); R[14] = (R[14] + 1) & ADR; set(d, r); break;
         case 41: { const e = B & 3; r = rd(e, A); set(d, r); z = r === 0; c = false; break; }
         case 42: wr(B & 3, R[d], A); break;
+        case 86: r = (((A & B) & 0xAAAAAAAA) | ((A | B) & 0x55555555)) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 87: r = (((A | B) & 0xAAAAAAAA) | ((A & B) & 0x55555555)) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 88: r = (((A & 0xAAAAAAAA) >>> 1) | ((A & 0x55555555) << 1)) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 89: r = (~(((A & 0xAAAAAAAA) >>> 1) | ((A & 0x55555555) << 1))) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 90: r = (A >>> ((B & 15) * 2)) & 3; set(d, r); z = r === 0; c = false; break;
         case 84: r = (rd(et, (A + (B >>> 4)) & ADR) >>> ((B & 15) * 2)) & 3; set(d, r); z = r === 0; c = false; break;
         case 85: { const a = (A + (B >>> 4)) & ADR, sh = (B & 15) * 2;
           wr(et, a, ((rd(et, a) & ~(3 << sh)) | ((R[d] & 3) << sh)) >>> 0); break; }

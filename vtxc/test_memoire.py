@@ -37,6 +37,15 @@ try:
     ok2 = (sorties[0].startswith("première fois") and "lancé 2 fois ; premier ami : Ambiorix ; amis : 2" in sorties[1]
            and "lancé 3 fois" in sorties[2] and "amis : 3" in sorties[2])
     print(f"Mémoire qui dure (sauver_tas, charger_tas) : souvenirs sur trois lancements : {'oui' if ok2 else 'NON'}")
+    # le programme change entre deux lancements (le code bouge) : les textes rangés restent justes
+    autre = 'fonction inutile(x) { afficher("du texte pour tout décaler", x); retour x * 3; }\n' + open(
+        os.path.join(tmp, "memoire.vtx"), encoding="utf-8").read()
+    with open(os.path.join(tmp, "memoire2.vtx"), "w", encoding="utf-8") as f:
+        f.write(autre)
+    s4 = subprocess.run([VTX, "memoire2.vtx"], cwd=tmp, capture_output=True, text=True, encoding="utf-8").stdout
+    ok2b = "je suis ScoR lancé 4 fois ; premier ami : Ambiorix ; amis : 4" in s4
+    print(f"Mémoire qui dure quand le programme change : textes gardés : {'oui' if ok2b else 'NON ' + s4}")
+    ok2 = ok2 and ok2b
     attendu = ("cube 262 : 262000 262999\ncube 330 : 330000 330999\ncube 392 : 392000 392999\n"
                "cube 0 : 0 ; l'étage 0 refuse : 1\nfin de deux cubes : 7 puis 1 9\n")
     rc = subprocess.run([VTX, "cubes.vtx"], cwd=tmp, capture_output=True, text=True, encoding="utf-8").stdout
