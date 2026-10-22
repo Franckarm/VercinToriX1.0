@@ -1,0 +1,17 @@
+// La logique à quatre valeurs : vrai, faux, inconnu, variable
+fonction dire(l: logique) {
+    selon l {
+        vrai { ecrire_texte(1, "fermée\n"); }
+        faux { ecrire_texte(1, "ouverte\n"); }
+        inconnu { ecrire_texte(1, "personne n'a regardé\n"); }
+        variable { ecrire_texte(1, "les témoins se contredisent\n"); }
+    }
+}
+
+fonction principal() {
+    soit capteur_a: logique = vrai;
+    soit capteur_b: logique = faux;
+    dire(fusion(capteur_a, capteur_b));     // variable
+    dire(fusion(capteur_a, inconnu));       // vrai
+    dire(et4(capteur_a, capteur_b));        // faux
+}

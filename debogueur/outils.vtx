@@ -1,0 +1,13 @@
+// Outils importés par demo.vtx
+fonction carre(x: flottant): flottant {
+    soit r = x * x;
+    retour r;
+}
+
+fonction somme_carres(n): long {
+    soit total: long = 0;
+    pour i dans 1..n + 1 {
+        total = total + long(i) * i;
+    }
+    retour total;
+}

@@ -1,0 +1,25 @@
+[package]
+name = "vtx-spu"
+version = "0.4.0"
+edition = "2021"
+description = "Émulateur du SPU à cube chromatique (Vercintorix, vtx 0.4)"
+
+[[bin]]
+name = "vtx-spu"
+path = "src/main.rs"
+
+[[bin]]
+name = "vtx"
+path = "src/vtx.rs"
+
+[[bin]]
+name = "atelier"
+path = "src/atelier_exe.rs"
+
+[dependencies]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

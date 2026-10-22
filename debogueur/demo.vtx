@@ -1,0 +1,18 @@
+importer "outils.vtx";
+
+fonction norme(x: flottant, y: flottant): flottant {
+    soit c = carre(x) + carre(y);
+    retour racine(c);
+}
+
+fonction principal() {
+    soit a = 3.0;
+    soit b = -4.0;
+    soit n = norme(a, b);
+    sortie(arrondi(n * 100.0));
+    soit grand = somme_carres(3000);
+    sortie(grand);
+    soit k = 7;
+    k = k - 10;
+    sortie(k);
+}

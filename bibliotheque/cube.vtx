@@ -1,0 +1,54 @@
+// Bibliothèque du cube chromatique : un mot = #RRGGBBAA. Voies numérotées 0 (rouge), 1 (vert), 2 (bleu), 3 (alpha).
+// Une seule définition de la disposition des voies, utilisée par tous les programmes (importer "cube.vtx";).
+
+fonction voie(m, v) {
+    retour (m >> (24 - v * 8)) & 255;
+}
+
+fonction poser_voie(m, v, x) {
+    soit s = 24 - v * 8;
+    retour (m & ~(255 << s)) | ((x & 255) << s);
+}
+
+// Projection sur la diagonale grise : moyenne des trois voies de couleur.
+fonction gris(m) {
+    retour (voie(m, 0) + voie(m, 1) + voie(m, 2)) / 3;
+}
+
+fonction ecart(a, b) {
+    si a > b {
+        retour a - b;
+    }
+    retour b - a;
+}
+
+// Distance au carré entre deux mots (les quatre voies).
+fonction distance2(a, b) {
+    soit s = 0;
+    pour v dans 0..4 {
+        soit e = ecart(voie(a, v), voie(b, v));
+        s = s + e * e;
+    }
+    retour s;
+}
+
+// Mélange voie par voie : t de 0 (tout a) à 256 (tout b).
+fonction melanger(a, b, t) {
+    soit r = 0;
+    pour v dans 0..4 {
+        soit x = (voie(a, v) * (256 - t) + voie(b, v) * t) >> 8;
+        r = poser_voie(r, v, x);
+    }
+    retour r;
+}
+
+// Centrage sur la diagonale grise : chaque voie devient (valeur - moyenne + 256) / 2, lisible comme un octet signé.
+fonction centrer(m) {
+    soit s = voie(m, 0) + voie(m, 1) + voie(m, 2) + voie(m, 3);
+    soit moy = (s + 2) >> 2;
+    soit r = 0;
+    pour v dans 0..4 {
+        r = poser_voie(r, v, (voie(m, v) + 256 - moy) >> 1);
+    }
+    retour r;
+}

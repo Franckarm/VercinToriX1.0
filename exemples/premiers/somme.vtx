@@ -1,0 +1,8 @@
+// Lit deux nombres donnés au lancement et affiche leur somme
+fonction principal() {
+    soit a = entrée();
+    soit b = entrée();
+    ecrire_texte(1, "a + b = ");
+    ecrire_nombre(1, a + b);
+    ecrire_car(1, '\n');
+}

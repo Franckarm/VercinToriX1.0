@@ -1,0 +1,547 @@
+<title>Labyrinthe du cube</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout : l'écran de jeu en tête, sur toute la largeur ; dessous, un bandeau d'état façon banc de mesure, puis les réglages. */
+:root {
+  --fond: #12141b;          /* ardoise bleutée, le fond du banc */
+  --surface: #1b1e28;
+  --trait: #2c3141;
+  --texte: #e7e3d8;
+  --texte-2: #9a9ba6;
+  --brique: #d2683f;        /* accent : la brique du niveau */
+  --voie-r: #e06a5a;
+  --voie-v: #6cc28a;
+  --voie-b: #6f9be8;
+  --alerte: #f0c24a;
+  --danger: #e2574c;
+  --ok: #67c58f;
+  --vie: #e2574c;
+  --vie-fond: #3a2326;
+  --f-titre: "Saira Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-texte: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --f-donnee: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html { background: var(--fond); }
+body {
+  background: var(--fond); color: var(--texte); font: 15px/1.55 var(--f-texte);
+  margin: 0 auto; max-width: 1000px;
+  padding-block: 18px 28px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; margin-bottom: 10px; }
+h1 { font: 700 30px/1.05 var(--f-titre); letter-spacing: .02em; margin: 0; text-wrap: balance; text-transform: uppercase; }
+h1 span { color: var(--brique); }
+.sous { font: 400 12.5px/1.4 var(--f-donnee); color: var(--texte-2); }
+.scene { position: relative; border-radius: 6px; overflow: hidden; border: 1px solid var(--trait); background: #000; }
+#ecran { display: block; width: 100%; max-width: 100%; aspect-ratio: 2 / 1; image-rendering: pixelated; cursor: crosshair; touch-action: none; }
+#carte { position: absolute; top: 10px; right: 10px; width: 112px; height: 112px; image-rendering: pixelated; opacity: .92; border: 1px solid rgba(231,227,216,.25); border-radius: 3px; pointer-events: none; }
+#viseur { position: absolute; left: 50%; top: 50%; width: 9px; height: 9px; margin: -5px 0 0 -5px; pointer-events: none; opacity: .55;
+  background: linear-gradient(var(--texte), var(--texte)) center/1px 100% no-repeat, linear-gradient(var(--texte), var(--texte)) center/100% 1px no-repeat; }
+#message { position: absolute; left: 12px; bottom: 12px; font: 500 13px/1.3 var(--f-donnee); color: var(--texte); background: rgba(18,20,27,.78); padding: 6px 10px; border-radius: 4px; border-left: 3px solid var(--alerte); }
+#fin { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(10,11,16,.72); text-align: center; }
+#fin h2 { font: 700 44px/1 var(--f-titre); margin: 0 0 6px; text-transform: uppercase; letter-spacing: .03em; }
+#fin p { margin: 0 0 14px; color: var(--texte-2); }
+#depart { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(10,11,16,.55); }
+#coup { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 45%, rgba(226,87,76,.55)); opacity: 0; transition: opacity .35s ease-out; }
+#coup.actif { opacity: 1; transition: none; }
+.jauge { height: 10px; border-radius: 2px; background: var(--vie-fond); overflow: hidden; margin: 2px 0 6px; }
+.jauge i { display: block; height: 100%; width: 100%; background: var(--vie); transition: width .2s; }
+.liste-e { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 10px; }
+.bandeau { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--trait); border: 1px solid var(--trait); border-radius: 6px; overflow: hidden; margin-top: 10px; }
+.case { background: var(--surface); padding: 9px 12px; min-width: 0; }
+.etiq { font: 500 11px/1.2 var(--f-texte); color: var(--texte-2); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+.val { font: 500 14px/1.35 var(--f-donnee); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.puce { display: inline-block; font: 500 12px/1 var(--f-donnee); padding: 4px 7px; border-radius: 3px; border: 1px solid var(--trait); color: var(--texte-2); margin: 0 4px 4px 0; }
+.puce.oui { color: #1b1206; background: var(--alerte); border-color: var(--alerte); }
+.ennemi { display: flex; gap: 8px; align-items: baseline; font: 400 12.5px/1.45 var(--f-donnee); white-space: nowrap; }
+.ennemi b { font-weight: 500; min-width: 4.6em; }
+.c0 { color: var(--voie-b); } .c1 { color: var(--alerte); } .c2 { color: var(--danger); }
+.r { color: var(--voie-r); } .v { color: var(--voie-v); } .b { color: var(--voie-b); }
+.commandes { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; margin-top: 18px; }
+h3 { font: 700 17px/1.2 var(--f-titre); text-transform: uppercase; letter-spacing: .04em; margin: 0 0 8px; }
+.grille { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--texte-2); }
+select, button { font: 500 13.5px/1.2 var(--f-texte); color: var(--texte); background: var(--surface); border: 1px solid var(--trait); border-radius: 5px; padding: 8px 10px; }
+button { cursor: pointer; min-height: 40px; }
+button.primaire { background: var(--brique); border-color: var(--brique); color: #1a0d07; font-weight: 500; }
+button:focus-visible, select:focus-visible, #ecran:focus-visible { outline: 2px solid var(--alerte); outline-offset: 2px; }
+.rangee { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.pave { display: none; grid-template-columns: repeat(3, minmax(52px, 1fr)); gap: 6px; margin-top: 10px; }
+.pave button { font-size: 18px; min-height: 52px; touch-action: none; }
+p.note { color: var(--texte-2); font-size: 13.5px; max-width: 65ch; margin: 8px 0 0; }
+kbd { font: 500 12px/1 var(--f-donnee); border: 1px solid var(--trait); border-bottom-width: 2px; border-radius: 3px; padding: 2px 5px; background: var(--surface); }
+details { margin-top: 18px; border-top: 1px solid var(--trait); padding-top: 12px; }
+summary { cursor: pointer; font: 700 15px/1.2 var(--f-titre); text-transform: uppercase; letter-spacing: .04em; }
+details p { max-width: 70ch; color: var(--texte-2); font-size: 14px; }
+@media (pointer: coarse) { .pave { display: grid; } }
+@media (max-width: 680px) {
+  .bandeau { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .commandes { grid-template-columns: minmax(0, 1fr); }
+  #carte { width: 80px; height: 80px; }
+  h1 { font-size: 25px; }
+}
+@media (prefers-reduced-motion: reduce) { #message, #coup, .jauge i { transition: none; } }
+</style>
+
+<header>
+  <h1>Labyrinthe <span>du cube</span></h1>
+  <div class="sous" id="sous">vtx 0.4 · SPU traduit en JavaScript · monde 32 × 32 en quatre morceaux · ennemis en huit directions</div>
+</header>
+
+<div class="scene">
+  <canvas id="ecran" width="256" height="128" tabindex="0" role="img" aria-label="Vue à la première personne du labyrinthe"></canvas>
+  <canvas id="carte" width="32" height="32" aria-hidden="true"></canvas>
+  <div id="coup" aria-hidden="true"></div>
+  <div id="viseur" aria-hidden="true"></div>
+  <div id="message" aria-live="polite" hidden></div>
+  <div id="depart"><button class="primaire" id="jouer">Jouer</button></div>
+  <div id="fin" hidden><div><h2 id="fin-titre"></h2><p id="fin-texte"></p><button class="primaire" id="rejouer">Rejouer</button></div></div>
+</div>
+
+<div class="pave" id="pave">
+  <button data-t="4" aria-label="Tourner à gauche">↺</button><button data-t="0" aria-label="Avancer">▲</button><button data-t="5" aria-label="Tourner à droite">↻</button>
+  <button data-t="2" aria-label="Pas à gauche">◀</button><button data-t="1" aria-label="Reculer">▼</button><button data-t="3" aria-label="Pas à droite">▶</button>
+</div>
+
+<div class="bandeau">
+  <div class="case"><div class="etiq">Points de vie</div><div class="val" id="pv">100</div><div class="jauge"><i id="pv-barre"></i></div><div class="val"><span class="puce" id="cle-a">clé A</span><span class="puce" id="cle-b">clé B</span></div></div>
+  <div class="case"><div class="etiq">Joueur, mot du cube</div><div class="val" id="mot-joueur">#</div></div>
+  <div class="case"><div class="etiq">Ennemis : comportement, case, confiance</div><div id="ennemis" class="liste-e"></div></div>
+  <div class="case"><div class="etiq">SPU</div><div class="val" id="mesure">–</div></div>
+</div>
+
+<div class="commandes">
+  <div>
+    <h3>Commandes</h3>
+    <div class="grille" id="cfg"></div>
+    <p class="note">Clavier : <kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> (ou <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>) pour marcher, flèches pour tourner. Cliquez dans l’image pour viser à la souris, <kbd>Échap</kbd> pour la libérer. Chaque touche se réaffecte ici, même en pleine partie.</p>
+  </div>
+  <div>
+    <h3>Partie</h3>
+    <div class="rangee">
+      <label for="vitesse">Vitesse des ennemis
+        <select id="vitesse"><option value="620" selected>lents</option><option value="440">moyens</option><option value="300">rapides</option></select></label>
+      <button id="pause">Pause</button>
+      <button id="recommencer">Recommencer</button>
+    </div>
+    <p class="note">But : la clé A est au nord-est, elle ouvre la porte sud de la salle de départ. La clé B, au sud-ouest, ouvre la porte vers le sud-est, où se trouve la sortie. Huit ennemis montent la garde ; en attaque, chacun retire 10 points de vie au contact, y compris en diagonale. Les trousses rendent 35 points.</p>
+  </div>
+</div>
+
+<details>
+  <summary>Ce qui tourne dans cette page</summary>
+  <p>Tout le jeu est un programme vtx de <span id="nmots"></span> mots, exécuté instruction par instruction par un émulateur du SPU écrit en JavaScript. Le même programme donne des images identiques sur les émulateurs Python et JavaScript.</p>
+  <p>Le monde de 32 × 32 cases est fait de quatre morceaux de 16 × 16, chacun avec une signature de fréquence (do, mi, sol, la) rangée dans un mot à quatre voies. Au chargement, le programme lit la partition, qui dit quelle signature va à quelle place, et retrouve chaque morceau par GDOT, comme la mémoire associative : <span id="morceaux"></span>.</p>
+  <p>Chaque ligne du terrain est un mot ADN de 16 lettres (A vide, C brique, G pierre, T porte), et chaque objet est un mot #CCLLTTEE : colonne, ligne, type, et dans l’alpha l’état ADN (présent) ou ARN (pris). Murs et sprites sont des textures ADN ; A, C et G sont des couleurs, T marque la transparence.</p>
+  <p>Les ennemis sont animés par le cube : chaque partie du corps a quatre poses clés rangées dans un seul mot à quatre voies, et un GDOT contre un mot de poids donne la position interpolée. Leur comportement (garde, marche, attaque) est choisi par la mémoire associative ; il reste une hypothèse tant que sa confiance, calculée en flottant avec une exponentielle en base 2, n’atteint pas 60 %, et n’est inscrit dans leur ADN qu’au-delà. Les déplacements suivent le double brin : l’hypothèse de chaque ennemi est écrite dans un ARN, les conflits sont résolus, puis l’ARN est rétrotranscrit en ADN.</p>
+  <p>Le code machine du SPU est traduit une fois en fonctions JavaScript, une par bloc de base (<span id="nblocs"></span>) ; la traduction donne les mêmes images, le même nombre d’instructions et la même mémoire que l’émulateur instruction par instruction, environ trois fois plus vite. Entre deux tours des ennemis, leur position est interpolée à chaque image, et l’image est recalculée en entier à chaque rafraîchissement de l’écran.</p>
+</details>
+
+<script>
+// Émulateur du SPU en JavaScript, mémoire en tableaux typés (même sémantique que vtx.py et Vtx.java).
+function SPU(words) {
+  const ADR = 0xFFFFFF, LIM = 65536;
+  const code = new Uint32Array(65536), pile = new Uint32Array(65536);
+  const S = [null, new Uint32Array(LIM), new Uint32Array(LIM), new Uint32Array(LIM)], haut = new Map();
+  code.set(words);
+  const R = new Uint32Array(16);
+  const rd = (e, a) => {
+    a &= ADR;
+    if (e === 0) return a >= 0x7F0000 ? pile[a - 0x7F0000] : (a < 65536 ? code[a] : 0);
+    if (a < LIM) return S[e][a];
+    const v = haut.get(e * 0x1000000 + a);
+    return v === undefined ? 0 : v;
+  };
+  const wr = (e, a, v) => {
+    a &= ADR; v >>>= 0;
+    if (e === 0) { if (a >= 0x7F0000) pile[a - 0x7F0000] = v; else if (a < 65536) code[a] = v; return; }
+    if (a < LIM) S[e][a] = v; else haut.set(e * 0x1000000 + a, v);
+  };
+  const FB = new Float32Array(1), IB = new Uint32Array(FB.buffer);
+  const vf = w => { IB[0] = w; return FB[0]; };
+  const fb = v => { if (v !== v) return 0x7FC00000; FB[0] = v; return IB[0]; };
+  const sat = t => t >= 2147483648 ? 0x7FFFFFFF : t < -2147483648 ? 0x80000000 : t >>> 0;
+  const pair = x => { const f = Math.floor(x), d = x - f; return d < 0.5 ? f : d > 0.5 ? f + 1 : (f % 2 === 0 ? f : f + 1); };
+  const mulhu = (a, b) => { const al = a & 0xFFFF, ah = a >>> 16, bl = b & 0xFFFF, bh = b >>> 16;
+    const ll = al * bl, lh = al * bh, hl = ah * bl, hh = ah * bh; const mid = (ll >>> 16) + (lh & 0xFFFF) + (hl & 0xFFFF);
+    return (hh + (lh >>> 16) + (hl >>> 16) + Math.floor(mid / 65536)) >>> 0; };
+  const dot = (x, y) => (((x >>> 24) * (y >>> 24)) + (((x >>> 16) & 255) * ((y >>> 16) & 255)) + (((x >>> 8) & 255) * ((y >>> 8) & 255)) + ((x & 255) * (y & 255)));
+  function run(inputs, maxSteps) {
+    R.fill(0); R[14] = 0x7FFFFF;
+    const out = [], inp = inputs; let ii = 0, pc = 0, z = false, c = false, halt = false, steps = 0;
+    const set = (i, v) => { if (i) R[i] = v >>> 0; };
+    while (!halt) {
+      if (steps++ > maxSteps) throw new Error("limite de pas");
+      const w = code[pc], op = w >>> 24, g = (w >>> 16) & 255, b = (w >>> 8) & 255, et = (w & 255) >>> 6;
+      const d = g >> 4, A = R[g & 15], B = R[b >> 4], dc = b > 127 ? b - 256 : b;
+      let nx = (pc + 1) & ADR, r;
+      switch (op) {
+        case 0: break;
+        case 1: case 6: { const s = A + (op === 1 ? B : b); r = s >>> 0; set(d, r); z = r === 0; c = s > 0xFFFFFFFF; break; }
+        case 2: case 7: case 14: { const y = op === 7 ? b : B; r = (A - y) >>> 0; if (op !== 14) set(d, r); z = r === 0; c = A < y; break; }
+        case 3: r = Math.imul(A, B) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 4: r = (A << 2) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 5: r = A >>> 2; set(d, r); z = r === 0; c = false; break;
+        case 8: r = (A << (B & 31)) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 9: r = A >>> (B & 31); set(d, r); z = r === 0; c = false; break;
+        case 10: r = code[nx]; set(d, r); z = r === 0; c = false; nx = (nx + 1) & ADR; break;
+        case 11: set(d, A); break;
+        case 12: case 13: r = B === 0 ? (op === 12 ? 0xFFFFFFFF : A) : (op === 12 ? (A - (A % B)) / B : A % B); set(d, r); z = r === 0; c = false; break;
+        case 16: case 17: case 19: { r = 0; for (let q = 0; q < 16; q++) { const x = (A >>> (2 * q)) & 3, y = (B >>> (2 * q)) & 3; r |= (op === 16 ? Math.min(x, y) : op === 17 ? Math.max(x, y) : (x + y) & 3) << (2 * q); } r >>>= 0; set(d, r); z = r === 0; c = false; break; }
+        case 18: r = (~A) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 20: r = (A & B) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 21: r = (A | B) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 22: r = (A ^ B) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 32: r = rd(et, A); set(d, r); z = r === 0; c = false; break;
+        case 33: wr(et, R[d], A); break;
+        case 35: set(d, ii < inp.length ? inp[ii++] : 0); break;
+        case 36: out.push(A); break;
+        case 37: set(d, rd(0, (R[13] + dc) & ADR)); break;
+        case 38: wr(0, (R[13] + dc) & ADR, R[d]); break;
+        case 39: R[14] = (R[14] - 1) & ADR; wr(0, R[14], A); break;
+        case 40: r = rd(0, R[14]); R[14] = (R[14] + 1) & ADR; set(d, r); break;
+        case 41: { const e = B & 3; r = rd(e, A); set(d, r); z = r === 0; c = false; break; }
+        case 42: wr(B & 3, R[d], A); break;
+        case 48: case 49: case 50: case 51: case 53: case 54: {
+          const j = op === 48 || op === 51 || (op === 49 && z) || (op === 50 && !z) || (op === 53 && c) || (op === 54 && !c);
+          if (op === 51) { R[14] = (R[14] - 1) & ADR; wr(0, R[14], nx); }
+          if (j) nx = (g << 8) | b; break; }
+        case 52: nx = rd(0, R[14]); R[14] = (R[14] + 1) & ADR; break;
+        case 56: r = dot(A, B) >>> 0; set(d, r); z = r === 0; c = false; break;
+        case 57: { const sp = R[14], n = rd(0, sp + 4), ww = rd(0, sp + 3), qb = rd(0, sp + 2), kb = rd(0, sp + 1), ob = rd(0, sp);
+          for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < ww; j++) s += dot(rd(2, qb + j), rd(2, kb + i * ww + j)); wr(2, ob + i, s); } break; }
+        case 64: r = fb(vf(A) + vf(B)); set(d, r); z = r === 0; c = false; break;
+        case 65: r = fb(vf(A) - vf(B)); set(d, r); z = r === 0; c = false; break;
+        case 66: r = fb(vf(A) * vf(B)); set(d, r); z = r === 0; c = false; break;
+        case 67: r = fb(vf(A) / vf(B)); set(d, r); z = r === 0; c = false; break;
+        case 68: r = vf(A) === vf(B) ? 1 : 0; set(d, r); z = r === 0; c = false; break;
+        case 69: r = vf(A) < vf(B) ? 1 : 0; set(d, r); z = r === 0; c = false; break;
+        case 70: r = vf(A) <= vf(B) ? 1 : 0; set(d, r); z = r === 0; c = false; break;
+        case 71: r = fb(Math.sqrt(vf(A))); set(d, r); z = r === 0; c = false; break;
+        case 72: r = fb(A); set(d, r); z = r === 0; c = false; break;
+        case 73: r = fb(A | 0); set(d, r); z = r === 0; c = false; break;
+        case 74: { const x = vf(A); r = x !== x ? 0 : sat(Math.trunc(x)); set(d, r); z = r === 0; c = false; break; }
+        case 75: { const x = vf(A); r = x !== x ? 0 : !isFinite(x) ? sat(x) : sat(pair(x)); set(d, r); z = r === 0; c = false; break; }
+        case 76: { const s = A + B + (c ? 1 : 0); r = s >>> 0; set(d, r); z = r === 0; c = s > 0xFFFFFFFF; break; }
+        case 77: { const y = B + (c ? 1 : 0); r = (A - y) >>> 0; set(d, r); z = r === 0; c = A < y; break; }
+        case 78: r = mulhu(A, B); set(d, r); z = r === 0; c = false; break;
+        case 63: halt = true; break;
+        default: throw new Error("code d’opération " + op);
+      }
+      pc = nx;
+    }
+    return { out, steps };
+  }
+  return { run, rd, wr, S };
+}
+
+// Traducteur du code machine du SPU vers JavaScript : chaque bloc de base devient une fonction JavaScript compilée
+// une fois, les registres deviennent des variables, les opérandes et les adresses fixes sont résolus à la traduction.
+// Même interface et même sémantique que SPU() de vm_rapide.js (sorties, nombre d'instructions, mémoire).
+// Hypothèse : le code ne se modifie pas lui-même (les écritures dans l'étage 0 ne touchent que la pile et les données).
+function SPUTraduit(words) {
+  const ADR = 0xFFFFFF, LIM = 65536;
+  const code = new Uint32Array(65536), pile = new Uint32Array(65536);
+  const S = [null, new Uint32Array(LIM), new Uint32Array(LIM), new Uint32Array(LIM)], haut = new Map();
+  code.set(words);
+  const rd = (e, a) => {
+    a &= ADR;
+    if (e === 0) return a >= 0x7F0000 ? pile[a - 0x7F0000] : (a < 65536 ? code[a] : 0);
+    if (a < LIM) return S[e][a];
+    const v = haut.get(e * 0x1000000 + a);
+    return v === undefined ? 0 : v;
+  };
+  const wr = (e, a, v) => {
+    a &= ADR; v >>>= 0;
+    if (e === 0) { if (a >= 0x7F0000) pile[a - 0x7F0000] = v; else if (a < 65536) code[a] = v; return; }
+    if (a < LIM) S[e][a] = v; else haut.set(e * 0x1000000 + a, v);
+  };
+  const dot = (x, y) => (((x >>> 24) * (y >>> 24)) + (((x >>> 16) & 255) * ((y >>> 16) & 255)) + (((x >>> 8) & 255) * ((y >>> 8) & 255)) + ((x & 255) * (y & 255)));
+  const FB = new Float32Array(1), IB = new Uint32Array(FB.buffer);
+  const vf = w => { IB[0] = w; return FB[0]; };
+  const fb = v => { if (v !== v) return 0x7FC00000; FB[0] = v; return IB[0]; };
+  const sat = t => t >= 2147483648 ? 0x7FFFFFFF : t < -2147483648 ? 0x80000000 : t >>> 0;
+  const pair = x => { const f = Math.floor(x), d = x - f; return d < 0.5 ? f : d > 0.5 ? f + 1 : (f % 2 === 0 ? f : f + 1); };
+  const ftoi = w => { const x = vf(w); return x !== x ? 0 : sat(Math.trunc(x)); };
+  const fround = w => { const x = vf(w); return x !== x ? 0 : !isFinite(x) ? sat(x) : sat(pair(x)); };
+  const mulhu = (a, b) => { const al = a & 0xFFFF, ah = a >>> 16, bl = b & 0xFFFF, bh = b >>> 16;
+    const ll = al * bl, lh = al * bh, hl = ah * bl, hh = ah * bh; const mid = (ll >>> 16) + (lh & 0xFFFF) + (hl & 0xFFFF);
+    return (hh + (lh >>> 16) + (hl >>> 16) + Math.floor(mid / 65536)) >>> 0; };
+  const quit = (A, B, f) => { let r = 0; for (let q = 0; q < 16; q++) { const x = (A >>> (2 * q)) & 3, y = (B >>> (2 * q)) & 3; r |= (f === 0 ? Math.min(x, y) : f === 1 ? Math.max(x, y) : (x + y) & 3) << (2 * q); } return r >>> 0; };
+  const gemv = (sp) => { const n = rd(0, sp + 4), ww = rd(0, sp + 3), qb = rd(0, sp + 2), kb = rd(0, sp + 1), ob = rd(0, sp);
+    for (let i = 0; i < n; i++) { let s = 0; for (let j = 0; j < ww; j++) s += dot(rd(2, qb + j), rd(2, kb + i * ww + j)); wr(2, ob + i, s); } };
+  const ctx = { R: new Uint32Array(16), z: false, c: false, steps: 0, max: 0, inp: [], ii: 0, out: [] };
+
+  // 1. Code atteignable et débuts de blocs, en suivant le flot de contrôle depuis l'adresse 0.
+  const SAUTS = new Set([48, 49, 50, 51, 53, 54]);
+  const instr = new Map(), debuts = new Set([0]), pile_a = [0];
+  while (pile_a.length) {
+    const pc = pile_a.pop();
+    if (instr.has(pc) || pc >= words.length) continue;
+    const w = code[pc], op = w >>> 24, g = (w >>> 16) & 255, b = (w >>> 8) & 255;
+    const lg = op === 10 ? 2 : 1, suite = pc + lg;
+    instr.set(pc, w);
+    if (SAUTS.has(op)) { const t = (g << 8) | b; debuts.add(t); pile_a.push(t); }
+    if (op === 48 || op === 52 || op === 63) { if (op === 63) debuts.add(suite); continue; }
+    if (SAUTS.has(op)) debuts.add(suite);
+    pile_a.push(suite);
+  }
+
+  // 2. Traduction d'une instruction en instructions JavaScript.
+  const Rg = i => i === 0 ? "0" : "R[" + i + "]";
+  const ecr = (d, v) => d === 0 ? "" : "R[" + d + "]=" + v + ";";
+  function traduire(pc, w) {
+    const op = w >>> 24, g = (w >>> 16) & 255, b = (w >>> 8) & 255, et = (w & 255) >>> 6;
+    const d = g >> 4, s = g & 15, t = b >> 4, dc = b > 127 ? b - 256 : b, cible = (g << 8) | b, nx = (pc + (op === 10 ? 2 : 1)) & ADR;
+    const A = Rg(s), B = Rg(t), F = "C.z=r===0;C.c=false;";
+    switch (op) {
+      case 0: return "";
+      case 1: return `{const u=${A}+${B};r=u>>>0;${ecr(d, "r")}C.z=r===0;C.c=u>4294967295;}`;
+      case 6: return `{const u=${A}+${b};r=u>>>0;${ecr(d, "r")}C.z=r===0;C.c=u>4294967295;}`;
+      case 2: case 14: return `{const a=${A},y=${B};r=(a-y)>>>0;${op === 2 ? ecr(d, "r") : ""}C.z=r===0;C.c=a<y;}`;
+      case 7: return `{const a=${A};r=(a-${b})>>>0;${ecr(d, "r")}C.z=r===0;C.c=a<${b};}`;
+      case 3: return `r=Math.imul(${A},${B})>>>0;${ecr(d, "r")}${F}`;
+      case 4: return `r=(${A}<<2)>>>0;${ecr(d, "r")}${F}`;
+      case 5: return `r=${A}>>>2;${ecr(d, "r")}${F}`;
+      case 8: return `r=(${A}<<(${B}&31))>>>0;${ecr(d, "r")}${F}`;
+      case 9: return `r=${A}>>>(${B}&31);${ecr(d, "r")}${F}`;
+      case 10: { const k = code[pc + 1] >>> 0; return `${ecr(d, k)}C.z=${k === 0};C.c=false;`; }
+      case 11: return ecr(d, A);
+      case 12: return `{const a=${A},y=${B};r=y===0?4294967295:(a-(a%y))/y;${ecr(d, "r")}${F}}`;
+      case 13: return `{const a=${A},y=${B};r=y===0?a:a%y;${ecr(d, "r")}${F}}`;
+      case 16: return `r=quit(${A},${B},0);${ecr(d, "r")}${F}`;
+      case 17: return `r=quit(${A},${B},1);${ecr(d, "r")}${F}`;
+      case 19: return `r=quit(${A},${B},2);${ecr(d, "r")}${F}`;
+      case 18: return `r=(~${A})>>>0;${ecr(d, "r")}${F}`;
+      case 20: return `r=(${A}&${B})>>>0;${ecr(d, "r")}${F}`;
+      case 21: return `r=(${A}|${B})>>>0;${ecr(d, "r")}${F}`;
+      case 22: return `r=(${A}^${B})>>>0;${ecr(d, "r")}${F}`;
+      case 32: return et === 0 ? `r=rd(0,${A});${ecr(d, "r")}${F}`
+        : `{const a=${A}&16777215;r=a<65536?S${et}[a]:rd(${et},a);}${ecr(d, "r")}${F}`;
+      case 33: return et === 0 ? `wr(0,${Rg(d)},${A});`
+        : `{const a=${Rg(d)}&16777215;if(a<65536)S${et}[a]=${A};else wr(${et},a,${A});}`;
+      case 35: return ecr(d, "(C.ii<C.inp.length?C.inp[C.ii++]>>>0:0)") || "if(C.ii<C.inp.length)C.ii++;";
+      case 36: return `C.out.push(${A});`;
+      case 37: return ecr(d, `rd(0,(R[13]+${dc})&16777215)`);
+      case 38: return `wr(0,(R[13]+${dc})&16777215,${Rg(d)});`;
+      case 39: return `R[14]=(R[14]-1)&16777215;pile[R[14]-8323072]=${A};`;
+      case 40: return `r=rd(0,R[14]);R[14]=(R[14]+1)&16777215;${ecr(d, "r")}`;
+      case 41: return `r=rd(${B}&3,${A});${ecr(d, "r")}${F}`;
+      case 42: return `wr(${B}&3,${Rg(d)},${A});`;
+      case 48: return `return ${cible};`;
+      case 49: return `if(C.z)return ${cible};`;
+      case 50: return `if(!C.z)return ${cible};`;
+      case 53: return `if(C.c)return ${cible};`;
+      case 54: return `if(!C.c)return ${cible};`;
+      case 51: return `R[14]=(R[14]-1)&16777215;wr(0,R[14],${nx});return ${cible};`;
+      case 52: return `r=rd(0,R[14]);R[14]=(R[14]+1)&16777215;return r;`;
+      case 56: return `r=dot(${A},${B})>>>0;${ecr(d, "r")}${F}`;
+      case 57: return `gemv(R[14]);`;
+      case 64: return `r=fb(vf(${A})+vf(${B}));${ecr(d, "r")}${F}`;
+      case 65: return `r=fb(vf(${A})-vf(${B}));${ecr(d, "r")}${F}`;
+      case 66: return `r=fb(vf(${A})*vf(${B}));${ecr(d, "r")}${F}`;
+      case 67: return `r=fb(vf(${A})/vf(${B}));${ecr(d, "r")}${F}`;
+      case 68: return `r=vf(${A})===vf(${B})?1:0;${ecr(d, "r")}${F}`;
+      case 69: return `r=vf(${A})<vf(${B})?1:0;${ecr(d, "r")}${F}`;
+      case 70: return `r=vf(${A})<=vf(${B})?1:0;${ecr(d, "r")}${F}`;
+      case 71: return `r=fb(Math.sqrt(vf(${A})));${ecr(d, "r")}${F}`;
+      case 72: return `r=fb(${A});${ecr(d, "r")}${F}`;
+      case 73: return `r=fb(${A}|0);${ecr(d, "r")}${F}`;
+      case 74: return `r=ftoi(${A});${ecr(d, "r")}${F}`;
+      case 75: return `r=fround(${A});${ecr(d, "r")}${F}`;
+      case 76: return `{const u=${A}+${B}+(C.c?1:0);r=u>>>0;${ecr(d, "r")}C.z=r===0;C.c=u>4294967295;}`;
+      case 77: return `{const a=${A},y=${B}+(C.c?1:0);r=(a-y)>>>0;${ecr(d, "r")}C.z=r===0;C.c=a<y;}`;
+      case 78: return `r=mulhu(${A},${B});${ecr(d, "r")}${F}`;
+      case 63: return `return -1;`;
+      default: return `throw new Error("code d’opération ${op} à l’adresse ${pc}");`;
+    }
+  }
+
+  // 3. Un bloc = une fonction : nombre d'instructions compté à l'entrée, puis les instructions à la suite.
+  const S1 = S[1], S2 = S[2], S3 = S[3];
+  const fabrique = (src) => new Function("C", "R", "S1", "S2", "S3", "rd", "wr", "dot", "quit", "gemv", "pile",
+    "vf", "fb", "ftoi", "fround", "mulhu", src)(ctx, ctx.R, S1, S2, S3, rd, wr, dot, quit, gemv, pile, vf, fb, ftoi, fround, mulhu);
+  const adresses = [...instr.keys()].sort((a, b) => a - b);
+  const blocs = new Array(words.length + 1);
+  let nblocs = 0, i = 0;
+  while (i < adresses.length) {
+    const debut = adresses[i];
+    let corps = "", n = 0, pc = debut, fin = false;
+    while (i < adresses.length && adresses[i] === pc && (pc === debut || !debuts.has(pc))) {
+      const w = instr.get(pc), op = w >>> 24;
+      corps += traduire(pc, w) + "\n";
+      n++; i++;
+      pc += op === 10 ? 2 : 1;
+      if (op === 48 || op === 52 || op === 63) { fin = true; break; }
+    }
+    const src = `return function(){let r=0;C.steps+=${n};if(C.steps>C.max)throw new Error("limite de pas");\n${corps}${fin ? "" : "return " + pc + ";"}};`;
+    blocs[debut] = fabrique(src);
+    nblocs++;
+  }
+
+  function run(inputs, maxSteps) {
+    const R = ctx.R; R.fill(0); R[14] = 0x7FFFFF;
+    ctx.z = false; ctx.c = false; ctx.steps = 0; ctx.max = maxSteps; ctx.inp = inputs; ctx.ii = 0; ctx.out = [];
+    let pc = 0;
+    while (pc !== -1) {
+      const f = blocs[pc];
+      if (f === undefined) throw new Error("saut vers une adresse non traduite : " + pc);
+      pc = f();
+    }
+    return { out: ctx.out, steps: ctx.steps };
+  }
+  return { run, rd, wr, S, nblocs, ninstr: instr.size };
+}
+if (typeof module !== "undefined") module.exports = { SPUTraduit };
+
+const MOTS = [182452240,8388607,856764176,1056964624,655163408,199098384,621806352,654376976,101718032,654376976,621806096,102762512,51453968,186712080,672137232,34676752,186712080,672137232,152117264,102825744,336666640,805312272,101711888,200081424,684720144,872415248,655163408,199098384,133038352,101718032,654376976,621806352,102762512,51453968,186712080,672137232,34676752,638648080,621806608,654376976,101777168,622919440,135340048,303104016,186712080,672137232,336666640,654376976,621806096,102825744,336666640,622919440,135340048,186712080,672137232,353443856,805321232,101711888,200081424,684720144,872415248,655163408,199098384,621806096,654376976,101712144,303104016,186712080,672137232,336666640,805324816,101711888,200081424,684720144,872415248,655163408,199098384,621806096,102760720,353443856,805327376,101711888,200081424,684720144,872415248,655163408,199098384,621806096,654376976,101712144,654376976,855639056,116261392,102768656,51453968,654376976,621806096,654376976,101711888,654376976,855639056,116261392,186712080,672137232,17899536,805333776,101711888,200081424,684720144,872415248,655163408,199098384,621806352,537985104,102760464,234954768,838901520,621806352,537985232,102825744,234954768,838901520,621806352,654376976,621806096,186712080,672137232,554827984,168820752,1024,654376976,168820752,2100,102760464,17899536,537985232,186712080,672137232,17899536,654376976,621806352,186712080,672137232,554827984,168820752,2100,102760464,17899536,654376976,168820752,2100,102760464,17899536,537985232,102760720,17899536,186712080,672137232,554827984,101711888,200081424,684720144,872415248,655163408,199098384,621806608,622854928,17899536,537985104,102760464,234954768,838907152,621806608,622854672,17899536,537985104,102760464,234954768,838907152,101712144,805352976,101711888,805353488,101711888,200081424,684720144,872415248,655163408,199098384,133039376,101711888,638648080,621870864,169869328,1024,234954768,906022672,621870864,654376976,101777168,186712080,672137232,554827984,621870864,101777680,638648080,805355536,621806096,102768656,51453968,622854928,17899536,638647824,621870608,654376976,101711888,186712080,672137232,554827984,168820752,1024,102760464,17899536,654376976,621870608,186712080,672137232,554827984,168820752,2100,102760464,17899536,654376976,101712144,186712080,672137232,554827984,101711888,638647568,621870352,654376976,168820752,2100,102760464,17899536,537985232,186712080,672137232,234954768,906069008,168820752,1024,622918928,17899536,537985232,638647312,621870352,102760720,17899536,638647568,621870096,537985232,102760720,17899536,638647056,621869840,102825744,234954768,906068752,621870096,102760720,17899536,654376976,621869840,654376976,855666192,116261392,621870096,102760720,34676752,654376976,621869840,654376976,855666192,116261392,621870096,102768656,17899536,654376976,621869840,654376976,855666192,116261392,621870096,102768656,34676752,654376976,621869840,654376976,855666192,116261392,621870096,654376976,101712144,654376976,101720080,654376976,855679760,116261648,234946576,822165776,621870096,102760720,17899536,102768656,17899536,654376976,621869840,654376976,855666192,116261392,621870096,654376976,168820752,4294967295,654376976,101720080,654376976,855679760,116261648,234946576,822171152,621870096,102760720,34676752,102768656,17899536,654376976,621869840,654376976,855666192,116261392,621870096,654376976,101712144,654376976,101711888,102768656,34676752,654376976,855679760,116261648,234946576,822176784,621870096,102760720,17899536,102768656,34676752,654376976,621869840,654376976,855666192,116261392,621870096,654376976,168820752,4294967295,654376976,101711888,102768656,34676752,654376976,855679760,116261648,234946576,822182672,621870096,102760720,34676752,102768656,34676752,654376976,621869840,654376976,855666192,116261392,805367568,101711888,200081424,684720144,872415248,655163408,199098384,133038608,621806096,638648080,621806096,537985232,638647824,621806096,102760720,17899536,537985232,622919184,234954768,906076176,621806096,102760720,17899536,638648080,621806096,102760720,17899536,537985232,638647824,621806096,102760720,34676752,537985232,622919184,234954768,906080272,621806096,102760720,34676752,638648080,621806096,102760720,34676752,537985232,638647824,621806096,102768656,17899536,537985232,622919184,234954768,906084368,621806096,102768656,17899536,638648080,621806096,102768656,17899536,537985232,638647824,621806096,102768656,34676752,537985232,622919184,234954768,906088464,621806096,102768656,34676752,638648080,621806096,102768656,34676752,537985232,638647824,621806096,654376976,101712144,654376976,101720080,654376976,855679760,116261648,234946576,822210576,621806096,102760720,17899536,102768656,17899536,537985232,622919184,234954768,906096656,621806096,102760720,17899536,102768656,17899536,638648080,621806096,102760720,17899536,102768656,17899536,537985232,638647824,621806096,654376976,168820752,4294967295,654376976,101720080,654376976,855679760,116261648,234946576,822219024,621806096,102760720,34676752,102768656,17899536,537985232,622919184,234954768,906105104,621806096,102760720,34676752,102768656,17899536,638648080,621806096,102760720,34676752,102768656,17899536,537985232,638647824,621806096,654376976,101712144,654376976,101711888,102768656,34676752,654376976,855679760,116261648,234946576,822227728,621806096,102760720,17899536,102768656,34676752,537985232,622919184,234954768,906113808,621806096,102760720,17899536,102768656,34676752,638648080,621806096,102760720,17899536,102768656,34676752,537985232,638647824,621806096,654376976,168820752,4294967295,654376976,101711888,102768656,34676752,654376976,855679760,116261648,234946576,822236688,621806096,102760720,34676752,102768656,34676752,537985232,622919184,234954768,906122768,621806096,102760720,34676752,102768656,34676752,638648080,621806096,102760720,34676752,102768656,34676752,537985232,638647824,621870864,805460240,101711888,200081424,684720144,872415248,655163408,199098384,133038864,621806352,654376976,621806096,654376976,855685904,116261392,101711888,638648080,621870864,102762512,234954768,906139408,621870864,537985168,638647824,621870608,654376976,855659792,116261136,654376976,855738384,116261136,638647568,101713936,622919440,17899536,654376976,621870608,654376976,855653648,116261136,654376976,101711888,654376976,621870352,102768656,219226128,654376976,855644688,116261648,654376976,101712144,654376976,621870352,102768656,202448912,654376976,855644688,116261648,186712080,672137232,554827920,621870864,101777680,638648080,805463824,101711888,200081424,684720144,872415248,655163408,199098384,133039888,101711888,638648080,621870864,654376976,101713936,102760720,17899536,186712080,672137232,234954768,906167312,101711888,638647824,621870608,102762512,234954768,906166288,101713936,622919184,17899536,537985168,654376976,855659792,116261136,638647568,621870608,537985168,654376976,855659792,116261136,638647312,101711888,638647056,621869840,102762512,234954768,906165264,621869840,622919184,234954768,822278160,101713936,622918416,17899536,537985168,654376976,855659792,116261136,638646800,621869840,537985168,654376976,855659792,116261136,638646544,621870352,622918672,234954768,822278160,621870352,622918160,234954768,839049744,621870608,622918416,235016208,906158608,805497360,621870352,622917904,234954768,839055376,621869584,622917904,234954768,839055376,101713936,622919184,17899536,654376976,621870608,537985168,654376976,855653648,116261136,186712080,672137232,554827920,621870096,638647568,621869840,101777680,638647056,805486352,621870608,101777680,638647824,805481232,621870864,101777680,638648080,805478416,101711888,200081424,684720144,872415248,655163408,199098384,133038352,101711888,638648080,621870864,102762512,234954768,906174736,621870864,654376976,101713936,622919440,17899536,537985168,654376976,855657232,116261136,186712080,672137232,554827920,621870864,101777680,638648080,805506320,101711888,200081424,684720144,872415248,655163408,199098384,133039888,101711888,638648080,101711888,638647824,101711888,638647568,621870352,102761488,234954768,906191632,168820752,1370,622918928,17899536,537985104,638647312,168820752,4194304,654376976,101712400,654376976,621806352,622918672,940646416,186712080,672137232,51453968,186712080,672137232,17899536,654376976,621870096,622918672,940646416,186712080,672137232,34676752,638647056,168820752,268,622918928,17899536,654376976,621869840,186712080,672137232,554827920,621869840,622919440,235016208,906190608,621869840,638648080,621870352,638647824,621870352,101777680,638647568,805514768,101711888,638646800,101711888,638646544,621869328,102761488,234954768,906200080,621869584,654376976,621870864,654376976,168820752,268,622917904,17899536,537985168,186712080,672137232,34676752,654376976,101715216,654376976,856940304,116261392,186712080,672137232,17899536,638646800,621869328,101777680,638646544,805529360,101771280,622854672,17899536,654376976,621870608,186712080,672137232,554827920,101771280,654376976,101712912,622854672,17899536,186712080,672137232,17899536,654376976,101711888,654376976,101715216,654376976,856940304,116261392,169869328,1000,51453968,622918160,202448912,186712080,672137232,554827920,621870608,805545488,101711888,200081424,684720144,872415248,655163408,199098384,133039888,621806096,102760976,219226128,102764560,51453968,638648080,621806096,102760976,202448912,102764560,51453968,638647824,101711888,638647568,621870352,102764560,234954768,906230800,168820752,1300,654376976,621806352,102764560,51453968,622918928,17899536,186712080,672137232,17899536,537985104,638647312,101711888,638647056,621869840,102764560,234954768,906229776,621870096,654376976,101715728,622918416,34676752,102760976,51453968,186712080,672137232,152117264,102761232,336666640,638646800,621869584,638646544,621869584,102761232,234954768,839116304,101713168,638646544,621870608,622918928,17899536,102768656,51453968,622919440,17899536,622918416,17899536,654376976,621869328,186712080,672137232,554827856,621869840,101777680,638647056,805555472,621870352,101777680,638647568,805550608,101711888,200081424,684720144,872415248,655163408,199098384,133040144,101711888,638648080,621870864,102761488,234954768,906238992,168820752,1380,622919440,17899536,537985104,654376976,621870864,654376976,855844112,116261392,654376976,621870864,654376976,855877904,116261392,621870864,101777680,638648080,805569808,101711888,638647824,621870608,102768656,234954768,906244880,168820752,1400,622919184,17899536,654376976,168820752,1440,622919184,17899536,537985104,186712080,672137232,554827856,621870608,101777680,638647824,805576208,101711888,638647568,101711888,638647312,621870096,102768656,234954768,906280976,168820752,1400,622918672,17899536,537985104,638647056,621869840,654376976,101711888,654376976,855639056,116261392,638646800,621869840,654376976,101712144,654376976,855639056,116261392,638646544,621869840,654376976,101712400,654376976,855639056,116261392,638646288,621869072,102761232,234954768,839148560,621869328,102768656,51453968,622918160,17899536,654376976,101713424,186712080,672137232,554827856,621869072,102761488,234954768,839152144,621869328,102768656,51453968,622918160,17899536,654376976,101713680,186712080,672137232,554827856,621869072,102761744,234954768,839163408,621870352,102762512,234954768,906272272,621870352,654376976,101711888,654376976,101711888,654376976,621869584,654376976,855644688,116261648,654376976,101712144,654376976,621869328,654376976,855644688,116261648,654376976,855657232,116261136,186712080,672137232,554827920,101718032,622918928,17899536,654376976,621870352,537985168,186712080,672137232,554827920,621870352,102760720,17899536,638647568,621869072,102762000,234954768,839171088,101768208,102760464,17899536,654376976,621869584,169869328,256,51453968,102793232,17899536,186712080,672137232,554827920,101768208,102760720,17899536,654376976,621869328,169869328,256,51453968,102793232,17899536,186712080,672137232,554827920,621870096,101777680,638647312,805582608,101768208,102760976,17899536,654376976,101711888,186712080,672137232,554827920,101768208,102761232,17899536,654376976,101711888,186712080,672137232,554827920,101768208,102761488,17899536,654376976,101711888,186712080,672137232,554827920,101768208,102761744,17899536,654376976,101711888,186712080,672137232,554827920,101770256,102760464,17899536,654376976,101737488,186712080,672137232,554827920,101770256,102760720,17899536,654376976,101711888,186712080,672137232,554827920,101770256,102760976,17899536,654376976,101711888,186712080,672137232,554827920,101711888,200081424,684720144,872415248,655163408,199098384,101763088,654376976,621806352,102764304,336666640,186712080,672137232,17899536,654376976,621806096,186712080,672137232,554827920,101711888,200081424,684720144,872415248,655163408,199098384,101768208,102760720,17899536,537985168,102762512,152117264,102768656,51453968,654376976,101768208,102760464,17899536,537985168,102762512,152117264,186712080,672137232,17899536,805643536,101711888,200081424,684720144,872415248,655163408,199098384,621806352,102776848,34676752,169869328,8064,234954768,889532944,805648656,621806096,102776848,34676752,169869328,8064,234954768,889535248,101711888,805672464,621806096,102770704,34676752,102762512,152117264,102768656,51453968,654376976,621806352,102770704,34676752,102762512,152117264,186712080,672137232,17899536,537985104,102760464,234954768,822432016,101711888,805672464,621806096,102770704,34676752,102762512,152117264,102768656,51453968,654376976,621806352,102770704,17899536,102762512,152117264,186712080,672137232,17899536,537985104,102760464,234954768,822437648,101711888,805672464,621806096,102770704,17899536,102762512,152117264,102768656,51453968,654376976,621806352,102770704,34676752,102762512,152117264,186712080,672137232,17899536,537985104,102760464,234954768,822443280,101711888,805672464,621806096,102770704,17899536,102762512,152117264,102768656,51453968,654376976,621806352,102770704,17899536,102762512,152117264,186712080,672137232,17899536,537985104,102760464,234954768,822448912,101711888,805672464,101712144,805672464,101711888,200081424,684720144,872415248,655163408,199098384,133038608,621806096,102762512,152117264,102768656,51453968,654376976,621806352,102762512,152117264,186712080,672137232,17899536,638648080,621870864,537985104,638647824,621870608,102761744,234954768,839239440,101768208,102761232,17899536,537985168,102760720,336666640,102760464,234954768,822462224,621870864,654376976,101711888,186712080,672137232,554827856,101768208,102761488,17899536,654376976,101712656,186712080,672137232,554827920,621870608,102762000,234954768,839246352,101768208,102761232,17899536,537985168,102760976,336666640,102760464,234954768,822469136,621870864,654376976,101711888,186712080,672137232,554827856,101768208,102761488,17899536,654376976,101712656,186712080,672137232,554827920,621870608,102762256,234954768,839251472,101768208,102761744,17899536,654376976,101712400,186712080,672137232,554827920,101768208,102761488,17899536,654376976,101712912,186712080,672137232,554827920,101711888,200081424,684720144,872415248,655163408,199098384,621806352,102776848,34676752,169869328,8064,234954768,906375696,621806096,102776848,34676752,169869328,8064,234954768,906375696,621806352,102770704,34676752,654376976,621806096,102770704,34676752,654376976,856004880,116261392,621806352,102770704,17899536,654376976,621806096,102770704,34676752,654376976,856004880,116261392,621806352,102770704,34676752,654376976,621806096,102770704,17899536,654376976,856004880,116261392,621806352,102770704,17899536,654376976,621806096,102770704,17899536,654376976,856004880,116261392,101711888,200081424,684720144,872415248,655163408,199098384,133039120,855969552,638648080,101711888,638647824,621870608,102768656,234954768,906415632,168820752,1400,622919184,17899536,537985104,638647568,621870352,654376976,101712400,654376976,855639056,116261392,638647312,621870096,102760720,234954768,839275280,805721872,621870096,102760976,234954768,839276560,805723152,621870096,102762256,234954768,839305744,621870352,102760720,336666640,102760720,234954768,839305744,621870352,654376976,101712144,654376976,855639056,116261392,102768656,51453968,654376976,621870352,654376976,101711888,654376976,855639056,116261392,186712080,672137232,17899536,622919440,234954768,839305744,621870096,102762256,234954768,839297296,101770256,102760464,17899536,537985168,102786064,234954768,906405904,168820752,1400,622919184,17899536,654376976,621870352,654376976,855653648,116261136,186712080,672137232,554827856,101770256,102760464,17899536,654376976,101737488,654376976,101770256,102760464,17899536,537985168,102769424,17899536,654376976,856936720,116261392,186712080,672137232,554827920,101768208,102761488,17899536,654376976,101713680,186712080,672137232,554827920,805751312,168820752,1400,622919184,17899536,654376976,621870352,654376976,855653648,116261136,186712080,672137232,554827856,101768208,102761232,17899536,654376976,101768208,102761232,17899536,537985168,622918672,353443856,186712080,672137232,554827920,101768208,102761488,17899536,654376976,621870096,186712080,672137232,554827920,621870608,101777680,638647824,805715216,101711888,200081424,684720144,872415248,655163408,199098384,133039120,168820752,4096,654376976,621806352,169869328,1023,336666640,186712080,672137232,17899536,537985104,169869328,256,34676752,622854672,51453968,654376976,101713936,654376976,856891152,116261392,638648080,168820752,5120,654376976,621806352,169869328,1023,336666640,186712080,672137232,17899536,537985104,169869328,256,34676752,622854672,51453968,654376976,101713936,654376976,856891152,116261392,638647824,101768208,102760464,17899536,537985168,638647568,101768208,102760720,17899536,537985168,638647312,621870352,622919440,17899536,654376976,621870096,622919184,17899536,654376976,856029712,116261392,621870352,622919440,17899536,654376976,621870096,622919184,17899536,654376976,855975952,116261392,102760720,234954768,839333648,101768208,102760464,17899536,654376976,621870352,622919440,17899536,186712080,672137232,554827920,101768208,102760720,17899536,654376976,621870096,622919184,17899536,186712080,672137232,554827920,805790224,621870352,622919440,17899536,654376976,621870096,654376976,855975952,116261392,102760720,234954768,839339280,101768208,102760464,17899536,654376976,621870352,622919440,17899536,186712080,672137232,554827920,805790224,621870352,654376976,621870096,622919184,17899536,654376976,855975952,116261392,102760720,234954768,839344656,101768208,102760720,17899536,654376976,621870096,622919184,17899536,186712080,672137232,554827920,856045072,101711888,200081424,684720144,872415248,655163408,199098384,101768208,102760976,17899536,654376976,101768208,102760976,17899536,537985168,622854672,17899536,169869328,1023,336666640,186712080,672137232,554827920,101711888,200081424,684720144,872415248,655163408,199098384,133038864,101768208,102761744,17899536,537985168,102760464,234954768,839378704,101763088,654376976,621806096,102764304,336666640,186712080,672137232,17899536,537985168,638648080,101768208,102760976,17899536,537985168,638647824,101768208,102762000,17899536,537985168,638647568,621870864,102760720,234954768,839361808,621870608,654376976,621870352,654376976,856085008,116261392,621870864,102760976,234954768,839365136,621870608,169869328,512,17899536,654376976,621870352,654376976,856085008,116261392,621870864,102761232,234954768,839368464,621870608,169869328,768,17899536,654376976,621870352,654376976,856085008,116261392,621870864,102761488,234954768,839371792,621870608,169869328,256,17899536,654376976,621870352,654376976,856085008,116261392,621870864,102761744,234954768,839375888,101711888,654376976,101768208,102762256,17899536,537985168,186712080,672137232,34676752,654376976,856123152,116261136,621870864,102762000,234954768,839378704,101768208,102762256,17899536,537985168,654376976,856123152,116261136,101711888,200081424,684720144,872415248,655163408,199098384,133039888,101770256,102760720,17899536,537985168,102760464,235016208,906494992,101770256,102760720,17899536,654376976,101770256,102760720,17899536,537985168,102760720,34676752,186712080,672137232,554827920,101711888,805879568,101711888,638648080,101711888,638647824,621870608,102762512,234954768,906515728,621870608,537985168,638647568,621870352,654376976,855659792,116261136,638647312,621870352,654376976,101711888,654376976,855639056,116261392,654376976,101768208,102760464,17899536,537985168,102762512,152117264,186712080,672137232,34676752,654376976,856874768,116261136,638647056,621870352,654376976,101712144,654376976,855639056,116261392,654376976,101768208,102760720,17899536,537985168,102762512,152117264,186712080,672137232,34676752,654376976,856874768,116261136,638646800,621870352,654376976,101712400,654376976,855639056,116261392,102760976,234954768,839405840,621869840,102760720,235016208,889737488,621869584,102760720,235016208,889737488,621870864,102760720,17899536,638648080,621870608,101777680,638647824,805832720,621870864,102760464,235016208,906542096,101768208,102761744,17899536,537985168,102760464,234954768,839433232,621870864,622854672,51453968,638646544,101770256,102760976,17899536,654376976,101770256,102760976,17899536,537985168,654376976,621869328,654376976,101770256,102760464,17899536,537985168,654376976,856936720,116261392,186712080,672137232,17899536,186712080,672137232,554827920,621869328,654376976,101770256,102760464,17899536,537985168,186712080,672137232,234954768,889757456,101770256,102760464,17899536,654376976,101711888,186712080,672137232,554827920,101768208,102761744,17899536,654376976,101712144,186712080,672137232,554827920,101768208,102761488,17899536,654376976,101713168,186712080,672137232,554827920,805878800,101770256,102760464,17899536,654376976,101770256,102760464,17899536,537985168,622917904,34676752,186712080,672137232,554827920,101770256,102760720,17899536,654376976,101712656,186712080,672137232,554827920,101768208,102761488,17899536,654376976,101713424,186712080,672137232,554827920,621870864,805879568,101711888,200081424,684720144,872415248,655163408,199098384,621806352,622854672,940646416,102792976,17899536,102825744,202448912,102793232,34676752,805883664,101711888,200081424,684720144,872415248,655163408,199098384,133042192,101711888,638648080,621870864,102764560,234954768,906555408,168820752,10500,654376976,621806608,102764560,51453968,622919440,17899536,186712080,672137232,17899536,654376976,168820752,4294967295,186712080,672137232,554827856,621870864,101777680,638648080,805885712,168820752,10300,654376976,621806096,102776592,336666640,186712080,672137232,17899536,537985104,638647824,101711888,638647568,621870352,102762000,234954768,906613520,168820752,10400,622918928,17899536,537985104,638647312,621870096,654376976,101711888,654376976,855639056,116261392,654376976,168820752,10200,654376976,621806352,102763536,51453968,654376976,621870352,102760976,51453968,186712080,672137232,17899536,186712080,672137232,17899536,537985104,654376976,621870608,654376976,856211984,116261392,186712080,672137232,17899536,638647056,621870096,654376976,101712144,654376976,855639056,116261392,654376976,168820752,10200,654376976,621806352,102763536,51453968,654376976,621870352,102760976,51453968,186712080,672137232,17899536,102760720,17899536,186712080,672137232,17899536,537985104,654376976,621870608,654376976,856211984,116261392,186712080,672137232,17899536,638646800,621870096,654376976,101712400,654376976,855639056,116261392,638646544,621870096,654376976,101712656,654376976,855639056,116261392,638646288,168820752,10410,622918928,17899536,537985104,638646032,101711888,638645776,621868560,622917648,234954768,906612496,621869584,622917136,17899536,638645520,621868304,102764560,234954768,906611472,168820752,10420,654376976,621868816,622917136,17899536,186712080,672137232,17899536,537985104,638645264,101711888,638645008,621867792,622917904,234954768,906611472,621868048,654376976,101715728,622916368,34676752,102760976,51453968,186712080,672137232,152117264,102761232,336666640,638644752,621869840,622916368,17899536,638644496,621867536,102761232,234954768,822724368,621867280,102764560,234954768,906610448,101715728,622915856,34676752,102760976,51453968,638644240,168820752,10500,654376976,621806608,102764560,51453968,622916880,17899536,186712080,672137232,17899536,654376976,168820752,10500,654376976,621806608,102764560,51453968,622916880,17899536,186712080,672137232,17899536,537985104,654376976,101712656,622915600,135340048,303104016,186712080,672137232,336666640,654376976,621867536,622915600,135340048,186712080,672137232,353443856,186712080,672137232,554827856,621867792,101777680,638645008,805927440,621868560,101777680,638645776,805921040,621870352,101777680,638647568,805895440,101711888,200081424,684720144,872415248,655163408,199098384,133039888,101711888,638648080,101711888,638647824,101711888,638647568,621870352,102761232,234954768,906630416,168820752,10470,622918928,17899536,537985104,638647312,168820752,4194304,654376976,101712400,654376976,621806096,622918672,940646416,186712080,672137232,51453968,186712080,672137232,17899536,654376976,621870096,622918672,940646416,186712080,672137232,34676752,638647056,168820752,260,622918928,17899536,654376976,621869840,186712080,672137232,554827920,621869840,622919440,235016208,906629392,621869840,638648080,621870352,638647824,621870352,101777680,638647568,805953552,101711888,638646800,101711888,638646544,621869328,102761232,234954768,906638864,621869584,654376976,621870864,654376976,168820752,260,622917904,17899536,537985168,186712080,672137232,34676752,654376976,101715216,654376976,856940304,116261392,186712080,672137232,17899536,638646800,621869328,101777680,638646544,805968144,168820752,264,102760464,17899536,654376976,101711888,654376976,101715216,654376976,856940304,116261392,169869328,1000,51453968,622918160,202448912,186712080,672137232,554827920,621870608,805981200,101711888,200081424,684720144,872415248,655163408,199098384,133047568,168820752,6144,622855440,17899536,537985104,169869328,256,34676752,638648080,621806096,622919440,17899536,169869328,1023,336666640,638647824,168820752,4096,622919184,17899536,537985104,638647568,168820752,5120,622919184,17899536,537985104,638647312,101712144,638647056,621870352,169869328,256,34676752,638646800,621870352,169869328,256,234954768,906658320,168820752,4294967295,638647056,168820752,256,622918928,34676752,638646800,101712144,638646544,621870096,169869328,256,34676752,638646288,621870096,169869328,256,234954768,906663440,168820752,4294967295,638646544,168820752,256,622918672,34676752,638646288,621806608,102762512,152117264,638646032,621806352,102762512,152117264,638645776,168820752,256,654376976,621806608,102825744,336666640,186712080,672137232,34676752,638645520,621869840,102760720,234954768,822784016,621806608,102825744,336666640,638645520,168820752,256,654376976,621806352,102825744,336666640,186712080,672137232,34676752,638645264,621869328,102760720,234954768,822788624,621806352,102825744,336666640,638645264,168820752,1073741824,638645008,168820752,1073741824,638644752,621869584,102760464,235016208,906680336,168820752,65536,622918160,202448912,638645008,621868304,169869328,256,51453968,622918160,202448912,638644752,168820752,1073741824,638644496,168820752,1073741824,638644240,621869072,102760464,235016208,906685968,168820752,65536,622917648,202448912,638644496,621868048,169869328,256,51453968,622917648,202448912,638644240,101711888,638643984,621868560,102768656,51453968,622917392,17899536,537985104,102760464,234954768,839586576,621867536,622915600,234954768,906692624,621867536,622916368,17899536,638644752,621868816,622918416,17899536,638646032,101711888,638643984,806031888,621867024,622915856,17899536,638644240,621868560,622917904,17899536,638645776,101712144,638643984,806023184,621867536,622916368,34676752,638643728,621866768,102760720,234954768,839589648,621867024,622915856,34676752,638643728,621866512,654376976,168820752,4096,654376976,621870864,169869328,1023,336666640,186712080,672137232,17899536,537985104,169869328,256,34676752,186712080,672137232,51453968,102762512,152117264,638643472,621866256,102764560,234954768,906705680,101715984,638643472,168820752,500,622855440,17899536,654376976,621866256,186712080,672137232,554827920,621868560,102768656,51453968,622917392,17899536,537985104,638643216,621806352,654376976,621866512,654376976,621870096,169869328,256,34676752,186712080,672137232,51453968,654376976,101713936,654376976,856891152,116261392,186712080,672137232,17899536,638642960,621866768,102760720,234954768,839612176,621806608,654376976,621866512,654376976,621870352,169869328,256,34676752,186712080,672137232,51453968,654376976,101713936,654376976,856891152,116261392,186712080,672137232,17899536,638642960,621865744,102825744,336666640,102761488,152117264,638642704,621866768,102760464,234954768,839616016,621869840,102760720,234954768,839616016,806063632,621866768,102760720,234954768,839619088,621869328,102760720,234954768,822841872,101715728,622914064,34676752,638642704,101711888,638642448,621866000,102760976,234954768,839621136,101712144,638642448,621866000,102761744,234954768,839622416,806069008,621866000,102762000,234954768,839623952,101712400,638642448,621866000,102762256,234954768,839625488,101712656,638642448,101777168,169869328,512,51453968,654376976,168820752,512,622914832,17899536,186712080,672137232,202448912,638642192,621866768,102760720,234954768,839631376,621864976,102761232,51453968,102760976,152117264,638642192,101711888,638641936,621864720,102761488,234954768,906758928,168820752,1170,654376976,621866000,102760720,34676752,102761488,51453968,186712080,672137232,17899536,622913296,17899536,537985104,638641680,101773328,622913296,17899536,654376976,621864464,102766608,152117264,622913552,51453968,102762512,152117264,102766608,135340048,654376976,621864464,102764560,152117264,102825744,336666640,622913552,51453968,102762512,152117264,102764560,135340048,186712080,672137232,353443856,654376976,621864464,102762512,152117264,102825744,336666640,622913552,51453968,102762512,152117264,102762512,135340048,186712080,672137232,353443856,102825744,353443856,186712080,672137232,554827920,621864720,101777680,638641936,806077456,168820752,26624,622914832,202448912,638641424,101711888,638641168,101744656,638640912,101711888,638640656,168820752,1048576,622912784,202448912,638640400,621864208,102793232,234954768,906766864,101744656,622912784,34676752,102760720,152117264,638641168,621863952,622912784,17899536,638640912,806105616,621864208,102793232,34676752,102760720,152117264,622911760,51453968,638640656,101715728,622914064,34676752,102760976,51453968,638640144,168820752,1100,654376976,621865232,102764560,51453968,186712080,672137232,17899536,638639888,621806864,638639632,101711888,638639376,621862160,622912528,234954768,906780688,168820752,1000,622910992,17899536,654376976,168820752,7000,622910736,17899536,537985104,186712080,672137232,554827920,621862416,169869328,256,17899536,638639632,621862160,101777680,638639376,806110736,621863952,638639120,621861904,622912272,234954768,906792976,168820752,1000,622910992,17899536,654376976,101773328,654376976,621862672,654376976,621863440,102764560,152117264,102764304,336666640,186712080,672137232,17899536,537985104,622911504,152117264,102761232,336666640,186712080,672137232,17899536,537985168,186712080,672137232,554827920,621863440,622911760,17899536,638640656,621862416,169869328,256,17899536,638639632,621861904,101777680,638639120,806117904,621863696,638638864,621861648,102793232,234954768,906800144,168820752,1000,622910992,17899536,654376976,168820752,7200,622910224,17899536,537985104,186712080,672137232,554827920,621862416,169869328,256,17899536,638639632,621861648,101777680,638638864,806130192,101711888,200081424,684720144,872415248,655163408,199098384,133038352,101711888,638648080,621870864,169869328,256,234954768,906807312,621870864,654376976,621806608,654376976,621806352,654376976,621806096,654376976,856313616,116261904,621870864,101777680,638648080,806139152,101711888,200081424,684720144,872415248,655163408,199098384,133039120,101711888,638648080,101711888,638647824,621870608,102761232,234954768,906815760,168820752,260,622919184,17899536,537985168,622919440,235016208,906814736,168820752,260,622919184,17899536,537985168,638648080,621870608,101777680,638647824,806146832,101711888,638647568,101711888,638647312,621870096,102761232,234954768,906825488,621870352,654376976,621870864,654376976,168820752,260,622918672,17899536,537985168,186712080,672137232,34676752,1209073680,169869328,1174405120,1125195792,169869328,2147483648,370221072,654376976,856901648,116261136,186712080,672137232,1074864144,638647568,621870096,101777680,638647312,806153488,168820752,1065353216,622918928,1125195792,806163728,101711888,200081424,684720144,872415248,655163408,199098384,133040912,101711888,638648080,621870864,102762512,234954768,906833424,101718032,622919440,17899536,654376976,621870864,537985168,186712080,672137232,554827920,621870864,101777680,638648080,806165776,101768208,102760464,17899536,537985168,102762512,152117264,654376976,101768208,102760720,17899536,537985168,102762512,152117264,654376976,855792656,116261392,101711888,638647824,621870608,102762512,234954768,906848016,621870608,537985168,654376976,101712400,654376976,855639056,116261392,102760464,234954768,839738128,621870608,537985168,654376976,855659792,116261136,537985232,102762512,234954768,890069776,101713936,622919184,17899536,654376976,621870608,537985168,654376976,855653648,116261136,186712080,672137232,554827920,621870608,101777680,638647824,806174736,855808784,855836688,101711888,638647568,621870352,102762512,234954768,906879760,621870352,537985168,638647312,621870096,654376976,855659792,116261136,537985232,638647056,101711888,638646800,621870096,654376976,855659792,116261136,654376976,101718032,622918928,17899536,537985168,654376976,855659792,116261136,186712080,672137232,234954768,822971152,806194960,621869840,102762512,234954768,906858768,101777168,638646800,101711888,638646544,621869840,102763024,234954768,906862608,101777168,654376976,621869840,102766608,51453968,186712080,672137232,34676752,638646544,101711888,638646288,621869840,102762512,234954768,906864656,101777168,638646288,621869584,102766608,135340048,654376976,621869328,102764560,135340048,186712080,672137232,353443856,654376976,621869072,102762512,135340048,186712080,672137232,353443856,102825744,353443856,638646032,621868816,654376976,856282896,116261136,638645776,856476688,638645520,168820752,272,622918928,17899536,654376976,621868304,186712080,672137232,554827920,621868304,169869328,1058642330,1175588880,234946576,822992656,621870352,654376976,621870096,654376976,101712400,654376976,621868560,654376976,855644688,116261648,186712080,672137232,554827920,621870352,101777680,638647568,806185744,101714448,654376976,856156944,116261136,101711888,200081424,684720144,872415248,655163408,199098384,133038864,621807632,622855440,34676752,638648080,621807376,622855184,34676752,638647824,621870864,622854928,51453968,654376976,621870608,622854672,51453968,186712080,672137232,17899536,638647568,168820752,364,622856464,17899536,654376976,621807120,186712080,672137232,554827920,168820752,332,622856464,17899536,654376976,621870608,622854928,51453968,654376976,621870864,622854672,51453968,186712080,672137232,34676752,186712080,672137232,554827920,621870352,169869328,2147483648,370221072,654376976,168820752,32768,169869328,2147483648,370221072,186712080,672137232,235016208,906900496,168820752,300,622856464,17899536,654376976,621870352,186712080,672137232,554827920,806239504,168820752,300,622856464,17899536,654376976,101711888,186712080,672137232,554827920,101711888,200081424,684720144,872415248,655163408,199098384,133042704,168820752,300,622854672,17899536,537985168,638648080,621870864,102760464,234954768,823099408,621870864,102762512,152117264,638647824,101744656,654376976,101744656,654376976,168820752,332,622854672,17899536,537985168,186712080,672137232,51453968,654376976,621870864,654376976,856879120,116261392,186712080,672137232,17899536,638647568,168820752,22000,622919184,202448912,638647312,168820752,364,622854672,17899536,537985168,102760464,234954768,823032080,168820752,11000,622919184,202448912,638647312,101728272,654376976,168820752,13312,622919184,202448912,186712080,672137232,17899536,638647056,621869840,622918672,34676752,638646800,621870352,654376976,621870096,102760720,152117264,186712080,672137232,34676752,638646544,101777168,169869328,512,51453968,654376976,168820752,512,622919184,17899536,186712080,672137232,202448912,638646288,168820752,10500,654376976,168820752,396,622854672,17899536,537985168,102764560,51453968,186712080,672137232,17899536,638646032,168820752,1270,638645776,168820752,364,622854672,17899536,537985168,102760720,234954768,839825168,806272784,168820752,364,622854672,17899536,537985168,102760976,234954768,839828752,168820752,1232,638646032,168820752,1274,638645776,168820752,364,622854672,17899536,537985168,102762256,234954768,839832336,168820752,1248,638646032,168820752,1278,638645776,101711888,638645520,621868304,102761232,234954768,906957328,621868560,622916880,17899536,537985104,638645264,101773328,622916880,17899536,654376976,621868048,102766608,152117264,622917648,51453968,102762512,152117264,102766608,135340048,654376976,621868048,102764560,152117264,102825744,336666640,622917648,51453968,102762512,152117264,102764560,135340048,186712080,672137232,353443856,654376976,621868048,102762512,152117264,102825744,336666640,622917648,51453968,102762512,152117264,102762512,135340048,186712080,672137232,353443856,102825744,353443856,186712080,672137232,554827920,621868304,101777680,638645520,806278416,101711888,638645008,621867792,622918672,234954768,906985488,621869328,622916368,17899536,638644752,621867536,169869328,256,234954768,906984464,621870608,654376976,168820752,500,622916112,17899536,537985168,186712080,672137232,234954768,906984464,101715728,654376976,621867792,102764560,51453968,622918672,202448912,186712080,672137232,34676752,102760976,51453968,638644496,101711888,638644240,621867024,622918672,234954768,906984464,621869584,622915600,17899536,638643984,621866768,102793232,234954768,906983440,621868816,654376976,621867024,102764560,51453968,622918672,202448912,186712080,672137232,17899536,537985104,622915856,152117264,102761232,336666640,638643728,621866512,102761232,234954768,823097360,168820752,1000,654376976,621866768,169869328,256,51453968,622916112,17899536,186712080,672137232,17899536,654376976,101773328,622915088,17899536,537985168,186712080,672137232,554827920,168820752,500,622916112,17899536,654376976,621870608,186712080,672137232,554827920,621867024,101777680,638644240,806304528,621867792,101777680,638645008,806294544,101711888,200081424,684720144,872415248,655163408,199098384,133042960,168820752,4096,654376976,621806096,169869328,1023,336666640,186712080,672137232,17899536,537985104,169869328,256,34676752,638648080,168820752,5120,654376976,621806096,169869328,1023,336666640,186712080,672137232,17899536,537985104,169869328,256,34676752,638647824,101711888,638647568,101711888,638647312,621870096,102762512,234954768,907042064,621870096,537985168,638647056,101718032,622918672,17899536,537985168,638646800,621869584,654376976,101711888,654376976,855639056,116261392,169869328,256,51453968,102793232,17899536,654376976,621869840,654376976,101711888,654376976,855639056,116261392,654376976,621869584,654376976,101711888,654376976,855639056,116261392,186712080,672137232,34676752,654376976,101775888,102760464,17899536,537985168,186712080,672137232,51453968,186712080,672137232,17899536,638646544,621869584,654376976,101712144,654376976,855639056,116261392,169869328,256,51453968,102793232,17899536,654376976,621869840,654376976,101712144,654376976,855639056,116261392,654376976,621869584,654376976,101712144,654376976,855639056,116261392,186712080,672137232,34676752,654376976,101775888,102760464,17899536,537985168,186712080,672137232,51453968,186712080,672137232,17899536,638646288,621869840,654376976,101712400,654376976,855639056,116261392,638646032,101775888,102760720,17899536,537985168,654376976,621870096,102764560,51453968,186712080,672137232,17899536,638645776,621868816,102760464,234954768,839920144,101775888,102760720,17899536,537985168,102760720,152117264,654376976,621870096,102764560,51453968,186712080,672137232,17899536,638645776,168820752,396,622918928,17899536,654376976,621870096,186712080,672137232,554827920,621870352,654376976,621869328,654376976,621869072,654376976,101711888,654376976,621806608,654376976,621806352,654376976,621870864,654376976,621870608,654376976,856550160,116262928,168820752,300,622918928,17899536,537985168,102760464,234954768,823153936,621870096,654376976,621868816,654376976,621868560,654376976,856216080,116261648,621870352,102760720,17899536,638647568,621870096,101777680,638647312,806332688,101711888,638645520,621868304,102768656,234954768,907063824,168820752,1400,622916880,17899536,537985104,638645264,621868048,654376976,101712400,654376976,855639056,116261392,638645008,621867792,102760720,234954768,839939344,806385936,621867792,102760976,234954768,839940624,806387216,621867792,102762256,234954768,839953936,621868048,102760720,336666640,102760720,234954768,839953936,621870352,654376976,621868048,654376976,101711888,654376976,855639056,116261392,169869328,256,51453968,102793232,17899536,654376976,621868048,654376976,101712144,654376976,855639056,116261392,169869328,256,51453968,102793232,17899536,654376976,621867792,654376976,621806608,654376976,621806352,654376976,621870864,654376976,621870608,654376976,856550160,116262928,621870352,102760720,17899536,638647568,621868304,101777680,638645520,806379280,101711888,638644752,621867536,622918928,234954768,907068688,168820752,428,622916112,17899536,654376976,621867536,186712080,672137232,554827920,621867536,101777680,638644752,806401040,621870352,102760720,235016208,907090192,101711888,638644496,621867280,622918928,234954768,907090192,101711888,638644240,621867024,654376976,621870352,102760720,34676752,186712080,672137232,234954768,907089168,168820752,428,622915600,17899536,537985168,638643984,168820752,428,654376976,621867024,102760720,17899536,186712080,672137232,17899536,537985168,638643728,168820752,300,622915344,17899536,537985168,654376976,168820752,300,622915088,17899536,537985168,186712080,672137232,234954768,907088144,168820752,428,622915600,17899536,654376976,621866512,186712080,672137232,554827920,168820752,428,654376976,621867024,102760720,17899536,186712080,672137232,17899536,654376976,621866768,186712080,672137232,554827920,621867024,101777680,638644240,806408464,621867280,101777680,638644496,806406928,101711888,638643472,621866256,622918928,234954768,907094800,168820752,428,622914832,17899536,537985168,654376976,856572176,116261136,621866256,101777680,638643472,806427408,101711888,200081424,684720144,872415248,655163408,199098384,133039632,856806672,588251152,638648080,621870864,102760464,234954768,840006160,101711888,638647824,621870608,102764560,234954768,907102992,101763088,622919184,17899536,654376976,588251152,186712080,672137232,554827920,621870608,101777680,638647824,806435600,588251152,638647568,588251152,638647312,588251152,638647056,855900176,101768208,102762000,17899536,654376976,621870352,186712080,672137232,554827920,101768208,102762256,17899536,654376976,621870096,186712080,672137232,554827920,101768208,102760976,17899536,654376976,621869840,186712080,672137232,554827920,101775888,102760464,17899536,654376976,101777168,186712080,672137232,554827920,101775888,102760720,17899536,654376976,101711888,186712080,672137232,554827920,621870864,102760720,234954768,840007440,856496144,621870864,102760976,234954768,840009488,588251152,654376976,856128784,116261136,621870864,102761232,234954768,840023312,101775888,102760464,17899536,654376976,588251152,186712080,672137232,554827920,101775888,102760720,17899536,654376976,588251152,186712080,672137232,554827920,101768208,102760464,17899536,537985168,654376976,101768208,102760720,17899536,537985168,654376976,101768208,102760976,17899536,537985168,654376976,856469520,116261648,101768208,102760464,17899536,537985168,654376976,101768208,102760720,17899536,537985168,654376976,101768208,102760976,17899536,537985168,654376976,856654864,116261648,621870864,102761488,234954768,840026384,588251152,638646800,621869584,654376976,588251152,654376976,855964688,116261392,621870864,102761744,234954768,840028432,588251152,654376976,856123152,116261136,101711888,200081424,684720144,872415248,655163408,199098384,168820752,16777215,537985232,102760464,234954768,840096528,168820752,5109,169869328,1300,170917904,64,104857872,542179344,707084304,101777680,102891792,120783120,840033296,168820752,5173,169869328,1370,170917904,4,104857872,542179344,707084304,101777680,102891792,120783120,840036624,168820752,5177,169869328,1380,170917904,4,104857872,542179344,707084304,101777680,102891792,120783120,840039952,168820752,5181,169869328,1440,170917904,32,104857872,542179344,707084304,101777680,102891792,120783120,840043280,168820752,5213,169869328,1100,170917904,64,104857872,542179344,707084304,101777680,102891792,120783120,840046608,168820752,5277,169869328,1170,170917904,28,104857872,542179344,707084304,101777680,102891792,120783120,840049936,168820752,5305,169869328,1200,170917904,64,104857872,542179344,707084304,101777680,102891792,120783120,840053264,168820752,5369,169869328,1270,170917904,12,104857872,542179344,707084304,101777680,102891792,120783120,840056592,168820752,5381,169869328,4096,170917904,1024,104857872,542179344,707084304,101777680,102891792,120783120,840059920,168820752,6405,169869328,5120,170917904,1024,104857872,542179344,707084304,101777680,102891792,120783120,840063248,168820752,7429,169869328,6144,170917904,256,104857872,542179344,707084304,101777680,102891792,120783120,840066576,168820752,7685,169869328,7000,170917904,128,104857872,542179344,707084304,101777680,102891792,120783120,840069904,168820752,7813,169869328,7200,170917904,128,104857872,542179344,707084304,101777680,102891792,120783120,840073232,168820752,7941,169869328,10200,170917904,36,104857872,542179344,707084304,101777680,102891792,120783120,840076560,168820752,7977,169869328,10300,170917904,64,104857872,542179344,707084304,101777680,102891792,120783120,840079888,168820752,8041,169869328,10400,170917904,6,104857872,542179344,707084304,101777680,102891792,120783120,840083216,168820752,8047,169869328,10410,170917904,6,104857872,542179344,707084304,101777680,102891792,120783120,840086544,168820752,8053,169869328,10420,170917904,22,104857872,542179344,707084304,101777680,102891792,120783120,840089872,168820752,8075,169869328,10470,170917904,3,104857872,542179344,707084304,101777680,102891792,120783120,840093200,168820752,16777215,654376976,101712144,186712080,672137232,554827984,101711888,200081424,684720144,872415248,655163408,199098384,621806096,169869328,2147483648,234954768,890432016,101711888,622854672,34676752,806546704,621806096,806546704,101711888,200081424,684720144,872415248,655163408,199098384,133038608,101711888,638648080,621806352,169869328,2147483648,234954768,890437648,101711888,622854928,34676752,638583568,101712144,638648080,621806096,169869328,2147483648,234954768,890440976,101711888,622854672,34676752,638583312,101712144,622919440,34676752,638648080,621806352,622854672,202448912,638647824,621870864,102760720,234954768,840112400,101711888,622919184,34676752,806558736,621870608,806558736,101711888,200081424,684720144,872415248,655163408,199098384,133038608,621806096,102768400,336666640,638648080,621806352,622919440,152117264,638647824,621806352,169869328,2147483648,234954768,890454544,621870864,102760464,235016208,907231760,621870608,654376976,168820752,4294967295,654376976,101720080,622919440,34676752,186712080,672137232,135340048,186712080,672137232,353443856,638647824,621870608,806569232,101711888,200081424,684720144,872415248,655163408,199098384,133038864,621806096,654376976,168820752,1123811328,169869328,2147483648,370221072,186712080,672137232,1158750224,234946576,823351568,101711888,806604304,621806096,169869328,1124073472,1175588880,234946576,823353872,168820752,2139095040,806604304,621806096,1242628112,638648080,621870864,1225850896,622854672,1158811664,234946576,823357200,621870864,102760720,34676752,638648080,621806096,654376976,621870864,1225850896,186712080,672137232,1091641360,638647824,168820752,1065353216,654376976,621870608,654376976,168820752,1060205080,654376976,621870608,654376976,168820752,1047920112,654376976,621870608,654376976,168820752,1029920839,654376976,621870608,654376976,168820752,1008571739,654376976,621870608,654376976,168820752,984531960,654376976,621870608,654376976,168820752,958497929,654376976,621870608,169869328,931128826,1108418576,186712080,672137232,1074864144,186712080,672137232,1108418576,186712080,672137232,1074864144,186712080,672137232,1108418576,186712080,672137232,1074864144,186712080,672137232,1108418576,186712080,672137232,1074864144,186712080,672137232,1108418576,186712080,672137232,1074864144,186712080,672137232,1108418576,186712080,672137232,1074864144,186712080,672137232,1108418576,186712080,672137232,1074864144,638647568,621870352,654376976,621870864,102766352,135340048,186712080,672137232,17899536,806604304,101711888,200081424,684720144,872415248,655163408,199098384,621806352,622854672,234954768,907270416,621806352,806607888,621806096,806607888,101711888,200081424,684720144,872415248,655163408,199098384,133038352,621806352,622854672,152117264,638648080,621870864,102764560,234954768,907276048,168820752,65536,622919440,152117264,806613520,101711888,806613520,101711888,200081424,684720144,872415248,1427461461,1073741825,1073741825,1076537345,1073741825,1073741825,1778384897,1073742337,1073742337,1073742337,1073741825,1073741825,1082130433,1082141313,1073741825,1431655765,1431655765,1073741825,1082130945,1073741825,1073823745,1073823745,1073741825,1107296385,1073741824,1073741825,1075118081,1073741825,1107296769,1073741825,1073741825,1440044373,1431655765,1073741825,1073741825,1082130945,1082130945,1073741825,1073823745,1073823745,1073741825,1073741825,1,1082130945,1082130945,1073741825,1073741825,1431655765,1431655765,1073741825,1073741825,1117784705,1073741825,1073741825,1073823745,1073823745,1,1073741825,1117784705,1073741825,1073741825,1073741825,1073741825,1431655765,808513584,4029689904,808464624,821047344,4029689904,821047344,808513584,808464624,50529793,453771521,85656065,253362945,488571905,335808257,169215745,404227841,369427713,453248257,336332033,169084161,102565121,370476289,437978369,354157825,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,715795114,366419445,357905781,0,2854922794,1428116757,1427463445,0,715795114,894768469,894770557,0,2854922794,1429558549,1427469589,0,715827882,366302589,399889749,357914453,894784853,357954901,1073741823,0,715795114,357897557,357897557,357897565,357897557,357897687,1073692671,353703189,353703189,2863311530,4294967295,353703189,490018069,353703189,387200285,354161941,353647901,387781909,354227477,2863311530,4294967295,490018069,353703189,0,1073741820,894784860,917154460,905969820,910163100,909466780,909548700,909548700,909466780,910163100,905969820,917154460,894784860,1073741820,0,975840767,2688954111,3260693759,2050303231,539507455,1247577855,1854058751,944139007,975840767,2688954111,3260693759,2050303231,539507455,1247577855,1854058751,944139007,975835391,2322211071,3365941503,1514410239,705706239,2050662655,2824917247,1243638015,170537215,547401983,1625354495,276861183,4294967295,4227858415,4177526575,4227858495,4032124175,4049951055,4048901455,4031776015,4228206655,3226817795,3306509395,3306509395,3944043755,4278538495,4279506175,4228104255,4294967295,4227858415,4177526575,4227858495,4032124175,4049951055,4048901455,4031776015,4228206655,3226817795,3306509395,3306509395,3944043755,4278538495,4233348415,4027564095,4294967295,4278194175,4229252095,4033515775,4050621695,4050621695,4033515775,4229252095,4278521855,4291117055,4291117055,4291100927,4291122431,4291117055,4291100927,4290773247,4294967295,4294967295,4294967295,4290774015,4279588095,4229338175,4233532735,4234848575,4234848575,4233532735,4233532735,4229256255,4278190335,4294967295,4294967295,4294967295,1510936575,3223985919,4071832319,0,1783238911,3769639167,4293955839,0,809515263,4042320127,3627036927,0,512,512,512,512,512,512,512,512,512,512,512,511,511,511,511,511,511,511,510,510,510,510,510,509,509,509,509,508,508,508,508,507,507,507,506,506,506,505,505,505,504,504,504,503,503,502,502,501,501,501,500,500,499,499,498,498,497,497,496,495,495,494,494,493,493,492,491,491,490,489,489,488,487,487,486,485,485,484,483,483,482,481,480,480,479,478,477,476,476,475,474,473,472,471,471,470,469,468,467,466,465,464,463,463,462,461,460,459,458,457,456,455,454,453,452,451,450,449,448,447,446,445,444,442,441,440,439,438,437,436,435,434,433,431,430,429,428,427,426,424,423,422,421,420,418,417,416,415,413,412,411,410,408,407,406,405,403,402,401,400,398,397,396,394,393,392,390,389,388,386,385,384,382,381,379,378,377,375,374,373,371,370,368,367,365,364,363,361,360,358,357,355,354,353,351,350,348,347,345,344,342,341,339,338,336,335,333,332,330,329,327,326,324,323,321,320,318,317,315,314,312,311,309,307,306,304,303,301,300,298,297,295,294,292,290,289,287,286,284,283,281,280,278,276,275,273,272,270,269,267,265,264,262,261,259,258,256,254,253,251,250,248,247,245,243,242,240,239,237,236,234,232,231,229,228,226,225,223,222,220,218,217,215,214,212,211,209,208,206,205,203,201,200,198,197,195,194,192,191,189,188,186,185,183,182,180,179,177,176,174,173,171,170,168,167,165,164,162,161,159,158,157,155,154,152,151,149,148,147,145,144,142,141,139,138,137,135,134,133,131,130,128,127,126,124,123,122,120,119,118,116,115,114,112,111,110,109,107,106,105,104,102,101,100,99,97,96,95,94,92,91,90,89,88,86,85,84,83,82,81,79,78,77,76,75,74,73,72,71,70,68,67,66,65,64,63,62,61,60,59,58,57,56,55,54,53,52,51,50,49,49,48,47,46,45,44,43,42,41,41,40,39,38,37,36,36,35,34,33,32,32,31,30,29,29,28,27,27,26,25,25,24,23,23,22,21,21,20,19,19,18,18,17,17,16,15,15,14,14,13,13,12,12,11,11,11,10,10,9,9,8,8,8,7,7,7,6,6,6,5,5,5,4,4,4,4,3,3,3,3,2,2,2,2,2,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,10,10,11,11,11,12,12,13,13,14,14,15,15,16,17,17,18,18,19,19,20,21,21,22,23,23,24,25,25,26,27,27,28,29,29,30,31,32,32,33,34,35,36,36,37,38,39,40,41,41,42,43,44,45,46,47,48,49,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,70,71,72,73,74,75,76,77,78,79,81,82,83,84,85,86,88,89,90,91,92,94,95,96,97,99,100,101,102,104,105,106,107,109,110,111,112,114,115,116,118,119,120,122,123,124,126,127,128,130,131,133,134,135,137,138,139,141,142,144,145,147,148,149,151,152,154,155,157,158,159,161,162,164,165,167,168,170,171,173,174,176,177,179,180,182,183,185,186,188,189,191,192,194,195,197,198,200,201,203,205,206,208,209,211,212,214,215,217,218,220,222,223,225,226,228,229,231,232,234,236,237,239,240,242,243,245,247,248,250,251,253,254,256,258,259,261,262,264,265,267,269,270,272,273,275,276,278,280,281,283,284,286,287,289,290,292,294,295,297,298,300,301,303,304,306,307,309,311,312,314,315,317,318,320,321,323,324,326,327,329,330,332,333,335,336,338,339,341,342,344,345,347,348,350,351,353,354,355,357,358,360,361,363,364,365,367,368,370,371,373,374,375,377,378,379,381,382,384,385,386,388,389,390,392,393,394,396,397,398,400,401,402,403,405,406,407,408,410,411,412,413,415,416,417,418,420,421,422,423,424,426,427,428,429,430,431,433,434,435,436,437,438,439,440,441,442,444,445,446,447,448,449,450,451,452,453,454,455,456,457,458,459,460,461,462,463,463,464,465,466,467,468,469,470,471,471,472,473,474,475,476,476,477,478,479,480,480,481,482,483,483,484,485,485,486,487,487,488,489,489,490,491,491,492,493,493,494,494,495,495,496,497,497,498,498,499,499,500,500,501,501,501,502,502,503,503,504,504,504,505,505,505,506,506,506,507,507,507,508,508,508,508,509,509,509,509,510,510,510,510,510,511,511,511,511,511,511,511,512,512,512,512,512,512,512,512,512,512,256,258,259,261,262,264,265,267,269,270,272,273,275,276,278,280,281,283,284,286,287,289,290,292,294,295,297,298,300,301,303,304,306,307,309,311,312,314,315,317,318,320,321,323,324,326,327,329,330,332,333,335,336,338,339,341,342,344,345,347,348,350,351,353,354,355,357,358,360,361,363,364,365,367,368,370,371,373,374,375,377,378,379,381,382,384,385,386,388,389,390,392,393,394,396,397,398,400,401,402,403,405,406,407,408,410,411,412,413,415,416,417,418,420,421,422,423,424,426,427,428,429,430,431,433,434,435,436,437,438,439,440,441,442,444,445,446,447,448,449,450,451,452,453,454,455,456,457,458,459,460,461,462,463,463,464,465,466,467,468,469,470,471,471,472,473,474,475,476,476,477,478,479,480,480,481,482,483,483,484,485,485,486,487,487,488,489,489,490,491,491,492,493,493,494,494,495,495,496,497,497,498,498,499,499,500,500,501,501,501,502,502,503,503,504,504,504,505,505,505,506,506,506,507,507,507,508,508,508,508,509,509,509,509,510,510,510,510,510,511,511,511,511,511,511,511,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,512,511,511,511,511,511,511,511,510,510,510,510,510,509,509,509,509,508,508,508,508,507,507,507,506,506,506,505,505,505,504,504,504,503,503,502,502,501,501,501,500,500,499,499,498,498,497,497,496,495,495,494,494,493,493,492,491,491,490,489,489,488,487,487,486,485,485,484,483,483,482,481,480,480,479,478,477,476,476,475,474,473,472,471,471,470,469,468,467,466,465,464,463,463,462,461,460,459,458,457,456,455,454,453,452,451,450,449,448,447,446,445,444,442,441,440,439,438,437,436,435,434,433,431,430,429,428,427,426,424,423,422,421,420,418,417,416,415,413,412,411,410,408,407,406,405,403,402,401,400,398,397,396,394,393,392,390,389,388,386,385,384,382,381,379,378,377,375,374,373,371,370,368,367,365,364,363,361,360,358,357,355,354,353,351,350,348,347,345,344,342,341,339,338,336,335,333,332,330,329,327,326,324,323,321,320,318,317,315,314,312,311,309,307,306,304,303,301,300,298,297,295,294,292,290,289,287,286,284,283,281,280,278,276,275,273,272,270,269,267,265,264,262,261,259,258,256,254,253,251,250,248,247,245,243,242,240,239,237,236,234,232,231,229,228,226,225,223,222,220,218,217,215,214,212,211,209,208,206,205,203,201,200,198,197,195,194,192,191,189,188,186,185,183,182,180,179,177,176,174,173,171,170,168,167,165,164,162,161,159,158,157,155,154,152,151,149,148,147,145,144,142,141,139,138,137,135,134,133,131,130,128,127,126,124,123,122,120,119,118,116,115,114,112,111,110,109,107,106,105,104,102,101,100,99,97,96,95,94,92,91,90,89,88,86,85,84,83,82,81,79,78,77,76,75,74,73,72,71,70,68,67,66,65,64,63,62,61,60,59,58,57,56,55,54,53,52,51,50,49,49,48,47,46,45,44,43,42,41,41,40,39,38,37,36,36,35,34,33,32,32,31,30,29,29,28,27,27,26,25,25,24,23,23,22,21,21,20,19,19,18,18,17,17,16,15,15,14,14,13,13,12,12,11,11,11,10,10,9,9,8,8,8,7,7,7,6,6,6,5,5,5,4,4,4,4,3,3,3,3,2,2,2,2,2,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,2,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,10,10,11,11,11,12,12,13,13,14,14,15,15,16,17,17,18,18,19,19,20,21,21,22,23,23,24,25,25,26,27,27,28,29,29,30,31,32,32,33,34,35,36,36,37,38,39,40,41,41,42,43,44,45,46,47,48,49,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,66,67,68,70,71,72,73,74,75,76,77,78,79,81,82,83,84,85,86,88,89,90,91,92,94,95,96,97,99,100,101,102,104,105,106,107,109,110,111,112,114,115,116,118,119,120,122,123,124,126,127,128,130,131,133,134,135,137,138,139,141,142,144,145,147,148,149,151,152,154,155,157,158,159,161,162,164,165,167,168,170,171,173,174,176,177,179,180,182,183,185,186,188,189,191,192,194,195,197,198,200,201,203,205,206,208,209,211,212,214,215,217,218,220,222,223,225,226,228,229,231,232,234,236,237,239,240,242,243,245,247,248,250,251,253,254,128,129,129,130,131,131,132,133,133,134,135,135,136,137,137,138,139,140,140,141,142,143,143,144,145,146,146,147,148,149,150,150,151,152,153,154,154,155,156,157,158,159,160,160,161,162,163,164,165,166,167,168,169,170,171,172,172,173,174,175,176,177,178,179,180,181,182,184,185,186,187,188,189,190,191,192,193,194,195,196,198,199,200,201,202,203,204,205,207,208,209,210,211,212,214,215,216,217,218,220,221,222,223,225,226,227,228,229,231,232,233,234,236,237,238,240,241,242,243,245,246,247,248,250,251,252,253,255,256,257,259,260,261,262,264,265,266,267,269,270,271,272,274,275,276,278,279,280,281,283,284,285,286,287,289,290,291,292,294,295,296,297,298,300,301,302,303,304,305,307,308,309,310,311,312,313,314,316,317,318,319,320,321,322,323,324,325,326,327,328,330,331,332,333,334,335,336,337,338,339,340,340,341,342,343,344,345,346,347,348,349,350,351,352,352,353,354,355,356,357,358,358,359,360,361,362,362,363,364,365,366,366,367,368,369,369,370,371,372,372,373,374,375,375,376,377,377,378,379,379,380,381,381,382,383,383,235940095,235940351,252783359,252783615,269626623,269626879,286469887,286470143,303313151,303313407,320156415,320156671,336999679,336999935,353842943,353843199,370686207,370686463,387529471,387529727,404372735,404372991,421215999,421216255,438059263,438059519,454902527,454902783,471745791,471746047,488589055,488589311,505432319,505432575,522275583,522275839,539118847,539119103,555962111,555962367,572805375,572805631,589648639,589648895,606491903,606492159,623335167,623335423,640178431,640178687,657021695,657021951,673864959,673865215,690708223,690708479,707551487,707551743,724394751,724395007,741238015,741238271,758081279,758081535,774924543,774924799,791767807,791768063,808611071,808611327,825454335,825454591,842297599,842297855,859140863,859141119,875984127,875984383,892827391,892827647,909670655,909670911,926513919,926514175,943357183,943357439,960200447,960200703,977043711,977043967,993886975,993887231,1010730239,1010730495,1027573503,1027573759,1044416767,1044417023,1061260031,1061260287,1078103295,1078103551,1094946559,1094946815,1111789823,1111790079,1128633087,1128633343,1145476351,1145476607,1162319615,1162319871,1179162879,1179163135,1196006143,1196006399,1212849407,1212849663,1229692671,1229692927,1246535935,1246536191,1263379199,1263379455,1280222463,1280222719,1297065727,1297065983,1580736511,1563959295,1563959295,1547116287,1547116287,1530339071,1530273535,1513496319,1513496319,1496653311,1496653311,1479876095,1479810559,1463033343,1463033343,1446190335,1446190335,1429413119,1429347583,1412570367,1412570367,1395727359,1395727359,1378950143,1378884607,1362107391,1362107391,1345264383,1345264383,1328487167,1328421631,1311644415,1311644415,1294801407,1294801407,1278024191,1277958655,1261181439,1261181439,1244338431,1244338431,1227561215,1227495679,1210718463,1210718463,1193875455,1193875455,1177098239,1177032703,1160255487,1160255487,1143412479,1143412479,1126635263,1126569727,1109792511,1109792511,1092949503,1092949503,1076172287,1076106751,1059329535,1059329535,1042486527,1042486527,1025709311,1025643775,1008866559,1008866559,992023551,992023551,975246335,975180799,958403583,958403583,941560575,941560575,924783359,924717823,907940607,907940607,891097599,891097599,874320383,874254847,857477631,857477631,840634623,840634623,823857407,823791871,807014655,807014655,790171647,790171647,773394431,773328895,756551679,756551679,739708671,739708671,722931455,722865919,706088703,706088703,689245695,689245695,672468479,672402943,655625727,655625727,638782719,638782719,622005503,621939967,605162751,605162751,588319743,588319743,571542527,571476991,554699775,554699775,537856767,537856767,521079551,521014015,504236799,2155905152,2155839615,2155905152,2155905152,2155905152,2155970689,2155905152,2155970689,2155905152,2155905152,2155905152,2155905152,2155905152,2155839615,2155905152,2155839615,2155905152,2172682112,2155905152,2139128192,2139128192,2155904896,2172682112,2139127936,2155839871,2155905408,2155839871,2155905152,2155839359,2155707517,2155970945,2155707517,2155905152,2155905152,2155905152,2155905152,4278190080,4228055040,4094361600,3877109760,3609722880,3292200960,2924544000,2540175360,2155806720,1754726400,1370357760,1002700800,685178880,417792000,200540160,66846720,16711680,16515840,15993600,15144960,14100480,12860160,11424000,9922560,8421120,6854400,5352960,3916800,2676480,1632000,783360,261120,65280,64515,62475,59160,55080,50235,44625,38760,32895,26775,20910,15300,10455,6375,3060,1020,255,50331900,184549620,402653415,671088855,989855940,1358954670,1744830615,2130706560,2533359720,2919235665,3288334395,3607101480,3875536920,4093640715,4227858435,67110918,84280837,33948422,184943366,84607749,134939397,0,6,11,11,17,17,4026269695,3221487615,357892095,426049535,336920575,3221487615,3225419775,357564415,441450495,357564415,3225419775,3489660927,335544319,335544319,335544319,603979775,4026531839,3489660927,335544319,335544319,335544319,67108863,3932415,4286119935,4294967295];
+let spu, mode = "traduit";
+try { spu = SPUTraduit(MOTS); spu.run([0, 1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 13, 6, 0], 3e8); }
+catch (e) { spu = SPU(MOTS); mode = "interprété"; }
+const $ = id => document.getElementById(id);
+const NOMS = ["rien", "avancer", "reculer", "pas à gauche", "pas à droite", "tourner à gauche", "tourner à droite"];
+const ETIQ = ["Z / W / ↑", "S / ↓", "Q / A", "D", "←", "→"];
+const config = [1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+const CLAVIER = { KeyW: 0, ArrowUp: 0, KeyS: 1, ArrowDown: 1, KeyA: 2, KeyD: 3, ArrowLeft: 4, ArrowRight: 5 };
+const EVT = { 1: "Clé A prise", 2: "Clé B prise", 3: "Porte ouverte", 7: "Soigné : +35 points de vie" };
+const COMP = ["garde", "marche", "attaque"];
+const ctx = $("ecran").getContext("2d"), image = ctx.createImageData(256, 128);
+const cctx = $("carte").getContext("2d"), cimg = cctx.createImageData(32, 32);
+const F32 = new Float32Array(1), U32 = new Uint32Array(F32.buffer);
+const enFlottant = w => { U32[0] = w; return F32[0]; };
+const tenues = new Set();
+const J = 220, PAS_MS = 1000 / 60;
+let enJeu = false, enPause = false, tourMs = 620, accu = 0, tourAccu = 0, dernier = 0, souris = 0, msgFin = 0;
+let mesures = [], phase = 0, phaseAccu = 0, images = 0;
+$("nmots").textContent = MOTS.length.toLocaleString("fr-FR");
+$("nblocs").textContent = spu.nblocs ? spu.nblocs + " blocs pour " + spu.ninstr.toLocaleString("fr-FR") + " instructions" : "mode interprété sur ce navigateur";
+
+const hex = w => "#" + (w >>> 0).toString(16).toUpperCase().padStart(8, "0");
+
+function nouvellePartie() {
+  spu.run([0, ...config, 13, 6, 0], 3e8);
+  accu = 0; tourAccu = 0; phase = 0; $("fin").hidden = true; $("message").hidden = true;
+}
+function annoncer(texte) {
+  const m = $("message"); m.textContent = texte; m.hidden = false; msgFin = performance.now() + 2200;
+}
+function finDePartie(gagne) {
+  enJeu = false;
+  $("fin-titre").textContent = gagne ? "Sortie atteinte" : "Vaincu";
+  $("fin-titre").style.color = gagne ? "var(--ok)" : "var(--danger)";
+  $("fin-texte").textContent = gagne ? "Le labyrinthe est traversé avec " + spu.S[2][228] + " points de vie." : "Plus de points de vie après " + spu.S[2][230] + " points de dégâts.";
+  $("fin").hidden = false;
+  try { document.exitPointerLock && document.exitPointerLock(); } catch (e) {}
+}
+function pasDeSimulation() {
+  for (const t of tenues) spu.run([2, t], 3e8);
+  const e = spu.S[2][J + 4];
+  if (e) { if (EVT[e]) annoncer(EVT[e]); spu.S[2][J + 4] = 0; }
+  const etat = spu.S[2][J + 5];
+  if (etat === 2) finDePartie(true);
+}
+function tourEnnemis() {
+  spu.run([1], 3e8);
+  const e = spu.S[2][J + 4];
+  if (e === 6) { annoncer("Touché : " + spu.S[2][228] + " points de vie"); const c = $("coup"); c.classList.add("actif"); setTimeout(() => c.classList.remove("actif"), 60); }
+  if (e) spu.S[2][J + 4] = 0;
+  if (spu.S[2][J + 5] === 1) finDePartie(false);
+}
+function dessinerCarte() {
+  const d = cimg.data, c1 = spu.S[1];
+  const couleur = t => t === 0 ? [36, 39, 52] : t === 1 ? [150, 72, 46] : t === 2 ? [80, 100, 150] : t === 5 ? [200, 160, 40] : t === 6 ? [90, 150, 220] : [100, 220, 230];
+  for (let i = 0; i < 1024; i++) { const k = couleur(c1[i]); d[4 * i] = k[0]; d[4 * i + 1] = k[1]; d[4 * i + 2] = k[2]; d[4 * i + 3] = 255; }
+  for (let j = 0; j < 32; j++) {
+    const o = c1[1400 + j], ty = (o >>> 8) & 255;
+    if ((ty === 1 || ty === 2 || ty === 7) && (o & 1)) { const i = ((o >>> 16) & 255) * 32 + (o >>> 24); const k = ty === 7 ? [240, 240, 232] : [255, 220, 90]; d[4 * i] = k[0]; d[4 * i + 1] = k[1]; d[4 * i + 2] = k[2]; }
+  }
+  for (let k = 0; k < 8; k++) { const m = spu.S[2][k], i = ((m >>> 16) & 255) * 32 + (m >>> 24); d[4 * i] = 240; d[4 * i + 1] = 60; d[4 * i + 2] = 50; }
+  const p = (spu.S[2][J + 1] >> 8) * 32 + (spu.S[2][J] >> 8);
+  d[4 * p] = 245; d[4 * p + 1] = 245; d[4 * p + 2] = 240;
+  cctx.putImageData(cimg, 0, 0);
+}
+function hud(pas, ms) {
+  const cles = spu.S[2][J + 3], pv = spu.S[2][228];
+  $("pv").textContent = pv + " / 100";
+  $("pv-barre").style.width = pv + "%";
+  $("cle-a").classList.toggle("oui", (cles & 1) !== 0);
+  $("cle-b").classList.toggle("oui", (cles & 2) !== 0);
+  const x = spu.S[2][J], y = spu.S[2][J + 1], a = spu.S[2][J + 2];
+  $("mot-joueur").innerHTML = `<span class="r">${(x >> 8).toString(16).toUpperCase().padStart(2, "0")}</span><span class="v">${(y >> 8).toString(16).toUpperCase().padStart(2, "0")}</span><span class="b">${Math.round(a * 255 / 1023).toString(16).toUpperCase().padStart(2, "0")}</span>FF · colonne ${(x / 256).toFixed(1)}, ligne ${(y / 256).toFixed(1)}`;
+  let h = "";
+  for (let k = 0; k < 8; k++) { const m = spu.S[2][k], b = (m >>> 8) & 255, cf = enFlottant(spu.S[2][272 + k]);
+    h += `<div class="ennemi"><b class="c${b}">${COMP[b] || "?"}</b><span>${hex(m).slice(0, 5)} · ${cf > 0 ? Math.round(cf * 100) + " %" : "–"}</span></div>`; }
+  $("ennemis").innerHTML = h;
+  $("mesure").textContent = `${pas.toLocaleString("fr-FR")} instr. · ${ms.toFixed(1)} ms · ${mode}`;
+}
+function rendre(maintenant) {
+  const interp = Math.min(255, Math.round(255 * tourAccu / tourMs));
+  const t0 = performance.now();
+  const r = spu.run([3, interp, phase & 255], 3e8);
+  const ms = performance.now() - t0;
+  const fb = spu.S[2], d = image.data;
+  for (let i = 0, j = 1000; i < 32768; i++, j++) { const w = fb[j]; d[4 * i] = w >>> 24; d[4 * i + 1] = (w >>> 16) & 255; d[4 * i + 2] = (w >>> 8) & 255; d[4 * i + 3] = 255; }
+  ctx.putImageData(image, 0, 0);
+  dessinerCarte();
+  mesures.push(ms); if (mesures.length > 30) mesures.shift();
+  if (images++ % 6 === 0) hud(r.steps, mesures.reduce((s, v) => s + v, 0) / mesures.length);
+}
+function boucle(maintenant) {
+  requestAnimationFrame(boucle);
+  if (!dernier) dernier = maintenant;
+  let dt = Math.min(100, maintenant - dernier); dernier = maintenant;
+  if (enJeu && !enPause) {
+    if (souris) { spu.run([5, (souris | 0) >>> 0], 3e8); souris = 0; }
+    accu += dt;
+    while (accu >= PAS_MS && enJeu) { pasDeSimulation(); accu -= PAS_MS; }
+    tourAccu += dt;
+    if (tourAccu >= tourMs && enJeu) { tourAccu -= tourMs; tourEnnemis(); }
+    phaseAccu += dt;
+    while (phaseAccu >= 70) { phase++; phaseAccu -= 70; }
+  }
+  if (!$("message").hidden && maintenant > msgFin) $("message").hidden = true;
+  rendre(maintenant);
+}
+
+window.addEventListener("keydown", e => {
+  if (e.code in CLAVIER) { tenues.add(CLAVIER[e.code]); e.preventDefault(); }
+  else if (e.code === "Enter" && !enJeu) { demarrer(); }
+  else if (e.code === "KeyP") { basculerPause(); }
+});
+window.addEventListener("keyup", e => { if (e.code in CLAVIER) tenues.delete(CLAVIER[e.code]); });
+window.addEventListener("blur", () => tenues.clear());
+$("ecran").addEventListener("click", () => {
+  if (!enJeu) return;
+  try { const p = $("ecran").requestPointerLock && $("ecran").requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+});
+document.addEventListener("mousemove", e => { if (document.pointerLockElement === $("ecran")) souris += e.movementX * 0.6; });
+for (const b of document.querySelectorAll("#pave button")) {
+  const t = +b.dataset.t;
+  b.addEventListener("pointerdown", e => { tenues.add(t); e.preventDefault(); });
+  for (const ev of ["pointerup", "pointerleave", "pointercancel"]) b.addEventListener(ev, () => tenues.delete(t));
+}
+function demarrer() { nouvellePartie(); enJeu = true; enPause = false; $("pause").textContent = "Pause"; $("depart").hidden = true; $("ecran").focus(); }
+function basculerPause() { if (!enJeu) return; enPause = !enPause; $("pause").textContent = enPause ? "Reprendre" : "Pause"; }
+$("jouer").onclick = demarrer;
+$("rejouer").onclick = demarrer;
+$("recommencer").onclick = demarrer;
+$("pause").onclick = basculerPause;
+$("vitesse").onchange = e => { tourMs = +e.target.value; };
+ETIQ.forEach((nom, t) => {
+  const l = document.createElement("label"); l.setAttribute("for", "cfg-" + t); l.textContent = "Touche " + nom;
+  const s = document.createElement("select"); s.id = "cfg-" + t;
+  NOMS.forEach((n, a) => { const o = document.createElement("option"); o.value = a; o.textContent = n; if (config[t] === a) o.selected = true; s.appendChild(o); });
+  s.onchange = () => { config[t] = +s.value; spu.run([4, t, +s.value], 3e8); };
+  l.appendChild(s); $("cfg").appendChild(l);
+});
+nouvellePartie();
+const REP = ["sol", "do", "la", "mi"];
+$("morceaux").textContent = [0, 1, 2, 3].map(k => ["nord-ouest", "nord-est", "sud-ouest", "sud-est"][k] + " : " + REP[spu.S[2][232 + k]] + " (confiance " + (spu.S[2][236 + k] / 10).toFixed(1) + " %)").join(", ");
+hud(0, 0);
+requestAnimationFrame(boucle);
+</script>

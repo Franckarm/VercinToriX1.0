@@ -1,0 +1,144 @@
+// Recherche d'un motif dans un génome, en tolérant des erreurs.
+// Le génome compte N bases (A, C, G, T = 0, 1, 2, 3 : une base = un quit). Le motif compte 16 bases.
+// On cherche toutes les positions où le motif apparaît avec au plus 2 bases différentes (mutations ou erreurs
+// de lecture), et on sort leur nombre et une somme de contrôle de leurs positions.
+// Quatre façons de faire le même calcul :
+//   mode 1 : à l'ancienne, une base par mot, 16 comparaisons par position ;
+//   mode 2 : génome en tableau de quits (16 bases par mot), lu base par base : 16 fois moins de mémoire ;
+//   mode 3 : 16 bases d'un coup, comparées et comptées par calcul de bits (sans instruction nouvelle) ;
+//   mode 4 : 16 bases d'un coup avec QEGAL (égalité de 16 quits) et COMPTE (nombre de bits à 1).
+// Mode 0 : préparation seule. Entrée : le mode.
+
+constante N = 16384;
+constante NMOTS = 1024;        // N / 16
+constante SEUIL = 14;          // au moins 14 bases sur 16 identiques
+
+tableau base1[N] @1[0];                 // mode 1 : une base par mot
+tableau genome[N] de quits @2[0];       // modes 2 à 4 : 16 bases par mot
+tableau mots[NMOTS] @2[0];              // le même génome, vu mot par mot
+tableau motif[16] @1[65536];
+tableau motif_q[16] de quits @1[65600];
+
+fonction tirage(i, s) {
+    soit x = i * 2654435761 + s * 2246822519;
+    x = x ^ (x >> 15);
+    x = x * 2246822519;
+    x = x ^ (x >> 13);
+    retour x >> 8;
+}
+
+fonction preparer() {
+    pour k dans 0..16 {
+        soit b = tirage(k, 99) & 3;
+        motif[k] = b;
+        motif_q[k] = b;
+    }
+    pour i dans 0..N {
+        soit c = tirage(i, 1) & 3;
+        // tous les 997 pas, une copie du motif avec 0 à 3 mutations
+        soit p = i % 997;
+        si p < 16 && i + 16 - p <= N {
+            c = motif[p];
+            soit n = (i / 997) & 3;
+            si p < n {
+                c = (c + 1) & 3;
+            }
+        }
+        base1[i] = c;
+        genome[i] = c;
+    }
+}
+
+fonction mode_ancien() {
+    soit nb = 0;
+    soit somme = 0;
+    pour p dans 0..N - 15 {
+        soit m = 0;
+        pour k dans 0..16 {
+            si base1[p + k] == motif[k] {
+                m = m + 1;
+            }
+        }
+        si m >= SEUIL {
+            nb = nb + 1;
+            somme = somme * 31 + p;
+        }
+    }
+    sortie(nb);
+    sortie(somme);
+}
+
+fonction mode_quits() {
+    soit nb = 0;
+    soit somme = 0;
+    pour p dans 0..N - 15 {
+        soit m = 0;
+        pour k dans 0..16 {
+            soit q = p + k;
+            si genome[q] == motif_q[k] {
+                m = m + 1;
+            }
+        }
+        si m >= SEUIL {
+            nb = nb + 1;
+            somme = somme * 31 + p;
+        }
+    }
+    sortie(nb);
+    sortie(somme);
+}
+
+// Les 16 bases qui commencent à la position p, dans un seul mot.
+fonction fenetre(p) {
+    soit w = p >> 4;
+    soit d = (p & 15) * 2;
+    si d == 0 {
+        retour mots[w];
+    }
+    retour (mots[w] >> d) | (mots[w + 1] << (32 - d));
+}
+
+fonction bits_bas(x) {
+    x = (x & 858993459) + ((x >> 2) & 858993459);
+    x = (x + (x >> 4)) & 252645135;
+    retour (x * 16843009) >> 24;
+}
+
+fonction mode_seize_logiciel() {
+    soit nb = 0;
+    soit somme = 0;
+    soit pm = @1[65600];
+    pour p dans 0..N - 15 {
+        soit x = fenetre(p) ^ pm;
+        soit egal = ~(x | (x >> 1)) & 1431655765;     // 1 dans le bit bas de chaque quit égal
+        si bits_bas(egal) >= SEUIL {
+            nb = nb + 1;
+            somme = somme * 31 + p;
+        }
+    }
+    sortie(nb);
+    sortie(somme);
+}
+
+fonction mode_seize() {
+    soit nb = 0;
+    soit somme = 0;
+    soit pm = @1[65600];
+    pour p dans 0..N - 15 {
+        si nb_bits(qegal(fenetre(p), pm)) >= SEUIL {
+            nb = nb + 1;
+            somme = somme * 31 + p;
+        }
+    }
+    sortie(nb);
+    sortie(somme);
+}
+
+fonction principal() {
+    soit mode = entrée();
+    preparer();
+    si mode == 1 { mode_ancien(); }
+    si mode == 2 { mode_quits(); }
+    si mode == 3 { mode_seize_logiciel(); }
+    si mode == 4 { mode_seize(); }
+}

@@ -1,0 +1,145 @@
+// Ennemis à double brin sur une carte de 32 x 32 cases, déplacements dans les huit directions
+// (une diagonale seulement si les deux cases qui la bordent sont libres : on ne coupe pas les coins). Chaque ennemi est un mot #RRGGBBAA :
+// R = colonne, V = ligne, B = comportement validé, alpha = ADN.
+//   mem_adn : état validé (T = 1, passif)          mem_arn : hypothèse de travail (U = 0, active)
+importer "../bibliotheque/cube.vtx";
+importer "../bibliotheque/adn.vtx";
+
+constante NE = 8;
+constante LARG = 32;
+constante NCASE = 1024;
+tableau carte[1024] @1[0];
+tableau mem_adn[8] @2[0];
+tableau mem_arn[8] @2[8];
+tableau dist[1024] @3[0];
+tableau file[1024] @3[1024];
+tableau fq[2] @3[2100];
+
+fonction cellule(m) {
+    retour voie(m, 1) * LARG + voie(m, 0);
+}
+
+fonction visiter(n, d) {
+    si carte[n] == 0 && dist[n] == 255 {
+        dist[n] = d;
+        file[fq[0]] = n;
+        fq[0] = fq[0] + 1;
+    }
+}
+
+// Diagonale de c vers c + dx + dy (dy en cases de LARG) : permise si les deux cases orthogonales sont libres.
+fonction diagonale(c, dx, dy) {
+    retour carte[c + dx] == 0 && carte[c + dy] == 0;
+}
+
+// Carte des distances à la cible (parcours en largeur), plafonnée à 255.
+fonction distances(tx, ty) {
+    pour i dans 0..NCASE {
+        dist[i] = 255;
+    }
+    soit s = ty * LARG + tx;
+    dist[s] = 0;
+    file[0] = s;
+    fq[0] = 1;
+    soit tete = 0;
+    tantque tete < fq[0] {
+        soit c = file[tete];
+        tete = tete + 1;
+        soit d = dist[c] + 1;
+        si d < 255 {
+            visiter(c + 1, d);
+            visiter(c - 1, d);
+            visiter(c + LARG, d);
+            visiter(c - LARG, d);
+            si diagonale(c, 1, LARG) {
+                visiter(c + 1 + LARG, d);
+            }
+            si diagonale(c, 4294967295, LARG) {
+                visiter(c - 1 + LARG, d);
+            }
+            si diagonale(c, 1, 0 - LARG) {
+                visiter(c + 1 - LARG, d);
+            }
+            si diagonale(c, 4294967295, 0 - LARG) {
+                visiter(c - 1 - LARG, d);
+            }
+        }
+    }
+}
+
+fonction choisir(c) {
+    soit best = c;
+    soit bd = dist[c];
+    si dist[c + 1] < bd {
+        best = c + 1;
+        bd = dist[c + 1];
+    }
+    si dist[c - 1] < bd {
+        best = c - 1;
+        bd = dist[c - 1];
+    }
+    si dist[c + LARG] < bd {
+        best = c + LARG;
+        bd = dist[c + LARG];
+    }
+    si dist[c - LARG] < bd {
+        best = c - LARG;
+        bd = dist[c - LARG];
+    }
+    si diagonale(c, 1, LARG) && dist[c + 1 + LARG] < bd {
+        best = c + 1 + LARG;
+        bd = dist[c + 1 + LARG];
+    }
+    si diagonale(c, 4294967295, LARG) && dist[c - 1 + LARG] < bd {
+        best = c - 1 + LARG;
+        bd = dist[c - 1 + LARG];
+    }
+    si diagonale(c, 1, 0 - LARG) && dist[c + 1 - LARG] < bd {
+        best = c + 1 - LARG;
+        bd = dist[c + 1 - LARG];
+    }
+    si diagonale(c, 4294967295, 0 - LARG) && dist[c - 1 - LARG] < bd {
+        best = c - 1 - LARG;
+        bd = dist[c - 1 - LARG];
+    }
+    retour best;
+}
+
+// Phase 1 : chaque ADN est transcrit en ARN qui reçoit le déplacement hypothétique.
+fonction hypotheses(tx, ty) {
+    distances(tx, ty);
+    pour i dans 0..NE {
+        soit m = mem_adn[i];
+        soit b = choisir(cellule(m));
+        mem_arn[i] = poser_voie(poser_voie(transcrire(m), 0, b % LARG), 1, b / LARG);
+    }
+}
+
+// Phase 2 : conflits résolus par numéro (le plus petit l'emporte, les autres reviennent en arrière).
+fonction resoudre() {
+    pour p dans 0..NE + 1 {
+        pour i2 dans 0..NE {
+            soit fi = cellule(mem_arn[i2]);
+            soit ci = cellule(mem_adn[i2]);
+            pour j dans 0..NE {
+                si j != i2 {
+                    soit fj = cellule(mem_arn[j]);
+                    soit cj = cellule(mem_adn[j]);
+                    si fi != ci {
+                        si (fi == fj && i2 > j) || (fi == cj && fj == cj) {
+                            mem_arn[i2] = transcrire(mem_adn[i2]);
+                            fi = ci;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Phase 3 : rétrotranscription, les hypothèses retenues deviennent l'état validé.
+fonction valider_tout() {
+    pour i3 dans 0..NE {
+        mem_adn[i3] = retrotranscrire(mem_arn[i3]);
+    }
+}

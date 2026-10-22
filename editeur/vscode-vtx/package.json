@@ -1,0 +1,42 @@
+{
+  "name": "vercintorix",
+  "displayName": "Vercintorix (vtx)",
+  "description": "Couleurs, extraits et lancement pour le langage vtx",
+  "version": "0.5.0",
+  "publisher": "vercintorix",
+  "engines": {
+    "vscode": "^1.60.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "vtx",
+        "aliases": [
+          "Vercintorix",
+          "vtx"
+        ],
+        "extensions": [
+          ".vtx"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "vtx",
+        "scopeName": "source.vtx",
+        "path": "./syntaxes/vtx.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "vtx",
+        "path": "./extraits.json"
+      }
+    ]
+  }
+}

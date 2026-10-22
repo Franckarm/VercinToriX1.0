@@ -1,0 +1,108 @@
+// Arithmétique sur 64 bits (par paires de mots) et virgule fixe 16.16, comme dans le moteur de Doom.
+// Le résultat haut d'une opération 64 bits se lit avec hi64() juste après l'appel.
+tableau reg64[1] @3[16777100];
+
+fonction hi64() {
+    retour reg64[0];
+}
+
+// 32 bits de poids fort du produit non signé a × b.
+fonction mulhi(a, b) {
+    soit al = a & 65535;
+    soit ah = a >> 16;
+    soit bl = b & 65535;
+    soit bh = b >> 16;
+    soit t = al * bl;
+    soit u = ah * bl + (t >> 16);
+    soit v = al * bh + (u & 65535);
+    retour ah * bh + (u >> 16) + (v >> 16);
+}
+
+// Produit non signé 32 x 32 vers 64 bits : rend le mot bas, hi64() donne le mot haut.
+fonction mul64(a, b) {
+    reg64[0] = mulhi(a, b);
+    retour a * b;
+}
+
+fonction add64(ah, al, bh, bl) {
+    soit lo = al + bl;
+    soit retenue = 0;
+    si lo < al {
+        retenue = 1;
+    }
+    reg64[0] = ah + bh + retenue;
+    retour lo;
+}
+
+fonction sub64(ah, al, bh, bl) {
+    soit lo = al - bl;
+    soit emprunt = 0;
+    si al < bl {
+        emprunt = 1;
+    }
+    reg64[0] = ah - bh - emprunt;
+    retour lo;
+}
+
+// Produit en virgule fixe 16.16 signé : (a × b) >> 16 sur 64 bits, arrondi vers le bas (décalage arithmétique de C).
+fonction fx_mul(a, b) {
+    soit neg = 0;
+    si a >= 2147483648 {
+        a = 0 - a;
+        neg = 1 - neg;
+    }
+    si b >= 2147483648 {
+        b = 0 - b;
+        neg = 1 - neg;
+    }
+    soit hi = mulhi(a, b);
+    soit lo = a * b;
+    si neg == 1 {
+        soit lo2 = lo + 65535;
+        si lo2 < lo {
+            hi = hi + 1;
+        }
+        lo = lo2;
+    }
+    soit r = (hi << 16) | (lo >> 16);
+    si neg == 1 {
+        retour 0 - r;
+    }
+    retour r;
+}
+
+// Division en virgule fixe 16.16 signée : (a << 16) / b, arrondie vers zéro, saturée ; b = 0 donne 0xFFFFFFFF.
+fonction fx_div(a, b) {
+    soit neg = 0;
+    si a >= 2147483648 {
+        a = 0 - a;
+        neg = 1 - neg;
+    }
+    si b >= 2147483648 {
+        b = 0 - b;
+        neg = 1 - neg;
+    }
+    si b == 0 {
+        retour 4294967295;
+    }
+    soit q = a / b;
+    si q >= 32768 {
+        si neg == 1 {
+            retour 2147483648;
+        }
+        retour 2147483647;
+    }
+    soit r = a % b;
+    soit res = q << 16;
+    pour k dans 0..16 {
+        r = r << 1;
+        si r >= b {
+            r = r - b;
+            res = res | (1 << (15 - k));
+        }
+    }
+    si neg == 1 {
+        retour 0 - res;
+    }
+    retour res;
+}

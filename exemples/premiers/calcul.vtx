@@ -1,0 +1,16 @@
+// afficher écrit un résultat en clair : entiers négatifs, flottants, longs, logiques, textes
+fonction principal() {
+    afficher("Calculs :");
+    afficher(3 - 5);                    // -2 (sortie(3 - 5) écrirait le mot brut : 4294967294)
+    afficher(7 / 2);                    // 3 : division entière
+    afficher(7.0 / 2);                  // 3.5 : un flottant dans le calcul, le résultat est flottant
+    afficher(racine(2.0));              // 1.414214
+    afficher(sinus(pi() / 6.0));        // 0.5
+    afficher(puissance(2.0, 0.5));      // 1.414214
+    afficher(exponentielle(1.0));       // 2.718282
+    afficher(logarithme(10.0));         // 2.302585
+    soit rayon: flottant = 2.5;
+    ecrire_texte(1, "aire du disque : ");
+    ecrire_flottant(1, pi() * rayon * rayon, 2);     // deux décimales
+    ecrire_car(1, '\n');
+}

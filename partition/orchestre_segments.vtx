@@ -1,0 +1,100 @@
+// Même démonstration, avec deux boucles écrites « en segments » : la préparation de l'image et le flou.
+// Chaque segment ne touche que son quart de l'image : le compilateur le prouve et joue les quatre ensemble.
+importer "../bibliotheque/cube.vtx";
+
+constante TAILLE = 4096;
+tableau image[4096] @1[0];
+tableau flou_img[4096] @3[0];
+tableau memoire[64] @2[0];
+tableau histo[16] @2[1000];
+tableau trouve[2] @2[2000];
+tableau stats[2] @2[3000];
+
+fonction preparer_image() {
+    pour i dans 0..TAILLE en segments {
+        soit x = i % 64;
+        soit y = i / 64;
+        image[i] = ((x * 4) << 24) | ((y * 4) << 16) | (((x + y) * 2) << 8) | 255;
+    }
+}
+
+fonction preparer_memoire() {
+    pour k dans 0..64 {
+        memoire[k] = ((k * 37) % 256 << 24) | ((k * 91) % 256 << 16) | ((k * 53) % 256 << 8) | 255;
+    }
+}
+
+fonction histogramme() {
+    pour b dans 0..16 {
+        histo[b] = 0;
+    }
+    pour i dans 0..TAILLE {
+        soit g = gris(image[i]) >> 4;
+        histo[g] = histo[g] + 1;
+    }
+}
+
+fonction flou() {
+    pour i dans 0..TAILLE en segments {
+        soit x = i % 64;
+        soit s = gris(image[i]) * 2;
+        si x > 0 {
+            s = s + gris(image[i - 1]);
+        } sinon {
+            s = s + gris(image[i]);
+        }
+        si x < 63 {
+            s = s + gris(image[i + 1]);
+        } sinon {
+            s = s + gris(image[i]);
+        }
+        flou_img[i] = s / 4;
+    }
+}
+
+fonction recherche() {
+    soit cible = #8040C0FF;
+    soit meilleur = 0;
+    soit ib = 0;
+    pour k dans 0..64 {
+        soit sc = 4194304 + 2 * gdot(cible, memoire[k]) - gdot(memoire[k], memoire[k]);
+        si sc > meilleur {
+            meilleur = sc;
+            ib = k;
+        }
+    }
+    trouve[0] = ib;
+    trouve[1] = memoire[ib];
+}
+
+fonction contraste() {
+    soit mini = 255;
+    soit maxi = 0;
+    pour i dans 0..TAILLE {
+        soit v = flou_img[i];
+        si v < mini {
+            mini = v;
+        }
+        si v > maxi {
+            maxi = v;
+        }
+    }
+    stats[0] = mini;
+    stats[1] = maxi;
+}
+
+fonction principal() {
+    preparer_image();
+    preparer_memoire();
+    histogramme();
+    flou();
+    recherche();
+    contraste();
+    pour b dans 0..16 {
+        sortie(histo[b]);
+    }
+    sortie(trouve[0]);
+    sortie(trouve[1]);
+    sortie(stats[0]);
+    sortie(stats[1]);
+}

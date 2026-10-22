@@ -1,0 +1,86 @@
+// Contrôleur de chariot d'usine (vtx 0.2)
+// Un tag au sol est une couleur RGBA ; l'action associée est un code :
+// 0 avancer · 1 gauche · 2 droite · 3 arrêt · 4 ralentir · 5 quai (chargement)
+// Étage 2 : 0 à 5 = clés (couleurs des tags) · 16 à 21 = |clé|² · 32 à 37 = scores · 64 = confiance
+// Étage 1 : 0 à 5 = actions
+// Entrées : le mot lu par le capteur, la température (décalage 12 à 17),
+//           le mode (0 égalité exacte, 1 similarité GDOT, 2 arbre de décision à seuils)
+// Sorties : l'action (255 = aucun tag reconnu) et la confiance (pour mille)
+
+constante N = 6;
+constante CONF = 64;
+
+donnees @2[0] = { #80808028, #1E50DC64, #E6D22864, #DC1E1EFF, #F08C14A0, #28BE46C8 };
+donnees @2[16] = { 50752, 65700, 108600, 115225, 103200, 82600 };
+donnees @1[0] = { 0, 1, 2, 3, 4, 5 };
+
+fonction exact(q) {
+    pour i dans 0..N {
+        si q == @2[i] {
+            @2[CONF] = 1000;
+            retour @1[i];
+        }
+    }
+    @2[CONF] = 0;
+    retour 255;
+}
+
+fonction similarite(q, t) {
+    soit meilleur = 0;
+    soit ib = 0;
+    pour i dans 0..N {
+        soit s = 262144 + 2 * gdot(q, @2[i]) - @2[16 + i];
+        @2[32 + i] = s;
+        si s > meilleur {
+            meilleur = s;
+            ib = i;
+        }
+    }
+    soit total = 0;
+    pour i dans 0..N {
+        total = total + poids(meilleur - @2[32 + i], t);
+    }
+    @2[CONF] = poids(0, t) * 1000 / total;
+    retour @1[ib];
+}
+
+fonction arbre(q) {
+    soit r = (q >> 24) & 255;
+    soit v = (q >> 16) & 255;
+    soit b = (q >> 8) & 255;
+    @2[CONF] = 1000;
+    si b > 174 {
+        retour 1;
+    }
+    si r > 174 {
+        si v < 86 {
+            retour 3;
+        }
+        si v < 176 {
+            retour 4;
+        }
+        retour 2;
+    }
+    si v > 159 && r < 100 {
+        retour 5;
+    }
+    retour 0;
+}
+
+fonction principal() {
+    soit q = entrée();
+    soit t = entrée();
+    soit mode = entrée();
+    soit action = 255;
+    si mode == 0 {
+        action = exact(q);
+    }
+    si mode == 1 {
+        action = similarite(q, t);
+    }
+    si mode == 2 {
+        action = arbre(q);
+    }
+    sortie(action);
+    sortie(@2[CONF]);
+}

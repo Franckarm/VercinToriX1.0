@@ -1,0 +1,47 @@
+// Canal caché par synonymie T/U dans une suite de quits (vtx)
+// Étage 2 : i = quits du canal principal (0 à 3, le 3 est « T »)
+// Étage 1 : k = bits à cacher ; 512 + k = bits retrouvés
+// Étage 3 : i = symboles émis (0 à 4, le 4 est « U », synonyme de T)
+// Entrées : n (nombre de quits), b (nombre de bits à cacher)
+
+fonction encoder(n, b) {
+    soit k = 0;
+    soit i = 0;
+    tantque i != n {
+        soit q = @2[i];
+        si q == 3 {
+            si k < b {
+                q = 3 + @1[k];
+                k = k + 1;
+            }
+        }
+        @3[i] = q;
+        i = i + 1;
+    }
+    retour k;
+}
+
+fonction decoder(n) {
+    soit k = 0;
+    soit i = 0;
+    tantque i != n {
+        soit s = @3[i];
+        si s > 2 {
+            @1[512 + k] = s - 3;
+            k = k + 1;
+        }
+        si s == 4 {
+            s = 3;
+        }
+        @2[2048 + i] = s;
+        i = i + 1;
+    }
+    retour k;
+}
+
+fonction principal() {
+    soit n = entrée();
+    soit b = entrée();
+    sortie(encoder(n, b));
+    sortie(decoder(n));
+}

@@ -1,0 +1,30 @@
+// Libérer la mémoire : ramasser() rend les blocs que plus rien ne désigne ; nouveau() les reprend.
+fonction principal() {
+    soit garde = tableau(0);
+    pour i dans 0..1000 {
+        soit t = tableau(100);
+        t[7] = i;
+        si i % 100 == 0 {
+            ajouter(garde, t);
+        }
+    }
+    soit mots = decouper("le cube chromatique de Vercintorix", " ");
+    afficher("tas utilisé avant :", tas_utilise());
+    soit libres = ramasser();
+    afficher("mots libérés :", libres);
+    pour i dans 0..900 {
+        soit u = tableau(100);
+        u[1] = 1;
+    }
+    afficher("tas après 900 nouveaux tableaux :", tas_utilise());
+    soit somme = 0;
+    pour g dans garde {
+        somme = somme + g[7];
+    }
+    afficher("gardés intacts :", longueur(garde), somme, mots[2]);
+    soit d = dico();
+    pour i dans 0..300 {
+        ranger(d, texte(i), i * 2);
+    }
+    afficher("dico :", trouver(d, "250"), ramasser() > 0, trouver(d, "17"), longueur(cles(d)));
+}

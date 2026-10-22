@@ -1,0 +1,18 @@
+// Dessiner : ecran(l, h) prépare une image de l × h points (dans l'étage 1) ; pixel, trait, rectangle, disque y
+// dessinent, rgb(r, g, b) fait une couleur. L'atelier montre l'image après l'exécution (F6 : image, cube, à plat).
+fonction principal() {
+    ecran(160, 120);
+    // un ciel en dégradé
+    pour y dans 0..120 {
+        trait(0, y, 159, y, rgb(20, 30 + y, 90 + y));
+    }
+    disque(120, 30, 14, rgb(250, 220, 90));
+    rectangle(0, 90, 160, 30, rgb(30, 110, 50));
+    // le cube : trois faces
+    rectangle(40, 60, 40, 40, rgb(200, 60, 60));
+    pour k dans 0..20 {
+        trait(40 + k, 60 - k, 80 + k, 60 - k, rgb(240, 120, 120));
+        trait(80 + k, 60 - k, 80 + k, 100 - k, rgb(140, 30, 30));
+    }
+    afficher("dessin de 160 × 120 points : regardez la vue de l'atelier");
+}

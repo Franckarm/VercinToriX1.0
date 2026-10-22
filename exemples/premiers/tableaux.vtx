@@ -1,0 +1,43 @@
+// Tableaux dynamiques, dictionnaires et mots de tous les jours.
+fonction principal() {
+    soit t = [5, 3, 9, 1];
+    ajouter(t, 7);
+    afficher("longueur :", longueur(t), "somme :", somme(t));
+    trier(t);
+    pour x dans t {
+        ecrire(x);
+        ecrire(" ");
+    }
+    afficher("");
+    t[0] = 100;
+    afficher(t[0], t[4], indice(t, 9), contient(t, 42));
+    inserer(t, 1, 50);
+    afficher(enlever(t, 2), retirer(t), longueur(t));
+    tableau carres[10];
+    pour i dans 0..10 {
+        carres[i] = i * i;
+    }
+    afficher(carres[9], longueur(carres));
+    soit grand = tableau(0);
+    pour i dans 0..1000 {
+        ajouter(grand, i);
+    }
+    afficher(somme(grand), longueur(grand));
+    soit mots = decouper("le cube chromatique de Vercintorix", " ");
+    pour mot dans mots {
+        afficher(majuscules(mot));
+    }
+    afficher(mots[1] + "!");
+    soit d = dico();
+    pour mot dans decouper("un deux un trois un deux", " ") {
+        ranger(d, mot, trouver(d, mot) + 1);
+    }
+    afficher("un :", trouver(d, "un"), "deux :", trouver(d, "deux"), "quatre :", trouver(d, "quatre"), existe(d, "trois"));
+    afficher(assembler(cles(d), ", "));
+    afficher(remplacer("a-b-c", "-", " + "), nettoyer("   espace   ") + "|", repeter("ab", 3));
+    afficher(commence_par("vercintorix", "verc"), finit_par("vercintorix", "rix"), pgcd(84, 36), borne(0 - 5, 0, 10));
+    pour mot: texte dans cles(d) {
+        ecrire(mot + ";");
+    }
+    afficher("");
+}

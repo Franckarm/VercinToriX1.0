@@ -1,0 +1,6 @@
+{
+  "rust-analyzer.linkedProjects": [
+    "vtx-rs/Cargo.toml"
+  ],
+  "terminal.integrated.sendKeybindingsToShell": true
+}

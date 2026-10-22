@@ -1,0 +1,1275 @@
+// ScoR v0 : la spirale sur constellation de recherche.
+//
+// 1. Lecture : les documents du projet sont découpés en phrases et en mots. Chaque mot naît avec QUATRE points du
+//    cube (ses quatre éléments, ses sens possibles), placés par le hex de son orthographe (la graine : l'ADN reçu).
+// 2. Mémoire courte : pendant la lecture d'un document, les mots voisins dans une phrase forment des liaisons
+//    (l'ARN, dans l'ombre). Une phrase niée (pas, sans, jamais, aucun…) range ses liaisons dans l'anti-cube.
+// 3. Sommeil : après chaque document, seules les liaisons revenues au moins deux fois sont consolidées (l'ADN) ;
+//    celles vues une seule fois attendent une nuit, puis sont oubliées. Les nuits rejouent l'ADN comme des ressorts :
+//    deux mots liés rapprochent leurs deux points les plus proches (le sens qu'ils partagent) ; des points tirés au
+//    hasard s'écartent ; le pas diminue (refroidissement).
+// 4. Question : les points de ses mots forment une constellation. Autour de chaque point, la spirale visite les cases
+//    par couronnes et s'arrête quand une couronne n'apporte plus rien ; une case déjà visitée n'est pas refaite.
+//    Le reste du cube reste dans l'ombre : c'est l'économie.
+// 5. Épissage (logique de Belnap) : la proximité n'est qu'une hypothèse ; l'état vient des preuves lues.
+//      vrai     : des phrases lient le mot à la question, aucune ne le nie          → ressort au cube
+//      faux     : seules des phrases niées le lient (la recherche contraire)         → anti-cube
+//      variable : affirmé et nié à la fois : critiqué                                → anti-cube
+//      inconnu  : proche dans le cube, mais aucune phrase ne le dit : hypothèse      → reste dans l'ombre (ARN)
+//    Un mot jamais lu est inconnu, et rien dans le budget donne « inconnu ».
+// 6. Comparaison honnête avec une recherche par mots-clés (les mots qui partagent le plus de phrases).
+//
+// L'étage 1 montre tous les points des mots (couleur : le hex de leur orthographe) ; l'étage 2 montre la dernière
+// question (blanc), ses réponses (vert vrai, gris inconnu) et l'anti-cube en miroir (rouge faux, orange variable).
+// Usage : dans ce dossier, vtx scor.vtx, puis des questions au clavier ; ou dans l'atelier (le terminal).
+
+constante FENETRE = 4;
+constante CASE = 16;            // 16 × 16 × 16 cases de 16 unités
+constante NUITS = 200;
+constante SENS = 4;               // quatre points par mot
+constante K = 8;                // réponses gardées
+constante SIGMA = 8.0;
+constante VIDE = 4294967295;
+
+structure Scor { mots, index, stop, neg, px, py, pz, compte,
+                 court_c, court_v, lt_c, lt_v, anti_c, anti_v, brut_c, brut_v,
+                 adn_a, adn_b, adn_w, tete, suivant, phrase, nphrases, oublies, consolides,
+                 brut, saut, voix, rel_c, rel_v, rel_s, rel_o, rel_p, rel_n, rtete, rsuiv, atete, asuiv, avers, apoids }
+
+// ------------------------------------------------------------------ table de hachage d'entiers (clés non nulles)
+fonction th_neuve(n) {
+    retour tableau(n);
+}
+fonction th_place(cles, k) {
+    soit n = longueur(cles);
+    soit i = ((k * 2654435761) >> 7) & (n - 1);
+    tantque cles[i] != 0 && cles[i] != k {
+        i = (i + 1) & (n - 1);
+    }
+    retour i;
+}
+fonction th_ajouter(cles, vals, k, x) {
+    soit i = th_place(cles, k);
+    cles[i] = k;
+    vals[i] = vals[i] + x;
+}
+fonction th_lire(cles, vals, k) {
+    soit i = th_place(cles, k);
+    si cles[i] == 0 {
+        retour 0;
+    }
+    retour vals[i];
+}
+fonction paire(a, b) {
+    si a < b {
+        retour (a << 16) | b | 0;
+    }
+    retour (b << 16) | a;
+}
+
+// ------------------------------------------------------------------ les mots
+fonction est_lettre(c) {
+    retour (c >= 97 && c <= 122) || (c >= 65 && c <= 90) || (c >= 192 && c <= 383 && c != 215 && c != 247);
+}
+fonction en_minuscule(c) {
+    si (c >= 65 && c <= 90) || (c >= 192 && c <= 222 && c != 215) {
+        retour c + 32;
+    }
+    retour c;
+}
+fonction fin_de_phrase(c) {
+    retour c == 46 || c == 33 || c == 63 || c == 59 || c == 58 || c == 10 || c == 124;
+}
+
+fonction liste_mots(t) {
+    soit d = dico();
+    pour m dans decouper(t, " ") {
+        ranger(d, m, 1);
+    }
+    retour d;
+}
+
+// l'identifiant d'un mot (créé à sa première rencontre, à la case de son hex)
+fonction id_de(s: Scor, w, px: flottant[], py: flottant[], pz: flottant[]) {
+    soit k = trouver(s.index, w);
+    si k != 0 {
+        retour k - 1;
+    }
+    soit id = longueur(s.mots);
+    ajouter(s.mots, w);
+    ajouter(s.compte, 0);
+    soit h = __hache(w);
+    pour ks dans 0..SENS {
+        ajouter(px, flottant((h >> 24) & 255) + 0.5);
+        ajouter(py, flottant((h >> 16) & 255) + 0.5);
+        ajouter(pz, flottant((h >> 8) & 255) + 0.5);
+        h = h * 2654435761 + 40503;
+    }
+    ranger(s.index, w, id + 1);
+    retour id;
+}
+
+// une phrase lue : ses liaisons dans la mémoire courte (ou l'anti-cube si elle est niée)
+fonction phrase_finie(s: Scor, niee) {
+    soit p = s.phrase;
+    soit n = longueur(p);
+    pour i dans 0..n {
+        pour j dans (i + 1)..n {
+            si j - i <= FENETRE && p[i] != p[j] {
+                soit k = paire(p[i], p[j]) + 1;
+                th_ajouter(s.brut_c, s.brut_v, k, 1);
+                si niee {
+                    th_ajouter(s.anti_c, s.anti_v, k, 1);
+                } sinon {
+                    th_ajouter(s.court_c, s.court_v, k, 1);
+                }
+            }
+        }
+    }
+    vider(p);
+    s.nphrases = s.nphrases + 1;
+}
+
+fonction lire_document(s: Scor, nom, px: flottant[], py: flottant[], pz: flottant[]) {
+    soit f = ouvrir_lecture(nom);
+    si f == VIDE {
+        afficher("introuvable :", nom);
+        retour 0;
+    }
+    soit buf = tableau(0);
+    soit niee = 0;
+    soit nmots = 0;
+    soit fini = 0;
+    tantque fini == 0 {
+        soit c = lire_car(f);
+        si c == VIDE {
+            fini = 1;
+            c = 10;
+        }
+        si est_lettre(c) {
+            ajouter(buf, en_minuscule(c));
+        } sinon {
+            si longueur(buf) > 0 {
+                soit w = texte_neuf(longueur(buf));
+                pour i dans 0..longueur(buf) {
+                    changer_car(w, i, buf[i]);
+                }
+                vider(buf);
+                ajouter(s.brut, w);
+                si existe(s.neg, w) {
+                    niee = 1;
+                } sinon si longueur(w) >= 3 && !existe(s.stop, w) {
+                    soit id = id_de(s, w, px, py, pz);
+                    s.compte[id] = s.compte[id] + 1;
+                    ajouter(s.phrase, id);
+                    nmots = nmots + 1;
+                }
+            }
+            si fin_de_phrase(c) {
+                relations(s);
+                phrase_finie(s, niee);
+                niee = 0;
+            }
+        }
+    }
+    fermer(f);
+    retour nmots;
+}
+
+// ------------------------------------------------------------------ le sommeil
+// la nuit après un document : ce qui est revenu deux fois passe dans l'ADN ; ce qui n'est venu qu'une fois attend
+// une nuit (âge 1), puis est oublié
+fonction nuit_de_tri(s: Scor) {
+    soit cles = s.court_c;
+    soit vals = s.court_v;
+    soit nc = th_neuve(longueur(cles));
+    soit nv = th_neuve(longueur(cles));
+    pour i dans 0..longueur(cles) {
+        si cles[i] != 0 {
+            soit compte = vals[i] & 16777215;
+            soit age = vals[i] >> 24;
+            si compte >= 2 {
+                soit k = cles[i];
+                si th_lire(s.lt_c, s.lt_v, k) == 0 {
+                    ajouter(s.adn_a, (k - 1) >> 16);
+                    ajouter(s.adn_b, (k - 1) & 65535);
+                    ajouter(s.adn_w, 0);
+                    th_ajouter(s.lt_c, s.lt_v, k, longueur(s.adn_a));
+                }
+                soit r = th_lire(s.lt_c, s.lt_v, k) - 1;
+                s.adn_w[r] = s.adn_w[r] + compte;
+                s.consolides = s.consolides + 1;
+            } sinon si age == 0 {
+                th_ajouter(nc, nv, cles[i], compte | (1 << 24));
+            } sinon {
+                s.oublies = s.oublies + 1;
+            }
+        }
+    }
+    s.court_c = nc;
+    s.court_v = nv;
+}
+
+fonction borner(x: flottant): flottant {
+    si x < 0.0 {
+        retour 0.0;
+    }
+    si x > 255.9 {
+        retour 255.9;
+    }
+    retour x;
+}
+
+fonction dpt(a, b, px: flottant[], py: flottant[], pz: flottant[]): flottant {
+    soit dx = px[a] - px[b];
+    soit dy = py[a] - py[b];
+    soit dz = pz[a] - pz[b];
+    retour racine(dx * dx + dy * dy + dz * dz);
+}
+
+// les deux points les plus proches de deux mots (le sens partagé) : 4 × (point de a) + (point de b)
+fonction sens_commun(a, b, px: flottant[], py: flottant[], pz: flottant[]) {
+    soit meilleur = 0;
+    soit dmin = 1000000.0;
+    pour i dans 0..SENS {
+        pour j dans 0..SENS {
+            soit d = dpt(SENS * a + i, SENS * b + j, px, py, pz);
+            si d < dmin {
+                dmin = d;
+                meilleur = SENS * i + j;
+            }
+        }
+    }
+    retour meilleur;
+}
+
+fonction distance(a, b, px: flottant[], py: flottant[], pz: flottant[]): flottant {
+    soit c = sens_commun(a, b, px, py, pz);
+    retour dpt(SENS * a + c / SENS, SENS * b + c % SENS, px, py, pz);
+}
+
+// les nuits de rêve : l'ADN est rejoué comme des ressorts entre les points du sens partagé ; des points tirés au
+// hasard qui sont trop près s'écartent. Le pas refroidit.
+fonction rever(s: Scor, px: flottant[], py: flottant[], pz: flottant[], nuits) {
+    graine(7);
+    soit npoints = longueur(px);
+    pour nuit dans 0..nuits {
+        soit pas: flottant = 0.5 * (1.0 - flottant(nuit) / flottant(nuits)) + 0.02;
+        pour r dans 0..longueur(s.adn_a) {
+            soit c = sens_commun(s.adn_a[r], s.adn_b[r], px, py, pz);
+            soit a = SENS * s.adn_a[r] + c / SENS;
+            soit b = SENS * s.adn_b[r] + c % SENS;
+            soit poids: flottant = logarithme(1.0 + flottant(s.adn_w[r]));
+            soit cible = 10.0 / (1.0 + poids);
+            soit dx = px[b] - px[a];
+            soit dy = py[b] - py[a];
+            soit dz = pz[b] - pz[a];
+            soit d = racine(dx * dx + dy * dy + dz * dz) + 0.01;
+            soit tire: flottant = pas * 0.5 * (d - cible) / d;
+            px[a] = borner(px[a] + tire * dx);
+            py[a] = borner(py[a] + tire * dy);
+            pz[a] = borner(pz[a] + tire * dz);
+            px[b] = borner(px[b] - tire * dx);
+            py[b] = borner(py[b] - tire * dy);
+            pz[b] = borner(pz[b] - tire * dz);
+            pour essai dans 0..4 {
+                soit o = hasard(npoints);
+                soit e = a;
+                si essai >= 2 {
+                    e = b;
+                }
+                si o / SENS != a / SENS && o / SENS != b / SENS {
+                    soit ex = px[e] - px[o];
+                    soit ey = py[e] - py[o];
+                    soit ez = pz[e] - pz[o];
+                    soit d2 = racine(ex * ex + ey * ey + ez * ez) + 0.01;
+                    si d2 < 80.0 {
+                        soit pousse: flottant = pas * 0.5 * (80.0 - d2) / d2;
+                        px[e] = borner(px[e] + pousse * ex);
+                        py[e] = borner(py[e] + pousse * ey);
+                        pz[e] = borner(pz[e] + pousse * ez);
+                        px[o] = borner(px[o] - pousse * ex);
+                        py[o] = borner(py[o] - pousse * ey);
+                        pz[o] = borner(pz[o] - pousse * ez);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// la mesure : distance (par le sens partagé) entre mots liés dans l'ADN, et entre mots tirés au hasard ; plus le
+// rapport est petit, mieux le cube range les liaisons
+fonction mesurer(s: Scor, px: flottant[], py: flottant[], pz: flottant[]) {
+    graine(11);
+    soit lies = 0.0;
+    pour r dans 0..longueur(s.adn_a) {
+        lies = lies + distance(s.adn_a[r], s.adn_b[r], px, py, pz);
+    }
+    lies = lies / flottant(longueur(s.adn_a));
+    soit hasards = 0.0;
+    pour h dans 0..2000 {
+        hasards = hasards + distance(s.adn_a[hasard(longueur(s.adn_a))], s.adn_b[hasard(longueur(s.adn_a))], px, py, pz);
+    }
+    hasards = hasards / 2000.0;
+    afficher("   distance moyenne : mots liés " + texte(lies) + ", mots au hasard " + texte(hasards) + ", rapport "
+             + texte(lies / hasards));
+}
+
+// ------------------------------------------------------------------ le cube : les cases
+fonction case_de(x: flottant, y: flottant, z: flottant) {
+    retour entier(x) / CASE + 16 * (entier(y) / CASE) + 256 * (entier(z) / CASE);
+}
+
+fonction indexer(s: Scor, px: flottant[], py: flottant[], pz: flottant[]) {
+    s.tete = tableau(4096);
+    pour i dans 0..4096 {
+        s.tete[i] = VIDE;
+    }
+    s.suivant = tableau(longueur(px));
+    // seuls les mots consolidés (présents dans l'ADN) ressortent au cube ; les autres restent dans l'ombre
+    soit dans_adn = tableau(longueur(s.mots));
+    pour r dans 0..longueur(s.adn_a) {
+        dans_adn[s.adn_a[r]] = 1;
+        dans_adn[s.adn_b[r]] = 1;
+    }
+    soit au_cube = 0;
+    pour p dans 0..longueur(px) {
+        si dans_adn[p / SENS] == 0 {
+            continuer;
+        }
+        au_cube = au_cube + 1;
+        soit c = case_de(px[p], py[p], pz[p]);
+        s.suivant[p] = s.tete[c];
+        s.tete[c] = p;
+        // l'étage 1 : chaque point à sa place, de la couleur du hex du mot
+        soit h = __hache(s.mots[p / SENS]);
+        @1[entier(px[p]) + 256 * entier(py[p]) + 65536 * entier(pz[p])] = (h & #FFFFFF00) | 255;
+    }
+    retour au_cube / SENS;
+}
+
+// ------------------------------------------------------------------ la question
+fonction mots_de(s: Scor, q) {
+    soit r = tableau(0);
+    soit inconnus = tableau(0);
+    pour w dans decouper(minuscules(q), " ") {
+        soit wn = nettoyer(w);
+        si longueur(wn) >= 3 && !existe(s.stop, wn) {
+            soit k = trouver(s.index, wn);
+            si k == 0 {
+                ajouter(inconnus, wn);
+            } sinon {
+                ajouter(r, k - 1);
+            }
+        }
+    }
+    retour [r, inconnus];
+}
+
+// la spirale : autour de chaque point de la constellation, des couronnes de cases ; une case déjà visitée pour cette
+// question n'est pas refaite (elle est dans l'ombre). Rend [candidats, scores, cases visitées, couronnes].
+fonction spirale(s: Scor, q, px: flottant[], py: flottant[], pz: flottant[]) {
+    soit nq = longueur(q);
+    soit nm = longueur(s.mots);
+    // dmin[qi * nm + m] : la plus courte distance entre un point du mot m et un point du mot qi de la question
+    soit dmin: flottant[] = tableau(0);
+    pour z dans 0..(nq * nm) {
+        ajouter(dmin, 1000000.0);
+    }
+    soit vue = tableau(4096);
+    soit visitees = 0;
+    soit couronnes = 0;
+    pour qi dans 0..nq {
+        pour k dans 0..SENS {
+            soit p0 = SENS * q[qi] + k;
+            soit ccx = entier(px[p0]) / CASE;
+            soit ccy = entier(py[p0]) / CASE;
+            soit ccz = entier(pz[p0]) / CASE;
+            soit rayon = 0;
+            soit calme = 0;
+            soit trouves = 0;
+            // énergie d'activation : la couronne suivante ne peut apporter que des points à au moins (rayon - 1) cases ;
+            // quand leur meilleur apport possible tombe sous 10 %, la spirale s'arrête
+            tantque rayon < 8 && calme < 1 {
+                soit dmin_possible = flottant(CASE) * (flottant(rayon) - 1.0) / SIGMA;
+                si rayon >= 2 && exponentielle(0.0 - dmin_possible * dmin_possible) < 0.1 {
+                    calme = 1;
+                    continuer;
+                }
+                soit neufs = 0;
+                pour dz dans 0..(2 * rayon + 1) {
+                    pour dy dans 0..(2 * rayon + 1) {
+                        pour dx dans 0..(2 * rayon + 1) {
+                            soit ix = ccx + dx - rayon;
+                            soit iy = ccy + dy - rayon;
+                            soit iz = ccz + dz - rayon;
+                            soit sur = dx == 0 || dy == 0 || dz == 0 || dx == 2 * rayon || dy == 2 * rayon || dz == 2 * rayon;
+                            si sur && ix .>= 0 && iy .>= 0 && iz .>= 0 && ix .< 16 && iy .< 16 && iz .< 16 {
+                                soit cel = ix + 16 * iy + 256 * iz;
+                                si vue[cel] != qi + 1 {
+                                    si vue[cel] == 0 {
+                                        visitees = visitees + 1;
+                                    }
+                                    vue[cel] = qi + 1;
+                                }
+                                soit p = s.tete[cel];
+                                tantque p != VIDE {
+                                    soit m = p / SENS;
+                                    si !contient(q, m) {
+                                        soit d = dpt(p, p0, px, py, pz);
+                                        si d < dmin[qi * nm + m] {
+                                            si dmin[qi * nm + m] > 999999.0 {
+                                                neufs = neufs + 1;
+                                            }
+                                            dmin[qi * nm + m] = d;
+                                        }
+                                    }
+                                    p = s.suivant[p];
+                                }
+                            }
+                        }
+                    }
+                }
+                trouves = trouves + neufs;
+                rayon = rayon + 1;
+            }
+            couronnes = couronnes + rayon;
+        }
+    }
+    soit meilleurs = tableau(0);
+    soit scores: flottant[] = tableau(0);
+    pour mm dans 0..nm {
+        soit sc = 0.0;
+        soit vu = 0;
+        pour qj dans 0..nq {
+            soit dd = dmin[qj * nm + mm] / SIGMA;
+            si dd < 50000.0 {
+                vu = 1;
+                sc = sc + exponentielle(0.0 - dd * dd);
+            }
+        }
+        si vu == 1 {
+            // les mots très fréquents (outils de la langue) pèsent moins
+            sc = sc / racine(flottant(1 + s.compte[mm]) / 4.0 + 1.0);
+            garder(meilleurs, scores, mm, sc);
+        }
+    }
+    retour [meilleurs, scores, visitees, couronnes];
+}
+
+// garde les K meilleurs ; scores triés du plus petit au plus grand (le dernier est le meilleur)
+fonction garder(ids, scores: flottant[], m, sc: flottant) {
+    si longueur(ids) == K && sc <= scores[0] {
+        retour;
+    }
+    si longueur(ids) == K {
+        enlever(ids, 0);
+        enlever(scores, 0);
+    }
+    soit i = 0;
+    tantque i < longueur(scores) && scores[i] < sc {
+        i = i + 1;
+    }
+    inserer(ids, i, m);
+    inserer(scores, i, sc);
+}
+
+// l'épissage, en logique de Belnap : la proximité dans le cube n'est qu'une hypothèse ; l'état vient des preuves
+// (phrases qui lient le mot à la question, phrases niées qui le lient). Rend [état, mots liés, pour, contre].
+fonction epissage(s: Scor, q, m) {
+    soit couverts = 0;
+    soit pos = 0;
+    soit neg = 0;
+    pour qk dans q {
+        soit k = paire(m, qk) + 1;
+        soit r = th_lire(s.lt_c, s.lt_v, k);
+        soit p = th_lire(s.court_c, s.court_v, k) & 16777215;
+        si r > 0 {
+            p = p + s.adn_w[r - 1];
+        }
+        si p > 0 {
+            couverts = couverts + 1;
+        }
+        pos = pos + p;
+        neg = neg + th_lire(s.anti_c, s.anti_v, k);
+    }
+    soit etat = 0;
+    si pos > 0 && neg > 0 {
+        etat = 3;
+    } sinon si pos > 0 {
+        etat = 2;
+    } sinon si neg > 0 {
+        etat = 1;
+    }
+    retour [etat, couverts, pos, neg];
+}
+
+// la recherche par mots-clés : les mots qui partagent le plus de phrases avec tous les mots de la question
+fonction mots_cles(s: Scor, q) {
+    soit ids = tableau(0);
+    soit scores: flottant[] = tableau(0);
+    pour m dans 0..longueur(s.mots) {
+        si !contient(q, m) {
+            soit total = 0;
+            soit tous = 1;
+            pour qk dans q {
+                soit c = th_lire(s.brut_c, s.brut_v, paire(m, qk) + 1);
+                si c == 0 {
+                    tous = 0;
+                }
+                total = total + c;
+            }
+            si tous == 1 && total > 0 {
+                garder(ids, scores, m, flottant(total));
+            }
+        }
+    }
+    retour ids;
+}
+
+fonction allumer(x: flottant, y: flottant, z: flottant, couleur) {
+    @2[entier(x) + 256 * entier(y) + 65536 * entier(z)] = couleur;
+}
+
+fonction repondre(s: Scor, question: texte, px: flottant[], py: flottant[], pz: flottant[]) {
+    afficher("");
+    afficher("? " + question);
+    si question_raisonnee(s, question) == 1 {
+        retour;
+    }
+    soit mq = mots_de(s, question);
+    soit q = mq[0];
+    pour wi: texte dans mq[1] {
+        afficher("   « " + wi + " » : jamais lu → inconnu");
+    }
+    si longueur(q) == 0 {
+        afficher("   réponse : inconnu (aucun mot de la question n'est dans la mémoire)");
+        retour;
+    }
+    pour iq dans 0..longueur(q) {
+        pour kq dans 0..SENS {
+            soit pq = SENS * q[iq] + kq;
+            allumer(px[pq], py[pq], pz[pq], #FFFFFFFF);
+        }
+    }
+    soit r = spirale(s, q, px, py, pz);
+    soit ids = r[0];
+    afficher("   spirale : " + texte(r[2]) + " cases visitées sur 4096 (" + texte(r[2] * 100 / 4096) + " %), "
+             + texte(r[3]) + " couronnes ; le reste du cube est resté dans l'ombre");
+    si longueur(ids) == 0 {
+        afficher("   réponse : inconnu (rien dans le budget)");
+        retour;
+    }
+    soit noms = ["inconnu", "faux", "vrai", "variable"];
+    soit lieu = ["reste dans l'ombre (hypothèse ARN)", "anti-cube", "cube", "anti-cube (critiqué)"];
+    // dans l'ordre : vrai, variable, faux, inconnu ; à état égal, le plus proche d'abord
+    soit prouves = 0;
+    pour ordre dans 0..4 {
+        soit voulu = [2, 3, 1, 0][ordre];
+        soit i = longueur(ids);
+        tantque i > 0 {
+            i = i - 1;
+            soit m = ids[i];
+            soit e = epissage(s, q, m);
+            si e[0] == voulu {
+                soit c = sens_commun(m, q[0], px, py, pz);
+                soit pm = SENS * m + c / SENS;
+                si voulu == 2 {
+                    allumer(px[pm], py[pm], pz[pm], #30E060FF);
+                } sinon si voulu == 0 {
+                    allumer(px[pm], py[pm], pz[pm], #707070FF);
+                } sinon si voulu == 1 {
+                    allumer(255.0 - px[pm], 255.0 - py[pm], 255.0 - pz[pm], #E04040FF);
+                } sinon {
+                    allumer(255.0 - px[pm], 255.0 - py[pm], 255.0 - pz[pm], #E0A030FF);
+                }
+                si voulu != 0 {
+                    prouves = prouves + 1;
+                }
+                soit w: texte = s.mots[m];
+                afficher("   " + nommer(comme_logique(voulu), noms) + "  " + w + "   (lié à " + texte(e[1]) + "/"
+                         + texte(longueur(q)) + " mots, " + texte(e[2]) + " fois ensemble, nié " + texte(e[3])
+                         + " fois) → " + nommer(comme_logique(voulu), lieu));
+            }
+        }
+    }
+    // la comparaison : la recherche par mots-clés
+    soit mc = mots_cles(s, q);
+    soit communs = 0;
+    soit liste = "";
+    soit j = longueur(mc);
+    tantque j > 0 {
+        j = j - 1;
+        soit wm: texte = s.mots[mc[j]];
+        liste = liste + wm + " ";
+        si contient(ids, mc[j]) {
+            communs = communs + 1;
+        }
+    }
+    afficher("   bilan : " + texte(prouves) + " réponses sur " + texte(longueur(ids)) + " appuyées par des phrases");
+    afficher("   mots-clés : " + liste);
+    afficher("   en commun avec la spirale : " + texte(communs) + " sur " + texte(longueur(mc)));
+}
+
+// ------------------------------------------------------------------ le raisonnement
+// Les relations « X est Y » (et « X n'est pas Y ») sont lues dans les phrases : le sujet est le mot juste avant le
+// verbe, l'attribut le premier mot plein après (articles sautés). Elles forment un réseau orienté où la déduction
+// enchaîne les liens, en logique de Belnap :
+//   une chaîne de liens affirmés de X à Y                         → vrai (déduit)
+//   une chaîne jusqu'à un N tel que « N n'est pas Y »             → faux (déduit : X est N, aucun N n'est Y)
+//   les deux à la fois, sans fait direct                          → variable (les règles se contredisent)
+//   un fait direct sur X l'emporte sur une règle héritée contraire → exception (le plus précis gagne)
+//   rien                                                          → inconnu
+fonction relations(s: Scor) {
+    soit b = s.brut;
+    soit n = longueur(b);
+    pour i dans 1..n {
+        soit v: texte = b[i];
+        si v == "est" || v == "sont" {
+            soit j = i - 1;
+            soit wj: texte = b[j];
+            si (wj == "n" || wj == "ne") && j > 0 {
+                j = j - 1;
+            }
+            soit sujet = trouver(s.index, b[j]);
+            soit pol = 1;
+            soit k = i + 1;
+            soit attribut = 0;
+            tantque k < n && k <= i + 4 && attribut == 0 {
+                soit wk: texte = b[k];
+                si existe(s.neg, wk) {
+                    pol = 0;
+                } sinon si !existe(s.saut, wk) {
+                    attribut = trouver(s.index, wk);
+                    si attribut == 0 {
+                        k = n;
+                    }
+                }
+                k = k + 1;
+            }
+            si sujet != 0 && attribut != 0 && sujet != attribut {
+                noter_relation(s, sujet - 1, attribut - 1, pol);
+            }
+        }
+    }
+    vider(b);
+}
+
+fonction noter_relation(s: Scor, a, o, pol) {
+    soit k = ((a << 16) | o) + 1;
+    soit r = th_lire(s.rel_c, s.rel_v, k);
+    si r == 0 {
+        ajouter(s.rel_s, a);
+        ajouter(s.rel_o, o);
+        ajouter(s.rel_p, 0);
+        ajouter(s.rel_n, 0);
+        th_ajouter(s.rel_c, s.rel_v, k, longueur(s.rel_s));
+        r = longueur(s.rel_s);
+    }
+    si pol == 1 {
+        s.rel_p[r - 1] = s.rel_p[r - 1] + 1;
+    } sinon {
+        s.rel_n[r - 1] = s.rel_n[r - 1] + 1;
+    }
+}
+
+// l'indice de la relation a → o, ou VIDE
+fonction arete(s: Scor, a, o) {
+    soit r = th_lire(s.rel_c, s.rel_v, ((a << 16) | o) + 1);
+    si r == 0 {
+        retour VIDE;
+    }
+    retour r - 1;
+}
+
+// les listes d'adjacence : relations « est » (orientées) et liaisons de l'ADN (dans les deux sens)
+fonction reseaux(s: Scor) {
+    soit nm = longueur(s.mots);
+    s.rtete = tableau(nm);
+    s.atete = tableau(nm);
+    pour m dans 0..nm {
+        s.rtete[m] = VIDE;
+        s.atete[m] = VIDE;
+    }
+    s.rsuiv = tableau(longueur(s.rel_s));
+    pour e dans 0..longueur(s.rel_s) {
+        s.rsuiv[e] = s.rtete[s.rel_s[e]];
+        s.rtete[s.rel_s[e]] = e;
+    }
+    s.asuiv = tableau(0);
+    s.avers = tableau(0);
+    s.apoids = tableau(0);
+    pour r dans 0..longueur(s.adn_a) {
+        pour cote dans 0..2 {
+            soit de = s.adn_a[r];
+            soit vers = s.adn_b[r];
+            si cote == 1 {
+                de = s.adn_b[r];
+                vers = s.adn_a[r];
+            }
+            ajouter(s.asuiv, s.atete[de]);
+            ajouter(s.avers, vers);
+            ajouter(s.apoids, s.adn_w[r]);
+            s.atete[de] = longueur(s.avers) - 1;
+        }
+    }
+}
+
+// la chaîne de x à n, d'après les parents (parent[m] = prédécesseur + 1 ; parent[x] = x + 1)
+fonction chaine(s: Scor, parent, n): texte {
+    soit etapes = tableau(0);
+    soit m = n;
+    tantque parent[m] - 1 != m {
+        inserer(etapes, 0, m);
+        m = parent[m] - 1;
+    }
+    soit t: texte = s.mots[m];
+    pour e dans etapes {
+        soit r = arete(s, m, e);
+        soit we: texte = s.mots[e];
+        t = t + " → " + we + " (" + texte(s.rel_p[r]) + ")";
+        m = e;
+    }
+    retour t;
+}
+
+// la déduction de « x est y » : [chaîne affirmée héritée, chaîne niée héritée, parents] (les fins de chaîne, ou VIDE)
+fonction deduire(s: Scor, x, y) {
+    soit nm = longueur(s.mots);
+    soit parent = tableau(nm);
+    soit prof = tableau(nm);
+    parent[x] = x + 1;
+    soit file = [x];
+    soit tete_f = 0;
+    soit hpos = VIDE;
+    soit hneg = VIDE;
+    tantque tete_f < longueur(file) {
+        soit n = file[tete_f];
+        tete_f = tete_f + 1;
+        si n != x {
+            soit e = arete(s, n, y);
+            si e != VIDE {
+                si s.rel_p[e] > 0 && hpos == VIDE {
+                    hpos = n;
+                }
+                si s.rel_n[e] > 0 && hneg == VIDE {
+                    hneg = n;
+                }
+            }
+        }
+        si prof[n] < 5 {
+            soit e2 = s.rtete[n];
+            tantque e2 != VIDE {
+                soit o = s.rel_o[e2];
+                si s.rel_p[e2] > 0 && parent[o] == 0 && o != y {
+                    parent[o] = n + 1;
+                    prof[o] = prof[n] + 1;
+                    ajouter(file, o);
+                }
+                e2 = s.rsuiv[e2];
+            }
+        }
+    }
+    retour [hpos, hneg, parent];
+}
+
+// la voix : seulement pour les questions tapées (s.voix = 1)
+fonction dire(s: Scor, t: texte) {
+    si s.voix == 1 {
+        parler(t);
+    }
+}
+
+fonction nom_de(s: Scor, m): texte {
+    retour s.mots[m];
+}
+
+// le dernier lien d'une chaîne, n → y, avec le nombre de phrases qui le disent
+fonction fin_de_chaine(s: Scor, n, y, affirme): texte {
+    soit e = arete(s, n, y);
+    si affirme {
+        retour " → " + nom_de(s, y) + " (" + texte(s.rel_p[e]) + ")";
+    }
+    retour ", et « " + nom_de(s, n) + " n'est pas " + nom_de(s, y) + " » (" + texte(s.rel_n[e]) + ")";
+}
+
+// l'état de « x est y » et sa preuve : [état, pourquoi]
+fonction evaluer(s: Scor, x, y) {
+    soit wx: texte = s.mots[x];
+    soit wy: texte = s.mots[y];
+    soit d = deduire(s, x, y);
+    soit hpos = d[0];
+    soit hneg = d[1];
+    soit parent = d[2];
+    soit e = arete(s, x, y);
+    soit dp = 0;
+    soit dn = 0;
+    si e != VIDE {
+        dp = s.rel_p[e];
+        dn = s.rel_n[e];
+    }
+    soit etat = 0;
+    soit pourquoi: texte = "";
+    si dp > 0 && dn > 0 {
+        etat = 3;
+        pourquoi = "les textes disent les deux : « " + wx + " est " + wy + " » (" + texte(dp) + ") et le contraire (" + texte(dn) + ")";
+    } sinon si dp > 0 {
+        etat = 2;
+        pourquoi = "dit directement (" + texte(dp) + " fois)";
+        si hneg != VIDE {
+            pourquoi = pourquoi + " ; pourtant la règle générale " + chaine(s, parent, hneg) + fin_de_chaine(s, hneg, y, 0)
+                       + " : exception, le fait le plus précis l'emporte";
+        }
+    } sinon si dn > 0 {
+        etat = 1;
+        pourquoi = "dit directement : « " + wx + " n'est pas " + wy + " » (" + texte(dn) + " fois)";
+        si hpos != VIDE {
+            pourquoi = pourquoi + " ; pourtant la règle générale " + chaine(s, parent, hpos) + fin_de_chaine(s, hpos, y, 1)
+                       + " : exception, le fait le plus précis l'emporte";
+        }
+    } sinon si hpos != VIDE && hneg != VIDE {
+        etat = 3;
+        pourquoi = "deux règles se contredisent : " + chaine(s, parent, hpos) + fin_de_chaine(s, hpos, y, 1) + " ; mais "
+                   + chaine(s, parent, hneg) + fin_de_chaine(s, hneg, y, 0);
+    } sinon si hpos != VIDE {
+        etat = 2;
+        pourquoi = "déduit : " + chaine(s, parent, hpos) + fin_de_chaine(s, hpos, y, 1);
+    } sinon si hneg != VIDE {
+        etat = 1;
+        pourquoi = "déduit : " + chaine(s, parent, hneg) + fin_de_chaine(s, hneg, y, 0);
+    } sinon {
+        pourquoi = "aucune chaîne de « " + wx + " » à « " + wy + " » dans ce qui a été lu";
+    }
+    retour [etat, pourquoi];
+}
+
+fonction raisonner(s: Scor, x, y) {
+    soit wx: texte = s.mots[x];
+    soit wy: texte = s.mots[y];
+    soit noms = ["inconnu", "faux", "vrai", "variable"];
+    soit ev = evaluer(s, x, y);
+    soit etat = ev[0];
+    soit pourquoi: texte = ev[1];
+    afficher("   " + nommer(comme_logique(etat), noms) + " : " + pourquoi);
+    si etat == 2 {
+        dire(s, "Oui, " + wx + " est " + wy + ".");
+    } sinon si etat == 1 {
+        dire(s, "Non, " + wx + " n'est pas " + wy + ".");
+    } sinon si etat == 3 {
+        dire(s, "Je ne peux pas trancher : ce que j'ai lu se contredit.");
+    } sinon {
+        dire(s, "Je ne sais pas. Rien de ce que j'ai lu ne relie " + wx + " à " + wy + ".");
+    }
+}
+
+// ce que l'on sait de x : ce qu'il est (dit, puis déduit), ce qu'il n'est pas, et ce qui est un x
+fonction decrire(s: Scor, x) {
+    soit wx: texte = s.mots[x];
+    soit dits: texte = "";
+    soit nies: texte = "";
+    soit e = s.rtete[x];
+    tantque e != VIDE {
+        soit wo: texte = s.mots[s.rel_o[e]];
+        si s.rel_p[e] > 0 {
+            dits = dits + wo + " ";
+        }
+        si s.rel_n[e] > 0 {
+            nies = nies + wo + " ";
+        }
+        e = s.rsuiv[e];
+    }
+    soit d = deduire(s, x, x);
+    soit parent = d[2];
+    soit deduits: texte = "";
+    pour m dans 0..longueur(s.mots) {
+        si parent[m] != 0 && m != x && arete(s, x, m) == VIDE {
+            deduits = deduits + chaine(s, parent, m) + " ; ";
+        }
+    }
+    soit sortes: texte = "";
+    pour r dans 0..longueur(s.rel_s) {
+        si s.rel_o[r] == x && s.rel_p[r] > 0 {
+            soit ws: texte = s.mots[s.rel_s[r]];
+            sortes = sortes + ws + " ";
+        }
+    }
+    si longueur(dits) + longueur(nies) + longueur(sortes) == 0 {
+        afficher("   inconnu : aucune phrase ne dit ce qu'est « " + wx + " »");
+        dire(s, "Je ne sais pas ce qu'est " + wx + ".");
+        retour;
+    }
+    afficher("   " + wx + " est : " + dits);
+    dire(s, wx + " est : " + dits);
+    si longueur(deduits) > 0 {
+        afficher("   donc aussi (déduit) : " + deduits);
+    }
+    si longueur(nies) > 0 {
+        afficher("   " + wx + " n'est pas : " + nies);
+    }
+    si longueur(sortes) > 0 {
+        afficher("   sont des " + wx + " : " + sortes);
+    }
+}
+
+// le lien entre deux mots dans l'ADN : le plus court chemin, avec le poids de chaque liaison
+fonction expliquer_lien(s: Scor, x, y) {
+    soit nm = longueur(s.mots);
+    soit parent = tableau(nm);
+    soit par_arete = tableau(nm);
+    soit prof = tableau(nm);
+    parent[x] = x + 1;
+    soit file = [x];
+    soit tete_f = 0;
+    tantque tete_f < longueur(file) && parent[y] == 0 {
+        soit n = file[tete_f];
+        tete_f = tete_f + 1;
+        si prof[n] < 4 {
+            soit a = s.atete[n];
+            tantque a != VIDE {
+                soit o = s.avers[a];
+                si parent[o] == 0 {
+                    parent[o] = n + 1;
+                    par_arete[o] = a;
+                    prof[o] = prof[n] + 1;
+                    ajouter(file, o);
+                }
+                a = s.asuiv[a];
+            }
+        }
+    }
+    soit wx: texte = s.mots[x];
+    soit wy: texte = s.mots[y];
+    si parent[y] == 0 {
+        afficher("   lien : aucun chemin de « " + wx + " » à « " + wy + " » dans l'ADN (4 liaisons au plus)");
+        retour;
+    }
+    soit etapes = tableau(0);
+    soit m = y;
+    tantque m != x {
+        inserer(etapes, 0, m);
+        m = parent[m] - 1;
+    }
+    soit t: texte = wx;
+    pour e dans etapes {
+        soit we: texte = s.mots[e];
+        t = t + " —(" + texte(s.apoids[par_arete[e]]) + ")— " + we;
+    }
+    afficher("   lien (" + texte(longueur(etapes)) + " liaison(s) de l'ADN, poids = phrases) : " + t);
+}
+
+// les mots d'une phrase, coupés aux non-lettres, en minuscules
+fonction mots_bruts(q) {
+    soit r = tableau(0);
+    soit buf = tableau(0);
+    soit n = longueur(q);
+    pour i dans 0..(n + 1) {
+        soit c = 32;
+        si i < n {
+            c = car(q, i);
+        }
+        si est_lettre(c) {
+            ajouter(buf, en_minuscule(c));
+        } sinon si longueur(buf) > 0 {
+            soit w = texte_neuf(longueur(buf));
+            pour j dans 0..longueur(buf) {
+                changer_car(w, j, buf[j]);
+            }
+            vider(buf);
+            ajouter(r, w);
+        }
+    }
+    retour r;
+}
+
+// une question qui raisonne : « X est-il Y ? » (oui ou non, avec la preuve), « qu'est-ce que X ? » ou « X ? » (tout
+// ce qu'on sait de X), « lien X Y » (le chemin dans l'ADN). Rend 1 si elle a été traitée ici.
+fonction question_raisonnee(s: Scor, question: texte) {
+    soit b = mots_bruts(question);
+    soit n = longueur(b);
+    soit pleins = tableau(0);
+    pour i dans 0..n {
+        soit k = trouver(s.index, b[i]);
+        si k != 0 {
+            ajouter(pleins, k - 1);
+        }
+    }
+    soit premier: texte = "";
+    si n > 0 {
+        premier = b[0];
+    }
+    si premier == "lien" {
+        // les mots pleins après « lien »
+        soit deux = tableau(0);
+        pour i dans 1..n {
+            soit kl = trouver(s.index, b[i]);
+            si kl != 0 {
+                ajouter(deux, kl - 1);
+            }
+        }
+        si longueur(deux) >= 2 {
+            expliquer_lien(s, deux[0], deux[1]);
+        } sinon {
+            afficher("   lien X Y : deux mots déjà lus sont nécessaires");
+        }
+        retour 1;
+    }
+    pour i dans 1..n {
+        soit v: texte = b[i];
+        si (v == "est" || v == "sont") && i + 1 < n {
+            soit j = i - 1;
+            soit wj: texte = b[j];
+            si (wj == "n" || wj == "ne") && j > 0 {
+                j = j - 1;
+            }
+            soit x = trouver(s.index, b[j]);
+            soit y = 0;
+            soit k2 = i + 1;
+            tantque k2 < n && y == 0 {
+                soit wk: texte = b[k2];
+                si !existe(s.saut, wk) && !existe(s.neg, wk) {
+                    y = trouver(s.index, wk);
+                    si y == 0 {
+                        afficher("   « " + wk + " » : jamais lu → inconnu");
+                        retour 1;
+                    }
+                }
+                k2 = k2 + 1;
+            }
+            soit wjj: texte = b[j];
+            si x == 0 && !(wjj == "qu" || wjj == "que" || wjj == "quoi") {
+                afficher("   « " + wjj + " » : jamais lu → inconnu");
+                retour 1;
+            }
+            si x != 0 && y != 0 {
+                raisonner(s, x - 1, y - 1);
+                retour 1;
+            }
+            // « qu'est-ce que X » : la description du dernier mot plein
+            si x == 0 && longueur(pleins) > 0 {
+                decrire(s, pleins[longueur(pleins) - 1]);
+                retour 1;
+            }
+        }
+    }
+    si longueur(pleins) == 1 && n <= 3 {
+        decrire(s, pleins[0]);
+        retour 1;
+    }
+    retour 0;
+}
+
+// ------------------------------------------------------------------ apprendre en parlant
+// Une affirmation tapée (« le chat est noir », sans « ? ») : ses mots entrent dans la mémoire courte, sa relation
+// dans le réseau ; le ScoR dit ce qu'il en pensait avant (il le savait, il l'ignorait, ou il avait compris le
+// contraire : alors la chose devient discutée). Rend 1 si la phrase était une affirmation.
+fonction apprendre(s: Scor, phrase: texte, px: flottant[], py: flottant[], pz: flottant[]) {
+    soit b = mots_bruts(phrase);
+    soit n = longueur(b);
+    soit iv = 0;
+    pour i dans 1..n {
+        soit v: texte = b[i];
+        si (v == "est" || v == "sont") && iv == 0 {
+            iv = i;
+        }
+    }
+    si iv == 0 {
+        retour 0;
+    }
+    soit j = iv - 1;
+    soit wj: texte = b[j];
+    si (wj == "n" || wj == "ne") && j > 0 {
+        j = j - 1;
+    }
+    soit wsujet: texte = b[j];
+    soit pol = 1;
+    soit wattr: texte = "";
+    pour k dans (iv + 1)..n {
+        soit wk: texte = b[k];
+        si existe(s.neg, wk) {
+            pol = 0;
+        } sinon si !existe(s.saut, wk) && longueur(wattr) == 0 {
+            wattr = wk;
+        }
+    }
+    si longueur(wattr) == 0 || longueur(wsujet) < 3 || existe(s.stop, wsujet) {
+        afficher("   je n'ai pas compris de qui ou de quoi tu parles");
+        dire(s, "Je n'ai pas compris de qui tu parles.");
+        retour 1;
+    }
+    // les mots entrent dans la mémoire (les mots neufs naissent à la case de leur hex)
+    soit niee = 0;
+    pour i2 dans 0..n {
+        soit w: texte = b[i2];
+        ajouter(s.brut, w);
+        si existe(s.neg, w) {
+            niee = 1;
+        } sinon si longueur(w) >= 3 && !existe(s.stop, w) {
+            soit id = id_de(s, w, px, py, pz);
+            s.compte[id] = s.compte[id] + 1;
+            ajouter(s.phrase, id);
+        }
+    }
+    soit x = trouver(s.index, wsujet) - 1;
+    soit y = trouver(s.index, wattr) - 1;
+    reseaux(s);
+    soit avant = evaluer(s, x, y);
+    relations(s);
+    phrase_finie(s, niee);
+    reseaux(s);
+    soit apres = evaluer(s, x, y);
+    soit noms = ["inconnu", "faux", "vrai", "variable"];
+    soit dit: texte = wsujet + " est " + wattr;
+    si pol == 0 {
+        dit = wsujet + " n'est pas " + wattr;
+    }
+    soit av = avant[0];
+    soit attendu = 2;
+    si pol == 0 {
+        attendu = 1;
+    }
+    soit reponse: texte = "";
+    si av == attendu {
+        reponse = "Je le savais déjà : " + dit + ". C'est encore plus sûr maintenant.";
+    } sinon si av == 0 {
+        reponse = "J'ai appris que " + dit + ".";
+    } sinon si av == 3 {
+        reponse = "J'ajoute ton avis, mais c'était déjà discuté.";
+    } sinon {
+        soit avant_txt: texte = avant[1];
+        reponse = "Tu me dis que " + dit + ", mais j'avais compris le contraire (" + avant_txt + ").";
+    }
+    soit apres_txt: texte = apres[1];
+    afficher("   " + reponse);
+    afficher("   maintenant : " + nommer(comme_logique(apres[0]), noms) + " : " + apres_txt);
+    dire(s, reponse);
+    retour 1;
+}
+
+// la nuit demandée (« dors ») : la mémoire courte est triée, l'ADN rejoué quelques nuits, le cube remis à jour
+fonction dormir(s: Scor, px: flottant[], py: flottant[], pz: flottant[]) {
+    soit avant = longueur(s.adn_a);
+    nuit_de_tri(s);
+    rever(s, px, py, pz, 20);
+    indexer(s, px, py, pz);
+    reseaux(s);
+    afficher("   j'ai dormi : " + texte(longueur(s.adn_a) - avant) + " liaison(s) nouvelle(s) dans l'ADN");
+    dire(s, "J'ai dormi. Ce que tu m'as dit deux fois est maintenant dans ma mémoire.");
+}
+
+fonction principal() {
+    // la mémoire qui dure : si le ScoR a déjà appris, il recharge sa mémoire au lieu de tout relire
+    soit px: flottant[] = tableau(0);
+    soit py: flottant[] = tableau(0);
+    soit pz: flottant[] = tableau(0);
+    soit racine = charger_tas("scor.memoire");
+    si racine != 0 {
+        soit sr: Scor = racine;
+        px = sr.px;
+        py = sr.py;
+        pz = sr.pz;
+        sr.voix = 0;
+        indexer(sr, px, py, pz);
+        reseaux(sr);
+        afficher("mémoire rechargée : " + texte(longueur(sr.mots)) + " mots, " + texte(longueur(sr.adn_a))
+                 + " liaisons dans l'ADN, " + texte(longueur(sr.rel_s)) + " relations (" + texte(tas_utilise())
+                 + " mots de tas) ; pour tout relire, effacez scor.memoire");
+        dialoguer(sr, px, py, pz);
+        retour;
+    }
+    soit s = Scor { mots: tableau(0), index: dico(), compte: tableau(0), phrase: tableau(0),
+                    court_c: th_neuve(131072), court_v: th_neuve(131072), lt_c: th_neuve(65536), lt_v: th_neuve(65536),
+                    anti_c: th_neuve(32768), anti_v: th_neuve(32768), brut_c: th_neuve(262144), brut_v: th_neuve(262144),
+                    adn_a: tableau(0), adn_b: tableau(0), adn_w: tableau(0) };
+    s.stop = liste_mots("les des une est sont pour par dans sur avec qui que quoi dont mais donc car son ses leur leurs "
+        + "cette ces cet aux elle ils elles nous vous plus moins tout tous toute toutes comme être été avoir fait faire "
+        + "peut aussi très bien chaque même entre après avant quand alors ainsi encore déjà lui ont sera ici cela ceci "
+        + "celle celui ceux quel quelle autre autres sous vers chez une the and its sur fois dont rien mot mots qu "
+        + "deux trois quatre est puis selon soit ceux leur avec ont donne rend");
+    s.neg = liste_mots("pas sans jamais aucun aucune non ni ne plus personne");
+    s.brut = tableau(0);
+    s.saut = liste_mots("un une le la les des du de d l toujours aussi très bien alors donc souvent tout toute il elle ils "
+        + "elles ce que qu être en à au aux");
+    s.rel_c = th_neuve(65536);
+    s.rel_v = th_neuve(65536);
+    s.rel_s = tableau(0);
+    s.rel_o = tableau(0);
+    s.rel_p = tableau(0);
+    s.rel_n = tableau(0);
+    soit docs = ["faits.md", "../docs/vtx-carnet.md", "../docs/vtx-syntaxe-v0-4.md", "../docs/vtx-0-5-autonomie.md",
+                 "../docs/specification-spu-v0-5.md", "../COMMENCER.md"];
+    soit total = 0;
+    pour nom: texte dans docs {
+        total = total + lire_document(s, nom, px, py, pz);
+        nuit_de_tri(s);
+    }
+    nuit_de_tri(s);
+    afficher("lu : " + texte(total) + " mots, " + texte(s.nphrases) + " phrases, " + texte(longueur(s.mots))
+             + " mots différents");
+    afficher("sommeil : " + texte(longueur(s.adn_a)) + " liaisons consolidées dans l'ADN, " + texte(s.oublies)
+             + " oubliées (vues une seule fois)");
+    afficher("avant le rêve (positions = hex de l'orthographe) :");
+    mesurer(s, px, py, pz);
+    rever(s, px, py, pz, NUITS);
+    afficher("après le rêve :");
+    mesurer(s, px, py, pz);
+    soit au_cube = indexer(s, px, py, pz);
+    reseaux(s);
+    soit niees = 0;
+    pour r dans 0..longueur(s.rel_s) {
+        si s.rel_n[r] > 0 {
+            niees = niees + 1;
+        }
+    }
+    afficher("relations « est » : " + texte(longueur(s.rel_s)) + " lues (dont " + texte(niees) + " niées)");
+    afficher("rêve : " + texte(NUITS) + " nuits ; " + texte(au_cube) + " mots consolidés ressortent dans les cases du cube "
+             + "(étage 1), les " + texte(longueur(s.mots) - au_cube) + " autres restent dans l'ombre");
+    soit questions = ["le chat est-il un vivant ?", "le requin est-il un mammifère ?", "le dauphin est-il un poisson ?",
+                      "le manchot est-il volant ?", "le moineau est-il volant ?", "l'ARN est-il une preuve ?",
+                      "Vercintorix est-il un outil ?", "le chêne est-il un animal ?", "le chat est-il une licorne ?", "Nixon est-il pacifiste ?",
+                      "qu'est-ce que le dauphin ?", "lien cube couleur",
+                      "cube couleur", "logique inconnu", "hypothèse arn", "tableau texte", "ombre lumière",
+                      "compilateur vtxc", "erreur diamant", "nuage licorne"];
+    pour qu: texte dans questions {
+        repondre(s, qu, px, py, pz);
+    }
+    s.px = px;
+    s.py = py;
+    s.pz = pz;
+    garder_memoire(s);
+    dialoguer(s, px, py, pz);
+}
+
+fonction garder_memoire(s: Scor) {
+    soit libres = ramasser();
+    soit r = sauver_tas("scor.memoire", entier(s));
+    si r == 4294967295 {
+        afficher("(la mémoire n'a pas pu être enregistrée : pas d'accès aux fichiers ici)");
+    } sinon {
+        afficher("mémoire enregistrée : " + texte(tas_utilise()) + " mots (" + texte(libres) + " mots de miettes ramassés)");
+    }
+}
+
+// les questions et les affirmations tapées (une ligne vide finit) : le ScoR répond aussi à voix haute, apprend ce
+// qu'on lui affirme, dort quand on le lui demande, et enregistre sa mémoire en partant
+fonction dialoguer(s: Scor, px: flottant[], py: flottant[], pz: flottant[]) {
+    s.voix = 1;
+    soit fin = 0;
+    tantque fin == 0 {
+        ecrire("\nTa question ou ce que tu veux m'apprendre (« dors » pour consolider, vide pour finir) ? ");
+        soit l = lire_ligne();
+        soit ln: texte = nettoyer(l);
+        si longueur(ln) == 0 {
+            fin = 1;
+        } sinon si minuscules(ln) == "dors" {
+            dormir(s, px, py, pz);
+        } sinon {
+            si position(ln, "?") == 4294967295 && apprendre(s, ln, px, py, pz) == 1 {
+                continuer;
+            }
+            repondre(s, ln, px, py, pz);
+        }
+    }
+    s.voix = 0;
+    garder_memoire(s);
+}

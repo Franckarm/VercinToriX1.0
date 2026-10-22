@@ -1,0 +1,43 @@
+importer "rendu3.vtx";
+importer "donnees_monde.vtx";
+
+// Programme de la page jouable. Modes :
+// 0 : initialisation (16 actions, vitesse, rotation, angle)     1 : tour des ennemis       2 : une touche
+// 3 : dessiner l'image (interpolation 0 à 255, image d'animation)                           4 : remapper (touche, action)
+// 5 : tourner d'un angle signé (souris)
+fonction principal() {
+    soit mode = entrée();
+    si mode == 0 {
+        pour k dans 0..16 {
+            config[k] = entrée();
+        }
+        soit vit = entrée();
+        soit rot = entrée();
+        soit ang = entrée();
+        charger_monde();
+        joueur[6] = vit;
+        joueur[7] = rot;
+        joueur[2] = ang;
+        rp[0] = 255;
+        rp[1] = 0;
+    }
+    si mode == 1 {
+        tour_complet();
+    }
+    si mode == 2 {
+        appliquer(entrée());
+    }
+    si mode == 3 {
+        rp[0] = entrée();
+        rp[1] = entrée();
+        rendre3(joueur[0], joueur[1], joueur[2]);
+        dessiner_sprites(joueur[0], joueur[1], joueur[2]);
+    }
+    si mode == 4 {
+        soit t = entrée();
+        remapper(t, entrée());
+    }
+    si mode == 5 {
+        tourner(entrée());
+    }
+}

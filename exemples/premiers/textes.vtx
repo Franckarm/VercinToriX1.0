@@ -1,0 +1,37 @@
+// Le type texte : « + » colle (et change un nombre en texte), « == » compare le contenu,
+// afficher prend plusieurs valeurs.
+structure Personne { nom: texte, age }
+
+fonction salut(qui: texte): texte {
+    retour "Bonjour, " + qui + " !";
+}
+
+fonction principal() {
+    soit nom = "Vercintorix";
+    afficher(salut(nom));
+    soit n = 3 - 5;
+    afficher("n = " + n);
+    afficher("pi vaut " + pi() + ", et 2^40 vaut " + 1099511627776L);
+    afficher("logique : " + fusion(vrai, faux));
+    soit t: texte = "abc";
+    si t == "abc" {
+        afficher("égal");
+    }
+    si t != "abd" {
+        afficher("différent");
+    }
+    afficher("total :", 42, 1.5, vrai, "fin");
+    soit p = Personne { nom: "Ambiorix", age: 40 };
+    afficher(p.nom + " a " + p.age + " ans");
+    afficher(longueur(nom), position(nom, "tor"), sous_texte(nom, 3, 7));
+    afficher(nombre("-123") + 1);
+    ecrire("sans retour ");
+    ecrire(7);
+    afficher("");
+    soit s = "";
+    pour i dans 0..5 {
+        s = s + i;
+    }
+    afficher(s);
+    afficher(texte(2.5) == "2.5");
+}

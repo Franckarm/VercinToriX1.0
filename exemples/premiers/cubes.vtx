@@ -1,0 +1,27 @@
+// Additionner les cubes : chaque étage regarde le cube de sa fréquence. accorder(étage, f) change de cube (les
+// autres gardent leur contenu) ; frequence(étage) dit lequel est regardé. L'étage 0 (le code, la pile) ne change pas.
+fonction principal() {
+    // trois cubes sur l'étage 1, chacun avec sa fréquence (do, mi, sol) et son contenu
+    soit notes = [262, 330, 392];
+    pour k dans 0..3 {
+        accorder(1, notes[k]);
+        pour i dans 0..1000 {
+            @1[i * 16] = notes[k] * 1000 + i;
+        }
+    }
+    // on revient sur chaque cube : son contenu est intact
+    pour k2 dans 0..3 {
+        accorder(1, notes[k2]);
+        afficher("cube", frequence(1), ":", @1[0], @1[999 * 16]);
+    }
+    // le cube 0 (celui du départ) est resté vide
+    accorder(1, 0);
+    afficher("cube 0 :", @1[0], "; l'étage 0 refuse :", accorder(0, 5) == 4294967295);
+    // 512 × 256 × 256 mots répartis sur deux cubes : au-delà d'un étage de 256³
+    accorder(2, 1);
+    @2[16777215] = 7;
+    accorder(2, 2);
+    @2[16777215] = 9;
+    accorder(2, 1);
+    afficher("fin de deux cubes :", @2[16777215], "puis", accorder(2, 2) == 1, @2[16777215]);
+}

@@ -1,0 +1,26 @@
+importer "cube.vtx";
+importer "adn.vtx";
+
+fonction principal() {
+    soit n = entrée();
+    pour i dans 0..n {
+        soit m = entrée();
+        soit x = entrée();
+        sortie(voie(m, 0));
+        sortie(voie(m, 1));
+        sortie(voie(m, 2));
+        sortie(voie(m, 3));
+        sortie(poser_voie(m, 1, x));
+        sortie(gris(m));
+        sortie(distance2(m, x));
+        sortie(melanger(m, x, 64));
+        sortie(centrer(m));
+        sortie(adn_voie(m));
+        sortie(adn_etat(m));
+        sortie(adn_appliquer(m, x));
+        sortie(adn_ecrire(m, ADN_G, ADN_T));
+        sortie(transcrire(m));
+        sortie(retrotranscrire(m));
+        sortie(adn_executer(m, x));
+    }
+}

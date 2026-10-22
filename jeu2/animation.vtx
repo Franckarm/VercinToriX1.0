@@ -1,0 +1,72 @@
+// Animation par le cube. Les poses clés sont des mots à 4 voies (une voie par pose clé), l'interpolation d'une coordonnée
+// est un seul GDOT contre un mot de poids, et la mémoire associative (GDOT contre des clés) choisit le comportement.
+// Parties du corps écrites en ADN (A, C, G couleurs, T transparent), assemblées dans un sprite 16 x 16.
+importer "../bibliotheque/cube.vtx";
+
+constante NCOMP = 3;
+tableau kf[36] @1[10200];
+tableau phases[64] @1[10300];
+tableau parts_hdr[6] @1[10400];
+tableau parts_ptr[6] @1[10410];
+tableau parts_bits[24] @1[10420];
+tableau cle_comp[3] @1[10470];
+tableau anim_bmp[128] @1[10500];
+tableau scores[4] @2[260];
+tableau confiance[1] @2[264];
+
+// Coordonnée interpolée (octets + 128 : décalage signé) : poids de la phase contre les quatre poses clés.
+fonction interp(k, w) {
+    retour (gdot(k, w) + 127) / 255 - 128;
+}
+
+// Assemble le sprite de l'ennemi `slot` dans anim_bmp : comportement `comp`, phase `phase` (0 à 63).
+fonction composer(slot, comp, phase) {
+    pour r0 dans 0..16 {
+        anim_bmp[slot * 16 + r0] = 4294967295;
+    }
+    soit w = phases[phase & 63];
+    pour p dans 0..6 {
+        soit ph = parts_hdr[p];
+        soit bx = voie(ph, 0) + interp(kf[comp * 12 + p * 2], w);
+        soit by = voie(ph, 1) + interp(kf[comp * 12 + p * 2 + 1], w);
+        soit largeur = voie(ph, 2);
+        soit hauteur = voie(ph, 3);
+        soit base = parts_ptr[p];
+        pour r dans 0..hauteur {
+            soit y = by + r;
+            si y < 16 {
+                soit mot = parts_bits[base + r];
+                pour c dans 0..largeur {
+                    soit q = (mot >> ((15 - c) * 2)) & 3;
+                    soit x = bx + c;
+                    si q != 3 && x < 16 {
+                        soit s = (15 - x) * 2;
+                        anim_bmp[slot * 16 + y] = (anim_bmp[slot * 16 + y] & ~(3 << s)) | (q << s);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Mémoire associative : l'état (vitesse, proximité, alerte, biais) est comparé aux clés par GDOT.
+// Rend le comportement le plus proche ; confiance[0] reçoit la confiance en pour mille (poids de type softmax).
+fonction choisir_comportement(etat) {
+    soit meilleur = 0;
+    soit ib = 0;
+    pour b dans 0..NCOMP {
+        soit cle = cle_comp[b];
+        soit s = 4194304 + 2 * gdot(etat, cle) - gdot(cle, cle);
+        scores[b] = s;
+        si s > meilleur {
+            meilleur = s;
+            ib = b;
+        }
+    }
+    soit total = 0;
+    pour b2 dans 0..NCOMP {
+        total = total + poids(meilleur - scores[b2], 13);
+    }
+    confiance[0] = poids(0, 13) * 1000 / total;
+    retour ib;
+}

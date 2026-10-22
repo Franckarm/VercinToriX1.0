@@ -1,0 +1,136 @@
+// Correction d'erreur « diamant » pour les mots du cube.
+// Un mot de 16 quits est un point d'un espace à 16 dimensions, 4 niveaux chacune. Le bruit du canal déplace une
+// lecture d'un niveau (+1 ou -1) sur un quit. Autour de chaque mot valide, les lectures à un pas forment un losange :
+// le diamant. On n'utilise que des mots dont les diamants ne se touchent pas.
+//
+// Deux niveaux :
+//   damier  : détecter. 15 quits de données (30 bits) et 1 quit de parité : la somme des quits est paire.
+//             Une erreur d'un niveau rend la somme impaire.                     états : vrai (intact), variable (erreur)
+//   diamant : corriger. 13 quits de données (26 bits) et 3 quits de contrôle. Le quit k (de 0, le plus faible, à 15)
+//             a le poids k + 1 ; la somme pondérée des quits vaut 0 modulo 33. Une erreur +1 sur le quit k donne la
+//             signature k + 1, une erreur -1 donne 33 - (k + 1) : la signature dit où et dans quel sens, on corrige.
+//             Les contrôles sont aux quits de poids 1, 4 et 16, qui composent toute valeur de 0 à 32 (x + 4y + 16z).
+//
+// Le résultat est nommé par la logique à quatre valeurs :
+//   vrai     : le mot est intact
+//   faux     : la lecture était fausse, elle a été corrigée (une erreur d'un niveau)
+//   variable : contradiction : erreur vue mais impossible à corriger (au moins deux erreurs)
+//   inconnu  : rien à juger : un mot nul, pris comme « jamais écrit » (la donnée 0 protégée donne aussi le mot nul :
+//              si 0 est une donnée utile, décalez-la, par exemple en rangeant d + 1)
+// Au-delà d'une erreur, le diamant peut aussi se tromper (corriger vers un autre mot) : c'est la limite de tout code.
+
+fonction __quit(m, k) {
+    retour (m >> (2 * k)) & 3;
+}
+
+fonction __poser_quit(m, k, v) {
+    retour (m & ~(3 << (2 * k))) | ((v & 3) << (2 * k));
+}
+
+// ------------------------------------------------------------------ damier : détecter
+fonction damier_proteger(d) {
+    soit m = (d & 1073741823) << 2;
+    soit s = 0;
+    pour k dans 1..16 {
+        s = s + __quit(m, k);
+    }
+    retour m | (s & 1);
+}
+
+fonction damier_etat(m): logique {
+    soit s = 0;
+    pour k dans 0..16 {
+        s = s + __quit(m, k);
+    }
+    si (s & 1) == 0 {
+        retour vrai;
+    }
+    retour variable;
+}
+
+fonction damier_donnee(m) {
+    retour m >> 2;
+}
+
+// ------------------------------------------------------------------ diamant : corriger
+// les 13 quits de données : tous sauf les quits 0, 3 et 15 (poids 1, 4 et 16)
+fonction __est_controle(k) {
+    retour k == 0 || k == 3 || k == 15;
+}
+
+fonction __signature(m) {
+    soit s = 0;
+    pour k dans 0..16 {
+        s = s + (k + 1) * __quit(m, k);
+    }
+    retour s % 33;
+}
+
+fonction diamant_proteger(d) {
+    soit m = 0;
+    soit j = 0;
+    pour k dans 0..16 {
+        si !__est_controle(k) {
+            m = __poser_quit(m, k, (d >> (2 * j)) & 3);
+            j = j + 1;
+        }
+    }
+    soit t = (33 - __signature(m)) % 33;
+    m = __poser_quit(m, 0, t & 3);
+    m = __poser_quit(m, 3, (t >> 2) & 3);
+    m = __poser_quit(m, 15, t >> 4);
+    retour m;
+}
+
+fonction diamant_etat(m): logique {
+    si m == 0 {
+        retour inconnu;
+    }
+    soit s = __signature(m);
+    si s == 0 {
+        retour vrai;
+    }
+    si s <= 16 {
+        si __quit(m, s - 1) == 0 {
+            retour variable;
+        }
+        retour faux;
+    }
+    si __quit(m, 32 - s) == 3 {
+        retour variable;
+    }
+    retour faux;
+}
+
+// le mot corrigé (inchangé s'il est intact, ou si la contradiction empêche de corriger)
+fonction diamant_corriger(m) {
+    soit s = __signature(m);
+    si s == 0 {
+        retour m;
+    }
+    si s <= 16 {
+        soit k = s - 1;
+        si __quit(m, k) == 0 {
+            retour m;
+        }
+        retour __poser_quit(m, k, __quit(m, k) - 1);
+    }
+    soit k2 = 32 - s;
+    si __quit(m, k2) == 3 {
+        retour m;
+    }
+    retour __poser_quit(m, k2, __quit(m, k2) + 1);
+}
+
+// les 26 bits de données d'un mot (corrigé ou non)
+fonction diamant_donnee(m) {
+    soit d = 0;
+    soit j = 0;
+    pour k dans 0..16 {
+        si !__est_controle(k) {
+            d = d | (__quit(m, k) << (2 * j));
+            j = j + 1;
+        }
+    }
+    retour d;
+}

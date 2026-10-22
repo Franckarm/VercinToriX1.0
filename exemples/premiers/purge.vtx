@@ -1,0 +1,17 @@
+// La purge automatique : 120 000 tableaux, deux fois la taille du tas ; quand il est plein, nouveau() ramasse les miettes et réessaie.
+fonction principal() {
+    // 120 000 tableaux de 100 cases, soit environ 13 millions de mots : deux fois le tas ; on n'en garde qu'un sur mille
+    soit garde = tableau(0);
+    pour i dans 0..120000 {
+        soit t = tableau(100);
+        t[0] = i;
+        si i % 1000 == 0 {
+            ajouter(garde, t);
+        }
+    }
+    soit s = 0;
+    pour g dans garde {
+        s = s + g[0];
+    }
+    afficher("gardés :", longueur(garde), "somme :", s, "tas :", tas_utilise());
+}

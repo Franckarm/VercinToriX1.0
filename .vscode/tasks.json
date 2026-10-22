@@ -1,0 +1,107 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "vtx : lancer le programme ouvert",
+      "type": "process",
+      "command": "${workspaceFolder}/vtx-rs/target/release/vtx",
+      "windows": {
+        "command": "${workspaceFolder}\\vtx-rs\\target\\release\\vtx.exe"
+      },
+      "args": [
+        "${file}",
+        "${input:entrees}"
+      ],
+      "options": {
+        "cwd": "${fileDirname}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      },
+      "problemMatcher": {
+        "owner": "vtx",
+        "fileLocation": [
+          "autoDetect",
+          "${fileDirname}"
+        ],
+        "pattern": {
+          "regexp": "^erreur (.+?), ligne (\\d+) : (.*)$",
+          "file": 1,
+          "line": 2,
+          "message": 3
+        }
+      }
+    },
+    {
+      "label": "vtx : atelier (éditeur et cube) sur le programme ouvert",
+      "type": "process",
+      "command": "${workspaceFolder}/vtx-rs/target/release/vtx",
+      "windows": {
+        "command": "${workspaceFolder}\\vtx-rs\\target\\release\\vtx.exe"
+      },
+      "args": [
+        "atelier",
+        "${file}"
+      ],
+      "options": {
+        "cwd": "${fileDirname}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "focus": true,
+        "clear": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "vtx : traduire en code natif",
+      "type": "process",
+      "command": "${workspaceFolder}/vtx-rs/target/release/vtx",
+      "windows": {
+        "command": "${workspaceFolder}\\vtx-rs\\target\\release\\vtx.exe"
+      },
+      "args": [
+        "traduire",
+        "${file}"
+      ],
+      "options": {
+        "cwd": "${fileDirname}"
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "vtx : construire la machine (cargo)",
+      "type": "process",
+      "command": "cargo",
+      "args": [
+        "build",
+        "--release"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/vtx-rs"
+      },
+      "problemMatcher": [
+        "$rustc"
+      ]
+    }
+  ],
+  "inputs": [
+    {
+      "id": "entrees",
+      "type": "promptString",
+      "description": "Entrées du programme (nombres séparés par des espaces, ou rien)",
+      "default": ""
+    }
+  ]
+}

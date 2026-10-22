@@ -1,0 +1,53 @@
+// Démonstration de vtx (Vercintorix) : un seul programme, plusieurs fonctionnalités.
+
+fonction fib(n) {
+    si n < 2 {
+        retour n;
+    }
+    retour fib(n - 1) + fib(n - 2);
+}
+
+// Une voie (R, V, B ou A) de l'interpolation à 4 coins.
+// u et v vont de 0 à 256 ; s est le décalage de la voie (24, 16, 8 ou 0).
+fonction voie(a, b, c, d, u, v, s) {
+    soit wa = (256 - u) * (256 - v);
+    soit wb = u * (256 - v);
+    soit wc = (256 - u) * v;
+    soit wd = u * v;
+    soit somme = wa * ((a >> s) & 255) + wb * ((b >> s) & 255)
+               + wc * ((c >> s) & 255) + wd * ((d >> s) & 255);
+    retour (somme >> 16) & 255;
+}
+
+// Un point interne d'un patch : 4 coins en entrée, un mot #RRGGBBAA en sortie.
+fonction interp(a, b, c, d, u, v) {
+    retour (voie(a, b, c, d, u, v, 24) << 24) | (voie(a, b, c, d, u, v, 16) << 16)
+         | (voie(a, b, c, d, u, v, 8) << 8) | voie(a, b, c, d, u, v, 0);
+}
+
+fonction principal() {
+    // 1. Boucle : somme de 1 à 10.
+    soit total = 0;
+    soit i = 10;
+    tantque i != 0 {
+        total = total + i;
+        i = i - 1;
+    }
+    sortie(total);                                    // 55
+
+    // 2. Cube chromatique : champs d'un mot, quit, complément à 3.
+    soit p = #3A7F1C80;
+    sortie(p.r);                                      // 58
+    sortie(p.q(3));                                   // 2
+    sortie(~27);                                      // chaque quit d devient 3 - d
+
+    // 3. Mémoire étagée : écriture puis lecture dans l'étage 2.
+    @2[7] = 99;
+    sortie(@2[7]);                                    // 99
+
+    // 4. Récursion.
+    sortie(fib(10));                                  // 55
+
+    // 5. Milieu d'un patch à 4 coins : les points internes se déduisent des coins.
+    sortie(interp(#00102030, #FF8040C0, #10203040, #80FF00FF, 128, 128));
+}

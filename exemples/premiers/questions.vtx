@@ -1,0 +1,9 @@
+// Lire une ligne au clavier : lire_ligne() rend le texte tapé, nombre() le convertit.
+fonction principal() {
+    ecrire("Ton nom ? ");
+    soit n = lire_ligne();
+    afficher("Salut", n + ",", "ton nom a", longueur(n), "lettres");
+    ecrire("Un nombre ? ");
+    soit k = nombre(lire_ligne());
+    afficher(k, "au carré :", k * k);
+}

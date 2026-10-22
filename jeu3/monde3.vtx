@@ -1,0 +1,271 @@
+// Monde de 32 x 32 cases assemblé à partir de quatre morceaux de 16 x 16 retrouvés par leur signature de fréquence.
+// Commandes, collisions, clés, portes, sortie, trousses de soin et points de vie.
+importer "ennemis32.vtx";
+
+constante COSB = 4096;
+constante SINB = 5120;
+constante NOBJ = 32;
+constante NMORC = 4;
+constante AVANCER = 1;
+constante RECULER = 2;
+constante PAS_GAUCHE = 3;
+constante PAS_DROIT = 4;
+constante TOURNER_G = 5;
+constante TOURNER_D = 6;
+constante RAYON = 40;
+constante PV_MAX = 100;
+constante SOIN = 35;
+constante INVUL = 3;
+tableau morceaux[64] @1[1300];
+tableau signature[4] @1[1370];
+tableau partition[4] @1[1380];
+tableau objets[32] @1[1400];
+tableau objets0[32] @1[1440];
+tableau mem_prec[8] @2[24];
+tableau config[16] @2[200];
+// joueur : 0 colonne, 1 ligne (1/256 de case), 2 angle (1/1024 de tour), 3 clés (bits), 4 dernier événement,
+// 5 partie (0 en cours, 1 perdu, 2 gagné), 6 vitesse par pas, 7 rotation par pas
+tableau joueur[8] @2[220];
+// vie : 0 points de vie, 1 tours d'invulnérabilité restants, 2 dégâts reçus au total
+tableau vie[3] @2[228];
+// charge : numéro du morceau retrouvé pour chaque place, et confiance de la recherche (pour mille)
+tableau charge[8] @2[232];
+tableau scores_m[4] @2[268];
+
+// Retrouve le morceau dont la signature ressemble le plus à la signature demandée (GDOT contre chaque signature).
+fonction trouver_morceau(sig, place) {
+    soit meilleur = 0;
+    soit ib = 0;
+    pour j dans 0..NMORC {
+        soit s = signature[j];
+        soit score = 4194304 + 2 * gdot(sig, s) - gdot(s, s);
+        scores_m[j] = score;
+        si score > meilleur {
+            meilleur = score;
+            ib = j;
+        }
+    }
+    soit total = 0;
+    pour j2 dans 0..NMORC {
+        total = total + poids(meilleur - scores_m[j2], 13);
+    }
+    charge[place] = ib;
+    charge[4 + place] = poids(0, 13) * 1000 / total;
+    retour ib;
+}
+
+// Copie un morceau (16 mots ADN, une ligne chacun) à sa place dans la carte de 32 x 32.
+fonction poser_morceau(j, place) {
+    soit ox = (place % 2) * 16;
+    soit oy = (place / 2) * 16;
+    pour r dans 0..16 {
+        soit mot = morceaux[j * 16 + r];
+        pour c dans 0..16 {
+            soit q = (mot >> ((15 - c) * 2)) & 3;
+            soit t = q;
+            si q == 3 {
+                t = 5;
+            }
+            carte[(oy + r) * LARG + ox + c] = t;
+        }
+    }
+}
+
+fonction charger_monde() {
+    pour place dans 0..4 {
+        poser_morceau(trouver_morceau(partition[place], place), place);
+    }
+    pour j0 dans 0..NOBJ {
+        objets[j0] = objets0[j0];
+    }
+    soit ne = 0;
+    pour j dans 0..NOBJ {
+        soit m = objets[j];
+        soit col = voie(m, 0);
+        soit lig = voie(m, 1);
+        soit ty = voie(m, 2);
+        si ty == 3 {
+            carte[lig * LARG + col] = 6;
+        }
+        si ty == 4 {
+            carte[lig * LARG + col] = 7;
+        }
+        si ty == 5 && ne < NE {
+            mem_adn[ne] = retrotranscrire(poser_voie(poser_voie(0, 0, col), 1, lig));
+            mem_prec[ne] = mem_adn[ne];
+            ne = ne + 1;
+        }
+        si ty == 6 {
+            joueur[0] = col * 256 + 128;
+            joueur[1] = lig * 256 + 128;
+        }
+    }
+    joueur[2] = 0;
+    joueur[3] = 0;
+    joueur[4] = 0;
+    joueur[5] = 0;
+    vie[0] = PV_MAX;
+    vie[1] = 0;
+    vie[2] = 0;
+}
+
+fonction remapper(touche, action) {
+    config[touche & 15] = action;
+}
+
+fonction cellule_joueur() {
+    retour (joueur[1] >> 8) * LARG + (joueur[0] >> 8);
+}
+
+fonction libre(x, y) {
+    si x - 64 >= 8064 || y - 64 >= 8064 {
+        retour 0;
+    }
+    si carte[((y - RAYON) >> 8) * LARG + ((x - RAYON) >> 8)] != 0 {
+        retour 0;
+    }
+    si carte[((y - RAYON) >> 8) * LARG + ((x + RAYON) >> 8)] != 0 {
+        retour 0;
+    }
+    si carte[((y + RAYON) >> 8) * LARG + ((x - RAYON) >> 8)] != 0 {
+        retour 0;
+    }
+    si carte[((y + RAYON) >> 8) * LARG + ((x + RAYON) >> 8)] != 0 {
+        retour 0;
+    }
+    retour 1;
+}
+
+// Événements : 1 clé A, 2 clé B, 3 porte ouverte, 4 sortie, 5 plus de points de vie, 6 touché, 7 soigné.
+fonction contact(x, y) {
+    soit c = (y >> 8) * LARG + (x >> 8);
+    soit t = carte[c];
+    si t == 5 && (joueur[3] & 1) != 0 {
+        carte[c] = 0;
+        joueur[4] = 3;
+    }
+    si t == 6 && (joueur[3] & 2) != 0 {
+        carte[c] = 0;
+        joueur[4] = 3;
+    }
+    si t == 7 {
+        joueur[5] = 2;
+        joueur[4] = 4;
+    }
+}
+
+fonction contacts(x, y) {
+    si x - 64 < 8064 && y - 64 < 8064 {
+        contact(x - RAYON, y - RAYON);
+        contact(x + RAYON, y - RAYON);
+        contact(x - RAYON, y + RAYON);
+        contact(x + RAYON, y + RAYON);
+    }
+}
+
+fonction ramasser() {
+    soit cj = cellule_joueur();
+    pour j dans 0..NOBJ {
+        soit m = objets[j];
+        soit ty = voie(m, 2);
+        si (ty == 1 || ty == 2 || ty == 7) && (m & 1) == 1 {
+            si voie(m, 1) * LARG + voie(m, 0) == cj {
+                si ty == 7 {
+                    si vie[0] < PV_MAX {
+                        objets[j] = transcrire(m);
+                        vie[0] = min(PV_MAX, vie[0] + SOIN);
+                        joueur[4] = 7;
+                    }
+                } sinon {
+                    objets[j] = transcrire(m);
+                    joueur[3] = joueur[3] | ty;
+                    joueur[4] = ty;
+                }
+            }
+        }
+    }
+}
+
+fonction bouger(a, v) {
+    soit dx = ((@1[COSB + (a & 1023)] - 256) * v) .>> 8;
+    soit dy = ((@1[SINB + (a & 1023)] - 256) * v) .>> 8;
+    soit x = joueur[0];
+    soit y = joueur[1];
+    contacts(x + dx, y + dy);
+    si libre(x + dx, y + dy) == 1 {
+        joueur[0] = x + dx;
+        joueur[1] = y + dy;
+    } sinon {
+        si libre(x + dx, y) == 1 {
+            joueur[0] = x + dx;
+        } sinon {
+            si libre(x, y + dy) == 1 {
+                joueur[1] = y + dy;
+            }
+        }
+    }
+    ramasser();
+}
+
+fonction tourner(delta) {
+    joueur[2] = (joueur[2] + delta) & 1023;
+}
+
+fonction appliquer(touche) {
+    si joueur[5] == 0 {
+        soit act = config[touche & 15];
+        soit a = joueur[2];
+        soit v = joueur[6];
+        si act == AVANCER {
+            bouger(a, v);
+        }
+        si act == RECULER {
+            bouger(a + 512, v);
+        }
+        si act == PAS_GAUCHE {
+            bouger(a + 768, v);
+        }
+        si act == PAS_DROIT {
+            bouger(a + 256, v);
+        }
+        si act == TOURNER_G {
+            tourner(0 - joueur[7]);
+        }
+        si act == TOURNER_D {
+            tourner(joueur[7]);
+        }
+    }
+}
+
+// Dégâts : chaque ennemi en attaque sur la case du joueur ou l'une des huit cases voisines retire `degat` points,
+// puis le joueur est invulnérable pendant INVUL tours.
+fonction blesser(degat) {
+    si vie[1] > 0 {
+        vie[1] = vie[1] - 1;
+        retour 0;
+    }
+    soit coups = 0;
+    pour i dans 0..NE {
+        soit m = mem_adn[i];
+        soit c = cellule(m);
+        soit ecx = abs(voie(m, 0) - (joueur[0] >> 8));
+        soit ecy = abs(voie(m, 1) - (joueur[1] >> 8));
+        si voie(m, 2) == 2 && ecx <= 1 && ecy <= 1 {
+            coups = coups + 1;
+        }
+    }
+    si coups > 0 && joueur[5] == 0 {
+        soit perte = coups * degat;
+        vie[2] = vie[2] + min(perte, vie[0]);
+        si perte >= vie[0] {
+            vie[0] = 0;
+            joueur[5] = 1;
+            joueur[4] = 5;
+        } sinon {
+            vie[0] = vie[0] - perte;
+            vie[1] = INVUL;
+            joueur[4] = 6;
+        }
+    }
+    retour coups;
+}

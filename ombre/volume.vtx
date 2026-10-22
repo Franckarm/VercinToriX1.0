@@ -1,0 +1,59 @@
+// Volume de démonstration N³ dans l'étage 1 (N est une constante du programme qui importe ce fichier) :
+// une montagne enneigée sur un sol de neige, et une sphère rouge qui flotte. Voxel (x, y, z) = @1[(z·N + y)·N + x].
+
+fonction ecart(a, b) {
+    si a > b {
+        retour a - b;
+    }
+    retour b - a;
+}
+
+// --- le volume : une montagne enneigée sur un sol de neige, et une sphère rouge qui flotte
+fonction hachage(x, z) {
+    retour ((x * 73856093) ^ (z * 19349663)) & 3;
+}
+
+fonction generer() {
+    soit sommet = (N * 5) / 8;
+    soit sol = N / 16;
+    pour z dans 0..N {
+        pour x dans 0..N {
+            soit d = ecart(x, N / 2) + ecart(z, N / 2);
+            soit pente = (d * 5) / 8;
+            soit h = sol;
+            si pente < sommet {
+                si sommet - pente > sol {
+                    h = sommet - pente;
+                }
+            }
+            soit bruit = hachage(x, z);
+            h = h + bruit;
+            soit ligne = (z * N) * N + x;
+            pour y dans 0..h {
+                soit c = #DDE3EEFF;                       // neige du sol
+                si y > (sommet * 55) / 100 {
+                    c = #F4F7FFFF;                        // neige du sommet
+                } sinon si y > sol + 3 {
+                    c = #7A7068FF + (bruit << 24);        // roche
+                }
+                @1[ligne + y * N] = c;
+            }
+        }
+    }
+    soit cx = (N * 3) / 4;
+    soit cy = (N * 11) / 16;
+    soit cz = N / 4;
+    soit r = N / 10;
+    pour z2 dans cz - r..cz + r + 1 {
+        pour y2 dans cy - r..cy + r + 1 {
+            pour x2 dans cx - r..cx + r + 1 {
+                soit ex = ecart(x2, cx);
+                soit ey = ecart(y2, cy);
+                soit ez = ecart(z2, cz);
+                si ex * ex + ey * ey + ez * ez <= r * r {
+                    @1[(z2 * N + y2) * N + x2] = #C03020FF;
+                }
+            }
+        }
+    }
+}

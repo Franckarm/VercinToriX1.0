@@ -1,0 +1,325 @@
+// Rendu 256 x 128 sur la carte de 32 x 32 : lancer de rayons par grille, murs texturés (textures en ADN), sol et plafond
+// par tables, sprites 16 x 16 en ADN triés par distance, ennemis animés par le cube et interpolés entre deux tours.
+// Sprites : A, C, G sont trois couleurs, T (ou U) est le statut transparent. Positions en 1/256 de case.
+importer "monde3.vtx";
+importer "../jeu2/animation.vtx";
+
+constante ANIM = 10500;
+constante SEUIL = 600;
+
+constante W = 256;
+constante H = 128;
+constante DAB = 6144;
+constante CEIL = 7000;
+constante FLOOR = 7200;
+constante TEX = 1100;
+constante TP = 1170;
+constante SPRK = 1232;
+constante SPRS = 1248;
+constante SPALE = 1270;
+constante SPALK = 1274;
+constante SPALS = 1278;
+constante DEGAT = 10;
+tableau zbuf[256] @2[500];
+tableau cadre[32768] @2[1000];
+tableau pals[4] @2[240];
+tableau rp[4] @2[250];
+tableau spr_a[32] @2[300];
+tableau spr_c[32] @2[332];
+tableau spr_t[32] @2[364];
+tableau spr_s[32] @2[396];
+tableau spr_o[32] @2[428];
+// confiance (flottant) de la dernière hypothèse de comportement de chaque ennemi
+tableau conf_e[8] @2[272];
+constante SEUIL_F = 0.6;
+
+fonction colonne(x, px, py, pa) {
+    soit off = @1[DAB + x] - 256;
+    soit a = (pa + off) & 1023;
+    soit cx = @1[COSB + a];
+    soit cy = @1[SINB + a];
+    soit sx = 1;
+    soit ax = cx - 256;
+    si cx < 256 {
+        sx = 4294967295;
+        ax = 256 - cx;
+    }
+    soit sy = 1;
+    soit ay = cy - 256;
+    si cy < 256 {
+        sy = 4294967295;
+        ay = 256 - cy;
+    }
+    soit mx = px >> 8;
+    soit my = py >> 8;
+    soit fx = 256 - (px & 255);
+    si sx != 1 {
+        fx = px & 255;
+    }
+    soit fy = 256 - (py & 255);
+    si sy != 1 {
+        fy = py & 255;
+    }
+    soit dlx = 1073741824;
+    soit slx = 1073741824;
+    si ax > 0 {
+        dlx = 65536 / ax;
+        slx = (fx * 256) / ax;
+    }
+    soit dly = 1073741824;
+    soit sly = 1073741824;
+    si ay > 0 {
+        dly = 65536 / ay;
+        sly = (fy * 256) / ay;
+    }
+    soit cote = 0;
+    tantque carte[my * LARG + mx] == 0 {
+        si slx < sly {
+            slx = slx + dlx;
+            mx = mx + sx;
+            cote = 0;
+        } sinon {
+            sly = sly + dly;
+            my = my + sy;
+            cote = 1;
+        }
+    }
+    soit d = slx - dlx;
+    si cote == 1 {
+        d = sly - dly;
+    }
+    soit perp = (d * (@1[COSB + (off & 1023)] - 256)) >> 8;
+    si perp < 16 {
+        perp = 16;
+    }
+    zbuf[x] = perp;
+    soit t = carte[my * LARG + mx];
+    soit coup = py + ((d * (cy - 256)) .>> 8);
+    si cote == 1 {
+        coup = px + ((d * (cx - 256)) .>> 8);
+    }
+    soit u = (coup & 255) >> 4;
+    si (cote == 0 && sx == 1) || (cote == 1 && sy != 1) {
+        u = 15 - u;
+    }
+    soit ti = 0;
+    si t == 2 {
+        ti = 1;
+    }
+    si t == 5 || t == 6 {
+        ti = 2;
+    }
+    si t == 7 {
+        ti = 3;
+    }
+    soit br = (255 * 512) / (512 + perp);
+    si cote == 1 {
+        br = (br * 3) >> 2;
+    }
+    pour k dans 0..4 {
+        soit pc = @1[TP + (t - 1) * 4 + k];
+        pals[k] = ((((pc >> 24) * br) >> 8) << 24) | (((((pc >> 16) & 255) * br) >> 8) << 16) | (((((pc >> 8) & 255) * br) >> 8) << 8) | 255;
+    }
+    soit h = 26624 / perp;
+    soit top = 0;
+    soit bot = H;
+    soit v = 0;
+    soit pasv = 1048576 / h;
+    si h < H {
+        top = (H - h) >> 1;
+        bot = top + h;
+    } sinon {
+        v = ((h - H) >> 1) * pasv;
+    }
+    soit dec = (15 - u) * 2;
+    soit tb = TEX + ti * 16;
+    soit q = x;
+    pour y dans 0..top {
+        cadre[q] = @1[CEIL + y];
+        q = q + W;
+    }
+    pour y2 dans top..bot {
+        cadre[q] = pals[(@1[tb + ((v >> 16) & 15)] >> dec) & 3];
+        v = v + pasv;
+        q = q + W;
+    }
+    pour y3 dans bot..H {
+        cadre[q] = @1[FLOOR + y3];
+        q = q + W;
+    }
+}
+
+fonction rendre3(px, py, pa) {
+    pour x dans 0..W {
+        colonne(x, px, py, pa);
+    }
+}
+
+// Tour complet des ennemis : double brin pour les déplacements, puis comportement par la mémoire associative.
+// Le comportement proposé est une hypothèse ; il n'est inscrit dans l'ADN (voie bleue du mot) que si sa confiance,
+// calculée en flottant, atteint SEUIL_F (0,6), sinon l'ennemi garde son comportement précédent. Un ennemi en garde ne bouge pas.
+// Un ennemi en attaque au contact du joueur lui retire des points de vie.
+// Confiance en flottant de la dernière décision de la mémoire associative : poids 2^(−écart / 8192) de chaque
+// comportement par rapport au meilleur, normalisés (une sorte de softmax en base 2). Vaut 1,0 quand rien ne rivalise.
+fonction confiance_f(): flottant {
+    soit meilleur = 0;
+    pour b dans 0..NCOMP {
+        si scores[b] > meilleur {
+            meilleur = scores[b];
+        }
+    }
+    soit somme = 0.0;
+    pour b2 dans 0..NCOMP {
+        somme = somme + exp2(0.0 - flottant(meilleur - scores[b2]) / 8192.0);
+    }
+    retour 1.0 / somme;
+}
+
+fonction tour_complet() {
+    pour i0 dans 0..NE {
+        mem_prec[i0] = mem_adn[i0];
+    }
+    hypotheses(joueur[0] >> 8, joueur[1] >> 8);
+    // Un ennemi en garde, loin du joueur, garde sa position : son hypothèse est ramenée à l'état validé.
+    pour i1 dans 0..NE {
+        si voie(mem_adn[i1], 2) == 0 && dist[cellule(mem_adn[i1])] >= 8 {
+            mem_arn[i1] = transcrire(mem_adn[i1]);
+        }
+    }
+    resoudre();
+    valider_tout();
+    pour i dans 0..NE {
+        soit m = mem_adn[i];
+        soit d = dist[cellule(m)];
+        soit vit = 0;
+        si cellule(m) != cellule(mem_prec[i]) || d < 8 {
+            vit = 255;
+        }
+        soit prox = 0;
+        si d < 10 {
+            prox = 255 - d * 24;
+        }
+        soit alerte = 0;
+        si d < 8 {
+            alerte = 255;
+        }
+        soit etat = (vit << 24) | (prox << 16) | (alerte << 8) | 255;
+        soit b = choisir_comportement(etat);
+        soit conf = confiance_f();
+        conf_e[i] = conf;
+        si conf >= SEUIL_F {
+            mem_adn[i] = poser_voie(m, 2, b);
+        }
+    }
+    blesser(DEGAT);
+}
+
+fonction ranger(k, wx, wy, ty, px, py, ca, sa) {
+    soit dx = wx - px;
+    soit dy = wy - py;
+    soit av = dx * ca + dy * sa;
+    spr_t[k] = ty;
+    spr_c[k] = dy * ca - dx * sa;
+    si av .> 32768 {
+        spr_a[k] = av;
+    } sinon {
+        spr_a[k] = 0;
+    }
+}
+
+fonction dessiner_un(k) {
+    soit av = spr_a[k];
+    si av != 0 {
+        soit fw = av >> 8;
+        soit sx = 128 + (128 * spr_c[k]) ./ av;
+        soit hs = 22000 / fw;
+        si spr_t[k] != 0 {
+            hs = 11000 / fw;
+        }
+        soit bas = 64 + 13312 / fw;
+        soit haut = bas - hs;
+        soit x0 = sx - (hs >> 1);
+        soit br = (255 * 512) / (512 + fw);
+        soit sb = ANIM + spr_s[k] * 16;
+        soit pb = SPALE;
+        si spr_t[k] == 1 || spr_t[k] == 2 {
+            sb = SPRK;
+            pb = SPALK;
+        }
+        si spr_t[k] == 7 {
+            sb = SPRS;
+            pb = SPALS;
+        }
+        pour m dans 0..3 {
+            soit pc = @1[pb + m];
+            pals[m] = ((((pc >> 24) * br) >> 8) << 24) | (((((pc >> 16) & 255) * br) >> 8) << 16) | (((((pc >> 8) & 255) * br) >> 8) << 8) | 255;
+        }
+        pour c dans 0..hs {
+            soit xs = x0 + c;
+            si xs < 256 {
+                si fw < zbuf[xs] {
+                    soit dec = (15 - (c * 16) / hs) * 2;
+                    pour r dans 0..hs {
+                        soit ys = haut + r;
+                        si ys < 128 {
+                            soit q = (@1[sb + (r * 16) / hs] >> dec) & 3;
+                            si q != 3 {
+                                cadre[ys * W + xs] = pals[q];
+                                zbuf[xs] = fw;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fonction dessiner_sprites(px, py, pa) {
+    soit ca = @1[COSB + (pa & 1023)] - 256;
+    soit sa = @1[SINB + (pa & 1023)] - 256;
+    soit n = 0;
+    pour i dans 0..NE {
+        soit mc = mem_adn[i];
+        soit mp = mem_prec[i];
+        soit ex = voie(mp, 0) * 256 + 128 + (voie(mc, 0) - voie(mp, 0)) * rp[0];
+        soit ey = voie(mp, 1) * 256 + 128 + (voie(mc, 1) - voie(mp, 1)) * rp[0];
+        soit comp = voie(mc, 2);
+        soit ph = rp[1] + i * 16;
+        si comp == 0 {
+            ph = (rp[1] >> 1) + i * 16;
+        }
+        spr_s[n] = i;
+        ranger(n, ex, ey, 0, px, py, ca, sa);
+        si spr_a[n] != 0 {
+            composer(i, comp, ph);
+        }
+        n = n + 1;
+    }
+    pour j dans 0..NOBJ {
+        soit mo = objets[j];
+        soit ty = voie(mo, 2);
+        si (ty == 1 || ty == 2 || ty == 7) && (mo & 1) == 1 {
+            ranger(n, voie(mo, 0) * 256 + 128, voie(mo, 1) * 256 + 128, ty, px, py, ca, sa);
+            n = n + 1;
+        }
+    }
+    pour k0 dans 0..n {
+        spr_o[k0] = k0;
+    }
+    si n > 1 {
+        pour p dans 0..n {
+            pour k2 dans 0..n - 1 {
+                soit a1 = spr_o[k2];
+                soit a2 = spr_o[k2 + 1];
+                si spr_a[a1] < spr_a[a2] {
+                    spr_o[k2] = a2;
+                    spr_o[k2 + 1] = a1;
+                }
+            }
+        }
+    }
+    pour s dans 0..n {
+        dessiner_un(spr_o[s]);
+    }
+}

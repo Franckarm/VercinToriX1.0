@@ -1,0 +1,23 @@
+// Savoir à quatre valeurs : un dictionnaire qui garde les contradictions au lieu de les écraser.
+// affirmer(d, clé, v) : la clé est vraie avec la valeur v ; nier(d, clé) : la clé est fausse.
+// savoir(d, clé) rend un logique : vrai (affirmé), faux (nié, ou absent d'un dico fermé),
+// inconnu (jamais dit, dans un dico ouvert), variable (affirmé puis contredit).
+fonction principal() {
+    soit k = dico_ouvert();
+    affirmer(k, "ciel", 1);
+    affirmer(k, "mer", 1);
+    affirmer(k, "mer", 2);
+    nier(k, "lune");
+    affirmer(k, "soleil", 1);
+    nier(k, "soleil");
+    soit noms = ["hors de portée", "nié", "affirmé", "contredit"];
+    pour m dans decouper("ciel mer lune soleil terre", " ") {
+        afficher(m, savoir(k, m), nommer(savoir(k, m), noms));
+    }
+    // un dico fermé (dico()) : ce qui n'y est pas est faux
+    soit f = dico();
+    ranger(f, "a", 1);
+    afficher(savoir(f, "a"), savoir(f, "b"), savoir(0, "a"));
+    pour i dans 0..40 { ranger(f, texte(i), i); }
+    afficher(trouver(f, "37"), savoir(f, "37"), longueur(cles(f)));
+}

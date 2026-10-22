@@ -1,0 +1,121 @@
+// Appariement spectral dans le cube (vtx)
+// Un spectre de 16 bandes tient dans 4 mots RGBA (4 octets chacun).
+// Étage 2 : 4·m + j = mot j du spectre du matériau m (0 à 5) · 100 + m = |réf|² · 120 + m = score · 140 + m = poids · 300 = drapeau
+// Entrées : les 4 mots du pixel, la température (décalage 12 à 17), le mode (0 exact, 1 similarité)
+// Sorties : statut, meilleur matériau, confiance (pour mille), puis les 6 poids (pour mille)
+
+fonction initialiser() {
+    @2[0] = #0F0F0D0A;   // eau
+    @2[1] = #08060504;
+    @2[2] = #03020201;
+    @2[3] = #01010101;
+    @2[4] = #0A0D1721;   // végétation
+    @2[5] = #140D1A59;
+    @2[6] = #7A80807D;
+    @2[7] = #78707373;
+    @2[8] = #141A212B;   // sol nu
+    @2[9] = #38454C52;
+    @2[10] = #575C5E61;
+    @2[11] = #615E6366;
+    @2[12] = #3336383B;   // roche
+    @2[13] = #3D404242;
+    @2[14] = #45454747;
+    @2[15] = #47454747;
+    @2[16] = #4C545C61;   // béton
+    @2[17] = #666B6E70;
+    @2[18] = #73757578;
+    @2[19] = #78757878;
+    @2[20] = #EBEDEDEB;   // neige
+    @2[21] = #E8E6E0D6;
+    @2[22] = #C7B8A899;
+    @2[23] = #85736B66;
+    soit m = 0;
+    tantque m != 6 {
+        soit n2 = 0;
+        soit j = 0;
+        tantque j != 4 {
+            soit r = @2[4 * m + j];
+            n2 = n2 + gdot(r, r);
+            j = j + 1;
+        }
+        @2[100 + m] = n2;
+        m = m + 1;
+    }
+    @2[300] = 1;
+}
+
+// Poids d'attention : 65536 / 2^d avec d = écart >> température (un softmax en base 2)
+fonction poids(ecart, temperature) {
+    soit d = ecart >> temperature;
+    si d < 16 {
+        retour 65536 >> d;
+    }
+    retour 0;
+}
+
+fonction principal() {
+    si @2[300] == 0 {
+        initialiser();
+    }
+    soit p0 = entrée();
+    soit p1 = entrée();
+    soit p2 = entrée();
+    soit p3 = entrée();
+    soit t = entrée();
+    soit mode = entrée();
+
+    // 1. Score : 1048576 + 2·(q·réf) − |réf|²  (grand = spectre proche)
+    soit meilleur = 0;
+    soit ib = 0;
+    soit m = 0;
+    tantque m != 6 {
+        soit d = gdot(p0, @2[4 * m]) + gdot(p1, @2[4 * m + 1]) + gdot(p2, @2[4 * m + 2]) + gdot(p3, @2[4 * m + 3]);
+        soit s = 1048576 + 2 * d - @2[100 + m];
+        @2[120 + m] = s;
+        si s > meilleur {
+            meilleur = s;
+            ib = m;
+        }
+        m = m + 1;
+    }
+
+    // 2. Poids : attention (similarité) ou égalité stricte des 4 mots (adresse exacte)
+    soit total = 0;
+    soit wmax = 0;
+    m = 0;
+    tantque m != 6 {
+        soit w = 0;
+        si mode == 1 {
+            w = poids(meilleur - @2[120 + m], t);
+        } sinon {
+            si (p0 == @2[4 * m]) & (p1 == @2[4 * m + 1]) & (p2 == @2[4 * m + 2]) & (p3 == @2[4 * m + 3]) {
+                w = 65536;
+            }
+        }
+        @2[140 + m] = w;
+        total = total + w;
+        si w > wmax {
+            wmax = w;
+        }
+        m = m + 1;
+    }
+
+    soit statut = 0;
+    soit confiance = 0;
+    si total != 0 {
+        statut = 1;
+        confiance = wmax * 1000 / total;
+    }
+    sortie(statut);
+    sortie(ib);
+    sortie(confiance);
+    m = 0;
+    tantque m != 6 {
+        si total != 0 {
+            sortie(@2[140 + m] * 1000 / total);
+        } sinon {
+            sortie(0);
+        }
+        m = m + 1;
+    }
+}

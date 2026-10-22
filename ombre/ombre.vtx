@@ -1,0 +1,171 @@
+// Ombre binaire du cube chromatique.
+// Un volume de N³ voxels occupe l'étage 1 : le voxel (x, y, z) est le mot @1[(z·N + y)·N + x], au format #RRGGBBAA ;
+// sa voie alpha est la densité. L'ombre en garde un seul bit : 1 si alpha ≥ SEUIL (il y a de la matière), 0 sinon.
+//   ombre fine     : 1 bit par voxel, 32 voxels par mot (N³/32 mots, 1/32 du volume)
+//   ombre grossière : 1 bit par bloc de 8×8×8 voxels (N³/16384 mots)
+// Démonstration : une image N × N, un rayon par pixel. Mode 0 : chaque pas lit le volume.
+// Mode 1 : chaque pas lit l'ombre fine. Mode 2 : un bloc vide de l'ombre grossière est sauté d'un coup.
+// Les trois modes rendent exactement la même image ; seul le nombre d'instructions change.
+// Entrées : mode (0, 1, 2 ; 3 = sans rendu ; + 16 pour sortir tous les pixels), puis n et n paires (adresse, mot)
+// de voxels ajoutés (0 pour la scène seule).
+
+constante N = 64;          // côté du volume (puissance de 2, de 32 à 256)
+constante LOGN = 6;
+constante NB = 8;          // N / 8 : blocs par côté
+constante NMOTS = 8192;    // N³ / 32
+constante NG = 16;         // (N / 8)³ / 32
+constante NPIX = 4096;     // image N × N
+constante SEUIL = 128;
+
+tableau ombre[NMOTS] @2[0];
+tableau gros[NG] @2[1048576];
+tableau image[NPIX] @2[2097152];
+
+importer "volume.vtx";
+
+fonction plus_petit(a, b) {
+    si a < b {
+        retour a;
+    }
+    retour b;
+}
+
+// --- l'ombre fine : le bit b du mot w est le voxel 32·w + b
+fonction calculer_ombre() {
+    pour w dans 0..NMOTS en segments {
+        soit m = 0;
+        soit base = w * 32;
+        pour b dans 0..32 {
+            si (@1[base + b] & 255) >= SEUIL {
+                m = m | (1 << b);
+            }
+        }
+        ombre[w] = m;
+    }
+}
+
+// --- l'ombre grossière : le bit k est le bloc (bx, by, bz), k = (bz·NB + by)·NB + bx ; vide si ses 512 bits sont nuls
+fonction calculer_gros() {
+    pour g dans 0..NG en segments {
+        soit m = 0;
+        pour j dans 0..32 {
+            soit k = g * 32 + j;
+            soit bx = k % NB;
+            soit by = (k / NB) % NB;
+            soit bz = k / (NB * NB);
+            soit plein = 0;
+            pour zz dans 0..8 {
+                pour yy dans 0..8 {
+                    soit debut = ((bz * 8 + zz) * N + by * 8 + yy) * N + bx * 8;
+                    si ((ombre[debut >> 5] >> (debut & 31)) & 255) != 0 {
+                        plein = 1;
+                    }
+                }
+            }
+            si plein == 1 {
+                m = m | (1 << j);
+            }
+        }
+        gros[g] = m;
+    }
+}
+
+// --- le rayon. Position en virgule fixe 16.16 ; z avance d'un voxel par pas (le rayon va de z = 0 à z = N).
+// Pas nécessaires pour sortir du bloc de 8 voxels le long d'un axe (p dans le volume, d en 16.16 signé).
+fonction pas_sortie(p, d) {
+    si d == 0 {
+        retour 64;
+    }
+    si d .> 0 {
+        soit fin = ((p >> 19) + 1) << 19;
+        retour (fin - p + d - 1) / d;
+    }
+    soit nd = 0 - d;
+    soit debut = (p >> 19) << 19;
+    retour (p - debut + nd) / nd;
+}
+
+fonction teinte(c, k) {
+    soit l = 256 - (k * 160) / N;
+    retour ((((c >> 24) * l) >> 8) << 24) | (((((c >> 16) & 255) * l) >> 8) << 16) | (((((c >> 8) & 255) * l) >> 8) << 8) | 255;
+}
+
+fonction ciel(py) {
+    retour ((100 + (py * 100) / N) << 24) | ((120 + (py * 80) / N) << 16) | (200 << 8) | 255;
+}
+
+fonction rayon(mode, px, py) {
+    soit x = (px << 16) + 32768;
+    soit y = ((N - 1 - py) + N / 4) << 16;
+    soit dx = ((2 * px - N) * 16384) ./ N;
+    soit dy = ((N - 2 * py) * 16384) ./ N - 16384;
+    soit k = 0;
+    tantque k < N {
+        soit vx = x .>> 16;
+        soit vy = y .>> 16;
+        si vx < N && vy < N {
+            si mode == 2 {
+                soit b = ((k >> 3) * NB + (vy >> 3)) * NB + (vx >> 3);
+                si ((gros[b >> 5] >> (b & 31)) & 1) == 0 {
+                    soit s = plus_petit(8 - (k & 7), plus_petit(pas_sortie(x, dx), pas_sortie(y, dy)));
+                    x = x + s * dx;
+                    y = y + s * dy;
+                    k = k + s;
+                    continuer;
+                }
+            }
+            soit a = ((k * N) + vy) * N + vx;
+            si mode == 0 {
+                si (@1[a] & 255) >= SEUIL {
+                    retour teinte(@1[a], k);
+                }
+            } sinon {
+                si ((ombre[a >> 5] >> (a & 31)) & 1) == 1 {
+                    retour teinte(@1[a], k);
+                }
+            }
+        }
+        x = x + dx;
+        y = y + dy;
+        k = k + 1;
+    }
+    retour ciel(py);
+}
+
+fonction principal() {
+    soit m = entrée();
+    soit mode = m & 15;
+    generer();
+    soit extra = entrée();                       // voxels ajoutés : adresse, mot (pour les essais)
+    pour e dans 0..extra {
+        soit adr = entrée();
+        @1[adr] = entrée();
+    }
+    calculer_ombre();
+    calculer_gros();
+    soit s = 0;
+    pour w dans 0..NMOTS {
+        s = s * 31 + ombre[w];
+    }
+    sortie(s);
+    soit g = 0;
+    pour j dans 0..NG {
+        g = g * 31 + gros[j];
+    }
+    sortie(g);
+    si mode < 3 {
+        pour i dans 0..NPIX en segments {
+            image[i] = rayon(mode, i % N, i / N);
+        }
+        soit t = 0;
+        pour i2 dans 0..NPIX {
+            t = t * 31 + image[i2];
+        }
+        sortie(t);
+        si (m & 16) != 0 {
+            pour i3 dans 0..NPIX {
+                sortie(image[i3]);
+            }
+        }
+    }
+}

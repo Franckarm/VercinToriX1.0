@@ -1,0 +1,61 @@
+// Le feu animé par la mémoire du cube, comme Pégase.
+// Six souvenirs de feu. Clé #RRGGBBAA : R chaleur, G vent (128 = calme), B hauteur, A agitation.
+// Deux valeurs par souvenir, quatre paramètres par mot :
+//   valeur 1 : R hauteur des flammes, G rayon à la base, B penchant (128 = droit), A vitesse de montée des langues
+//   valeur 2 : R puissance de la lumière (/64), G teinte (128 = neutre), B seuil des langues, A balancement (0 à 3)
+// À chaque image, une requête qui évolue avec le temps est comparée aux six clés ; chaque souvenir pèse
+// 65536 / 2^(écart >> 11) (un softmax en base 2, comme Pégase) et les paramètres sont la moyenne pondérée, voie par voie.
+
+constante MEM = 460000;
+
+fonction souvenirs() {
+    @2[MEM] = #78806428;      @2[MEM + 10] = #280C8002;   @2[MEM + 20] = #6E760503;   // calme
+    @2[MEM + 1] = #C880AA78;  @2[MEM + 11] = #320D8003;   @2[MEM + 21] = #9C8A0403;   // vif
+    @2[MEM + 2] = #AA288CC8;  @2[MEM + 12] = #2C0D4C03;   @2[MEM + 22] = #85800403;   // rafale vers la gauche
+    @2[MEM + 3] = #AADC8CC8;  @2[MEM + 13] = #2C0DB403;   @2[MEM + 23] = #85800403;   // rafale vers la droite
+    @2[MEM + 4] = #50803214;  @2[MEM + 14] = #1A0B8001;   @2[MEM + 24] = #4E620601;   // braises
+    @2[MEM + 5] = #FA80E6A0;  @2[MEM + 15] = #3C0E8004;   @2[MEM + 25] = #CB940303;   // flambée
+}
+
+fonction distance_cube(a, b) {
+    retour ecart(a.r, b.r) * ecart(a.r, b.r) + ecart(a.v, b.v) * ecart(a.v, b.v)
+         + ecart(a.b, b.b) * ecart(a.b, b.b) + ecart(a.a, b.a) * ecart(a.a, b.a);
+}
+
+fonction triangle(f, p) {
+    soit m = f % (2 * p);
+    retour (ecart(m, p) * 255) / p;
+}
+
+// La requête de l'image f : la chaleur et la hauteur respirent, le vent tourne lentement, l'agitation crépite.
+fonction requete(f) {
+    soit r = 110 + (triangle(f + 5, 13) * 130) / 255;
+    soit v = 40 + (triangle(f, 29) * 176) / 255;
+    soit b = 90 + (hache(f >> 1, 3, 5) & 127);
+    soit a = 40 + (hache(f, 7, 1) & 191);
+    retour (r << 24) | (v << 16) | (b << 8) | a;
+}
+
+fonction rappeler(q) {
+    soit total = 0;
+    pour k dans 0..6 {
+        soit d = distance_cube(q, @2[MEM + k]) >> 11;
+        soit w = 0;
+        si d < 16 {
+            w = 65536 >> d;
+        }
+        @2[MEM + 30 + k] = w;
+        total = total + w;
+    }
+    si total == 0 {
+        total = 1;
+    }
+    pour p dans 0..8 {
+        soit s = 0;
+        pour k2 dans 0..6 {
+            soit mot = @2[MEM + 10 + (p >> 2) * 10 + k2];
+            s = s + @2[MEM + 30 + k2] * ((mot >> (24 - (p & 3) * 8)) & 255);
+        }
+        @2[FEU + p] = s / total;
+    }
+}

@@ -1,0 +1,152 @@
+// Mémoire associative du cube chromatique, version 2 (vtx)
+// Étage 2 : i = clés (RGBA, 4 traits) · 64+i = produits scalaires · 192+i = poids · 300 = drapeau d'initialisation
+// Étage 1 : i = valeurs d'allure (R cadence, V amplitude, B cabrage, A allure)
+//           64+i = valeurs de style (R amplitude des ailes, V battements, B mobilité du cou, A déploiement)
+// Entrées : requête #RRGGBBAA, température (décalage 10 à 15), mode (0 exact, 1 similarité),
+//           n (nombre de souvenirs, 7 à 64), plasticité (0 ou 1)
+
+fonction initialiser() {
+    @2[0] = #2040C014;  @1[0] = #000C0080;  @1[64] = #00005A00;   // arrêt
+    @2[1] = #30C06046;  @1[1] = #5A5A0000;  @1[65] = #00003C00;   // pas
+    @2[2] = #E0D0308C;  @1[2] = #96960080;  @1[66] = #00003200;   // trot
+    @2[3] = #E03020FA;  @1[3] = #EBE600FF;  @1[67] = #288C1E3C;   // galop
+    @2[4] = #C030D0C8;  @1[4] = #37C8EB80;  @1[68] = #967878C8;   // cabré
+    @2[5] = #20C8E0DC;  @1[5] = #1E3C1E80;  @1[69] = #E69696FF;   // vol
+    @2[6] = #90D8F078;  @1[6] = #001E2880;  @1[70] = #3C286EFF;   // plané
+    @2[300] = 1;
+}
+
+// Poids d'attention : 65536 / 2^d avec d = écart >> température (un softmax en base 2)
+fonction poids(ecart, temperature) {
+    soit d = ecart >> temperature;
+    si d < 16 {
+        retour 65536 >> d;
+    }
+    retour 0;
+}
+
+// Somme(w · voie) / Somme(w) sur les valeurs de l'étage 1 (base 0 : allure, base 64 : style)
+fonction melange(base, decalage, total, n) {
+    soit somme = 0;
+    soit i = 0;
+    tantque i != n {
+        somme = somme + @2[192 + i] * ((@1[base + i] >> decalage) & 255);
+        i = i + 1;
+    }
+    retour somme / total;
+}
+
+fonction composer(base, total, n) {
+    retour (melange(base, 24, total, n) << 24) | (melange(base, 16, total, n) << 16) | (melange(base, 8, total, n) << 8) | melange(base, 0, total, n);
+}
+
+fonction melange_cle(decalage, total, n) {
+    soit somme = 0;
+    soit i = 0;
+    tantque i != n {
+        somme = somme + @2[192 + i] * ((@2[i] >> decalage) & 255);
+        i = i + 1;
+    }
+    retour somme / total;
+}
+
+// Plasticité : rapproche une voie de la requête, proportionnellement au poids (p en pour mille)
+fonction rapprocher(a, b, p) {
+    si b > a {
+        retour a + (b - a) * p / 16000;
+    }
+    retour a - (a - b) * p / 16000;
+}
+
+fonction deriver(k, q, p) {
+    retour (rapprocher((k >> 24) & 255, (q >> 24) & 255, p) << 24) | (rapprocher((k >> 16) & 255, (q >> 16) & 255, p) << 16) | (rapprocher((k >> 8) & 255, (q >> 8) & 255, p) << 8) | rapprocher(k & 255, q & 255, p);
+}
+
+fonction principal() {
+    si @2[300] == 0 {
+        initialiser();
+    }
+    soit q = entrée();
+    soit t = entrée();
+    soit mode = entrée();
+    soit n = entrée();
+    soit plastique = entrée();
+
+    // 1. Score de chaque souvenir : 262144 + 2·(q·k) − |k|²  (grand = couleur proche)
+    soit meilleur = 0;
+    soit i = 0;
+    tantque i != n {
+        soit k = @2[i];
+        soit d = gdot(q, k);
+        @2[64 + i] = d;
+        soit s = 262144 + 2 * d - gdot(k, k);
+        @2[128 + i] = s;
+        si s > meilleur {
+            meilleur = s;
+        }
+        i = i + 1;
+    }
+
+    // 2. Poids : attention (similarité) ou égalité stricte (adresse exacte)
+    soit total = 0;
+    soit wmax = 0;
+    i = 0;
+    tantque i != n {
+        soit w = 0;
+        si mode == 1 {
+            w = poids(meilleur - @2[128 + i], t);
+        } sinon {
+            si q == @2[i] {
+                w = 65536;
+            }
+        }
+        @2[192 + i] = w;
+        total = total + w;
+        si w > wmax {
+            wmax = w;
+        }
+        i = i + 1;
+    }
+
+    // 3. Mélange voie par voie, pour l'allure, le style et la couleur moyenne
+    soit statut = 0;
+    soit allure = 0;
+    soit style = 0;
+    soit couleur = 0;
+    si total != 0 {
+        statut = 1;
+        allure = composer(0, total, n);
+        style = composer(64, total, n);
+        couleur = (melange_cle(24, total, n) << 24) | (melange_cle(16, total, n) << 16) | (melange_cle(8, total, n) << 8) | melange_cle(0, total, n);
+    }
+    sortie(statut);
+    sortie(allure);
+    sortie(style);
+    sortie(couleur);
+    si total != 0 {
+        sortie(1000 - wmax * 1000 / total);
+    } sinon {
+        sortie(1000);
+    }
+    i = 0;
+    tantque i != n {
+        sortie(@2[64 + i]);
+        si total != 0 {
+            sortie(@2[192 + i] * 1000 / total);
+        } sinon {
+            sortie(0);
+        }
+        i = i + 1;
+    }
+
+    // 4. La mémoire se métamorphose : chaque clé glisse vers la requête selon son poids
+    si plastique == 1 {
+        si total != 0 {
+            i = 0;
+            tantque i != n {
+                @2[i] = deriver(@2[i], q, @2[192 + i] * 1000 / total);
+                i = i + 1;
+            }
+        }
+    }
+}

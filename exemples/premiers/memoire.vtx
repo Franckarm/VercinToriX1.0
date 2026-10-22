@@ -1,0 +1,18 @@
+// Une mémoire qui dure : le programme recharge son tas (charger_tas), s'en sert, puis l'enregistre (sauver_tas).
+structure Souvenir { nom: texte, fois, amis }
+fonction principal() {
+    soit r = charger_tas("souvenirs");
+    si r == 0 {
+        afficher("première fois : je crée ma mémoire");
+        soit s0 = Souvenir { nom: "ScoR", fois: 1, amis: tableau(0) };
+        ajouter(s0.amis, "Ambiorix");
+        sauver_tas("souvenirs", entier(s0));
+    } sinon {
+        soit s: Souvenir = r;
+        s.fois = s.fois + 1;
+        ajouter(s.amis, "visiteur " + texte(s.fois));
+        soit a: texte = s.amis[0];
+        afficher("je me souviens : je suis", s.nom, "lancé", s.fois, "fois ; premier ami :", a, "; amis :", longueur(s.amis));
+        sauver_tas("souvenirs", entier(s));
+    }
+}

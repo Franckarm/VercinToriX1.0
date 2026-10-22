@@ -1,0 +1,202 @@
+// Compression du cube par blocs et palettes, à la manière ADN / ARN.
+// Le volume N³ (étage 1) est découpé en blocs de 8×8×8 = 512 voxels. Chaque bloc est rangé sous la forme la plus courte :
+//   0 vide       : aucun mot (tous les voxels valent 0)
+//   1 uniforme   : 1 mot (la couleur commune)
+//   2 4 couleurs : palette de 4 mots + 1 quit par voxel (16 voxels par mot) = 36 mots
+//   3 16 couleurs: palette de 16 mots + 4 bits par voxel (8 voxels par mot) = 80 mots
+//   4 brut       : 512 mots
+// Répertoire : 1 mot par bloc dans l'étage 2, (forme << 28) | position des données dans l'étage 3.
+// C'est la forme ADN : rangée, passive. Transcrire un bloc (T devient U), c'est le recopier en clair dans une zone de
+// travail, la forme ARN, la seule qu'on traite ; on peut aussi lire un voxel directement dans la forme ADN.
+// Les voxels d'un bloc sont dans l'ordre j = (z·8 + y)·8 + x ; la palette, dans l'ordre de première apparition.
+// Entrées : n, puis n paires (adresse, mot) de voxels ajoutés au volume (0 pour la scène seule).
+
+constante N = 64;
+constante NB = 8;          // N / 8
+constante NBLOC = 512;     // (N / 8)³
+constante REP = 0;         // répertoire : @2[REP + bloc]
+constante TRAVAIL = 1048576;   // zone ARN : @2[TRAVAIL + j], 512 mots
+constante PAL = 1049088;       // palette en cours de construction : @2[PAL + i], 17 mots
+constante FIN_DONNEES = 14680064;
+
+importer "../ombre/volume.vtx";
+
+fonction adresse_voxel(b, j) {
+    soit bx = b % NB;
+    soit by = (b / NB) % NB;
+    soit bz = b / (NB * NB);
+    soit x = bx * 8 + (j & 7);
+    soit y = by * 8 + ((j >> 3) & 7);
+    soit z = bz * 8 + (j >> 6);
+    retour (z * N + y) * N + x;
+}
+
+// Palette du bloc b (au plus 17 couleurs : la 17e signifie « trop ») ; rend le nombre de couleurs.
+fonction palette(b) {
+    soit n = 0;
+    pour j dans 0..512 {
+        soit c = @1[adresse_voxel(b, j)];
+        soit trouve = 0;
+        pour i dans 0..n {
+            si @2[PAL + i] == c {
+                trouve = 1;
+                arrêter;
+            }
+        }
+        si trouve == 0 {
+            @2[PAL + n] = c;
+            n = n + 1;
+            si n == 17 {
+                retour n;
+            }
+        }
+    }
+    retour n;
+}
+
+fonction indice(c, n) {
+    pour i dans 0..n {
+        si @2[PAL + i] == c {
+            retour i;
+        }
+    }
+    retour 0;
+}
+
+// Comprime tout le volume ; rend le nombre de mots de données (ou 4294967295 si la place manque).
+fonction comprimer() {
+    soit pos = 0;
+    pour b dans 0..NBLOC {
+        soit n = palette(b);
+        soit forme = 4;
+        si n == 1 {
+            forme = 1;
+            si @2[PAL] == 0 {
+                forme = 0;
+            }
+        } sinon si n <= 4 {
+            forme = 2;
+        } sinon si n <= 16 {
+            forme = 3;
+        }
+        @2[REP + b] = (forme << 28) | pos;
+        si forme == 1 {
+            @3[pos] = @2[PAL];
+            pos = pos + 1;
+        } sinon si forme == 2 {
+            pour i dans 0..4 {
+                soit c = 0;                       // cases inutilisées de la palette : 0
+                si i < n {
+                    c = @2[PAL + i];
+                }
+                @3[pos + i] = c;
+            }
+            pour w dans 0..32 {
+                soit m = 0;
+                pour q dans 0..16 {
+                    m = m | (indice(@1[adresse_voxel(b, w * 16 + q)], n) << (q * 2));
+                }
+                @3[pos + 4 + w] = m;
+            }
+            pos = pos + 36;
+        } sinon si forme == 3 {
+            pour i2 dans 0..16 {
+                soit c2 = 0;
+                si i2 < n {
+                    c2 = @2[PAL + i2];
+                }
+                @3[pos + i2] = c2;
+            }
+            pour w2 dans 0..64 {
+                soit m2 = 0;
+                pour q2 dans 0..8 {
+                    m2 = m2 | (indice(@1[adresse_voxel(b, w2 * 8 + q2)], n) << (q2 * 4));
+                }
+                @3[pos + 16 + w2] = m2;
+            }
+            pos = pos + 80;
+        } sinon si forme == 4 {
+            pour j dans 0..512 {
+                @3[pos + j] = @1[adresse_voxel(b, j)];
+            }
+            pos = pos + 512;
+        }
+        si pos > FIN_DONNEES {
+            retour 4294967295;
+        }
+    }
+    retour pos;
+}
+
+// Lecture d'un voxel directement dans la forme ADN, sans transcrire le bloc.
+fonction lire_adn(b, j) {
+    soit e = @2[REP + b];
+    soit forme = e >> 28;
+    soit pos = e & 268435455;
+    si forme == 0 {
+        retour 0;
+    }
+    si forme == 1 {
+        retour @3[pos];
+    }
+    si forme == 2 {
+        retour @3[pos + ((@3[pos + 4 + (j >> 4)] >> ((j & 15) * 2)) & 3)];
+    }
+    si forme == 3 {
+        retour @3[pos + ((@3[pos + 16 + (j >> 3)] >> ((j & 7) * 4)) & 15)];
+    }
+    retour @3[pos + j];
+}
+
+// Transcription : le bloc b recopié en clair dans la zone de travail (ARN).
+fonction transcrire_bloc(b) {
+    pour j dans 0..512 {
+        @2[TRAVAIL + j] = lire_adn(b, j);
+    }
+}
+
+fonction principal() {
+    generer();
+    soit extra = entrée();
+    pour e dans 0..extra {
+        soit adr = entrée();
+        @1[adr] = entrée();
+    }
+    soit taille = comprimer();
+    sortie(taille);
+    soit formes0 = 0;
+    soit formes1 = 0;
+    soit formes2 = 0;
+    soit formes3 = 0;
+    soit formes4 = 0;
+    soit s = 0;
+    pour b dans 0..NBLOC {
+        soit f = @2[REP + b] >> 28;
+        si f == 0 { formes0 = formes0 + 1; }
+        si f == 1 { formes1 = formes1 + 1; }
+        si f == 2 { formes2 = formes2 + 1; }
+        si f == 3 { formes3 = formes3 + 1; }
+        si f == 4 { formes4 = formes4 + 1; }
+        s = s * 31 + @2[REP + b];
+    }
+    pour i dans 0..taille {
+        s = s * 31 + @3[i];
+    }
+    sortie(s);
+    sortie(formes0);
+    sortie(formes1);
+    sortie(formes2);
+    sortie(formes3);
+    sortie(formes4);
+    // vérification : chaque bloc transcrit doit redonner exactement le volume
+    soit erreurs = 0;
+    pour b2 dans 0..NBLOC {
+        transcrire_bloc(b2);
+        pour j2 dans 0..512 {
+            si @2[TRAVAIL + j2] != @1[adresse_voxel(b2, j2)] {
+                erreurs = erreurs + 1;
+            }
+        }
+    }
+    sortie(erreurs);
+}

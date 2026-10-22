@@ -1,0 +1,117 @@
+// Les huit reines : placer 8 reines sur un échiquier sans qu'aucune n'en menace une autre.
+// Trois idées de vtx travaillent ensemble :
+//   - le hasard propose : les colonnes sont essayées dans un ordre tiré au sort ;
+//   - la logique à quatre valeurs juge : chaque case est inconnu (pas encore décidée), vrai (une reine),
+//     faux (menacée). Poser une reine sur une case menacée, c'est fusion(faux, vrai) = variable : une contradiction ;
+//   - l'hypothèse permet de revenir en arrière : on pose la reine « pour voir » ; si cela mène à une contradiction
+//     ou à une impasse, annuler défait toutes les cases écrites.
+// « vtx reines.vtx » tire au hasard (bruit de la machine) ; « vtx reines.vtx 7 » rejoue toujours la même partie.
+
+constante N = 8;
+tableau grille[64] de logique @1[0];       // la case (ligne, colonne) est grille[ligne * 8 + colonne]
+tableau ordre[64] @1[100];                 // l'ordre d'essai des colonnes, pour chaque ligne
+tableau compteurs[2] @1[200];              // essais, puis retours en arrière
+
+// Une ligne est une impasse si aucune de ses cases n'est encore libre (inconnu) ni occupée (vrai).
+fonction impasse(ligne) {
+    pour c dans 0..N {
+        selon grille[ligne * N + c] {
+            inconnu { retour 0; }
+            vrai { retour 0; }
+            faux { }
+            variable { }
+        }
+    }
+    retour 1;
+}
+
+fonction placer(ligne) {
+    si ligne == N {
+        retour 1;
+    }
+    // les colonnes dans un ordre tiré au sort (mélange de Fisher-Yates)
+    pour k dans 0..N {
+        ordre[ligne * N + k] = k;
+    }
+    pour k dans 0..N - 1 {
+        soit j = hasard_entre(k, N - 1);
+        soit t = ordre[ligne * N + k];
+        ordre[ligne * N + k] = ordre[ligne * N + j];
+        ordre[ligne * N + j] = t;
+    }
+    pour k dans 0..N {
+        soit col = ordre[ligne * N + k];
+        soit reussi = 0;
+        compteurs[0] = compteurs[0] + 1;
+        hypothèse {
+            // la reine : vrai sur sa case ; si la case était menacée (faux), la fusion donne variable
+            soit avant: logique = grille[ligne * N + col];
+            soit apres: logique = fusion(avant, vrai);
+            grille[ligne * N + col] = apres;
+            selon apres {
+                variable { annuler; }
+                vrai { }
+                faux { }
+                inconnu { }
+            }
+            // les cases menacées plus bas : sa colonne et ses deux diagonales deviennent faux
+            pour l dans ligne + 1..N {
+                soit d = l - ligne;
+                grille[l * N + col] = faux;
+                si col >= d {
+                    grille[l * N + col - d] = faux;
+                }
+                si col + d < N {
+                    grille[l * N + col + d] = faux;
+                }
+            }
+            // regarder devant : une ligne sans case possible condamne ce choix tout de suite
+            soit bloque = 0;
+            pour l dans ligne + 1..N {
+                si impasse(l) == 1 {
+                    bloque = 1;
+                }
+            }
+            si bloque == 1 {
+                annuler;
+            }
+            si placer(ligne + 1) == 0 {
+                annuler;
+            }
+            reussi = 1;
+        }
+        si reussi == 1 {
+            retour 1;
+        }
+        compteurs[1] = compteurs[1] + 1;
+    }
+    retour 0;
+}
+
+fonction principal() {
+    soit g = entrée();
+    si g == 0 {
+        graine_bruit();
+    } sinon {
+        graine(g);
+    }
+    si placer(0) == 1 {
+        pour l dans 0..N {
+            pour c dans 0..N {
+                selon grille[l * N + c] {
+                    vrai { ecrire_texte(1, " ♛"); }
+                    faux { ecrire_texte(1, " ·"); }
+                    inconnu { ecrire_texte(1, " ?"); }
+                    variable { ecrire_texte(1, " !"); }
+                }
+            }
+            ecrire_car(1, '\n');
+        }
+    } sinon {
+        afficher("pas de solution");
+    }
+    ecrire_texte(1, "essais : ");
+    afficher(compteurs[0]);
+    ecrire_texte(1, "retours en arrière (annuler) : ");
+    afficher(compteurs[1]);
+}

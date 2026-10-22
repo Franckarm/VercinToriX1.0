@@ -1,0 +1,17 @@
+// Fonctions, boucles, tableaux
+tableau carres[10] @1[0];
+
+fonction carre(x) {
+    retour x * x;
+}
+
+fonction principal() {
+    pour i dans 0..10 {
+        carres[i] = carre(i);
+    }
+    soit total = 0;
+    pour i dans 0..10 {
+        total = total + carres[i];
+    }
+    sortie(total);
+}

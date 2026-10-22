@@ -1,0 +1,440 @@
+// Feu de camp : ombre quaternaire et rendu PBR, tout en vtx.
+// Ombre quaternaire (un quit par voxel, 16 par mot, étage 2) : 0 vide, 1 brume, 2 plein, 3 inconnu (pas encore analysé).
+// Au départ tout est inconnu ; un voxel n'est analysé que la première fois qu'un rayon l'atteint. L'analyse d'un voxel
+// plein regarde ses 6 faces (lesquelles touchent du non plein) et ses 26 voisins (la normale, par le gradient), et range le
+// résultat dans @3[v] : bit 6 analysé, bits 0 à 5 faces exposées (-x, +x, -y, +y, -z, +z), puis la normale en trois octets signés.
+// Le rayon avance voxel par voxel (parcours exact de Amanatides et Woo) et sait toujours par quelle face il est entré :
+// une normale qui ne fait pas face au rayon est remplacée par celle de cette face, pour ne jamais confondre les faces.
+
+constante W = 256;
+constante H = 256;
+constante IMAGE = 300000;          // @2[IMAGE + py·W + px]
+constante MAT = 420000;            // matières : 6 flottants (albédo r, v, b, rugosité, métal, réserve)
+
+tableau ombre[2097152] de quits @2[0];
+tableau ombre_mots[131072] @2[0];
+
+donnees @2[420000] = {
+    0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
+    0.85, 0.88, 0.95, 0.55, 0.0, 0.0,        // 1 neige
+    0.18, 0.17, 0.16, 0.95, 0.0, 0.0,        // 2 cendre
+    0.42, 0.40, 0.38, 0.75, 0.0, 0.0,        // 3 pierre
+    0.30, 0.20, 0.12, 0.90, 0.0, 0.0,        // 4 écorce
+    0.05, 0.045, 0.04, 0.95, 0.0, 0.0,       // 5 bois carbonisé
+    0.08, 0.05, 0.04, 0.90, 0.0, 0.0,        // 6 braise (plus son émission)
+    0.56, 0.57, 0.58, 0.35, 1.0, 0.0 };      // 7 fonte : métal
+
+fonction tout_inconnu() {
+    pour w dans 0..131072 {
+        ombre_mots[w] = 4294967295;
+    }
+}
+
+fonction plein_ou_hors(x, y, z) {
+    si x >= N || y >= N || z >= N {
+        retour 0;
+    }
+    retour (@1[(z * N + y) * N + x] & 255) >= 128;
+}
+
+// Analyse d'un voxel : son état, et pour un voxel plein ses faces et sa normale.
+fonction analyser(v) {
+    soit a = @1[v] & 255;
+    soit etat = 0;
+    si a >= 128 {
+        etat = 2;
+    } sinon si a > 0 {
+        etat = 1;
+    }
+    si etat == 2 {
+        soit x = v & 127;
+        soit y = (v >> 7) & 127;
+        soit z = v >> 14;
+        soit faces = 0;
+        si plein_ou_hors(x - 1, y, z) == 0 { faces = faces | 1; }
+        si plein_ou_hors(x + 1, y, z) == 0 { faces = faces | 2; }
+        si plein_ou_hors(x, y - 1, z) == 0 { faces = faces | 4; }
+        si plein_ou_hors(x, y + 1, z) == 0 { faces = faces | 8; }
+        si plein_ou_hors(x, y, z - 1) == 0 { faces = faces | 16; }
+        si plein_ou_hors(x, y, z + 1) == 0 { faces = faces | 32; }
+        soit gx = 0;
+        soit gy = 0;
+        soit gz = 0;
+        si faces != 0 {
+            pour dz dans 0..3 {
+                pour dy dans 0..3 {
+                    pour dx dans 0..3 {
+                        si plein_ou_hors(x + dx - 1, y + dy - 1, z + dz - 1) == 0 {
+                            gx = gx + dx - 1;
+                            gy = gy + dy - 1;
+                            gz = gz + dz - 1;
+                        }
+                    }
+                }
+            }
+        }
+        @3[v] = 64 | faces | ((gx & 255) << 8) | ((gy & 255) << 16) | ((gz & 255) << 24);
+    }
+    ombre[v] = etat;
+    retour etat;
+}
+
+fonction analyser_tout() {
+    pour v dans 0..2097152 {
+        analyser(v);
+    }
+}
+
+fonction etat_de(v) {
+    soit e = ombre[v];
+    si e == 3 {
+        e = analyser(v);
+        @2[499999] = @2[499999] + 1;           // nombre de voxels analysés
+    }
+    retour e;
+}
+
+fonction octet_signe(b): flottant {
+    si b >= 128 {
+        retour flottant(b) - 256.0;
+    }
+    retour flottant(b);
+}
+
+fonction matiere(m, k): flottant {
+    retour comme_flottant(@2[MAT + m * 6 + k]);
+}
+
+// Visibilité de la lumière du feu depuis (x, y, z) : 0 si un voxel plein est sur le chemin, 1 sinon.
+fonction visible(ox: flottant, oy: flottant, oz: flottant, lx: flottant, ly: flottant, lz: flottant): entier {
+    soit dx: flottant = lx - ox;
+    soit dy: flottant = ly - oy;
+    soit dz: flottant = lz - oz;
+    soit dist: flottant = racine(dx * dx + dy * dy + dz * dz);
+    dx = dx / dist;
+    dy = dy / dist;
+    dz = dz / dist;
+    soit ix = entier(ox);
+    soit iy = entier(oy);
+    soit iz = entier(oz);
+    soit sx = 1;
+    soit sy = 1;
+    soit sz = 1;
+    soit tx: flottant = 1000000.0;
+    soit ty: flottant = 1000000.0;
+    soit tz: flottant = 1000000.0;
+    soit px: flottant = 1000000.0;
+    soit py: flottant = 1000000.0;
+    soit pz: flottant = 1000000.0;
+    si dx > 0.0 { tx = (flottant(ix + 1) - ox) / dx; px = 1.0 / dx; }
+    si dx < 0.0 { sx = 0 - 1; tx = (flottant(ix) - ox) / dx; px = 0.0 - 1.0 / dx; }
+    si dy > 0.0 { ty = (flottant(iy + 1) - oy) / dy; py = 1.0 / dy; }
+    si dy < 0.0 { sy = 0 - 1; ty = (flottant(iy) - oy) / dy; py = 0.0 - 1.0 / dy; }
+    si dz > 0.0 { tz = (flottant(iz + 1) - oz) / dz; pz = 1.0 / dz; }
+    si dz < 0.0 { sz = 0 - 1; tz = (flottant(iz) - oz) / dz; pz = 0.0 - 1.0 / dz; }
+    soit fin: flottant = dist - 5.0;
+    soit t: flottant = 0.0;
+    tantque t < fin {
+        si ix >= N || iy >= N || iz >= N {
+            retour 1;
+        }
+        soit v = (iz * N + iy) * N + ix;
+        si @2[200000 + ((iz >> 3) * 16 + (iy >> 3)) * 16 + (ix >> 3)] != 0 {
+            si etat_de(v) == 2 {
+                retour 0;
+            }
+        }
+        si tx < ty && tx < tz {
+            t = tx;
+            tx = tx + px;
+            ix = ix + sx;
+        } sinon si ty < tz {
+            t = ty;
+            ty = ty + py;
+            iy = iy + sy;
+        } sinon {
+            t = tz;
+            tz = tz + pz;
+            iz = iz + sz;
+        }
+    }
+    retour 1;
+}
+
+fonction ton(c: flottant): entier {
+    soit m: flottant = c / (1.0 + c);
+    soit g = entier(racine(m) * 255.0 + 0.5);
+    si g > 255 {
+        retour 255;
+    }
+    retour g;
+}
+
+// Un rayon : rend la couleur du pixel (#RRGGBBFF).
+fonction rayon(px, py): entier {
+    // caméra
+    soit ox: flottant = 64.0;
+    soit oy: flottant = 40.0;
+    soit oz: flottant = 0.0 - 34.0;
+    soit u: flottant = (flottant(px) + 0.5) / 128.0 - 1.0;
+    soit w: flottant = 1.0 - (flottant(py) + 0.5) / 128.0;
+    // avant (0, -0.2, 0.98) normalisé ; droite (1, 0, 0) ; haut = avant × droite
+    soit fy: flottant = 0.0 - 0.2;
+    soit fz: flottant = 0.98;
+    soit fl: flottant = racine(fy * fy + fz * fz);
+    fy = fy / fl;
+    fz = fz / fl;
+    soit dx: flottant = u * 0.55;
+    soit dy: flottant = fy + w * 0.55 * fz;
+    soit dz: flottant = fz - w * 0.55 * fy;
+    soit dl: flottant = racine(dx * dx + dy * dy + dz * dz);
+    dx = dx / dl;
+    dy = dy / dl;
+    dz = dz / dl;
+    // ciel de nuit
+    soit hc: flottant = max(dy, 0.0);
+    soit cr: flottant = 0.0;
+    soit cg: flottant = 0.0;
+    soit cb: flottant = 0.0;
+    soit tr: flottant = 1.0;
+    // entrée dans la boîte [0, N]³
+    soit inx: flottant = 1000000.0;
+    soit iny: flottant = 1000000.0;
+    soit inz: flottant = 1000000.0;
+    si dx != 0.0 { inx = 1.0 / dx; }
+    si dy != 0.0 { iny = 1.0 / dy; }
+    si dz != 0.0 { inz = 1.0 / dz; }
+    soit ax: flottant = (0.0 - ox) * inx;
+    soit bx: flottant = (128.0 - ox) * inx;
+    soit ay: flottant = (0.0 - oy) * iny;
+    soit by: flottant = (128.0 - oy) * iny;
+    soit az: flottant = (0.0 - oz) * inz;
+    soit bz: flottant = (128.0 - oz) * inz;
+    soit t0: flottant = max(max(min(ax, bx), min(ay, by)), min(az, bz));
+    soit t1: flottant = min(min(max(ax, bx), max(ay, by)), max(az, bz));
+    soit face = 0;
+    si min(az, bz) >= max(min(ax, bx), min(ay, by)) {
+        face = 2;
+    } sinon si min(ay, by) >= min(ax, bx) {
+        face = 1;
+    }
+    soit fsigne = 0;                               // 0 : le rayon avance dans le sens + de l'axe de la face
+    si t1 > t0 && t1 > 0.0 {
+        soit tc: flottant = max(t0, 0.0) + 0.0001;
+        soit ix = min(entier(ox + dx * tc), 127);
+        soit iy = min(entier(oy + dy * tc), 127);
+        soit iz = min(entier(oz + dz * tc), 127);
+        soit sx = 1;
+        soit sy = 1;
+        soit sz = 1;
+        soit tx: flottant = 1000000.0;
+        soit ty: flottant = 1000000.0;
+        soit tz: flottant = 1000000.0;
+        soit qx: flottant = 1000000.0;
+        soit qy: flottant = 1000000.0;
+        soit qz: flottant = 1000000.0;
+        si dx > 0.0 { tx = (flottant(ix + 1) - ox) * inx; qx = inx; }
+        si dx < 0.0 { sx = 0 - 1; tx = (flottant(ix) - ox) * inx; qx = 0.0 - inx; }
+        si dy > 0.0 { ty = (flottant(iy + 1) - oy) * iny; qy = iny; }
+        si dy < 0.0 { sy = 0 - 1; ty = (flottant(iy) - oy) * iny; qy = 0.0 - iny; }
+        si dz > 0.0 { tz = (flottant(iz + 1) - oz) * inz; qz = inz; }
+        si dz < 0.0 { sz = 0 - 1; tz = (flottant(iz) - oz) * inz; qz = 0.0 - inz; }
+        si face == 0 && dx < 0.0 { fsigne = 1; }
+        si face == 1 && dy < 0.0 { fsigne = 1; }
+        si face == 2 && dz < 0.0 { fsigne = 1; }
+        soit fini = 0;
+        tantque fini == 0 && ix < N && iy < N && iz < N {
+            soit tn: flottant = min(min(tx, ty), tz);
+            soit v = (iz * N + iy) * N + ix;
+            si @2[200000 + ((iz >> 3) * 16 + (iy >> 3)) * 16 + (ix >> 3)] != 0 {
+                soit e = etat_de(v);
+                si e == 1 {
+                    // brume : flamme (émet) ou fumée (absorbe et diffuse la lumière du feu)
+                    soit mot = @1[v];
+                    soit dens: flottant = flottant(mot & 255) / 255.0;
+                    soit dt: flottant = tn - tc;
+                    si (mot >> 24) == 8 {
+                        soit hf: flottant = flottant((mot >> 8) & 255) / 255.0;
+                        soit ef: flottant = dens * dt * 1.6;
+                        cr = cr + tr * ef * 3.0 * hf;
+                        cg = cg + tr * ef * 1.25 * hf * hf;
+                        cb = cb + tr * ef * 0.30 * hf * hf * hf * hf;
+                        tr = tr * max(1.0 - dens * dt * 0.30, 0.0);
+                    } sinon {
+                        soit fx: flottant = flottant(ix) - 64.0;
+                        soit fyy: flottant = flottant(iy) - 26.0;
+                        soit fzz: flottant = flottant(iz) - 64.0;
+                        soit lum: flottant = 900.0 / (fx * fx + fyy * fyy + fzz * fzz + 60.0);
+                        soit af: flottant = min(dens * dt * 1.4, 0.9);
+                        cr = cr + tr * af * (0.012 + 0.35 * lum);
+                        cg = cg + tr * af * (0.014 + 0.18 * lum);
+                        cb = cb + tr * af * (0.022 + 0.07 * lum);
+                        tr = tr * (1.0 - af);
+                    }
+                    si tr < 0.01 {
+                        fini = 1;
+                    }
+                }
+                si e == 2 {
+                    // plein : PBR, puis arrêt du rayon
+                    soit mot2 = @1[v];
+                    soit m = mot2 >> 24;
+                    soit varie: flottant = 0.75 + flottant((mot2 >> 16) & 255) / 510.0;
+                    soit alr: flottant = matiere(m, 0);
+                    soit alg: flottant = matiere(m, 1);
+                    soit alb: flottant = matiere(m, 2);
+                    si m == 3 || m == 4 {
+                        alr = alr * varie;
+                        alg = alg * varie;
+                        alb = alb * varie;
+                    }
+                    soit rug: flottant = matiere(m, 3);
+                    soit met: flottant = matiere(m, 4);
+                    // normale : celle de l'analyse si elle fait face au rayon, sinon celle de la face d'entrée
+                    soit an = @3[v];
+                    soit nx: flottant = octet_signe((an >> 8) & 255);
+                    soit ny: flottant = octet_signe((an >> 16) & 255);
+                    soit nz: flottant = octet_signe(an >> 24);
+                    soit nl: flottant = racine(nx * nx + ny * ny + nz * nz);
+                    si nl > 0.0 {
+                        nx = nx / nl;
+                        ny = ny / nl;
+                        nz = nz / nl;
+                    }
+                    si nl == 0.0 || nx * dx + ny * dy + nz * dz > 0.0 - 0.05 {
+                        nx = 0.0;
+                        ny = 0.0;
+                        nz = 0.0;
+                        soit fs: flottant = 1.0;
+                        si fsigne == 0 {
+                            fs = 0.0 - 1.0;
+                        }
+                        si face == 0 { nx = fs; }
+                        si face == 1 { ny = fs; }
+                        si face == 2 { nz = fs; }
+                    }
+                    // contrôle : la normale retenue fait toujours face au rayon ; dernier voxel plein touché et sa face
+                    si nx * dx + ny * dy + nz * dz >= 0.0 {
+                        @2[499998] = @2[499998] + 1;
+                    }
+                    @2[499990] = v;
+                    @2[499991] = face * 2 + fsigne;
+                    soit hx: flottant = ox + dx * tc + nx * 0.6;
+                    soit hy: flottant = oy + dy * tc + ny * 0.6;
+                    soit hz: flottant = oz + dz * tc + nz * 0.6;
+                    soit vx: flottant = 0.0 - dx;
+                    soit vy: flottant = 0.0 - dy;
+                    soit vz: flottant = 0.0 - dz;
+                    soit ndv: flottant = max(nx * vx + ny * vy + nz * vz, 0.001);
+                    soit a1: flottant = rug * rug;
+                    soit a2: flottant = a1 * a1;
+                    soit kk: flottant = (rug + 1.0) * (rug + 1.0) / 8.0;
+                    soit f0r: flottant = 0.04 + (alr - 0.04) * met;
+                    soit f0g: flottant = 0.04 + (alg - 0.04) * met;
+                    soit f0b: flottant = 0.04 + (alb - 0.04) * met;
+                    soit sr: flottant = 0.0;
+                    soit sg: flottant = 0.0;
+                    soit sb: flottant = 0.0;
+                    // deux lumières : le feu (ombres portées) et la lune
+                    pour li dans 0..2 {
+                        soit lx: flottant = 64.0 - hx;
+                        soit ly: flottant = 26.0 - hy;
+                        soit lz: flottant = 64.0 - hz;
+                        soit ir: flottant = 0.0;
+                        soit ig: flottant = 0.0;
+                        soit ib: flottant = 0.0;
+                        soit d2: flottant = lx * lx + ly * ly + lz * lz;
+                        soit dd: flottant = racine(d2);
+                        lx = lx / dd;
+                        ly = ly / dd;
+                        lz = lz / dd;
+                        si li == 0 {
+                            soit puissance: flottant = flottant(@2[450004] * 64) / (d2 + 80.0);
+                            soit teinte: flottant = flottant(@2[450005]) - 128.0;
+                            ir = puissance * 1.0;
+                            ig = puissance * (0.50 + teinte / 512.0);
+                            ib = puissance * (0.17 + teinte / 1024.0);
+                        } sinon {
+                            lx = 0.0 - 0.48;
+                            ly = 0.72;
+                            lz = 0.0 - 0.50;
+                            ir = 0.10;
+                            ig = 0.12;
+                            ib = 0.20;
+                        }
+                        soit ndl: flottant = nx * lx + ny * ly + nz * lz;
+                        si ndl > 0.0 {
+                            si li == 0 {
+                                si visible(hx, hy, hz, 64.0, 26.0, 64.0) == 0 {
+                                    ndl = 0.0;
+                                }
+                            }
+                        }
+                        si ndl > 0.0 {
+                            soit gx: flottant = lx + vx;
+                            soit gy: flottant = ly + vy;
+                            soit gz: flottant = lz + vz;
+                            soit gl: flottant = racine(gx * gx + gy * gy + gz * gz);
+                            gx = gx / gl;
+                            gy = gy / gl;
+                            gz = gz / gl;
+                            soit ndh: flottant = max(nx * gx + ny * gy + nz * gz, 0.0);
+                            soit vdh: flottant = max(vx * gx + vy * gy + vz * gz, 0.0);
+                            soit q: flottant = ndh * ndh * (a2 - 1.0) + 1.0;
+                            soit dist_d: flottant = a2 / (3.14159265 * q * q);
+                            soit geo: flottant = ndv / (ndv * (1.0 - kk) + kk) * (ndl / (ndl * (1.0 - kk) + kk));
+                            soit u1: flottant = 1.0 - vdh;
+                            soit u5: flottant = u1 * u1 * u1 * u1 * u1;
+                            soit fr: flottant = f0r + (1.0 - f0r) * u5;
+                            soit fg: flottant = f0g + (1.0 - f0g) * u5;
+                            soit fb: flottant = f0b + (1.0 - f0b) * u5;
+                            soit sp: flottant = dist_d * geo / (4.0 * ndv * ndl + 0.0001);
+                            soit kd: flottant = (1.0 - met) / 3.14159265;
+                            sr = sr + ((1.0 - fr) * kd * alr + fr * sp) * ir * ndl;
+                            sg = sg + ((1.0 - fg) * kd * alg + fg * sp) * ig * ndl;
+                            sb = sb + ((1.0 - fb) * kd * alb + fb * sp) * ib * ndl;
+                        }
+                    }
+                    // lumière ambiante de la nuit, et reflet du ciel sur le métal
+                    sr = sr + alr * 0.015 * (1.0 - met) + f0r * 0.03 * met;
+                    sg = sg + alg * 0.018 * (1.0 - met) + f0g * 0.035 * met;
+                    sb = sb + alb * 0.030 * (1.0 - met) + f0b * 0.05 * met;
+                    si m == 6 {
+                        soit hb: flottant = flottant((mot2 >> 8) & 255) / 255.0;
+                        sr = sr + 5.0 * hb * hb;
+                        sg = sg + 1.6 * hb * hb * hb;
+                        sb = sb + 0.25 * hb * hb * hb * hb;
+                    }
+                    cr = cr + tr * sr;
+                    cg = cg + tr * sg;
+                    cb = cb + tr * sb;
+                    tr = 0.0;
+                    fini = 1;
+                }
+            }
+            si fini == 0 {
+                tc = tn;
+                si tx < ty && tx < tz {
+                    tx = tx + qx;
+                    ix = ix + sx;
+                    face = 0;
+                    fsigne = dx < 0.0;
+                } sinon si ty < tz {
+                    ty = ty + qy;
+                    iy = iy + sy;
+                    face = 1;
+                    fsigne = dy < 0.0;
+                } sinon {
+                    tz = tz + qz;
+                    iz = iz + sz;
+                    face = 2;
+                    fsigne = dz < 0.0;
+                }
+            }
+        }
+    }
+    cr = cr + tr * (0.010 + hc * 0.020);
+    cg = cg + tr * (0.013 + hc * 0.030);
+    cb = cb + tr * (0.030 + hc * 0.070);
+    retour (ton(cr) << 24) | (ton(cg) << 16) | (ton(cb) << 8) | 255;
+}

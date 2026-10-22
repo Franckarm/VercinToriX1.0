@@ -1,0 +1,18 @@
+importer "fixe.vtx";
+
+fonction principal() {
+    soit n = entrée();
+    pour i dans 0..n {
+        soit a = entrée();
+        soit b = entrée();
+        sortie(mulhi(a, b));
+        sortie(mul64(a, b));
+        sortie(hi64());
+        sortie(fx_mul(a, b));
+        sortie(fx_div(a, b));
+        sortie(add64(a, b, b, a));
+        sortie(hi64());
+        sortie(sub64(a, b, b, a));
+        sortie(hi64());
+    }
+}

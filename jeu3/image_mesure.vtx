@@ -1,0 +1,13 @@
+importer "rendu3.vtx";
+importer "donnees_monde.vtx";
+
+// Une image du jeu, pour mesurer ce que les cylindres peuvent jouer ensemble.
+fonction principal() {
+    charger_monde();
+    joueur[6] = 40;
+    joueur[7] = 16;
+    rp[0] = 255;
+    rp[1] = 0;
+    rendre3(joueur[0], joueur[1], joueur[2]);
+    dessiner_sprites(joueur[0], joueur[1], joueur[2]);
+}

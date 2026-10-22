@@ -1,0 +1,1620 @@
+// L'atelier en fenêtre Windows (atelier.exe) : Win32 et GDI directement, sans bibliothèque.
+// En haut, des boutons (Ouvrir, Enregistrer, Lancer, Pas à pas, les entrées, l'étage, la vue). À gauche, le texte du
+// programme (le contrôle d'édition de Windows : souris, sélection, presse-papiers, annulation). À droite, le cube :
+// un étage de la mémoire, à plat (chaque mot est un pixel de sa couleur) ou en perspective isométrique (l'étage
+// vu comme un cube de 256 × 256 × 256 mots, les mots non nuls en voxels). En dessous, ce qu'a donné le programme.
+#![allow(non_snake_case, clippy::upper_case_acronyms)]
+
+use super::{compiler_avec, dossier_de, executer_dans, lire_partition, nombres, Memoire, ARRET, ATTENTE_NS, CANAL_ENTREE, CANAL_SORTIE, CLAVIER,
+            COMPLET, DIRECT, VTXC};
+use super::arbre::{self, Noeud};
+use std::collections::HashSet;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc;
+use core::ffi::c_void;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+type H = *mut c_void;
+type Proc = unsafe extern "system" fn(H, u32, usize, isize) -> isize;
+
+#[repr(C)]
+struct WndClassEx {
+    cbSize: u32,
+    style: u32,
+    lpfnWndProc: Proc,
+    cbClsExtra: i32,
+    cbWndExtra: i32,
+    hInstance: H,
+    hIcon: H,
+    hCursor: H,
+    hbrBackground: H,
+    lpszMenuName: *const u16,
+    lpszClassName: *const u16,
+    hIconSm: H,
+}
+#[repr(C)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+#[repr(C)]
+struct Msg {
+    hwnd: H,
+    message: u32,
+    wParam: usize,
+    lParam: isize,
+    time: u32,
+    pt: Point,
+}
+#[repr(C)]
+#[derive(Default)]
+struct Rect {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+#[repr(C)]
+struct PaintStruct {
+    hdc: H,
+    fErase: i32,
+    rcPaint: Rect,
+    fRestore: i32,
+    fIncUpdate: i32,
+    rgbReserved: [u8; 32],
+}
+#[repr(C)]
+struct BitmapInfoHeader {
+    biSize: u32,
+    biWidth: i32,
+    biHeight: i32,
+    biPlanes: u16,
+    biBitCount: u16,
+    biCompression: u32,
+    biSizeImage: u32,
+    biXPelsPerMeter: i32,
+    biYPelsPerMeter: i32,
+    biClrUsed: u32,
+    biClrImportant: u32,
+}
+#[repr(C)]
+struct BitmapInfo {
+    bmiHeader: BitmapInfoHeader,
+    bmiColors: [u32; 1],
+}
+#[repr(C)]
+struct Accel {
+    fVirt: u8,
+    key: u16,
+    cmd: u16,
+}
+#[repr(C)]
+struct OpenFileName {
+    lStructSize: u32,
+    hwndOwner: H,
+    hInstance: H,
+    lpstrFilter: *const u16,
+    lpstrCustomFilter: *mut u16,
+    nMaxCustFilter: u32,
+    nFilterIndex: u32,
+    lpstrFile: *mut u16,
+    nMaxFile: u32,
+    lpstrFileTitle: *mut u16,
+    nMaxFileTitle: u32,
+    lpstrInitialDir: *const u16,
+    lpstrTitle: *const u16,
+    Flags: u32,
+    nFileOffset: u16,
+    nFileExtension: u16,
+    lpstrDefExt: *const u16,
+    lCustData: isize,
+    lpfnHook: *const c_void,
+    lpTemplateName: *const u16,
+    pvReserved: *mut c_void,
+    dwReserved: u32,
+    FlagsEx: u32,
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn RegisterClassExW(c: *const WndClassEx) -> u16;
+    fn CreateWindowExW(ex: u32, classe: *const u16, titre: *const u16, style: u32, x: i32, y: i32, l: i32, h: i32,
+                       parent: H, menu: H, inst: H, param: *mut c_void) -> H;
+    fn DefWindowProcW(h: H, m: u32, w: usize, l: isize) -> isize;
+    fn CallWindowProcW(p: isize, h: H, m: u32, w: usize, l: isize) -> isize;
+    fn SetWindowLongPtrW(h: H, index: i32, v: isize) -> isize;
+    fn GetMessageW(m: *mut Msg, h: H, a: u32, b: u32) -> i32;
+    fn TranslateMessage(m: *const Msg) -> i32;
+    fn DispatchMessageW(m: *const Msg) -> isize;
+    fn TranslateAcceleratorW(h: H, t: H, m: *mut Msg) -> i32;
+    fn CreateAcceleratorTableW(a: *const Accel, n: i32) -> H;
+    fn PostQuitMessage(code: i32);
+    fn PostMessageW(h: H, m: u32, w: usize, l: isize) -> i32;
+    fn SendMessageW(h: H, m: u32, w: usize, l: isize) -> isize;
+    fn ShowWindow(h: H, n: i32) -> i32;
+    fn MoveWindow(h: H, x: i32, y: i32, l: i32, ht: i32, redessiner: i32) -> i32;
+    fn SetWindowTextW(h: H, t: *const u16) -> i32;
+    fn GetWindowTextW(h: H, t: *mut u16, n: i32) -> i32;
+    fn GetWindowTextLengthW(h: H) -> i32;
+    fn CreateMenu() -> H;
+    fn CreatePopupMenu() -> H;
+    fn AppendMenuW(m: H, drapeaux: u32, id: usize, t: *const u16) -> i32;
+    fn SetMenu(h: H, m: H) -> i32;
+    fn MessageBoxW(h: H, t: *const u16, titre: *const u16, genre: u32) -> i32;
+    fn InvalidateRect(h: H, r: *const Rect, effacer: i32) -> i32;
+    fn BeginPaint(h: H, p: *mut PaintStruct) -> H;
+    fn EndPaint(h: H, p: *const PaintStruct) -> i32;
+    fn GetClientRect(h: H, r: *mut Rect) -> i32;
+    fn LoadCursorW(inst: H, nom: *const u16) -> H;
+    fn SetFocus(h: H) -> H;
+    fn GetFocus() -> H;
+    fn SetProcessDPIAware() -> i32;
+    fn GetDC(h: H) -> H;
+    fn ReleaseDC(h: H, dc: H) -> i32;
+    fn DestroyWindow(h: H) -> i32;
+    fn SetTimer(h: H, id: usize, ms: u32, f: *const c_void) -> usize;
+    fn KillTimer(h: H, id: usize) -> i32;
+    fn LoadImageW(inst: H, nom: *const u16, genre: u32, l: i32, h: i32, drapeaux: u32) -> H;
+    fn FillRect(dc: H, r: *const Rect, pinceau: H) -> i32;
+}
+#[link(name = "gdi32")]
+extern "system" {
+    fn CreateFontW(h: i32, l: i32, esc: i32, orient: i32, graisse: i32, italique: u32, souligne: u32, barre: u32,
+                   jeu: u32, precision: u32, decoupe: u32, qualite: u32, famille: u32, nom: *const u16) -> H;
+    fn StretchDIBits(dc: H, xd: i32, yd: i32, ld: i32, hd: i32, xs: i32, ys: i32, ls: i32, hs: i32, bits: *const c_void,
+                     info: *const BitmapInfo, usage: u32, rop: u32) -> i32;
+    fn CreateSolidBrush(c: u32) -> H;
+    fn SetTextColor(dc: H, c: u32) -> u32;
+    fn SetBkColor(dc: H, c: u32) -> u32;
+    fn GetDeviceCaps(dc: H, index: i32) -> i32;
+    fn TextOutW(dc: H, x: i32, y: i32, t: *const u16, n: i32) -> i32;
+    fn SetBkMode(dc: H, mode: i32) -> i32;
+    fn SelectObject(dc: H, o: H) -> H;
+    fn DeleteObject(o: H) -> i32;
+    fn CreateCompatibleDC(dc: H) -> H;
+    fn CreateCompatibleBitmap(dc: H, l: i32, h: i32) -> H;
+    fn BitBlt(dc: H, x: i32, y: i32, l: i32, h: i32, src: H, xs: i32, ys: i32, rop: u32) -> i32;
+    fn DeleteDC(dc: H) -> i32;
+}
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetModuleHandleW(nom: *const u16) -> H;
+}
+#[link(name = "comdlg32")]
+extern "system" {
+    fn GetOpenFileNameW(o: *mut OpenFileName) -> i32;
+    fn GetSaveFileNameW(o: *mut OpenFileName) -> i32;
+}
+
+// messages et styles
+const WM_CREATE: u32 = 0x0001;
+const WM_DESTROY: u32 = 0x0002;
+const WM_SIZE: u32 = 0x0005;
+const WM_PAINT: u32 = 0x000F;
+const WM_CLOSE: u32 = 0x0010;
+const WM_ERASEBKGND: u32 = 0x0014;
+const WM_SETFONT: u32 = 0x0030;
+const WM_CHAR: u32 = 0x0102;
+const WM_COMMAND: u32 = 0x0111;
+const WM_CTLCOLOREDIT: u32 = 0x0133;
+const WM_CTLCOLORSTATIC: u32 = 0x0138;
+const WM_LBUTTONDOWN: u32 = 0x0201;
+const WM_MOUSEWHEEL: u32 = 0x020A;
+const WM_CUT: u32 = 0x0300;
+const WM_COPY: u32 = 0x0301;
+const WM_PASTE: u32 = 0x0302;
+const WM_UNDO: u32 = 0x0304;
+const WM_APP_FINI: u32 = 0x8001;
+const WM_TIMER: u32 = 0x0113;
+const EM_GETSEL: u32 = 0x00B0;
+const EM_SETSEL: u32 = 0x00B1;
+const EM_SCROLLCARET: u32 = 0x00B7;
+const EM_GETMODIFY: u32 = 0x00B8;
+const EM_SETMODIFY: u32 = 0x00B9;
+const EM_LINEINDEX: u32 = 0x00BB;
+const EM_REPLACESEL: u32 = 0x00C2;
+const EM_GETLINE: u32 = 0x00C4;
+const EM_SETLIMITTEXT: u32 = 0x00C5;
+const EM_LINEFROMCHAR: u32 = 0x00C9;
+const EM_SETTABSTOPS: u32 = 0x00CB;
+const EM_GETLINECOUNT: u32 = 0x00BA;
+const EM_GETFIRSTVISIBLELINE: u32 = 0x00CE;
+const EM_POSFROMCHAR: u32 = 0x00D6;
+const EN_CHANGE: usize = 0x0300;
+const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
+const WS_VISIBLE: u32 = 0x1000_0000;
+const WS_CHILD: u32 = 0x4000_0000;
+const WS_VSCROLL: u32 = 0x0020_0000;
+const WS_HSCROLL: u32 = 0x0010_0000;
+const WS_CLIPCHILDREN: u32 = 0x0200_0000;
+const WS_TABSTOP: u32 = 0x0001_0000;
+const WS_EX_CLIENTEDGE: u32 = 0x0000_0200;
+const ES_MULTILINE: u32 = 0x0004;
+const ES_AUTOVSCROLL: u32 = 0x0040;
+const ES_AUTOHSCROLL: u32 = 0x0080;
+const ES_NOHIDESEL: u32 = 0x0100;
+const ES_READONLY: u32 = 0x0800;
+const ES_WANTRETURN: u32 = 0x1000;
+const SS_CENTERIMAGE: u32 = 0x0200;
+const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
+const MF_POPUP: u32 = 0x0010;
+const MF_SEPARATOR: u32 = 0x0800;
+const IDC_ARROW: usize = 32512;
+const GWLP_WNDPROC: i32 = -4;
+const MB_YESNOCANCEL: u32 = 0x0003;
+const MB_ICONQUESTION: u32 = 0x0020;
+const MB_ICONINFORMATION: u32 = 0x0040;
+const IDYES: i32 = 6;
+const IDCANCEL: i32 = 2;
+const FVIRTKEY: u8 = 1;
+const FCONTROL: u8 = 8;
+const SRCCOPY: u32 = 0x00CC_0020;
+
+// commandes (menus, raccourcis, boutons)
+const C_NOUVEAU: u16 = 1001;
+const C_OUVRIR: u16 = 1002;
+const C_ENREGISTRER: u16 = 1003;
+const C_ENREGISTRER_SOUS: u16 = 1004;
+const C_QUITTER: u16 = 1005;
+const C_ANNULER: u16 = 1101;
+const C_COUPER: u16 = 1102;
+const C_COPIER: u16 = 1103;
+const C_COLLER: u16 = 1104;
+const C_TOUT: u16 = 1105;
+const C_LANCER: u16 = 1201;
+const C_PAS: u16 = 1202;
+const C_ARRETER: u16 = 1203;
+const C_ASSOCIER: u16 = 1402;
+const C_PURGER: u16 = 1205;
+const C_ETAGE: u16 = 1300; // + 0..3
+const C_VUE: u16 = 1310;
+const C_LARGEUR: u16 = 1311;
+const C_EFFACER: u16 = 1312;
+const C_ONGLET_SORTIE: u16 = 1313;
+const C_ONGLET_TERMINAL: u16 = 1314;
+const C_APROPOS: u16 = 1401;
+
+const FOND: u32 = 0x001E1E1E; // COLORREF : 0x00BBGGRR
+const TEXTE: u32 = 0x00D4D4D4;
+
+fn w(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+/// L'état de la fenêtre : un seul fil (celui des messages) le touche ; le programme lancé tourne à côté et rend son
+/// résultat par FINI.
+struct Atelier {
+    inst: H,
+    fen: H,
+    source: H,
+    sortie: H,
+    entrees: H,
+    cube: H,
+    etat: H,
+    boutons: Vec<(H, u16)>,
+    etiquettes: Vec<H>,
+    police: H,
+    police_ui: H,
+    pinceau: H,
+    echelle: f32,
+    fichier: Option<PathBuf>,
+    mem: Option<Memoire>,
+    etage: u32,
+    iso: bool,
+    largeur: u32,
+    base: u32,
+    zoom: f32,
+    en_cours: bool,
+    ancien_proc_source: isize,
+    // sous le cube : le terminal (sortie du programme et commandes) et l'arbre des liaisons
+    term_entree: H,
+    // comme VS Code : l'onglet « Sortie » (le compte rendu de chaque exécution) et l'onglet « Terminal » (interactif)
+    journal: H,
+    onglets: [H; 2],
+    onglet: usize,
+    ancien_proc_term: isize,
+    arbre: H,
+    noeuds: Vec<Noeud>,
+    ouverts: HashSet<Vec<usize>>,
+    defile: i32,
+    choisi: Option<(u32, u32)>,
+    // les numéros de ligne à gauche du texte, et l'image d'un programme qui dessine
+    lignes: H,
+    vue_lignes: (isize, isize),
+    ligne_erreur: Option<usize>,
+    dessin: bool,
+    rx_sortie: Option<mpsc::Receiver<u32>>,
+    tx_entree: Option<mpsc::Sender<u32>>,
+    icone: H,
+}
+
+static mut ATELIER: *mut Atelier = std::ptr::null_mut();
+fn a() -> &'static mut Atelier {
+    unsafe { &mut *ATELIER }
+}
+
+struct Fini {
+    texte: String,
+    resume: String,
+    mem: Option<Memoire>,
+    ligne_erreur: Option<usize>,
+}
+static FINI: Mutex<Option<Fini>> = Mutex::new(None);
+
+// ------------------------------------------------------------------------------------------------ texte des contrôles
+fn lire_texte(h: H) -> String {
+    unsafe {
+        let n = GetWindowTextLengthW(h);
+        let mut t = vec![0u16; n as usize + 1];
+        let k = GetWindowTextW(h, t.as_mut_ptr(), n + 1);
+        String::from_utf16_lossy(&t[..k.max(0) as usize])
+    }
+}
+fn ecrire_texte(h: H, t: &str) {
+    let t = t.replace("\r\n", "\n").replace('\n', "\r\n");
+    unsafe {
+        SetWindowTextW(h, w(&t).as_ptr());
+    }
+}
+fn titre() {
+    let at = a();
+    let nom = at.fichier.as_ref().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or("sans titre".into());
+    let modifie = unsafe { SendMessageW(at.source, EM_GETMODIFY, 0, 0) } != 0;
+    unsafe {
+        SetWindowTextW(at.fen, w(&format!("{}{} — Atelier vtx", nom, if modifie { " •" } else { "" })).as_ptr());
+    }
+}
+fn etat(t: &str) {
+    unsafe {
+        SetWindowTextW(a().etat, w(&format!("  {}", t)).as_ptr());
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ fichiers
+fn dossier_de_depart() -> PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        let mut p = exe.parent().map(|x| x.to_path_buf()).unwrap_or_default();
+        for _ in 0..5 {
+            if p.join("exemples").is_dir() {
+                return p.join("exemples");
+            }
+            match p.parent() {
+                Some(q) => p = q.to_path_buf(),
+                None => break,
+            }
+        }
+    }
+    std::env::current_dir().unwrap_or_default()
+}
+
+fn dialogue_fichier(enregistrer: bool) -> Option<PathBuf> {
+    let at = a();
+    let mut tampon = vec![0u16; 2048];
+    if let Some(f) = &at.fichier {
+        let n: Vec<u16> = f.file_name().map(|n| n.to_string_lossy().encode_utf16().collect()).unwrap_or_default();
+        tampon[..n.len().min(2000)].copy_from_slice(&n[..n.len().min(2000)]);
+    }
+    let filtre: Vec<u16> = "Programmes vtx (*.vtx)\0*.vtx\0Tous les fichiers\0*.*\0\0".encode_utf16().collect();
+    let depart = at.fichier.as_ref().and_then(|f| f.parent().map(|p| p.to_path_buf())).unwrap_or_else(dossier_de_depart);
+    let depart = w(&depart.to_string_lossy());
+    let ext = w("vtx");
+    let mut o = OpenFileName {
+        lStructSize: std::mem::size_of::<OpenFileName>() as u32, hwndOwner: at.fen, hInstance: std::ptr::null_mut(),
+        lpstrFilter: filtre.as_ptr(), lpstrCustomFilter: std::ptr::null_mut(), nMaxCustFilter: 0, nFilterIndex: 1,
+        lpstrFile: tampon.as_mut_ptr(), nMaxFile: tampon.len() as u32, lpstrFileTitle: std::ptr::null_mut(), nMaxFileTitle: 0,
+        lpstrInitialDir: depart.as_ptr(), lpstrTitle: std::ptr::null(),
+        Flags: if enregistrer { 0x2 | 0x800 | 0x80000 } else { 0x1000 | 0x800 | 0x80000 },
+        nFileOffset: 0, nFileExtension: 0, lpstrDefExt: ext.as_ptr(), lCustData: 0, lpfnHook: std::ptr::null(),
+        lpTemplateName: std::ptr::null(), pvReserved: std::ptr::null_mut(), dwReserved: 0, FlagsEx: 0,
+    };
+    let ok = unsafe { if enregistrer { GetSaveFileNameW(&mut o) } else { GetOpenFileNameW(&mut o) } };
+    if ok == 0 {
+        return None;
+    }
+    let n = tampon.iter().position(|&c| c == 0).unwrap_or(0);
+    Some(PathBuf::from(String::from_utf16_lossy(&tampon[..n])))
+}
+
+/// Un autre programme (Nouveau, Ouvrir) : les résultats du précédent disparaissent de toutes les vues.
+fn effacer_resultats() {
+    let at = a();
+    if at.en_cours {
+        return;
+    }
+    at.mem = None;
+    at.noeuds.clear();
+    at.ouverts.clear();
+    at.choisi = None;
+    at.dessin = false;
+    at.ligne_erreur = None;
+    at.vue_lignes = (-1, -1);
+    ecrire_texte(at.journal, "");
+    ecrire_texte(at.sortie, "");
+    unsafe {
+        for h in [at.cube, at.arbre, at.lignes] {
+            InvalidateRect(h, std::ptr::null(), 0);
+        }
+    }
+}
+
+fn charger(chemin: &Path) {
+    let at = a();
+    let texte = std::fs::read_to_string(chemin).unwrap_or_else(|_| MODELE.to_string());
+    ecrire_texte(at.source, &texte);
+    unsafe {
+        SendMessageW(at.source, EM_SETMODIFY, 0, 0);
+    }
+    at.fichier = Some(chemin.to_path_buf());
+    effacer_resultats();
+    titre();
+    etat(&format!("ouvert : {}", chemin.display()));
+}
+
+/// Enregistre (en demandant un nom s'il n'y en a pas) ; false si l'utilisateur a renoncé ou si l'écriture échoue.
+fn enregistrer(sous: bool) -> bool {
+    let at = a();
+    if sous || at.fichier.is_none() {
+        match dialogue_fichier(true) {
+            Some(f) => at.fichier = Some(f),
+            None => return false,
+        }
+    }
+    let f = at.fichier.clone().unwrap();
+    let mut t = lire_texte(at.source).replace("\r\n", "\n").replace('\t', "    ");
+    if !t.ends_with('\n') {
+        t.push('\n');
+    }
+    match std::fs::write(&f, t) {
+        Ok(_) => {
+            unsafe {
+                SendMessageW(at.source, EM_SETMODIFY, 0, 0);
+            }
+            titre();
+            etat(&format!("enregistré : {}", f.display()));
+            true
+        }
+        Err(e) => {
+            message(&format!("Impossible d'enregistrer {} :\n{}", f.display(), e));
+            false
+        }
+    }
+}
+
+fn message(t: &str) {
+    unsafe {
+        MessageBoxW(a().fen, w(t).as_ptr(), w("Atelier vtx").as_ptr(), MB_ICONINFORMATION);
+    }
+}
+
+/// Les modifications non enregistrées : true si l'on peut continuer (enregistrées ou abandonnées).
+fn peut_quitter() -> bool {
+    let at = a();
+    if unsafe { SendMessageW(at.source, EM_GETMODIFY, 0, 0) } == 0 {
+        return true;
+    }
+    let r = unsafe {
+        MessageBoxW(at.fen, w("Le programme a été modifié. Enregistrer les modifications ?").as_ptr(), w("Atelier vtx").as_ptr(),
+                    MB_YESNOCANCEL | MB_ICONQUESTION)
+    };
+    match r {
+        IDYES => enregistrer(false),
+        IDCANCEL => false,
+        _ => true,
+    }
+}
+
+const MODELE: &str = "fonction principal() {\n    afficher(\"Bonjour, Vercintorix !\");\n}\n";
+
+// ------------------------------------------------------------------------------------------------ lancer
+fn lancer() {
+    let at = a();
+    if at.en_cours {
+        etat("un programme tourne déjà");
+        return;
+    }
+    // sans nom : on lance quand même, depuis un fichier temporaire (rien n'est demandé)
+    let fichier = if at.fichier.is_none() {
+        let f = std::env::temp_dir().join("sans titre.vtx");
+        if std::fs::write(&f, lire_texte(at.source).replace("\r\n", "\n")).is_err() {
+            message("Impossible d'écrire le fichier temporaire.");
+            return;
+        }
+        f
+    } else {
+        if !enregistrer(false) {
+            return;
+        }
+        at.fichier.clone().unwrap()
+    };
+    let source = lire_texte(at.source).replace("\r\n", "\n");
+    let entrees: Vec<u32> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).map(|x| x as u32).collect();
+    at.en_cours = true;
+    // la mémoire du programme précédent est rendue avant d'en prendre une autre
+    at.mem = None;
+    at.noeuds.clear();
+    at.ouverts.clear();
+    unsafe {
+        InvalidateRect(at.cube, std::ptr::null(), 0);
+        InvalidateRect(at.arbre, std::ptr::null(), 0);
+    }
+    let nom = fichier.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    ajouter_texte(at.sortie, &format!("\n▶ {}\n", nom));
+    ecrire_texte(at.journal, &format!("▶ {} : compilation et exécution…\n", nom));
+    montrer_onglet(1);
+    etat("compilation et exécution… (la ligne sous le terminal répond au programme ; Maj+F5 l'arrête)");
+    // la console du programme passe par le terminal
+    let (tx_s, rx_s) = mpsc::channel();
+    let (tx_e, rx_e) = mpsc::channel();
+    *CANAL_SORTIE.lock().unwrap() = Some(tx_s);
+    *CANAL_ENTREE.lock().unwrap() = Some(rx_e);
+    at.rx_sortie = Some(rx_s);
+    at.tx_entree = Some(tx_e);
+    ARRET.store(false, Ordering::Relaxed);
+    unsafe {
+        SetFocus(at.term_entree);
+        SetTimer(at.fen, 1, 30, std::ptr::null());
+    }
+    let fen = at.fen as usize;
+    std::thread::spawn(move || {
+        let fini = executer(&fichier, &source, &entrees);
+        DIRECT.store(false, Ordering::Relaxed);
+        CLAVIER.store(0, Ordering::Relaxed);
+        *CANAL_SORTIE.lock().unwrap() = None;
+        *CANAL_ENTREE.lock().unwrap() = None;
+        *FINI.lock().unwrap() = Some(fini);
+        unsafe {
+            PostMessageW(fen as H, WM_APP_FINI, 0, 0);
+        }
+    });
+}
+
+fn executer(fichier: &Path, source: &str, entrees: &[u32]) -> Fini {
+    let f = fichier.to_string_lossy().into_owned();
+    let base = dossier_de(&f);
+    let nom = fichier.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let t0 = std::time::Instant::now();
+    let (mots, table) = match compiler_avec(&nombres(VTXC), source, &base, COMPLET) {
+        Ok(r) => r,
+        Err(e) => {
+            let ligne = e.find("erreur ligne ").and_then(|p| e[p + 13..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok());
+            let t = e.replace("erreur ligne ", &format!("erreur {}, ligne ", nom));
+            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne };
+        }
+    };
+    let tc = t0.elapsed().as_secs_f64();
+    let mut mem = Memoire::new(false);
+    super::charger(&mut mem, &mots);
+    let cyl = super::cylindres_voulus(None);
+    let part = if table.first().copied().unwrap_or(0) == 0 || cyl <= 1 { None } else { Some(lire_partition(&table, cyl)) };
+    // la console du programme (et pas celle du compilateur) va dans la fenêtre d'exécution
+    DIRECT.store(true, Ordering::Relaxed);
+    CLAVIER.store(2, Ordering::Relaxed);
+    ATTENTE_NS.store(0, Ordering::Relaxed);
+    let t1 = std::time::Instant::now();
+    let r = executer_dans(&mem, entrees, 5_000_000_000, Some(Path::new(&base)), part.as_ref());
+    // le temps passé à attendre le clavier n'est pas du calcul
+    let attente = ATTENTE_NS.load(Ordering::Relaxed) as f64 / 1e9;
+    let te = (t1.elapsed().as_secs_f64() - attente).max(0.0);
+    let duree = |t: f64| if t < 1.0 { format!("{:.0} ms", t * 1000.0) } else { format!("{:.2} s", t) };
+    let mut texte = String::new();
+    let mut resume = String::new();
+    match r {
+        Ok(r) => {
+            resume.push_str(&format!("{} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), r.pas, duree(te),
+                                     if attente > 0.0 { format!(" (et {} à attendre le clavier)", duree(attente)) } else { String::new() }));
+            if !r.sorties.is_empty() {
+                let s: Vec<String> = r.sorties.iter().map(|v| v.to_string()).collect();
+                resume.push_str(&format!("sorties : {}\n", s.join(",")));
+            }
+            // la sortie : ce que le programme a écrit, puis le bilan
+            texte.extend(r.texte.iter().filter_map(|&v| char::from_u32(v & 0x1F_FFFF)));
+            if !texte.is_empty() && !texte.ends_with('\n') {
+                texte.push('\n');
+            }
+            texte.push_str("──────────\n");
+            texte.push_str(&resume);
+        }
+        Err(e) => {
+            resume.push_str(&format!("{}\n", if e.contains("arrêté") { "programme arrêté".to_string() } else { format!("erreur à l'exécution : {}", e) }));
+            texte.push_str(&resume);
+        }
+    }
+    Fini { texte, resume, mem: Some(mem), ligne_erreur: None }
+}
+
+fn fini() {
+    let at = a();
+    at.en_cours = false;
+    let f = match FINI.lock().unwrap().take() {
+        Some(f) => f,
+        None => return,
+    };
+    // le terminal : le reste de ce que le programme a écrit, puis le bilan
+    vider_sortie_programme();
+    at.rx_sortie = None;
+    at.tx_entree = None;
+    unsafe {
+        KillTimer(at.fen, 1);
+    }
+    let _ = &f.texte;
+    ajouter_texte(at.sortie, &format!("\n── {}", f.resume));
+    // la sortie : le compte rendu complet ; on y passe après l'exécution, sauf si le programme a dialogué au clavier
+    ajouter_texte(at.journal, &f.texte);
+    let a_dialogue = ATTENTE_NS.load(Ordering::Relaxed) > 0;
+    if f.ligne_erreur.is_some() || !a_dialogue {
+        montrer_onglet(0);
+    }
+    at.ligne_erreur = f.ligne_erreur;
+    at.vue_lignes = (-1, -1);
+    if let Some(l) = f.ligne_erreur {
+        // la ligne fautive est sélectionnée dans le texte (et son numéro passe en rouge)
+        unsafe {
+            let debut = SendMessageW(at.source, EM_LINEINDEX, l.saturating_sub(1), 0);
+            let fin = SendMessageW(at.source, EM_LINEINDEX, l, 0);
+            let fin = if fin < 0 { GetWindowTextLengthW(at.source) as isize } else { fin };
+            SendMessageW(at.source, EM_SETSEL, debut.max(0) as usize, fin);
+            SendMessageW(at.source, EM_SCROLLCARET, 0, 0);
+            SetFocus(at.source);
+        }
+        etat(&format!("erreur de compilation, ligne {}", l));
+        return;
+    }
+    if let Some(m) = f.mem {
+        // si l'étage regardé est vide, on montre le premier étage (1 à 3) qui contient quelque chose (tout l'étage :
+        // le tas commence à 8 388 608)
+        let vide = |e: u32| (0..=0xFF_FFFFu32).all(|x| m.lit(e, x) == 0);
+        if vide(at.etage) {
+            if let Some(e) = (1..4u32).find(|&e| !vide(e)) {
+                at.etage = e;
+                at.base = 0;
+            }
+        }
+        // un programme qui dessine (ecran(l, h)) : la vue montre son image
+        at.dessin = taille_dessin(&m).is_some();
+        at.mem = Some(m);
+        at.choisi = None;
+        rafraichir_arbre();
+    }
+    etat(&format!("programme terminé · cube : étage {} · l'arbre montre les objets du tas", at.etage));
+    unsafe {
+        InvalidateRect(at.cube, std::ptr::null(), 0);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ les numéros de ligne
+fn suivre_lignes() {
+    let at = a();
+    let v = unsafe { (SendMessageW(at.source, EM_GETFIRSTVISIBLELINE, 0, 0), SendMessageW(at.source, EM_GETLINECOUNT, 0, 0)) };
+    if v != at.vue_lignes {
+        at.vue_lignes = v;
+        unsafe {
+            InvalidateRect(at.lignes, std::ptr::null(), 0);
+        }
+    }
+}
+
+unsafe extern "system" fn proc_lignes(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    match m {
+        WM_ERASEBKGND => 1,
+        WM_PAINT => {
+            let at = a();
+            let mut ps: PaintStruct = std::mem::zeroed();
+            let dc = BeginPaint(h, &mut ps);
+            let mut r = Rect::default();
+            GetClientRect(h, &mut r);
+            let mdc = CreateCompatibleDC(dc);
+            let bmp = CreateCompatibleBitmap(dc, r.right.max(1), r.bottom.max(1));
+            let ancien_bmp = SelectObject(mdc, bmp);
+            let fond = CreateSolidBrush(0x0018_1818);
+            FillRect(mdc, &r, fond);
+            DeleteObject(fond);
+            let ancienne_police = SelectObject(mdc, at.police);
+            SetBkMode(mdc, 1);
+            let premiere = SendMessageW(at.source, EM_GETFIRSTVISIBLELINE, 0, 0).max(0);
+            let total = SendMessageW(at.source, EM_GETLINECOUNT, 0, 0);
+            // la position de chaque ligne visible est demandée au texte lui-même (EM_POSFROMCHAR) : toujours alignée
+            let decalage = (2.0 * at.echelle) as i32; // le bord du texte
+            let mut n = premiere;
+            while n < total {
+                let debut = SendMessageW(at.source, EM_LINEINDEX, n as usize, 0);
+                if debut < 0 {
+                    break;
+                }
+                let pos = SendMessageW(at.source, EM_POSFROMCHAR, debut as usize, 0);
+                let y = ((pos >> 16) & 0xFFFF) as i16 as i32 + decalage;
+                if y > r.bottom {
+                    break;
+                }
+                let erreur = at.ligne_erreur == Some(n as usize + 1);
+                SetTextColor(mdc, if erreur { 0x0060_60F0 } else { 0x0070_7070 });
+                let t = w(&format!("{:>4}", n + 1));
+                TextOutW(mdc, (4.0 * at.echelle) as i32, y, t.as_ptr(), t.len() as i32 - 1);
+                n += 1;
+            }
+            BitBlt(dc, 0, 0, r.right, r.bottom, mdc, 0, 0, SRCCOPY);
+            SelectObject(mdc, ancienne_police);
+            SelectObject(mdc, ancien_bmp);
+            DeleteObject(bmp);
+            DeleteDC(mdc);
+            EndPaint(h, &ps);
+            0
+        }
+        _ => DefWindowProcW(h, m, wp, lp),
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ le terminal
+/// Ajoute du texte à la fin d'un contrôle d'édition (le terminal).
+fn ajouter_texte(h: H, t: &str) {
+    if h.is_null() || t.is_empty() {
+        return;
+    }
+    let t = t.replace("\r\n", "\n").replace('\n', "\r\n");
+    unsafe {
+        let n = GetWindowTextLengthW(h) as usize;
+        SendMessageW(h, EM_SETSEL, n, n as isize);
+        SendMessageW(h, EM_REPLACESEL, 0, w(&t).as_ptr() as isize);
+        SendMessageW(h, EM_SCROLLCARET, 0, 0);
+    }
+}
+
+/// Ce que le programme a écrit depuis la dernière fois, vers le terminal.
+fn vider_sortie_programme() {
+    let at = a();
+    let mut t = String::new();
+    if let Some(rx) = &at.rx_sortie {
+        while let Ok(v) = rx.try_recv() {
+            if let Some(c) = char::from_u32(v & 0x1F_FFFF) {
+                t.push(c);
+            }
+        }
+    }
+    ajouter_texte(at.sortie, &t);
+}
+
+/// Montre l'onglet « Sortie » (0) ou « Terminal » (1).
+fn montrer_onglet(i: usize) {
+    let at = a();
+    at.onglet = i;
+    unsafe {
+        ShowWindow(at.journal, if i == 0 { 5 } else { 0 });
+        ShowWindow(at.sortie, if i == 1 { 5 } else { 0 });
+        ShowWindow(at.term_entree, if i == 1 { 5 } else { 0 });
+        // l'onglet actif est écrit entre crochets
+        SetWindowTextW(at.onglets[0], w(if i == 0 { "[ Sortie ]" } else { "Sortie" }).as_ptr());
+        SetWindowTextW(at.onglets[1], w(if i == 1 { "[ Terminal ]" } else { "Terminal" }).as_ptr());
+        if i == 1 {
+            SetFocus(at.term_entree);
+        }
+    }
+}
+
+/// Entrée dans la ligne du terminal : pendant l'exécution, la ligne part vers le programme (lire_car(1), lire_ligne()) ;
+/// sinon c'est une commande de l'atelier.
+fn ligne_terminal() {
+    let at = a();
+    let t = lire_texte(at.term_entree);
+    unsafe {
+        SetWindowTextW(at.term_entree, w("").as_ptr());
+    }
+    if at.en_cours {
+        if let Some(tx) = &at.tx_entree {
+            for c in t.chars() {
+                let _ = tx.send(c as u32);
+            }
+            let _ = tx.send(10);
+            ajouter_texte(at.sortie, &format!("{}\n", t));
+        }
+        return;
+    }
+    ajouter_texte(at.sortie, &format!("› {}\n", t));
+    let mots: Vec<&str> = t.split_whitespace().collect();
+    let nombre = |s: &str| -> Option<u32> {
+        let s = s.trim_start_matches('@');
+        if let Some(h) = s.strip_prefix('#').or_else(|| s.strip_prefix("0x")) { u32::from_str_radix(h, 16).ok() } else { s.parse().ok() }
+    };
+    match mots.first().copied() {
+        None => {}
+        Some("aide") => ajouter_texte(at.sortie, "commandes : lancer · arreter · mot ADRESSE · mot ÉTAGE ADRESSE · etage N · arbre · effacer · purger\n\
+            ADRESSE : décimale, #hex ou 0xhex. L'arbre montre le mot choisi et les objets du tas (tableaux, dicos, textes)\n\
+            avec leurs liaisons ; un clic sur une ligne l'ouvre ou la ferme. À plat (F6), un clic dans le cube choisit un mot.\n"),
+        Some("lancer") => lancer(),
+        Some("arreter") | Some("arrêter") => commande(C_ARRETER),
+        Some("effacer") => ecrire_texte(at.sortie, ""),
+        Some("purger") => {
+            effacer_resultats();
+            ajouter_texte(at.sortie, "mémoire du programme rendue à Windows (cube et arbre vidés)\n");
+        }
+        Some("arbre") => {
+            rafraichir_arbre();
+            ajouter_texte(at.sortie, "arbre recalculé\n");
+        }
+        Some("etage") | Some("étage") => match mots.get(1).and_then(|x| nombre(x)) {
+            Some(e) if e < 4 => commande(C_ETAGE + e as u16),
+            _ => ajouter_texte(at.sortie, "etage 0, 1, 2 ou 3\n"),
+        },
+        Some("mot") => {
+            let (e, adr) = match (mots.get(1).and_then(|x| nombre(x)), mots.get(2).and_then(|x| nombre(x))) {
+                (Some(e), Some(adr)) if e < 4 => (e, adr),
+                (Some(adr), None) => (at.etage, adr),
+                _ => {
+                    ajouter_texte(at.sortie, "mot ADRESSE, ou mot ÉTAGE ADRESSE\n");
+                    return;
+                }
+            };
+            choisir_mot(e, adr & 0xFF_FFFF);
+        }
+        Some(x) => ajouter_texte(at.sortie, &format!("« {} » : commande inconnue (tapez aide)\n", x)),
+    }
+}
+
+unsafe extern "system" fn proc_term(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    if m == WM_CHAR && wp == 13 {
+        ligne_terminal();
+        return 0;
+    }
+    CallWindowProcW(a().ancien_proc_term, h, m, wp, lp)
+}
+
+// ------------------------------------------------------------------------------------------------ l'arbre des liaisons
+/// Le mot choisi (clic dans le cube, ou « mot ») : son décodage dans le terminal, et en tête de l'arbre.
+fn choisir_mot(e: u32, adr: u32) {
+    let at = a();
+    let mem = match &at.mem {
+        Some(m) => m,
+        None => {
+            ajouter_texte(at.sortie, "rien à lire : lancez d'abord le programme\n");
+            return;
+        }
+    };
+    let v = mem.lit(e, adr);
+    let mut t = format!("@{}[{}]\n", e, adr);
+    for l in arbre::decoder(v) {
+        t.push_str(&format!("   {}\n", l));
+    }
+    ajouter_texte(at.sortie, &t);
+    at.choisi = Some((e, adr));
+    rafraichir_arbre();
+}
+
+fn rafraichir_arbre() {
+    let at = a();
+    at.noeuds.clear();
+    at.ouverts.clear();
+    at.defile = 0;
+    if let Some(mem) = &at.mem {
+        let lit = |e: u32, x: u32| mem.lit(e, x);
+        if let Some((e, adr)) = at.choisi {
+            at.noeuds.push(arbre::noeud_mot(&lit, e, adr));
+        }
+        at.noeuds.extend(arbre::arbre(&lit));
+        for i in 0..at.noeuds.len() {
+            at.ouverts.insert(vec![i]);
+        }
+    }
+    unsafe {
+        InvalidateRect(at.arbre, std::ptr::null(), 0);
+    }
+}
+
+/// Les lignes visibles : (profondeur, chemin, noeud).
+fn lignes_arbre() -> Vec<(usize, Vec<usize>, &'static Noeud)> {
+    fn rec(n: &'static Noeud, chemin: Vec<usize>, prof: usize, ouverts: &HashSet<Vec<usize>>, r: &mut Vec<(usize, Vec<usize>, &'static Noeud)>) {
+        let ouvert = ouverts.contains(&chemin);
+        r.push((prof, chemin.clone(), n));
+        if ouvert {
+            for (i, e) in n.enfants.iter().enumerate() {
+                let mut c = chemin.clone();
+                c.push(i);
+                rec(e, c, prof + 1, ouverts, r);
+            }
+        }
+    }
+    let at = a();
+    let mut r = Vec::new();
+    for (i, n) in at.noeuds.iter().enumerate() {
+        rec(n, vec![i], 0, &at.ouverts, &mut r);
+    }
+    r
+}
+
+fn couleur_logique(q: u8) -> u32 {
+    // COLORREF 0x00BBGGRR : inconnu gris, faux rouge, vrai vert, variable orange
+    [0x0090_9090, 0x0060_60E0, 0x0070_C870, 0x0040_A8E8][q as usize & 3]
+}
+
+unsafe extern "system" fn proc_arbre(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    let at = a();
+    let hl = (18.0 * at.echelle) as i32;
+    let ind = (16.0 * at.echelle) as i32;
+    match m {
+        WM_ERASEBKGND => 1,
+        WM_PAINT => {
+            let mut ps: PaintStruct = std::mem::zeroed();
+            let dc = BeginPaint(h, &mut ps);
+            let mut r = Rect::default();
+            GetClientRect(h, &mut r);
+            // dessin hors écran puis copie : pas de scintillement
+            let mdc = CreateCompatibleDC(dc);
+            let bmp = CreateCompatibleBitmap(dc, r.right.max(1), r.bottom.max(1));
+            let ancien_bmp = SelectObject(mdc, bmp);
+            let fond = CreateSolidBrush(FOND);
+            FillRect(mdc, &r, fond);
+            DeleteObject(fond);
+            let ancienne_police = SelectObject(mdc, at.police);
+            SetBkMode(mdc, 1);
+            let lignes = lignes_arbre();
+            if lignes.is_empty() {
+                SetTextColor(mdc, 0x0080_8080);
+                let t = w("l'arbre des liaisons apparaît après l'exécution (F5)");
+                TextOutW(mdc, ind / 2, hl / 4, t.as_ptr(), t.len() as i32 - 1);
+            }
+            let guide = CreateSolidBrush(0x0040_4040);
+            for (k, (prof, chemin, n)) in lignes.iter().enumerate().skip(at.defile.max(0) as usize) {
+                let y = (k as i32 - at.defile) * hl + hl / 6;
+                if y > r.bottom {
+                    break;
+                }
+                let x0 = ind / 2 + *prof as i32 * ind;
+                for d in 0..*prof {
+                    let gx = ind / 2 + d as i32 * ind + ind / 3;
+                    FillRect(mdc, &Rect { left: gx, top: y, right: gx + 1, bottom: y + hl }, guide);
+                }
+                // ouvrir / fermer
+                if !n.enfants.is_empty() {
+                    SetTextColor(mdc, 0x00B0_B0B0);
+                    let s = w(if at.ouverts.contains(chemin) { "▾" } else { "▸" });
+                    TextOutW(mdc, x0, y, s.as_ptr(), 1);
+                }
+                let mut x = x0 + ind;
+                // la couleur du mot dans le cube
+                if let Some(v) = n.mot {
+                    let c = super::cube::couleur(v, 1000);
+                    let pinceau = CreateSolidBrush(((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF));
+                    let cote = hl * 2 / 3;
+                    let carre = Rect { left: x, top: y + (hl - cote) / 2, right: x + cote, bottom: y + (hl + cote) / 2 };
+                    FillRect(mdc, &carre, guide);
+                    let interieur = Rect { left: carre.left + 1, top: carre.top + 1, right: carre.right - 1, bottom: carre.bottom - 1 };
+                    FillRect(mdc, &interieur, pinceau);
+                    DeleteObject(pinceau);
+                    x += cote + ind / 3;
+                }
+                SetTextColor(mdc, n.logique.map(couleur_logique).unwrap_or(TEXTE));
+                let t = w(&n.texte);
+                TextOutW(mdc, x, y, t.as_ptr(), t.len() as i32 - 1);
+            }
+            DeleteObject(guide);
+            BitBlt(dc, 0, 0, r.right, r.bottom, mdc, 0, 0, SRCCOPY);
+            SelectObject(mdc, ancienne_police);
+            SelectObject(mdc, ancien_bmp);
+            DeleteObject(bmp);
+            DeleteDC(mdc);
+            EndPaint(h, &ps);
+            0
+        }
+        WM_LBUTTONDOWN => {
+            let y = ((lp >> 16) & 0xFFFF) as i16 as i32;
+            let k = (y - hl / 6).max(0) / hl + at.defile;
+            let lignes = lignes_arbre();
+            if let Some((_, chemin, n)) = lignes.get(k as usize) {
+                if !n.enfants.is_empty() {
+                    if !at.ouverts.remove(chemin) {
+                        at.ouverts.insert(chemin.clone());
+                    }
+                }
+                if let Some(v) = n.mot {
+                    etat(&format!("{}  ·  {}", n.texte, arbre::decoder(v)[0]));
+                }
+                InvalidateRect(h, std::ptr::null(), 0);
+            }
+            SetFocus(h);
+            0
+        }
+        WM_MOUSEWHEEL => {
+            let cran = ((wp >> 16) & 0xFFFF) as i16 as i32 / 120;
+            let n = lignes_arbre().len() as i32;
+            at.defile = (at.defile - 3 * cran).clamp(0, (n - 1).max(0));
+            InvalidateRect(h, std::ptr::null(), 0);
+            0
+        }
+        _ => DefWindowProcW(h, m, wp, lp),
+    }
+}
+
+/// Le pas à pas reste dans l'atelier en console : il s'ouvre dans sa fenêtre, sur le même fichier.
+fn pas_a_pas() {
+    let at = a();
+    if !enregistrer(false) {
+        return;
+    }
+    let vtx = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.join("vtx.exe")));
+    match vtx {
+        Some(v) if v.exists() => {
+            let f = at.fichier.clone().unwrap();
+            let _ = std::process::Command::new(v).arg("atelier").arg(&f).current_dir(f.parent().unwrap_or(Path::new("."))).spawn();
+            etat("pas à pas : l'atelier en console s'ouvre (F7 avance d'une ligne, F9 point d'arrêt)");
+        }
+        _ => message("vtx.exe est introuvable à côté d'atelier.exe : reconstruisez (cargo build --release)."),
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ le cube
+use super::cube::{rendre_dessin, rendre_iso, rendre_plan, taille_dessin};
+
+unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    match m {
+        WM_ERASEBKGND => 1,
+        WM_PAINT => {
+            let mut ps: PaintStruct = std::mem::zeroed();
+            let dc = BeginPaint(h, &mut ps);
+            let mut r = Rect::default();
+            GetClientRect(h, &mut r);
+            let (l, ht) = ((r.right - r.left).max(1) as usize, (r.bottom - r.top).max(1) as usize);
+            let mut px = vec![0x0010_1418u32; l * ht];
+            let at = a();
+            if let Some(mem) = &at.mem {
+                if at.dessin && rendre_dessin(mem, l, ht, &mut px) {
+                    let (dl, dh) = taille_dessin(mem).unwrap_or((0, 0));
+                    etat(&format!("image du programme : {} × {} points · F6 : image, cube en perspective, à plat", dl, dh));
+                } else if at.iso {
+                    let n = rendre_iso(mem, at.etage, at.zoom, l, ht, &mut px);
+                    etat(&format!("cube en perspective · étage {} · {} mots non nuls · molette : zoom", at.etage, n));
+                } else {
+                    rendre_plan(mem, at.etage, at.largeur, at.base, l, ht, &mut px);
+                }
+            }
+            let info = BitmapInfo {
+                bmiHeader: BitmapInfoHeader { biSize: std::mem::size_of::<BitmapInfoHeader>() as u32, biWidth: l as i32,
+                    biHeight: -(ht as i32), biPlanes: 1, biBitCount: 32, biCompression: 0, biSizeImage: 0,
+                    biXPelsPerMeter: 0, biYPelsPerMeter: 0, biClrUsed: 0, biClrImportant: 0 },
+                bmiColors: [0],
+            };
+            StretchDIBits(dc, 0, 0, l as i32, ht as i32, 0, 0, l as i32, ht as i32, px.as_ptr() as *const c_void, &info, 0, SRCCOPY);
+            EndPaint(h, &ps);
+            0
+        }
+        WM_LBUTTONDOWN => {
+            let at = a();
+            let mut choix = None;
+            if let (Some(mem), false, false) = (&at.mem, at.iso, at.dessin) {
+                let (x, y) = ((lp & 0xFFFF) as i16 as i32, ((lp >> 16) & 0xFFFF) as i16 as i32);
+                let mut r = Rect::default();
+                GetClientRect(h, &mut r);
+                let l = (r.right - r.left).max(1) as u32;
+                let cote = (l / at.largeur).max(1);
+                let pas = ((at.largeur + l - 1) / l).max(1);
+                let adr = at.base + (y.max(0) as u32 / cote) * pas * at.largeur + (x.max(0) as u32 / cote) * pas;
+                if adr <= 0xFF_FFFF && (x.max(0) as u32 / cote) * pas < at.largeur {
+                    let v = mem.lit(at.etage, adr);
+                    etat(&format!("@{}[{}] = #{:08X} = {} (signé {})", at.etage, adr, v, v, v as i32));
+                    choix = Some((at.etage, adr));
+                }
+            }
+            if let Some((e, adr)) = choix {
+                choisir_mot(e, adr);
+            }
+            0
+        }
+        WM_MOUSEWHEEL => {
+            let at = a();
+            let cran = ((wp >> 16) & 0xFFFF) as i16 as i32 / 120;
+            if at.iso {
+                at.zoom = (at.zoom * if cran > 0 { 1.25 } else { 0.8 }).clamp(0.2, 64.0);
+            } else {
+                let lignes = 16 * at.largeur;
+                at.base = if cran > 0 { at.base.saturating_sub(lignes) } else { (at.base + lignes).min(0xFF_0000) };
+                etat(&format!("à plat · étage {} · à partir de @{}[{}] · {} mots par ligne", at.etage, at.etage, at.base, at.largeur));
+            }
+            InvalidateRect(h, std::ptr::null(), 0);
+            0
+        }
+        _ => DefWindowProcW(h, m, wp, lp),
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ l'éditeur
+/// Le texte du programme : Entrée garde le retrait de la ligne (un niveau de plus après « { »), Tab met 4 espaces.
+unsafe extern "system" fn proc_source(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    let ancien = a().ancien_proc_source;
+    if m == WM_PASTE {
+        // le presse-papiers peut venir d'ailleurs avec des fins de ligne « \n » seules : l'éditeur de Windows veut « \r\n »
+        if let Some(t) = super::atelier::console::lire_presse() {
+            let t = t.replace("\r\n", "\n").replace('\r', "\n").replace('\n', "\r\n").replace('\t', "    ");
+            SendMessageW(h, EM_REPLACESEL, 1, w(&t).as_ptr() as isize);
+            return 0;
+        }
+    }
+    if m == WM_CHAR && wp == 9 {
+        SendMessageW(h, EM_REPLACESEL, 1, w("    ").as_ptr() as isize);
+        return 0;
+    }
+    if m == WM_CHAR && wp == 13 {
+        let n = SendMessageW(h, EM_LINEFROMCHAR, usize::MAX, 0) as usize;
+        let mut t = vec![0u16; 4096];
+        t[0] = 4090;
+        let k = SendMessageW(h, EM_GETLINE, n, t.as_mut_ptr() as isize) as usize;
+        let ligne = String::from_utf16_lossy(&t[..k.min(4090)]);
+        // seulement le texte avant le curseur compte pour « { »
+        let mut debut = 0u32;
+        SendMessageW(h, EM_GETSEL, &mut debut as *mut u32 as usize, 0);
+        let col = (debut as isize - SendMessageW(h, EM_LINEINDEX, n, 0)).max(0) as usize;
+        let avant: String = ligne.chars().take(col).collect();
+        let mut retrait = ligne.chars().take_while(|c| *c == ' ').count().min(col);
+        if avant.trim_end().ends_with('{') {
+            retrait += 4;
+        }
+        let ins = format!("\r\n{}", " ".repeat(retrait));
+        SendMessageW(h, EM_REPLACESEL, 1, w(&ins).as_ptr() as isize);
+        return 0;
+    }
+    if m == WM_CHAR && wp == '}' as usize {
+        // « } » sur une ligne vide : la fermante revient d'un niveau
+        let n = SendMessageW(h, EM_LINEFROMCHAR, usize::MAX, 0) as usize;
+        let mut t = vec![0u16; 4096];
+        t[0] = 4090;
+        let k = SendMessageW(h, EM_GETLINE, n, t.as_mut_ptr() as isize) as usize;
+        let ligne = String::from_utf16_lossy(&t[..k.min(4090)]);
+        let mut debut = 0u32;
+        SendMessageW(h, EM_GETSEL, &mut debut as *mut u32 as usize, 0);
+        let i = SendMessageW(h, EM_LINEINDEX, n, 0) as usize;
+        if ligne.len() >= 4 && ligne.chars().all(|c| c == ' ') && debut as usize == i + ligne.chars().count() {
+            SendMessageW(h, EM_SETSEL, debut as usize - 4, debut as isize);
+            SendMessageW(h, EM_REPLACESEL, 1, w("}").as_ptr() as isize);
+            return 0;
+        }
+    }
+    CallWindowProcW(ancien, h, m, wp, lp)
+}
+
+// ------------------------------------------------------------------------------------------------ la fenêtre
+fn creer_controles(fen: H) {
+    let at = a();
+    unsafe {
+        let edit = w("EDIT");
+        let bouton = w("BUTTON");
+        let statique = w("STATIC");
+        at.lignes = CreateWindowExW(0, w("VtxLignes").as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE,
+            0, 0, 10, 10, fen, 17 as H, at.inst, std::ptr::null_mut());
+        at.source = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_NOHIDESEL | ES_WANTRETURN | WS_TABSTOP,
+            0, 0, 10, 10, fen, 10 as H, at.inst, std::ptr::null_mut());
+        at.sortie = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
+            0, 0, 10, 10, fen, 11 as H, at.inst, std::ptr::null_mut());
+        at.entrees = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+            0, 0, 10, 10, fen, 12 as H, at.inst, std::ptr::null_mut());
+        at.journal = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
+            WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
+            0, 0, 10, 10, fen, 18 as H, at.inst, std::ptr::null_mut());
+        for (i, (t, c)) in [("Sortie", C_ONGLET_SORTIE), ("Terminal", C_ONGLET_TERMINAL)].iter().enumerate() {
+            at.onglets[i] = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
+                                            *c as usize as H, at.inst, std::ptr::null_mut());
+        }
+        at.term_entree = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
+            0, 0, 10, 10, fen, 15 as H, at.inst, std::ptr::null_mut());
+        at.arbre = CreateWindowExW(WS_EX_CLIENTEDGE, w("VtxArbre").as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE,
+            0, 0, 10, 10, fen, 16 as H, at.inst, std::ptr::null_mut());
+        at.cube = CreateWindowExW(WS_EX_CLIENTEDGE, w("VtxCube").as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE,
+            0, 0, 10, 10, fen, 13 as H, at.inst, std::ptr::null_mut());
+        at.etat = CreateWindowExW(0, statique.as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE,
+            0, 0, 10, 10, fen, 14 as H, at.inst, std::ptr::null_mut());
+        for (t, c) in [("Ouvrir", C_OUVRIR), ("Enregistrer", C_ENREGISTRER), ("▶  Lancer  (F5)", C_LANCER), ("Pas à pas  (F7)", C_PAS),
+                       ("0", C_ETAGE), ("1", C_ETAGE + 1), ("2", C_ETAGE + 2), ("3", C_ETAGE + 3), ("Vue : à plat / perspective  (F6)", C_VUE),
+                       ("Largeur", C_LARGEUR)] {
+            let b = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
+                                    c as usize as H, at.inst, std::ptr::null_mut());
+            at.boutons.push((b, c));
+        }
+        for t in ["Entrées :", "Étage :"] {
+            let e = CreateWindowExW(0, statique.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | SS_CENTERIMAGE, 0, 0, 10, 10, fen,
+                                    std::ptr::null_mut(), at.inst, std::ptr::null_mut());
+            at.etiquettes.push(e);
+        }
+        // polices : à chasse fixe pour le code, celle de l'interface pour le reste
+        let dc = GetDC(fen);
+        at.echelle = GetDeviceCaps(dc, 90) as f32 / 96.0;
+        ReleaseDC(fen, dc);
+        let px = |p: f32| -(p * at.echelle) as i32;
+        at.police = CreateFontW(px(15.0), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0x31, w("Consolas").as_ptr());
+        at.police_ui = CreateFontW(px(14.0), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 5, 0, w("Segoe UI").as_ptr());
+        for h in [at.source, at.sortie, at.entrees, at.term_entree, at.journal] {
+            SendMessageW(h, WM_SETFONT, at.police as usize, 1);
+        }
+        for h in at.onglets {
+            SendMessageW(h, WM_SETFONT, at.police_ui as usize, 1);
+        }
+        SendMessageW(at.journal, EM_SETLIMITTEXT, 64 << 20, 0);
+        ecrire_texte(at.journal, "sortie : le compte rendu de chaque exécution (compilation, ce que le programme a écrit, bilan).\n");
+        ecrire_texte(at.sortie, "terminal vtx : la sortie du programme s'écrit ici ; la ligne du dessous lui répond pendant l'exécution,\n\
+            et prend des commandes le reste du temps (tapez aide).\n");
+        for h in at.boutons.iter().map(|b| b.0).chain(at.etiquettes.iter().copied()).chain(std::iter::once(at.etat)) {
+            SendMessageW(h, WM_SETFONT, at.police_ui as usize, 1);
+        }
+        SendMessageW(at.source, EM_SETLIMITTEXT, 64 << 20, 0);
+        SendMessageW(at.sortie, EM_SETLIMITTEXT, 64 << 20, 0);
+        let tab: i32 = 16;
+        SendMessageW(at.source, EM_SETTABSTOPS, 1, &tab as *const i32 as isize);
+        at.pinceau = CreateSolidBrush(FOND);
+        at.ancien_proc_source = SetWindowLongPtrW(at.source, GWLP_WNDPROC, proc_source as *const () as usize as isize);
+        at.ancien_proc_term = SetWindowLongPtrW(at.term_entree, GWLP_WNDPROC, proc_term as *const () as usize as isize);
+    }
+}
+
+fn disposer(fen: H) {
+    let at = a();
+    let mut r = Rect::default();
+    unsafe {
+        GetClientRect(fen, &mut r);
+    }
+    let e = at.echelle;
+    let px = |v: f32| (v * e) as i32;
+    let (l, h) = (r.right, r.bottom);
+    let barre = px(36.0);
+    let bas = px(24.0);
+    let marge = px(4.0);
+    // la barre des boutons
+    let mut x = marge;
+    let largeurs = [70.0, 90.0, 120.0, 120.0];
+    unsafe {
+        for (i, lb) in largeurs.iter().enumerate() {
+            MoveWindow(at.boutons[i].0, x, marge, px(*lb), barre - 2 * marge, 1);
+            x += px(*lb) + marge;
+        }
+        x += marge * 2;
+        MoveWindow(at.etiquettes[0], x, marge, px(62.0), barre - 2 * marge, 1);
+        x += px(62.0);
+        MoveWindow(at.entrees, x, marge + px(3.0), px(130.0), barre - 2 * marge - px(6.0), 1);
+        x += px(130.0) + marge * 3;
+        MoveWindow(at.etiquettes[1], x, marge, px(46.0), barre - 2 * marge, 1);
+        x += px(46.0);
+        for i in 4..8 {
+            MoveWindow(at.boutons[i].0, x, marge, px(28.0), barre - 2 * marge, 1);
+            x += px(28.0) + px(2.0);
+        }
+        x += marge * 2;
+        MoveWindow(at.boutons[8].0, x, marge, px(220.0), barre - 2 * marge, 1);
+        x += px(220.0) + marge;
+        MoveWindow(at.boutons[9].0, x, marge, px(70.0), barre - 2 * marge, 1);
+        // l'éditeur à gauche, le cube et la sortie à droite
+        let gauche = (l as f32 * 0.5) as i32;
+        let haut_util = h - barre - bas;
+        let gouttiere = px(44.0);
+        MoveWindow(at.lignes, 0, barre, gouttiere, haut_util, 1);
+        MoveWindow(at.source, gouttiere, barre, gauche - gouttiere, haut_util, 1);
+        let hc = (haut_util as f32 * 0.6) as i32;
+        MoveWindow(at.cube, gauche + marge, barre, l - gauche - marge, hc, 1);
+        // sous le cube : le terminal (et sa ligne) à gauche, l'arbre des liaisons à droite
+        let yb = barre + hc + marge;
+        let hb = haut_util - hc - marge;
+        let lt = (l - gauche - marge) * 5 / 11;
+        let hligne = px(26.0);
+        let honglet = px(26.0);
+        MoveWindow(at.onglets[0], gauche + marge, yb, px(90.0), honglet, 1);
+        MoveWindow(at.onglets[1], gauche + marge + px(92.0), yb, px(90.0), honglet, 1);
+        let yt = yb + honglet + px(2.0);
+        let ht = hb - honglet - px(2.0);
+        MoveWindow(at.journal, gauche + marge, yt, lt, ht, 1);
+        MoveWindow(at.sortie, gauche + marge, yt, lt, ht - hligne, 1);
+        MoveWindow(at.term_entree, gauche + marge, yt + ht - hligne, lt, hligne, 1);
+        MoveWindow(at.arbre, gauche + marge + lt + marge, yb, l - gauche - marge - lt - marge, hb, 1);
+        MoveWindow(at.etat, 0, h - bas, l, bas, 1);
+    }
+}
+
+fn menus(fen: H) {
+    unsafe {
+        let barre = CreateMenu();
+        let ajouter = |m: H, t: &str, id: u16| {
+            if t.is_empty() {
+                AppendMenuW(m, MF_SEPARATOR, 0, std::ptr::null());
+            } else {
+                AppendMenuW(m, 0, id as usize, w(t).as_ptr());
+            }
+        };
+        let fichier = CreatePopupMenu();
+        ajouter(fichier, "&Nouveau\tCtrl+N", C_NOUVEAU);
+        ajouter(fichier, "&Ouvrir…\tCtrl+O", C_OUVRIR);
+        ajouter(fichier, "&Enregistrer\tCtrl+S", C_ENREGISTRER);
+        ajouter(fichier, "Enregistrer &sous…", C_ENREGISTRER_SOUS);
+        ajouter(fichier, "", 0);
+        ajouter(fichier, "&Quitter", C_QUITTER);
+        let edition = CreatePopupMenu();
+        ajouter(edition, "&Annuler\tCtrl+Z", C_ANNULER);
+        ajouter(edition, "", 0);
+        ajouter(edition, "&Couper\tCtrl+X", C_COUPER);
+        ajouter(edition, "C&opier\tCtrl+C", C_COPIER);
+        ajouter(edition, "Co&ller\tCtrl+V", C_COLLER);
+        ajouter(edition, "&Tout sélectionner\tCtrl+A", C_TOUT);
+        let executer = CreatePopupMenu();
+        ajouter(executer, "&Lancer\tF5", C_LANCER);
+        ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
+        ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
+        ajouter(executer, "&Pas à pas (atelier en console)\tF7", C_PAS);
+        let cube = CreatePopupMenu();
+        ajouter(cube, "Étage &0 (le code)", C_ETAGE);
+        ajouter(cube, "Étage &1", C_ETAGE + 1);
+        ajouter(cube, "Étage &2", C_ETAGE + 2);
+        ajouter(cube, "Étage &3", C_ETAGE + 3);
+        ajouter(cube, "", 0);
+        ajouter(cube, "&Vue à plat / en perspective\tF6", C_VUE);
+        ajouter(cube, "&Largeur de l'image (à plat)", C_LARGEUR);
+        ajouter(cube, "&Effacer la mémoire affichée", C_EFFACER);
+        let aide = CreatePopupMenu();
+        ajouter(aide, "&Associer les fichiers .vtx à l'atelier", C_ASSOCIER);
+        ajouter(aide, "À &propos", C_APROPOS);
+        for (m, t) in [(fichier, "&Fichier"), (edition, "&Édition"), (executer, "E&xécuter"), (cube, "&Cube"), (aide, "&Aide")] {
+            AppendMenuW(barre, MF_POPUP, m as usize, w(t).as_ptr());
+        }
+        SetMenu(fen, barre);
+    }
+}
+
+fn commande(c: u16) {
+    let at = a();
+    let cible = || {
+        let f = unsafe { GetFocus() };
+        let b = a();
+        if f == b.sortie || f == b.entrees { f } else { b.source }
+    };
+    unsafe {
+        match c {
+            C_NOUVEAU => {
+                if peut_quitter() {
+                    at.fichier = None;
+                    ecrire_texte(at.source, MODELE);
+                    SendMessageW(at.source, EM_SETMODIFY, 0, 0);
+                    effacer_resultats();
+                    titre();
+                }
+            }
+            C_OUVRIR => {
+                if peut_quitter() {
+                    if let Some(f) = dialogue_fichier(false) {
+                        charger(&f);
+                    }
+                }
+            }
+            C_ENREGISTRER => {
+                enregistrer(false);
+            }
+            C_ENREGISTRER_SOUS => {
+                enregistrer(true);
+            }
+            C_QUITTER => {
+                if peut_quitter() {
+                    DestroyWindow(at.fen);
+                }
+            }
+            C_ANNULER => {
+                SendMessageW(cible(), WM_UNDO, 0, 0);
+            }
+            C_COUPER => {
+                SendMessageW(cible(), WM_CUT, 0, 0);
+            }
+            C_COPIER => {
+                SendMessageW(cible(), WM_COPY, 0, 0);
+            }
+            C_COLLER => {
+                SendMessageW(cible(), WM_PASTE, 0, 0);
+            }
+            C_TOUT => {
+                SendMessageW(cible(), EM_SETSEL, 0, -1);
+            }
+            C_LANCER => lancer(),
+            C_PURGER => {
+                effacer_resultats();
+                etat("mémoire du programme rendue (cube et arbre vidés)");
+            }
+            C_ONGLET_SORTIE => montrer_onglet(0),
+            C_ONGLET_TERMINAL => montrer_onglet(1),
+            C_ARRETER => {
+                if at.en_cours {
+                    ARRET.store(true, Ordering::Relaxed);
+                    at.tx_entree = None; // un programme qui attend une ligne la reçoit vide : il peut finir
+                    etat("arrêt demandé…");
+                }
+            }
+            C_ASSOCIER => match super::installer(true) {
+                Ok(m) => message(&m),
+                Err(e) => message(&e),
+            },
+            C_PAS => pas_a_pas(),
+            x if (C_ETAGE..C_ETAGE + 4).contains(&x) => {
+                at.etage = (x - C_ETAGE) as u32;
+                at.base = 0;
+                etat(&format!("cube : étage {}", at.etage));
+                InvalidateRect(at.cube, std::ptr::null(), 0);
+            }
+            C_VUE => {
+                // image du programme (s'il dessine) → cube en perspective → à plat → image…
+                let a_dessin = at.mem.as_ref().map(|m| taille_dessin(m).is_some()).unwrap_or(false);
+                if at.dessin {
+                    at.dessin = false;
+                    at.iso = true;
+                } else if at.iso {
+                    at.iso = false;
+                } else {
+                    at.iso = true;
+                    at.dessin = a_dessin;
+                }
+                if !at.iso {
+                    etat(&format!("à plat · étage {} · {} mots par ligne · clic : la valeur d'un mot · molette : défiler", at.etage, at.largeur));
+                }
+                InvalidateRect(at.cube, std::ptr::null(), 0);
+            }
+            C_LARGEUR => {
+                let l = [16, 32, 64, 128, 256, 512, 1024];
+                let i = l.iter().position(|&x| x == at.largeur).unwrap_or(0);
+                at.largeur = l[(i + 1) % l.len()];
+                etat(&format!("à plat · {} mots par ligne", at.largeur));
+                InvalidateRect(at.cube, std::ptr::null(), 0);
+            }
+            C_EFFACER => {
+                at.mem = None;
+                InvalidateRect(at.cube, std::ptr::null(), 0);
+            }
+            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique #RRGGBBAA et de la logique à quatre valeurs.\n\nF5 lance le programme, F7 ouvre le pas à pas, F6 change la vue du cube."),
+            _ => {}
+        }
+    }
+}
+
+unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    match m {
+        WM_CREATE => {
+            a().fen = h;
+            creer_controles(h);
+            menus(h);
+            0
+        }
+        WM_SIZE => {
+            if !a().source.is_null() {
+                disposer(h);
+            }
+            0
+        }
+        WM_COMMAND => {
+            let id = (wp & 0xFFFF) as u16;
+            let notif = (wp >> 16) & 0xFFFF;
+            if lp as H == a().source {
+                if notif == EN_CHANGE {
+                    titre();
+                }
+                return 0;
+            }
+            if lp as H == a().entrees || lp as H == a().sortie || lp as H == a().term_entree || lp as H == a().journal {
+                return 0;
+            }
+            commande(id);
+            0
+        }
+        WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
+            // l'éditeur et la sortie en sombre ; le reste garde les couleurs de Windows
+            let at = a();
+            if lp as H == at.source || lp as H == at.sortie || lp as H == at.term_entree || lp as H == at.journal {
+                SetTextColor(wp as H, TEXTE);
+                SetBkColor(wp as H, FOND);
+                return at.pinceau as isize;
+            }
+            DefWindowProcW(h, m, wp, lp)
+        }
+        WM_APP_FINI => {
+            fini();
+            0
+        }
+        WM_TIMER => {
+            if wp == 2 {
+                suivre_lignes();
+            } else {
+                vider_sortie_programme();
+            }
+            0
+        }
+        WM_CLOSE => {
+            if peut_quitter() {
+                DestroyWindow(h);
+            }
+            0
+        }
+        WM_DESTROY => {
+            PostQuitMessage(0);
+            0
+        }
+        _ => DefWindowProcW(h, m, wp, lp),
+    }
+}
+
+/// atelier.exe : la fenêtre, sur le fichier donné (ou un nouveau programme).
+pub fn lancer_fenetre(fichier: Option<&str>) {
+    unsafe {
+        SetProcessDPIAware();
+        let inst = GetModuleHandleW(std::ptr::null());
+        let boite = Box::new(Atelier {
+            inst, fen: std::ptr::null_mut(), source: std::ptr::null_mut(), sortie: std::ptr::null_mut(), entrees: std::ptr::null_mut(),
+            cube: std::ptr::null_mut(), etat: std::ptr::null_mut(), boutons: Vec::new(), etiquettes: Vec::new(),
+            police: std::ptr::null_mut(), police_ui: std::ptr::null_mut(), pinceau: std::ptr::null_mut(), echelle: 1.0,
+            fichier: None, mem: None, etage: 1, iso: true, largeur: 64, base: 0, zoom: 1.0, en_cours: false, ancien_proc_source: 0,
+            term_entree: std::ptr::null_mut(), journal: std::ptr::null_mut(), onglets: [std::ptr::null_mut(); 2], onglet: 1,
+            ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),
+            ouverts: HashSet::new(), defile: 0, choisi: None, lignes: std::ptr::null_mut(), vue_lignes: (-1, -1), ligne_erreur: None,
+            dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(),
+        });
+        ATELIER = Box::into_raw(boite);
+        let curseur = LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16);
+        // l'icône du cube, à côté de l'exécutable (écrite la première fois)
+        if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
+            let f = d.join("vtx.ico");
+            if !f.exists() {
+                let _ = std::fs::write(&f, super::cube::ico(&[16, 32, 48, 256]));
+            }
+            a().icone = LoadImageW(std::ptr::null_mut(), w(&f.to_string_lossy()).as_ptr(), 1, 0, 0, 0x10 | 0x40);
+        }
+        let nom_fen = w("VtxAtelier");
+        let nom_cube = w("VtxCube");
+        let classe = WndClassEx {
+            cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0, lpfnWndProc: proc_fenetre, cbClsExtra: 0, cbWndExtra: 0,
+            hInstance: inst, hIcon: a().icone, hCursor: curseur, hbrBackground: 16 as H, // COLOR_BTNFACE + 1
+            lpszMenuName: std::ptr::null(), lpszClassName: nom_fen.as_ptr(), hIconSm: a().icone,
+        };
+        RegisterClassExW(&classe);
+        let nom_arbre = w("VtxArbre");
+        let classe_arbre = WndClassEx {
+            cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0x3, lpfnWndProc: proc_arbre, cbClsExtra: 0, cbWndExtra: 0,
+            hInstance: inst, hIcon: std::ptr::null_mut(), hCursor: curseur, hbrBackground: std::ptr::null_mut(),
+            lpszMenuName: std::ptr::null(), lpszClassName: nom_arbre.as_ptr(), hIconSm: std::ptr::null_mut(),
+        };
+        RegisterClassExW(&classe_arbre);
+        let nom_lignes = w("VtxLignes");
+        let classe_lignes = WndClassEx {
+            cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0x3, lpfnWndProc: proc_lignes, cbClsExtra: 0, cbWndExtra: 0,
+            hInstance: inst, hIcon: std::ptr::null_mut(), hCursor: curseur, hbrBackground: std::ptr::null_mut(),
+            lpszMenuName: std::ptr::null(), lpszClassName: nom_lignes.as_ptr(), hIconSm: std::ptr::null_mut(),
+        };
+        RegisterClassExW(&classe_lignes);
+        let classe_cube = WndClassEx {
+            cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0x3, lpfnWndProc: proc_cube, cbClsExtra: 0, cbWndExtra: 0,
+            hInstance: inst, hIcon: std::ptr::null_mut(), hCursor: curseur, hbrBackground: std::ptr::null_mut(),
+            lpszMenuName: std::ptr::null(), lpszClassName: nom_cube.as_ptr(), hIconSm: std::ptr::null_mut(),
+        };
+        RegisterClassExW(&classe_cube);
+        let fen = CreateWindowExW(0, nom_fen.as_ptr(), w("Atelier vtx").as_ptr(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+                                  CW_USEDEFAULT, CW_USEDEFAULT, 1400, 860, std::ptr::null_mut(), std::ptr::null_mut(), inst,
+                                  std::ptr::null_mut());
+        if fen.is_null() {
+            return;
+        }
+        match fichier {
+            Some(f) => charger(Path::new(f)),
+            None => {
+                ecrire_texte(a().source, MODELE);
+                SendMessageW(a().source, EM_SETMODIFY, 0, 0);
+                titre();
+                etat("F5 lance le programme · Fichier › Ouvrir pour un exemple · le cube montre la mémoire après l'exécution");
+            }
+        }
+        ShowWindow(fen, 3); // agrandie
+        SetTimer(fen, 2, 100, std::ptr::null()); // les numéros de ligne suivent le défilement du texte
+        disposer(fen);
+        montrer_onglet(0);
+        SetFocus(a().source);
+        let raccourcis = [
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: b'N' as u16, cmd: C_NOUVEAU },
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: b'O' as u16, cmd: C_OUVRIR },
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: b'S' as u16, cmd: C_ENREGISTRER },
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: b'A' as u16, cmd: C_TOUT },
+            Accel { fVirt: FVIRTKEY, key: 0x74, cmd: C_LANCER }, // F5
+            Accel { fVirt: FVIRTKEY | 4, key: 0x74, cmd: C_ARRETER }, // Maj+F5
+            Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6
+            Accel { fVirt: FVIRTKEY, key: 0x76, cmd: C_PAS },    // F7
+        ];
+        let table = CreateAcceleratorTableW(raccourcis.as_ptr(), raccourcis.len() as i32);
+        let mut msg: Msg = std::mem::zeroed();
+        while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+            if TranslateAcceleratorW(fen, table, &mut msg) == 0 {
+                TranslateMessage(&msg);
+                DispatchMessageW(&msg);
+            }
+        }
+    }
+}

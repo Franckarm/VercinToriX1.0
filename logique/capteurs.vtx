@@ -1,0 +1,156 @@
+// Capteurs bruités et logique à quatre valeurs.
+// NPORTES portes, chacune vue par deux capteurs A et B. Un capteur répond vrai (fermée), faux (ouverte) ou inconnu
+// (pas de mesure) ; il se trompe parfois (le bruit). Fusionner les deux témoignages donne vrai ou faux s'ils
+// s'accordent, variable s'ils se contredisent, inconnu si aucun n'a mesuré. On compte les portes de chaque état.
+// Trois façons de faire le même calcul :
+//   mode 1 : un logique par porte, fusion() puis selon ;
+//   mode 2 : 16 portes par mot (un quit chacune), une seule fusion() pour 16 portes, comptage par masques ;
+//   mode 3 : à l'ancienne, deux booléens par capteur (a-t-il mesuré ? que dit-il ?) et des si imbriqués.
+// Mode 0 : préparation seule (pour soustraire son coût). Sorties : vrai, faux, inconnu, variable.
+
+constante NPORTES = 4096;
+constante NMOTS = 256;     // NPORTES / 16
+
+tableau ca[NPORTES] @1[0];           // mode 1 : un code de logique par porte
+tableau cb[NPORTES] @1[8192];
+tableau pa[NMOTS] @1[16384];         // mode 2 : 16 portes par mot
+tableau pb[NMOTS] @1[17408];
+tableau oka[NPORTES] @2[0];          // mode 3 : deux booléens par capteur
+tableau vala[NPORTES] @2[8192];
+tableau okb[NPORTES] @2[16384];
+tableau valb[NPORTES] @2[24576];
+
+fonction tirage(i, s) {
+    soit x = i * 2654435761 + s * 2246822519;
+    x = x ^ (x >> 15);
+    x = x * 2246822519;
+    x = x ^ (x >> 13);
+    retour x >> 8;
+}
+
+// Ce que dit un capteur : le plus souvent la vérité, parfois l'inverse, parfois rien.
+fonction lecture(i, s) {
+    soit vraie = tirage(i, 7) & 1;          // 1 : la porte est fermée
+    soit h = tirage(i, s) & 15;
+    si h >= 14 {
+        retour 0;                            // inconnu
+    }
+    si h >= 12 {
+        vraie = 1 - vraie;                   // le bruit
+    }
+    retour 1 + vraie;                        // faux = 1, vrai = 2
+}
+
+fonction preparer() {
+    pour i dans 0..NPORTES {
+        soit a = lecture(i, 1);
+        soit b = lecture(i, 2);
+        ca[i] = a;
+        cb[i] = b;
+        pa[i >> 4] = pa[i >> 4] | (a << ((i & 15) * 2));
+        pb[i >> 4] = pb[i >> 4] | (b << ((i & 15) * 2));
+        oka[i] = a != 0;
+        vala[i] = a == 2;
+        okb[i] = b != 0;
+        valb[i] = b == 2;
+    }
+}
+
+fonction mode_logique() {
+    soit nv = 0;
+    soit nf = 0;
+    soit ni = 0;
+    soit nx = 0;
+    pour i dans 0..NPORTES {
+        selon fusion(comme_logique(ca[i]), comme_logique(cb[i])) {
+            vrai { nv = nv + 1; }
+            faux { nf = nf + 1; }
+            inconnu { ni = ni + 1; }
+            variable { nx = nx + 1; }
+        }
+    }
+    sortie(nv);
+    sortie(nf);
+    sortie(ni);
+    sortie(nx);
+}
+
+// Nombre de bits à 1 (au plus un par quit, sur le bit bas).
+fonction bits_bas(x) {
+    x = (x & 858993459) + ((x >> 2) & 858993459);       // 0x33333333
+    x = (x + (x >> 4)) & 252645135;                      // 0x0F0F0F0F
+    retour (x * 16843009) >> 24;                         // 0x01010101
+}
+
+fonction mode_quits() {
+    soit nv = 0;
+    soit nf = 0;
+    soit ni = 0;
+    soit nx = 0;
+    pour w dans 0..NMOTS {
+        soit m = fusion(pa[w], pb[w]);                   // 16 portes d'un coup
+        soit v = (m >> 1) & 1431655765;                  // preuve du vrai, ramenée sur le bit bas (0x55555555)
+        soit f = m & 1431655765;                         // preuve du faux
+        nv = nv + bits_bas(v & ~f);
+        nf = nf + bits_bas(f & ~v);
+        soit x = bits_bas(v & f);
+        nx = nx + x;
+        ni = ni + 16 - bits_bas(v | f);
+    }
+    sortie(nv);
+    sortie(nf);
+    sortie(ni);
+    sortie(nx);
+}
+
+fonction mode_booleens() {
+    soit nv = 0;
+    soit nf = 0;
+    soit ni = 0;
+    soit nx = 0;
+    pour i dans 0..NPORTES {
+        si oka[i] && okb[i] {
+            si vala[i] == valb[i] {
+                si vala[i] {
+                    nv = nv + 1;
+                } sinon {
+                    nf = nf + 1;
+                }
+            } sinon {
+                nx = nx + 1;
+            }
+        } sinon si oka[i] {
+            si vala[i] {
+                nv = nv + 1;
+            } sinon {
+                nf = nf + 1;
+            }
+        } sinon si okb[i] {
+            si valb[i] {
+                nv = nv + 1;
+            } sinon {
+                nf = nf + 1;
+            }
+        } sinon {
+            ni = ni + 1;
+        }
+    }
+    sortie(nv);
+    sortie(nf);
+    sortie(ni);
+    sortie(nx);
+}
+
+fonction principal() {
+    soit mode = entrée();
+    preparer();
+    si mode == 1 {
+        mode_logique();
+    }
+    si mode == 2 {
+        mode_quits();
+    }
+    si mode == 3 {
+        mode_booleens();
+    }
+}

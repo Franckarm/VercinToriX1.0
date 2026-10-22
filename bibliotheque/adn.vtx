@@ -1,0 +1,49 @@
+// Couche ADN du cube (convention du projet, inspirée de la biologie).
+// La position est la valeur hexadécimale RRGGBB ; le traitement est porté par l'alpha.
+//   voie de traitement (quit A1, bits 2 à 3) : A = rouge (1), G = vert (2), C = bleu (3), 0 = aucune
+//   état (bit 0 de l'alpha) : T = 1 -> ADN, mémoire passive, jamais traitée sur place
+//                              U = 0 -> ARN, copie de travail active, seule traitée
+//   transcription : ADN -> ARN (T devient U), c'est la copie de travail ;
+//   rétrotranscription : ARN -> ADN (U devient T), c'est l'écriture en mémoire.
+// L'étage (quit A3) et le type (quit A2) de l'alpha ne sont jamais touchés.
+importer "cube.vtx";
+
+constante ADN_A = 1;
+constante ADN_G = 2;
+constante ADN_C = 3;
+constante ADN_T = 1;
+constante ADN_U = 0;
+
+fonction adn_voie(m) {
+    retour (m >> 2) & 3;
+}
+
+fonction adn_etat(m) {
+    retour m & 1;
+}
+
+fonction adn_ecrire(m, base, etat) {
+    retour (m & ~15) | ((base & 3) << 2) | (etat & 1);
+}
+
+fonction transcrire(m) {
+    retour m & ~1;
+}
+
+fonction retrotranscrire(m) {
+    retour m | 1;
+}
+
+// Seul un ARN actif (U) est traité, et une voie doit être désignée : la voie prend la valeur x.
+fonction adn_appliquer(m, x) {
+    soit b = adn_voie(m);
+    si adn_etat(m) == 1 || b == 0 {
+        retour m;
+    }
+    retour poser_voie(m, b - 1, x);
+}
+
+// Appliquer une mémoire : on la transcrit, on traite la copie, la mémoire d'origine reste intacte.
+fonction adn_executer(m, x) {
+    retour adn_appliquer(transcrire(m), x);
+}

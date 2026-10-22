@@ -1,0 +1,5 @@
+fonction principal() {
+    soit s = 0;
+    pour i dans 0..20000000 { s = s + i * 3; }
+    afficher(s);
+}

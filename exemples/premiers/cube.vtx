@@ -1,0 +1,8 @@
+// Le mot du cube : #RRGGBBAA, quatre voies de 8 bits
+fonction principal() {
+    soit braise = #FF6020C0;
+    sortie(braise.r);      // 255
+    sortie(braise.v);      // 96
+    sortie(braise.b);      // 32
+    sortie(braise.a);      // 192
+}

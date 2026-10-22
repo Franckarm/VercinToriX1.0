@@ -1,0 +1,24 @@
+// Le hasard : lancer de dés.
+// « vtx des.vtx » : une partie différente à chaque fois (la graine vient du bruit de la machine) ;
+// « vtx des.vtx 7 » : toujours la même partie (graine 7), utile pour vérifier ou comparer.
+fonction principal() {
+    soit g = entrée();
+    si g == 0 {
+        graine_bruit();
+    } sinon {
+        graine(g);
+    }
+    soit compte = 0;
+    pour i dans 0..10 {
+        soit d = hasard_entre(1, 6);
+        ecrire_entier(1, d);
+        ecrire_car(1, ' ');
+        si d == 6 {
+            compte = compte + 1;
+        }
+    }
+    ecrire_car(1, '\n');
+    ecrire_texte(1, "nombre de six : ");
+    afficher(compte);
+    afficher(hasard_flottant());       // entre 0 et 1
+}

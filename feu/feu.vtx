@@ -1,0 +1,84 @@
+// Feu de camp réaliste en vtx : scène en voxels, ombre quaternaire, rendu PBR (image 256 × 256).
+// Entrées : mode (0 : scène seule ; 1 : image, analyse à la demande ; 2 : image après analyse de tout le volume ;
+// 3 : contrôle du parcours ; 4 : animation, l0 images, le feu réglé par la mémoire du cube),
+// puis la première et la dernière ligne de l'image à calculer, puis 1 pour sortir les pixels.
+importer "scene.vtx";
+importer "rendu.vtx";
+importer "anime.vtx";
+
+fonction principal() {
+    soit mode = entrée();
+    soit l0 = entrée();
+    soit l1 = entrée();
+    soit afficher = entrée();
+    construire_scene();
+    tout_inconnu();
+    si mode == 2 {
+        analyser_tout();
+    }
+    si mode == 3 {
+        // contrôle du parcours : pour chaque pixel demandé, le voxel plein touché et la face d'entrée
+        soit n = entrée();
+        pour k3 dans 0..n {
+            soit px = entrée();
+            soit py = entrée();
+            @2[499990] = 4294967295;
+            @2[499991] = 4294967295;
+            rayon(px, py);
+            sortie(@2[499990]);
+            sortie(@2[499991]);
+        }
+        sortie(@2[499998]);
+    }
+    si mode == 4 {
+        // animation : l0 = nombre d'images ; pour chaque image, la mémoire du cube règle le feu, puis rendu
+        souvenirs();
+        pour f dans 0..l0 {
+            rappeler(requete(f));
+            @2[FEU + 10] = f;
+            effacer_feu();
+            flammes();
+            fumee();
+            tout_inconnu();
+            pour p dans 0..8 {
+                sortie(@2[FEU + p]);
+            }
+            si afficher == 1 {
+                pour i4 dans 0..W * H en segments {
+                    @2[IMAGE + i4] = rayon(i4 % W, i4 / W);
+                }
+                pour k4 dans 0..W * H {
+                    sortie(@2[IMAGE + k4]);
+                }
+            }
+            si afficher == 2 {
+                // contrôle : somme de tous les voxels de cette image
+                soit s5 = 0;
+                pour v5 dans 0..2097152 {
+                    soit w5 = @1[v5];
+                    si w5 != 0 {
+                        s5 = s5 * 31 + w5 + v5;
+                    }
+                }
+                sortie(s5);
+            }
+        }
+    }
+    si mode == 1 || mode == 2 {
+        pour i dans l0 * W..l1 * W en segments {
+            @2[IMAGE + i] = rayon(i % W, i / W);
+        }
+        soit s = 0;
+        pour k dans l0 * W..l1 * W {
+            s = s * 31 + @2[IMAGE + k];
+        }
+        sortie(s);
+        sortie(@2[499999]);
+        sortie(@2[499998]);
+        si afficher == 1 {
+            pour k2 dans l0 * W..l1 * W {
+                sortie(@2[IMAGE + k2]);
+            }
+        }
+    }
+}

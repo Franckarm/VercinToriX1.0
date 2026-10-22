@@ -1,0 +1,159 @@
+// Analyse d'initialisation à quatre valeurs : la question qu'un compilateur se pose pour chaque variable lue.
+// « À cet endroit, la variable a-t-elle reçu une valeur ? » La réponse n'est pas oui ou non :
+//   vrai     : sur tous les chemins qui mènent ici, elle a été initialisée ;
+//   faux     : sur aucun chemin ;
+//   variable : sur certains chemins oui, sur d'autres non (le cas des vrais bogues, si difficile à voir) ;
+//   inconnu  : aucun chemin ne mène ici (code mort) : il n'y a rien à dire, et l'analyse ne l'invente pas.
+// Un booléen « initialisée sur tous les chemins ? » répondrait « non » aux trois derniers cas et les confondrait.
+//
+// Le programme analysé est un graphe de blocs (16 blocs au plus, 16 variables au plus, nommées a à p) :
+//   entrées : nombre de blocs ; puis pour chaque bloc : variables affectées (masque de 16 bits),
+//             variables lues (masque), nombre de prédécesseurs, puis les prédécesseurs. Le bloc 0 est l'entrée.
+// Les 16 variables d'un bloc tiennent dans un mot : un quit chacune. Une seule instruction (fusion) rassemble ce que
+// disent deux chemins pour les 16 variables d'un coup ; le comptage final est réécrit 16 éléments à la fois.
+// Exemple (logique/test_initialisation.py le détaille) : vtx initialisation.vtx 9 3 0 0 0 2 1 0 4 1 1 1 0 0 1 1 0 5 2 2 3
+//   0 8 2 4 6 8 0 1 5 0 16 1 5 0 1 0
+// Sorties : l'état de chaque variable lue (code : inconnu 0, faux 1, vrai 2, variable 3), puis le nombre de cas vrai,
+// faux, inconnu et variable sur tout le graphe, puis le nombre de tours de l'analyse. Le texte du rapport va sur la
+// console.
+
+constante MAXB = 16;
+constante VRAIS = 0xAAAAAAAA;      // 16 fois vrai
+constante FAUX16 = 0x55555555;     // 16 fois faux
+
+tableau etats[256] de logique @1[0];    // état des 16 variables à l'entrée de chaque bloc (mots @1[0..15])
+tableau sorties[256] de logique @1[16];  // état à la sortie (mots @1[16..31])
+tableau affecte[MAXB] @1[64];
+tableau lit[MAXB] @1[80];
+tableau npred[MAXB] @1[96];
+tableau preds[256] @1[112];
+
+// ---------------------------------------------------------------- texte sur la console (sans prélude)
+fonction dire(t) {
+    soit n = @(t >> 24)[t & 16777215];
+    pour i dans 0..n {
+        ecrire_car(1, @(t >> 24)[(t & 16777215) + 1 + i]);
+    }
+}
+
+fonction dire_nombre(n) {
+    si n >= 10 {
+        dire_nombre(n / 10);
+    }
+    ecrire_car(1, '0' + n % 10);
+}
+
+// Un masque de 16 bits étendu à un quit par variable : le bit k devient le quit k plein (3)
+fonction quits_de(m) {
+    soit w = 0;
+    pour k dans 0..16 {
+        si (m >> k) & 1 {
+            w = w | (3 << (2 * k));
+        }
+    }
+    retour w;
+}
+
+// Les quits non inconnus d'un mot de logiques, pleins (3) : les variables dont on sait quelque chose
+fonction connus(e) {
+    soit x = (e | (e >> 1)) & FAUX16;
+    retour x | (x << 1);
+}
+
+fonction analyser(nb) {
+    soit change = 1;
+    soit tours = 0;
+    tantque change {
+        change = 0;
+        tours = tours + 1;
+        pour b dans 0..nb {
+            soit e = 0;                              // inconnu : aucun chemin vu
+            si b == 0 {
+                e = FAUX16;                          // au départ, aucune variable n'a de valeur
+            }
+            pour k dans 0..npred[b] {
+                e = fusion(e, @1[16 + preds[b * 16 + k]]);   // 16 variables rassemblées d'un coup
+            }
+            // une affectation rend la variable vraie, mais seulement si le bloc est atteint : le code mort reste inconnu
+            soit m = affecte[b] & connus(e);
+            soit s = (e & ~m) | (VRAIS & m);
+            @1[b] = e;
+            si s != @1[16 + b] {
+                @1[16 + b] = s;
+                change = 1;
+            }
+        }
+    }
+    retour tours;
+}
+
+fonction principal() {
+    soit nb = entrée();
+    pour b dans 0..nb {
+        affecte[b] = quits_de(entrée());
+        lit[b] = entrée();
+        npred[b] = entrée();
+        pour k dans 0..npred[b] {
+            preds[b * 16 + k] = entrée();
+        }
+    }
+    soit tours = analyser(nb);
+
+    // le rapport : chaque lecture de variable
+    soit bogues = 0;
+    pour b dans 0..nb {
+        pour v dans 0..16 {
+            si (lit[b] >> v) & 1 {
+                soit i = b * 16 + v;
+                soit etat: logique = etats[i];
+                sortie(entier(etat));
+                dire("bloc ");
+                dire_nombre(b);
+                dire(", ");
+                ecrire_car(1, 'a' + v);
+                selon etat {
+                    vrai { dire(" : initialisée sur tous les chemins\n"); }
+                    faux {
+                        dire(" : jamais initialisée (erreur)\n");
+                        bogues = bogues + 1;
+                    }
+                    variable {
+                        dire(" : initialisée sur certains chemins seulement (bogue caché)\n");
+                        bogues = bogues + 1;
+                    }
+                    inconnu { dire(" : bloc jamais atteint (code mort)\n"); }
+                }
+            }
+        }
+    }
+
+    // le bilan sur tout le graphe : cette boucle est réécrite pour compter 16 variables à la fois
+    soit nv = 0;
+    soit nf = 0;
+    soit ni = 0;
+    soit nx = 0;
+    pour j dans 0..nb * 16 {
+        si etats[j] == vrai { nv = nv + 1; }
+        si etats[j] == faux { nf = nf + 1; }
+        si etats[j] == inconnu { ni = ni + 1; }
+        si etats[j] == variable { nx = nx + 1; }
+    }
+    sortie(nv);
+    sortie(nf);
+    sortie(ni);
+    sortie(nx);
+    sortie(tours);
+    dire("bilan : vrai ");
+    dire_nombre(nv);
+    dire(", faux ");
+    dire_nombre(nf);
+    dire(", inconnu ");
+    dire_nombre(ni);
+    dire(", variable ");
+    dire_nombre(nx);
+    dire(" ; ");
+    dire_nombre(bogues);
+    dire(" lecture(s) à corriger ; analyse stable en ");
+    dire_nombre(tours);
+    dire(" tours\n");
+}

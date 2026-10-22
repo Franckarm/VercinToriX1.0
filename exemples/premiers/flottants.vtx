@@ -1,0 +1,24 @@
+// Tableaux de flottants : [2.5, -1.0], flottant[], somme, trier, pour x dans t.
+fonction moyenne(t: flottant[]): flottant {
+    retour somme(t) / flottant(longueur(t));
+}
+fonction principal() {
+    soit t = [2.5, -1.0, 4, 0.25];
+    ajouter(t, 10.5);
+    afficher("somme", somme(t), "moyenne", moyenne(t));
+    trier(t);
+    pour x dans t {
+        ecrire(x * 2.0);
+        ecrire(" ");
+    }
+    afficher("");
+    t[0] = racine(2.0);
+    afficher(t[0], retirer(t), longueur(t), indice(t, 4.0));
+    soit u: flottant[] = [1, 2, 3];
+    afficher(somme(u));
+    soit v: flottant[] = tableau(0);
+    pour i dans 0..5 { ajouter(v, flottant(i) * 0.5); }
+    afficher(somme(v), v[4]);
+    pour y: flottant dans copie(t) { ecrire(y); ecrire(";"); }
+    afficher("");
+}
