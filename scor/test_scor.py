@@ -18,9 +18,11 @@ vc = [int(x) for x in open(prog).read().split(";")[0].split(",")]
 os.remove(prog)
 # le ScoR garde sa mémoire d'un lancement à l'autre : le test part d'une mémoire vide, dans un dossier à part
 tmp = tempfile.mkdtemp()
-shutil.copytree(ici, os.path.join(tmp, "scor"), ignore=shutil.ignore_patterns("scor.memoire*"))
-shutil.copytree(os.path.join(racine, "docs"), os.path.join(tmp, "docs"))
-shutil.copy(os.path.join(racine, "COMMENCER.md"), tmp)
+# il lit un corpus figé (une copie des documents du 22 octobre 2026) : le test ne doit pas changer quand on écrit la
+# documentation (une phrase neuve peut, à juste titre, rendre un mot « variable »)
+shutil.copytree(ici, os.path.join(tmp, "scor"), ignore=shutil.ignore_patterns("scor.memoire*", "corpus_essai"))
+shutil.copytree(os.path.join(ici, "corpus_essai", "docs"), os.path.join(tmp, "docs"))
+shutil.copy(os.path.join(ici, "corpus_essai", "COMMENCER.md"), tmp)
 dossier = os.path.join(tmp, "scor")
 r = subprocess.run([VTX, "scor.vtx"], cwd=dossier, capture_output=True, text=True, encoding="utf-8",
                    input="le hérisson est piquant\n\n")

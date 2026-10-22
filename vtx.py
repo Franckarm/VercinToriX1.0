@@ -155,7 +155,10 @@ def _assembler(texte):
             cible = etiquettes.get(args[0].upper())
             if cible is None:
                 cible = entier(args[0])
-            mots.append(mot(code, cible >> 8, cible & 255))
+            if not 0 <= cible < 1 << 20:
+                raise VtxError(f"saut hors de portée (plus d'un million de mots de code) : {cible}")
+            # adresse sur 20 bits : g et b, puis les 4 bits bas du dernier octet (le code dépasse 65 536 mots)
+            mots.append(mot(code, (cible >> 8) & 255, cible & 255) | (cible >> 16))
         elif forme == "ldi":
             mots.append(mot(code, reg(args[0]) << 4, 0))
             mots.append((etiquettes[args[1].upper()] if args[1].upper() in etiquettes else entier(args[1])) & MASK)
@@ -424,7 +427,7 @@ class CPU:
             self.r[14] = (self.r[14] + 1) & 0xFFFFFF
             self.ecrire(rd, v)
         elif op in (0x30, 0x31, 0x32, 0x35, 0x36, 0x33):
-            cible = (g << 8) | b
+            cible = ((w & 15) << 16) | (g << 8) | b
             saut = {0x30: True, 0x31: self.z, 0x32: not self.z, 0x35: self.c, 0x36: not self.c, 0x33: True}[op]
             if op == 0x33:
                 self.r[14] = (self.r[14] - 1) & 0xFFFFFF
@@ -762,6 +765,15 @@ class Analyseur:
             raise VtxError(f"ligne {l} : « {v} » est un nom réservé de la logique à quatre valeurs")
         return v
 
+    def nom_variable(self):
+        """Le nom d'une variable ou d'un paramètre : ni un nom réservé, ni celui d'une constante (sinon chaque lecture
+        rendrait la constante, pas la variable)."""
+        l = self.regard()[2]
+        v = self.identifiant()
+        if v in self.consts:
+            raise VtxError(f"ligne {l} : « {v} » est une constante : une variable ne peut pas porter son nom")
+        return v
+
     def type_opt(self):
         """Annotation de type facultative : « : flottant », « : long » ou « : entier »."""
         if not self.est_op(":"):
@@ -866,7 +878,7 @@ class Analyseur:
             self.attendre("(")
             params, ptypes = [], []
             while not self.est_op(")"):
-                params.append(self.identifiant())
+                params.append(self.nom_variable())
                 ptypes.append(self.type_opt() or "e")
                 if self.est_op(","):
                     self.suivant()
@@ -931,7 +943,7 @@ class Analyseur:
         if k == "kw":
             self.suivant()
             if v == "soit":
-                nom = self.identifiant()
+                nom = self.nom_variable()
                 t = self.type_opt()
                 self.attendre("=")
                 e = self.expr()
@@ -954,7 +966,7 @@ class Analyseur:
                 self.ctx.pop()
                 return ("tantque", cond, corps, l)
             if v == "pour":
-                nom = self.identifiant()
+                nom = self.nom_variable()
                 annot = self.type_opt()
                 k2, v2, l2 = self.suivant()
                 if not (k2 == "kw" and v2 == "dans"):
@@ -1054,7 +1066,7 @@ class Analyseur:
         if k == "id" and v == "tableau" and self.regard(1)[0] == "id" and self.regard(2)[:2] == ("op", "["):
             # tableau t[n]; dans une fonction : un tableau dynamique de n cases (sur le tas)
             self.suivant()
-            nom = self.identifiant()
+            nom = self.nom_variable()
             self.attendre("[")
             n = self.expr()
             self.attendre("]")
@@ -5425,6 +5437,10 @@ ERREURS = [
     ("tableau cumulé écrit autrement que par addition",
      "tableau h[4] @2[0]; fonction principal() { pour i dans 0..8 en segments cumulant h { h[i % 4] = i; } }"),
     ("variable inconnue", "fonction principal() { sortie(x); }"),
+    ("variable au nom d'une constante", "constante K = 3; fonction principal() { soit K = 5; sortie(K); }"),
+    ("variable au nom d'une valeur logique", "fonction principal() { soit faux = 0; sortie(faux); }"),
+    ("paramètre au nom d'une valeur logique", "fonction f(vrai) { retour vrai; } fonction principal() { sortie(f(4)); }"),
+    ("boucle sur un nom de constante", "constante N = 4; fonction principal() { pour N dans 0..3 { sortie(N); } }"),
     ("fonction inconnue", "fonction principal() { f(1); }"),
     ("mauvais nombre d'arguments", "fonction f(a) { retour a; } fonction principal() { f(1, 2); }"),
     ("principal absente", "fonction f() { retour 1; }"),
@@ -5520,7 +5536,7 @@ def desassembler(cpu):
     nom = NOMS.get(op, f"?{op:02X}")
     rd, rs, rt = g >> 4, g & 15, b >> 4
     if nom in ("JMP", "JZ", "JNZ", "JC", "JNC", "CALL"):
-        ops = f"@{(g << 8) | b:04X}"
+        ops = f"@{((w & 15) << 16) | (g << 8) | b:04X}"
     elif nom == "LDI":
         ops = f"R{rd}, #{cpu.mem.get((0, cpu.pc + 1), 0):08X}"
     elif nom in ("LD", "ST"):

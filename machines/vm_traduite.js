@@ -46,7 +46,7 @@ function SPUTraduit(words) {
     const w = code[pc], op = w >>> 24, g = (w >>> 16) & 255, b = (w >>> 8) & 255;
     const lg = op === 10 ? 2 : 1, suite = pc + lg;
     instr.set(pc, w);
-    if (SAUTS.has(op)) { const t = (g << 8) | b; debuts.add(t); pile_a.push(t); }
+    if (SAUTS.has(op)) { const t = ((w & 15) << 16) | (g << 8) | b; debuts.add(t); pile_a.push(t); }
     if (op === 48 || op === 52 || op === 63) { if (op === 63) debuts.add(suite); continue; }
     if (SAUTS.has(op)) debuts.add(suite);
     pile_a.push(suite);
@@ -57,7 +57,7 @@ function SPUTraduit(words) {
   const ecr = (d, v) => d === 0 ? "" : "R[" + d + "]=" + v + ";";
   function traduire(pc, w) {
     const op = w >>> 24, g = (w >>> 16) & 255, b = (w >>> 8) & 255, et = (w & 255) >>> 6;
-    const d = g >> 4, s = g & 15, t = b >> 4, dc = b > 127 ? b - 256 : b, cible = (g << 8) | b, nx = (pc + (op === 10 ? 2 : 1)) & ADR;
+    const d = g >> 4, s = g & 15, t = b >> 4, dc = b > 127 ? b - 256 : b, cible = ((w & 15) << 16) | (g << 8) | b, nx = (pc + (op === 10 ? 2 : 1)) & ADR;
     const A = Rg(s), B = Rg(t), F = "C.z=r===0;C.c=false;";
     switch (op) {
       case 0: return "";

@@ -61,6 +61,7 @@ if shutil.which("node"):
 else:
     print("node absent : les machines JavaScript ne sont pas vérifiées")
 echecs = 0
+noms_echecs = []
 for nom, cmd in etapes:
     print(f"\n=== {nom}")
     if nom == "machine Rust":
@@ -69,19 +70,24 @@ for nom, cmd in etapes:
         if b.returncode != 0 or not os.path.exists(exe):
             print("compilation Rust en échec :", b.stderr[-800:])
             echecs += 1
+            noms_echecs.append(nom)
             continue
         r = subprocess.run([exe, "corpus", os.path.join("conformite", "corpus_conformite.txt")], cwd=ici, **TEXTE)
         attendu = open(os.path.join(ici, "conformite", "corpus_attendu.txt")).read().strip().split("\n")
         obtenu = r.stdout.strip().split("\n")
         ec = sum(a_ != b_ for a_, b_ in zip(attendu, obtenu)) + abs(len(attendu) - len(obtenu))
         print(f"Rust : {len(attendu)} programmes, {ec} écart(s)")
-        echecs += (r.returncode != 0) or ec > 0
+        if r.returncode != 0 or ec > 0:
+            echecs += 1
+            noms_echecs.append(nom)
         continue
     r = subprocess.run(cmd, cwd=ici, **TEXTE)
     sortie = (r.stdout + r.stderr).strip().split("\n")
     print("\n".join(sortie[-6:]))
-    echecs += r.returncode != 0
-print("\n" + ("Tout est conforme." if not echecs else f"{echecs} étape(s) en échec."))
+    if r.returncode != 0:
+        echecs += 1
+        noms_echecs.append(nom)
+print("\n" + ("Tout est conforme." if not echecs else f"{echecs} étape(s) en échec : " + " ; ".join(noms_echecs)))
 if not COMPLET:
     print("(vérification rapide ; « verifier.py --complet » refait tout, grands volumes compris)")
 sys.exit(1 if echecs else 0)

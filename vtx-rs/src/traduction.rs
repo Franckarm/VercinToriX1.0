@@ -18,6 +18,11 @@ fn champs(w: u32) -> (u32, u32, u32, u32) {
     (w >> 24, (w >> 16) & 255, (w >> 8) & 255, (w & 255) >> 6)
 }
 
+/// L'adresse d'un saut : 20 bits (g, b, puis les 4 bits bas du dernier octet).
+fn cible(w: u32) -> u32 {
+    ((w & 15) << 16) | (((w >> 16) & 255) << 8) | ((w >> 8) & 255)
+}
+
 fn reg(n: u32) -> String {
     if n == 0 { "0u32".to_string() } else { format!("r{}", n) }
 }
@@ -62,17 +67,17 @@ fn analyser(mots: &[u32], bornes: &BTreeSet<u32>) -> Result<(BTreeSet<u32>, BTre
         if !vues.insert(pc) {
             continue;
         }
-        let (op, g, b, _) = champs(mot(pc));
+        let (op, _, _, _) = champs(mot(pc));
         let suivant = (pc + 1) & ADR;
         match op {
             0x0A => pile.push((pc + 2) & ADR),
             0x30 => {
-                let t = (g << 8) | b;
+                let t = cible(mot(pc));
                 tetes.insert(t);
                 pile.push(t);
             }
             0x31 | 0x32 | 0x35 | 0x36 | 0x33 => {
-                let t = (g << 8) | b;
+                let t = cible(mot(pc));
                 tetes.insert(t);
                 tetes.insert(suivant);
                 pile.push(t);
@@ -195,14 +200,14 @@ pub fn traduire(mots: &[u32], nom: &str, table: &[u32]) -> Result<String, String
                 0x4F => res(&format!("{{ let x = {} ^ {}; !(x | (x >> 1)) & 0x5555_5555 }}", ra, rb)),
                 0x50 => res(&format!("{}.count_ones()", ra)),
                 // sauts : fin du bloc
-                0x30 => { fin = format!("pc = {};", (g << 8) | b); String::new() }
+                0x30 => { fin = format!("pc = {};", cible(w)); String::new() }
                 0x31 | 0x32 | 0x35 | 0x36 => {
                     let cond = match op { 0x31 => "z", 0x32 => "!z", 0x35 => "c", _ => "!c" };
-                    fin = format!("pc = if {} {{ {} }} else {{ {} }};", cond, (g << 8) | b, suivant);
+                    fin = format!("pc = if {} {{ {} }} else {{ {} }};", cond, cible(w), suivant);
                     String::new()
                 }
                 0x33 => {
-                    fin = format!("r14 = r14.wrapping_sub(1) & ADR; mem.ecrit(0, r14, {}); pc = {};", suivant, (g << 8) | b);
+                    fin = format!("r14 = r14.wrapping_sub(1) & ADR; mem.ecrit(0, r14, {}); pc = {};", suivant, cible(w));
                     String::new()
                 }
                 0x34 => { fin = "pc = mem.lit(0, r14); r14 = (r14 + 1) & ADR;".to_string(); String::new() }

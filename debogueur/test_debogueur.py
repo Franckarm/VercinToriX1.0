@@ -105,3 +105,4 @@ arrete = ou(dj2)
 coups = dj2.valeur("coups")[1] if arrete else None
 print(f"jeu complet ({len(dj2.debuts)} instructions source repérées, {len(dj2.fonctions)} fonctions) : "
       f"arrêt en {arrete} avec coups = {coups} ; pile : {[f for f, _, _ in dj2.pile()]}")
+raise SystemExit(0 if ok == total and arrete else 1)

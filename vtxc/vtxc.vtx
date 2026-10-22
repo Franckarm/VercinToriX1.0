@@ -904,6 +904,21 @@ fonction identifiant(c: Ctx) {
     retour avancer(c).texte;
 }
 
+// le nom d'une variable ou d'un paramètre : ni un nom de la logique à quatre valeurs, ni celui d'une constante (chaque
+// lecture rendrait sinon la constante, pas la variable)
+fonction nom_variable(c: Ctx) {
+    soit l = c.tok.ligne;
+    soit v = identifiant(c);
+    si code_logique(v) != 0 - 1 || texte_egal(v, "et4") || texte_egal(v, "ou4") || texte_egal(v, "non4")
+            || texte_egal(v, "anti") || texte_egal(v, "fusion") || texte_egal(v, "consensus") || texte_egal(v, "logique")
+            || texte_egal(v, "comme_logique") {
+        erreur_nom(c, l, "nom réservé de la logique à quatre valeurs :", v);
+    } sinon si constante_de(c, v) != nul || texte_egal(v, "nul") {
+        erreur_nom(c, l, "une variable ne peut pas porter le nom d'une constante :", v);
+    }
+    retour v;
+}
+
 fonction struct_de(c: Ctx, nom): Struct {
     soit s = c.structs;
     tantque s != nul {
@@ -1556,7 +1571,7 @@ fonction instruction(c: Ctx): Noeud {
     si est_kw(c, "soit") {
         avancer(c);
         soit s = noeud(N_SOIT, l);
-        s.nom = identifiant(c);
+        s.nom = nom_variable(c);
         s.val = type_opt(c);
         attendre(c, "=");
         s.a = expr(c, 0);
@@ -1621,7 +1636,7 @@ fonction instruction(c: Ctx): Noeud {
     si est_kw(c, "pour") {
         avancer(c);
         soit s4 = noeud(N_POUR, l);
-        s4.nom = identifiant(c);
+        s4.nom = nom_variable(c);
         soit annot = type_opt(c);
         si !est_kw(c, "dans") {
             erreur(c, l, "« dans » attendu");
@@ -1786,7 +1801,7 @@ fonction instruction(c: Ctx): Noeud {
         // tableau t[n]; dans une fonction : un tableau dynamique de n cases (sur le tas)
         avancer(c);
         soit st = noeud(N_SOIT, l);
-        st.nom = identifiant(c);
+        st.nom = nom_variable(c);
         attendre(c, "[");
         st.a = appel1("tableau", expr(c, 0), l);
         attendre(c, "]");
@@ -2840,7 +2855,7 @@ fonction programme(c: Ctx) {
             attendre(c, "(");
             soit dp: Param = nul;
             tantque c.erreur == 0 && !est_op(c, ")") {
-                soit p = Param { nom: identifiant(c) };
+                soit p = Param { nom: nom_variable(c) };
                 p.type = type_opt(c);
                 si dp == nul {
                     f.params = p;
@@ -4534,6 +4549,10 @@ fonction compter(c: Ctx, x: Noeud, d) {
         } sinon si g == N_SOIT || g == N_AFFECTER {
             compter_nom(c, x.nom, poids_boucle(d));
             compter(c, x.a, d);
+        } sinon si g == N_RLIRE {
+            // vtx.py écrit l'indice deux fois (le mot, puis la place dans le mot) : compté deux fois
+            compter(c, x.a, d);
+            compter(c, x.a, d);
         } sinon si g == N_TANTQUE {
             compter(c, x.a, d + 1);
             compter(c, x.premier, d + 1);
@@ -5508,7 +5527,8 @@ fonction generer(c: Ctx) {
         soit pos = elem(c.fix_pos, j2);
         soit cible = elem(c.etiq, elem(c.fix_etiq, j2));
         si elem(c.fix_genre, j2) == 0 {
-            poser(c.code, pos, elem(c.code, pos) | ((cible >> 8) << 16) | ((cible & 255) << 8));
+            // adresse sur 20 bits : g et b, puis les 4 bits bas du dernier octet (le code dépasse 65 536 mots)
+            poser(c.code, pos, elem(c.code, pos) | (((cible >> 8) & 255) << 16) | ((cible & 255) << 8) | (cible >> 16));
         } sinon {
             poser(c.code, pos, cible);
         }
@@ -6093,6 +6113,131 @@ fonction textes_liste(c: Ctx, s: Noeud, env: Liste) {
     }
 }
 
+// --------------------------------------------------------------------------------------------- prélude à la demande
+// Le prélude compte près de 150 fonctions ; les lire toutes à chaque compilation coûtait l'essentiel du temps. On ne lit
+// que celles dont le nom paraît dans le programme, dans les fonctions qu'appelle le compilateur lui-même, et, de proche
+// en proche, dans les fonctions retenues. Avec les optimisations, la génération ne garde de toute façon que les fonctions
+// appelées (élagage) : le code produit est le même, dans le même ordre.
+structure Morceau { debut, fin, nom, nl, pris, suivant: Morceau }
+
+fonction car_de_nom(x) {
+    retour (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || (x >= '0' && x <= '9') || x == '_' || x >= 128;
+}
+
+// le morceau (fonction du prélude) qui porte le nom t[d..d+n], sinon nul
+fonction morceau_nomme(t, ms: Morceau, u, d, n): Morceau {
+    soit m = ms;
+    tantque m != nul {
+        si m.nl == n && car(t, m.nom) == car(u, d) {
+            soit k = 1;
+            tantque k < n && car(t, m.nom + k) == car(u, d + k) {
+                k = k + 1;
+            }
+            si k == n {
+                retour m;
+            }
+        }
+        m = m.suivant;
+    }
+    retour nul;
+}
+
+structure Pile { m: Morceau, suivant: Pile }
+
+fonction prendre(m: Morceau, p: Pile): Pile {
+    si m == nul || m.pris {
+        retour p;
+    }
+    m.pris = 1;
+    retour Pile { m: m, suivant: p };
+}
+
+fonction prelude_utile(c: Ctx, t) {
+    soit n = longueur(t);
+    // les morceaux : chaque « fonction » écrite en début de ligne, jusqu'à la suivante
+    soit ms: Morceau = nul;
+    soit der: Morceau = nul;
+    soit i = 0;
+    tantque i < n {
+        si (i == 0 || car(t, i - 1) == 10) && i + 9 < n && car(t, i) == 'f' && car(t, i + 1) == 'o' && car(t, i + 2) == 'n'
+                && car(t, i + 3) == 'c' && car(t, i + 4) == 't' && car(t, i + 5) == 'i' && car(t, i + 6) == 'o'
+                && car(t, i + 7) == 'n' && car(t, i + 8) == ' ' {
+            soit k = i + 9;
+            tantque k < n && car_de_nom(car(t, k)) {
+                k = k + 1;
+            }
+            soit nv = Morceau { debut: i, fin: n, nom: i + 9, nl: k - i - 9 };
+            si der == nul {
+                ms = nv;
+            } sinon {
+                der.fin = i;
+                der.suivant = nv;
+            }
+            der = nv;
+        }
+        i = i + 1;
+    }
+    // les graines : les noms du programme, ceux qu'emploie le compilateur lui-même, et les fonctions
+    // qui écrivent un texte
+    soit p: Pile = nul;
+    soit j = c.jetons;
+    tantque j != nul {
+        si j.genre == 1 {
+            p = prendre(morceau_nomme(t, ms, j.texte, 0, longueur(j.texte)), p);
+        }
+        j = j.suivant;
+    }
+    soit g = "divs mods asr nouveau tableau longueur texte_egal texte ecrire afficher ecrire_car comme_logique qegal nb_bits __code_logique __lshl __lsar __ldiv __afficher_t __ecrire_t __texte_t __afficher_f __ecrire_f __texte_f __afficher_l __ecrire_l __texte_l __afficher_q __ecrire_q __texte_q __texte_plus __remplir __somme_f __trier_f __hyp_debut __hyp_noter __hyp_valider __hyp_annuler";
+    soit a = 0;
+    tantque a < longueur(g) {
+        soit b = a;
+        tantque b < longueur(g) && car(g, b) != ' ' {
+            b = b + 1;
+        }
+        p = prendre(morceau_nomme(t, ms, g, a, b - a), p);
+        a = b + 1;
+    }
+    soit m = ms;
+    tantque m != nul {
+        // les textes écrits dans le prélude sont tous gardés dans le code (comme vtx.py) : leurs fonctions sont lues
+        pour kq dans m.debut..m.fin {
+            si car(t, kq) == '"' {
+                p = prendre(m, p);
+            }
+        }
+        m = m.suivant;
+    }
+    // de proche en proche : les noms écrits dans les fonctions retenues
+    tantque p != nul {
+        soit x = p.m;
+        p = p.suivant;
+        soit q = x.nom + x.nl;
+        tantque q < x.fin {
+            si car_de_nom(car(t, q)) && !car_de_nom(car(t, q - 1)) && !(car(t, q) >= '0' && car(t, q) <= '9') {
+                soit r = q;
+                tantque r < x.fin && car_de_nom(car(t, r)) {
+                    r = r + 1;
+                }
+                p = prendre(morceau_nomme(t, ms, t, q, r - q), p);
+                q = r;
+            } sinon {
+                q = q + 1;
+            }
+        }
+    }
+    // le texte lu : les fonctions retenues, dans l'ordre du prélude
+    ajouter(c.src, 10);
+    m = ms;
+    tantque m != nul {
+        si m.pris {
+            pour kc dans m.debut..m.fin {
+                ajouter(c.src, car(t, kc));
+            }
+        }
+        m = m.suivant;
+    }
+}
+
 fonction typer_textes(c: Ctx) {
     soit f = c.fonctions;
     tantque f != nul {
@@ -6203,7 +6348,12 @@ fonction principal() {
         constantes_predefinies(c);
         c.tableaux = nul;
         c.src = liste();
-        ajouter_texte(c.src, texte_prelude());
+        si c.optim {
+            prelude_utile(c, texte_prelude());
+        } sinon {
+            // sans optimisation, rien n'est élagué : tout le prélude est compilé, comme vtx.py
+            ajouter_texte(c.src, texte_prelude());
+        }
         c.jetons = nul;
         c.segs = nul;
         lexer(c);

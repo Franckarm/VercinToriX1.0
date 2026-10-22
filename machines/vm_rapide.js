@@ -67,7 +67,7 @@ function SPU(words) {
         case 48: case 49: case 50: case 51: case 53: case 54: {
           const j = op === 48 || op === 51 || (op === 49 && z) || (op === 50 && !z) || (op === 53 && c) || (op === 54 && !c);
           if (op === 51) { R[14] = (R[14] - 1) & ADR; wr(0, R[14], nx); }
-          if (j) nx = (g << 8) | b; break; }
+          if (j) nx = ((w & 15) << 16) | (g << 8) | b; break; }
         case 52: nx = rd(0, R[14]); R[14] = (R[14] + 1) & ADR; break;
         case 56: r = dot(A, B) >>> 0; set(d, r); z = r === 0; c = false; break;
         case 57: { const sp = R[14], n = rd(0, sp + 4), ww = rd(0, sp + 3), qb = rd(0, sp + 2), kb = rd(0, sp + 1), ob = rd(0, sp);

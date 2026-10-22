@@ -590,7 +590,7 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                     mem.ecrit(0, r[14], suivant);
                 }
                 if saut {
-                    suivant = (g << 8) | b;
+                    suivant = ((w & 15) << 16) | (g << 8) | b;
                 }
             }
             0x34 => {
