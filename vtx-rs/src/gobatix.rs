@@ -402,6 +402,7 @@ mod fen {
                 }
                 let (mx, my) = ((lp & 0xFFFF) as i16 as i32, ((lp >> 16) & 0xFFFF) as i16 as i32);
                 let im = IMAGE.lock().unwrap();
+                // (souris_dans_vue compte aussi le glissement)
                 let (x0, y0, dl, dh) = im.place;
                 super::hote::souris_dans_vue(mx, my, x0, y0, dl, dh, im.l, im.h, b);
                 0

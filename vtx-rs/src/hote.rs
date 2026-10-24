@@ -8,12 +8,17 @@
 //   19 cadence(ms)   intervalle minimal entre deux presenter() (0 : le plus vite possible) ; rend l'ancien
 //   20 molette()     crans de molette depuis le dernier appel (signé)
 //   21 appuyee(t)    1 si la touche t est enfoncée en ce moment, sinon 0
+//   23 souris_glisse()  le déplacement de la souris depuis le dernier appel : dx (bits 0-15), dy (16-31), signés
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub static SOURIS: AtomicU32 = AtomicU32::new(0);
+// le glissement de la souris (pixels de l'écran) depuis le dernier souris_glisse(), et sa dernière position vue
+static GLISSE_X: AtomicI32 = AtomicI32::new(0);
+static GLISSE_Y: AtomicI32 = AtomicI32::new(0);
+static DERNIERE_POS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 pub static MOLETTE: AtomicI32 = AtomicI32::new(0);
 pub static TOUCHES: Mutex<VecDeque<u32>> = Mutex::new(VecDeque::new());
 // les touches enfoncées : un bit par code de touche Windows (0 à 255)
@@ -33,6 +38,9 @@ pub fn remettre() {
     MOLETTE.store(0, Ordering::Relaxed);
     CADENCE_MS.store(16, Ordering::Relaxed);
     SOURIS.store(0, Ordering::Relaxed);
+    GLISSE_X.store(0, Ordering::Relaxed);
+    GLISSE_Y.store(0, Ordering::Relaxed);
+    *DERNIERE_POS.lock().unwrap() = None;
     tout_relacher();
     *SCENARIO.lock().unwrap() = (Vec::new(), 0, 0);
 }
@@ -46,6 +54,22 @@ fn depuis_debut() -> u64 {
 pub fn poser_souris(x: i32, y: i32, boutons: u32, dedans: bool) {
     let v = (x.clamp(0, 4095) as u32) | ((y.clamp(0, 4095) as u32) << 12) | ((boutons & 7) << 24) | ((dedans as u32) << 27);
     SOURIS.store(v, Ordering::Relaxed);
+}
+
+/// La souris a bougé jusqu'en (mx, my), en pixels de la fenêtre : le glissement s'accumule.
+pub fn glisser(mx: i32, my: i32) {
+    let mut d = DERNIERE_POS.lock().unwrap();
+    if let Some((x, y)) = *d {
+        GLISSE_X.fetch_add(mx - x, Ordering::Relaxed);
+        GLISSE_Y.fetch_add(my - y, Ordering::Relaxed);
+    }
+    *d = Some((mx, my));
+}
+
+/// Un glissement donné tel quel (les scénarios).
+pub fn ajouter_glisse(dx: i32, dy: i32) {
+    GLISSE_X.fetch_add(dx, Ordering::Relaxed);
+    GLISSE_Y.fetch_add(dy, Ordering::Relaxed);
 }
 
 pub fn ajouter_molette(crans: i32) {
@@ -121,6 +145,12 @@ pub fn service(code: u64, arg: u64, m: u64) -> Option<u64> {
         18 => depuis_debut() & m,
         19 => CADENCE_MS.swap(arg.min(60_000) as u32, Ordering::Relaxed) as u64,
         20 => (MOLETTE.swap(0, Ordering::Relaxed) as i64 as u64) & m,
+        // 23 : le glissement depuis le dernier appel, dx (bits 0-15) et dy (16-31), signés sur 16 bits
+        23 => {
+            let dx = GLISSE_X.swap(0, Ordering::Relaxed).clamp(-32768, 32767);
+            let dy = GLISSE_Y.swap(0, Ordering::Relaxed).clamp(-32768, 32767);
+            ((dx as u16 as u64) | ((dy as u16 as u64) << 16)) & m
+        }
         21 => match code_windows(arg) {
             Some(vk) => ((ENFONCEES[(vk >> 5) as usize].load(Ordering::Relaxed) >> (vk & 31)) & 1) as u64,
             None => 0,
@@ -132,6 +162,7 @@ pub fn service(code: u64, arg: u64, m: u64) -> Option<u64> {
 /// La souris vue dans une fenêtre où l'image (il × ih points) est dessinée en (x0, y0), sur dl × dh pixels.
 #[allow(clippy::too_many_arguments)]
 pub fn souris_dans_vue(mx: i32, my: i32, x0: i32, y0: i32, dl: i32, dh: i32, il: usize, ih: usize, boutons: u32) {
+    glisser(mx, my);
     if dl <= 0 || dh <= 0 || il == 0 || ih == 0 {
         return;
     }
@@ -169,6 +200,7 @@ pub fn clavier_windows(message: u32, wp: usize) {
 //   12 touche CODE               une touche appuyée (un caractère, ou 65536 + code), lue par touche()
 //   12 appui CODE / relache CODE une touche enfoncée ou relâchée, vue par appuyee()
 //   12 molette CRANS             des crans de molette
+//   12 glisse DX DY              un glissement de la souris (pixels de l'écran), lu par souris_glisse()
 // « # » commence un commentaire.
 struct Geste {
     image: usize,
@@ -195,7 +227,8 @@ pub fn charger_scenario(texte: &str) -> Result<usize, String> {
             Some("appui") => (2, 1),
             Some("relache") => (3, 1),
             Some("molette") => (4, 1),
-            _ => return Err(format!("scénario, ligne {} : souris, touche, appui, relache ou molette attendu", n + 1)),
+            Some("glisse") => (5, 2),
+            _ => return Err(format!("scénario, ligne {} : souris, touche, appui, relache, molette ou glisse attendu", n + 1)),
         };
         let mut v = [0i64; 3];
         for (j, x) in v.iter_mut().enumerate().take(k) {
@@ -222,7 +255,8 @@ fn appliquer_scenario(image: usize) {
                     poser_enfoncee(vk, g.quoi == 2);
                 }
             }
-            _ => ajouter_molette(g.v[0] as i32),
+            4 => ajouter_molette(g.v[0] as i32),
+            _ => ajouter_glisse(g.v[0] as i32, g.v[1] as i32),
         }
         s.1 += 1;
     }

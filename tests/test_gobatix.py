@@ -65,6 +65,8 @@ ESSAI = """fonction principal() {
     rectangle_anti(0, 0, 3, 3);
     rectangle_anti(0, 0, 3, 3);
     sortie(@1[9] == anti_couleur(c));
+    sortie(texte_image(0, 0, "Clé", c) + largeur_texte("ab\\ncdé", 2));
+    sortie(glisse_x(souris_glisse()) + glisse_y(1 << 16) + glisse_x(65535) + 1);
     soit t = horloge();
     sortie(presenter());
 }
@@ -95,7 +97,7 @@ verifier(f"1. mêmes mots : vtx.py = vtxc {ok32}/{len(progs)}, vtx64.py = vtxc64
          ok32 == ok64 == len(progs))
 
 # 2. sans fenêtre, les quatre machines
-attendu = [0, 0xABC123 & 4095, 0, 0, 0, 16, 40, 1, 65574 + 65575 + 65576 + 13 + 27 + 32, 1, 0]
+attendu = [0, 0xABC123 & 4095, 0, 0, 0, 16, 40, 1, 65574 + 65575 + 65576 + 13 + 27 + 32, 1, 18 + 36, 1, 0]
 attendu[1] = (0xABC123 & 4095) + ((0xABC123 >> 12) & 4095) + 7 + 1
 p = os.path.join(TMP, "essai.vtx")
 with open(p, "w", encoding="utf-8") as f:

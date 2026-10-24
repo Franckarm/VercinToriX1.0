@@ -1,3 +1,4 @@
+// machine : spu-32
 importer "rendu3.vtx";
 importer "donnees_monde.vtx";
 

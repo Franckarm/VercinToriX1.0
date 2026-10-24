@@ -517,8 +517,8 @@ class CPU:
             return self.presenter(self) if self.presenter else 0
         if code == 13:
             return self.jeter_cube(arg)
-        if code in (16, 17, 20, 21):
-            return 0                          # souris, touche, molette, appuyee : pas de fenêtre ici
+        if code in (16, 17, 20, 21, 23):
+            return 0                          # souris, touche, molette, appuyee, glisse : pas de fenêtre ici
         if code == 22:
             etat = getattr(self, "_etat_disque", 0)   # l'état des cubes lus sur disque (miroir inversé)
             self._etat_disque = 0

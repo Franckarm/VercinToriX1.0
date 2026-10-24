@@ -156,6 +156,7 @@ extern "system" {
     fn SetCapture(h: H) -> H;
     fn ReleaseCapture() -> i32;
     fn GetCapture() -> H;
+    fn GetKeyState(vk: i32) -> i16;
     fn GetFocus() -> H;
     fn SetProcessDPIAware() -> i32;
     fn GetDC(h: H) -> H;
@@ -226,6 +227,8 @@ const WM_COPY: u32 = 0x0301;
 const WM_PASTE: u32 = 0x0302;
 const WM_UNDO: u32 = 0x0304;
 const WM_APP_FINI: u32 = 0x8001;
+// la première image d'un programme : la vue du cube prend le clavier (demandé par message, pas pendant la peinture)
+const WM_APP_CLAVIER: u32 = 0x8003;
 const WM_TIMER: u32 = 0x0113;
 const EM_GETSEL: u32 = 0x00B0;
 const EM_SETSEL: u32 = 0x00B1;
@@ -525,11 +528,39 @@ fn charger(chemin: &Path) {
     }
     at.fichier = Some(chemin.to_path_buf());
     effacer_resultats();
-    // les exemples de la machine 32 bits (dossier « exemples ») s'ouvrent sur elle ; tout le reste sur la SPU-64
-    let ancien = chemin.components().any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case("exemples"));
-    choisir_machine(!ancien);
-    etat(&format!("ouvert : {} · machine {}{}", chemin.display(), if ancien { "SPU-32" } else { "SPU-64" },
-                  if ancien { " (dossier exemples ; Exécuter › Machine 64 bits pour changer)" } else { "" }));
+    // la machine : celle que le fichier nomme dans ses premières lignes (« // machine : spu-32 » ou « spu-64 ») ; sinon les
+    // exemples de la machine 32 bits (dossier « exemples ») s'ouvrent sur elle, tout le reste sur la SPU-64. Ctrl+M
+    // change toujours de machine.
+    let (m64, pourquoi) = match machine_ecrite(&texte) {
+        Some(m) => (m, " (écrite dans le fichier ; Ctrl+M pour changer)"),
+        None => {
+            let ancien = chemin.components().any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case("exemples"));
+            (!ancien, if ancien { " (dossier exemples ; Ctrl+M pour changer)" } else { "" })
+        }
+    };
+    choisir_machine(m64);
+    etat(&format!("ouvert : {} · machine {}{}", chemin.display(), if m64 { "SPU-64" } else { "SPU-32" }, pourquoi));
+}
+
+/// La machine écrite en tête d'un programme, dans ses dix premières lignes : « // machine : spu-32 » (ou « 32 ») rend
+/// Some(false), « spu-64 » (ou « 64 ») Some(true).
+pub fn machine_ecrite(texte: &str) -> Option<bool> {
+    for ligne in texte.lines().take(10) {
+        let l = ligne.trim();
+        if let Some(r) = l.strip_prefix("//") {
+            let r = r.trim().to_lowercase();
+            if let Some(m) = r.strip_prefix("machine") {
+                let m = m.trim_start_matches([' ', ':', '\u{a0}']).trim();
+                if m.starts_with("spu-32") || m.starts_with("spu32") || m.starts_with("32") {
+                    return Some(false);
+                }
+                if m.starts_with("spu-64") || m.starts_with("spu64") || m.starts_with("64") {
+                    return Some(true);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Enregistre (en demandant un nom s'il n'y en a pas) ; false si l'utilisateur a renoncé ou si l'écriture échoue.
@@ -643,6 +674,7 @@ fn lancer() {
     super::hote::FENETRE.store(true, Ordering::Relaxed);
     super::gobatix::installer(Some(Box::new(VueAtelier { cube: at.cube as usize })));
     ANNONCEE.store(false, Ordering::Relaxed);
+    PEINTURE.store(false, Ordering::Relaxed);
     unsafe {
         SetFocus(at.term_entree);
         SetTimer(at.fen, 1, 30, std::ptr::null());
@@ -1604,6 +1636,7 @@ static IMAGE: Mutex<Option<(usize, usize, Vec<u32>)>> = Mutex::new(None);
 /// Où l'image est peinte dans la vue du cube (x0, y0, largeur, hauteur), pour situer la souris dans l'image.
 static PLACE: Mutex<(i32, i32, i32, i32)> = Mutex::new((0, 0, 0, 0));
 static ANNONCEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PEINTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// La sortie de Gobatix dans l'atelier : chaque image présentée remplace la précédente dans la vue du cube.
 struct VueAtelier {
@@ -1618,8 +1651,11 @@ impl super::gobatix::Sortie for VueAtelier {
                 _ => *im = Some((l, h, px.to_vec())),
             }
         }
-        unsafe {
-            InvalidateRect(self.cube as H, std::ptr::null(), 0);
+        // une seule peinture demandée à la fois : si la précédente n'est pas faite, l'image est seulement remplacée
+        if !PEINTURE.swap(true, Ordering::Relaxed) {
+            unsafe {
+                InvalidateRect(self.cube as H, std::ptr::null(), 0);
+            }
         }
         !ARRET.load(Ordering::Relaxed)
     }
@@ -1800,6 +1836,7 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
             let (l, ht) = ((r.right - r.left).max(1) as usize, (r.bottom - r.top).max(1) as usize);
             let mut px = vec![0x0010_1418u32; l * ht];
             let at = a();
+            PEINTURE.store(false, Ordering::Relaxed);
             let image = if at.en_cours || at.dessin { IMAGE.lock().unwrap().clone() } else { None };
             if let Some((il, ih, ipx)) = &image {
                 *PLACE.lock().unwrap() = peindre_image(*il, *ih, ipx, l, ht, &mut px);
@@ -1808,9 +1845,9 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
                                   il, ih));
                 } else if !ANNONCEE.swap(true, Ordering::Relaxed) {
                     // la première image : le clavier va au programme sans qu'il faille cliquer
-                    SetFocus(h);
-                    etat(&format!("image du programme : {} × {} · la souris et le clavier vont au programme · \
-                                   Ctrl+G : enregistrer l'animation (GIF) · Maj+F5 : arrêter", il, ih));
+                    PostMessageW(at.fen, WM_APP_CLAVIER, 0, 0);
+                    etat(&format!("image du programme : {} × {} · la souris et le clavier vont au programme (un clic dans le texte \
+                                   le reprend) · Ctrl+G : enregistrer en GIF · Maj+F5 : arrêter", il, ih));
                 }
             } else if let Some(mem) = &at.mem {
                 if at.iso {
@@ -2338,6 +2375,12 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
             fini();
             0
         }
+        WM_APP_CLAVIER => {
+            if a().en_cours {
+                SetFocus(a().cube);
+            }
+            0
+        }
         WM_TIMER => {
             if wp == 2 {
                 suivre_lignes();
@@ -2453,10 +2496,11 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
         let table = CreateAcceleratorTableW(raccourcis.as_ptr(), raccourcis.len() as i32);
         let mut msg: Msg = std::mem::zeroed();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
-            // pendant l'exécution, les touches tapées dans l'image vont au programme (Échap compris), sauf F5 et Maj+F5
+            // pendant l'exécution, les touches tapées dans l'image vont au programme (Échap compris)
             let at = a();
-            let direct = at.en_cours && msg.hwnd == at.cube && matches!(msg.message, WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP)
-                && msg.wParam != 0x74;
+            // les raccourcis de l'atelier restent à l'atelier : Ctrl+…, Alt+… et les touches F1 à F12
+            let direct = at.en_cours && msg.hwnd == at.cube && matches!(msg.message, WM_KEYDOWN | WM_KEYUP)
+                && !(0x70..=0x7B).contains(&msg.wParam) && GetKeyState(0x11) >= 0 && GetKeyState(0x12) >= 0;
             if direct || TranslateAcceleratorW(fen, table, &mut msg) == 0 {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);

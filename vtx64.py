@@ -3576,6 +3576,21 @@ fonction souris_boutons(m) {
 fonction souris_dedans(m) {
     retour (m >> 27) & 1;
 }
+// le déplacement de la souris depuis le dernier appel, en pixels de l'écran (même au-delà des bords de l'image tant
+// qu'un bouton est tenu) : pour tourner la tête dans un jeu ; glisse_x(g), glisse_y(g) le lisent (signés)
+fonction souris_glisse() {
+    retour __service(23, 0);
+}
+fonction glisse_x(g) {
+    soit v = g & 65535;
+    si v >= 32768 { retour v - 65536; }
+    retour v;
+}
+fonction glisse_y(g) {
+    soit v = (g >> 16) & 65535;
+    si v >= 32768 { retour v - 65536; }
+    retour v;
+}
 fonction molette() {
     // les crans de molette depuis le dernier appel (vers l'avant : positif)
     retour __service(20, 0);
@@ -3627,6 +3642,790 @@ fonction rectangle_anti(x, y, l, h) {
             pixel_anti(x + i, y + j);
         }
     }
+}
+// ---- le texte dans l'image : une police de 5 × 7 points, chaque glyphe en 5 colonnes de 7 points (bit 0 : la ligne du
+// haut), les quatre premières dans un mot rendu par __glyphe_a, la cinquième par __glyphe_b (une recherche en arbre :
+// rien n'est rangé en mémoire, et rien n'est ajouté à un programme qui n'écrit pas de texte) ; les lettres françaises ont leur accent (é è ê ë à â ç ù û ô î ï É È À Ç) ; un caractère inconnu
+// laisse sa place vide
+fonction __glyphe_a(k) {
+    si k < 58 {
+        si k < 29 {
+            si k < 14 {
+                si k < 7 {
+                    si k < 3 {
+                        si k < 1 {
+                            retour 0;
+                        }
+                        si k < 2 {
+                            retour 1556480;
+                        }
+                        retour 14680960;
+                    }
+                    si k < 5 {
+                        si k < 4 {
+                            retour 266682260;
+                        }
+                        retour 90166564;
+                    }
+                    si k < 6 {
+                        retour 209848739;
+                    }
+                    retour 72705206;
+                }
+                si k < 10 {
+                    si k < 8 {
+                        retour 49664;
+                    }
+                    si k < 9 {
+                        retour 136875520;
+                    }
+                    retour 59285632;
+                }
+                si k < 12 {
+                    si k < 11 {
+                        retour 17794068;
+                    }
+                    retour 17794056;
+                }
+                si k < 13 {
+                    retour 796672;
+                }
+                retour 16909320;
+            }
+            si k < 21 {
+                si k < 17 {
+                    si k < 15 {
+                        retour 1585152;
+                    }
+                    si k < 16 {
+                        retour 8521760;
+                    }
+                    retour 145909950;
+                }
+                si k < 19 {
+                    si k < 18 {
+                        retour 136306944;
+                    }
+                    retour 154431682;
+                }
+                si k < 20 {
+                    retour 158425249;
+                }
+                retour 266635800;
+            }
+            si k < 25 {
+                si k < 23 {
+                    si k < 22 {
+                        retour 145842855;
+                    }
+                    retour 154297660;
+                }
+                si k < 24 {
+                    retour 10647681;
+                }
+                retour 154297526;
+            }
+            si k < 27 {
+                si k < 26 {
+                    retour 87188614;
+                }
+                retour 891648;
+            }
+            si k < 28 {
+                retour 895744;
+            }
+            retour 136874504;
+        }
+        si k < 43 {
+            si k < 36 {
+                si k < 32 {
+                    si k < 30 {
+                        retour 42273300;
+                    }
+                    si k < 31 {
+                        retour 42508416;
+                    }
+                    retour 20201602;
+                }
+                si k < 34 {
+                    si k < 33 {
+                        retour 138306738;
+                    }
+                    retour 19023102;
+                }
+                si k < 35 {
+                    retour 154297599;
+                }
+                retour 137388222;
+            }
+            si k < 39 {
+                si k < 37 {
+                    retour 72376575;
+                }
+                si k < 38 {
+                    retour 154297599;
+                }
+                retour 19023103;
+            }
+            si k < 41 {
+                si k < 40 {
+                    retour 154296510;
+                }
+                retour 16909439;
+            }
+            si k < 42 {
+                retour 138403968;
+            }
+            retour 133193760;
+        }
+        si k < 50 {
+            si k < 46 {
+                si k < 44 {
+                    retour 71631999;
+                }
+                si k < 45 {
+                    retour 135274623;
+                }
+                retour 4391295;
+            }
+            si k < 48 {
+                si k < 47 {
+                    retour 33686143;
+                }
+                retour 137388222;
+            }
+            si k < 49 {
+                retour 19023103;
+            }
+            retour 70541502;
+        }
+        si k < 54 {
+            si k < 52 {
+                si k < 51 {
+                    retour 86394111;
+                }
+                retour 154297542;
+            }
+            si k < 53 {
+                retour 4178049;
+            }
+            retour 135274559;
+        }
+        si k < 56 {
+            si k < 55 {
+                retour 68161567;
+            }
+            retour 135143487;
+        }
+        si k < 57 {
+            retour 42076771;
+        }
+        retour 18613255;
+    }
+    si k < 87 {
+        si k < 72 {
+            si k < 65 {
+                si k < 61 {
+                    si k < 59 {
+                        retour 145909985;
+                    }
+                    si k < 60 {
+                        retour 137396096;
+                    }
+                    retour 33686018;
+                }
+                si k < 63 {
+                    si k < 62 {
+                        retour 267411584;
+                    }
+                    retour 4210948;
+                }
+                si k < 64 {
+                    retour 135274560;
+                }
+                retour 8421504;
+            }
+            si k < 68 {
+                si k < 66 {
+                    retour 177547808;
+                }
+                si k < 67 {
+                    retour 143729791;
+                }
+                retour 143729208;
+            }
+            si k < 70 {
+                si k < 69 {
+                    retour 152117816;
+                }
+                retour 177547832;
+            }
+            si k < 71 {
+                retour 2260744;
+            }
+            retour 177547784;
+        }
+        si k < 79 {
+            si k < 75 {
+                si k < 73 {
+                    retour 8455295;
+                }
+                si k < 74 {
+                    retour 136274432;
+                }
+                retour 129048608;
+            }
+            si k < 77 {
+                si k < 76 {
+                    retour 143263871;
+                }
+                retour 136306816;
+            }
+            si k < 78 {
+                retour 8782460;
+            }
+            retour 8455292;
+        }
+        si k < 83 {
+            si k < 81 {
+                si k < 80 {
+                    retour 143729208;
+                }
+                retour 42273404;
+            }
+            si k < 82 {
+                retour 50661896;
+            }
+            retour 8455292;
+        }
+        si k < 85 {
+            si k < 84 {
+                retour 177547848;
+            }
+            retour 135339908;
+        }
+        si k < 86 {
+            retour 68165692;
+        }
+        retour 68161564;
+    }
+    si k < 101 {
+        si k < 94 {
+            si k < 90 {
+                si k < 88 {
+                    retour 135012412;
+                }
+                si k < 89 {
+                    retour 84153412;
+                }
+                retour 169093132;
+            }
+            si k < 92 {
+                si k < 91 {
+                    retour 160772676;
+                }
+                retour 137200640;
+            }
+            si k < 93 {
+                retour 2080768;
+            }
+            retour 17670272;
+        }
+        si k < 97 {
+            si k < 95 {
+                retour 33686024;
+            }
+            si k < 96 {
+                retour 179677752;
+            }
+            retour 177580728;
+        }
+        si k < 99 {
+            si k < 98 {
+                retour 181758776;
+            }
+            retour 179645112;
+        }
+        si k < 100 {
+            retour 177580704;
+        }
+        retour 181758752;
+    }
+    si k < 108 {
+        si k < 104 {
+            si k < 102 {
+                retour 207130908;
+            }
+            si k < 103 {
+                retour 68198588;
+            }
+            retour 72376636;
+        }
+        si k < 106 {
+            si k < 105 {
+                retour 147940152;
+            }
+            retour 140403968;
+        }
+        si k < 107 {
+            retour 138355328;
+        }
+        retour 158508414;
+    }
+    si k < 112 {
+        si k < 110 {
+            si k < 109 {
+                retour 156411390;
+            }
+            retour 42306296;
+        }
+        si k < 111 {
+            retour 205017246;
+        }
+        retour 42076706;
+    }
+    si k < 114 {
+        si k < 113 {
+            retour 131072;
+        }
+        retour 42633736;
+    }
+    si k < 115 {
+        retour 42633762;
+    }
+    retour 4276866;
+}
+fonction __glyphe_b(k) {
+    si k < 58 {
+        si k < 29 {
+            si k < 14 {
+                si k < 7 {
+                    si k < 3 {
+                        si k < 1 {
+                            retour 0;
+                        }
+                        si k < 2 {
+                            retour 0;
+                        }
+                        retour 0;
+                    }
+                    si k < 5 {
+                        si k < 4 {
+                            retour 20;
+                        }
+                        retour 18;
+                    }
+                    si k < 6 {
+                        retour 98;
+                    }
+                    retour 80;
+                }
+                si k < 10 {
+                    si k < 8 {
+                        retour 0;
+                    }
+                    si k < 9 {
+                        retour 0;
+                    }
+                    retour 0;
+                }
+                si k < 12 {
+                    si k < 11 {
+                        retour 20;
+                    }
+                    retour 8;
+                }
+                si k < 13 {
+                    retour 0;
+                }
+                retour 8;
+            }
+            si k < 21 {
+                si k < 17 {
+                    si k < 15 {
+                        retour 0;
+                    }
+                    si k < 16 {
+                        retour 2;
+                    }
+                    retour 62;
+                }
+                si k < 19 {
+                    si k < 18 {
+                        retour 0;
+                    }
+                    retour 70;
+                }
+                si k < 20 {
+                    retour 49;
+                }
+                retour 16;
+            }
+            si k < 25 {
+                si k < 23 {
+                    si k < 22 {
+                        retour 57;
+                    }
+                    retour 48;
+                }
+                si k < 24 {
+                    retour 3;
+                }
+                retour 54;
+            }
+            si k < 27 {
+                si k < 26 {
+                    retour 30;
+                }
+                retour 0;
+            }
+            si k < 28 {
+                retour 0;
+            }
+            retour 0;
+        }
+        si k < 43 {
+            si k < 36 {
+                si k < 32 {
+                    si k < 30 {
+                        retour 20;
+                    }
+                    si k < 31 {
+                        retour 8;
+                    }
+                    retour 6;
+                }
+                si k < 34 {
+                    si k < 33 {
+                        retour 62;
+                    }
+                    retour 126;
+                }
+                si k < 35 {
+                    retour 54;
+                }
+                retour 34;
+            }
+            si k < 39 {
+                si k < 37 {
+                    retour 28;
+                }
+                si k < 38 {
+                    retour 65;
+                }
+                retour 1;
+            }
+            si k < 41 {
+                si k < 40 {
+                    retour 122;
+                }
+                retour 127;
+            }
+            si k < 42 {
+                retour 0;
+            }
+            retour 1;
+        }
+        si k < 50 {
+            si k < 46 {
+                si k < 44 {
+                    retour 65;
+                }
+                si k < 45 {
+                    retour 64;
+                }
+                retour 127;
+            }
+            si k < 48 {
+                si k < 47 {
+                    retour 127;
+                }
+                retour 62;
+            }
+            si k < 49 {
+                retour 6;
+            }
+            retour 94;
+        }
+        si k < 54 {
+            si k < 52 {
+                si k < 51 {
+                    retour 70;
+                }
+                retour 49;
+            }
+            si k < 53 {
+                retour 1;
+            }
+            retour 63;
+        }
+        si k < 56 {
+            si k < 55 {
+                retour 31;
+            }
+            retour 63;
+        }
+        si k < 57 {
+            retour 99;
+        }
+        retour 7;
+    }
+    si k < 87 {
+        si k < 72 {
+            si k < 65 {
+                si k < 61 {
+                    si k < 59 {
+                        retour 67;
+                    }
+                    si k < 60 {
+                        retour 0;
+                    }
+                    retour 32;
+                }
+                si k < 63 {
+                    si k < 62 {
+                        retour 0;
+                    }
+                    retour 4;
+                }
+                si k < 64 {
+                    retour 64;
+                }
+                retour 0;
+            }
+            si k < 68 {
+                si k < 66 {
+                    retour 120;
+                }
+                si k < 67 {
+                    retour 56;
+                }
+                retour 32;
+            }
+            si k < 70 {
+                si k < 69 {
+                    retour 127;
+                }
+                retour 24;
+            }
+            si k < 71 {
+                retour 2;
+            }
+            retour 60;
+        }
+        si k < 79 {
+            si k < 75 {
+                si k < 73 {
+                    retour 120;
+                }
+                si k < 74 {
+                    retour 0;
+                }
+                retour 0;
+            }
+            si k < 77 {
+                si k < 76 {
+                    retour 0;
+                }
+                retour 0;
+            }
+            si k < 78 {
+                retour 120;
+            }
+            retour 120;
+        }
+        si k < 83 {
+            si k < 81 {
+                si k < 80 {
+                    retour 56;
+                }
+                retour 8;
+            }
+            si k < 82 {
+                retour 124;
+            }
+            retour 8;
+        }
+        si k < 85 {
+            si k < 84 {
+                retour 32;
+            }
+            retour 32;
+        }
+        si k < 86 {
+            retour 124;
+        }
+        retour 28;
+    }
+    si k < 101 {
+        si k < 94 {
+            si k < 90 {
+                si k < 88 {
+                    retour 60;
+                }
+                si k < 89 {
+                    retour 68;
+                }
+                retour 60;
+            }
+            si k < 92 {
+                si k < 91 {
+                    retour 68;
+                }
+                retour 0;
+            }
+            si k < 93 {
+                retour 0;
+            }
+            retour 0;
+        }
+        si k < 97 {
+            si k < 95 {
+                retour 8;
+            }
+            si k < 96 {
+                retour 24;
+            }
+            retour 24;
+        }
+        si k < 99 {
+            si k < 98 {
+                retour 24;
+            }
+            retour 24;
+        }
+        si k < 100 {
+            retour 120;
+        }
+        retour 120;
+    }
+    si k < 108 {
+        si k < 104 {
+            si k < 102 {
+                retour 16;
+            }
+            si k < 103 {
+                retour 124;
+            }
+            retour 124;
+        }
+        si k < 106 {
+            si k < 105 {
+                retour 56;
+            }
+            retour 0;
+        }
+        si k < 107 {
+            retour 0;
+        }
+        retour 66;
+    }
+    si k < 112 {
+        si k < 110 {
+            si k < 109 {
+                retour 66;
+            }
+            retour 120;
+        }
+        si k < 111 {
+            retour 18;
+        }
+        retour 34;
+    }
+    si k < 114 {
+        si k < 113 {
+            retour 0;
+        }
+        retour 34;
+    }
+    si k < 115 {
+        retour 8;
+    }
+    retour 0;
+}
+// la place du caractère c dans la police (le nombre de glyphes s'il n'y est pas) : de l'espace au tilde par le calcul,
+// les lettres françaises et quelques signes à partir de 95
+fonction __glyphe(c) {
+    si c >= 32 && c <= 126 { retour c - 32; }
+    si c == 233 { retour 95; }          // é
+    si c == 232 { retour 96; }          // è
+    si c == 234 { retour 97; }          // ê
+    si c == 235 { retour 98; }          // ë
+    si c == 224 { retour 99; }          // à
+    si c == 226 { retour 100; }          // â
+    si c == 231 { retour 101; }          // ç
+    si c == 249 { retour 102; }          // ù
+    si c == 251 { retour 103; }          // û
+    si c == 244 { retour 104; }          // ô
+    si c == 238 { retour 105; }          // î
+    si c == 239 { retour 106; }          // ï
+    si c == 201 { retour 107; }          // É
+    si c == 200 { retour 108; }          // È
+    si c == 192 { retour 109; }          // À
+    si c == 199 { retour 110; }          // Ç
+    si c == 215 { retour 111; }          // ×
+    si c == 183 { retour 112; }          // ·
+    si c == 171 { retour 113; }          // «
+    si c == 187 { retour 114; }          // »
+    si c == 176 { retour 115; }          // °
+    retour 116;
+}
+// écrit le texte t dans l'image, le coin haut gauche en (x, y), chaque point agrandi e fois (e = 1 : 6 points par
+// caractère, 9 par ligne) ; un retour à la ligne revient sous x ; rend la largeur de la ligne la plus longue
+fonction texte_image_grand(x, y, t, c, e) {
+    soit nj = 116;
+    soit n = longueur(t);
+    soit cx = x;
+    soit large = 0;
+    pour i dans 0..n {
+        soit ch = car(t, i);
+        si ch == 10 {
+            si cx - x > large { large = cx - x; }
+            cx = x;
+            y = y + 9 * e;
+        } sinon {
+            soit k = __glyphe(ch);
+            si k < nj {
+                soit ga = __glyphe_a(k);
+                soit gb = __glyphe_b(k);
+                pour col dans 0..5 {
+                    soit v = gb;
+                    si col < 4 { v = (ga >> (7 * col)) & 127; }
+                    pour lig dans 0..7 {
+                        si ((v >> lig) & 1) == 1 {
+                            si e == 1 {
+                                pixel(cx + col, y + lig, c);
+                            } sinon {
+                                rectangle(cx + col * e, y + lig * e, e, e, c);
+                            }
+                        }
+                    }
+                }
+            }
+            cx = cx + 6 * e;
+        }
+    }
+    si cx - x > large { large = cx - x; }
+    retour large;
+}
+fonction texte_image(x, y, t, c) {
+    retour texte_image_grand(x, y, t, c, 1);
+}
+// la largeur en points qu'occupera le texte t (sa ligne la plus longue), pour centrer ou aligner à droite
+fonction largeur_texte(t, e) {
+    soit n = longueur(t);
+    soit l = 0;
+    soit large = 0;
+    pour i dans 0..n {
+        si car(t, i) == 10 {
+            si l > large { large = l; }
+            l = 0;
+        } sinon {
+            l = l + 6 * e;
+        }
+    }
+    si l > large { large = l; }
+    retour large;
 }
 fonction __somme_f(t): flottant {
     soit p = t & 16777215;

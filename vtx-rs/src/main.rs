@@ -723,7 +723,7 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                     // 12 : présenter l'image du programme (Gobatix) ; rend 1 si la fenêtre a été fermée
                     12 => gobatix::presenter(mem),
                     // 16 à 21 : la souris, les touches, l'horloge, la cadence (hote.rs)
-                    16..=21 => hote::service(ra as u64, rb as u64, 0xFFFF_FFFF).unwrap_or(0) as u32,
+                    16..=21 | 23 => hote::service(ra as u64, rb as u64, 0xFFFF_FFFF).unwrap_or(0) as u32,
                     // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé, miroir.rs)
                     22 => miroir::prendre_etat() as u32,
                     10 => return Err("mémoire pleine : le tas ne peut plus grandir, même après avoir ramassé les miettes".to_string()),
