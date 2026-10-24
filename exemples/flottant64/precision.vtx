@@ -18,18 +18,12 @@ fonction harmonique_64(n): flottant_64 {
 }
 
 fonction principal() {
-    afficher("0.1 + 0.2 en 32 bits : ");
-    afficher(0.1 + 0.2);
-    afficher("0.1 + 0.2 en 64 bits : ");
-    afficher(0.1D + 0.2D);
-    afficher("racine de 2 en 32 bits : ");
-    afficher(racine(2.0));
-    afficher("racine de 2 en 64 bits : ");
-    afficher(racine(2.0D));
-    afficher("somme harmonique de 10000 termes, 32 bits : ");
-    afficher(harmonique_32(10000));
-    afficher("somme harmonique de 10000 termes, 64 bits : ");
-    afficher(harmonique_64(10000));
-    afficher("2^53 + 1 en 64 bits (perd le 1) : ");
-    afficher(9007199254740992.0D + 1.0D);
+    // les appels en série : « afficher(): a, b; » vaut « afficher(a); afficher(b); »
+    afficher(): "0.1 + 0.2 en 32 bits : ", 0.1 + 0.2;
+    afficher(): "0.1 + 0.2 en 64 bits : ", 0.1D + 0.2D;
+    afficher(): "racine de 2 en 32 bits : ", racine(2.0);
+    afficher(): "racine de 2 en 64 bits : ", racine(2.0D);
+    afficher(): "somme harmonique de 10000 termes, 32 bits : ", harmonique_32(10000);
+    afficher(): "somme harmonique de 10000 termes, 64 bits : ", harmonique_64(10000);
+    afficher(): "2^53 + 1 en 64 bits (perd le 1) : ", 9007199254740992.0D + 1.0D;
 }

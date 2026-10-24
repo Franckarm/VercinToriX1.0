@@ -51,6 +51,64 @@ OPS = {
 NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
 
+
+# ---- les cubes sur disque en miroir inversé (comme vtx-rs/src/miroir.rs) : à côté de chaque cube, son anti-cube
+# (« anti » devant le nom du fichier), chaque octet après l'en-tête complémenté ; à la lecture, les deux s'accordent :
+# vrai (2) d'accord, faux (1) une seule copie lisible (réparée), variable (3) contradiction (la première gardée),
+# inconnu (0) ni l'une ni l'autre.
+def _chemin_anti(chemin):
+    d, n = os.path.split(chemin)
+    return os.path.join(d, "anti" + n)
+
+
+def _entete_anti(entete):
+    return entete[:3] + b"ANT" + entete[6:]
+
+
+def ecrire_double(chemin, octets):
+    with open(chemin, "wb") as h:
+        h.write(octets)
+    with open(_chemin_anti(chemin), "wb") as h:
+        h.write(_entete_anti(octets[:8]) + bytes(255 - x for x in octets[8:]))
+
+
+def lire_double(chemin, entete):
+    """Rend (contenu retenu ou None, état de Belnap) ; une copie absente ou abîmée est refaite à partir de l'autre."""
+    def lire(c):
+        try:
+            with open(c, "rb") as h:
+                return h.read()
+        except OSError:
+            return None
+    p, a = lire(chemin), lire(_chemin_anti(chemin))
+    p = p if p is not None and p[:8] == entete else None
+    a = entete + bytes(255 - x for x in a[8:]) if a is not None and a[:8] == _entete_anti(entete) else None
+    if p is None and a is None:
+        return None, 0
+    if p is not None and a is not None:
+        if p == a:
+            return p, 2
+        if len(a) > len(p) and a.startswith(p):
+            garde, etat = a, 1
+        elif len(p) > len(a) and p.startswith(a):
+            garde, etat = p, 1
+        else:
+            return p, 3
+    else:
+        garde, etat = (p, 1) if p is not None else (a, 1)
+    try:
+        ecrire_double(chemin, garde)
+    except OSError:
+        pass
+    return garde, etat
+
+
+def noter_etat(machine, etat):
+    """Le pire état vu depuis le dernier etat_disque() (inconnu < vrai < faux < variable)."""
+    rang = {0: 0, 2: 1, 1: 2, 3: 3}
+    if rang[etat] > rang[getattr(machine, "_etat_disque", 0)]:
+        machine._etat_disque = etat
+
 class Erreur(Exception):
     pass
 
@@ -194,12 +252,9 @@ class CPU:
         self.pages_vues.add(cle)
         f = i >> 24
         chemin = os.path.join(self.dossier, f"cube64-{e}-{f}.cub")
-        try:
-            with open(chemin, "rb") as h:
-                b = h.read()
-        except OSError:
-            return
-        if b[:8] != b"VTXCUB64":
+        b, etat = lire_double(chemin, b"VTXCUB64")
+        noter_etat(self, etat)
+        if b is None:
             return
         k, voulue = 8, (i >> 16) & 255
         taille = 4 + 65536 * 8 + 16384
@@ -325,6 +380,10 @@ class CPU:
             return self.jeter_cube(arg)
         if code in (16, 17, 20, 21):
             return 0                          # souris, touche, molette, appuyee : pas de fenêtre ici
+        if code == 22:
+            etat = getattr(self, "_etat_disque", 0)   # l'état des cubes lus sur disque (miroir inversé)
+            self._etat_disque = 0
+            return etat
         if code == 19:
             ancienne = self.__dict__.get("_cadence", 16)   # cadence : gardée, sans effet sans fenêtre
             self._cadence = min(arg, 60000)
@@ -359,19 +418,19 @@ class CPU:
         for (ee, j), q in self.brin.items():
             if ee == e and j >> 24 == f and q:
                 pages.setdefault((j >> 16) & 255, None)
+        h = [b"VTXCUB64"]
+        for p in sorted(pages):
+            base = (f << 24) | (p << 16)
+            h.append(p.to_bytes(4, "little"))
+            h.append(b"".join(self.mem.get((e, base | j), 0).to_bytes(8, "little") for j in range(65536)))
+            br = bytearray(16384)
+            for j in range(65536):
+                q = self.brin.get((e, base | j), 0)
+                if q:
+                    br[j // 4] |= q << (2 * (j % 4))
+            h.append(bytes(br))
         try:
-            with open(os.path.join(self.dossier, f"cube64-{e}-{f}.cub"), "wb") as h:
-                h.write(b"VTXCUB64")
-                for p in sorted(pages):
-                    base = (f << 24) | (p << 16)
-                    h.write(p.to_bytes(4, "little"))
-                    h.write(b"".join(self.mem.get((e, base | j), 0).to_bytes(8, "little") for j in range(65536)))
-                    br = bytearray(16384)
-                    for j in range(65536):
-                        q = self.brin.get((e, base | j), 0)
-                        if q:
-                            br[j // 4] |= q << (2 * (j % 4))
-                    h.write(bytes(br))
+            ecrire_double(os.path.join(self.dossier, f"cube64-{e}-{f}.cub"), b"".join(h))
         except OSError:
             return M64
         return len(pages)

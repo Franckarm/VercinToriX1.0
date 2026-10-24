@@ -305,6 +305,64 @@ def sature32(t):
     return t & MASK
 
 
+
+# ---- les cubes sur disque en miroir inversé (comme vtx-rs/src/miroir.rs) : à côté de chaque cube, son anti-cube
+# (« anti » devant le nom du fichier), chaque octet après l'en-tête complémenté ; à la lecture, les deux s'accordent :
+# vrai (2) d'accord, faux (1) une seule copie lisible (réparée), variable (3) contradiction (la première gardée),
+# inconnu (0) ni l'une ni l'autre.
+def _chemin_anti(chemin):
+    d, n = os.path.split(chemin)
+    return os.path.join(d, "anti" + n)
+
+
+def _entete_anti(entete):
+    return entete[:3] + b"ANT" + entete[6:]
+
+
+def ecrire_double(chemin, octets):
+    with open(chemin, "wb") as h:
+        h.write(octets)
+    with open(_chemin_anti(chemin), "wb") as h:
+        h.write(_entete_anti(octets[:8]) + bytes(255 - x for x in octets[8:]))
+
+
+def lire_double(chemin, entete):
+    """Rend (contenu retenu ou None, état de Belnap) ; une copie absente ou abîmée est refaite à partir de l'autre."""
+    def lire(c):
+        try:
+            with open(c, "rb") as h:
+                return h.read()
+        except OSError:
+            return None
+    p, a = lire(chemin), lire(_chemin_anti(chemin))
+    p = p if p is not None and p[:8] == entete else None
+    a = entete + bytes(255 - x for x in a[8:]) if a is not None and a[:8] == _entete_anti(entete) else None
+    if p is None and a is None:
+        return None, 0
+    if p is not None and a is not None:
+        if p == a:
+            return p, 2
+        if len(a) > len(p) and a.startswith(p):
+            garde, etat = a, 1
+        elif len(p) > len(a) and p.startswith(a):
+            garde, etat = p, 1
+        else:
+            return p, 3
+    else:
+        garde, etat = (p, 1) if p is not None else (a, 1)
+    try:
+        ecrire_double(chemin, garde)
+    except OSError:
+        pass
+    return garde, etat
+
+
+def noter_etat(machine, etat):
+    """Le pire état vu depuis le dernier etat_disque() (inconnu < vrai < faux < variable)."""
+    rang = {0: 0, 2: 1, 1: 2, 3: 3}
+    if rang[etat] > rang[getattr(machine, "_etat_disque", 0)]:
+        machine._etat_disque = etat
+
 class CPU:
     def __init__(self):
         self.r = [0] * 16
@@ -366,14 +424,14 @@ class CPU:
         for (_, a), v in mots.items():
             if v:
                 pages.setdefault(a >> 16, []).append((a & 0xFFFF, v))
+        h = [b"VTXCUB01"]
+        for k in sorted(pages):
+            page = [0] * 65536
+            for o, v in pages[k]:
+                page[o] = v
+            h.append(k.to_bytes(4, "little") + b"".join(v.to_bytes(4, "little") for v in page))
         try:
-            with open(self.chemin_cube(e, f), "wb") as h:
-                h.write(b"VTXCUB01")
-                for k in sorted(pages):
-                    page = [0] * 65536
-                    for o, v in pages[k]:
-                        page[o] = v
-                    h.write(k.to_bytes(4, "little") + b"".join(v.to_bytes(4, "little") for v in page))
+            ecrire_double(self.chemin_cube(e, f), b"".join(h))
         except OSError:
             return None
         return len(pages)
@@ -381,12 +439,9 @@ class CPU:
     def cube_depuis_disque(self, e, f):
         if self.dossier_fichiers is None:
             return None
-        try:
-            with open(self.chemin_cube(e, f), "rb") as h:
-                b = h.read()
-        except OSError:
-            return None
-        if b[:8] != b"VTXCUB01":
+        b, etat = lire_double(self.chemin_cube(e, f), b"VTXCUB01")
+        noter_etat(self, etat)
+        if b is None:
             return None
         r, i = {}, 8
         while i + 4 + 262144 <= len(b):
@@ -463,6 +518,10 @@ class CPU:
             return 0                          # présenter l'image : la machine de référence n'a pas de fenêtre
         if code in (16, 17, 20, 21):
             return 0                          # souris, touche, molette, appuyee : pas de fenêtre ici
+        if code == 22:
+            etat = getattr(self, "_etat_disque", 0)   # l'état des cubes lus sur disque (miroir inversé)
+            self._etat_disque = 0
+            return etat
         if code == 19:
             ancienne = self.__dict__.get("_cadence", 16)   # cadence : gardée, sans effet sans fenêtre
             self._cadence = min(arg, 60000)
@@ -1255,7 +1314,52 @@ class Analyseur:
         self.attendre("}")
         return instr
 
+    def serie(self):
+        """« f(a): x, y, z; » : des appels en série. Les jetons sont réécrits en « f(a, x); f(a, y); f(a, z); », chaque
+        appel portant la ligne de sa valeur ; sans arguments fixes, « f(): x, y; » donne « f(x); f(y); »."""
+        t, i = self.t, self.i
+        if not (t[i][0] == "id" and i + 1 < len(t) and t[i + 1][:2] == ("op", "(")):
+            return
+        prof, q = 0, i + 1
+        while True:
+            k, v, _ = t[q]
+            if k == "eof":
+                return
+            if k == "op" and v in ("(", "[", "{"):
+                prof += 1
+            elif k == "op" and v in (")", "]", "}"):
+                prof -= 1
+                if prof == 0:
+                    break
+            q += 1
+        if t[q + 1][:2] != ("op", ":"):
+            return
+        fixes = t[i + 2:q]
+        nouveaux, debut, k_, prof = [], q + 2, q + 2, 0
+        while True:
+            k, v, l = t[k_]
+            if k == "eof":
+                raise VtxError(f"ligne {t[i][2]} : « ; » attendu à la fin des appels en série")
+            if prof == 0 and k == "op" and v in (",", ";"):
+                if k_ == debut:
+                    raise VtxError(f"ligne {l} : une valeur attendue dans les appels en série (« f(a): x, y; »)")
+                lv = t[debut][2]
+                nouveaux += [("id", t[i][1], lv), ("op", "(", lv)] + [(a, b, lv) for a, b, _ in fixes]
+                if fixes:
+                    nouveaux.append(("op", ",", lv))
+                nouveaux += list(t[debut:k_]) + [("op", ")", lv), ("op", ";", lv)]
+                if v == ";":
+                    break
+                debut = k_ + 1
+            elif k == "op" and v in ("(", "[", "{"):
+                prof += 1
+            elif k == "op" and v in (")", "]", "}"):
+                prof -= 1
+            k_ += 1
+        self.t = t[:i] + nouveaux + t[k_ + 1:]
+
     def instruction(self):
+        self.serie()
         k, v, l = self.regard()
         if k == "kw":
             self.suivant()
@@ -4257,6 +4361,12 @@ fonction ranger_cube(etage, f) {
     // écrit sur disque le cube de fréquence f de l'étage (fichier cube-ÉTAGE-FRÉQUENCE.cub, à côté du programme) ; un cube
     // qui n'est pas regardé quitte la mémoire, accorder(étage, f) le retrouve dans son fichier ; rend le nombre de pages
     retour __service(11, (f << 2) | (etage & 3));
+}
+fonction etat_disque(): logique {
+    // l'état des cubes relus sur disque depuis le dernier appel : chaque cube y est écrit avec son anti-cube (le miroir
+    // inversé) ; vrai : les deux copies s'accordent ; faux : une seule était lisible, le cube a été réparé à partir
+    // d'elle ; variable : elles se contredisent (la première est gardée) ; inconnu : rien n'a été relu
+    retour comme_logique(__service(22, 0));
 }
 fonction parler(t) {
     soit c = ouvrir_ecriture("voix:");

@@ -149,8 +149,9 @@ Les `flottant_petuar` (128 bits) se calculent par le prélude sur des paires de 
 | 19 | la cadence : T millisecondes au moins entre deux présentations (16 au départ) ; rend l'ancienne |
 | 20 | les crans de molette depuis le dernier appel (signé) |
 | 21 | 1 si la touche T est enfoncée, sinon 0 |
+| 22 | l'état des cubes relus sur disque depuis le dernier appel (miroir inversé : le cube et son anti-cube) : 0 inconnu, 1 faux (une seule copie, réparée), 2 vrai (d'accord), 3 variable (contradiction) |
 
-Les services 16 à 21 sont les mêmes au SPU-32 (sur 32 bits). Sans fenêtre (machines de référence, tests), 16, 17, 20
+Les services 16 à 22 sont les mêmes au SPU-32 (sur 32 bits). Sans fenêtre (machines de référence, tests), 16, 17, 20
 et 21 rendent 0.
 
 Canaux : 0 les nombres (IN et OUT), 1 la console en texte (un caractère par mot), 2 et suivants les fichiers.

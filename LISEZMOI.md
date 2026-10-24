@@ -21,6 +21,9 @@ Langage, compilateur, assembleur et émulateur du SPU à cube chromatique.
   qui dessinent, sur les deux machines ; l'atelier montre l'animation pendant qu'elle tourne et l'enregistre en GIF
   (Ctrl+G), écrit par différence d'une image à l'autre ; l'anti-cube des couleurs pour les curseurs et les objets
   animés (`exemples/gobatix/peindre.vtx`).
+- **Le miroir et l'opposé** : les cubes sur disque écrits avec leur anti-cube (`etat_disque()` : vrai, faux réparé,
+  variable, inconnu), le cube des noms dans vtxc64 (chaque nom haché une fois), les appels en série
+  `ajouter(l): 1, 2, 3;`.
 - Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là ; il reçoit les mêmes fonctions de Gobatix.
 
 L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/vtx-0-5-autonomie.md`.

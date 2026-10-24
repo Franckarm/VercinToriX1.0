@@ -319,3 +319,29 @@ le clavier (Échap compris ; F5 et Maj+F5 restent à l'atelier). Ctrl+G commence
 (`programme-1.gif` à côté du programme) ; Cube › Image en PNG. Le programme fini, la vue en perspective se tourne à la
 souris (glisser à gauche : un quart de tour ; glisser à droite : déplacer ; double clic : revenir). La limite d'instructions
 de F5 est levée : un programme interactif tourne tant qu'on veut, Maj+F5 l'arrête.
+
+## 13. Le cube des noms, les appels en série, le miroir inversé
+
+**Le cube des noms (l'internement, dans vtxc64).** Avant, chaque recherche d'un nom (une variable, une fonction, une
+constante) le hachait de nouveau et comparait ses caractères dans une table Robin Hood : le même nom était haché des
+dizaines de fois. Maintenant le lexeur cherche chaque nom **une fois** et rend son nom canonique, écrit une seule fois
+dans un cube à lui (`K_TNOMS`) : **sa place dans ce cube est son identité**. Deux noms canoniques sont égaux si et
+seulement si ce sont les mêmes adresses. Chaque table d'un rôle (fonctions, variables, constantes, textes, prélude,
+mots-clés, intégrés) est un cube **en miroir** du cube des noms : la valeur d'un nom est à la même place que lui, dans le
+cube du rôle. Le nom rappelle sa définition sans hachage ni comparaison, et un nom fabriqué en cours de route (« __it1 »)
+passe par l'index une fois, comme les autres. Les mots produits ne changent pas (point fixe, et mêmes mots que vtx64.py).
+
+Mesuré à entrée égale (le même source compilé par l'ancien et le nouveau vtxc64) : **485 → 443 millions
+d'instructions (−8,7 %)** pour compiler vtxc64 ; **61,4 → 56,7 millions (−7,6 %)** pour F5 sur bonjour64. Ce que ça
+contient : le cube des noms ; `egal(a, b)`, une comparaison de textes qui écarte sans appel ceux de longueurs ou de
+premiers caractères différents ; `ecrire_nombre` sans récursion. Honnêtement : l'idée d'un anti-point gardant le sens
+précédent d'un nom (les portées) n'a pas d'objet ici, car une fonction vtx n'a qu'une portée ; le miroir sert aux
+tables. Le reste du temps de vtxc64 est ailleurs : `ajouter` (16 %), l'analyse de vie de l'épissage (6 %).
+
+**Les appels en série.** `f(a): x, y, z;` vaut `f(a, x); f(a, y); f(a, z);`, réécrit dès la lecture des jetons par les
+quatre compilateurs (vtx.py, vtxc, vtx64.py, vtxc64), avec les mêmes mots que la forme écrite à la main
+(`tests/test_serie.py`).
+
+**Le miroir inversé des cubes sur disque.** Chaque cube rangé s'écrit avec son anti-cube (le contenu complémenté) ;
+`etat_disque()` (service 22) dit vrai, faux (réparé à partir d'une seule copie, l'autre refaite), variable (contradiction)
+ou inconnu. Sur les quatre machines (`tests/test_miroir.py`, `vtx-rs/src/miroir.rs`).

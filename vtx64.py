@@ -605,7 +605,52 @@ class Analyseur:
         self.attendre("}")
         return instr
 
+    def serie(self):
+        """« f(a): x, y, z; » : des appels en série. Les jetons sont réécrits en « f(a, x); f(a, y); f(a, z); », chaque
+        appel portant la ligne de sa valeur ; sans arguments fixes, « f(): x, y; » donne « f(x); f(y); »."""
+        t, i = self.t, self.i
+        if not (t[i][0] == "id" and i + 1 < len(t) and t[i + 1][:2] == ("op", "(")):
+            return
+        prof, q = 0, i + 1
+        while True:
+            k, v, _ = t[q]
+            if k == "eof":
+                return
+            if k == "op" and v in ("(", "[", "{"):
+                prof += 1
+            elif k == "op" and v in (")", "]", "}"):
+                prof -= 1
+                if prof == 0:
+                    break
+            q += 1
+        if t[q + 1][:2] != ("op", ":"):
+            return
+        fixes = t[i + 2:q]
+        nouveaux, debut, k_, prof = [], q + 2, q + 2, 0
+        while True:
+            k, v, l = t[k_]
+            if k == "eof":
+                raise VtxError(f"ligne {t[i][2]} : « ; » attendu à la fin des appels en série")
+            if prof == 0 and k == "op" and v in (",", ";"):
+                if k_ == debut:
+                    raise VtxError(f"ligne {l} : une valeur attendue dans les appels en série (« f(a): x, y; »)")
+                lv = t[debut][2]
+                nouveaux += [("id", t[i][1], lv), ("op", "(", lv)] + [(a, b, lv) for a, b, _ in fixes]
+                if fixes:
+                    nouveaux.append(("op", ",", lv))
+                nouveaux += list(t[debut:k_]) + [("op", ")", lv), ("op", ";", lv)]
+                if v == ";":
+                    break
+                debut = k_ + 1
+            elif k == "op" and v in ("(", "[", "{"):
+                prof += 1
+            elif k == "op" and v in (")", "]", "}"):
+                prof -= 1
+            k_ += 1
+        self.t = t[:i] + nouveaux + t[k_ + 1:]
+
     def instruction(self):
+        self.serie()
         k, v, l = self.regard()
         if k == "kw":
             self.suivant()
@@ -3361,6 +3406,12 @@ fonction ranger_cube(etage, f) {
     // écrit sur disque le cube de fréquence f de l'étage (fichier cube64-ÉTAGE-FRÉQUENCE.cub, à côté du programme), avec le
     // brin de chaque mot ; ses pages sont relues d'elles-mêmes, à la demande, au premier accès ; rend le nombre de pages
     retour __service(11, cube_adresse(etage, f, 0));
+}
+fonction etat_disque(): logique {
+    // l'état des cubes relus sur disque depuis le dernier appel : chaque cube y est écrit avec son anti-cube (le miroir
+    // inversé) ; vrai : les deux copies s'accordent ; faux : une seule était lisible, le cube a été réparé à partir
+    // d'elle ; variable : elles se contredisent (la première est gardée) ; inconnu : rien n'a été relu
+    retour comme_logique(__service(22, 0));
 }
 // le cube de transfert jetable : un cube entier sert de brouillon (par exemple cube_adresse(2, f, i)) ; jeter_cube le
 // vide d'un coup (ses pages quittent la mémoire, sans être relues du disque) ; rend le nombre de pages jetées

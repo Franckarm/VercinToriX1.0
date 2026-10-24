@@ -97,9 +97,10 @@ impl Spu64 {
             return;
         }
         let f = i >> 24;
-        let b = match std::fs::read(dossier.join(format!("cube64-{}-{}.cub", e, f))) {
-            Ok(b) => b,
-            Err(_) => return,
+        // le cube et son anti-cube (miroir inversé, miroir.rs) : accordés, réparés si l'un manque
+        let b = match crate::miroir::lire_double(&dossier.join(format!("cube64-{}-{}.cub", e, f)), b"VTXCUB64") {
+            Some(b) => b,
+            None => return,
         };
         if b.len() < 8 || &b[..8] != b"VTXCUB64" {
             return;
@@ -387,6 +388,8 @@ impl Spu64 {
             11 => Ok(self.ranger_cube(arg)),
             13 => Ok(self.jeter_cube(arg)),
             16..=21 => Ok(crate::hote::service(code, arg, u64::MAX).unwrap_or(0)),
+            // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé)
+            22 => Ok(crate::miroir::prendre_etat() as u64),
             12 => {
                 if let Some(mut f) = self.presenter.take() {
                     let r = f(self);
@@ -439,7 +442,7 @@ impl Spu64 {
                 None => b.extend(std::iter::repeat(0u8).take(PAGE / 4)),
             }
         }
-        if std::fs::write(d.join(format!("cube64-{}-{}.cub", e, f)), b).is_err() {
+        if crate::miroir::ecrire_double(&d.join(format!("cube64-{}-{}.cub", e, f)), &b).is_err() {
             return u64::MAX;
         }
         cles.len() as u64

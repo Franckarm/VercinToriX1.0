@@ -28,6 +28,7 @@ mod gobatix;
 mod hote;
 #[allow(dead_code)]
 mod gif;
+mod miroir;
 // la machine SPU-64 et son compilateur embarqué (vtxc64) : l'atelier s'en sert
 #[allow(dead_code)]
 mod qflot;
@@ -329,7 +330,8 @@ fn chemin_cube(d: &std::path::Path, e: u32, f: u32) -> std::path::PathBuf {
 fn ecrire_cube(chemin: &std::path::Path, pages: &[*mut u32]) -> std::io::Result<usize> {
     use std::io::Write;
     let nulle = page_nulle();
-    let mut f = std::io::BufWriter::new(fs::File::create(chemin)?);
+    // le cube est écrit avec son anti-cube (miroir inversé, miroir.rs)
+    let mut f: Vec<u8> = Vec::new();
     f.write_all(b"VTXCUB01")?;
     let mut n = 0;
     for (k, &p) in pages.iter().enumerate() {
@@ -346,12 +348,12 @@ fn ecrire_cube(chemin: &std::path::Path, pages: &[*mut u32]) -> std::io::Result<
         }
         n += 1;
     }
-    f.flush()?;
+    miroir::ecrire_double(chemin, &f)?;
     Ok(n)
 }
 
 fn lire_cube(chemin: &std::path::Path) -> Option<Vec<*mut u32>> {
-    let b = fs::read(chemin).ok()?;
+    let b = miroir::lire_double(chemin, b"VTXCUB01")?;
     if b.len() < 8 || &b[..8] != b"VTXCUB01" {
         return None;
     }
@@ -722,6 +724,8 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                     12 => gobatix::presenter(mem),
                     // 16 à 21 : la souris, les touches, l'horloge, la cadence (hote.rs)
                     16..=21 => hote::service(ra as u64, rb as u64, 0xFFFF_FFFF).unwrap_or(0) as u32,
+                    // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé, miroir.rs)
+                    22 => miroir::prendre_etat() as u32,
                     10 => return Err("mémoire pleine : le tas ne peut plus grandir, même après avoir ramassé les miettes".to_string()),
                     9 => mem.frequence(rb & 3),
                     // 6 et 7 : écrire ou lire un bloc de mots dans un fichier (nom, adresse globale et nombre de mots

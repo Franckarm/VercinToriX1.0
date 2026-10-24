@@ -136,6 +136,17 @@ retour v;
 hypothèse { …  annuler;  …  valider; … }
 ```
 
+**Appels en série** (0.5) : une suite d'appels à la même fonction s'écrit une fois. Le nom et les premiers arguments, puis « : » et les valeurs, séparées par des virgules ; le « ; » ferme la série.
+
+```
+ajouter(l): 1, 2, x * 3;               // ajouter(l, 1); ajouter(l, 2); ajouter(l, x * 3);
+afficher(): "résultat : ", r;          // afficher("résultat : "); afficher(r);
+ecrire_texte(c): "x = ", texte(x),
+                 "\n";                 // la série peut tenir sur plusieurs lignes
+```
+
+C'est une écriture, pas une nouvelle instruction : les deux compilateurs de chaque machine réécrivent la série en appels ordinaires dès la lecture, avant tout le reste ; le code produit est celui des appels écrits à la main, mot pour mot (`tests/test_serie.py`). Chaque appel garde la ligne de sa valeur (le pas à pas s'y arrête). Une valeur peut contenir des virgules entre parenthèses, crochets ou accolades (`P { x: 1, y: 2 }`).
+
 **Hypothèse** : les écritures mémoire écrites dans le bloc sont notées dans un journal ; `annuler;` les défait et sort du bloc ; `valider;` ou la fin du bloc les garde. Les blocs s'imbriquent. Les variables locales et les écritures faites par les fonctions appelées ne sont pas défaites ; `retour`, `arrêter` et `continuer` ne peuvent pas sortir d'une hypothèse ; l'étage 0 y est interdit.
 
 ## 6. Déclarations
@@ -258,6 +269,7 @@ selon porte {
 | `souris()`, `souris_x(m)`, `souris_y(m)`, `souris_boutons(m)`, `souris_dedans(m)` | la souris dans l'image (0 sans fenêtre) | SYS 16, prélude |
 | `touche()`, `appuyee(t)`, `touche_gauche()`… | la prochaine touche (sans attendre), une touche enfoncée | SYS 17, SYS 21 |
 | `molette()`, `horloge()`, `cadence(ms)` | crans de molette, millisecondes, cadence des images | SYS 20, 18, 19 |
+| `etat_disque()` | l'état des cubes relus (miroir inversé) : vrai, faux (réparé), variable, inconnu | SYS 22 |
 | `anti_couleur(c)`, `pixel_anti(x, y)`, `rectangle_anti(x, y, l, h)` | l'anti-cube des couleurs (255 − c, involutif) | prélude |
 | conversions | voir la section 3 | ITOF, ITOFS, FTOI, FROUND, ITOD, DTOI… |
 
@@ -370,6 +382,8 @@ Chaque étage 1, 2 et 3 regarde un cube de 256³ mots choisi par sa **fréquence
 
 **Cubes sur disque.** `ranger_cube(étage, f)` écrit le cube de fréquence f dans le fichier `cube-ÉTAGE-FRÉQUENCE.cub`, à côté du programme (par exemple `cube-1-262.cub`) et rend le nombre de pages écrites. Si l'étage regarde ce cube, le fichier en est une copie et le cube reste en place ; si le cube est rangé, il quitte la mémoire. `accorder(étage, f)` retrouve un cube : en mémoire s'il y est encore, sinon dans son fichier (d'un lancement à l'autre aussi : le fichier reste). Le nom du fichier porte la fréquence : l'atelier et `vtx cubes DOSSIER` les listent avec le nom de la note quand la fréquence en est une (262 → do4, 330 → mi4, 392 → sol4). Dans l'atelier, `cubes` dit ce que regarde chaque étage et ce qui est en mémoire ou sur disque ; `cube ÉTAGE FRÉQUENCE` fait regarder ce cube à l'étage et l'affiche. Format : `VTXCUB01`, puis pour chaque page non nulle son numéro (u32) et ses 65 536 mots (u32, petit boutiste) ; les pages jamais écrites ne prennent pas de place. Exemple : `exemples/premiers/cubes_disque.vtx`.
 Contraintes : un cube a au plus 2^24 mots (64 Mo) ; la page de 256 Ko est l'unité d'écriture et de lecture ; accorder un étage déplace ses 256 pages (lecture de tout le fichier si le cube vient du disque) : à réserver aux changements de cube, pas à l'intérieur d'une boucle serrée ; un pointeur ne vaut que dans son cube, donc il faut accorder avant de le suivre ; un cube rangé n'est pas lu par le programme tant qu'il n'est pas accordé ; aucun contrôle de version entre deux lancements (un programme qui change de format de données doit changer de fréquence) ; l'étage 0 ne change pas de cube. Variable d'environnement `VTX_CUBES_PAGES=N` : au-delà de N pages rangées en mémoire, le cube quitté va au disque tout seul. Services 11 (ranger) et 8 (accorder) : machines Rust et Python ; les machines JavaScript n'ont pas de disque.
+
+**Le miroir inversé** (0.5). Chaque cube rangé s'écrit avec son **anti-cube** : `anticube-1-262.cub` à côté de `cube-1-262.cub` (au SPU-64 : `anticube64-…`), le même contenu, chaque octet complémenté (l'en-tête devient `VTXANT01`, `VTXANT64`). C'est un RAID 1 dont la seconde copie est l'opposée de la première : une panne qui frappe les deux copies de la même façon (une page remise à zéro, un fichier tronqué, une écriture folle) les laisserait d'accord dans l'erreur, alors que l'accord d'une copie et de son opposée, « tout à 1 », ne survit pas à ces pannes. Bit par bit, la paire (copie, anti-copie) est un quit de Belnap : (1, 0) et (0, 1) les deux valeurs sûres, (0, 0) l'absence, (1, 1) la contradiction. À la relecture, `etat_disque()` rend le pire état vu depuis son dernier appel : `vrai` (les deux copies s'accordent), `faux` (une seule était lisible, effacée, abîmée ou tronquée : le cube est rendu à partir d'elle **et la copie manquante est refaite**), `variable` (elles se contredisent : la première est gardée, et le programme le sait), `inconnu` (rien n'a été relu). Limite honnête : avec deux copies, une contradiction se voit mais ne se tranche pas ; il faudrait une troisième voix (ou le code diamant) pour savoir laquelle croire. Le coût : deux fichiers, deux écritures, deux lectures. Vérifié sur les quatre machines (`tests/test_miroir.py`).
 
 La machine Rust ne prend la mémoire que là où l'on écrit (pages de 65 536 mots ; l'étage 0 d'un bloc de 64 Mo) : un petit programme prend quelques Mo, pas 256.
 

@@ -272,6 +272,11 @@ compilateur sans Python.
   sauvegarder le fond ; le GIF n'écrit que la différence d'une image à l'autre, les points inchangés étant *inconnus*
   (transparents). Les scénarios de gestes (`--scenario`) rejouent un programme interactif sans écran :
   `tests/test_gobatix.py`, même GIF octet pour octet sur le SPU-32 et le SPU-64.
+- **Le miroir et l'opposé** (24 octobre) : idée du créateur, un RAID à double cube en miroir et un retour
+  d'information simultané. Le miroir et l'opposé réunis donnent le double rail, c'est-à-dire Belnap bit par bit.
+  Réalisé : **les cubes sur disque en miroir inversé** (le cube et son anti-cube, `etat_disque()`, réparation d'une
+  copie perdue) ; **le cube des noms** dans vtxc64 (chaque nom haché une fois, sa place est son identité, les tables des
+  rôles en miroir : −8,7 % sur la compilation de vtxc64) ; **les appels en série** `f(a): x, y, z;` (écrire moins).
 
 ---
 
