@@ -70,9 +70,15 @@ def prog_segments(r):
 
 r = random.Random(11)
 N = 20 if RAPIDE else 80
-ok = paralleles = 0
+ok = paralleles = refuses = 0
 for n in range(N):
     src = prog_segments(r)
+    try:
+        vtx.compiler(src)
+    except vtx.VtxError:
+        refuses += 1  # refus légitime : le tableau cumulé peut être atteint par une adresse calculée (@k[...])
+        ok += 1
+        continue
     ref = vtx.executer(src, (), max_pas=50_000_000)[0].sortie
     sorties = [lancer(src, [], c)[0] for c in (1, 2, 3)]
     attendu = ",".join(map(str, ref))
@@ -85,7 +91,7 @@ for n in range(N):
         print(src)
         break
 print(f"1. {N} programmes aléatoires en segments : sorties identiques à l'émulateur Python sur 1, 2 et 3 cylindres "
-      f"{ok}/{N} ; {paralleles} avec des segments joués ensemble")
+      f"{ok}/{N} ; {paralleles} avec des segments joués ensemble ; {refuses} refusé(s) à raison par le compilateur")
 assert ok == N
 
 orch = open(os.path.join(racine, "partition", "orchestre_cumul.vtx"), encoding="utf-8").read()
