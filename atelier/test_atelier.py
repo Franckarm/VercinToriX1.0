@@ -228,7 +228,7 @@ try:
              f"{ligne_verte(g)} {t[-500:]}")
     verifier("le panneau montre les registres et les variables locales",
              "pas à pas · ligne 9" in t and "R1 " in t and "variables locales  -1: 3  -2: 9" in t, t[-900:])
-    flux, _ = piloter(pas, [BAS * 9, F9, F7, F5])
+    flux, _ = piloter(pas, [BAS * 9, F9, F7, ("ligne 6", 5), F5, ("ligne 10", 5)])
     g = ecran(flux)
     t = texte(g)
     verifier("F9 sur la ligne 10, F5 : arrêt sur le point d'arrêt", ligne_verte(g) == [10],

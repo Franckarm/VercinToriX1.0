@@ -1,0 +1,30 @@
+// Le SPU-64 : un mot est un point profond #RRRRGGGGBBBBAAAA (64 bits, 32 quits).
+// L'entier et le flottant ont 64 bits par défaut ; le flottant est quaternaire (état Belnap, exposant en base 4,
+// mantisse de 26 quits). Les 32 bits (suffixe S) et les 128 bits (suffixes LL et Q) se choisissent à la main.
+fonction principal() {
+    afficher("Bonjour du SPU-64");
+    soit n = 9223372036854775807;            // le plus grand entier signé de 64 bits
+    afficher(n);
+    afficher(n + 1);                          // la même suite de 64 bits, lue avec un signe : -9223372036854775808
+    soit petit = 4000000000S;                 // un entier_32 : son calcul revient dans 32 bits
+    soit p2: entier_32 = petit + petit;
+    afficher(p2);                             // affiché signé sur 32 bits
+    afficher(0.1 + 0.2);                      // le quaternaire arrondit 0,1 + 0,2 juste sur 0,3
+    afficher(0.1 + 0.2 == 0.3);
+    afficher(1.0 / 3.0);
+    afficher(1.0S / 3.0S);                    // flottant_32 : 11 quits de mantisse
+    afficher(1Q / 3Q);                        // flottant_petuar : 56 quits
+    afficher(racine(2.0));
+    afficher(pi());
+    afficher(sinus(pi() / 6.0));
+    afficher(exponentielle(1.0));
+    afficher(-1.0 / 0.0);                     // l'infini négatif
+    afficher(racine(-1.0));                   // variable : la contradiction de Belnap (pas de NaN)
+    soit w = 1234567890123456789LL * 9876543210987654321LL;
+    afficher(w);                              // entier_petuar : 128 bits sur deux mots
+    afficher(texte_cube(bits(pi_petuar())));  // deux points profonds
+    soit c = #FF8000;                         // #RRGGBB s'approfondit : #FFFF808000000000
+    afficher(c.r);                            // 16 bits par canal
+    ecrire_hexa(1, c);
+    ecrire_car(1, 10);
+}

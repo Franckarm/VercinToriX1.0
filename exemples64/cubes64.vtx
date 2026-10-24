@@ -1,0 +1,30 @@
+// La mémoire du SPU-64 : une adresse longue porte l'étage (bits 63-62), la fréquence du cube (bits 47-24) et
+// #RRGGBB (bits 23-0) : 4 étages × 16 777 216 cubes × 16 777 216 mots. @[a] lit ou écrit à l'adresse longue a ;
+// @e[a] place a à l'étage e (en gardant sa fréquence).
+fonction principal() {
+    // deux cubes de l'étage 2 à la même place #000064 : ils ne se mélangent pas
+    soit a = cube_adresse(2, 5, 100);
+    soit b = cube_adresse(2, 6, 100);
+    @[a] = 111;
+    @[b] = 222;
+    afficher(@[a]);
+    afficher(@[b]);
+    afficher(@2[100]);                         // le cube 0 de l'étage 2 : vide
+    // le cube de transfert jetable : un cube sert de brouillon, puis il est jeté d'un coup
+    soit brouillon = cube_adresse(2, 777, 0);
+    pour i dans 0..100000 { @[brouillon + i] = i * i; }
+    afficher(@[brouillon + 99999]);
+    afficher(jeter_cube(2, 777));              // le nombre de pages (65 536 mots) jetées
+    afficher(@[brouillon + 99999]);            // 0 : le cube est vide
+    // un cube rangé sur disque : ranger_cube(étage, fréquence) l'écrit à côté du programme ; un autre programme le
+    // retrouve page par page, au premier accès (essayez : lancez deux fois)
+    soit d = cube_adresse(1, 42, 0);
+    si @[d] == 0 {
+        afficher("premier lancement : je range le cube 42 de l'étage 1");
+        pour i dans 0..10 { @[d + i] = 1000 + i; }
+        afficher(ranger_cube(1, 42));
+    } sinon {
+        afficher("le cube 42 revient du disque :");
+        afficher(@[d + 9]);
+    }
+}

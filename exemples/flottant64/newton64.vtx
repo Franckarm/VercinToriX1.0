@@ -1,0 +1,39 @@
+// Racine carrée par la méthode de Newton en flottants de 64 bits, comparée à l'instruction DSQRT (racine), qui est
+// arrondie exactement : Newton tombe souvent juste (1), parfois à une unité du dernier chiffre (0).
+// Sans entrée, quelques valeurs choisies ; avec des entrées : n, puis n paires (mot bas, mot haut) d'un flottant_64.
+// en partant d'au-dessus de la racine, la suite descend : on s'arrête dès qu'elle ne descend plus
+fonction newton(a: flottant_64): flottant_64 {
+    soit x = a;
+    si x < 1.0D { x = 1.0D; }
+    pour i dans 0..2000 {
+        soit nx = 0.5D * (x + a / x);
+        si nx >= x { arrêter; }
+        x = nx;
+    }
+    retour x;
+}
+
+fonction essayer(a: flottant_64) {
+    soit x = newton(a);
+    soit y = racine(a);
+    afficher(a);
+    afficher(x);
+    afficher(x == y);
+}
+
+fonction principal() {
+    soit n = entrée();
+    si n == 0 {
+        essayer(2.0D);
+        essayer(10.0D);
+        essayer(0.0625D);
+        essayer(1.0e300D);
+        essayer(123456789.0D);
+        retour;
+    }
+    pour i dans 0..n {
+        soit lo = entrée();
+        soit hi = entrée();
+        essayer(flottant_64_de(hi, lo));
+    }
+}

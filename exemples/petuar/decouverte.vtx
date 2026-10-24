@@ -1,0 +1,29 @@
+// flottant_petuar : le flottant quaternaire de 128 bits de Vercintorix.
+// Un nombre = quatre points du cube #RRGGBBAA = 32 chiffres hex = 64 quits = 64 bases d'ADN.
+//   quit 63      : l'état, en logique de Belnap : A inconnu, C négatif, G positif, T/U variable (contradiction)
+//   quits 62..56 : l'exposant, en base 4 (7 quits)
+//   quits 55..0  : la mantisse, 56 chiffres en base 4 (111 à 112 bits de précision, environ 34 chiffres décimaux)
+// Un littéral s'écrit avec Q (1.5Q), comme D pour flottant_64 et LL pour entier_petuar.
+fonction principal() {
+    soit a = 1.5Q;
+    soit b: flottant_petuar = 2;              // un entier, un flottant ou un flottant_64 s'élargit tout seul
+    afficher(a + b);
+    afficher(a * b - 0.1Q);
+    afficher(1Q / 3Q);
+    afficher(racine(2Q));
+    afficher(pi_petuar());
+    afficher(-a);
+    afficher(0.1Q + 0.2Q == 0.3Q);            // vrai ici (1) ; en flottant_64, faux (0) :
+    afficher(0.1D + 0.2D == 0.3D);
+    afficher(flottant_64(1Q / 3Q));            // vers les autres types : flottant_64, flottant, entier_petuar, long, entier
+    afficher(entier_128(1.0e30Q));
+    // le même nombre vu trois fois : points du cube, ADN, ARN
+    afficher(texte_cube(bits(pi_petuar())));
+    afficher(texte_adn(bits(pi_petuar())));
+    afficher(texte_arn(bits(1Q)));
+    // les grands et les petits : jusqu'à environ 10^±4931
+    afficher(1.0e4000Q * 1.0e-3990Q);
+    // l'échange avec le binary128 de l'IEEE 754 (les autres langages) : π y est #4000921F_B54442D1_8469898C_C51701B8
+    afficher(texte_cube(vers_ieee128(pi_petuar())));
+    afficher(de_ieee128(#4000921F_B54442D1_8469898C_C51701B8));
+}

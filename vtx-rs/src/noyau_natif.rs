@@ -186,6 +186,17 @@ fn fb(v: f32) -> u32 {
     if v.is_nan() { 0x7FC0_0000 } else { v.to_bits() }
 }
 
+/// Flottants de 64 bits : une paire de registres (Rn, Rn+3), mot bas puis mot haut ; NaN unique 0x7FF8000000000000.
+#[inline(always)]
+fn d64(lo: u32, hi: u32) -> f64 {
+    f64::from_bits(((hi as u64) << 32) | lo as u64)
+}
+
+#[inline(always)]
+fn db(v: f64) -> u64 {
+    if v.is_nan() { 0x7FF8_0000_0000_0000 } else { v.to_bits() }
+}
+
 #[inline(always)]
 fn dot(x: u32, y: u32) -> u64 {
     ((x >> 24) as u64) * ((y >> 24) as u64)

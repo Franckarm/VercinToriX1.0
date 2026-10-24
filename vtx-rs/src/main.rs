@@ -1,4 +1,4 @@
-// Émulateur du SPU à cube chromatique pour Vercintorix (vtx 0.4), sans dépendance.
+// Émulateur du SPU à cube chromatique pour Vercintorix (vtx 0.5), sans dépendance.
 // Même sémantique que vtx.py, Vtx.java et les machines JavaScript : mots de 32 bits #RRGGBBAA, quatre étages de
 // 2^24 mots, flottants IEEE 754 binary32 (NaN rendu sous la forme 0x7FC00000), instructions 64 bits ADC, SBC, MULHU.
 //
@@ -23,6 +23,15 @@ mod traduction;
 mod atelier;
 mod arbre;
 mod cube;
+mod gobatix;
+// la machine SPU-64 et son compilateur embarqué (vtxc64) : l'atelier s'en sert
+#[allow(dead_code)]
+mod qflot;
+#[allow(dead_code)]
+mod spu64;
+#[allow(dead_code)]
+mod machine64;
+mod pas64;
 #[cfg(any(windows, feature = "verif_fenetre"))]
 mod fenetre;
 
@@ -144,7 +153,7 @@ impl Memoire {
         r
     }
     /// L'étage e regarde désormais le cube de fréquence f (rend l'ancienne fréquence).
-    fn accorder(&self, e: u32, f: u32) -> u32 {
+    fn accorder(&self, e: u32, f: u32, dossier: Option<&std::path::Path>) -> u32 {
         use std::sync::atomic::Ordering::{AcqRel, Release};
         let e = e & 3;
         if e == 0 {
@@ -159,14 +168,67 @@ impl Memoire {
             let rangees: Vec<*mut u32> = (0..ETAGE / PAGE).map(|k| self.pages[debut + k].swap(nulle, AcqRel)).collect();
             if rangees.iter().any(|&p| p != nulle) {
                 cubes.insert((e, ancienne), rangees);
+                // au-delà du budget de pages en mémoire (VTX_CUBES_PAGES, sans limite par défaut), le cube quitté va au disque
+                if let (Some(d), Some(max)) = (dossier, budget_cubes()) {
+                    let en_memoire: usize = cubes.values().map(|v| v.iter().filter(|&&p| p != nulle).count()).sum();
+                    if en_memoire > max && ecrire_cube(&chemin_cube(d, e, ancienne), &cubes[&(e, ancienne)]).is_ok() {
+                        for p in cubes.remove(&(e, ancienne)).unwrap() {
+                            rendre_page(p);
+                        }
+                    }
+                }
             }
             if let Some(v) = cubes.remove(&(e, f)) {
+                for (k, p) in v.into_iter().enumerate() {
+                    self.pages[debut + k].store(p, Release);
+                }
+            } else if let Some(v) = dossier.and_then(|d| lire_cube(&chemin_cube(d, e, f))) {
+                // le cube n'est plus en mémoire : on le retrouve dans son fichier (cube-ÉTAGE-FRÉQUENCE.cub)
                 for (k, p) in v.into_iter().enumerate() {
                     self.pages[debut + k].store(p, Release);
                 }
             }
         }
         ancienne
+    }
+    /// Écrit sur disque le cube (e, f) : celui que regarde l'étage, ou un cube rangé (qui quitte alors la mémoire).
+    /// Rend le nombre de pages écrites, ou 0xFFFFFFFF.
+    fn ranger_cube(&self, e: u32, f: u32, dossier: Option<&std::path::Path>) -> u32 {
+        let (e, d) = (e & 3, match dossier { Some(d) => d, None => return 0xFFFF_FFFF });
+        if e == 0 {
+            return 0xFFFF_FFFF;
+        }
+        let nulle = page_nulle();
+        let mut cubes = self.cubes.lock().unwrap();
+        let debut = e as usize * (ETAGE / PAGE);
+        if self.frequence(e) == f {
+            let v: Vec<*mut u32> = (0..ETAGE / PAGE).map(|k| self.pages[debut + k].load(std::sync::atomic::Ordering::Acquire)).collect();
+            return match ecrire_cube(&chemin_cube(d, e, f), &v) {
+                Ok(n) => n as u32,
+                Err(_) => 0xFFFF_FFFF,
+            };
+        }
+        match cubes.get(&(e, f)) {
+            None => 0xFFFF_FFFF,
+            Some(v) => match ecrire_cube(&chemin_cube(d, e, f), v) {
+                Ok(n) => {
+                    for p in cubes.remove(&(e, f)).unwrap() {
+                        rendre_page(p);
+                    }
+                    let _ = nulle;
+                    n as u32
+                }
+                Err(_) => 0xFFFF_FFFF,
+            },
+        }
+    }
+    /// Les cubes rangés en mémoire (étage, fréquence, pages prises), en plus de ceux que regardent les étages.
+    fn cubes_rangees(&self) -> Vec<(u32, u32, usize)> {
+        let nulle = page_nulle();
+        let mut v: Vec<(u32, u32, usize)> =
+            self.cubes.lock().unwrap().iter().map(|(&(e, f), p)| (e, f, p.iter().filter(|&&q| q != nulle).count())).collect();
+        v.sort_unstable();
+        v
     }
     fn frequence(&self, e: u32) -> u32 {
         self.frequences[(e & 3) as usize].load(std::sync::atomic::Ordering::Acquire)
@@ -193,6 +255,118 @@ impl Drop for Memoire {
             }
         }
     }
+}
+
+fn budget_cubes() -> Option<usize> {
+    env::var("VTX_CUBES_PAGES").ok().and_then(|v| v.parse().ok())
+}
+
+/// Le nom de la note quand la fréquence (en hertz) tombe à un demi-ton près sur une note du tempérament égal (la = 440) :
+/// 262 donne « do4 », 330 « mi4 », 392 « sol4 ».
+fn nom_note(f: u32) -> Option<String> {
+    if f < 16 {
+        return None;
+    }
+    let demi = 12.0 * (f as f64 / 440.0).log2();
+    let n = demi.round();
+    if (demi - n).abs() > 0.2 {
+        return None;
+    }
+    let k = n as i32 + 57;                        // demi-tons depuis do0 (la4 = 57)
+    let noms = ["do", "do#", "ré", "ré#", "mi", "fa", "fa#", "sol", "sol#", "la", "la#", "si"];
+    Some(format!("{}{}", noms[k.rem_euclid(12) as usize], k.div_euclid(12)))
+}
+
+/// Les cubes écrits dans un dossier (cube-ÉTAGE-FRÉQUENCE.cub) : (étage, fréquence, octets), triés.
+fn cubes_sur_disque(d: &std::path::Path) -> Vec<(u32, u32, u64)> {
+    let mut v = Vec::new();
+    if let Ok(rd) = fs::read_dir(d) {
+        for en in rd.flatten() {
+            let nom = en.file_name().to_string_lossy().to_string();
+            if let Some(r) = nom.strip_prefix("cube-").and_then(|r| r.strip_suffix(".cub")) {
+                let mut it = r.splitn(2, '-');
+                if let (Some(Ok(e)), Some(Ok(f))) = (it.next().map(|x| x.parse::<u32>()), it.next().map(|x| x.parse::<u32>())) {
+                    v.push((e, f, en.metadata().map(|m| m.len()).unwrap_or(0)));
+                }
+            }
+        }
+    }
+    v.sort_unstable();
+    v
+}
+
+/// Le tableau des cubes pour l'atelier (commande « cubes ») et pour « vtx cubes DOSSIER ».
+fn texte_cubes(mem: Option<&Memoire>, d: &std::path::Path) -> String {
+    let note = |f: u32| nom_note(f).map(|n| format!(" ({})", n)).unwrap_or_default();
+    let mut t = String::new();
+    if let Some(m) = mem {
+        for e in 1..4u32 {
+            t.push_str(&format!("étage {} regarde le cube {}{}\n", e, m.frequence(e), note(m.frequence(e))));
+        }
+        for (e, f, p) in m.cubes_rangees() {
+            t.push_str(&format!("en mémoire : étage {} · cube {}{} · {} page(s) de 65 536 mots\n", e, f, note(f), p));
+        }
+    }
+    for (e, f, o) in cubes_sur_disque(d) {
+        t.push_str(&format!("sur disque : cube-{}-{}.cub · étage {} · cube {}{} · {} Ko\n", e, f, e, f, note(f), o / 1024));
+    }
+    if t.is_empty() {
+        t.push_str("aucun cube\n");
+    }
+    t
+}
+
+fn chemin_cube(d: &std::path::Path, e: u32, f: u32) -> std::path::PathBuf {
+    d.join(format!("cube-{}-{}.cub", e, f))
+}
+
+/// Un cube sur disque : « VTXCUB01 », puis pour chaque page non nulle son numéro (u32) et ses 65 536 mots (u32, petit
+/// boutiste). Les pages jamais écrites ne prennent pas de place.
+fn ecrire_cube(chemin: &std::path::Path, pages: &[*mut u32]) -> std::io::Result<usize> {
+    use std::io::Write;
+    let nulle = page_nulle();
+    let mut f = std::io::BufWriter::new(fs::File::create(chemin)?);
+    f.write_all(b"VTXCUB01")?;
+    let mut n = 0;
+    for (k, &p) in pages.iter().enumerate() {
+        if p == nulle || p.is_null() {
+            continue;
+        }
+        let mots = unsafe { std::slice::from_raw_parts(p, PAGE) };
+        if mots.iter().all(|&m| m == 0) {
+            continue;
+        }
+        f.write_all(&(k as u32).to_le_bytes())?;
+        for &m in mots {
+            f.write_all(&m.to_le_bytes())?;
+        }
+        n += 1;
+    }
+    f.flush()?;
+    Ok(n)
+}
+
+fn lire_cube(chemin: &std::path::Path) -> Option<Vec<*mut u32>> {
+    let b = fs::read(chemin).ok()?;
+    if b.len() < 8 || &b[..8] != b"VTXCUB01" {
+        return None;
+    }
+    let mut v = vec![page_nulle(); ETAGE / PAGE];
+    let mut i = 8;
+    let taille = 4 + PAGE * 4;
+    while i + taille <= b.len() {
+        let k = u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]) as usize;
+        if k < v.len() {
+            let p = page_neuve();
+            for j in 0..PAGE {
+                let o = i + 4 + 4 * j;
+                unsafe { *p.add(j) = u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]]) };
+            }
+            v[k] = p;
+        }
+        i += taille;
+    }
+    Some(v)
 }
 
 /// Table des accords exportée par le compilateur : pour chaque accord, l'adresse où il commence, celle où il finit,
@@ -273,6 +447,17 @@ fn f(w: u32) -> f32 {
 #[inline(always)]
 fn fb(v: f32) -> u32 {
     if v.is_nan() { 0x7FC0_0000 } else { v.to_bits() }
+}
+
+/// Flottants de 64 bits : une paire de registres (Rn, Rn+3), mot bas puis mot haut ; NaN unique 0x7FF8000000000000.
+#[inline(always)]
+fn d64(lo: u32, hi: u32) -> f64 {
+    f64::from_bits(((hi as u64) << 32) | lo as u64)
+}
+
+#[inline(always)]
+fn db(v: f64) -> u64 {
+    if v.is_nan() { 0x7FF8_0000_0000_0000 } else { v.to_bits() }
 }
 
 #[inline(always)]
@@ -525,7 +710,12 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                     },
                     5 => bruit_hote(),
                     // 8 : accorder un étage sur une fréquence (argument : fréquence × 4 + étage) ; 9 : sa fréquence
-                    8 => mem.accorder(rb & 3, rb >> 2),
+                    8 => mem.accorder(rb & 3, rb >> 2, dossier),
+                    // 11 : écrire sur disque le cube de fréquence f d'un étage (argument f × 4 + étage) ; un cube rangé
+                    // quitte alors la mémoire, et accorder(étage, f) le retrouve dans son fichier
+                    11 => mem.ranger_cube(rb & 3, rb >> 2, dossier),
+                    // 12 : présenter l'image du programme (Gobatix) ; rend 1 si la fenêtre a été fermée
+                    12 => gobatix::presenter(mem),
                     10 => return Err("mémoire pleine : le tas ne peut plus grandir, même après avoir ramassé les miettes".to_string()),
                     9 => mem.frequence(rb & 3),
                     // 6 et 7 : écrire ou lire un bloc de mots dans un fichier (nom, adresse globale et nombre de mots
@@ -661,6 +851,39 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                 res!(!(x | (x >> 1)) & 0x5555_5555)
             }
             0x50 => res!(ra.count_ones()),
+            // flottants binary64 sur des paires de registres (Rn, Rn+3)
+            0x5B..=0x6B => {
+                let (is, it) = ((g & 15) as usize, (b >> 4) as usize);
+                let x = d64(r[is], r[(is + 3) & 15]);
+                let y = d64(r[it], r[(it + 3) & 15]);
+                // résultat sur une paire : écrit les deux mots (R0 reste nul) et pose Z
+                macro_rules! resd { ($v:expr) => {{
+                    let v: u64 = $v;
+                    if rd != 0 { r[rd] = v as u32; }
+                    if (rd + 3) & 15 != 0 { r[(rd + 3) & 15] = (v >> 32) as u32; }
+                    z = v as u32 == 0 && (v >> 32) as u32 == 0;
+                    c = false;
+                }}; }
+                match op {
+                    0x5B => resd!(db(x + y)),
+                    0x5C => resd!(db(x - y)),
+                    0x5D => resd!(db(x * y)),
+                    0x5E => resd!(db(x / y)),
+                    0x5F => resd!(db(x.sqrt())),
+                    0x60 => res!((x == y) as u32),
+                    0x61 => res!((x < y) as u32),
+                    0x62 => res!((x <= y) as u32),
+                    0x63 => resd!(db(r[is] as f64)),
+                    0x64 => resd!(db(r[is] as i32 as f64)),
+                    0x65 => res!(x as i32 as u32),
+                    0x66 => res!(x.round_ties_even() as i32 as u32),
+                    0x67 => resd!(db(f(r[is]) as f64)),
+                    0x68 => res!(fb(x as f32)),
+                    0x69 => resd!(db((((r[(is + 3) & 15] as u64) << 32) | r[is] as u64) as i64 as f64)),
+                    0x6A => resd!(x as i64 as u64),
+                    _ => resd!(x.round_ties_even() as i64 as u64),
+                }
+            }
             _ => return Err(format!("code d'opération inconnu {:#04x} à l'adresse {}", op, pc)),
         }
         pc = suivant;
@@ -1135,6 +1358,8 @@ fn main() {
         Some("renouveler") if args.len() > 2 => renouveler(&args[2]),
         Some("image") => cube::image(&args[2..]),
         Some("dessin") => cube::dessin(&args[2..]),
+        Some("cubes") => print!("{}", texte_cubes(None, std::path::Path::new(args.get(2).map(|s| s.as_str()).unwrap_or(".")))),
+        Some("gobatix") => gobatix::lancer(&args[2..]),
         Some("quits") => cube::image_quits(&args[2..]),
         Some("icone") if args.len() > 2 => {
             let f = &args[2];
@@ -1148,6 +1373,7 @@ fn main() {
                 process::exit(1);
             }
         },
+        Some("essai-pas64") => pas64::essai(&args[2..]),
         Some("atelier") => atelier::atelier(args.get(2).map(|s| s.as_str())),
         Some("traduire") if args.len() > 2 => traduire_programme(&args[2], args.get(3)),
         Some("traduire-corpus") if args.len() > 3 => {

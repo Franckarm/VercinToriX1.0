@@ -1,0 +1,11 @@
+; vitesse : 80 millions d'instructions (une addition, une écriture en étage 1, une soustraction, un saut, 20 millions de fois)
+    LDI R2,20000000
+    LDIS R1,#0
+    LDI R5,0x4000000000000000
+boucle:
+    ADD R1,R1,R2
+    ST R5,R1,#0
+    SUBI R2,R2,#1
+    JNZ boucle
+    OUT R1
+    HALT

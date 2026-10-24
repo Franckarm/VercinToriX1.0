@@ -1,0 +1,23 @@
+// Factorielles exactes sur 128 bits (34! dépasse 2^127 : afficher() l'écrit alors en négatif, l'entier_128 est signé), puis Fibonacci(180).
+// entier_128 (suffixe LL, alias gaulois « petuar ») : quatre mots de 32 bits, calcul exact modulo 2^128.
+fonction principal() {
+    soit f: entier_128 = 1LL;
+    pour i dans 1..35 {
+        f = f * entier_128(i);
+        si i == 20 || i == 25 || i == 30 || i == 34 {
+            afficher(f);
+        }
+    }
+    soit a: entier_128 = 0LL;
+    soit b: entier_128 = 1LL;
+    pour k dans 0..180 {
+        soit t = a + b;
+        a = b;
+        b = t;
+    }
+    afficher(a);
+    afficher(a / 1000000007LL);
+    afficher(a % 1000000007LL);
+    afficher(0LL - a);
+    afficher(flottant_64(a));
+}

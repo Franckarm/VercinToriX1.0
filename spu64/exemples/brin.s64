@@ -1,0 +1,30 @@
+; le brin : un tableau de travail (ARN) fixé en ADN ; lire son brin ; une copie de travail reste modifiable
+    LDI R1,0x8000000000000100      ; étage 2, #000100
+    LDIS R2,#0
+    LDIS R3,#8
+remplir:
+    STX R1,R3,R2                   ; t[i] = 8 - i
+    ADDI R2,R2,#1
+    SUBI R3,R3,#1
+    JNZ remplir
+    LDIS R4,#8
+    MARQUE R1,R4,#2                ; en travail (ARN)
+    BRIN R5,R1
+    OUT R5
+    MARQUE R1,R4,#1                ; fixé (ADN)
+    BRIN R5,R1
+    OUT R5
+    LDI R6,0x8000000000000200      ; la copie de travail
+    LDIS R2,#0
+copier:
+    LDX R7,R1,R2
+    STX R6,R7,R2
+    ADDI R2,R2,#1
+    CMPI R2,#8
+    JNZ copier
+    MARQUE R6,R4,#2
+    LDIS R7,#42
+    ST R6,R7,#3                    ; permis : la copie est ARN
+    LD R8,R6,#3
+    OUT R8
+    HALT

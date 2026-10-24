@@ -1,8 +1,8 @@
 [package]
 name = "vtx-spu"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
-description = "Émulateur du SPU à cube chromatique (Vercintorix, vtx 0.4)"
+description = "Émulateur du SPU à cube chromatique (Vercintorix, vtx 0.5)"
 
 [[bin]]
 name = "vtx-spu"
@@ -15,6 +15,10 @@ path = "src/vtx.rs"
 [[bin]]
 name = "atelier"
 path = "src/atelier_exe.rs"
+
+[[bin]]
+name = "vtx64"
+path = "src/vtx64.rs"
 
 [dependencies]
 

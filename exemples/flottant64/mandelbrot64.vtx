@@ -1,0 +1,37 @@
+// L'ensemble de Mandelbrot en flottants de 64 bits : une fenêtre de 40 × 16 caractères.
+fonction iterations(cr: flottant_64, ci: flottant_64) {
+    soit zr: flottant_64 = 0.0D;
+    soit zi: flottant_64 = 0.0D;
+    soit n = 0;
+    tantque n < 30 {
+        soit r2 = zr * zr;
+        soit i2 = zi * zi;
+        si r2 + i2 > 4.0D {
+            retour n;
+        }
+        zi = 2.0D * zr * zi + ci;
+        zr = r2 - i2 + cr;
+        n = n + 1;
+    }
+    retour n;
+}
+
+fonction principal() {
+    pour ligne dans 0..16 {
+        pour col dans 0..40 {
+            soit cr = -2.2D + 3.2D * col / 40;
+            soit ci = -1.2D + 2.4D * ligne / 16;
+            soit n = iterations(cr, ci);
+            si n >= 30 {
+                ecrire("#");
+            } sinon si n > 6 {
+                ecrire("+");
+            } sinon si n > 2 {
+                ecrire(".");
+            } sinon {
+                ecrire(" ");
+            }
+        }
+        ecrire("\n");
+    }
+}

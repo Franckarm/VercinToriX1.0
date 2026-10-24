@@ -1,0 +1,18 @@
+// Comparaisons signées (complément à deux), décalages arithmétiques et conversions de l'entier_128.
+fonction principal() {
+    soit x: entier_128 = 340282366920938463463374607431768211455LL;
+    soit y: entier_128 = 1LL << 100;
+    afficher(x);
+    afficher(y);
+    si x > y { afficher(1); } sinon { afficher(0); }
+    si y < x { afficher(1); } sinon { afficher(0); }
+    si x == y { afficher(1); } sinon { afficher(0); }
+    si x != y { afficher(1); } sinon { afficher(0); }
+    afficher(x >> 100);
+    afficher(entier_128_signe(0 - 7));
+    afficher(bas(y));
+    afficher(haut(y));
+    afficher(entier_128_de(5L, 9L));
+    afficher(min(x, y));
+    afficher(max(x, y));
+}

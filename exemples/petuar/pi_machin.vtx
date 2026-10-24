@@ -1,0 +1,31 @@
+// π en flottant_petuar par la formule de Machin : π = 16 arctan(1/5) − 4 arctan(1/239),
+// arctan(1/n) = 1/n − 1/(3n³) + 1/(5n⁵) − … ; puis racine(2) par la méthode de Newton. Chaque opération est arrondie
+// exactement ; la somme accumule quelques unités du dernier quit (environ 10^-33 sur π).
+fonction arctan_inv(n): flottant_petuar {
+    soit x = 1Q / flottant_petuar(n);
+    soit x2 = x * x;
+    soit terme = x;
+    soit somme = x;
+    soit k = 1;
+    tantque k < 120 {
+        terme = terme * x2;
+        soit t = terme / flottant_petuar(2 * k + 1);
+        si (k & 1) == 1 { somme = somme - t; } sinon { somme = somme + t; }
+        k = k + 1;
+        si t < 1.0e-40Q { arrêter; }
+    }
+    retour somme;
+}
+fonction principal() {
+    soit p = 16Q * arctan_inv(5) - 4Q * arctan_inv(239);
+    afficher(p);
+    afficher(pi_petuar());
+    afficher(p - pi_petuar());
+    soit x = 1Q;
+    pour i dans 0..8 {
+        x = (x + 2Q / x) / 2Q;
+    }
+    afficher(x);
+    afficher(x * x - 2Q);
+    afficher(x - racine(2Q));          // Newton s'arrête à un écart d'une unité du dernier quit ; racine() est arrondie exactement
+}

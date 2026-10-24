@@ -1,0 +1,52 @@
+// Gobatix, premier pas : un cube qui tourne.
+// ecran(l, h) prépare l'image (étage 1) ; trait y dessine ; presenter() la montre (fenêtre, ou fichiers avec --images)
+// et rend 0 tant que la fenêtre est ouverte. Lancer : vtx gobatix cube_tournant.vtx
+// Le calcul est en flottants 32 bits, la rotation autour de deux axes, la projection en perspective.
+fonction principal() {
+    soit l = 400;
+    soit h = 300;
+    soit px = tableau(8);
+    soit py = tableau(8);
+    soit pz = tableau(8);
+    soit t = 0.0;
+    soit fini = 0;
+    soit images = 0;
+    tantque fini == 0 && images < 36000 {
+        ecran(l, h);
+        soit a = t;
+        soit b = t * 0.7;
+        soit ca = cosinus(a);
+        soit sa = sinus(a);
+        soit cb = cosinus(b);
+        soit sb = sinus(b);
+        pour v dans 0..8 {
+            soit x = flottant(v & 1) * 2.0 - 1.0;
+            soit y = flottant((v >> 1) & 1) * 2.0 - 1.0;
+            soit z = flottant((v >> 2) & 1) * 2.0 - 1.0;
+            soit x1 = x * ca + z * sa;
+            soit z1 = z * ca - x * sa;
+            soit y2 = y * cb - z1 * sb;
+            soit z2 = y * sb + z1 * cb;
+            soit s = 230.0 / (z2 + 4.5);
+            px[v] = entier(flottant(l) * 0.5 + x1 * s + 0.5);
+            py[v] = entier(flottant(h) * 0.5 + y2 * s + 0.5);
+            pz[v] = entier((z2 + 2.0) * 40.0);          // 0 (devant) à 160 (derrière) : la couleur suit la profondeur
+        }
+        pour v2 dans 0..8 {
+            pour bit dans 0..3 {
+                soit w = v2 ^ (1 << bit);
+                si v2 < w {
+                    soit p = 255 - (pz[v2] + pz[w]) / 2;
+                    trait(px[v2], py[v2], px[w], py[w], rgb(60 + p / 2, 140 + p / 3, 255));
+                }
+            }
+        }
+        pour v3 dans 0..8 {
+            soit q = 255 - pz[v3];
+            disque(px[v3], py[v3], 3, rgb(255, 200 + q / 5, 80));
+        }
+        fini = presenter();
+        t = t + 0.03;
+        images = images + 1;
+    }
+}

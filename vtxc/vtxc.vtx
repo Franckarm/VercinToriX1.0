@@ -113,7 +113,7 @@ structure Jeton { genre, val, texte, ligne, suivant: Jeton }
 // liste chaînée d'instructions ou d'arguments (premier), suivant dans une liste, ligne
 // zet, zlo, zhi : la zone mémoire d'un accès à un tableau (étage + 1, début, fin) ; copie : boucle recopiée (partition)
 structure Noeud { genre, op, val, nom, a: Noeud, b: Noeud, c: Noeud, premier: Noeud, deuxieme: Noeud, suivant: Noeud, ligne,
-                  zet, zlo, zhi, copie }
+                  zet, zlo, zhi, copie, expl }
 
 structure Champ { nom, type, suivant: Champ }
 structure Struct { nom, champs: Champ, nb, suivant: Struct }
@@ -174,6 +174,7 @@ structure Ctx {
     lex_genre,
     lex_val,
     lex_haut,
+    tab_w: Liste,       // entier_128 : les mots 1 à 3 des constantes, trois par constante (le noeud et le jeton portent l'indice du premier)
     lignes_dbg,         // 1 : écrire aussi la table adresse -> ligne du programme (pas à pas de l'atelier)
     niter,              // compteur des boucles « pour x dans t » (variables cachées __itN, __ikN)
     tabtextes: Liste,   // typer_textes : les variables qui contiennent un tableau de textes
@@ -231,12 +232,23 @@ constante T_LOG = 1000000;
 constante T_F = 1000001;     // flottant (IEEE 754 binary32)
 constante T_L = 1000002;     // long : 64 bits, mot bas dans R1, mot haut dans R4
 constante T_T = 1000003;
+constante T_W = 1000006;     // entier_128 : quatre mots dans R1, R3, R4, R6 (le mot bas d'abord)
+constante T_X = 1000007;     // flottant_petuar : le flottant quaternaire, quatre points du cube dans R1, R3, R4, R6
+constante T_D = 1000005;     // flottant_64 : IEEE 754 binary64, mot bas dans R1, mot haut dans R4 (paire des instructions D)
 constante T_TF = 1000004;    // flottant[] : la poignée d'un tableau de flottants ; redevient un entier (typer_textes)     // texte : l'adresse d'un bloc ; redevient un entier avant la génération (typer_textes)
 constante N_FNOMBRE = 16;    // val = les bits du flottant
 constante N_LNOMBRE = 17;    // val = mot bas, nom = mot haut
+constante N_WNOMBRE = 19;    // entier_128 : val = mot 0, nom = la liste des mots 1 à 3
+constante N_XNOMBRE = 41;    // flottant_petuar : val = mot 0, nom = l'indice des mots 1 à 3 dans tab_w
+constante N_DNOMBRE = 18;    // flottant_64 : val = mot bas, nom = mot haut
 constante SIGNE = 2147483648;
 constante BITS_V = 0xAAAAAAAA;
 constante BITS_F = 0x55555555;
+
+// entier_petuar et flottant_petuar : quatre mots (quatre points du cube)
+fonction quatre(t) {
+    retour t == T_W || t == T_X;
+}
 
 fonction est_struct(t) {
     retour t > 0 && t < T_LOG;
@@ -541,6 +553,253 @@ fonction bits_flottant(n: Liste, k) {
     retour big_entier(big_arrondi(q, s - 149));
 }
 
+
+// Le flottant n × 10^k (k signé), en bits binary64 : mot bas dans c.lex_val, mot haut dans c.lex_haut ; 0 si trop grand
+fonction bits_double(c: Ctx, n: Liste, k) {
+    c.lex_val = 0;
+    c.lex_haut = 0;
+    si big_bits(n) == 0 {
+        retour 1;
+    }
+    soit ordre = k + (big_bits(n) * 30103) / 100000;
+    si ordre .> 400 {
+        retour 0;
+    }
+    si ordre .< 0 - 400 {
+        retour 1;
+    }
+    soit a = big_shr(n, 0);
+    soit b = big(1);
+    si k .>= 0 {
+        pour i dans 0..k {
+            big_mul_ajoute(a, 10, 0);
+        }
+    } sinon {
+        pour j dans 0..(0 - k) {
+            big_mul_ajoute(b, 10, 0);
+        }
+    }
+    soit s = 52 - (big_bits(a) - big_bits(b));
+    soit reste = liste();
+    soit q = liste();
+    soit encore = 1;
+    tantque encore {
+        si s .> 1074 {
+            s = 1074;
+        }
+        si s .>= 0 {
+            q = big_divmod(big_shl(a, s), b, reste);
+        } sinon {
+            q = big_divmod(a, big_shl(b, 0 - s), reste);
+        }
+        soit nb = big_bits(q);
+        encore = 0;
+        si nb > 53 {
+            s = s - 1;
+            encore = 1;
+        } sinon si nb < 53 && s .< 1074 {
+            s = s + 1;
+            encore = 1;
+        }
+    }
+    soit den = b;
+    si s .< 0 {
+        den = big_shl(b, 0 - s);
+    }
+    big_mul_ajoute(reste, 2, 0);
+    soit k2 = big_cmp(reste, den);
+    si k2 == 1 || (k2 == 0 && big_bit(q, 0) == 1) {
+        big_mul_ajoute(q, 1, 1);
+    }
+    si big_bits(q) > 53 {
+        q = big_shr(q, 1);
+        s = s - 1;
+    }
+    soit e = 52 - s;
+    si e .> 1023 {
+        retour 0;
+    }
+    c.lex_val = big_entier(q);
+    soit hi = big_entier(big_shr(q, 32));
+    si big_bits(q) == 53 {
+        hi = (hi & 1048575) | ((e + 1023) << 20);
+    }
+    c.lex_haut = hi;
+    retour 1;
+}
+
+// a = a × 10^k (k >= 0), par paquets de quatre chiffres
+fonction big_mul10k(a: Liste, k) {
+    tantque k >= 4 {
+        big_mul_ajoute(a, 10000, 0);
+        k = k - 4;
+    }
+    tantque k > 0 {
+        big_mul_ajoute(a, 10, 0);
+        k = k - 1;
+    }
+}
+
+// a >> s, par chiffres de 16 bits (rapide)
+fonction big_droite(a: Liste, s): Liste {
+    soit r = liste();
+    soit q = s >> 4;
+    soit b = s & 15;
+    soit i = q;
+    tantque i < a.n {
+        soit lo = elem(a, i) >> b;
+        soit hi = 0;
+        si b != 0 && i + 1 < a.n {
+            hi = (elem(a, i + 1) << (16 - b)) & 65535;
+        }
+        ajouter(r, lo | hi);
+        i = i + 1;
+    }
+    big_norm(r);
+    retour r;
+}
+
+// a = a >> 1, sur place (sans prendre de mémoire)
+fonction big_droite1(a: Liste) {
+    soit r = 0;
+    soit i = a.n;
+    tantque i > 0 {
+        i = i - 1;
+        soit x = elem(a, i);
+        poser(a, i, (x >> 1) | (r << 15));
+        r = x & 1;
+    }
+    big_norm(a);
+}
+
+// 1 si les s bits bas de a ne sont pas tous nuls
+fonction big_bas_non_nul(a: Liste, s) {
+    soit q = s >> 4;
+    pour i dans 0..q {
+        si i < a.n && elem(a, i) != 0 {
+            retour 1;
+        }
+    }
+    si (s & 15) != 0 && q < a.n && (elem(a, q) & ((1 << (s & 15)) - 1)) != 0 {
+        retour 1;
+    }
+    retour 0;
+}
+
+// Le flottant_petuar n × 10^k (k signé) : mot 0 dans c.lex_val, mots 1 à 3 ajoutés à c.tab_w (c.lex_haut : leur indice) ;
+// 0 si trop grand. La valeur exacte sur 116 bits (et un bit collant), puis l'arrondi quaternaire (le même calcul que
+// __pq_arrondi du prélude).
+fonction bits_petuar(c: Ctx, n: Liste, k) {
+    soit w3 = SIGNE;
+    soit q = liste();
+    si big_bits(n) != 0 {
+        soit ordre = k + (big_bits(n) * 30103) / 100000;
+        si ordre .> 5000 {
+            retour 0;
+        }
+        si ordre .>= 0 - 5000 {
+            soit m = liste();
+            soit s = 0;
+            soit collant = 0;
+            si k .>= 0 {
+                // un entier : ses 116 bits du haut, et le reste en bit collant
+                soit a = big_shr(n, 0);
+                big_mul10k(a, k);
+                soit nb = big_bits(a);
+                si nb <= 116 {
+                    m = big_shl(a, 116 - nb);
+                    s = 116 - nb;
+                } sinon {
+                    m = big_droite(a, nb - 116);
+                    collant = big_bas_non_nul(a, nb - 116);
+                    s = 0 - (nb - 116);
+                }
+            } sinon {
+                // n / 10^-k : les 116 bits du quotient par la division posée, bit à bit, sur 117 bits au plus
+                soit b = big(1);
+                big_mul10k(b, 0 - k);
+                s = 115 - (big_bits(n) - big_bits(b));
+                soit encore = 1;
+                tantque encore {
+                    soit ra = big_shr(n, 0);
+                    soit bs = big_shr(b, 0);
+                    si s .>= 0 {
+                        ra = big_shl(n, s);
+                    } sinon {
+                        bs = big_shl(b, 0 - s);
+                    }
+                    m = liste();
+                    pour z dans 0..8 {
+                        ajouter(m, 0);
+                    }
+                    soit i = 117;
+                    soit bi = big_shl(bs, 116);
+                    tantque i > 0 {
+                        i = i - 1;
+                        si big_cmp(ra, bi) != 0 - 1 {
+                            big_sub(ra, bi);
+                            poser(m, i >> 4, elem(m, i >> 4) | (1 << (i & 15)));
+                        }
+                        big_droite1(bi);
+                    }
+                    big_norm(m);
+                    big_norm(ra);
+                    collant = ra.n != 0;
+                    soit nq = big_bits(m);
+                    encore = 0;
+                    si nq > 116 {
+                        s = s - 1;
+                        encore = 1;
+                    } sinon si nq < 116 {
+                        s = s + 1;
+                        encore = 1;
+                    }
+                }
+            }
+            // l'arrondi : une mantisse de 111 ou 112 bits à un exposant binaire pair (des puissances de 4)
+            soit ex = 0 - s;
+            soit kk = 116 - 112;
+            si ((ex + kk) & 1) == 1 {
+                kk = kk + 1;
+            }
+            si (ex + kk) .< 0 - 16492 {
+                kk = 0 - 16492 - ex;
+            }
+            q = big_shr(m, kk);
+            soit r = big_shr(m, 0);
+            big_sub(r, big_shl(q, kk));
+            soit kc = big_cmp(r, big_shl(big(1), kk - 1));
+            si kc == 1 || (kc == 0 && (collant || big_bit(q, 0) == 1)) {
+                big_mul_ajoute(q, 1, 1);
+            }
+            ex = ex + kk;
+            si big_bits(q) == 113 {
+                q = big_shr(q, 2);
+                ex = ex + 2;
+            }
+            si big_bits(q) >= 111 {
+                soit h = 0;
+                si ex .< 0 {
+                    h = 0 - ((0 - ex) >> 1);
+                } sinon {
+                    h = ex >> 1;
+                }
+                soit e = h + 8247;
+                si e .>= 16383 {
+                    retour 0;
+                }
+                w3 = w3 | (e << 16);
+            }
+        }
+    }
+    c.lex_val = big_entier(q);
+    c.lex_haut = c.tab_w.n;
+    ajouter(c.tab_w, big_entier(big_shr(q, 32)));
+    ajouter(c.tab_w, big_entier(big_shr(q, 64)));
+    ajouter(c.tab_w, w3 | big_entier(big_shr(q, 96)));
+    retour 1;
+}
+
 // --------------------------------------------------------------------------------------------- analyse lexicale
 fonction lettre(x) {
     retour (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || x == '_' || x >= 128;
@@ -614,12 +873,14 @@ fonction operateur(c: Ctx, i) {
     retour 0;
 }
 
-// Après « adn » en position i : "ACGT…" (1 à 16 lettres) ? Rend 1 et range sa valeur dans c.lex_val, sinon 0
+// Après « adn » en position i : "ACGT…" (1 à 64 lettres) ? Rend 1 et range sa valeur dans c.lex_val (jeton entier),
+// ou, au-delà de 16 lettres, un entier_petuar (jeton 10, mots 1 à 3 dans tab_w), sinon 0
 fonction valeur_adn(c: Ctx, s: Liste, i) {
     si i >= s.n || elem(s, i) != '"' {
         retour 0;
     }
     soit v = 0;
+    soit bv = liste();
     soit k = i + 1;
     tantque k < s.n && elem(s, k) != '"' {
         soit x = elem(s, k);
@@ -631,16 +892,27 @@ fonction valeur_adn(c: Ctx, s: Liste, i) {
         si x == 'C' { q = 1; }
         si x == 'G' { q = 2; }
         si x == 'T' || x == 'U' { q = 3; }
-        si q == 0 - 1 || k - i > 16 {
+        si q == 0 - 1 || k - i > 64 {
             retour 0;
         }
         v = v * 4 + q;
+        big_mul_ajoute(bv, 4, q);
         k = k + 1;
     }
     si k >= s.n || k == i + 1 {
         retour 0;
     }
+    c.lex_genre = 3;
     c.lex_val = v;
+    c.lex_haut = 0;
+    si k - i - 1 > 16 {
+        c.lex_genre = 10;
+        c.lex_val = big_entier(bv);
+        c.lex_haut = c.tab_w.n;
+        ajouter(c.tab_w, big_entier(big_shr(bv, 32)));
+        ajouter(c.tab_w, big_entier(big_shr(bv, 64)));
+        ajouter(c.tab_w, big_entier(big_shr(bv, 96)));
+    }
     retour 1;
 }
 
@@ -694,6 +966,19 @@ fonction nombre_lexical(c: Ctx, i, ligne) {
         }
         j = j + 1;
     }
+    // entier_128 : …LL non suivi d'une lettre ou d'un chiffre ; mot 0 dans lex_val, mots 1 à 3 dans la liste lex_haut
+    si car_en(s, j) == 'L' && car_en(s, j + 1) == 'L' && !alnum(car_en(s, j + 2)) {
+        si big_bits(n) > 128 {
+            erreur(c, ligne, "nombre trop grand pour 128 bits");
+        }
+        c.lex_genre = 10;
+        c.lex_val = big_entier(n);
+        c.lex_haut = c.tab_w.n;
+        ajouter(c.tab_w, big_entier(big_shr(n, 32)));
+        ajouter(c.tab_w, big_entier(big_shr(n, 64)));
+        ajouter(c.tab_w, big_entier(big_shr(n, 96)));
+        retour j + 2;
+    }
     // long : …L non suivi d'une lettre ou d'un chiffre
     si car_en(s, j) == 'L' && !alnum(car_en(s, j + 1)) {
         si big_bits(n) > 64 {
@@ -738,6 +1023,20 @@ fonction nombre_lexical(c: Ctx, i, ligne) {
             si neg {
                 ex = 0 - ex;
             }
+        }
+        si elem(s, j) == 'D' && !alnum(car_en(s, j + 1)) {
+            si !bits_double(c, n, ex - frac) {
+                erreur(c, ligne, "nombre flottant_64 trop grand");
+            }
+            c.lex_genre = 9;
+            retour j + 1;
+        }
+        si elem(s, j) == 'Q' && !alnum(car_en(s, j + 1)) {
+            si !bits_petuar(c, n, ex - frac) {
+                erreur(c, ligne, "nombre flottant_petuar trop grand");
+            }
+            c.lex_genre = 11;
+            retour j + 1;
         }
         si flottant {
             soit b = bits_flottant(n, ex - frac);
@@ -788,7 +1087,7 @@ fonction lexer(c: Ctx) {
                     i = i + 1;
                 }
                 i = i + 2;
-                dernier = nouveau_jeton(c, dernier, 3, c.lex_val, 0, ligne);
+                dernier = nouveau_jeton(c, dernier, c.lex_genre, c.lex_val, c.lex_haut, ligne);
             } sinon si texte_egal(t, "et") {
                 dernier = nouveau_jeton(c, dernier, 4, 0, "&&", ligne);
             } sinon si texte_egal(t, "ou") {
@@ -822,7 +1121,27 @@ fonction lexer(c: Ctx) {
             si i - d2 == 6 {
                 v2 = v2 << 8;
             }
-            dernier = nouveau_jeton(c, dernier, 3, v2, 0, ligne);
+            si i - d2 == 8 && car_en(s, i) == '_' && valeur_hexa(car_en(s, i + 1)) < 16 {
+                // quatre points du cube : #RRGGBBAA_RRGGBBAA_RRGGBBAA_RRGGBBAA, le plus fort d'abord (un entier_petuar)
+                soit pts = liste();
+                ajouter(pts, v2);
+                pour kp dans 0..3 {
+                    i = i + 1;
+                    soit vp = 0;
+                    pour kh dans 0..8 {
+                        vp = vp * 16 + valeur_hexa(car_en(s, i));
+                        i = i + 1;
+                    }
+                    ajouter(pts, vp);
+                }
+                soit hw = c.tab_w.n;
+                ajouter(c.tab_w, elem(pts, 2));
+                ajouter(c.tab_w, elem(pts, 1));
+                ajouter(c.tab_w, elem(pts, 0));
+                dernier = nouveau_jeton(c, dernier, 10, elem(pts, 3), hw, ligne);
+            } sinon {
+                dernier = nouveau_jeton(c, dernier, 3, v2, 0, ligne);
+            }
         } sinon si x == '\'' {
             soit v3 = elem(s, i + 1);
             i = i + 2;
@@ -971,8 +1290,17 @@ fonction type_opt(c: Ctx) {
         }
         retour T_F;
     }
-    si texte_egal(nom, "long") {
+    si texte_egal(nom, "long") || texte_egal(nom, "entier_64") {
         retour T_L;
+    }
+    si texte_egal(nom, "flottant_64") {
+        retour T_D;
+    }
+    si texte_egal(nom, "entier_128") || texte_egal(nom, "petuar") || texte_egal(nom, "entier_petuar") {
+        retour T_W;
+    }
+    si texte_egal(nom, "flottant_petuar") || texte_egal(nom, "flottant_128") {
+        retour T_X;
     }
     si texte_egal(nom, "logique") {
         retour T_LOG;
@@ -1289,6 +1617,18 @@ fonction primaire(c: Ctx): Noeud {
         avancer(c);
         retour Noeud { genre: N_LNOMBRE, val: j.val, nom: j.texte, ligne: l };
     }
+    si j.genre == 9 {
+        avancer(c);
+        retour Noeud { genre: N_DNOMBRE, val: j.val, nom: j.texte, ligne: l };
+    }
+    si j.genre == 10 {
+        avancer(c);
+        retour Noeud { genre: N_WNOMBRE, val: j.val, nom: j.texte, ligne: l };
+    }
+    si j.genre == 11 {
+        avancer(c);
+        retour Noeud { genre: N_XNOMBRE, val: j.val, nom: j.texte, ligne: l };
+    }
     si j.genre == 5 {
         avancer(c);
         etiquette_texte(c, j.texte);
@@ -1422,6 +1762,15 @@ fonction primaire(c: Ctx): Noeud {
         }
         si k.type == T_L {
             retour Noeud { genre: N_LNOMBRE, val: k.val, nom: k.haut, ligne: l };
+        }
+        si k.type == T_D {
+            retour Noeud { genre: N_DNOMBRE, val: k.val, nom: k.haut, ligne: l };
+        }
+        si k.type == T_W {
+            retour Noeud { genre: N_WNOMBRE, val: k.val, nom: k.haut, ligne: l };
+        }
+        si k.type == T_X {
+            retour Noeud { genre: N_XNOMBRE, val: k.val, nom: k.haut, ligne: l };
         }
         retour nombre(k.val, l);
     }
@@ -1572,6 +1921,9 @@ fonction instruction(c: Ctx): Noeud {
         avancer(c);
         soit s = noeud(N_SOIT, l);
         s.nom = nom_variable(c);
+        si est_op(c, ":") && c.tok.suivant != nul && texte_egal(c.tok.suivant.texte, "entier") {
+            s.expl = 1;             // « soit x: entier = … » : le type écrit interdit les conversions implicites
+        }
         s.val = type_opt(c);
         attendre(c, "=");
         s.a = expr(c, 0);
@@ -2051,7 +2403,7 @@ fonction copier(n: Noeud): Noeud {
     }
     retour Noeud { genre: n.genre, op: n.op, val: n.val, nom: n.nom, a: copier(n.a), b: copier(n.b), c: copier(n.c),
                    premier: copier_liste(n.premier), deuxieme: copier_liste(n.deuxieme), ligne: n.ligne,
-                   zet: n.zet, zlo: n.zlo, zhi: n.zhi, copie: n.copie };
+                   zet: n.zet, zlo: n.zlo, zhi: n.zhi, copie: n.copie, expl: n.expl };
 }
 
 fonction copier_liste(x: Noeud): Noeud {
@@ -2741,6 +3093,40 @@ fonction une_constante(c: Ctx) {
         si neg {
             k.val = xc.val ^ SIGNE;
         }
+    } sinon si xc.genre == N_WNOMBRE {
+        k.type = T_W;
+        k.val = xc.val;
+        k.haut = xc.nom;
+        si neg {
+            // complément à deux : ~x + 1, la retenue passe d'un mot au suivant tant que le mot est nul
+            soit ret = xc.val == 0;
+            k.val = ~xc.val + 1;
+            k.haut = c.tab_w.n;
+            pour iw dans 0..3 {
+                soit mv = elem(c.tab_w, xc.nom + iw);
+                ajouter(c.tab_w, ~mv + ret);
+                ret = ret && mv == 0;
+            }
+        }
+    } sinon si xc.genre == N_XNOMBRE {
+        k.type = T_X;
+        k.val = xc.val;
+        k.haut = xc.nom;
+        soit hx = elem(c.tab_w, xc.nom + 2);
+        si neg && ((hx >> 30) == 1 || (hx >> 30) == 2) {
+            // l'opposé : l'état C (négatif) et G (positif) s'échangent, inconnu et variable restent
+            k.haut = c.tab_w.n;
+            ajouter(c.tab_w, elem(c.tab_w, xc.nom));
+            ajouter(c.tab_w, elem(c.tab_w, xc.nom + 1));
+            ajouter(c.tab_w, hx ^ 0xC0000000);
+        }
+    } sinon si xc.genre == N_DNOMBRE {
+        k.type = T_D;
+        k.val = xc.val;
+        k.haut = xc.nom;
+        si neg {
+            k.haut = xc.nom ^ SIGNE;
+        }
     } sinon si xc.genre == N_LNOMBRE {
         k.type = T_L;
         k.val = xc.val;
@@ -3010,13 +3396,34 @@ fonction joindre_types(c: Ctx, a, b, ligne) {
     si a == b {
         retour a;
     }
+    si a == T_X || b == T_X {
+        soit autre = a;
+        si a == T_X {
+            autre = b;
+        }
+        si autre == 0 || autre == T_F || autre == T_D {
+            retour T_X;             // un entier, un flottant ou un flottant_64 s'élargit en flottant_petuar
+        }
+        erreur(c, ligne, "l'opération mélange un flottant_petuar et un autre type : convertissez avec flottant_petuar()");
+        retour 0;
+    }
     si (a == 0 && b == T_F) || (a == T_F && b == 0) {
         retour T_F;
     }
     si (a == 0 && b == T_L) || (a == T_L && b == 0) {
         retour T_L;
     }
-    si (a == T_F && b == T_L) || (a == T_L && b == T_F) {
+    si (a == 0 && b == T_W) || (a == T_W && b == 0) {
+        retour T_W;                 // un entier s'élargit en entier_128 (zéros à gauche, comme vers long)
+    }
+    si a == T_W || b == T_W {
+        erreur(c, ligne, "l'opération mélange un entier_128 et un autre type : convertissez avec entier_128()");
+    } sinon si (a == 0 || a == T_F) && b == T_D || a == T_D && (b == 0 || b == T_F) {
+        retour T_D;                 // un entier ou un flottant s'élargit en flottant_64 (sans perte)
+    }
+    si a == T_D || b == T_D {
+        erreur(c, ligne, "l'opération mélange un flottant_64 et un autre type : convertissez avec flottant_64() ou long()");
+    } sinon si (a == T_F && b == T_L) || (a == T_L && b == T_F) {
         erreur(c, ligne, "l'opération mélange un flottant et un long : convertissez avec flottant(), long() ou entier()");
     } sinon {
         erreur(c, ligne, "types incompatibles dans l'opération");
@@ -3057,20 +3464,20 @@ fonction typ_bin(c: Ctx, e: Noeud) {
     }
     si texte_egal(o, "+") || texte_egal(o, "-") || texte_egal(o, "*") || texte_egal(o, "/") || texte_egal(o, "%") {
         soit t = joindre_types(c, ta, tb, l);
-        si t == T_F && texte_egal(o, "%") {
+        si (t == T_F || t == T_D || t == T_X) && texte_egal(o, "%") {
             erreur(c, l, "le reste « % » n'est pas défini pour les flottants");
         }
         retour t;
     }
     si texte_egal(o, "&") || texte_egal(o, "|") || texte_egal(o, "^") {
         soit t2 = joindre_types(c, ta, tb, l);
-        si t2 == T_F {
+        si t2 == T_F || t2 == T_D || t2 == T_X {
             erreur(c, l, "opération bit à bit sur un flottant (voir bits())");
         }
         retour t2;
     }
     si texte_egal(o, "<<") || texte_egal(o, ">>") {
-        si ta == T_F || tb != 0 {
+        si ta == T_F || ta == T_D || ta == T_X || tb != 0 {
             erreur(c, l, "décalage d'un entier ou d'un long par un entier seulement");
         }
         retour ta;
@@ -3082,12 +3489,27 @@ fonction typ_bin(c: Ctx, e: Noeud) {
 }
 
 fonction retour_integre(nom) {
+    si texte_egal(nom, "flottant_petuar") || texte_egal(nom, "flottant_128") || texte_egal(nom, "comme_flottant_petuar")
+        || texte_egal(nom, "de_ieee128") {
+        retour T_X;
+    }
+    si texte_egal(nom, "vers_ieee128") {
+        retour T_W;
+    }
     si texte_egal(nom, "flottant") || texte_egal(nom, "flottant_signe") || texte_egal(nom, "racine")
         || texte_egal(nom, "comme_flottant") {
         retour T_F;
     }
-    si texte_egal(nom, "long") || texte_egal(nom, "long_signe") || texte_egal(nom, "long_de") {
+    si texte_egal(nom, "long") || texte_egal(nom, "long_signe") || texte_egal(nom, "long_de")
+        || texte_egal(nom, "arrondi_long") {
         retour T_L;
+    }
+    si texte_egal(nom, "entier_128") || texte_egal(nom, "entier_128_signe") || texte_egal(nom, "entier_128_de") {
+        retour T_W;
+    }
+    si texte_egal(nom, "flottant_64") || texte_egal(nom, "flottant_64_signe") || texte_egal(nom, "flottant_64_de")
+        || texte_egal(nom, "comme_flottant_64") {
+        retour T_D;
     }
     retour 0 - 1;
 }
@@ -3112,7 +3534,7 @@ fonction type_surcharge(c: Ctx, e: Noeud) {
     soit fl = 0;
     tantque a != nul {
         soit ta = typ(c, a);
-        si ta == T_F || ta == T_L {
+        si ta == T_F || ta == T_L || ta == T_D || ta == T_W || ta == T_X {
             fl = 1;
         }
         t = joindre_types(c, t, ta, e.ligne);
@@ -3134,16 +3556,25 @@ fonction typ(c: Ctx, e: Noeud) {
     si e.genre == N_LNOMBRE {
         retour T_L;
     }
+    si e.genre == N_DNOMBRE {
+        retour T_D;
+    }
+    si e.genre == N_WNOMBRE {
+        retour T_W;
+    }
+    si e.genre == N_XNOMBRE {
+        retour T_X;
+    }
     si e.genre == N_BIN {
         retour typ_bin(c, e);
     }
     si e.genre == N_NON {
         soit tn = typ(c, e.a);
-        si tn == T_F {
+        si tn == T_F || tn == T_D || tn == T_X {
             erreur(c, e.ligne, "« ~ » ne s'applique pas à un flottant");
         }
-        si tn == T_L {
-            retour T_L;
+        si tn == T_L || tn == T_W {
+            retour tn;
         }
         retour 0;
     }
@@ -3165,6 +3596,24 @@ fonction typ(c: Ctx, e: Noeud) {
         }
         si texte_egal(e.nom, "logique") || texte_egal(e.nom, "comme_logique") {
             retour T_LOG;
+        }
+        si (texte_egal(e.nom, "racine") || texte_egal(e.nom, "bits")) && e.premier != nul && e.premier.suivant == nul
+                && typ(c, e.premier) == T_X {
+            si texte_egal(e.nom, "racine") {
+                retour T_X;
+            }
+            retour T_W;                 // bits(x) d'un flottant_petuar : ses quatre points, comme un entier_petuar
+        }
+        si (texte_egal(e.nom, "racine") || texte_egal(e.nom, "bits")) && e.premier != nul && e.premier.suivant == nul
+                && typ(c, e.premier) == T_D {
+            si texte_egal(e.nom, "racine") {
+                retour T_D;
+            }
+            retour T_L;                 // bits(x) d'un flottant_64 : ses 64 bits, comme long
+        }
+        si (texte_egal(e.nom, "bas") || texte_egal(e.nom, "haut")) && e.premier != nul && e.premier.suivant == nul
+                && typ(c, e.premier) == T_W {
+            retour T_L;                 // les deux moitiés de 64 bits d'un entier_128
         }
         si retour_integre(e.nom) != 0 - 1 {
             retour retour_integre(e.nom);
@@ -3301,12 +3750,30 @@ fonction deux(c: Ctx, a: Noeud, b: Noeud) {
 
 // a dans R1, b dans R2, chacun évalué au type voulu (seul le logique change quelque chose : vrai vaut alors 2)
 fonction paire(c: Ctx, a: Noeud, b: Noeud, voulu) {
-    si voulu == T_L {
+    si voulu == T_W {
+        // R1, R3, R4, R6 et R2, R5, R7, R8
+        gen_v(c, a, T_W);
+        pousser(c, 1);
+        pousser(c, 3);
+        pousser(c, 4);
+        pousser(c, 6);
+        gen_v(c, b, T_W);
+        rr(c, 11, 2, 1);
+        rr(c, 11, 5, 3);
+        rr(c, 11, 7, 4);
+        rr(c, 11, 8, 6);
+        depiler(c, 6);
+        depiler(c, 4);
+        depiler(c, 3);
+        depiler(c, 1);
+        retour;
+    }
+    si voulu == T_L || voulu == T_D {
         // R1:R4 et R2:R5
-        gen_v(c, a, T_L);
+        gen_v(c, a, voulu);
         pousser(c, 1);
         pousser(c, 4);
-        gen_v(c, b, T_L);
+        gen_v(c, b, voulu);
         rr(c, 11, 2, 1);
         rr(c, 11, 5, 4);
         depiler(c, 4);
@@ -3362,21 +3829,36 @@ fonction gen_v(c: Ctx, e: Noeud, voulu) {
             erreur(c, e.ligne, "il faut une référence de cette structure (ou nul) : conversion impossible");
         }
     }
+    si voulu == T_X {
+        soit tx = typ(c, e);
+        si tx == 0 || tx == T_F || tx == T_D {
+            appel(c, appel_n("flottant_petuar", copier(e), e.ligne));     // élargi en flottant_petuar par le prélude
+            retour;
+        }
+    }
     gen(c, e);
     si voulu == 0 {
         soit t0 = typ(c, e);
-        si t0 == T_F || t0 == T_L {
+        si t0 == T_F || t0 == T_L || t0 == T_D || t0 == T_W || t0 == T_X {
             erreur(c, e.ligne, "conversion implicite impossible vers un entier : utilisez entier(), bas() ou bits()");
         }
     }
-    si voulu == T_F || voulu == T_L {
+    si voulu == T_F || voulu == T_L || voulu == T_D || voulu == T_W || voulu == T_X {
         soit t = typ(c, e);
         si t == 0 {
-            si voulu == T_F {
+            si voulu == T_W {
+                rri(c, 6, 3, 0, 0);
+                rri(c, 6, 4, 0, 0);
+                rri(c, 6, 6, 0, 0);
+            } sinon si voulu == T_F {
                 rr(c, 72, 1, 1);
+            } sinon si voulu == T_D {
+                rr(c, 99, 1, 1);
             } sinon {
                 rri(c, 6, 4, 0, 0);
             }
+        } sinon si voulu == T_D && t == T_F {
+            rr(c, 103, 1, 1);
         } sinon si t != voulu {
             erreur(c, e.ligne, "conversion implicite impossible : utilisez entier(), flottant(), long() ou logique()");
         }
@@ -3427,12 +3909,23 @@ fonction saut_long(c: Ctx, op, cible, g0, g1, d0, d1) {
 // Valeur de vérité dans R1 : un flottant est vrai s'il n'est pas ±0, un long s'il n'est pas nul
 fonction gen_bool(c: Ctx, e: Noeud) {
     refuser_logique(c, e);
+    si typ(c, e) == T_X {
+        erreur(c, e.ligne, "un flottant_petuar a un état à quatre valeurs et ne sert pas de condition : comparez-le, ou utilisez « selon etat(x) »");
+    }
     gen(c, e);
     soit t = typ(c, e);
     si t == T_F {
         charger(c, 2, 2147483647);
         rrr(c, 20, 1, 1, 2);
     } sinon si t == T_L {
+        rrr(c, 21, 1, 1, 4);
+    } sinon si t == T_D {
+        charger(c, 2, 2147483647);
+        rrr(c, 20, 4, 4, 2);
+        rrr(c, 21, 1, 1, 4);
+    } sinon si t == T_W {
+        rrr(c, 21, 1, 1, 3);
+        rrr(c, 21, 4, 4, 6);
         rrr(c, 21, 1, 1, 4);
     }
 }
@@ -3473,10 +3966,118 @@ fonction conversion(c: Ctx, e: Noeud) {
     }
     soit t = typ(c, x);
     soit interdit = 0;
-    si texte_egal(nom, "flottant") {
+    si texte_egal(nom, "flottant_petuar") || texte_egal(nom, "flottant_128") {
+        si t == T_X {
+            gen(c, x);
+        } sinon si t == 0 {
+            appel(c, appel_n("__pq_de_e", copier(x), e.ligne));
+        } sinon si t == T_F {
+            appel(c, appel_n("__pq_de_d", appel_n("flottant_64", copier(x), e.ligne), e.ligne));
+        } sinon si t == T_D {
+            appel(c, appel_n("__pq_de_d", copier(x), e.ligne));
+        } sinon si t == T_L {
+            appel(c, appel_n("__pq_de_l", copier(x), e.ligne));
+        } sinon si t == T_W {
+            appel(c, appel_n("__pq_de_w", copier(x), e.ligne));
+        } sinon {
+            interdit = 1;
+        }
+    } sinon si texte_egal(nom, "comme_flottant_petuar") {
+        interdit = t != T_W;
+        gen(c, x);
+    } sinon si texte_egal(nom, "vers_ieee128") {
+        interdit = t != T_X;
+        si !interdit {
+            appel(c, appel_n("__pq_vers_ieee", bits_x(c, x), e.ligne));
+        }
+    } sinon si texte_egal(nom, "de_ieee128") {
+        interdit = t != T_W;
+        si !interdit {
+            appel(c, appel_n("__pq_de_ieee", copier(x), e.ligne));
+        }
+    } sinon si t == T_X {
+        // un flottant_petuar vers les autres types : par le prélude
+        si texte_egal(nom, "bits") {
+            gen(c, x);
+        } sinon si texte_egal(nom, "racine") {
+            appel(c, appel_n("__pq_racine", bits_x(c, x), e.ligne));
+        } sinon si texte_egal(nom, "flottant_64") {
+            appel(c, appel_n("__pq_vers_d", bits_x(c, x), e.ligne));
+        } sinon si texte_egal(nom, "flottant") {
+            appel(c, appel_n("__pq_vers_f", bits_x(c, x), e.ligne));
+        } sinon si texte_egal(nom, "entier_128") || texte_egal(nom, "long") || texte_egal(nom, "entier") {
+            appel(c, appel_n("__pq_vers_w", bits_x(c, x), e.ligne));
+            si texte_egal(nom, "long") {
+                rr(c, 11, 4, 3);
+            }
+        } sinon {
+            interdit = 1;
+        }
+    } sinon si texte_egal(nom, "flottant") {
         interdit = t == T_L;
         gen(c, x);
         si t == 0 { rr(c, 72, 1, 1); }
+        si t == T_D { rr(c, 104, 1, 1); }
+    } sinon si texte_egal(nom, "entier_128") && t == T_D {
+        appel(c, Noeud { genre: N_APPEL, nom: "__dtoq", premier: copier(x), ligne: e.ligne });
+    } sinon si texte_egal(nom, "entier_128") {
+        interdit = !(t == 0 || t == T_L || t == T_W);
+        gen(c, x);
+        si t == 0 {
+            rri(c, 6, 3, 0, 0);
+            rri(c, 6, 4, 0, 0);
+            rri(c, 6, 6, 0, 0);
+        }
+        si t == T_L {
+            rr(c, 11, 3, 4);
+            rri(c, 6, 2, 0, 31);
+            rrr(c, 9, 4, 4, 2);
+            rrr(c, 2, 4, 0, 4);
+            rr(c, 11, 6, 4);
+        }
+    } sinon si texte_egal(nom, "entier_128_signe") {
+        interdit = t != 0;
+        gen(c, x);
+        rri(c, 6, 2, 0, 31);
+        rrr(c, 9, 4, 1, 2);
+        rrr(c, 2, 4, 0, 4);
+        rr(c, 11, 3, 4);
+        rr(c, 11, 6, 4);
+    } sinon si texte_egal(nom, "entier_128_de") {
+        interdit = t != T_L || x.suivant == nul || typ(c, x.suivant) != T_L;
+        si x.suivant != nul {
+            paire(c, x, x.suivant, T_L);
+        }
+        rr(c, 11, 6, 4);
+        rr(c, 11, 3, 5);
+        rr(c, 11, 4, 1);
+        rr(c, 11, 1, 2);
+    } sinon si texte_egal(nom, "flottant_64") && t == T_W {
+        appel(c, Noeud { genre: N_APPEL, nom: "__qtod", premier: copier(x), ligne: e.ligne });
+    } sinon si texte_egal(nom, "flottant_64") {
+        interdit = !(t == 0 || t == T_F || t == T_D || t == T_L);
+        gen(c, x);
+        si t == 0 { rr(c, 99, 1, 1); }
+        si t == T_F { rr(c, 103, 1, 1); }
+        si t == T_L { rr(c, 105, 1, 1); }
+    } sinon si texte_egal(nom, "flottant_64_signe") {
+        interdit = t != 0;
+        gen(c, x);
+        rr(c, 100, 1, 1);
+    } sinon si texte_egal(nom, "flottant_64_de") {
+        interdit = t != 0 || x.suivant == nul || typ(c, x.suivant) != 0;
+        si x.suivant != nul {
+            deux(c, x, x.suivant);
+        }
+        rr(c, 11, 4, 1);
+        rr(c, 11, 1, 2);
+    } sinon si texte_egal(nom, "comme_flottant_64") {
+        interdit = t != T_L;
+        gen(c, x);
+    } sinon si texte_egal(nom, "arrondi_long") {
+        interdit = t != T_D;
+        gen(c, x);
+        rr(c, 107, 1, 1);
     } sinon si texte_egal(nom, "flottant_signe") {
         interdit = t != 0;
         gen(c, x);
@@ -3484,19 +4085,33 @@ fonction conversion(c: Ctx, e: Noeud) {
     } sinon si texte_egal(nom, "entier") {
         gen(c, x);
         si t == T_F { rr(c, 74, 1, 1); }
+        si t == T_D { rr(c, 101, 1, 1); }
     } sinon si texte_egal(nom, "arrondi") {
-        interdit = t != T_F;
+        interdit = t != T_F && t != T_D;
         gen(c, x);
-        rr(c, 75, 1, 1);
+        si t == T_D { rr(c, 102, 1, 1); } sinon { rr(c, 75, 1, 1); }
     } sinon si texte_egal(nom, "racine") {
-        gen_v(c, x, T_F);
-        rr(c, 71, 1, 1);
+        si t == T_D {
+            gen(c, x);
+            rr(c, 95, 1, 1);
+        } sinon {
+            gen_v(c, x, T_F);
+            rr(c, 71, 1, 1);
+        }
     } sinon si texte_egal(nom, "comme_flottant") || texte_egal(nom, "bits") {
-        interdit = t == T_L;
+        interdit = t == T_L || (t == T_D && texte_egal(nom, "comme_flottant"));
         gen(c, x);
     } sinon si texte_egal(nom, "long") {
         interdit = t == T_F;
-        gen_v(c, x, T_L);
+        si t == T_D {
+            gen(c, x);
+            rr(c, 106, 1, 1);
+        } sinon si t == T_W {
+            gen(c, x);
+            rr(c, 11, 4, 3);
+        } sinon {
+            gen_v(c, x, T_L);
+        }
     } sinon si texte_egal(nom, "long_signe") {
         interdit = t != 0;
         gen(c, x);
@@ -3510,8 +4125,16 @@ fonction conversion(c: Ctx, e: Noeud) {
         }
         rr(c, 11, 4, 1);
         rr(c, 11, 1, 2);
+    } sinon si t == T_W {
+        gen(c, x);
+        si texte_egal(nom, "bas") {
+            rr(c, 11, 4, 3);
+        } sinon {
+            rr(c, 11, 1, 4);
+            rr(c, 11, 4, 6);
+        }
     } sinon {
-        interdit = t != T_L;
+        interdit = t != T_L && t != T_D;
         gen(c, x);
         si texte_egal(nom, "haut") {
             rr(c, 11, 1, 4);
@@ -3526,11 +4149,37 @@ fonction conversion(c: Ctx, e: Noeud) {
 // abs, min et max pour les flottants et les longs, en ligne
 fonction surcharge(c: Ctx, e: Noeud, t) {
     soit a = e.premier;
+    si t == T_X {
+        soit px = liste();
+        ajouter_texte(px, "__pq_");
+        ajouter_texte(px, e.nom);
+        soit premier: Noeud = nul;
+        soit dernier: Noeud = nul;
+        soit y = a;
+        tantque y != nul {
+            soit bx = bits_x(c, y);
+            si dernier == nul { premier = bx; } sinon { dernier.suivant = bx; }
+            dernier = bx;
+            y = y.suivant;
+        }
+        appel(c, Noeud { genre: N_APPEL, nom: texte_de(px, 0, px.n), premier: premier, ligne: e.ligne });
+        retour;
+    }
+    si t == T_W {
+        soit pw = liste();
+        ajouter_texte(pw, "__q");
+        ajouter_texte(pw, e.nom);
+        appel(c, Noeud { genre: N_APPEL, nom: texte_de(pw, 0, pw.n), premier: a, ligne: e.ligne });
+        retour;
+    }
     si texte_egal(e.nom, "abs") {
         gen_v(c, a, t);
         si t == T_F {
             charger(c, 2, 2147483647);
             rrr(c, 20, 1, 1, 2);
+        } sinon si t == T_D {
+            charger(c, 2, 2147483647);
+            rrr(c, 20, 4, 4, 2);
         } sinon {
             soit fin = nouvelle_etiquette(c);
             charger(c, 8, SIGNE);
@@ -3555,6 +4204,10 @@ fonction surcharge(c: Ctx, e: Noeud, t) {
         si est_min { rrr(c, 69, 3, 2, 1); } sinon { rrr(c, 69, 3, 1, 2); }
         cmp(c, 3, 0);
         saut(c, 50, prendre);
+    } sinon si t == T_D {
+        si est_min { rrr(c, 97, 3, 2, 1); } sinon { rrr(c, 97, 3, 1, 2); }
+        cmp(c, 3, 0);
+        saut(c, 50, prendre);
     } sinon {
         si est_min {
             saut_long(c, "<", prendre, 2, 5, 1, 4);
@@ -3565,7 +4218,7 @@ fonction surcharge(c: Ctx, e: Noeud, t) {
     saut(c, 48, fin2);
     poser_etiquette(c, prendre);
     rr(c, 11, 1, 2);
-    si t == T_L {
+    si t == T_L || t == T_D {
         rr(c, 11, 4, 5);
     }
     poser_etiquette(c, fin2);
@@ -3577,8 +4230,14 @@ fonction appel(c: Ctx, e: Noeud) {
     si texte_egal(nom, "sortie") {
         gen(c, a);
         emettre(c, mot(36, 1, 0, 0));
-        si typ(c, a) == T_L {
+        soit ts = typ(c, a);
+        si ts == T_L || ts == T_D {
             emettre(c, mot(36, 4, 0, 0));
+        }
+        si quatre(ts) {
+            emettre(c, mot(36, 3, 0, 0));
+            emettre(c, mot(36, 4, 0, 0));
+            emettre(c, mot(36, 6, 0, 0));
         }
         retour;
     }
@@ -3708,6 +4367,9 @@ fonction appel(c: Ctx, e: Noeud) {
             soit suffixe = 0;
             si ta == T_F { suffixe = "_f"; }
             si ta == T_L { suffixe = "_l"; }
+            si ta == T_D { suffixe = "_d"; }
+            si ta == T_W { suffixe = "_w"; }
+            si ta == T_X { suffixe = "_x"; }
             si ta == T_LOG { suffixe = "_q"; }
             si suffixe != 0 {
                 soit l = liste();
@@ -3723,6 +4385,7 @@ fonction appel(c: Ctx, e: Noeud) {
         erreur_nom(c, e.ligne, "fonction inconnue :", nom);
         retour;
     }
+    soit etiq_appel = demander(c, f);   // comme vtx.py : la fonction est demandée avant la génération des arguments
     soit n = 0;
     soit p = f.params;
     tantque a != nul {
@@ -3733,9 +4396,15 @@ fonction appel(c: Ctx, e: Noeud) {
         gen_v(c, a, p.type);
         pousser(c, 1);
         n = n + 1;
-        si p.type == T_L {
+        si p.type == T_L || p.type == T_D {
             pousser(c, 4);
             n = n + 1;
+        }
+        si quatre(p.type) {
+            pousser(c, 3);
+            pousser(c, 4);
+            pousser(c, 6);
+            n = n + 3;
         }
         a = a.suivant;
         p = p.suivant;
@@ -3743,7 +4412,7 @@ fonction appel(c: Ctx, e: Noeud) {
     si p != nul {
         erreur_nom(c, e.ligne, "pas assez d'arguments pour", nom);
     }
-    saut(c, 51, demander(c, f));
+    saut(c, 51, etiq_appel);
     si n != 0 {
         rri(c, 6, 14, 14, n);
     }
@@ -3824,9 +4493,14 @@ fonction gen(c: Ctx, e: Noeud) {
         charger(c, 1, e.val);
     } sinon si g == N_FNOMBRE {
         charger(c, 1, e.val);
-    } sinon si g == N_LNOMBRE {
+    } sinon si g == N_LNOMBRE || g == N_DNOMBRE {
         charger(c, 1, e.val);
         charger(c, 4, e.nom);
+    } sinon si g == N_WNOMBRE || g == N_XNOMBRE {
+        charger(c, 1, e.val);
+        charger(c, 3, elem(c.tab_w, e.nom));
+        charger(c, 4, elem(c.tab_w, e.nom + 1));
+        charger(c, 6, elem(c.tab_w, e.nom + 2));
     } sinon si g == N_BLIT {
         charger(c, 1, e.val == 2);
     } sinon si g == N_QNOMBRE {
@@ -3848,8 +4522,13 @@ fonction gen(c: Ctx, e: Noeud) {
         } sinon {
             ldf(c, 1, vr.off);
         }
-        si vr.type == T_L {
+        si vr.type == T_L || vr.type == T_D {
             ldf(c, 4, vr.haut);
+        }
+        si quatre(vr.type) {
+            ldf(c, 3, vr.haut);
+            ldf(c, 4, vr.off - 2);
+            ldf(c, 6, vr.off - 3);
         }
     } sinon si g == N_ETIQ {
         ldi_etiquette(c, 1, etiquette_texte(c, e.nom));
@@ -3858,13 +4537,18 @@ fonction gen(c: Ctx, e: Noeud) {
         si tn == T_LOG {
             erreur(c, e.ligne, "« ~ » ne s'applique pas à un logique : utilisez non4() ou anti()");
         }
-        si tn == T_F {
+        si tn == T_F || tn == T_D || tn == T_X {
             erreur(c, e.ligne, "« ~ » ne s'applique pas à un flottant");
         }
         gen(c, e.a);
         rr(c, 18, 1, 1);
         si tn == T_L {
             rr(c, 18, 4, 4);
+        }
+        si tn == T_W {
+            rr(c, 18, 3, 3);
+            rr(c, 18, 4, 4);
+            rr(c, 18, 6, 6);
         }
     } sinon si g == N_NONLOG {
         soit lv = nouvelle_etiquette(c);
@@ -3924,7 +4608,11 @@ fonction gen(c: Ctx, e: Noeud) {
         soit p = e.premier;
         tantque p != nul {
             soit pos = position_champ(st, p.nom);
-            gen_v(c, p.a, champ_de(c, st, p.nom).type);
+            soit tpc = champ_de(c, st, p.nom).type;
+            si tpc == T_L || tpc == T_D || quatre(tpc) {
+                erreur(c, e.ligne, "un champ ne peut pas contenir un long, un flottant_64 ni quatre points du cube");
+            }
+            gen_v(c, p.a, tpc);
             rr(c, 11, 7, 1);
             depiler(c, 1);
             pousser(c, 1);
@@ -3961,6 +4649,85 @@ fonction code_operation(o) {
 }
 
 // Opérations sur des longs : en ligne, ou par le prélude (division, reste, décalages)
+// entier_128 : + - & | ^ en ligne sur les quatre mots ; * / % << >> par les fonctions du prélude (comme vtx.py expr_w)
+fonction gen_large(c: Ctx, e: Noeud) {
+    soit o = e.op;
+    soit l = e.ligne;
+    si texte_egal(o, "*") || texte_egal(o, "/") || texte_egal(o, "%") || texte_egal(o, "<<") || texte_egal(o, ">>") {
+        soit a = copier(e.a);
+        a.suivant = copier(e.b);
+        soit f = "__qmul";
+        si texte_egal(o, "<<") {
+            f = "__qshl";
+        }
+        si texte_egal(o, ">>") {
+            f = "__qsar";
+        }
+        si texte_egal(o, "/") || texte_egal(o, "%") {
+            f = "__qdiv";
+            a.suivant.suivant = nombre(texte_egal(o, "%"), l);
+        }
+        appel(c, Noeud { genre: N_APPEL, nom: f, premier: a, ligne: l });
+        retour;
+    }
+    paire(c, e.a, e.b, T_W);
+    si texte_egal(o, "+") {
+        rrr(c, 1, 1, 1, 2);
+        rrr(c, 76, 3, 3, 5);
+        rrr(c, 76, 4, 4, 7);
+        rrr(c, 76, 6, 6, 8);
+    } sinon si texte_egal(o, "-") {
+        rrr(c, 2, 1, 1, 2);
+        rrr(c, 77, 3, 3, 5);
+        rrr(c, 77, 4, 4, 7);
+        rrr(c, 77, 6, 6, 8);
+    } sinon si texte_egal(o, "&") || texte_egal(o, "|") || texte_egal(o, "^") {
+        soit k = code_operation(o);
+        rrr(c, k, 1, 1, 2);
+        rrr(c, k, 3, 3, 5);
+        rrr(c, k, 4, 4, 7);
+        rrr(c, k, 6, 6, 8);
+    } sinon {
+        erreur(c, l, "cet opérateur ne s'applique pas à un entier_128");
+    }
+}
+
+// flottant_petuar : tout par le prélude, sur ses quatre points vus comme un entier_petuar (bits)
+fonction gen_petuar(c: Ctx, e: Noeud) {
+    soit o = e.op;
+    soit l = e.ligne;
+    si texte_egal(o, "-") && ((e.a.genre == N_NOMBRE || e.a.genre == N_FNOMBRE) && e.a.val == 0
+            || e.a.genre == N_DNOMBRE && e.a.val == 0 && e.a.nom == 0) {
+        appel(c, appel_n("__pq_neg", bits_x(c, e.b), l));
+        retour;
+    }
+    soit f = 0;
+    si texte_egal(o, "+") { f = "__pq_add"; }
+    si texte_egal(o, "-") { f = "__pq_sub"; }
+    si texte_egal(o, "*") { f = "__pq_mul"; }
+    si texte_egal(o, "/") { f = "__pq_div"; }
+    si f == 0 {
+        erreur(c, l, "cet opérateur ne s'applique pas à un flottant_petuar");
+        retour;
+    }
+    soit ax = bits_x(c, e.a);
+    ax.suivant = bits_x(c, e.b);
+    appel(c, appel_n(f, ax, l));
+}
+
+fonction appel_n(nom, a: Noeud, l): Noeud {
+    retour Noeud { genre: N_APPEL, nom: nom, premier: a, ligne: l };
+}
+
+// bits(x) d'un flottant_petuar (élargi d'abord s'il le faut) : ses quatre points, vus comme un entier_petuar
+fonction bits_x(c: Ctx, a: Noeud): Noeud {
+    soit x = copier(a);
+    si typ(c, a) != T_X {
+        x = appel_n("flottant_petuar", x, a.ligne);
+    }
+    retour appel_n("bits", x, a.ligne);
+}
+
 fonction gen_long(c: Ctx, e: Noeud) {
     soit o = e.op;
     soit l = e.ligne;
@@ -4153,6 +4920,18 @@ fonction gen_bin(c: Ctx, e: Noeud) {
     si ta != T_LOG && tb != T_LOG && !est_struct(ta) && !est_struct(tb) {
         si est_comparaison(o) {
             soit tc = joindre_types(c, ta, tb, e.ligne);
+            si tc == T_X {
+                soit fc = "__pq_eq";
+                si texte_egal(o, "!=") { fc = "__pq_ne"; }
+                si texte_egal(o, "<") { fc = "__pq_lt"; }
+                si texte_egal(o, "<=") { fc = "__pq_le"; }
+                si texte_egal(o, ">") { fc = "__pq_gt"; }
+                si texte_egal(o, ">=") { fc = "__pq_ge"; }
+                soit ax = bits_x(c, e.a);
+                ax.suivant = bits_x(c, e.b);
+                appel(c, appel_n(fc, ax, e.ligne));
+                retour;
+            }
             si tc == T_F {
                 paire(c, e.a, e.b, T_F);
                 si texte_egal(o, "==") || texte_egal(o, "!=") { rrr(c, 68, 1, 1, 2); }
@@ -4160,6 +4939,55 @@ fonction gen_bin(c: Ctx, e: Noeud) {
                 si texte_egal(o, "<=") { rrr(c, 70, 1, 1, 2); }
                 si texte_egal(o, ">") { rrr(c, 69, 1, 2, 1); }
                 si texte_egal(o, ">=") { rrr(c, 70, 1, 2, 1); }
+                si texte_egal(o, "!=") {
+                    rri(c, 6, 2, 0, 1);
+                    rrr(c, 22, 1, 1, 2);
+                }
+                retour;
+            }
+            si tc == T_W {
+                si texte_egal(o, "==") || texte_egal(o, "!=") {
+                    paire(c, e.a, e.b, T_W);
+                    rrr(c, 22, 1, 1, 2);
+                    rrr(c, 22, 3, 3, 5);
+                    rrr(c, 22, 4, 4, 7);
+                    rrr(c, 22, 6, 6, 8);
+                    rrr(c, 21, 1, 1, 3);
+                    rrr(c, 21, 4, 4, 6);
+                    rrr(c, 21, 1, 1, 4);
+                    soit lvw = nouvelle_etiquette(c);
+                    soit lfw = nouvelle_etiquette(c);
+                    cmp(c, 1, 0);
+                    si texte_egal(o, "==") { saut(c, 49, lvw); } sinon { saut(c, 50, lvw); }
+                    rri(c, 6, 1, 0, 0);
+                    saut(c, 48, lfw);
+                    poser_etiquette(c, lvw);
+                    rri(c, 6, 1, 0, 1);
+                    poser_etiquette(c, lfw);
+                    retour;
+                }
+                soit pa = copier(e.a);
+                soit pb = copier(e.b);
+                si texte_egal(o, "<") || texte_egal(o, ">=") {
+                    pa.suivant = pb;
+                    appel(c, Noeud { genre: N_APPEL, nom: "__qlt", premier: pa, ligne: e.ligne });
+                } sinon {
+                    pb.suivant = pa;
+                    appel(c, Noeud { genre: N_APPEL, nom: "__qlt", premier: pb, ligne: e.ligne });
+                }
+                si texte_egal(o, "<=") || texte_egal(o, ">=") {
+                    rri(c, 6, 2, 0, 1);
+                    rrr(c, 22, 1, 1, 2);
+                }
+                retour;
+            }
+            si tc == T_D {
+                paire(c, e.a, e.b, T_D);
+                si texte_egal(o, "==") || texte_egal(o, "!=") { rrr(c, 96, 1, 1, 2); }
+                si texte_egal(o, "<") { rrr(c, 97, 1, 1, 2); }
+                si texte_egal(o, "<=") { rrr(c, 98, 1, 1, 2); }
+                si texte_egal(o, ">") { rrr(c, 97, 1, 2, 1); }
+                si texte_egal(o, ">=") { rrr(c, 98, 1, 2, 1); }
                 si texte_egal(o, "!=") {
                     rri(c, 6, 2, 0, 1);
                     rrr(c, 22, 1, 1, 2);
@@ -4192,6 +5020,29 @@ fonction gen_bin(c: Ctx, e: Noeud) {
                 si texte_egal(o, "-") { rrr(c, 65, 1, 1, 2); }
                 si texte_egal(o, "*") { rrr(c, 66, 1, 1, 2); }
                 si texte_egal(o, "/") { rrr(c, 67, 1, 1, 2); }
+                retour;
+            }
+            si t == T_W {
+                gen_large(c, e);
+                retour;
+            }
+            si t == T_X {
+                gen_petuar(c, e);
+                retour;
+            }
+            si t == T_D {
+                si texte_egal(o, "-") && ((e.a.genre == N_NOMBRE || e.a.genre == N_FNOMBRE) && e.a.val == 0
+                        || e.a.genre == N_DNOMBRE && e.a.val == 0 && e.a.nom == 0) {
+                    gen_v(c, e.b, T_D);
+                    charger(c, 2, SIGNE);
+                    rrr(c, 22, 4, 4, 2);
+                    retour;
+                }
+                paire(c, e.a, e.b, T_D);
+                si texte_egal(o, "+") { rrr(c, 91, 1, 1, 2); }
+                si texte_egal(o, "-") { rrr(c, 92, 1, 1, 2); }
+                si texte_egal(o, "*") { rrr(c, 93, 1, 1, 2); }
+                si texte_egal(o, "/") { rrr(c, 94, 1, 1, 2); }
                 retour;
             }
             si t == T_L {
@@ -4304,6 +5155,12 @@ fonction instr(c: Ctx, s: Noeud) {
     si c.lignes_dbg == 1 {
         noter_ligne(c, s.ligne);
     }
+    si g == N_SOIT && s.expl == 1 {
+        soit te = typ(c, s.a);
+        si te == T_F || te == T_L || te == T_D || te == T_W || te == T_X {
+            erreur(c, s.ligne, "conversion implicite impossible vers un entier : utilisez entier(), bas() ou bits()");
+        }
+    }
     si (g == N_SOIT || g == N_AFFECTER) && c.optim && reg_direct(c, s) {
         retour;
     }
@@ -4321,11 +5178,16 @@ fonction instr(c: Ctx, s: Noeud) {
         } sinon {
             stf(c, 1, v.off);
         }
-        si v.type == T_L {
+        si v.type == T_L || v.type == T_D {
             stf(c, 4, v.haut);
         }
+        si quatre(v.type) {
+            stf(c, 3, v.haut);
+            stf(c, 4, v.off - 2);
+            stf(c, 6, v.off - 3);
+        }
     } sinon si g == N_ECRIRE {
-        si typ(c, s.c) == T_L {
+        si typ(c, s.c) == T_L || typ(c, s.c) == T_D || quatre(typ(c, s.c)) {
             erreur(c, s.ligne, "un long occupe deux mots : écrivez bas(x) et haut(x) séparément");
         }
         soit qe: Quit = nul;
@@ -4362,7 +5224,7 @@ fonction instr(c: Ctx, s: Noeud) {
         soit t = typ(c, s.a);
         soit pos = position_champ(struct_numero(c, t), s.nom);
         soit tch = champ_de(c, struct_numero(c, t), s.nom).type;
-        si tch == T_L {
+        si tch == T_L || tch == T_D || quatre(tch) {
             erreur(c, s.ligne, "un champ ne peut pas contenir un long");
         }
         gen_v(c, s.c, tch);
@@ -4501,8 +5363,13 @@ fonction instr(c: Ctx, s: Noeud) {
     } sinon si g == N_RETOUR {
         si s.a == nul {
             rri(c, 6, 1, 0, 0);
-            si c.fcour.rtype == T_L {
+            si c.fcour.rtype == T_L || c.fcour.rtype == T_D {
                 rri(c, 6, 4, 0, 0);
+            }
+            si quatre(c.fcour.rtype) {
+                rri(c, 6, 3, 0, 0);
+                rri(c, 6, 4, 0, 0);
+                rri(c, 6, 6, 0, 0);
             }
         } sinon {
             gen_v(c, s.a, c.fcour.rtype);
@@ -4553,9 +5420,12 @@ fonction locales(c: Ctx, s: Noeud, nl) {
             } sinon {
                 nl = nl + 1;
                 c.vars = Var { nom: s.nom, off: 0 - nl, type: t, genre: genre, suivant: c.vars };
-                si t == T_L {
+                si t == T_L || t == T_D || quatre(t) {
                     nl = nl + 1;
                     c.vars.haut = 0 - nl;
+                }
+                si quatre(t) {
+                    nl = nl + 2;
                 }
             }
             si s.genre == N_POUR && !s.copie {
@@ -4604,7 +5474,11 @@ fonction placer(c: Ctx, p: Param, ligne) {
         }
         v = v.suivant;
     }
-    si p.type == T_L {
+    si quatre(p.type) {
+        c.vars = Var { nom: p.nom, off: o + 3, haut: o + 2, type: p.type, genre: 3, suivant: c.vars };
+        retour o + 4;
+    }
+    si p.type == T_L || p.type == T_D {
         c.vars = Var { nom: p.nom, off: o + 1, haut: o, type: p.type, genre: 3, suivant: c.vars };
         retour o + 2;
     }
@@ -5221,7 +6095,7 @@ fonction choisir_registres(c: Ctx, f: Fonction) {
         soit m: Var = nul;
         soit v = c.vars;
         tantque v != nul {
-            si v.reg == 0 && v.score >= 16 && v.type != T_L && !commence(v.nom, "__q") {
+            si v.reg == 0 && v.score >= 16 && v.type != T_L && v.type != T_D && !quatre(v.type) && !commence(v.nom, "__q") {
                 // à égalité, la plus haute dans le cadre (les décalages sont signés)
                 si m == nul || v.score > m.score || (v.score == m.score && (v.off ^ 2147483648) > (m.off ^ 2147483648)) {
                     m = v;
@@ -5315,8 +6189,13 @@ fonction fonction_code(c: Ctx, f: Fonction) {
     c.ffin = nouvelle_etiquette(c);
     instrs(c, f.corps);
     rri(c, 6, 1, 0, 0);
-    si f.rtype == T_L {
+    si f.rtype == T_L || f.rtype == T_D {
         rri(c, 6, 4, 0, 0);
+    }
+    si quatre(f.rtype) {
+        rri(c, 6, 3, 0, 0);
+        rri(c, 6, 4, 0, 0);
+        rri(c, 6, 6, 0, 0);
     }
     poser_etiquette(c, c.ffin);
     pour k dans 0..ng {
@@ -5678,7 +6557,7 @@ fonction remplacer_cumul(c: Ctx, n: Noeud, copies: Liste): Noeud {
     soit m = Noeud { genre: n.genre, op: n.op, val: n.val, nom: n.nom, a: remplacer_cumul(c, n.a, copies),
                      b: remplacer_cumul(c, n.b, copies), c: remplacer_cumul(c, n.c, copies),
                      premier: remplacer_liste(c, n.premier, copies), deuxieme: remplacer_liste(c, n.deuxieme, copies),
-                     ligne: n.ligne, zet: n.zet, zlo: n.zlo, zhi: n.zhi, copie: n.copie };
+                     ligne: n.ligne, zet: n.zet, zlo: n.zlo, zhi: n.zhi, copie: n.copie, expl: n.expl };
     si (n.genre == N_LIRE || n.genre == N_ECRIRE) && n.zet != 0 {
         pour i dans 0..copies.n / 4 {
             si elem(copies, 4 * i) == n.zet - 1 && elem(copies, 4 * i + 1) == n.zlo {
@@ -6838,7 +7717,7 @@ fonction prelude_utile(c: Ctx, t) {
         }
         j = j.suivant;
     }
-    soit g = "divs mods asr nouveau tableau longueur texte_egal texte ecrire afficher ecrire_car comme_logique qegal nb_bits __code_logique __lshl __lsar __ldiv __afficher_t __ecrire_t __texte_t __afficher_f __ecrire_f __texte_f __afficher_l __ecrire_l __texte_l __afficher_q __ecrire_q __texte_q __texte_plus __texte_tas __remplir __somme_f __trier_f __hyp_debut __hyp_noter __hyp_valider __hyp_annuler";
+    soit g = "divs mods asr nouveau tableau longueur texte_egal texte ecrire afficher ecrire_car comme_logique qegal nb_bits __code_logique __lshl __lsar __ldiv __afficher_t __ecrire_t __texte_t __afficher_f __ecrire_f __texte_f __afficher_l __ecrire_l __texte_l __afficher_d __ecrire_d __texte_d __afficher_w __ecrire_w __texte_w __qmul __qdiv __qshl __qsar __qlt __qabs __qmin __qmax __qtod __dtoq __afficher_q __ecrire_q __texte_q __afficher_x __ecrire_x __texte_x __pq_add __pq_sub __pq_mul __pq_div __pq_neg __pq_lt __pq_le __pq_gt __pq_ge __pq_eq __pq_ne __pq_racine __pq_de_e __pq_de_d __pq_de_l __pq_de_w __pq_vers_d __pq_vers_f __pq_vers_w __pq_vers_ieee __pq_de_ieee __pq_abs __pq_min __pq_max __texte_plus __texte_tas __remplir __somme_f __trier_f __hyp_debut __hyp_noter __hyp_valider __hyp_annuler";
     soit a = 0;
     tantque a < longueur(g) {
         soit b = a;
@@ -6951,7 +7830,7 @@ fonction constantes_predefinies(c: Ctx) {
 
 fonction principal() {
     soit c = Ctx { src: liste(), code: liste(), etiq: liste(), fix_pos: liste(), fix_etiq: liste(), fix_genre: liste(),
-                   vus: liste(), segs: liste(), pile: liste() };
+                   vus: liste(), segs: liste(), pile: liste(), tab_w: liste() };
     // entrées : le dossier du programme, un caractère par entrée, terminé par 0 (les fichiers importés y sont cherchés)
     soit d = liste();
     soit x = entrée();
@@ -7065,5 +7944,5 @@ fonction principal() {
 // Le prélude de vtx.py, mot pour mot (le test vérifie qu'il est identique) : ajouté à la fin du programme compilé,
 // sauf les fonctions que le programme définit lui-même.
 fonction texte_prelude() {
-    retour "\nfonction abs(x) { si x >= 2147483648 { retour 0 - x; } retour x; }\nfonction inf(a, b) { retour (a ^ 2147483648) < (b ^ 2147483648); }\nfonction sup(a, b) { retour (b ^ 2147483648) < (a ^ 2147483648); }\nfonction __hyp_debut() {\n    soit d = @3[16777201];\n    si d == 0 { @3[16777200] = 15728640; }\n    @3[16777201] = d + 1;\n    retour @3[16777200];\n}\nfonction __hyp_noter(e, a) {\n    soit p = @3[16777200];\n    @3[p] = e;\n    @3[p + 1] = a;\n    @3[p + 2] = @(e)[a];\n    @3[16777200] = p + 3;\n}\nfonction __hyp_valider() { @3[16777201] = @3[16777201] - 1; }\nfonction __hyp_annuler(p0) {\n    soit p = @3[16777200];\n    tantque p > p0 {\n        p = p - 3;\n        @(@3[p])[@3[p + 1]] = @3[p + 2];\n    }\n    @3[16777200] = p0;\n    @3[16777201] = @3[16777201] - 1;\n}\nfonction divs(a, b) {\n    soit n = 0;\n    si a >= 2147483648 { a = 0 - a; n = 1; }\n    si b >= 2147483648 { b = 0 - b; n = 1 - n; }\n    soit q = a / b;\n    si n == 1 { retour 0 - q; }\n    retour q;\n}\nfonction mods(a, b) {\n    soit n = 0;\n    si a >= 2147483648 { a = 0 - a; n = 1; }\n    si b >= 2147483648 { b = 0 - b; }\n    soit r = a % b;\n    si n == 1 { retour 0 - r; }\n    retour r;\n}\nfonction asr(a, n) {\n    soit k = n & 31;\n    soit r = a >> k;\n    si a >= 2147483648 && k > 0 { r = r | (4294967295 << (32 - k)); }\n    retour r;\n}\nfonction signe(x) { si x == 0 { retour 0; } si x >= 2147483648 { retour 4294967295; } retour 1; }\nfonction exp2(x: flottant): flottant {\n    si x < -126.0 { retour 0.0; }\n    si x >= 128.0 { retour comme_flottant(2139095040); }\n    soit n = entier(x);\n    si flottant_signe(n) > x { n = n - 1; }\n    soit f = x - flottant_signe(n);\n    soit p = 1.0 + f * (0.6931472 + f * (0.2402265 + f * (0.05550411 + f * (0.009618129 + f * (0.001333355\n        + f * (0.0001540353 + f * 0.00001525273))))));\n    retour comme_flottant(bits(p) + (n << 23));\n}\nfonction __lshl(a: long, n): long {\n    soit k = n & 63;\n    si k == 0 { retour a; }\n    si k >= 32 { retour long_de(bas(a) << (k - 32), 0); }\n    retour long_de((haut(a) << k) | (bas(a) >> (32 - k)), bas(a) << k);\n}\nfonction __lsar(a: long, n): long {\n    soit k = n & 63;\n    soit h = haut(a);\n    si k == 0 { retour a; }\n    soit s = 0;\n    si h >= 2147483648 { s = 4294967295; }\n    si k >= 32 { retour long_de(s, asr(h, k - 32)); }\n    retour long_de(asr(h, k), (bas(a) >> k) | (h << (32 - k)));\n}\nfonction __ldivu(ah, al, bh, bl, reste): long {\n    soit qh = 0; soit ql = 0; soit rh = 0; soit rl = 0;\n    pour i dans 0..64 {\n        soit bit = 0;\n        si i < 32 { bit = (ah >> (31 - i)) & 1; } sinon { bit = (al >> (63 - i)) & 1; }\n        soit dessus = rh >> 31;\n        rh = (rh << 1) | (rl >> 31);\n        rl = (rl << 1) | bit;\n        qh = (qh << 1) | (ql >> 31);\n        ql = ql << 1;\n        si dessus == 1 || rh > bh || (rh == bh && rl >= bl) {\n            soit emprunt = 0;\n            si rl < bl { emprunt = 1; }\n            rl = rl - bl;\n            rh = rh - bh - emprunt;\n            ql = ql | 1;\n        }\n    }\n    si reste == 1 { retour long_de(rh, rl); }\n    retour long_de(qh, ql);\n}\nfonction __ldiv(a: long, b: long, reste): long {\n    si b == 0L { si reste == 1 { retour a; } retour 0L - 1L; }\n    soit na = 0;\n    soit nb = 0;\n    soit x = a;\n    soit y = b;\n    si a < 0L { x = 0L - a; na = 1; }\n    si b < 0L { y = 0L - b; nb = 1; }\n    soit q = __ldivu(haut(x), bas(x), haut(y), bas(y), reste);\n    si reste == 1 { si na == 1 { retour 0L - q; } retour q; }\n    si na != nb { retour 0L - q; }\n    retour q;\n}\nfonction min(a, b) { si a < b { retour a; } retour b; }\nfonction max(a, b) { si a > b { retour a; } retour b; }\nfonction poids(ecart, temperature) {\n    soit d = ecart >> temperature;\n    si d < 16 { retour 65536 >> d; }\n    retour 0;\n}\nfonction gdotn(ea, a, eb, b, n) {\n    soit s = 0;\n    pour i dans 0..n { s = s + gdot(@(ea)[a + i], @(eb)[b + i]); }\n    retour s;\n}\nfonction copier(ed, d, es, s, n) {\n    pour i dans 0..n { @(ed)[d + i] = @(es)[s + i]; }\n}\nfonction melange(ev, bv, ep, bp, decalage, n) {\n    soit s = 0;\n    pour i dans 0..n { s = s + @(ep)[bp + i] * ((@(ev)[bv + i] >> decalage) & 255); }\n    retour s;\n}\nfonction longueur(t) {\n    retour @(t >> 24)[t & 16777215];\n}\nfonction car(t, i) {\n    retour @(t >> 24)[(t & 16777215) + 1 + i];\n}\nfonction changer_car(t, i, c) {\n    @(t >> 24)[(t & 16777215) + 1 + i] = c;\n}\nfonction texte_egal(a, b) {\n    soit n = longueur(a);\n    si n != longueur(b) {\n        retour 0;\n    }\n    pour i dans 0..n {\n        si car(a, i) != car(b, i) {\n            retour 0;\n        }\n    }\n    retour 1;\n}\nfonction nouveau(n) {\n    // chaque bloc a un mot d'en-tête (sa taille) juste avant lui ; un bloc libéré de la bonne taille est repris\n    // d'abord (listes par taille en @3[14680064 + taille], la liste 0 pour les grands blocs)\n    si n == 0 {\n        n = 1;\n    }\n    si n <= 64 {\n        soit t = @3[14680064 + n];\n        si t != 0 {\n            @3[14680064 + n] = @3[t];\n            @3[t - 1] = n;\n            pour i dans 0..n {\n                @3[t + i] = 0;\n            }\n            retour 50331648 + t;\n        }\n    }\n    // un grand bloc libre (premier assez grand) ; ce qui dépasse redevient un bloc libre\n    soit prec = 0;\n    soit g = @3[14680064];\n    tantque g != 0 {\n        soit taille = @3[g - 1] & 16777215;\n        si taille >= n {\n            si prec == 0 {\n                @3[14680064] = @3[g];\n            } sinon {\n                @3[prec] = @3[g];\n            }\n            si taille >= n + 2 {\n                __rendre_suite(g + n, g + taille);\n                taille = n;\n            }\n            @3[g - 1] = taille;\n            pour j dans 0..taille {\n                @3[g + j] = 0;\n            }\n            retour 50331648 + g;\n        }\n        prec = g;\n        g = @3[g];\n    }\n    soit p = @3[14680056];\n    si p == 0 {\n        p = 8388608;\n    }\n    si p + n + 1 > 14080048 {\n        // le tas est plein (les 600 000 derniers mots restent au ramasse-miettes) : une purge, puis un second essai\n        @3[14680056] = p;\n        // pas de purge automatique si la dernière n'a rendu presque rien (le tas est vraiment plein : on ne s'acharne\n        // pas, nouveau rend nul) ; une purge demandée (ramasser) lève cette interdiction\n        si @3[14680252] == 0 && @3[14680253] == 0 {\n            @3[14680252] = 1;\n            soit libres = ramasser();\n            @3[14680252] = 0;\n            si libres < 355715 {\n                @3[14680253] = 1;\n            }\n            si libres > n {\n                retour nouveau(n);\n            }\n        }\n        retour 0;\n    }\n    @3[p] = n;\n    @3[14680056] = p + n + 1;\n    pour k dans 0..n {\n        @3[p + 1 + k] = 0;\n    }\n    retour 50331649 + p;\n}\n// un bloc libre d'en-tête h0, qui s'étend jusqu'à h1 (exclu) : rangé dans la liste de sa taille\nfonction __rendre_suite(h0, h1) {\n    soit taille = h1 - h0 - 1;\n    @3[h0] = taille | 2147483648;\n    soit k = taille;\n    si k > 64 {\n        k = 0;\n    }\n    @3[h0 + 1] = @3[14680064 + k];\n    @3[14680064 + k] = h0 + 1;\n}\n// le tas est plein : le programme s'arrête avec un message clair (au lieu d'écrire à l'adresse 0)\nfonction __verifier(h) {\n    si h == 0 {\n        __service(10, 0);\n    }\n    retour h;\n}\nfonction liberer(h) {\n    soit p = h & 16777215;\n    si p <= 8388608 || p >= @3[14680056] {\n        retour;\n    }\n    soit taille = @3[p - 1];\n    si taille >= 2147483648 {\n        retour;\n    }\n    @3[p - 1] = taille | 2147483648;\n    soit k = taille;\n    si k > 64 {\n        k = 0;\n    }\n    @3[p] = @3[14680064 + k];\n    @3[14680064 + k] = p;\n}\nfonction tas_marque() {\n    soit p = @3[14680056];\n    si p == 0 {\n        p = 8388608;\n    }\n    retour p;\n}\nfonction tas_retour(m) {\n    @3[14680056] = m;\n    pour k dans 0..65 {\n        @3[14680064 + k] = 0;\n    }\n}\nfonction tas_utilise() {\n    soit p = @3[14680056];\n    si p == 0 {\n        retour 0;\n    }\n    retour p - 8388608;\n}\nfonction __marquer(v, deb, mar, pil, np, cap, haut) {\n    soit e = v >> 24;\n    si e != 3 && e != 0 {\n        retour np;\n    }\n    soit p = v & 16777215;\n    si p <= 8388608 || p >= haut {\n        retour np;\n    }\n    soit k = p - 8388608;\n    si ((@3[deb + k / 32] >> (k % 32)) & 1) == 0 || ((@3[mar + k / 32] >> (k % 32)) & 1) == 1 {\n        retour np;\n    }\n    @3[mar + k / 32] = @3[mar + k / 32] | (1 << (k % 32));\n    si np < cap {\n        @3[pil + np] = p;\n        retour np + 1;\n    }\n    @3[14680063] = 1;\n    retour np;\n}\nfonction ramasser() {\n    // ramasse-miettes : ce que tiennent les variables (la pile) et les poignées protégées reste ; tout bloc qu'on\n    // ne peut plus atteindre est libéré. Rend le nombre de mots libérés.\n    soit haut = @3[14680056];\n    si haut == 0 {\n        retour 0;\n    }\n    @3[14680254] = @3[14680254] + 1;\n    si @3[14680252] == 0 {\n        @3[14680253] = 0;\n    }\n    soit nm = (haut - 8388608) / 32 + 1;\n    soit deb = haut;\n    soit mar = haut + nm;\n    soit pil = haut + 2 * nm;\n    si pil + 1024 > 14680048 {\n        retour 0;\n    }\n    soit cap = 14680048 - pil;\n    pour i dans 0..(2 * nm) {\n        @3[deb + i] = 0;\n    }\n    soit h = 8388608;\n    tantque h < haut {\n        soit kb = h + 1 - 8388608;\n        @3[deb + kb / 32] = @3[deb + kb / 32] | (1 << (kb % 32));\n        h = h + 1 + (@3[h] & 16777215);\n    }\n    @3[14680063] = 0;\n    soit np = 0;\n    pour a dans pile()..8388608 {\n        np = __marquer(@0[a], deb, mar, pil, np, cap, haut);\n    }\n    pour r dans 0..@3[14680200] {\n        np = __marquer(@3[14680201 + r], deb, mar, pil, np, cap, haut);\n    }\n    tantque np > 0 {\n        np = np - 1;\n        soit p = @3[pil + np];\n        soit taille = @3[p - 1];\n        si taille < 2147483648 {\n            pour j dans 0..taille {\n                np = __marquer(@3[p + j], deb, mar, pil, np, cap, haut);\n            }\n        }\n    }\n    si @3[14680063] == 1 {\n        retour 0;\n    }\n    // balayage : les listes de blocs libres sont refaites ; des blocs libres voisins sont fondus en un seul ; une suite\n    // libre qui touche le sommet fait redescendre le tas\n    pour k2 dans 0..65 {\n        @3[14680064 + k2] = 0;\n    }\n    soit libres = 0;\n    soit debut_libre = 0;\n    h = 8388608;\n    tantque h < haut {\n        soit b = h + 1;\n        soit t2 = @3[h];\n        soit kb2 = b - 8388608;\n        si t2 >= 2147483648 || ((@3[mar + kb2 / 32] >> (kb2 % 32)) & 1) == 0 {\n            si t2 < 2147483648 {\n                libres = libres + t2;\n            }\n            si debut_libre == 0 {\n                debut_libre = h;\n            }\n        } sinon si debut_libre != 0 {\n            __rendre_suite(debut_libre, h);\n            debut_libre = 0;\n        }\n        h = b + (t2 & 16777215);\n    }\n    si debut_libre != 0 {\n        @3[14680056] = debut_libre;\n    }\n    retour libres;\n}\nfonction purges() {\n    retour @3[14680254];\n}\nfonction proteger(h) {\n    soit n = @3[14680200];\n    si n < 50 {\n        @3[14680201 + n] = h;\n        @3[14680200] = n + 1;\n    }\n}\nfonction sauver_bloc(nom, adr, n) {\n    @3[14680060] = nom;\n    @3[14680061] = adr;\n    @3[14680062] = n;\n    retour __service(6, 0);\n}\nfonction charger_bloc(nom, adr, n) {\n    @3[14680060] = nom;\n    @3[14680061] = adr;\n    @3[14680062] = n;\n    retour __service(7, 0);\n}\nfonction __nom_ent(nom) {\n    soit n = longueur(nom);\n    soit t = texte_neuf(n + 4);\n    pour i dans 0..n {\n        changer_car(t, i, car(nom, i));\n    }\n    changer_car(t, n, 46);\n    changer_car(t, n + 1, 101);\n    changer_car(t, n + 2, 110);\n    changer_car(t, n + 3, 116);\n    retour t;\n}\nfonction sauver_tas(nom, racine) {\n    // tout le tas dans le fichier « nom », et son en-tête (sommet, listes libres, racine, format) dans « nom.ent »\n    @3[14680063] = racine;\n    @3[14680255] = 3;\n    soit haut = tas_marque();\n    soit e = __nom_ent(nom);\n    soit r = sauver_bloc(e, 50331648 + 14680056, 200);\n    si r == 4294967295 {\n        retour r;\n    }\n    retour sauver_bloc(nom, 50331648 + 8388608, haut - 8388608);\n}\nfonction charger_tas(nom) {\n    // rend la racine rangée par sauver_tas, ou 0 si le fichier n'existe pas\n    // l'en-tête est lu à part (dans la réserve du ramasse-miettes) : un fichier absent, ou d'un autre format, ne\n    // touche à rien et rend 0\n    soit e = __nom_ent(nom);\n    si charger_bloc(e, 50331648 + 14400000, 200) != 200 || @3[14400199] != 3 {\n        retour 0;\n    }\n    pour i dans 0..200 {\n        @3[14680056 + i] = @3[14400000 + i];\n    }\n    charger_bloc(nom, 50331648 + 8388608, @3[14680056] - 8388608);\n    retour @3[14680063];\n}\nfonction ecrire_texte(c, t) {\n    pour i dans 0..longueur(t) {\n        ecrire_car(c, car(t, i));\n    }\n}\nfonction ecrire_nombre(c, n) {\n    si n >= 10 {\n        ecrire_nombre(c, n / 10);\n    }\n    ecrire_car(c, 48 + n % 10);\n}\nfonction texte_neuf(n) {\n    soit t = __verifier(nouveau(n + 1));\n    @(t >> 24)[t & 16777215] = n;\n    retour t;\n}\nfonction __texte_tas(t): texte {\n    // un texte rangé dans le tas (champ, tableau, dictionnaire) : un texte écrit dans le programme (gardé avec le code, à\n    // l'étage 0) est recopié dans le tas, pour qu'une mémoire sauvée (sauver_tas) reste juste quand le programme change\n    si t == 0 || (t >> 24) != 0 {\n        retour t;\n    }\n    soit n = longueur(t);\n    soit r = texte_neuf(n);\n    pour i dans 0..n {\n        changer_car(r, i, car(t, i));\n    }\n    retour r;\n}\nfonction __mettre(c, x) {\n    si c < 65536 {\n        ecrire_car(c, x);\n    } sinon {\n        soit e = c >> 24;\n        soit a = c & 16777215;\n        soit n = @(e)[a];\n        @(e)[a + 1 + n] = x;\n        @(e)[a] = n + 1;\n    }\n}\nfonction __mettre_nombre(c, n) {\n    si n >= 10 {\n        __mettre_nombre(c, n / 10);\n    }\n    __mettre(c, 48 + n % 10);\n}\nfonction ecrire_entier(c, n) {\n    si n >= 2147483648 {\n        __mettre(c, 45);\n        n = 0 - n;\n    }\n    __mettre_nombre(c, n);\n}\nfonction ecrire_hexa(c, n) {\n    __mettre(c, 35);\n    pour i dans 0..8 {\n        soit k = (n >> (28 - 4 * i)) & 15;\n        si k < 10 { __mettre(c, 48 + k); } sinon { __mettre(c, 55 + k); }\n    }\n}\nfonction __ecrire_chiffres(c, q, d) {\n    si d > 1 {\n        __ecrire_chiffres(c, q / 10, d - 1);\n    }\n    __mettre(c, 48 + q % 10);\n}\nfonction ecrire_flottant(c, x: flottant, d) {\n    soit b = bits(x);\n    si b >= 2147483648 {\n        __mettre(c, 45);\n        b = b & 2147483647;\n    }\n    si b >= 2139095040 {\n        si b == 2139095040 {\n            __mettre(c, 105); __mettre(c, 110); __mettre(c, 102);\n        } sinon {\n            __mettre(c, 110); __mettre(c, 97); __mettre(c, 110);\n        }\n        retour;\n    }\n    soit y = comme_flottant(b);\n    soit auto = 0;\n    si d == 4294967295 { auto = 1; d = 6; }\n    si d > 9 { d = 9; }\n    soit e = 0;\n    soit eneg = 0;\n    si y >= 10000000.0 || (auto == 1 && y < 0.0001 && b != 0) {\n        tantque y >= 10.0 { y = y / 10.0; e = e + 1; }\n        tantque y < 1.0 { y = y * 10.0; e = e + 1; eneg = 1; }\n    }\n    soit ip = entier(y);\n    si auto == 1 {\n        soit nc = 1;\n        soit t = ip / 10;\n        tantque t > 0 { nc = nc + 1; t = t / 10; }\n        si nc >= 7 { d = 1; } sinon { d = 7 - nc; }\n    }\n    soit pe = 1;\n    pour i dans 0..d { pe = pe * 10; }\n    soit q = arrondi((y - flottant(ip)) * flottant(pe));\n    si q >= pe { ip = ip + 1; q = q - pe; }\n    si auto == 1 {\n        tantque d > 1 && q % 10 == 0 { q = q / 10; d = d - 1; }\n    }\n    __mettre_nombre(c, ip);\n    si d > 0 {\n        __mettre(c, 46);\n        __ecrire_chiffres(c, q, d);\n    }\n    si e > 0 {\n        __mettre(c, 101);\n        si eneg == 1 { __mettre(c, 45); }\n        __mettre_nombre(c, e);\n    }\n}\nfonction ecrire_long(c, a: long) {\n    si a < 0L {\n        __mettre(c, 45);\n        a = 0L - a;\n    }\n    si a >= 10L {\n        ecrire_long(c, a / 10L);\n    }\n    __mettre(c, 48 + bas(a % 10L));\n}\nfonction ecrire_logique(c, l: logique) {\n    selon l {\n        vrai { __mettre(c, 118); __mettre(c, 114); __mettre(c, 97); __mettre(c, 105); }\n        faux { __mettre(c, 102); __mettre(c, 97); __mettre(c, 117); __mettre(c, 120); }\n        inconnu {\n            __mettre(c, 105); __mettre(c, 110); __mettre(c, 99); __mettre(c, 111);\n            __mettre(c, 110); __mettre(c, 110); __mettre(c, 117);\n        }\n        variable {\n            __mettre(c, 118); __mettre(c, 97); __mettre(c, 114); __mettre(c, 105);\n            __mettre(c, 97); __mettre(c, 98); __mettre(c, 108); __mettre(c, 101);\n        }\n    }\n}\nfonction afficher(x) {\n    ecrire_entier(1, x);\n    ecrire_car(1, 10);\n}\nfonction __afficher_f(x: flottant) {\n    ecrire_flottant(1, x, 4294967295);\n    ecrire_car(1, 10);\n}\nfonction __afficher_l(x: long) {\n    ecrire_long(1, x);\n    ecrire_car(1, 10);\n}\nfonction __afficher_q(x: logique) {\n    ecrire_logique(1, x);\n    ecrire_car(1, 10);\n}\nfonction __afficher_t(t) {\n    ecrire_texte(1, t);\n    ecrire_car(1, 10);\n}\nfonction ecrire(x) {\n    ecrire_entier(1, x);\n}\nfonction __ecrire_f(x: flottant) {\n    ecrire_flottant(1, x, 4294967295);\n}\nfonction __ecrire_l(x: long) {\n    ecrire_long(1, x);\n}\nfonction __ecrire_q(x: logique) {\n    ecrire_logique(1, x);\n}\nfonction __ecrire_t(t) {\n    ecrire_texte(1, t);\n}\nfonction __texte_t(t): texte {\n    retour t;\n}\nfonction __texte_fin(t): texte {\n    // le dernier bloc du tas prend juste la place du texte écrit ; un bloc repris ailleurs garde sa taille\n    soit p = t & 16777215;\n    si p + (@3[p - 1] & 16777215) == @3[14680056] {\n        @3[p - 1] = 1 + longueur(t);\n        @3[14680056] = p + 1 + longueur(t);\n    }\n    retour t;\n}\nfonction texte(n): texte {\n    soit t = __verifier(nouveau(16));\n    ecrire_entier(t, n);\n    retour __texte_fin(t);\n}\nfonction __texte_f(x: flottant): texte {\n    soit t = __verifier(nouveau(40));\n    ecrire_flottant(t, x, 4294967295);\n    retour __texte_fin(t);\n}\nfonction __texte_l(x: long): texte {\n    soit t = __verifier(nouveau(24));\n    ecrire_long(t, x);\n    retour __texte_fin(t);\n}\nfonction __texte_q(x: logique): texte {\n    soit t = __verifier(nouveau(12));\n    ecrire_logique(t, x);\n    retour __texte_fin(t);\n}\nfonction __texte_plus(a, b): texte {\n    soit na = longueur(a);\n    soit nb = longueur(b);\n    soit t = texte_neuf(na + nb);\n    pour i dans 0..na {\n        changer_car(t, i, car(a, i));\n    }\n    pour i dans 0..nb {\n        changer_car(t, na + i, car(b, i));\n    }\n    retour t;\n}\nfonction sous_texte(t, debut, fin): texte {\n    si fin > longueur(t) {\n        fin = longueur(t);\n    }\n    si debut >= fin {\n        retour texte_neuf(0);\n    }\n    soit r = texte_neuf(fin - debut);\n    pour i dans debut..fin {\n        changer_car(r, i - debut, car(t, i));\n    }\n    retour r;\n}\nfonction position(t, motif) {\n    soit n = longueur(t);\n    soit m = longueur(motif);\n    si m > n {\n        retour 4294967295;\n    }\n    pour i dans 0..n - m + 1 {\n        soit k = 0;\n        tantque k < m && car(t, i + k) == car(motif, k) {\n            k = k + 1;\n        }\n        si k == m {\n            retour i;\n        }\n    }\n    retour 4294967295;\n}\nfonction nombre(t) {\n    soit r = 0;\n    soit i = 0;\n    soit neg = 0;\n    si longueur(t) > 0 && car(t, 0) == 45 {\n        neg = 1;\n        i = 1;\n    }\n    tantque i < longueur(t) && car(t, i) >= 48 && car(t, i) <= 57 {\n        r = r * 10 + car(t, i) - 48;\n        i = i + 1;\n    }\n    si neg == 1 {\n        retour 0 - r;\n    }\n    retour r;\n}\nfonction pi(): flottant { retour 3.1415927; }\nfonction plancher(x: flottant): flottant {\n    si !(abs(x) < 8388608.0) { retour x; }\n    soit t = flottant_signe(entier(x));\n    si t > x { t = t - 1.0; }\n    retour t;\n}\nfonction plafond(x: flottant): flottant {\n    soit t = plancher(x);\n    si t < x { t = t + 1.0; }\n    retour t;\n}\nfonction __sin_cos(x: flottant, decale): flottant {\n    si !(abs(x) < 100000000.0) { retour comme_flottant(2143289344); }\n    soit k = arrondi(x * 0.63661975);\n    soit fk = flottant_signe(k);\n    soit r = ((x - fk * 1.5703125) - fk * 0.00048382679) - fk * 0.0000000000025632829;\n    soit s = r * r;\n    soit q = (k + decale) & 3;\n    soit v = 0.0;\n    si (q & 1) == 0 {\n        v = r * (1.0 - s * (0.16666667 - s * (0.0083333333 - s * (0.0001984127 - s * 0.0000027557319))));\n    } sinon {\n        v = 1.0 - s * (0.5 - s * (0.041666667 - s * (0.0013888889 - s * (0.000024801587 - s * 0.00000027557319))));\n    }\n    si q >= 2 { retour 0.0 - v; }\n    retour v;\n}\nfonction sinus(x: flottant): flottant { retour __sin_cos(x, 0); }\nfonction cosinus(x: flottant): flottant { retour __sin_cos(x, 1); }\nfonction tangente(x: flottant): flottant { retour __sin_cos(x, 0) / __sin_cos(x, 1); }\nfonction exponentielle(x: flottant): flottant {\n    si x > 88.72284 { retour comme_flottant(2139095040); }\n    si x < -103.97208 { retour 0.0; }\n    soit n = arrondi(x * 1.442695);\n    soit fn = flottant_signe(n);\n    soit r = (x - fn * 0.69314575) - fn * 0.0000014286068;\n    soit p = 1.0 + r * (1.0 + r * (0.5 + r * (0.16666667 + r * (0.041666667 + r * (0.0083333333\n        + r * (0.0013888889 + r * 0.0001984127))))));\n    si n .< 0 - 125 {\n        retour comme_flottant(bits(p) + ((n + 64) << 23)) * 0.0000000000000000000542101086242752217;\n    }\n    si n .> 127 {\n        retour comme_flottant(bits(p) + ((n - 1) << 23)) * 2.0;\n    }\n    retour comme_flottant(bits(p) + (n << 23));\n}\nfonction logarithme(x: flottant): flottant {\n    si x != x || x < 0.0 { retour comme_flottant(2143289344); }\n    si x == 0.0 { retour comme_flottant(4286578688); }\n    si x > 340282350000000000000000000000000000000.0 { retour x; }\n    soit b = bits(x);\n    soit e = 0;\n    si b < 8388608 {\n        b = bits(x * 8388608.0);\n        e = 0 - 23;\n    }\n    e = e + (b >> 23) - 127;\n    soit m = comme_flottant((b & 8388607) | 1065353216);\n    si m > 1.4142135 {\n        m = m * 0.5;\n        e = e + 1;\n    }\n    soit f = (m - 1.0) / (m + 1.0);\n    soit s = f * f;\n    soit lm = 2.0 * f * (1.0 + s * (0.33333333 + s * (0.2 + s * (0.14285714 + s * (0.11111111 + s * 0.09090909)))));\n    soit fe = flottant_signe(e);\n    retour fe * 0.69314575 + (fe * 0.0000014286068 + lm);\n}\nfonction puissance(x: flottant, y: flottant): flottant {\n    si y == 0.0 { retour 1.0; }\n    si x == 0.0 {\n        si y < 0.0 { retour comme_flottant(2139095040); }\n        retour 0.0;\n    }\n    si x < 0.0 {\n        si plancher(y) != y { retour comme_flottant(2143289344); }\n        soit r = exponentielle(y * logarithme(0.0 - x));\n        si abs(y) < 16777216.0 && (entier(abs(y)) & 1) == 1 { retour 0.0 - r; }\n        retour r;\n    }\n    retour exponentielle(y * logarithme(x));\n}\nfonction arctangente(x: flottant): flottant {\n    si x != x { retour x; }\n    soit a = abs(x);\n    soit inv = 0;\n    si a > 1.0 { a = 1.0 / a; inv = 1; }\n    soit ajout = 0.0;\n    si a > 0.26794919 {\n        a = (a * 1.7320508 - 1.0) / (a + 1.7320508);\n        ajout = 0.52359878;\n    }\n    soit s = a * a;\n    soit v = ajout + a * (1.0 - s * (0.33333333 - s * (0.2 - s * (0.14285714 - s * (0.11111111 - s * 0.09090909)))));\n    si inv == 1 { v = 1.5707964 - v; }\n    si x < 0.0 { retour 0.0 - v; }\n    retour v;\n}\nfonction arctangente2(y: flottant, x: flottant): flottant {\n    si x > 0.0 { retour arctangente(y / x); }\n    si x < 0.0 {\n        si y < 0.0 { retour arctangente(y / x) - 3.1415927; }\n        retour arctangente(y / x) + 3.1415927;\n    }\n    si y > 0.0 { retour 1.5707964; }\n    si y < 0.0 { retour 0.0 - 1.5707964; }\n    retour 0.0;\n}\nfonction arcsinus(x: flottant): flottant {\n    si !(abs(x) <= 1.0) { retour comme_flottant(2143289344); }\n    si abs(x) == 1.0 {\n        si x > 0.0 { retour 1.5707964; }\n        retour 0.0 - 1.5707964;\n    }\n    retour arctangente(x / racine(1.0 - x * x));\n}\nfonction arccosinus(x: flottant): flottant {\n    si !(abs(x) <= 1.0) { retour comme_flottant(2143289344); }\n    retour 1.5707964 - arcsinus(x);\n}\nfonction graine(n) {\n    soit x = n ^ 2463534242;\n    si x == 0 { x = 1; }\n    @3[14680057] = x;\n    pour i dans 0..8 { hasard_mot(); }\n}\nfonction hasard_mot() {\n    soit x = @3[14680057];\n    si x == 0 { x = 2463534242; }\n    x = x ^ (x << 13);\n    x = x ^ (x >> 17);\n    x = x ^ (x << 5);\n    @3[14680057] = x;\n    retour x;\n}\nfonction hasard(n) {\n    si n == 0 { retour hasard_mot(); }\n    retour hasard_mot() % n;\n}\nfonction hasard_entre(a, b) {\n    retour a + hasard(b - a + 1);\n}\nfonction hasard_flottant(): flottant {\n    retour flottant(hasard_mot() >> 8) * 0.000000059604645;\n}\nfonction graine_bruit() {\n    graine(bruit());\n}\nfonction bruit_logique(): logique {\n    retour comme_logique(bruit());\n}\nfonction tableau(n) {\n    soit h = __verifier(nouveau(3));\n    soit p = h & 16777215;\n    soit cap = n;\n    si cap < 4 {\n        cap = 4;\n    }\n    @3[p] = n;\n    @3[p + 1] = cap;\n    @3[p + 2] = __verifier(nouveau(cap)) & 16777215;\n    retour h;\n}\nfonction __remplir(t, i, v) {\n    @3[@3[(t & 16777215) + 2] + i] = v;\n    retour t;\n}\nfonction __ajouter(t, v) {\n    soit p = t & 16777215;\n    soit n = @3[p];\n    soit cap = @3[p + 1];\n    soit d = @3[p + 2];\n    si n == cap {\n        soit d2 = __verifier(nouveau(2 * cap)) & 16777215;\n        pour i dans 0..n {\n            @3[d2 + i] = @3[d + i];\n        }\n        liberer(50331648 + d);\n        d = d2;\n        @3[p + 1] = 2 * cap;\n        @3[p + 2] = d;\n    }\n    @3[d + n] = v;\n    @3[p] = n + 1;\n}\nfonction ajouter(t, v) {\n    __ajouter(t, v);\n}\nfonction retirer(t) {\n    soit p = t & 16777215;\n    soit n = @3[p];\n    si n == 0 {\n        retour 0;\n    }\n    @3[p] = n - 1;\n    retour @3[@3[p + 2] + n - 1];\n}\nfonction inserer(t, i, v) {\n    __ajouter(t, 0);\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit k = @3[p] - 1;\n    tantque k > i {\n        @3[d + k] = @3[d + k - 1];\n        k = k - 1;\n    }\n    @3[d + i] = v;\n}\nfonction enlever(t, i) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit v = @3[d + i];\n    pour k dans i..n - 1 {\n        @3[d + k] = @3[d + k + 1];\n    }\n    @3[p] = n - 1;\n    retour v;\n}\nfonction vider(t) {\n    @3[t & 16777215] = 0;\n}\nfonction indice(t, v) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    pour k dans 0..@3[p] {\n        si @3[d + k] == v {\n            retour k;\n        }\n    }\n    retour 4294967295;\n}\nfonction contient(t, v) {\n    retour indice(t, v) != 4294967295;\n}\nfonction somme(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit s = 0;\n    pour k dans 0..@3[p] {\n        s = s + @3[d + k];\n    }\n    retour s;\n}\nfonction accorder(etage, f) {\n    // l'étage regarde désormais le cube de fréquence f (les autres cubes gardent leur contenu) ; rend l'ancienne\n    retour __service(8, (f << 2) | (etage & 3));\n}\nfonction frequence(etage) {\n    retour __service(9, etage & 3);\n}\nfonction parler(t) {\n    soit c = ouvrir_ecriture(\"voix:\");\n    si c != 4294967295 {\n        ecrire_texte(c, t);\n        fermer(c);\n    }\n}\nfonction ecran(l, h) {\n    @3[14680058] = l;\n    @3[14680059] = h;\n    pour i dans 0..(l * h) {\n        @1[i] = 0;\n    }\n}\nfonction rgb(r, g, b) {\n    retour ((r & 255) << 24) | ((g & 255) << 16) | ((b & 255) << 8) | 255;\n}\nfonction pixel(x, y, c) {\n    soit l = @3[14680058];\n    si x < l && y < @3[14680059] {\n        @1[y * l + x] = c;\n    }\n}\nfonction rectangle(x, y, l, h, c) {\n    pour j dans 0..h {\n        pour i dans 0..l {\n            pixel(x + i, y + j, c);\n        }\n    }\n}\nfonction disque(cx, cy, r, c) {\n    pour j dans 0..(2 * r + 1) {\n        pour i dans 0..(2 * r + 1) {\n            soit dx = i - r;\n            soit dy = j - r;\n            si dx * dx + dy * dy <= r * r {\n                pixel(cx + dx, cy + dy, c);\n            }\n        }\n    }\n}\nfonction trait(x0, y0, x1, y1, c) {\n    soit dx = abs(x1 - x0);\n    soit dy = abs(y1 - y0);\n    soit sx = 1;\n    si x1 .< x0 {\n        sx = 0 - 1;\n    }\n    soit sy = 1;\n    si y1 .< y0 {\n        sy = 0 - 1;\n    }\n    soit err = dx - dy;\n    soit fini = 0;\n    tantque fini == 0 {\n        pixel(x0, y0, c);\n        si x0 == x1 && y0 == y1 {\n            fini = 1;\n        } sinon {\n            soit e2 = 2 * err;\n            si e2 .> 0 - dy {\n                err = err - dy;\n                x0 = x0 + sx;\n            }\n            si e2 .< dx {\n                err = err + dx;\n                y0 = y0 + sy;\n            }\n        }\n    }\n}\nfonction __somme_f(t): flottant {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit s = 0.0;\n    pour k dans 0..@3[p] {\n        s = s + comme_flottant(@3[d + k]);\n    }\n    retour s;\n}\nfonction __cle_f(b) {\n    si b >= 2147483648 {\n        retour ~b;\n    }\n    retour b | 2147483648;\n}\nfonction __trier_f(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit ecart = n / 2;\n    tantque ecart > 0 {\n        pour i dans ecart..n {\n            soit x = @3[d + i];\n            soit j = i;\n            tantque j >= ecart && __cle_f(@3[d + j - ecart]) > __cle_f(x) {\n                @3[d + j] = @3[d + j - ecart];\n                j = j - ecart;\n            }\n            @3[d + j] = x;\n        }\n        ecart = ecart / 2;\n    }\n}\nfonction inverser(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit a = 0;\n    soit b = @3[p] - 1;\n    tantque a .< b {\n        soit x = @3[d + a];\n        @3[d + a] = @3[d + b];\n        @3[d + b] = x;\n        a = a + 1;\n        b = b - 1;\n    }\n}\nfonction copie(t) {\n    soit n = @3[t & 16777215];\n    soit r = tableau(n);\n    soit ds = @3[(t & 16777215) + 2];\n    soit dr = @3[(r & 16777215) + 2];\n    pour k dans 0..n {\n        @3[dr + k] = @3[ds + k];\n    }\n    retour r;\n}\nfonction trier(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit ecart = n / 2;\n    tantque ecart > 0 {\n        pour i dans ecart..n {\n            soit x = @3[d + i];\n            soit j = i;\n            tantque j >= ecart && (@3[d + j - ecart] ^ 2147483648) > (x ^ 2147483648) {\n                @3[d + j] = @3[d + j - ecart];\n                j = j - ecart;\n            }\n            @3[d + j] = x;\n        }\n        ecart = ecart / 2;\n    }\n}\nfonction __hache(t) {\n    soit h = 2166136261;\n    pour i dans 0..longueur(t) {\n        h = (h ^ car(t, i)) * 16777619;\n    }\n    retour h;\n}\nfonction __dico(ouvert) {\n    soit h = __verifier(nouveau(6));\n    soit p = h & 16777215;\n    @3[p + 1] = 16;\n    @3[p + 2] = __verifier(nouveau(16)) & 16777215;\n    @3[p + 3] = __verifier(nouveau(16)) & 16777215;\n    @3[p + 4] = __verifier(nouveau(16)) & 16777215;\n    @3[p + 5] = ouvert;\n    retour h;\n}\nfonction dico() {\n    retour __dico(0);\n}\nfonction dico_ouvert() {\n    retour __dico(1);\n}\nfonction __place(d, cle) {\n    soit p = d & 16777215;\n    soit cap = @3[p + 1];\n    soit ks = @3[p + 2];\n    soit i = __hache(cle) & (cap - 1);\n    tantque @3[ks + i] != 0 && texte_egal(@3[ks + i], cle) == 0 {\n        i = (i + 1) & (cap - 1);\n    }\n    retour i;\n}\nfonction __remettre(d, cle, v, q) {\n    soit p = d & 16777215;\n    soit i = __place(d, cle);\n    si @3[@3[p + 2] + i] == 0 {\n        @3[@3[p + 2] + i] = cle;\n        @3[p] = @3[p] + 1;\n    }\n    @3[@3[p + 3] + i] = v;\n    @3[@3[p + 4] + i] = q;\n}\nfonction __case(d, cle) {\n    soit p = d & 16777215;\n    si (@3[p] + 1) * 4 > @3[p + 1] * 3 {\n        soit cap = @3[p + 1];\n        soit ks = @3[p + 2];\n        soit vs = @3[p + 3];\n        soit qs = @3[p + 4];\n        @3[p] = 0;\n        @3[p + 1] = 2 * cap;\n        @3[p + 2] = __verifier(nouveau(2 * cap)) & 16777215;\n        @3[p + 3] = __verifier(nouveau(2 * cap)) & 16777215;\n        @3[p + 4] = __verifier(nouveau(2 * cap)) & 16777215;\n        pour k dans 0..cap {\n            si @3[ks + k] != 0 {\n                __remettre(d, @3[ks + k], @3[vs + k], @3[qs + k]);\n            }\n        }\n        liberer(50331648 + ks);\n        liberer(50331648 + vs);\n        liberer(50331648 + qs);\n    }\n    soit i = __place(d, cle);\n    si @3[@3[p + 2] + i] == 0 {\n        @3[@3[p + 2] + i] = cle;\n        @3[p] = @3[p] + 1;\n    }\n    retour i;\n}\nfonction ranger(d, cle, v) {\n    soit p = d & 16777215;\n    soit i = __case(d, cle);\n    @3[@3[p + 3] + i] = v;\n    @3[@3[p + 4] + i] = 2;\n}\nfonction affirmer(d, cle, v) {\n    soit p = d & 16777215;\n    soit neuf = existe(d, cle) == 0;\n    soit i = __case(d, cle);\n    soit q = @3[@3[p + 4] + i];\n    si neuf {\n        q = 2;\n    } sinon si q == 1 || (q == 2 && @3[@3[p + 3] + i] != v) {\n        q = 3;\n    }\n    @3[@3[p + 3] + i] = v;\n    @3[@3[p + 4] + i] = q;\n}\nfonction nier(d, cle) {\n    soit p = d & 16777215;\n    soit neuf = existe(d, cle) == 0;\n    soit i = __case(d, cle);\n    soit q = @3[@3[p + 4] + i];\n    si neuf {\n        q = 1;\n    } sinon si q == 2 {\n        q = 3;\n    }\n    @3[@3[p + 4] + i] = q;\n}\nfonction trouver(d, cle) {\n    soit p = d & 16777215;\n    soit i = __place(d, cle);\n    retour @3[@3[p + 3] + i];\n}\nfonction existe(d, cle) {\n    soit p = d & 16777215;\n    retour @3[@3[p + 2] + __place(d, cle)] != 0;\n}\nfonction savoir(d, cle): logique {\n    si d == 0 {\n        retour inconnu;\n    }\n    soit p = d & 16777215;\n    soit i = __place(d, cle);\n    si @3[@3[p + 2] + i] == 0 {\n        si @3[p + 5] == 1 {\n            retour inconnu;\n        }\n        retour faux;\n    }\n    retour comme_logique(@3[@3[p + 4] + i]);\n}\nfonction nommer(l: logique, noms): texte {\n    retour @3[@3[(noms & 16777215) + 2] + entier(l)];\n}\nfonction cles(d) {\n    soit p = d & 16777215;\n    soit r = tableau(0);\n    soit ks = @3[p + 2];\n    pour k dans 0..@3[p + 1] {\n        si @3[ks + k] != 0 {\n            __ajouter(r, @3[ks + k]);\n        }\n    }\n    retour r;\n}\nfonction majuscules(t): texte {\n    soit n = longueur(t);\n    soit r = texte_neuf(n);\n    pour i dans 0..n {\n        soit c = car(t, i);\n        si (c >= 97 && c <= 122) || (c >= 224 && c <= 254 && c != 247) {\n            c = c - 32;\n        }\n        changer_car(r, i, c);\n    }\n    retour r;\n}\nfonction minuscules(t): texte {\n    soit n = longueur(t);\n    soit r = texte_neuf(n);\n    pour i dans 0..n {\n        soit c = car(t, i);\n        si (c >= 65 && c <= 90) || (c >= 192 && c <= 222 && c != 215) {\n            c = c + 32;\n        }\n        changer_car(r, i, c);\n    }\n    retour r;\n}\nfonction commence_par(t, debut) {\n    soit n = longueur(debut);\n    si n > longueur(t) {\n        retour 0;\n    }\n    pour i dans 0..n {\n        si car(t, i) != car(debut, i) {\n            retour 0;\n        }\n    }\n    retour 1;\n}\nfonction finit_par(t, fin) {\n    soit n = longueur(fin);\n    soit m = longueur(t);\n    si n > m {\n        retour 0;\n    }\n    pour i dans 0..n {\n        si car(t, m - n + i) != car(fin, i) {\n            retour 0;\n        }\n    }\n    retour 1;\n}\nfonction car_texte(c): texte {\n    soit t = texte_neuf(1);\n    changer_car(t, 0, c);\n    retour t;\n}\nfonction repeter(t, n): texte {\n    soit m = longueur(t);\n    soit r = texte_neuf(m * n);\n    pour k dans 0..n {\n        pour i dans 0..m {\n            changer_car(r, k * m + i, car(t, i));\n        }\n    }\n    retour r;\n}\nfonction nettoyer(t): texte {\n    soit a = 0;\n    soit b = longueur(t);\n    tantque a < b && (car(t, a) == 32 || car(t, a) == 9 || car(t, a) == 10 || car(t, a) == 13) {\n        a = a + 1;\n    }\n    tantque b > a && (car(t, b - 1) == 32 || car(t, b - 1) == 9 || car(t, b - 1) == 10 || car(t, b - 1) == 13) {\n        b = b - 1;\n    }\n    retour sous_texte(t, a, b);\n}\nfonction decouper(t, sep) {\n    soit r = tableau(0);\n    soit n = longueur(t);\n    soit m = longueur(sep);\n    soit debut = 0;\n    soit i = 0;\n    tantque i + m <= n && m > 0 {\n        soit egal = 1;\n        pour k dans 0..m {\n            si car(t, i + k) != car(sep, k) {\n                egal = 0;\n            }\n        }\n        si egal == 1 {\n            __ajouter(r, sous_texte(t, debut, i));\n            i = i + m;\n            debut = i;\n        } sinon {\n            i = i + 1;\n        }\n    }\n    __ajouter(r, sous_texte(t, debut, n));\n    retour r;\n}\nfonction assembler(tab, sep): texte {\n    soit p = tab & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit total = 0;\n    pour k dans 0..n {\n        total = total + longueur(@3[d + k]);\n    }\n    si n > 0 {\n        total = total + (n - 1) * longueur(sep);\n    }\n    soit r = texte_neuf(total);\n    soit j = 0;\n    pour k dans 0..n {\n        si k > 0 {\n            pour i dans 0..longueur(sep) {\n                changer_car(r, j, car(sep, i));\n                j = j + 1;\n            }\n        }\n        soit x = @3[d + k];\n        pour i dans 0..longueur(x) {\n            changer_car(r, j, car(x, i));\n            j = j + 1;\n        }\n    }\n    retour r;\n}\nfonction remplacer(t, ancien, neuf): texte {\n    retour assembler(decouper(t, ancien), neuf);\n}\nfonction lire_ligne(): texte {\n    soit t = __verifier(nouveau(257));\n    soit c = lire_car(1);\n    si c == 4294967295 {\n        retour __texte_fin(t);\n    }\n    tantque c != 10 && c != 4294967295 {\n        si c != 13 {\n            si longueur(t) < 256 {\n                __mettre(t, c);\n            }\n        }\n        c = lire_car(1);\n    }\n    retour __texte_fin(t);\n}\nfonction pgcd(a, b) {\n    tantque b != 0 {\n        soit r = a % b;\n        a = b;\n        b = r;\n    }\n    retour a;\n}\nfonction borne(x, a, b) {\n    si x .< a {\n        retour a;\n    }\n    si x .> b {\n        retour b;\n    }\n    retour x;\n}\n";
+    retour "\nfonction abs(x) { si x >= 2147483648 { retour 0 - x; } retour x; }\nfonction inf(a, b) { retour (a ^ 2147483648) < (b ^ 2147483648); }\nfonction sup(a, b) { retour (b ^ 2147483648) < (a ^ 2147483648); }\nfonction __hyp_debut() {\n    soit d = @3[16777201];\n    si d == 0 { @3[16777200] = 15728640; }\n    @3[16777201] = d + 1;\n    retour @3[16777200];\n}\nfonction __hyp_noter(e, a) {\n    soit p = @3[16777200];\n    @3[p] = e;\n    @3[p + 1] = a;\n    @3[p + 2] = @(e)[a];\n    @3[16777200] = p + 3;\n}\nfonction __hyp_valider() { @3[16777201] = @3[16777201] - 1; }\nfonction __hyp_annuler(p0) {\n    soit p = @3[16777200];\n    tantque p > p0 {\n        p = p - 3;\n        @(@3[p])[@3[p + 1]] = @3[p + 2];\n    }\n    @3[16777200] = p0;\n    @3[16777201] = @3[16777201] - 1;\n}\nfonction divs(a, b) {\n    soit n = 0;\n    si a >= 2147483648 { a = 0 - a; n = 1; }\n    si b >= 2147483648 { b = 0 - b; n = 1 - n; }\n    soit q = a / b;\n    si n == 1 { retour 0 - q; }\n    retour q;\n}\nfonction mods(a, b) {\n    soit n = 0;\n    si a >= 2147483648 { a = 0 - a; n = 1; }\n    si b >= 2147483648 { b = 0 - b; }\n    soit r = a % b;\n    si n == 1 { retour 0 - r; }\n    retour r;\n}\nfonction asr(a, n) {\n    soit k = n & 31;\n    soit r = a >> k;\n    si a >= 2147483648 && k > 0 { r = r | (4294967295 << (32 - k)); }\n    retour r;\n}\nfonction signe(x) { si x == 0 { retour 0; } si x >= 2147483648 { retour 4294967295; } retour 1; }\nfonction exp2(x: flottant): flottant {\n    si x < -126.0 { retour 0.0; }\n    si x >= 128.0 { retour comme_flottant(2139095040); }\n    soit n = entier(x);\n    si flottant_signe(n) > x { n = n - 1; }\n    soit f = x - flottant_signe(n);\n    soit p = 1.0 + f * (0.6931472 + f * (0.2402265 + f * (0.05550411 + f * (0.009618129 + f * (0.001333355\n        + f * (0.0001540353 + f * 0.00001525273))))));\n    retour comme_flottant(bits(p) + (n << 23));\n}\nfonction __lshl(a: long, n): long {\n    soit k = n & 63;\n    si k == 0 { retour a; }\n    si k >= 32 { retour long_de(bas(a) << (k - 32), 0); }\n    retour long_de((haut(a) << k) | (bas(a) >> (32 - k)), bas(a) << k);\n}\nfonction __lsar(a: long, n): long {\n    soit k = n & 63;\n    soit h = haut(a);\n    si k == 0 { retour a; }\n    soit s = 0;\n    si h >= 2147483648 { s = 4294967295; }\n    si k >= 32 { retour long_de(s, asr(h, k - 32)); }\n    retour long_de(asr(h, k), (bas(a) >> k) | (h << (32 - k)));\n}\nfonction __ldivu(ah, al, bh, bl, reste): long {\n    soit qh = 0; soit ql = 0; soit rh = 0; soit rl = 0;\n    pour i dans 0..64 {\n        soit bit = 0;\n        si i < 32 { bit = (ah >> (31 - i)) & 1; } sinon { bit = (al >> (63 - i)) & 1; }\n        soit dessus = rh >> 31;\n        rh = (rh << 1) | (rl >> 31);\n        rl = (rl << 1) | bit;\n        qh = (qh << 1) | (ql >> 31);\n        ql = ql << 1;\n        si dessus == 1 || rh > bh || (rh == bh && rl >= bl) {\n            soit emprunt = 0;\n            si rl < bl { emprunt = 1; }\n            rl = rl - bl;\n            rh = rh - bh - emprunt;\n            ql = ql | 1;\n        }\n    }\n    si reste == 1 { retour long_de(rh, rl); }\n    retour long_de(qh, ql);\n}\nfonction __ldiv(a: long, b: long, reste): long {\n    si b == 0L { si reste == 1 { retour a; } retour 0L - 1L; }\n    soit na = 0;\n    soit nb = 0;\n    soit x = a;\n    soit y = b;\n    si a < 0L { x = 0L - a; na = 1; }\n    si b < 0L { y = 0L - b; nb = 1; }\n    soit q = __ldivu(haut(x), bas(x), haut(y), bas(y), reste);\n    si reste == 1 { si na == 1 { retour 0L - q; } retour q; }\n    si na != nb { retour 0L - q; }\n    retour q;\n}\nfonction min(a, b) { si a < b { retour a; } retour b; }\nfonction max(a, b) { si a > b { retour a; } retour b; }\nfonction poids(ecart, temperature) {\n    soit d = ecart >> temperature;\n    si d < 16 { retour 65536 >> d; }\n    retour 0;\n}\nfonction gdotn(ea, a, eb, b, n) {\n    soit s = 0;\n    pour i dans 0..n { s = s + gdot(@(ea)[a + i], @(eb)[b + i]); }\n    retour s;\n}\nfonction copier(ed, d, es, s, n) {\n    pour i dans 0..n { @(ed)[d + i] = @(es)[s + i]; }\n}\nfonction melange(ev, bv, ep, bp, decalage, n) {\n    soit s = 0;\n    pour i dans 0..n { s = s + @(ep)[bp + i] * ((@(ev)[bv + i] >> decalage) & 255); }\n    retour s;\n}\nfonction longueur(t) {\n    retour @(t >> 24)[t & 16777215];\n}\nfonction car(t, i) {\n    retour @(t >> 24)[(t & 16777215) + 1 + i];\n}\nfonction changer_car(t, i, c) {\n    @(t >> 24)[(t & 16777215) + 1 + i] = c;\n}\nfonction texte_egal(a, b) {\n    soit n = longueur(a);\n    si n != longueur(b) {\n        retour 0;\n    }\n    pour i dans 0..n {\n        si car(a, i) != car(b, i) {\n            retour 0;\n        }\n    }\n    retour 1;\n}\nfonction nouveau(n) {\n    // chaque bloc a un mot d'en-tête (sa taille) juste avant lui ; un bloc libéré de la bonne taille est repris\n    // d'abord (listes par taille en @3[14680064 + taille], la liste 0 pour les grands blocs)\n    si n == 0 {\n        n = 1;\n    }\n    si n <= 64 {\n        soit t = @3[14680064 + n];\n        si t != 0 {\n            @3[14680064 + n] = @3[t];\n            @3[t - 1] = n;\n            pour i dans 0..n {\n                @3[t + i] = 0;\n            }\n            retour 50331648 + t;\n        }\n    }\n    // un grand bloc libre (premier assez grand) ; ce qui dépasse redevient un bloc libre\n    soit prec = 0;\n    soit g = @3[14680064];\n    tantque g != 0 {\n        soit taille = @3[g - 1] & 16777215;\n        si taille >= n {\n            si prec == 0 {\n                @3[14680064] = @3[g];\n            } sinon {\n                @3[prec] = @3[g];\n            }\n            si taille >= n + 2 {\n                __rendre_suite(g + n, g + taille);\n                taille = n;\n            }\n            @3[g - 1] = taille;\n            pour j dans 0..taille {\n                @3[g + j] = 0;\n            }\n            retour 50331648 + g;\n        }\n        prec = g;\n        g = @3[g];\n    }\n    soit p = @3[14680056];\n    si p == 0 {\n        p = 8388608;\n    }\n    si p + n + 1 > 14080048 {\n        // le tas est plein (les 600 000 derniers mots restent au ramasse-miettes) : une purge, puis un second essai\n        @3[14680056] = p;\n        // pas de purge automatique si la dernière n'a rendu presque rien (le tas est vraiment plein : on ne s'acharne\n        // pas, nouveau rend nul) ; une purge demandée (ramasser) lève cette interdiction\n        si @3[14680252] == 0 && @3[14680253] == 0 {\n            @3[14680252] = 1;\n            soit libres = ramasser();\n            @3[14680252] = 0;\n            si libres < 355715 {\n                @3[14680253] = 1;\n            }\n            si libres > n {\n                retour nouveau(n);\n            }\n        }\n        retour 0;\n    }\n    @3[p] = n;\n    @3[14680056] = p + n + 1;\n    pour k dans 0..n {\n        @3[p + 1 + k] = 0;\n    }\n    retour 50331649 + p;\n}\n// un bloc libre d'en-tête h0, qui s'étend jusqu'à h1 (exclu) : rangé dans la liste de sa taille\nfonction __rendre_suite(h0, h1) {\n    soit taille = h1 - h0 - 1;\n    @3[h0] = taille | 2147483648;\n    soit k = taille;\n    si k > 64 {\n        k = 0;\n    }\n    @3[h0 + 1] = @3[14680064 + k];\n    @3[14680064 + k] = h0 + 1;\n}\n// le tas est plein : le programme s'arrête avec un message clair (au lieu d'écrire à l'adresse 0)\nfonction __verifier(h) {\n    si h == 0 {\n        __service(10, 0);\n    }\n    retour h;\n}\nfonction liberer(h) {\n    soit p = h & 16777215;\n    si p <= 8388608 || p >= @3[14680056] {\n        retour;\n    }\n    soit taille = @3[p - 1];\n    si taille >= 2147483648 {\n        retour;\n    }\n    @3[p - 1] = taille | 2147483648;\n    soit k = taille;\n    si k > 64 {\n        k = 0;\n    }\n    @3[p] = @3[14680064 + k];\n    @3[14680064 + k] = p;\n}\nfonction tas_marque() {\n    soit p = @3[14680056];\n    si p == 0 {\n        p = 8388608;\n    }\n    retour p;\n}\nfonction tas_retour(m) {\n    @3[14680056] = m;\n    pour k dans 0..65 {\n        @3[14680064 + k] = 0;\n    }\n}\nfonction tas_utilise() {\n    soit p = @3[14680056];\n    si p == 0 {\n        retour 0;\n    }\n    retour p - 8388608;\n}\nfonction __marquer(v, deb, mar, pil, np, cap, haut) {\n    soit e = v >> 24;\n    si e != 3 && e != 0 {\n        retour np;\n    }\n    soit p = v & 16777215;\n    si p <= 8388608 || p >= haut {\n        retour np;\n    }\n    soit k = p - 8388608;\n    si ((@3[deb + k / 32] >> (k % 32)) & 1) == 0 || ((@3[mar + k / 32] >> (k % 32)) & 1) == 1 {\n        retour np;\n    }\n    @3[mar + k / 32] = @3[mar + k / 32] | (1 << (k % 32));\n    si np < cap {\n        @3[pil + np] = p;\n        retour np + 1;\n    }\n    @3[14680063] = 1;\n    retour np;\n}\nfonction ramasser() {\n    // ramasse-miettes : ce que tiennent les variables (la pile) et les poignées protégées reste ; tout bloc qu'on\n    // ne peut plus atteindre est libéré. Rend le nombre de mots libérés.\n    soit haut = @3[14680056];\n    si haut == 0 {\n        retour 0;\n    }\n    @3[14680254] = @3[14680254] + 1;\n    si @3[14680252] == 0 {\n        @3[14680253] = 0;\n    }\n    soit nm = (haut - 8388608) / 32 + 1;\n    soit deb = haut;\n    soit mar = haut + nm;\n    soit pil = haut + 2 * nm;\n    si pil + 1024 > 14680048 {\n        retour 0;\n    }\n    soit cap = 14680048 - pil;\n    pour i dans 0..(2 * nm) {\n        @3[deb + i] = 0;\n    }\n    soit h = 8388608;\n    tantque h < haut {\n        soit kb = h + 1 - 8388608;\n        @3[deb + kb / 32] = @3[deb + kb / 32] | (1 << (kb % 32));\n        h = h + 1 + (@3[h] & 16777215);\n    }\n    @3[14680063] = 0;\n    soit np = 0;\n    pour a dans pile()..8388608 {\n        np = __marquer(@0[a], deb, mar, pil, np, cap, haut);\n    }\n    pour r dans 0..@3[14680200] {\n        np = __marquer(@3[14680201 + r], deb, mar, pil, np, cap, haut);\n    }\n    tantque np > 0 {\n        np = np - 1;\n        soit p = @3[pil + np];\n        soit taille = @3[p - 1];\n        si taille < 2147483648 {\n            pour j dans 0..taille {\n                np = __marquer(@3[p + j], deb, mar, pil, np, cap, haut);\n            }\n        }\n    }\n    si @3[14680063] == 1 {\n        retour 0;\n    }\n    // balayage : les listes de blocs libres sont refaites ; des blocs libres voisins sont fondus en un seul ; une suite\n    // libre qui touche le sommet fait redescendre le tas\n    pour k2 dans 0..65 {\n        @3[14680064 + k2] = 0;\n    }\n    soit libres = 0;\n    soit debut_libre = 0;\n    h = 8388608;\n    tantque h < haut {\n        soit b = h + 1;\n        soit t2 = @3[h];\n        soit kb2 = b - 8388608;\n        si t2 >= 2147483648 || ((@3[mar + kb2 / 32] >> (kb2 % 32)) & 1) == 0 {\n            si t2 < 2147483648 {\n                libres = libres + t2;\n            }\n            si debut_libre == 0 {\n                debut_libre = h;\n            }\n        } sinon si debut_libre != 0 {\n            __rendre_suite(debut_libre, h);\n            debut_libre = 0;\n        }\n        h = b + (t2 & 16777215);\n    }\n    si debut_libre != 0 {\n        @3[14680056] = debut_libre;\n    }\n    retour libres;\n}\nfonction purges() {\n    retour @3[14680254];\n}\nfonction proteger(h) {\n    soit n = @3[14680200];\n    si n < 50 {\n        @3[14680201 + n] = h;\n        @3[14680200] = n + 1;\n    }\n}\nfonction sauver_bloc(nom, adr, n) {\n    @3[14680060] = nom;\n    @3[14680061] = adr;\n    @3[14680062] = n;\n    retour __service(6, 0);\n}\nfonction charger_bloc(nom, adr, n) {\n    @3[14680060] = nom;\n    @3[14680061] = adr;\n    @3[14680062] = n;\n    retour __service(7, 0);\n}\nfonction __nom_ent(nom) {\n    soit n = longueur(nom);\n    soit t = texte_neuf(n + 4);\n    pour i dans 0..n {\n        changer_car(t, i, car(nom, i));\n    }\n    changer_car(t, n, 46);\n    changer_car(t, n + 1, 101);\n    changer_car(t, n + 2, 110);\n    changer_car(t, n + 3, 116);\n    retour t;\n}\nfonction sauver_tas(nom, racine) {\n    // tout le tas dans le fichier « nom », et son en-tête (sommet, listes libres, racine, format) dans « nom.ent »\n    @3[14680063] = racine;\n    @3[14680255] = 3;\n    soit haut = tas_marque();\n    soit e = __nom_ent(nom);\n    soit r = sauver_bloc(e, 50331648 + 14680056, 200);\n    si r == 4294967295 {\n        retour r;\n    }\n    retour sauver_bloc(nom, 50331648 + 8388608, haut - 8388608);\n}\nfonction charger_tas(nom) {\n    // rend la racine rangée par sauver_tas, ou 0 si le fichier n'existe pas\n    // l'en-tête est lu à part (dans la réserve du ramasse-miettes) : un fichier absent, ou d'un autre format, ne\n    // touche à rien et rend 0\n    soit e = __nom_ent(nom);\n    si charger_bloc(e, 50331648 + 14400000, 200) != 200 || @3[14400199] != 3 {\n        retour 0;\n    }\n    pour i dans 0..200 {\n        @3[14680056 + i] = @3[14400000 + i];\n    }\n    charger_bloc(nom, 50331648 + 8388608, @3[14680056] - 8388608);\n    retour @3[14680063];\n}\nfonction ecrire_texte(c, t) {\n    pour i dans 0..longueur(t) {\n        ecrire_car(c, car(t, i));\n    }\n}\nfonction ecrire_nombre(c, n) {\n    si n >= 10 {\n        ecrire_nombre(c, n / 10);\n    }\n    ecrire_car(c, 48 + n % 10);\n}\nfonction texte_neuf(n) {\n    soit t = __verifier(nouveau(n + 1));\n    @(t >> 24)[t & 16777215] = n;\n    retour t;\n}\nfonction __texte_tas(t): texte {\n    // un texte rangé dans le tas (champ, tableau, dictionnaire) : un texte écrit dans le programme (gardé avec le code, à\n    // l'étage 0) est recopié dans le tas, pour qu'une mémoire sauvée (sauver_tas) reste juste quand le programme change\n    si t == 0 || (t >> 24) != 0 {\n        retour t;\n    }\n    soit n = longueur(t);\n    soit r = texte_neuf(n);\n    pour i dans 0..n {\n        changer_car(r, i, car(t, i));\n    }\n    retour r;\n}\nfonction __mettre(c, x) {\n    si c < 65536 {\n        ecrire_car(c, x);\n    } sinon {\n        soit e = c >> 24;\n        soit a = c & 16777215;\n        soit n = @(e)[a];\n        @(e)[a + 1 + n] = x;\n        @(e)[a] = n + 1;\n    }\n}\nfonction __mettre_nombre(c, n) {\n    si n >= 10 {\n        __mettre_nombre(c, n / 10);\n    }\n    __mettre(c, 48 + n % 10);\n}\nfonction ecrire_entier(c, n) {\n    si n >= 2147483648 {\n        __mettre(c, 45);\n        n = 0 - n;\n    }\n    __mettre_nombre(c, n);\n}\nfonction ecrire_hexa(c, n) {\n    __mettre(c, 35);\n    pour i dans 0..8 {\n        soit k = (n >> (28 - 4 * i)) & 15;\n        si k < 10 { __mettre(c, 48 + k); } sinon { __mettre(c, 55 + k); }\n    }\n}\nfonction __ecrire_chiffres(c, q, d) {\n    si d > 1 {\n        __ecrire_chiffres(c, q / 10, d - 1);\n    }\n    __mettre(c, 48 + q % 10);\n}\nfonction ecrire_flottant(c, x: flottant, d) {\n    soit b = bits(x);\n    si b >= 2147483648 {\n        __mettre(c, 45);\n        b = b & 2147483647;\n    }\n    si b >= 2139095040 {\n        si b == 2139095040 {\n            __mettre(c, 105); __mettre(c, 110); __mettre(c, 102);\n        } sinon {\n            __mettre(c, 110); __mettre(c, 97); __mettre(c, 110);\n        }\n        retour;\n    }\n    soit y = comme_flottant(b);\n    soit auto = 0;\n    si d == 4294967295 { auto = 1; d = 6; }\n    si d > 9 { d = 9; }\n    soit e = 0;\n    soit eneg = 0;\n    si y >= 10000000.0 || (auto == 1 && y < 0.0001 && b != 0) {\n        tantque y >= 10.0 { y = y / 10.0; e = e + 1; }\n        tantque y < 1.0 { y = y * 10.0; e = e + 1; eneg = 1; }\n    }\n    soit ip = entier(y);\n    si auto == 1 {\n        soit nc = 1;\n        soit t = ip / 10;\n        tantque t > 0 { nc = nc + 1; t = t / 10; }\n        si nc >= 7 { d = 1; } sinon { d = 7 - nc; }\n    }\n    soit pe = 1;\n    pour i dans 0..d { pe = pe * 10; }\n    soit q = arrondi((y - flottant(ip)) * flottant(pe));\n    si q >= pe { ip = ip + 1; q = q - pe; }\n    si auto == 1 {\n        tantque d > 1 && q % 10 == 0 { q = q / 10; d = d - 1; }\n    }\n    __mettre_nombre(c, ip);\n    si d > 0 {\n        __mettre(c, 46);\n        __ecrire_chiffres(c, q, d);\n    }\n    si e > 0 {\n        __mettre(c, 101);\n        si eneg == 1 { __mettre(c, 45); }\n        __mettre_nombre(c, e);\n    }\n}\nfonction ecrire_long(c, a: long) {\n    si a < 0L {\n        __mettre(c, 45);\n        a = 0L - a;\n    }\n    si a >= 10L {\n        ecrire_long(c, a / 10L);\n    }\n    __mettre(c, 48 + bas(a % 10L));\n}\n// ---- grands entiers (limbes de 16 bits, mot bas d'abord) pour l'écriture décimale exacte des flottants\nfonction __bn_neuf(v) {\n    soit t = tableau(0);\n    si v != 0 {\n        ajouter(t, v & 65535);\n        si (v >> 16) != 0 { ajouter(t, v >> 16); }\n    }\n    retour t;\n}\nfonction __bn_copie(a) {\n    soit r = tableau(0);\n    pour i dans 0..longueur(a) { ajouter(r, a[i]); }\n    retour r;\n}\nfonction __bn_mul(a, m) {\n    soit c = 0;\n    pour i dans 0..longueur(a) {\n        soit p = a[i] * m + c;\n        a[i] = p & 65535;\n        c = p >> 16;\n    }\n    si c != 0 { ajouter(a, c); }\n}\nfonction __bn_mul10(a, n) {\n    tantque n >= 4 { __bn_mul(a, 10000); n = n - 4; }\n    tantque n > 0 { __bn_mul(a, 10); n = n - 1; }\n}\nfonction __bn_cmp(a, b) {\n    soit na = longueur(a);\n    soit nb = longueur(b);\n    si na != nb {\n        si na > nb { retour 1; }\n        retour 2;\n    }\n    soit i = na;\n    tantque i > 0 {\n        i = i - 1;\n        si a[i] != b[i] {\n            si a[i] > b[i] { retour 1; }\n            retour 2;\n        }\n    }\n    retour 0;\n}\nfonction __bn_ajouter(a, b) {\n    soit n = longueur(b);\n    si longueur(a) > n { n = longueur(a); }\n    soit c = 0;\n    pour i dans 0..n {\n        soit x = c;\n        soit na = longueur(a);\n        si i < na { x = x + a[i]; }\n        si i < longueur(b) { x = x + b[i]; }\n        si i < na { a[i] = x & 65535; } sinon { ajouter(a, x & 65535); }\n        c = x >> 16;\n    }\n    si c != 0 { ajouter(a, c); }\n}\nfonction __bn_sub(a, b) {\n    soit emprunt = 0;\n    pour i dans 0..longueur(a) {\n        soit y = emprunt;\n        si i < longueur(b) { y = y + b[i]; }\n        si a[i] >= y { a[i] = a[i] - y; emprunt = 0; } sinon { a[i] = a[i] + 65536 - y; emprunt = 1; }\n    }\n    tantque longueur(a) > 0 && a[longueur(a) - 1] == 0 { retirer(a); }\n}\nfonction __bn_decaler(a, k) {\n    si longueur(a) == 0 { retour; }\n    soit q = k >> 4;\n    soit b = k & 15;\n    si b != 0 {\n        soit c = 0;\n        pour i dans 0..longueur(a) {\n            soit x = (a[i] << b) | c;\n            a[i] = x & 65535;\n            c = x >> 16;\n        }\n        si c != 0 { ajouter(a, c); }\n    }\n    si q != 0 {\n        soit n = longueur(a);\n        pour i dans 0..q { ajouter(a, 0); }\n        soit j = n;\n        tantque j > 0 { j = j - 1; a[j + q] = a[j]; }\n        pour i dans 0..q { a[i] = 0; }\n    }\n}\nfonction __bn_bits(a) {\n    soit n = longueur(a);\n    si n == 0 { retour 0; }\n    soit h = a[n - 1];\n    soit b = 0;\n    tantque h != 0 { b = b + 1; h = h >> 1; }\n    retour 16 * (n - 1) + b;\n}\n// chiffres décimaux les plus courts qui redonnent le flottant f * 2^e (Burger et Dybvig) : le tableau rendu contient\n// k + 20000 (la valeur vaut 0,d1d2d3... fois 10^k) puis les chiffres ; bord vaut 1 si l'écart inférieur est la moitié,\n// 2 s'il est le quart (le bas d'une puissance de 4 du flottant_petuar)\nfonction __dragon(f, e, bord) {\n    soit pair = 1;\n    si f[0] & 1 { pair = 0; }\n    soit r = __bn_copie(f);\n    soit s = __bn_neuf(1);\n    soit mp = __bn_neuf(1);\n    soit mm = __bn_neuf(1);\n    si e < 2147483648 {\n        si bord == 0 {\n            __bn_decaler(r, e + 1);\n            s = __bn_neuf(2);\n            __bn_decaler(mp, e);\n            __bn_decaler(mm, e);\n        } sinon si bord == 1 {\n            __bn_decaler(r, e + 2);\n            s = __bn_neuf(4);\n            __bn_decaler(mp, e + 1);\n            __bn_decaler(mm, e);\n        } sinon {\n            __bn_decaler(r, e + 3);\n            s = __bn_neuf(8);\n            __bn_decaler(mp, e + 2);\n            __bn_decaler(mm, e);\n        }\n    } sinon {\n        soit n = 0 - e;\n        si bord == 0 {\n            __bn_decaler(r, 1);\n            __bn_decaler(s, n + 1);\n        } sinon si bord == 1 {\n            __bn_decaler(r, 2);\n            __bn_decaler(s, n + 2);\n            mp = __bn_neuf(2);\n        } sinon {\n            __bn_decaler(r, 3);\n            __bn_decaler(s, n + 3);\n            mp = __bn_neuf(4);\n        }\n    }\n    // estimation par défaut de l'exposant décimal : log10(2) = 0,30103 ; le reste est corrigé par la boucle\n    soit x = e + __bn_bits(f) - 1;\n    soit est = 0;\n    si x < 2147483648 {\n        est = x * 30102 / 100000;\n        __bn_mul10(s, est);\n    } sinon {\n        soit m = 0 - x;\n        est = (m * 30104 + 99999) / 100000;\n        __bn_mul10(r, est);\n        __bn_mul10(mp, est);\n        __bn_mul10(mm, est);\n        est = 0 - est;\n    }\n    soit k = est;\n    soit encore = 1;\n    tantque encore == 1 {\n        soit t1 = __bn_copie(r);\n        __bn_ajouter(t1, mp);\n        soit c = __bn_cmp(t1, s);\n        si (pair == 1 && c != 2) || (pair == 0 && c == 1) {\n            __bn_mul(s, 10);\n            k = k + 1;\n        } sinon {\n            encore = 0;\n        }\n    }\n    __bn_mul(r, 10);\n    __bn_mul(mp, 10);\n    __bn_mul(mm, 10);\n    soit dig = tableau(0);\n    ajouter(dig, k + 20000);\n    soit fini = 0;\n    tantque fini == 0 {\n        soit d = 0;\n        tantque __bn_cmp(r, s) != 2 {\n            __bn_sub(r, s);\n            d = d + 1;\n        }\n        soit c1 = __bn_cmp(r, mm);\n        soit tc1 = 0;\n        si (pair == 1 && c1 != 1) || (pair == 0 && c1 == 2) { tc1 = 1; }\n        soit t = __bn_copie(r);\n        __bn_ajouter(t, mp);\n        soit c2 = __bn_cmp(t, s);\n        soit tc2 = 0;\n        si (pair == 1 && c2 != 2) || (pair == 0 && c2 == 1) { tc2 = 1; }\n        si tc1 == 0 && tc2 == 0 {\n            ajouter(dig, d);\n            __bn_mul(r, 10);\n            __bn_mul(mp, 10);\n            __bn_mul(mm, 10);\n        } sinon {\n            si tc1 == 1 && tc2 == 0 {\n                ajouter(dig, d);\n            } sinon si tc1 == 0 && tc2 == 1 {\n                ajouter(dig, d + 1);\n            } sinon {\n                __bn_mul(r, 2);\n                si __bn_cmp(r, s) == 2 { ajouter(dig, d); } sinon { ajouter(dig, d + 1); }\n            }\n            fini = 1;\n        }\n    }\n    retour dig;\n}\nfonction __ecrire_chiffres_dec(c, dig, de, a) {\n    pour i dans de..a { __mettre(c, 48 + dig[i]); }\n}\nfonction __bn_divpetit(a, m) {\n    soit r = 0;\n    soit i = longueur(a);\n    tantque i > 0 {\n        i = i - 1;\n        soit x = (r << 16) | a[i];\n        a[i] = x / m;\n        r = x % m;\n    }\n    tantque longueur(a) > 0 && a[longueur(a) - 1] == 0 { retirer(a); }\n    retour r;\n}\nfonction __bn_bit(a, i) {\n    si (i >> 4) >= longueur(a) { retour 0; }\n    retour (a[i >> 4] >> (i & 15)) & 1;\n}\nfonction __bn_bas_nul(a, n) {\n    soit q = n >> 4;\n    pour i dans 0..q {\n        si i < longueur(a) && a[i] != 0 { retour 0; }\n    }\n    si (n & 15) != 0 && q < longueur(a) {\n        si (a[q] & ((1 << (n & 15)) - 1)) != 0 { retour 0; }\n    }\n    retour 1;\n}\nfonction __bn_droite(a, n) {\n    soit q = n >> 4;\n    soit b = n & 15;\n    soit m = longueur(a);\n    pour i dans 0..m {\n        soit lo = 0;\n        si i + q < m { lo = a[i + q] >> b; }\n        soit hi = 0;\n        si b != 0 && i + q + 1 < m { hi = (a[i + q + 1] << (16 - b)) & 65535; }\n        a[i] = lo | hi;\n    }\n    tantque longueur(a) > 0 && a[longueur(a) - 1] == 0 { retirer(a); }\n}\n// f * 2^e écrit avec d décimales exactes (arrondi au plus proche, pair en cas d'égalité, comme printf)\nfonction __ecrire_fixe(c, f, e, d) {\n    soit x = __bn_copie(f);\n    __bn_mul10(x, d);\n    si e < 2147483648 {\n        __bn_decaler(x, e);\n    } sinon {\n        soit n = 0 - e;\n        soit demi = __bn_bit(x, n - 1);\n        soit reste = 1 - __bn_bas_nul(x, n - 1);\n        soit impair = __bn_bit(x, n);\n        __bn_droite(x, n);\n        si demi == 1 && (reste == 1 || impair == 1) { __bn_ajouter(x, __bn_neuf(1)); }\n    }\n    soit dd = tableau(0);\n    tantque longueur(x) > 0 {\n        soit q = __bn_divpetit(x, 10000);\n        ajouter(dd, q % 10);\n        ajouter(dd, (q / 10) % 10);\n        ajouter(dd, (q / 100) % 10);\n        ajouter(dd, q / 1000);\n    }\n    tantque longueur(dd) > d + 1 && dd[longueur(dd) - 1] == 0 { retirer(dd); }\n    tantque longueur(dd) < d + 1 { ajouter(dd, 0); }\n    soit i = longueur(dd);\n    tantque i > d {\n        i = i - 1;\n        __mettre(c, 48 + dd[i]);\n    }\n    si d > 0 {\n        __mettre(c, 46);\n        tantque i > 0 {\n            i = i - 1;\n            __mettre(c, 48 + dd[i]);\n        }\n    }\n}\n// d décimales, ou 4294967295 pour les chiffres les plus courts qui redonnent exactement le nombre\nfonction ecrire_flottant_64(c, x: flottant_64, d) {\n    soit b = bits(x);\n    soit lo = bas(b);\n    soit hi = haut(b);\n    soit ex = (hi >> 20) & 2047;\n    soit mh = hi & 1048575;\n    si ex == 2047 && (mh != 0 || lo != 0) {\n        __mettre(c, 110); __mettre(c, 97); __mettre(c, 110);\n        retour;\n    }\n    si hi >= 2147483648 {\n        __mettre(c, 45);\n    }\n    si ex == 2047 {\n        __mettre(c, 105); __mettre(c, 110); __mettre(c, 102);\n        retour;\n    }\n    soit f = tableau(0);\n    ajouter(f, lo & 65535);\n    ajouter(f, lo >> 16);\n    ajouter(f, mh & 65535);\n    soit t3 = mh >> 16;\n    soit e = 0;\n    si ex == 0 {\n        e = 0 - 1074;\n    } sinon {\n        t3 = t3 | 16;\n        e = ex - 1075;\n    }\n    ajouter(f, t3);\n    tantque longueur(f) > 0 && f[longueur(f) - 1] == 0 { retirer(f); }\n    si d != 4294967295 {\n        si d > 40 { d = 40; }\n        __ecrire_fixe(c, f, e, d);\n        retour;\n    }\n    si longueur(f) == 0 {\n        __mettre(c, 48); __mettre(c, 46); __mettre(c, 48);\n        retour;\n    }\n    soit bord = 0;\n    si ex > 1 && mh == 0 && lo == 0 { bord = 1; }\n    __ecrire_dragon(c, __dragon(f, e, bord));\n}\n// écrit les chiffres rendus par __dragon (en fixe de 10^-3 à 10^16, sinon avec un exposant)\nfonction __ecrire_dragon(c, dig) {\n    soit n = longueur(dig) - 1;\n    soit k = dig[0];\n    si k >= 19997 && k <= 20016 {\n        si k <= 20000 {\n            __mettre(c, 48); __mettre(c, 46);\n            pour i dans 0..(20000 - k) { __mettre(c, 48); }\n            __ecrire_chiffres_dec(c, dig, 1, n + 1);\n        } sinon {\n            soit ent = k - 20000;\n            pour i dans 0..ent {\n                si i < n { __mettre(c, 48 + dig[1 + i]); } sinon { __mettre(c, 48); }\n            }\n            __mettre(c, 46);\n            si n > ent { __ecrire_chiffres_dec(c, dig, 1 + ent, n + 1); } sinon { __mettre(c, 48); }\n        }\n    } sinon {\n        __mettre(c, 48 + dig[1]);\n        __mettre(c, 46);\n        si n > 1 { __ecrire_chiffres_dec(c, dig, 2, n + 1); } sinon { __mettre(c, 48); }\n        __mettre(c, 101);\n        si k < 20001 {\n            __mettre(c, 45);\n            __mettre_nombre(c, 20001 - k);\n        } sinon {\n            __mettre_nombre(c, k - 20001);\n        }\n    }\n}\nfonction ecrire_logique(c, l: logique) {\n    selon l {\n        vrai { __mettre(c, 118); __mettre(c, 114); __mettre(c, 97); __mettre(c, 105); }\n        faux { __mettre(c, 102); __mettre(c, 97); __mettre(c, 117); __mettre(c, 120); }\n        inconnu {\n            __mettre(c, 105); __mettre(c, 110); __mettre(c, 99); __mettre(c, 111);\n            __mettre(c, 110); __mettre(c, 110); __mettre(c, 117);\n        }\n        variable {\n            __mettre(c, 118); __mettre(c, 97); __mettre(c, 114); __mettre(c, 105);\n            __mettre(c, 97); __mettre(c, 98); __mettre(c, 108); __mettre(c, 101);\n        }\n    }\n}\n// ---- la frontière avec le binaire : Belnap reste le cœur de Vercintorix ; binaire() donne le code d'échange\n// 0 non, 1 oui, 2 inconnu, 3 variable (le bit fort dit « pas binaire ») ; quaternaire() fait le chemin inverse\nfonction binaire(l: logique) {\n    soit c = entier(l);\n    soit v = c >> 1;\n    retour ((((v ^ c) & 1) ^ 1) << 1) | v;\n}\nfonction quaternaire(b): logique {\n    soit lo = b & 1;\n    soit hi = (b >> 1) & 1;\n    retour comme_logique((lo << 1) | (1 - (hi ^ lo)));\n}\n// les mêmes sur 16 logiques rangés dans un mot (un par quit)\nfonction binaire16(x) {\n    soit v = (x >> 1) & 1431655765;\n    soit f = x & 1431655765;\n    retour ((~(v ^ f) & 1431655765) << 1) | v;\n}\nfonction quaternaire16(b) {\n    soit lo = b & 1431655765;\n    soit hi = (b >> 1) & 1431655765;\n    retour (lo << 1) | (~(hi ^ lo) & 1431655765);\n}\nfonction afficher(x) {\n    ecrire_entier(1, x);\n    ecrire_car(1, 10);\n}\nfonction __afficher_f(x: flottant) {\n    ecrire_flottant(1, x, 4294967295);\n    ecrire_car(1, 10);\n}\nfonction __afficher_l(x: long) {\n    ecrire_long(1, x);\n    ecrire_car(1, 10);\n}\nfonction __afficher_d(x: flottant_64) {\n    ecrire_flottant_64(1, x, 4294967295);\n    ecrire_car(1, 10);\n}\nfonction __afficher_q(x: logique) {\n    ecrire_logique(1, x);\n    ecrire_car(1, 10);\n}\nfonction __afficher_t(t) {\n    ecrire_texte(1, t);\n    ecrire_car(1, 10);\n}\nfonction ecrire(x) {\n    ecrire_entier(1, x);\n}\nfonction __ecrire_f(x: flottant) {\n    ecrire_flottant(1, x, 4294967295);\n}\nfonction __ecrire_l(x: long) {\n    ecrire_long(1, x);\n}\nfonction __ecrire_d(x: flottant_64) {\n    ecrire_flottant_64(1, x, 4294967295);\n}\nfonction __ecrire_q(x: logique) {\n    ecrire_logique(1, x);\n}\nfonction __ecrire_t(t) {\n    ecrire_texte(1, t);\n}\nfonction __texte_t(t): texte {\n    retour t;\n}\nfonction __texte_fin(t): texte {\n    // le dernier bloc du tas prend juste la place du texte écrit ; un bloc repris ailleurs garde sa taille\n    soit p = t & 16777215;\n    si p + (@3[p - 1] & 16777215) == @3[14680056] {\n        @3[p - 1] = 1 + longueur(t);\n        @3[14680056] = p + 1 + longueur(t);\n    }\n    retour t;\n}\nfonction texte(n): texte {\n    soit t = __verifier(nouveau(16));\n    ecrire_entier(t, n);\n    retour __texte_fin(t);\n}\nfonction __texte_f(x: flottant): texte {\n    soit t = __verifier(nouveau(40));\n    ecrire_flottant(t, x, 4294967295);\n    retour __texte_fin(t);\n}\nfonction __texte_l(x: long): texte {\n    soit t = __verifier(nouveau(24));\n    ecrire_long(t, x);\n    retour __texte_fin(t);\n}\nfonction __texte_d(x: flottant_64): texte {\n    soit t = __verifier(nouveau(40));\n    ecrire_flottant_64(t, x, 4294967295);\n    retour __texte_fin(t);\n}\nfonction __texte_q(x: logique): texte {\n    soit t = __verifier(nouveau(12));\n    ecrire_logique(t, x);\n    retour __texte_fin(t);\n}\nfonction __texte_plus(a, b): texte {\n    soit na = longueur(a);\n    soit nb = longueur(b);\n    soit t = texte_neuf(na + nb);\n    pour i dans 0..na {\n        changer_car(t, i, car(a, i));\n    }\n    pour i dans 0..nb {\n        changer_car(t, na + i, car(b, i));\n    }\n    retour t;\n}\nfonction sous_texte(t, debut, fin): texte {\n    si fin > longueur(t) {\n        fin = longueur(t);\n    }\n    si debut >= fin {\n        retour texte_neuf(0);\n    }\n    soit r = texte_neuf(fin - debut);\n    pour i dans debut..fin {\n        changer_car(r, i - debut, car(t, i));\n    }\n    retour r;\n}\nfonction position(t, motif) {\n    soit n = longueur(t);\n    soit m = longueur(motif);\n    si m > n {\n        retour 4294967295;\n    }\n    pour i dans 0..n - m + 1 {\n        soit k = 0;\n        tantque k < m && car(t, i + k) == car(motif, k) {\n            k = k + 1;\n        }\n        si k == m {\n            retour i;\n        }\n    }\n    retour 4294967295;\n}\nfonction nombre(t) {\n    soit r = 0;\n    soit i = 0;\n    soit neg = 0;\n    si longueur(t) > 0 && car(t, 0) == 45 {\n        neg = 1;\n        i = 1;\n    }\n    tantque i < longueur(t) && car(t, i) >= 48 && car(t, i) <= 57 {\n        r = r * 10 + car(t, i) - 48;\n        i = i + 1;\n    }\n    si neg == 1 {\n        retour 0 - r;\n    }\n    retour r;\n}\nfonction pi(): flottant { retour 3.1415927; }\nfonction plancher(x: flottant): flottant {\n    si !(abs(x) < 8388608.0) { retour x; }\n    soit t = flottant_signe(entier(x));\n    si t > x { t = t - 1.0; }\n    retour t;\n}\nfonction plafond(x: flottant): flottant {\n    soit t = plancher(x);\n    si t < x { t = t + 1.0; }\n    retour t;\n}\nfonction __sin_cos(x: flottant, decale): flottant {\n    si !(abs(x) < 100000000.0) { retour comme_flottant(2143289344); }\n    soit k = arrondi(x * 0.63661975);\n    soit fk = flottant_signe(k);\n    soit r = ((x - fk * 1.5703125) - fk * 0.00048382679) - fk * 0.0000000000025632829;\n    soit s = r * r;\n    soit q = (k + decale) & 3;\n    soit v = 0.0;\n    si (q & 1) == 0 {\n        v = r * (1.0 - s * (0.16666667 - s * (0.0083333333 - s * (0.0001984127 - s * 0.0000027557319))));\n    } sinon {\n        v = 1.0 - s * (0.5 - s * (0.041666667 - s * (0.0013888889 - s * (0.000024801587 - s * 0.00000027557319))));\n    }\n    si q >= 2 { retour 0.0 - v; }\n    retour v;\n}\nfonction sinus(x: flottant): flottant { retour __sin_cos(x, 0); }\nfonction cosinus(x: flottant): flottant { retour __sin_cos(x, 1); }\nfonction tangente(x: flottant): flottant { retour __sin_cos(x, 0) / __sin_cos(x, 1); }\nfonction exponentielle(x: flottant): flottant {\n    si x > 88.72284 { retour comme_flottant(2139095040); }\n    si x < -103.97208 { retour 0.0; }\n    soit n = arrondi(x * 1.442695);\n    soit fn = flottant_signe(n);\n    soit r = (x - fn * 0.69314575) - fn * 0.0000014286068;\n    soit p = 1.0 + r * (1.0 + r * (0.5 + r * (0.16666667 + r * (0.041666667 + r * (0.0083333333\n        + r * (0.0013888889 + r * 0.0001984127))))));\n    si n .< 0 - 125 {\n        retour comme_flottant(bits(p) + ((n + 64) << 23)) * 0.0000000000000000000542101086242752217;\n    }\n    si n .> 127 {\n        retour comme_flottant(bits(p) + ((n - 1) << 23)) * 2.0;\n    }\n    retour comme_flottant(bits(p) + (n << 23));\n}\nfonction logarithme(x: flottant): flottant {\n    si x != x || x < 0.0 { retour comme_flottant(2143289344); }\n    si x == 0.0 { retour comme_flottant(4286578688); }\n    si x > 340282350000000000000000000000000000000.0 { retour x; }\n    soit b = bits(x);\n    soit e = 0;\n    si b < 8388608 {\n        b = bits(x * 8388608.0);\n        e = 0 - 23;\n    }\n    e = e + (b >> 23) - 127;\n    soit m = comme_flottant((b & 8388607) | 1065353216);\n    si m > 1.4142135 {\n        m = m * 0.5;\n        e = e + 1;\n    }\n    soit f = (m - 1.0) / (m + 1.0);\n    soit s = f * f;\n    soit lm = 2.0 * f * (1.0 + s * (0.33333333 + s * (0.2 + s * (0.14285714 + s * (0.11111111 + s * 0.09090909)))));\n    soit fe = flottant_signe(e);\n    retour fe * 0.69314575 + (fe * 0.0000014286068 + lm);\n}\nfonction puissance(x: flottant, y: flottant): flottant {\n    si y == 0.0 { retour 1.0; }\n    si x == 0.0 {\n        si y < 0.0 { retour comme_flottant(2139095040); }\n        retour 0.0;\n    }\n    si x < 0.0 {\n        si plancher(y) != y { retour comme_flottant(2143289344); }\n        soit r = exponentielle(y * logarithme(0.0 - x));\n        si abs(y) < 16777216.0 && (entier(abs(y)) & 1) == 1 { retour 0.0 - r; }\n        retour r;\n    }\n    retour exponentielle(y * logarithme(x));\n}\nfonction arctangente(x: flottant): flottant {\n    si x != x { retour x; }\n    soit a = abs(x);\n    soit inv = 0;\n    si a > 1.0 { a = 1.0 / a; inv = 1; }\n    soit ajout = 0.0;\n    si a > 0.26794919 {\n        a = (a * 1.7320508 - 1.0) / (a + 1.7320508);\n        ajout = 0.52359878;\n    }\n    soit s = a * a;\n    soit v = ajout + a * (1.0 - s * (0.33333333 - s * (0.2 - s * (0.14285714 - s * (0.11111111 - s * 0.09090909)))));\n    si inv == 1 { v = 1.5707964 - v; }\n    si x < 0.0 { retour 0.0 - v; }\n    retour v;\n}\nfonction arctangente2(y: flottant, x: flottant): flottant {\n    si x > 0.0 { retour arctangente(y / x); }\n    si x < 0.0 {\n        si y < 0.0 { retour arctangente(y / x) - 3.1415927; }\n        retour arctangente(y / x) + 3.1415927;\n    }\n    si y > 0.0 { retour 1.5707964; }\n    si y < 0.0 { retour 0.0 - 1.5707964; }\n    retour 0.0;\n}\nfonction arcsinus(x: flottant): flottant {\n    si !(abs(x) <= 1.0) { retour comme_flottant(2143289344); }\n    si abs(x) == 1.0 {\n        si x > 0.0 { retour 1.5707964; }\n        retour 0.0 - 1.5707964;\n    }\n    retour arctangente(x / racine(1.0 - x * x));\n}\nfonction arccosinus(x: flottant): flottant {\n    si !(abs(x) <= 1.0) { retour comme_flottant(2143289344); }\n    retour 1.5707964 - arcsinus(x);\n}\nfonction pi_64(): flottant_64 { retour 3.141592653589793D; }\nfonction __nan_64(): flottant_64 { retour comme_flottant_64(0x7FF8000000000000L); }\nfonction __inf_64(): flottant_64 { retour comme_flottant_64(0x7FF0000000000000L); }\nfonction __p2_64(n): flottant_64 { retour flottant_64_de((n + 1023) << 20, 0); }\nfonction plancher_64(x: flottant_64): flottant_64 {\n    si !(abs(x) < 4503599627370496.0D) || x == 0.0D { retour x; }\n    soit t = flottant_64(long(x));\n    si t > x { t = t - 1.0D; }\n    retour t;\n}\nfonction plafond_64(x: flottant_64): flottant_64 {\n    soit t = plancher_64(x);\n    si t < x { t = t + 1.0D; }\n    retour t;\n}\nfonction __sin_cos_64(x: flottant_64, decale): flottant_64 {\n    soit ax = abs(x);\n    si !(ax < 1647099.0D) { retour __nan_64(); }\n    soit k = 0;\n    soit y0 = x;\n    soit y1 = 0.0D;\n    si ax > 0.7853981633974483D {\n        k = arrondi(x * 0.6366197723675814D);\n        soit fk = flottant_64_signe(k);\n        soit r = x - fk * 1.57079632673412561417D;\n        soit w = fk * 6.07710050650619224932e-11D;\n        y0 = r - w;\n        soit j = (haut(x) >> 20) & 2047;\n        soit i = j - ((haut(y0) >> 20) & 2047);\n        si i > 16 {\n            soit t = r;\n            w = fk * 6.07710050630396597660e-11D;\n            r = t - w;\n            w = fk * 2.02226624879595063154e-21D - ((t - r) - w);\n            y0 = r - w;\n            i = j - ((haut(y0) >> 20) & 2047);\n            si i > 49 {\n                t = r;\n                w = fk * 2.02226624871116645580e-21D;\n                r = t - w;\n                w = fk * 8.47842766036889956997e-32D - ((t - r) - w);\n                y0 = r - w;\n            }\n        }\n        y1 = (r - y0) - w;\n    }\n    soit q = (k + decale) & 3;\n    soit z = y0 * y0;\n    soit v = 0.0D;\n    si (q & 1) == 0 {\n        soit vv = z * y0;\n        soit rr = 8.33333333332248946124e-03D + z * (-1.98412698298579493134e-04D + z * (2.75573137070700676789e-06D\n            + z * (-2.50507602534068634195e-08D + z * 1.58969099521155010221e-10D)));\n        v = y0 - ((z * (0.5D * y1 - vv * rr) - y1) - vv * -1.66666666666666324348e-01D);\n    } sinon {\n        soit rc = z * (4.16666666666666019037e-02D + z * (-1.38888888888741095749e-03D + z * (2.48015872894767294178e-05D\n            + z * (-2.75573143513906633035e-07D + z * (2.08757232129817482790e-09D + z * -1.13596475577881948265e-11D)))));\n        soit hz = 0.5D * z;\n        soit w1 = 1.0D - hz;\n        v = w1 + (((1.0D - w1) - hz) + (z * rc - y0 * y1));\n    }\n    si q >= 2 { retour -v; }\n    retour v;\n}\nfonction sinus_64(x: flottant_64): flottant_64 { retour __sin_cos_64(x, 0); }\nfonction cosinus_64(x: flottant_64): flottant_64 { retour __sin_cos_64(x, 1); }\nfonction tangente_64(x: flottant_64): flottant_64 { retour __sin_cos_64(x, 0) / __sin_cos_64(x, 1); }\nfonction exponentielle_64(x: flottant_64): flottant_64 {\n    si x != x { retour x; }\n    si x > 709.782712893384D { retour __inf_64(); }\n    si x < -745.1332191019411D { retour 0.0D; }\n    si abs(x) < 3.725290298461914e-09D { retour 1.0D + x; }\n    soit k = arrondi(x * 1.44269504088896338700D);\n    soit fk = flottant_64_signe(k);\n    soit hi = x - fk * 6.93147180369123816490e-01D;\n    soit lo = fk * 1.90821492927058770002e-10D;\n    soit r = hi - lo;\n    soit t = r * r;\n    soit c = r - t * (1.66666666666666019037e-01D + t * (-2.77777777770155933842e-03D + t * (6.61375632143793436117e-05D\n        + t * (-1.65339022054652515390e-06D + t * 4.13813679705723846039e-08D))));\n    soit y = 1.0D - ((lo - (r * c) / (2.0D - c)) - hi);\n    si k .> 1023 {\n        retour y * __p2_64(1023) * __p2_64(k - 1023);\n    }\n    si k .< 0 - 1021 {\n        retour y * __p2_64(k + 1000) * __p2_64(0 - 1000);\n    }\n    retour y * __p2_64(k);\n}\nfonction logarithme_64(x: flottant_64): flottant_64 {\n    si x != x { retour x; }\n    si x < 0.0D { retour __nan_64(); }\n    si x == 0.0D { retour -__inf_64(); }\n    si x == __inf_64() { retour x; }\n    soit k = 0;\n    soit hx = haut(x);\n    si hx < 1048576 {\n        k = 0 - 54;\n        x = x * 18014398509481984.0D;\n        hx = haut(x);\n    }\n    k = k + (hx >> 20) - 1023;\n    hx = hx & 1048575;\n    soit i = (hx + 614244) & 1048576;\n    x = flottant_64_de(hx | (i ^ 1072693248), bas(x));\n    k = k + (i >> 20);\n    soit f = x - 1.0D;\n    soit s = f / (2.0D + f);\n    soit dk = flottant_64_signe(k);\n    soit z = s * s;\n    soit w = z * z;\n    soit t1 = w * (3.999999999940941908e-01D + w * (2.222219843214978396e-01D + w * 1.531383769920937332e-01D));\n    soit t2 = z * (6.666666666666735130e-01D + w * (2.857142874366239149e-01D + w * (1.818357216161805012e-01D + w * 1.479819860511658591e-01D)));\n    soit rr = t2 + t1;\n    soit hfsq = 0.5D * f * f;\n    retour dk * 6.93147180369123816490e-01D - ((hfsq - (s * (hfsq + rr) + dk * 1.90821492927058770002e-10D)) - f);\n}\nfonction puissance_64(x: flottant_64, y: flottant_64): flottant_64 {\n    si y == 0.0D { retour 1.0D; }\n    si x != x || y != y { retour __nan_64(); }\n    soit entiere = plancher_64(y) == y;\n    soit impaire = 0;\n    si entiere && abs(y) < 9007199254740992.0D {\n        impaire = (long(abs(y)) & 1L) != 0L;\n    }\n    si x == 0.0D {\n        si y < 0.0D { retour __inf_64(); }\n        retour 0.0D;\n    }\n    si entiere && abs(y) <= 1024.0D {\n        soit n = entier(abs(y));\n        soit b = x;\n        soit r = 1.0D;\n        tantque n != 0 {\n            si (n & 1) == 1 { r = r * b; }\n            b = b * b;\n            n = n >> 1;\n        }\n        si y < 0.0D { retour 1.0D / r; }\n        retour r;\n    }\n    si x < 0.0D {\n        si !entiere { retour __nan_64(); }\n        soit e2 = exponentielle_64(y * logarithme_64(-x));\n        si impaire { retour -e2; }\n        retour e2;\n    }\n    retour exponentielle_64(y * logarithme_64(x));\n}\nfonction arctangente_64(x: flottant_64): flottant_64 {\n    si x != x { retour x; }\n    soit ax = abs(x);\n    soit id = 0 - 1;\n    soit u = ax;\n    si ax >= 7.378697629483821e+19D {\n        si x < 0.0D { retour -1.5707963267948966D; }\n        retour 1.5707963267948966D;\n    }\n    si ax >= 0.4375D {\n        si ax < 1.1875D {\n            si ax < 0.6875D {\n                id = 0;\n                u = (2.0D * ax - 1.0D) / (2.0D + ax);\n            } sinon {\n                id = 1;\n                u = (ax - 1.0D) / (ax + 1.0D);\n            }\n        } sinon {\n            si ax < 2.4375D {\n                id = 2;\n                u = (ax - 1.5D) / (1.0D + 1.5D * ax);\n            } sinon {\n                id = 3;\n                u = -1.0D / ax;\n            }\n        }\n    } sinon {\n        si ax < 7.450580596923828e-09D { retour x; }\n        u = x;\n    }\n    soit z = u * u;\n    soit w = z * z;\n    soit s1 = z * (3.33333333333329318027e-01D + w * (1.42857142725034663711e-01D + w * (9.09088713343650656196e-02D\n        + w * (6.66107313738753120669e-02D + w * (4.97687799461593236017e-02D + w * 1.62858201153657823623e-02D)))));\n    soit s2 = w * (-1.99999999998764832476e-01D + w * (-1.11111104054623557880e-01D + w * (-7.69187620504482999495e-02D\n        + w * (-5.83357013379057348645e-02D + w * -3.65315727442169155270e-02D))));\n    si id .< 0 { retour u - u * (s1 + s2); }\n    soit hi = 0.0D;\n    soit lo = 0.0D;\n    si id == 0 { hi = 4.63647609000806093515e-01D; lo = 2.26987774529616870924e-17D; }\n    si id == 1 { hi = 7.85398163397448278999e-01D; lo = 3.06161699786838301793e-17D; }\n    si id == 2 { hi = 9.82793723247329054082e-01D; lo = 1.39033110312309984516e-17D; }\n    si id == 3 { hi = 1.57079632679489655800e+00D; lo = 6.12323399573676603587e-17D; }\n    soit r = hi - ((u * (s1 + s2) - lo) - u);\n    si x < 0.0D { retour -r; }\n    retour r;\n}\nfonction arctangente2_64(y: flottant_64, x: flottant_64): flottant_64 {\n    si x != x || y != y { retour __nan_64(); }\n    si x == 0.0D {\n        si y > 0.0D { retour 1.5707963267948966D; }\n        si y < 0.0D { retour -1.5707963267948966D; }\n        retour 0.0D;\n    }\n    soit z = arctangente_64(abs(y / x));\n    si x > 0.0D {\n        si y < 0.0D { retour -z; }\n        retour z;\n    }\n    si y < 0.0D { retour (z - 1.2246467991473531772e-16D) - 3.141592653589793D; }\n    retour 3.141592653589793D - (z - 1.2246467991473531772e-16D);\n}\nfonction arcsinus_64(x: flottant_64): flottant_64 {\n    si !(abs(x) <= 1.0D) { retour __nan_64(); }\n    retour arctangente2_64(x, racine((1.0D - x) * (1.0D + x)));\n}\nfonction arccosinus_64(x: flottant_64): flottant_64 {\n    si !(abs(x) <= 1.0D) { retour __nan_64(); }\n    retour 2.0D * arctangente2_64(racine(1.0D - x), racine(1.0D + x));\n}\nfonction __qlt(a: entier_128, b: entier_128) {\n    soit x = haut(haut(a)) ^ 2147483648;\n    soit y = haut(haut(b)) ^ 2147483648;\n    si x != y { retour x < y; }\n    x = bas(haut(a));\n    y = bas(haut(b));\n    si x != y { retour x < y; }\n    x = haut(bas(a));\n    y = haut(bas(b));\n    si x != y { retour x < y; }\n    retour bas(bas(a)) < bas(bas(b));\n}\nfonction __qltu(a: entier_128, b: entier_128) {\n    soit x = haut(haut(a));\n    soit y = haut(haut(b));\n    si x != y { retour x < y; }\n    x = bas(haut(a));\n    y = bas(haut(b));\n    si x != y { retour x < y; }\n    x = haut(bas(a));\n    y = haut(bas(b));\n    si x != y { retour x < y; }\n    retour bas(bas(a)) < bas(bas(b));\n}\nfonction __qshl(a: entier_128, n): entier_128 {\n    soit k = n & 127;\n    soit w0 = bas(bas(a));\n    soit w1 = haut(bas(a));\n    soit w2 = bas(haut(a));\n    soit w3 = haut(haut(a));\n    tantque k >= 32 {\n        w3 = w2;\n        w2 = w1;\n        w1 = w0;\n        w0 = 0;\n        k = k - 32;\n    }\n    si k > 0 {\n        w3 = (w3 << k) | (w2 >> (32 - k));\n        w2 = (w2 << k) | (w1 >> (32 - k));\n        w1 = (w1 << k) | (w0 >> (32 - k));\n        w0 = w0 << k;\n    }\n    retour entier_128_de(long_de(w3, w2), long_de(w1, w0));\n}\nfonction __qshr_rempli(a: entier_128, n, s): entier_128 {\n    soit k = n & 127;\n    soit w0 = bas(bas(a));\n    soit w1 = haut(bas(a));\n    soit w2 = bas(haut(a));\n    soit w3 = haut(haut(a));\n    tantque k >= 32 {\n        w0 = w1;\n        w1 = w2;\n        w2 = w3;\n        w3 = s;\n        k = k - 32;\n    }\n    si k > 0 {\n        w0 = (w0 >> k) | (w1 << (32 - k));\n        w1 = (w1 >> k) | (w2 << (32 - k));\n        w2 = (w2 >> k) | (w3 << (32 - k));\n        w3 = (w3 >> k) | (s << (32 - k));\n    }\n    retour entier_128_de(long_de(w3, w2), long_de(w1, w0));\n}\nfonction __qshr(a: entier_128, n): entier_128 { retour __qshr_rempli(a, n, 0); }\nfonction __qsar(a: entier_128, n): entier_128 {\n    si haut(haut(a)) >= 2147483648 { retour __qshr_rempli(a, n, 4294967295); }\n    retour __qshr_rempli(a, n, 0);\n}\nfonction __qmul(a: entier_128, b: entier_128): entier_128 {\n    soit al = bas(a);\n    soit ah = haut(a);\n    soit bl = bas(b);\n    soit bh = haut(b);\n    soit a0 = long(bas(al));\n    soit a1 = long(haut(al));\n    soit b0 = long(bas(bl));\n    soit b1 = long(haut(bl));\n    soit r = entier_128_de(0L, a0 * b0);\n    r = r + (entier_128_de(0L, a0 * b1) << 32) + (entier_128_de(0L, a1 * b0) << 32) + entier_128_de(a1 * b1, 0L);\n    retour r + entier_128_de(ah * bl + al * bh, 0L);\n}\nfonction __qdivu(a: entier_128, b: entier_128, reste): entier_128 {\n    soit q = 0LL;\n    soit r = 0LL;\n    pour i dans 0..128 {\n        soit dessus = haut(haut(a)) >> 31;\n        soit rtop = haut(haut(r)) >> 31;\n        a = a + a;\n        r = r + r + entier_128(dessus);\n        q = q + q;\n        si rtop == 1 || !__qltu(r, b) {\n            r = r - b;\n            q = q + 1;\n        }\n    }\n    si reste == 1 { retour r; }\n    retour q;\n}\nfonction __qdiv(a: entier_128, b: entier_128, reste): entier_128 {\n    soit na = haut(haut(a)) >> 31;\n    soit nb = haut(haut(b)) >> 31;\n    si na == 1 { a = 0 - a; }\n    si nb == 1 { b = 0 - b; }\n    soit q = __qdivu(a, b, reste);\n    si reste == 1 {\n        si na == 1 { retour 0 - q; }\n        retour q;\n    }\n    si na != nb { retour 0 - q; }\n    retour q;\n}\nfonction __qabs(a: entier_128): entier_128 {\n    si haut(haut(a)) >= 2147483648 { retour 0 - a; }\n    retour a;\n}\nfonction __qmin(a: entier_128, b: entier_128): entier_128 {\n    si __qlt(b, a) { retour b; }\n    retour a;\n}\nfonction __qmax(a: entier_128, b: entier_128): entier_128 {\n    si __qlt(a, b) { retour b; }\n    retour a;\n}\nfonction __qtod(x: entier_128): flottant_64 {\n    soit neg = haut(haut(x)) >> 31;\n    si neg == 1 { x = 0 - x; }\n    soit w3 = haut(haut(x));\n    soit w2 = bas(haut(x));\n    soit w1 = haut(bas(x));\n    soit w0 = bas(bas(x));\n    soit n = 0;\n    soit top = w0;\n    si w3 != 0 { n = 96; top = w3; } sinon si w2 != 0 { n = 64; top = w2; } sinon si w1 != 0 { n = 32; top = w1; }\n    tantque top != 0 {\n        n = n + 1;\n        top = top >> 1;\n    }\n    soit d = 0.0D;\n    si n < 64 {\n        d = flottant_64(bas(x));\n    } sinon {\n        soit s = n - 63;\n        soit q = __qshr(x, s);\n        soit t = bas(q);\n        si __qshl(q, s) != x { t = t | 1L; }\n        d = flottant_64(t) * __p2_64(s);\n    }\n    si neg == 1 { retour -d; }\n    retour d;\n}\nfonction __dtoq(x: flottant_64): entier_128 {\n    si x != x { retour 0LL; }\n    soit neg = haut(x) >> 31;\n    soit ax = abs(x);\n    si ax < 9223372036854775808.0D { retour entier_128(long(x)); }\n    si ax >= 170141183460469231731687303715884105728.0D {\n        si neg == 1 { retour 0x80000000000000000000000000000000LL; }\n        retour 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;\n    }\n    soit e = ((haut(x) >> 20) & 2047) - 1023;\n    soit m = long_de((haut(x) & 1048575) | 1048576, bas(x));\n    soit r = __qshl(entier_128_de(0L, m), e - 52);\n    si neg == 1 { retour 0 - r; }\n    retour r;\n}\nfonction ecrire_entier_128(c, a: entier_128) {\n    si a < 0 {\n        __mettre(c, 45);\n        a = 0 - a;\n    }\n    soit t0 = 0;\n    soit t1 = 0;\n    soit t2 = 0;\n    soit t3 = 0;\n    soit t4 = 0;\n    soit k = 0;\n    tantque k == 0 || a != 0 {\n        soit q = __qdivu(a, 1000000000, 0);\n        soit r = bas(bas(a - q * 1000000000));\n        si k == 0 { t0 = r; } sinon si k == 1 { t1 = r; } sinon si k == 2 { t2 = r; } sinon si k == 3 { t3 = r; } sinon { t4 = r; }\n        a = q;\n        k = k + 1;\n    }\n    soit premier = 1;\n    tantque k > 0 {\n        k = k - 1;\n        soit v = t0;\n        si k == 1 { v = t1; } sinon si k == 2 { v = t2; } sinon si k == 3 { v = t3; } sinon si k == 4 { v = t4; }\n        si premier == 1 {\n            __mettre_nombre(c, v);\n            premier = 0;\n        } sinon {\n            __ecrire_chiffres(c, v, 9);\n        }\n    }\n}\nfonction __afficher_w(x: entier_128) {\n    ecrire_entier_128(1, x);\n    ecrire_car(1, 10);\n}\nfonction __ecrire_w(x: entier_128) {\n    ecrire_entier_128(1, x);\n}\nfonction __texte_w(x: entier_128): texte {\n    soit t = __verifier(nouveau(48));\n    ecrire_entier_128(t, x);\n    retour __texte_fin(t);\n}\n// ---- arrondi binaire et produit de 64 bits (pour le flottant_petuar et ses échanges avec l'IEEE 754)\n// ---- flottant_128 (binary128 de l'IEEE 754 : 1 bit de signe, 15 d'exposant, 112 de fraction), calculé sur ses bits\n// rangés comme un entier_128 ; arrondi au plus proche, pair en cas d'égalité, comme le matériel des flottants\nfonction __xbits(m: entier_128) {\n    soit top = bas(bas(m));\n    soit n = 0;\n    si haut(haut(m)) != 0 { n = 96; top = haut(haut(m)); } sinon si bas(haut(m)) != 0 { n = 64; top = bas(haut(m)); } sinon si haut(bas(m)) != 0 { n = 32; top = haut(bas(m)); }\n    si top >= 65536 { n = n + 16; top = top >> 16; }\n    si top >= 256 { n = n + 8; top = top >> 8; }\n    si top >= 16 { n = n + 4; top = top >> 4; }\n    si top >= 4 { n = n + 2; top = top >> 2; }\n    si top >= 2 { retour n + 2; }\n    retour n + top;\n}\n// arrondi de m × 2^E (E signé) à p bits de mantisse ; b : le biais, emax : l'exposant de l'infini ; collant : des bits non\n// nuls sous m (m a alors au moins p + 2 bits). Rend les bits sans le signe : exposant << (p - 1), plus la fraction.\nfonction __xarrondi(m: entier_128, ex, collant, p, b, emax): entier_128 {\n    si m == 0LL { retour 0LL; }\n    soit n = __xbits(m);\n    soit qmin = 2 - b - p;\n    soit k = n - p;\n    si (ex + k) .< qmin { k = qmin - ex; }\n    soit q = 0LL;\n    si k .> 0 {\n        si k <= 128 {\n            soit bas_ = m;\n            si k < 128 {\n                q = __qshr(m, k);\n                bas_ = m - __qshl(q, k);\n            }\n            soit demi = __qshl(1LL, k - 1);\n            si __qltu(demi, bas_) || (bas_ == demi && (collant != 0 || (bas(bas(q)) & 1) == 1)) {\n                q = q + 1LL;\n            }\n        }\n        ex = ex + k;\n        si q == __qshl(1LL, p) {\n            q = __qshr(q, 1);\n            ex = ex + 1;\n        }\n    } sinon {\n        q = __qshl(m, 0 - k);\n        ex = ex + k;\n    }\n    soit cache = __qshl(1LL, p - 1);\n    si __qltu(q, cache) { retour q; }\n    soit be = ex + p - 1 + b;\n    si be .>= emax { retour __qshl(entier_128(emax), p - 1); }\n    retour __qshl(entier_128(be), p - 1) | (q - cache);\n}\n// produit de deux entiers de 64 bits sans signe, sur 128 bits\nfonction __xmul64(a: long, b: long): entier_128 {\n    soit a0 = long(bas(a));\n    soit a1 = long(haut(a));\n    soit b0 = long(bas(b));\n    soit b1 = long(haut(b));\n    soit m = entier_128_de(0L, a0 * b1) + entier_128_de(0L, a1 * b0);\n    retour entier_128_de(a1 * b1, a0 * b0) + entier_128_de(long_de(bas(haut(m)), haut(bas(m))), long_de(bas(bas(m)), 0));\n}\n// ---- flottant_petuar : le flottant quaternaire de 128 bits de Vercintorix (4 points du cube, 32 chiffres hex, 64 quits)\n// quit 63 : l'état, en logique de Belnap (A 0 inconnu, C 1 négatif, G 2 positif, T/U 3 variable) ; quits 62 à 56 :\n// l'exposant en base 4 (7 quits, biais 8192, 16383 : l'infini) ; quits 55 à 0 : la mantisse, 56 chiffres en base 4, le\n// premier non nul (sauf sous l'exposant 0). Valeur : mantisse × 4^(exposant − 8247). Arrondi au plus proche, pair au milieu.\nfonction __pq_etat(a: entier_128) { retour haut(haut(a)) >> 30; }\nfonction __pq_ef(a: entier_128) { retour (haut(haut(a)) >> 16) & 16383; }\nfonction __pq_mant(a: entier_128): entier_128 { retour a & 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFLL; }\n// l'exposant binaire du quit 0 de la mantisse : 2 × (exposant − 8247), l'exposant 0 compté comme 1 (sous-normaux)\nfonction __pq_ex2(a: entier_128) {\n    soit e = __pq_ef(a);\n    si e == 0 { e = 1; }\n    retour 2 * (e - 8247);\n}\nfonction __pq_variable(): entier_128 { retour 0xC0000000000000000000000000000000LL; }\nfonction __pq_signe(s): entier_128 {\n    si s == 1 { retour 0x40000000000000000000000000000000LL; }\n    retour 0x80000000000000000000000000000000LL;\n}\nfonction __pq_inf(s): entier_128 { retour __pq_signe(s) | 0x3FFF0000000000000000000000000000LL; }\n// inconnu l'emporte sur un nombre, variable sur tout : 1LL quand les deux sont des nombres (zéros et infinis compris)\nfonction __pq_special(a: entier_128, b: entier_128): entier_128 {\n    soit ea = __pq_etat(a);\n    soit eb = __pq_etat(b);\n    si ea == 3 || eb == 3 { retour __pq_variable(); }\n    si ea == 0 || eb == 0 { retour 0LL; }\n    retour 1LL;\n}\n// m × 2^ex (ex signé) arrondi : exposant << 112, plus la mantisse (sans l'état) ; collant : des bits non nuls sous m\nfonction __pq_arrondi(m: entier_128, ex, collant): entier_128 {\n    si m == 0LL { retour 0LL; }\n    soit n = __xbits(m);\n    soit k = n - 112;\n    si ((ex + k) & 1) == 1 { k = k + 1; }\n    si (ex + k) .< 0 - 16492 { k = 0 - 16492 - ex; }\n    soit q = 0LL;\n    si k .> 0 {\n        si k <= 128 {\n            soit bas_ = m;\n            si k < 128 {\n                q = __qshr(m, k);\n                bas_ = m - __qshl(q, k);\n            }\n            soit demi = __qshl(1LL, k - 1);\n            si __qltu(demi, bas_) || (bas_ == demi && (collant != 0 || (bas(bas(q)) & 1) == 1)) {\n                q = q + 1LL;\n            }\n        }\n        ex = ex + k;\n        si q == 0x00010000000000000000000000000000LL {\n            q = 0x00004000000000000000000000000000LL;\n            ex = ex + 2;\n        }\n    } sinon {\n        q = __qshl(m, 0 - k);\n        ex = ex + k;\n    }\n    si __qltu(q, 0x00004000000000000000000000000000LL) { retour q; }\n    soit h = 0;\n    si ex .< 0 { h = 0 - ((0 - ex) >> 1); } sinon { h = ex >> 1; }\n    soit e = h + 8247;\n    si e .>= 16383 { retour 0x3FFF0000000000000000000000000000LL; }\n    retour __qshl(entier_128(e), 112) | q;\n}\nfonction __pq_de_mag(m: entier_128, ex, s): entier_128 {\n    retour __pq_signe(s) | __pq_arrondi(m, ex, 0);\n}\n// la mantisse ramenée à 112 bits, et son exposant binaire\nfonction __pq_norm(m: entier_128) { retour 112 - __xbits(m); }\nfonction __pq_add(a: entier_128, b: entier_128): entier_128 {\n    soit sp = __pq_special(a, b);\n    si sp != 1LL { retour sp; }\n    soit sa = __pq_etat(a) & 1;\n    soit sb = __pq_etat(b) & 1;\n    soit fa = __pq_ef(a);\n    soit fb = __pq_ef(b);\n    si fa == 16383 || fb == 16383 {\n        si fa == 16383 && fb == 16383 && sa != sb { retour __pq_variable(); }\n        si fa == 16383 { retour a; }\n        retour b;\n    }\n    soit ma = __pq_mant(a);\n    soit mb = __pq_mant(b);\n    si ma == 0LL {\n        si mb == 0LL && sa != sb { retour __pq_signe(0); }\n        retour b;\n    }\n    si mb == 0LL { retour a; }\n    soit xa = __pq_ex2(a);\n    soit xb = __pq_ex2(b);\n    si xa .< xb {\n        soit t = ma; ma = mb; mb = t;\n        soit u = xa; xa = xb; xb = u;\n        soit v = sa; sa = sb; sb = v;\n    }\n    ma = __qshl(ma, 4);\n    mb = __qshl(mb, 4);\n    soit d = xa - xb;\n    si d > 120 {\n        mb = 1LL;\n    } sinon si d != 0 {\n        soit q = __qshr(mb, d);\n        si __qshl(q, d) != mb { q = q | 1LL; }\n        mb = q;\n    }\n    soit s = sa;\n    soit m = ma + mb;\n    si sa != sb {\n        si __qltu(ma, mb) {\n            m = mb - ma;\n            s = sb;\n        } sinon {\n            m = ma - mb;\n        }\n        si m == 0LL { retour __pq_signe(0); }\n    }\n    retour __pq_signe(s) | __pq_arrondi(m, xa - 4, 0);\n}\nfonction __pq_neg(a: entier_128): entier_128 {\n    soit e = __pq_etat(a);\n    si e == 1 || e == 2 { retour a ^ 0xC0000000000000000000000000000000LL; }\n    retour a;\n}\nfonction __pq_sub(a: entier_128, b: entier_128): entier_128 { retour __pq_add(a, __pq_neg(b)); }\nfonction __pq_mul(a: entier_128, b: entier_128): entier_128 {\n    soit sp = __pq_special(a, b);\n    si sp != 1LL { retour sp; }\n    soit s = 1;\n    si __pq_etat(a) == __pq_etat(b) { s = 0; }\n    soit ma = __pq_mant(a);\n    soit mb = __pq_mant(b);\n    soit fa = __pq_ef(a);\n    soit fb = __pq_ef(b);\n    si fa == 16383 || fb == 16383 {\n        si (fa != 16383 && ma == 0LL) || (fb != 16383 && mb == 0LL) { retour __pq_variable(); }\n        retour __pq_inf(s);\n    }\n    si ma == 0LL || mb == 0LL { retour __pq_signe(s); }\n    soit ka = __pq_norm(ma);\n    soit kb = __pq_norm(mb);\n    ma = __qshl(ma, ka);\n    mb = __qshl(mb, kb);\n    soit al = bas(ma);\n    soit ah = haut(ma);\n    soit bl = bas(mb);\n    soit bh = haut(mb);\n    soit lo = __xmul64(al, bl);\n    soit mi = __xmul64(ah, bl) + __xmul64(al, bh);\n    soit hi = __xmul64(ah, bh) + entier_128_de(0L, haut(mi));\n    soit lo2 = lo + entier_128_de(bas(mi), 0L);\n    si __qltu(lo2, lo) { hi = hi + 1LL; }\n    soit m = __qshl(hi, 29) | __qshr(lo2, 99);\n    soit collant = 0;\n    si __qshl(lo2, 29) != 0LL { collant = 1; }\n    retour __pq_signe(s) | __pq_arrondi(m, __pq_ex2(a) - ka + __pq_ex2(b) - kb + 99, collant);\n}\nfonction __pq_div(a: entier_128, b: entier_128): entier_128 {\n    soit sp = __pq_special(a, b);\n    si sp != 1LL { retour sp; }\n    soit s = 1;\n    si __pq_etat(a) == __pq_etat(b) { s = 0; }\n    soit ma = __pq_mant(a);\n    soit mb = __pq_mant(b);\n    soit fa = __pq_ef(a);\n    soit fb = __pq_ef(b);\n    si fa == 16383 {\n        si fb == 16383 { retour __pq_variable(); }\n        retour __pq_inf(s);\n    }\n    si fb == 16383 { retour __pq_signe(s); }\n    si mb == 0LL {\n        si ma == 0LL { retour __pq_variable(); }\n        retour __pq_inf(s);\n    }\n    si ma == 0LL { retour __pq_signe(s); }\n    soit ka = __pq_norm(ma);\n    soit kb = __pq_norm(mb);\n    ma = __qshl(ma, ka);\n    mb = __qshl(mb, kb);\n    soit r = ma;\n    soit q = 0LL;\n    pour i dans 0..117 {\n        q = q + q;\n        si !__qltu(r, mb) {\n            r = r - mb;\n            q = q + 1LL;\n        }\n        r = r + r;\n    }\n    soit collant = 0;\n    si r != 0LL { collant = 1; }\n    retour __pq_signe(s) | __pq_arrondi(q, (__pq_ex2(a) - ka) - (__pq_ex2(b) - kb) - 116, collant);\n}\nfonction __pq_racine(a: entier_128): entier_128 {\n    soit st = __pq_etat(a);\n    si st == 0 || st == 3 { retour a; }\n    soit m = __pq_mant(a);\n    soit f0 = __pq_ef(a);\n    si f0 != 16383 && m == 0LL { retour a; }\n    si st == 1 { retour __pq_variable(); }\n    si f0 == 16383 { retour a; }\n    soit k = __pq_norm(m);\n    m = __qshl(m, k);\n    soit x = __pq_ex2(a) - k;\n    si (x & 1) == 1 {\n        m = m + m;\n        x = x - 1;\n    }\n    soit nb = __xbits(m);\n    soit paires = (nb + 121) / 2;\n    soit f = __qshl(m, 248 - 2 * paires);\n    soit res = 0LL;\n    soit reste = 0LL;\n    pour j dans 0..paires {\n        soit deux = haut(haut(f)) >> 30;\n        f = f + f;\n        f = f + f;\n        reste = reste + reste;\n        reste = reste + reste + entier_128(deux);\n        soit t = res + res;\n        t = t + t + 1LL;\n        res = res + res;\n        si !__qltu(reste, t) {\n            reste = reste - t;\n            res = res + 1LL;\n        }\n    }\n    soit collant = 0;\n    si reste != 0LL { collant = 1; }\n    soit y = x - 120;\n    si y .< 0 { y = 0 - ((0 - y) >> 1); } sinon { y = y >> 1; }\n    retour __pq_signe(0) | __pq_arrondi(res, y, collant);\n}\n// 0 : égaux, 1 : a < b, 2 : a > b, 3 : sans ordre (inconnu ou variable)\nfonction __pq_cmp(a: entier_128, b: entier_128) {\n    si __pq_special(a, b) != 1LL { retour 3; }\n    soit ma = a & 0x3FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;\n    soit mb = b & 0x3FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;\n    soit na = __pq_etat(a) & 1;\n    soit nb = __pq_etat(b) & 1;\n    si ma == 0LL && mb == 0LL { retour 0; }\n    si na != nb {\n        si na == 1 { retour 1; }\n        retour 2;\n    }\n    si ma == mb { retour 0; }\n    si __qltu(ma, mb) != na { retour 1; }\n    retour 2;\n}\nfonction __pq_lt(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) == 1; }\nfonction __pq_le(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) < 2; }\nfonction __pq_gt(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) == 2; }\nfonction __pq_ge(a: entier_128, b: entier_128) { retour (__pq_cmp(a, b) & 1) == 0; }\nfonction __pq_eq(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) == 0; }\nfonction __pq_ne(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) != 0; }\n// conversions\nfonction __pq_de_e(x): entier_128 {\n    si x == 0 { retour __pq_signe(0); }\n    retour __pq_de_mag(entier_128_de(0L, long(x)), 0, 0);\n}\nfonction __pq_de_w(w: entier_128): entier_128 {\n    si w == 0LL { retour __pq_signe(0); }\n    si (haut(haut(w)) >> 31) == 1 { retour __pq_de_mag(0LL - w, 0, 1); }\n    retour __pq_de_mag(w, 0, 0);\n}\nfonction __pq_de_l(x: long): entier_128 { retour __pq_de_w(entier_128(x)); }\nfonction __pq_de_d(dx: flottant_64): entier_128 {\n    soit lo = bas(dx);\n    soit hi = haut(dx);\n    soit e = (hi >> 20) & 2047;\n    soit s = hi >> 31;\n    soit m = entier_128_de(0L, long_de(hi & 1048575, lo));\n    si e == 2047 {\n        si m != 0LL { retour __pq_variable(); }\n        retour __pq_inf(s);\n    }\n    si e == 0 && m == 0LL { retour __pq_signe(s); }\n    soit x = 0 - 1074;\n    si e != 0 {\n        m = m | 0x10000000000000LL;\n        x = e - 1075;\n    }\n    retour __pq_de_mag(m, x, s);\n}\n// vers binary64 (les 64 bits dans la moitié basse) : inconnu et variable donnent le NaN\nfonction __pq_vers_d(a: entier_128): flottant_64 {\n    soit st = __pq_etat(a);\n    si st == 0 || st == 3 { retour comme_flottant_64(0x7FF8000000000000L); }\n    soit r = 0x7FF0000000000000LL;\n    si __pq_ef(a) != 16383 { r = __xarrondi(__pq_mant(a), __pq_ex2(a), 0, 53, 1023, 2047); }\n    si st == 1 { r = r | 0x8000000000000000LL; }\n    retour comme_flottant_64(bas(r));\n}\n// vers binary32, en un seul arrondi\nfonction __pq_vers_f(a: entier_128): flottant {\n    soit st = __pq_etat(a);\n    si st == 0 || st == 3 { retour comme_flottant(2143289344); }\n    soit r = 2139095040;\n    si __pq_ef(a) != 16383 { r = bas(bas(__xarrondi(__pq_mant(a), __pq_ex2(a), 0, 24, 127, 255))); }\n    si st == 1 { r = r | 2147483648; }\n    retour comme_flottant(r);\n}\n// vers entier_128 en tronquant vers zéro, saturé aux bornes ; inconnu et variable donnent 0\nfonction __pq_vers_w(a: entier_128): entier_128 {\n    soit st = __pq_etat(a);\n    si st == 0 || st == 3 { retour 0LL; }\n    soit m = __pq_mant(a);\n    soit x = __pq_ex2(a);\n    si __pq_ef(a) == 16383 || (m != 0LL && x .>= 0 && x + __xbits(m) > 127) {\n        si st == 1 { retour 0x80000000000000000000000000000000LL; }\n        retour 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;\n    }\n    si m == 0LL { retour 0LL; }\n    si x .>= 0 {\n        m = __qshl(m, x);\n    } sinon si (0 - x) >= 128 {\n        m = 0LL;\n    } sinon {\n        m = __qshr(m, 0 - x);\n    }\n    si st == 1 { retour 0LL - m; }\n    retour m;\n}\n// échange avec le binary128 de l'IEEE 754 : vers lui c'est exact, depuis lui on arrondit (111 à 112 bits ici, 113 là-bas)\nfonction __pq_vers_ieee(a: entier_128): entier_128 {\n    soit st = __pq_etat(a);\n    si st == 0 || st == 3 { retour 0x7FFF8000000000000000000000000000LL; }\n    soit r = 0x7FFF0000000000000000000000000000LL;\n    si __pq_ef(a) != 16383 { r = __xarrondi(__pq_mant(a), __pq_ex2(a), 0, 113, 16383, 32767); }\n    si st == 1 { retour r | 0x80000000000000000000000000000000LL; }\n    retour r;\n}\nfonction __pq_de_ieee(b: entier_128): entier_128 {\n    soit s = haut(haut(b)) >> 31;\n    soit e = (haut(haut(b)) >> 16) & 32767;\n    soit f = b & 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;\n    si e == 32767 {\n        si f != 0LL { retour __pq_variable(); }\n        retour __pq_inf(s);\n    }\n    si e == 0 && f == 0LL { retour __pq_signe(s); }\n    si e == 0 { retour __pq_de_mag(f, 0 - 16494, s); }\n    retour __pq_de_mag(f | 0x00010000000000000000000000000000LL, e - 16495, s);\n}\nfonction __pq_abs(a: entier_128): entier_128 {\n    si __pq_etat(a) == 1 { retour a ^ 0xC0000000000000000000000000000000LL; }\n    retour a;\n}\nfonction __pq_min(a: entier_128, b: entier_128): entier_128 {\n    soit sp = __pq_special(a, b);\n    si sp != 1LL { retour sp; }\n    si __pq_cmp(b, a) == 1 { retour b; }\n    retour a;\n}\nfonction __pq_max(a: entier_128, b: entier_128): entier_128 {\n    soit sp = __pq_special(a, b);\n    si sp != 1LL { retour sp; }\n    si __pq_cmp(a, b) == 1 { retour b; }\n    retour a;\n}\n// l'état d'un flottant_petuar, en logique de Belnap : inconnu, faux (négatif), vrai (positif), variable (contradiction)\nfonction etat(x: flottant_petuar): logique { retour comme_logique(__pq_etat(bits(x))); }\nfonction pi_petuar(): flottant_petuar { retour 3.14159265358979323846264338327950288419716939937510582Q; }\nfonction inconnu_petuar(): flottant_petuar { retour comme_flottant_petuar(0LL); }\nfonction variable_petuar(): flottant_petuar { retour comme_flottant_petuar(0xC0000000000000000000000000000000LL); }\n// écriture décimale : les chiffres les plus courts qui redonnent exactement le nombre (d = 4294967295), ou d décimales\nfonction ecrire_flottant_petuar(c, x: flottant_petuar, d) {\n    soit a = bits(x);\n    soit st = __pq_etat(a);\n    si st == 0 {\n        __mettre(c, 105); __mettre(c, 110); __mettre(c, 99); __mettre(c, 111); __mettre(c, 110); __mettre(c, 110); __mettre(c, 117);\n        retour;\n    }\n    si st == 3 {\n        __mettre(c, 118); __mettre(c, 97); __mettre(c, 114); __mettre(c, 105); __mettre(c, 97); __mettre(c, 98); __mettre(c, 108);\n        __mettre(c, 101);\n        retour;\n    }\n    si st == 1 { __mettre(c, 45); }\n    soit ef = __pq_ef(a);\n    si ef == 16383 {\n        __mettre(c, 105); __mettre(c, 110); __mettre(c, 102);\n        retour;\n    }\n    soit m = __pq_mant(a);\n    soit f = tableau(0);\n    soit w0 = bas(bas(m));\n    soit w1 = haut(bas(m));\n    soit w2 = bas(haut(m));\n    soit w3 = haut(haut(m));\n    ajouter(f, w0 & 65535); ajouter(f, w0 >> 16);\n    ajouter(f, w1 & 65535); ajouter(f, w1 >> 16);\n    ajouter(f, w2 & 65535); ajouter(f, w2 >> 16);\n    ajouter(f, w3 & 65535);\n    tantque longueur(f) > 0 && f[longueur(f) - 1] == 0 { retirer(f); }\n    soit e = __pq_ex2(a);\n    si d != 4294967295 {\n        si d > 60 { d = 60; }\n        __ecrire_fixe(c, f, e, d);\n        retour;\n    }\n    si longueur(f) == 0 {\n        __mettre(c, 48); __mettre(c, 46); __mettre(c, 48);\n        retour;\n    }\n    // au bas d'une puissance de 4, le voisin du dessous est quatre fois plus près\n    soit bord = 0;\n    si ef > 1 && m == 0x00004000000000000000000000000000LL { bord = 2; }\n    __ecrire_dragon(c, __dragon(f, e, bord));\n}\nfonction __afficher_x(x: flottant_petuar) {\n    ecrire_flottant_petuar(1, x, 4294967295);\n    ecrire_car(1, 10);\n}\nfonction __ecrire_x(x: flottant_petuar) {\n    ecrire_flottant_petuar(1, x, 4294967295);\n}\nfonction __texte_x(x: flottant_petuar): texte {\n    soit t = __verifier(nouveau(48));\n    ecrire_flottant_petuar(t, x, 4294967295);\n    retour __texte_fin(t);\n}\n// les 64 quits d'un entier_petuar en bases (A C G T, ou U pour l'ARN), le quit 63 d'abord ; et ses quatre points du cube\nfonction ecrire_adn(c, w: entier_128, arn) {\n    pour i dans 0..64 {\n        soit k = 63 - i;\n        soit mot = bas(bas(w));\n        si k >= 48 { mot = haut(haut(w)); } sinon si k >= 32 { mot = bas(haut(w)); } sinon si k >= 16 { mot = haut(bas(w)); }\n        soit q = (mot >> ((k & 15) * 2)) & 3;\n        si q == 0 { __mettre(c, 65); } sinon si q == 1 { __mettre(c, 67); } sinon si q == 2 { __mettre(c, 71); }\n        sinon si arn == 1 { __mettre(c, 85); } sinon { __mettre(c, 84); }\n    }\n}\nfonction __hexa8(c, n) {\n    pour i dans 0..8 {\n        soit k = (n >> (28 - 4 * i)) & 15;\n        si k < 10 { __mettre(c, 48 + k); } sinon { __mettre(c, 55 + k); }\n    }\n}\nfonction ecrire_cube(c, w: entier_128) {\n    ecrire_hexa(c, haut(haut(w)));\n    __mettre(c, 95); __hexa8(c, bas(haut(w)));\n    __mettre(c, 95); __hexa8(c, haut(bas(w)));\n    __mettre(c, 95); __hexa8(c, bas(bas(w)));\n}\nfonction texte_adn(w: entier_128): texte {\n    soit t = __verifier(nouveau(68));\n    ecrire_adn(t, w, 0);\n    retour __texte_fin(t);\n}\nfonction texte_arn(w: entier_128): texte {\n    soit t = __verifier(nouveau(68));\n    ecrire_adn(t, w, 1);\n    retour __texte_fin(t);\n}\nfonction texte_cube(w: entier_128): texte {\n    soit t = __verifier(nouveau(40));\n    ecrire_cube(t, w);\n    retour __texte_fin(t);\n}\nfonction graine(n) {\n    soit x = n ^ 2463534242;\n    si x == 0 { x = 1; }\n    @3[14680057] = x;\n    pour i dans 0..8 { hasard_mot(); }\n}\nfonction hasard_mot() {\n    soit x = @3[14680057];\n    si x == 0 { x = 2463534242; }\n    x = x ^ (x << 13);\n    x = x ^ (x >> 17);\n    x = x ^ (x << 5);\n    @3[14680057] = x;\n    retour x;\n}\nfonction hasard(n) {\n    si n == 0 { retour hasard_mot(); }\n    retour hasard_mot() % n;\n}\nfonction hasard_entre(a, b) {\n    retour a + hasard(b - a + 1);\n}\nfonction hasard_flottant(): flottant {\n    retour flottant(hasard_mot() >> 8) * 0.000000059604645;\n}\nfonction graine_bruit() {\n    graine(bruit());\n}\nfonction bruit_logique(): logique {\n    retour comme_logique(bruit());\n}\nfonction tableau(n) {\n    soit h = __verifier(nouveau(3));\n    soit p = h & 16777215;\n    soit cap = n;\n    si cap < 4 {\n        cap = 4;\n    }\n    @3[p] = n;\n    @3[p + 1] = cap;\n    @3[p + 2] = __verifier(nouveau(cap)) & 16777215;\n    retour h;\n}\nfonction __remplir(t, i, v) {\n    @3[@3[(t & 16777215) + 2] + i] = v;\n    retour t;\n}\nfonction __ajouter(t, v) {\n    soit p = t & 16777215;\n    soit n = @3[p];\n    soit cap = @3[p + 1];\n    soit d = @3[p + 2];\n    si n == cap {\n        soit d2 = __verifier(nouveau(2 * cap)) & 16777215;\n        pour i dans 0..n {\n            @3[d2 + i] = @3[d + i];\n        }\n        liberer(50331648 + d);\n        d = d2;\n        @3[p + 1] = 2 * cap;\n        @3[p + 2] = d;\n    }\n    @3[d + n] = v;\n    @3[p] = n + 1;\n}\nfonction ajouter(t, v) {\n    __ajouter(t, v);\n}\nfonction retirer(t) {\n    soit p = t & 16777215;\n    soit n = @3[p];\n    si n == 0 {\n        retour 0;\n    }\n    @3[p] = n - 1;\n    retour @3[@3[p + 2] + n - 1];\n}\nfonction inserer(t, i, v) {\n    __ajouter(t, 0);\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit k = @3[p] - 1;\n    tantque k > i {\n        @3[d + k] = @3[d + k - 1];\n        k = k - 1;\n    }\n    @3[d + i] = v;\n}\nfonction enlever(t, i) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit v = @3[d + i];\n    pour k dans i..n - 1 {\n        @3[d + k] = @3[d + k + 1];\n    }\n    @3[p] = n - 1;\n    retour v;\n}\nfonction vider(t) {\n    @3[t & 16777215] = 0;\n}\nfonction indice(t, v) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    pour k dans 0..@3[p] {\n        si @3[d + k] == v {\n            retour k;\n        }\n    }\n    retour 4294967295;\n}\nfonction contient(t, v) {\n    retour indice(t, v) != 4294967295;\n}\nfonction somme(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit s = 0;\n    pour k dans 0..@3[p] {\n        s = s + @3[d + k];\n    }\n    retour s;\n}\nfonction accorder(etage, f) {\n    // l'étage regarde désormais le cube de fréquence f (les autres cubes gardent leur contenu) ; rend l'ancienne\n    retour __service(8, (f << 2) | (etage & 3));\n}\nfonction frequence(etage) {\n    retour __service(9, etage & 3);\n}\nfonction presenter() {\n    // Gobatix : montre l'image préparée par ecran(l, h) ; rend 0 tant que tout va bien (la machine sans fenêtre rend toujours 0),\n    // 1 quand la fenêtre a été fermée, 4294967295 si le programme n'a pas préparé d'image\n    retour __service(12, 0);\n}\nfonction ranger_cube(etage, f) {\n    // écrit sur disque le cube de fréquence f de l'étage (fichier cube-ÉTAGE-FRÉQUENCE.cub, à côté du programme) ; un cube\n    // qui n'est pas regardé quitte la mémoire, accorder(étage, f) le retrouve dans son fichier ; rend le nombre de pages\n    retour __service(11, (f << 2) | (etage & 3));\n}\nfonction parler(t) {\n    soit c = ouvrir_ecriture(\"voix:\");\n    si c != 4294967295 {\n        ecrire_texte(c, t);\n        fermer(c);\n    }\n}\nfonction ecran(l, h) {\n    @3[14680058] = l;\n    @3[14680059] = h;\n    pour i dans 0..(l * h) {\n        @1[i] = 0;\n    }\n}\nfonction rgb(r, g, b) {\n    retour ((r & 255) << 24) | ((g & 255) << 16) | ((b & 255) << 8) | 255;\n}\nfonction pixel(x, y, c) {\n    soit l = @3[14680058];\n    si x < l && y < @3[14680059] {\n        @1[y * l + x] = c;\n    }\n}\nfonction rectangle(x, y, l, h, c) {\n    pour j dans 0..h {\n        pour i dans 0..l {\n            pixel(x + i, y + j, c);\n        }\n    }\n}\nfonction disque(cx, cy, r, c) {\n    pour j dans 0..(2 * r + 1) {\n        pour i dans 0..(2 * r + 1) {\n            soit dx = i - r;\n            soit dy = j - r;\n            si dx * dx + dy * dy <= r * r {\n                pixel(cx + dx, cy + dy, c);\n            }\n        }\n    }\n}\nfonction trait(x0, y0, x1, y1, c) {\n    soit dx = abs(x1 - x0);\n    soit dy = abs(y1 - y0);\n    soit sx = 1;\n    si x1 .< x0 {\n        sx = 0 - 1;\n    }\n    soit sy = 1;\n    si y1 .< y0 {\n        sy = 0 - 1;\n    }\n    soit err = dx - dy;\n    soit fini = 0;\n    tantque fini == 0 {\n        pixel(x0, y0, c);\n        si x0 == x1 && y0 == y1 {\n            fini = 1;\n        } sinon {\n            soit e2 = 2 * err;\n            si e2 .> 0 - dy {\n                err = err - dy;\n                x0 = x0 + sx;\n            }\n            si e2 .< dx {\n                err = err + dx;\n                y0 = y0 + sy;\n            }\n        }\n    }\n}\n// triangle plein dont la couleur se fond d'un sommet à l'autre (ombrage de Gouraud) : chaque sommet a sa couleur #RRGGBBAA\nfonction triangle(x0, y0, c0, x1, y1, c1, x2, y2, c2) {\n    soit l = @3[14680058];\n    soit h = @3[14680059];\n    soit aire = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);\n    si aire == 0 { retour; }\n    si aire .< 0 {\n        soit tx = x1; x1 = x2; x2 = tx;\n        soit ty = y1; y1 = y2; y2 = ty;\n        soit tc = c1; c1 = c2; c2 = tc;\n        aire = 0 - aire;\n    }\n    // la boîte du triangle, coupée aux bords de l'image\n    soit xa = x0; si x1 .< xa { xa = x1; } si x2 .< xa { xa = x2; } si xa .< 0 { xa = 0; }\n    soit ya = y0; si y1 .< ya { ya = y1; } si y2 .< ya { ya = y2; } si ya .< 0 { ya = 0; }\n    soit xb = x0; si x1 .> xb { xb = x1; } si x2 .> xb { xb = x2; } si xb .>= l { xb = l - 1; }\n    soit yb = y0; si y1 .> yb { yb = y1; } si y2 .> yb { yb = y2; } si yb .>= h { yb = h - 1; }\n    si xa .> xb || ya .> yb { retour; }\n    // les trois poids (fonctions d'arête), qui avancent d'un pas constant d'un point au suivant\n    soit r0 = c0 >> 24; soit g0 = (c0 >> 16) & 255; soit b0 = (c0 >> 8) & 255;\n    soit r1 = c1 >> 24; soit g1 = (c1 >> 16) & 255; soit b1 = (c1 >> 8) & 255;\n    soit r2 = c2 >> 24; soit g2 = (c2 >> 16) & 255; soit b2 = (c2 >> 8) & 255;\n    soit a0 = y1 - y2; soit b0p = x2 - x1;\n    soit a1 = y2 - y0; soit b1p = x0 - x2;\n    soit a2 = y0 - y1; soit b2p = x1 - x0;\n    soit w0l = (x2 - x1) * (ya - y1) - (y2 - y1) * (xa - x1);\n    soit w1l = (x0 - x2) * (ya - y2) - (y0 - y2) * (xa - x2);\n    soit w2l = (x1 - x0) * (ya - y0) - (y1 - y0) * (xa - x0);\n    soit y = ya;\n    tantque y .<= yb {\n        soit w0 = w0l;\n        soit w1 = w1l;\n        soit w2 = w2l;\n        soit p = y * l + xa;\n        soit x = xa;\n        tantque x .<= xb {\n            si (w0 | w1 | w2) < 2147483648 {\n                soit r = (w0 * r0 + w1 * r1 + w2 * r2) / aire;\n                soit g = (w0 * g0 + w1 * g1 + w2 * g2) / aire;\n                soit b = (w0 * b0 + w1 * b1 + w2 * b2) / aire;\n                @1[p] = (r << 24) | (g << 16) | (b << 8) | 255;\n            }\n            w0 = w0 + a0;\n            w1 = w1 + a1;\n            w2 = w2 + a2;\n            p = p + 1;\n            x = x + 1;\n        }\n        w0l = w0l + b0p;\n        w1l = w1l + b1p;\n        w2l = w2l + b2p;\n        y = y + 1;\n    }\n}\nfonction __somme_f(t): flottant {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit s = 0.0;\n    pour k dans 0..@3[p] {\n        s = s + comme_flottant(@3[d + k]);\n    }\n    retour s;\n}\nfonction __cle_f(b) {\n    si b >= 2147483648 {\n        retour ~b;\n    }\n    retour b | 2147483648;\n}\nfonction __trier_f(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit ecart = n / 2;\n    tantque ecart > 0 {\n        pour i dans ecart..n {\n            soit x = @3[d + i];\n            soit j = i;\n            tantque j >= ecart && __cle_f(@3[d + j - ecart]) > __cle_f(x) {\n                @3[d + j] = @3[d + j - ecart];\n                j = j - ecart;\n            }\n            @3[d + j] = x;\n        }\n        ecart = ecart / 2;\n    }\n}\nfonction inverser(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit a = 0;\n    soit b = @3[p] - 1;\n    tantque a .< b {\n        soit x = @3[d + a];\n        @3[d + a] = @3[d + b];\n        @3[d + b] = x;\n        a = a + 1;\n        b = b - 1;\n    }\n}\nfonction copie(t) {\n    soit n = @3[t & 16777215];\n    soit r = tableau(n);\n    soit ds = @3[(t & 16777215) + 2];\n    soit dr = @3[(r & 16777215) + 2];\n    pour k dans 0..n {\n        @3[dr + k] = @3[ds + k];\n    }\n    retour r;\n}\nfonction trier(t) {\n    soit p = t & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit ecart = n / 2;\n    tantque ecart > 0 {\n        pour i dans ecart..n {\n            soit x = @3[d + i];\n            soit j = i;\n            tantque j >= ecart && (@3[d + j - ecart] ^ 2147483648) > (x ^ 2147483648) {\n                @3[d + j] = @3[d + j - ecart];\n                j = j - ecart;\n            }\n            @3[d + j] = x;\n        }\n        ecart = ecart / 2;\n    }\n}\nfonction __hache(t) {\n    soit h = 2166136261;\n    pour i dans 0..longueur(t) {\n        h = (h ^ car(t, i)) * 16777619;\n    }\n    retour h;\n}\nfonction __dico(ouvert) {\n    soit h = __verifier(nouveau(6));\n    soit p = h & 16777215;\n    @3[p + 1] = 16;\n    @3[p + 2] = __verifier(nouveau(16)) & 16777215;\n    @3[p + 3] = __verifier(nouveau(16)) & 16777215;\n    @3[p + 4] = __verifier(nouveau(16)) & 16777215;\n    @3[p + 5] = ouvert;\n    retour h;\n}\nfonction dico() {\n    retour __dico(0);\n}\nfonction dico_ouvert() {\n    retour __dico(1);\n}\nfonction __place(d, cle) {\n    soit p = d & 16777215;\n    soit cap = @3[p + 1];\n    soit ks = @3[p + 2];\n    soit i = __hache(cle) & (cap - 1);\n    tantque @3[ks + i] != 0 && texte_egal(@3[ks + i], cle) == 0 {\n        i = (i + 1) & (cap - 1);\n    }\n    retour i;\n}\nfonction __remettre(d, cle, v, q) {\n    soit p = d & 16777215;\n    soit i = __place(d, cle);\n    si @3[@3[p + 2] + i] == 0 {\n        @3[@3[p + 2] + i] = cle;\n        @3[p] = @3[p] + 1;\n    }\n    @3[@3[p + 3] + i] = v;\n    @3[@3[p + 4] + i] = q;\n}\nfonction __case(d, cle) {\n    soit p = d & 16777215;\n    si (@3[p] + 1) * 4 > @3[p + 1] * 3 {\n        soit cap = @3[p + 1];\n        soit ks = @3[p + 2];\n        soit vs = @3[p + 3];\n        soit qs = @3[p + 4];\n        @3[p] = 0;\n        @3[p + 1] = 2 * cap;\n        @3[p + 2] = __verifier(nouveau(2 * cap)) & 16777215;\n        @3[p + 3] = __verifier(nouveau(2 * cap)) & 16777215;\n        @3[p + 4] = __verifier(nouveau(2 * cap)) & 16777215;\n        pour k dans 0..cap {\n            si @3[ks + k] != 0 {\n                __remettre(d, @3[ks + k], @3[vs + k], @3[qs + k]);\n            }\n        }\n        liberer(50331648 + ks);\n        liberer(50331648 + vs);\n        liberer(50331648 + qs);\n    }\n    soit i = __place(d, cle);\n    si @3[@3[p + 2] + i] == 0 {\n        @3[@3[p + 2] + i] = cle;\n        @3[p] = @3[p] + 1;\n    }\n    retour i;\n}\nfonction ranger(d, cle, v) {\n    soit p = d & 16777215;\n    soit i = __case(d, cle);\n    @3[@3[p + 3] + i] = v;\n    @3[@3[p + 4] + i] = 2;\n}\nfonction affirmer(d, cle, v) {\n    soit p = d & 16777215;\n    soit neuf = existe(d, cle) == 0;\n    soit i = __case(d, cle);\n    soit q = @3[@3[p + 4] + i];\n    si neuf {\n        q = 2;\n    } sinon si q == 1 || (q == 2 && @3[@3[p + 3] + i] != v) {\n        q = 3;\n    }\n    @3[@3[p + 3] + i] = v;\n    @3[@3[p + 4] + i] = q;\n}\nfonction nier(d, cle) {\n    soit p = d & 16777215;\n    soit neuf = existe(d, cle) == 0;\n    soit i = __case(d, cle);\n    soit q = @3[@3[p + 4] + i];\n    si neuf {\n        q = 1;\n    } sinon si q == 2 {\n        q = 3;\n    }\n    @3[@3[p + 4] + i] = q;\n}\nfonction trouver(d, cle) {\n    soit p = d & 16777215;\n    soit i = __place(d, cle);\n    retour @3[@3[p + 3] + i];\n}\nfonction existe(d, cle) {\n    soit p = d & 16777215;\n    retour @3[@3[p + 2] + __place(d, cle)] != 0;\n}\nfonction savoir(d, cle): logique {\n    si d == 0 {\n        retour inconnu;\n    }\n    soit p = d & 16777215;\n    soit i = __place(d, cle);\n    si @3[@3[p + 2] + i] == 0 {\n        si @3[p + 5] == 1 {\n            retour inconnu;\n        }\n        retour faux;\n    }\n    retour comme_logique(@3[@3[p + 4] + i]);\n}\nfonction nommer(l: logique, noms): texte {\n    retour @3[@3[(noms & 16777215) + 2] + entier(l)];\n}\nfonction cles(d) {\n    soit p = d & 16777215;\n    soit r = tableau(0);\n    soit ks = @3[p + 2];\n    pour k dans 0..@3[p + 1] {\n        si @3[ks + k] != 0 {\n            __ajouter(r, @3[ks + k]);\n        }\n    }\n    retour r;\n}\nfonction majuscules(t): texte {\n    soit n = longueur(t);\n    soit r = texte_neuf(n);\n    pour i dans 0..n {\n        soit c = car(t, i);\n        si (c >= 97 && c <= 122) || (c >= 224 && c <= 254 && c != 247) {\n            c = c - 32;\n        }\n        changer_car(r, i, c);\n    }\n    retour r;\n}\nfonction minuscules(t): texte {\n    soit n = longueur(t);\n    soit r = texte_neuf(n);\n    pour i dans 0..n {\n        soit c = car(t, i);\n        si (c >= 65 && c <= 90) || (c >= 192 && c <= 222 && c != 215) {\n            c = c + 32;\n        }\n        changer_car(r, i, c);\n    }\n    retour r;\n}\nfonction commence_par(t, debut) {\n    soit n = longueur(debut);\n    si n > longueur(t) {\n        retour 0;\n    }\n    pour i dans 0..n {\n        si car(t, i) != car(debut, i) {\n            retour 0;\n        }\n    }\n    retour 1;\n}\nfonction finit_par(t, fin) {\n    soit n = longueur(fin);\n    soit m = longueur(t);\n    si n > m {\n        retour 0;\n    }\n    pour i dans 0..n {\n        si car(t, m - n + i) != car(fin, i) {\n            retour 0;\n        }\n    }\n    retour 1;\n}\nfonction car_texte(c): texte {\n    soit t = texte_neuf(1);\n    changer_car(t, 0, c);\n    retour t;\n}\nfonction repeter(t, n): texte {\n    soit m = longueur(t);\n    soit r = texte_neuf(m * n);\n    pour k dans 0..n {\n        pour i dans 0..m {\n            changer_car(r, k * m + i, car(t, i));\n        }\n    }\n    retour r;\n}\nfonction nettoyer(t): texte {\n    soit a = 0;\n    soit b = longueur(t);\n    tantque a < b && (car(t, a) == 32 || car(t, a) == 9 || car(t, a) == 10 || car(t, a) == 13) {\n        a = a + 1;\n    }\n    tantque b > a && (car(t, b - 1) == 32 || car(t, b - 1) == 9 || car(t, b - 1) == 10 || car(t, b - 1) == 13) {\n        b = b - 1;\n    }\n    retour sous_texte(t, a, b);\n}\nfonction decouper(t, sep) {\n    soit r = tableau(0);\n    soit n = longueur(t);\n    soit m = longueur(sep);\n    soit debut = 0;\n    soit i = 0;\n    tantque i + m <= n && m > 0 {\n        soit egal = 1;\n        pour k dans 0..m {\n            si car(t, i + k) != car(sep, k) {\n                egal = 0;\n            }\n        }\n        si egal == 1 {\n            __ajouter(r, sous_texte(t, debut, i));\n            i = i + m;\n            debut = i;\n        } sinon {\n            i = i + 1;\n        }\n    }\n    __ajouter(r, sous_texte(t, debut, n));\n    retour r;\n}\nfonction assembler(tab, sep): texte {\n    soit p = tab & 16777215;\n    soit d = @3[p + 2];\n    soit n = @3[p];\n    soit total = 0;\n    pour k dans 0..n {\n        total = total + longueur(@3[d + k]);\n    }\n    si n > 0 {\n        total = total + (n - 1) * longueur(sep);\n    }\n    soit r = texte_neuf(total);\n    soit j = 0;\n    pour k dans 0..n {\n        si k > 0 {\n            pour i dans 0..longueur(sep) {\n                changer_car(r, j, car(sep, i));\n                j = j + 1;\n            }\n        }\n        soit x = @3[d + k];\n        pour i dans 0..longueur(x) {\n            changer_car(r, j, car(x, i));\n            j = j + 1;\n        }\n    }\n    retour r;\n}\nfonction remplacer(t, ancien, neuf): texte {\n    retour assembler(decouper(t, ancien), neuf);\n}\nfonction lire_ligne(): texte {\n    soit t = __verifier(nouveau(257));\n    soit c = lire_car(1);\n    si c == 4294967295 {\n        retour __texte_fin(t);\n    }\n    tantque c != 10 && c != 4294967295 {\n        si c != 13 {\n            si longueur(t) < 256 {\n                __mettre(t, c);\n            }\n        }\n        c = lire_car(1);\n    }\n    retour __texte_fin(t);\n}\nfonction pgcd(a, b) {\n    tantque b != 0 {\n        soit r = a % b;\n        a = b;\n        b = r;\n    }\n    retour a;\n}\nfonction borne(x, a, b) {\n    si x .< a {\n        retour a;\n    }\n    si x .> b {\n        retour b;\n    }\n    retour x;\n}\n";
 }
