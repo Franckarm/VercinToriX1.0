@@ -155,6 +155,7 @@ extern "system" {
     fn SetFocus(h: H) -> H;
     fn SetCapture(h: H) -> H;
     fn ReleaseCapture() -> i32;
+    fn GetCapture() -> H;
     fn GetFocus() -> H;
     fn SetProcessDPIAware() -> i32;
     fn GetDC(h: H) -> H;
@@ -811,7 +812,10 @@ fn fini() {
     super::hote::FENETRE.store(false, Ordering::Relaxed);
     super::hote::tout_relacher();
     unsafe {
-        ReleaseCapture();
+        // la vue du cube rend la souris si elle la tenait (pas l'éditeur, qui sélectionne peut-être)
+        if GetCapture() == at.cube {
+            ReleaseCapture();
+        }
     }
     // une animation en cours d'enregistrement est écrite à la fin du programme
     if super::gobatix::ENREGISTRER.load(Ordering::Relaxed) {
@@ -1658,6 +1662,13 @@ unsafe fn souris_vue(h: H, m: u32, wp: usize, lp: isize) -> bool {
     let b = (wp as u32 & 1) | (wp as u32 & 2) | if wp & 16 != 0 { 4 } else { 0 };
     let presse = matches!(m, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_LBUTTONDBLCLK);
     let lache = matches!(m, WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP);
+    // la souris est rendue au reste de l'atelier dès que plus aucun bouton n'est enfoncé, quel que soit l'état (sinon,
+    // un bouton relâché après la fin du programme laissait la vue du cube garder la souris : l'éditeur ne pouvait plus
+    // arrêter de sélectionner)
+    if lache && b == 0 {
+        ReleaseCapture();
+        at.glisse = None;
+    }
     if at.en_cours {
         let taille = IMAGE.lock().unwrap().as_ref().map(|(l, h, _)| (*l, *h));
         let (il, ih) = match taille {
@@ -1667,8 +1678,6 @@ unsafe fn souris_vue(h: H, m: u32, wp: usize, lp: isize) -> bool {
         if presse {
             SetFocus(h);
             SetCapture(h);
-        } else if lache && b == 0 {
-            ReleaseCapture();
         }
         let (x0, y0, dl, dh) = *PLACE.lock().unwrap();
         super::hote::souris_dans_vue(mx, my, x0, y0, dl, dh, il, ih, b);
@@ -1689,10 +1698,7 @@ unsafe fn souris_vue(h: H, m: u32, wp: usize, lp: isize) -> bool {
             at.glisse = Some((mx, my));
             SetCapture(h);
         }
-        WM_LBUTTONUP | WM_RBUTTONUP => {
-            at.glisse = None;
-            ReleaseCapture();
-        }
+        WM_LBUTTONUP | WM_RBUTTONUP => {}
         WM_MOUSEMOVE => {
             if let Some((x, y)) = at.glisse {
                 let seuil = (60.0 * at.echelle) as i32;
@@ -1801,7 +1807,9 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
                     etat(&format!("image du programme : {} × {} points · F6 : image, cube en perspective, à plat, quits · Cube › Image en PNG",
                                   il, ih));
                 } else if !ANNONCEE.swap(true, Ordering::Relaxed) {
-                    etat(&format!("image du programme : {} × {} · cliquez l'image : la souris et le clavier vont au programme · \
+                    // la première image : le clavier va au programme sans qu'il faille cliquer
+                    SetFocus(h);
+                    etat(&format!("image du programme : {} × {} · la souris et le clavier vont au programme · \
                                    Ctrl+G : enregistrer l'animation (GIF) · Maj+F5 : arrêter", il, ih));
                 }
             } else if let Some(mem) = &at.mem {
@@ -1834,6 +1842,11 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
         }
         WM_KILLFOCUS => {
             super::hote::tout_relacher();
+            0
+        }
+        // la souris reprise par Windows (Alt+Tab, une autre fenêtre) : plus de glissement en cours
+        0x0215 => {
+            a().glisse = None;
             0
         }
         WM_LBUTTONDOWN => {
