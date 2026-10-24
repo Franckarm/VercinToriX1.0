@@ -1,10 +1,25 @@
-# Vercintorix (vtx) 0.4
+# Vercintorix (vtx) 0.5
 
 **Pour commencer : lisez `COMMENCER.md`** (construire vtx.exe, installer l'éditeur, premiers programmes).
 
 Tous droits réservés : voir `AUTEUR.md`.
 
 Langage, compilateur, assembleur et émulateur du SPU à cube chromatique.
+
+## Ce que la 0.5 réunit
+
+- **Le SPU-64** : mots de 64 bits, points profonds `#RRRRGGGGBBBBAAAA`, adresses longues (étage, cube, `#RRGGBB`), brin
+  ADN et ARN de chaque mot, flottant quaternaire de 64 bits par défaut (32 et 128 au choix). Machines Python et Rust
+  identiques (`spu64/`, `docs/specification-spu64.md`).
+- **vtx64.py** (le compilateur de référence du SPU-64) et **vtxc64** (le compilateur écrit en vtx, qui se compile lui-même
+  au point fixe), qui donnent toujours les mêmes mots (`docs/vtx64-langage.md`).
+- **vtx64.exe sans Python** : `vtx64 programme.vtx` compile avec vtxc64 embarqué et exécute ; l'**atelier** travaille par
+  défaut sur la SPU-64 (Ctrl+M : SPU-32).
+- **Les optimisations** : variables en registres, épissage (dont la règle échange, comme l'auto-épissage des introns),
+  expansion en ligne des petites fonctions, tables de noms dans les cubes.
+- Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là, inchangé.
+
+L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/vtx-0-5-autonomie.md`.
 
 ## Ce qu'il faut
 

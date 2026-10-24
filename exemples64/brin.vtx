@@ -1,0 +1,23 @@
+// Le brin de chaque mot : 0 libre, 1 ADN (T : le résultat fixé, en lecture seule), 2 ARN (U : le travail).
+// Le code, les textes écrits et les données du programme sont de l'ADN dès le départ : une écriture dessus arrête la
+// machine au lieu de corrompre le programme.
+fonction principal() {
+    soit modele = "gaulois";                  // écrit dans le programme : déjà de l'ADN
+    afficher(est_fixe(modele));
+    soit travail: texte = copier_arn(modele); // une copie de travail (ARN), modifiable
+    changer_car(travail, 0, 71);
+    afficher(travail);
+    afficher(est_arn(travail));
+    fixer(travail);                           // le résultat est fixé : il devient de l'ADN
+    afficher(est_fixe(travail));
+    soit t = [3, 1, 2];
+    trier(t);
+    fixer_tableau(t);                         // le tableau trié est désormais fixé
+    soit t2 = copier_arn_tableau(t);          // pour le changer, on en tire une copie de travail
+    t2[0] = 10;
+    afficher(t2[0] + t[0]);
+    afficher(brin(cube_adresse(0, 0, 0)));    // le premier mot du code : 1 (ADN)
+    afficher("et maintenant, une écriture sur l'ADN :");
+    changer_car(travail, 1, 88);              // arrête la machine : « écriture dans un mot ADN (fixé) »
+    afficher("jamais affiché");
+}

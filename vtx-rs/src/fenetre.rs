@@ -5,9 +5,12 @@
 // vu comme un cube de 256 × 256 × 256 mots, les mots non nuls en voxels). En dessous, ce qu'a donné le programme.
 #![allow(non_snake_case, clippy::upper_case_acronyms)]
 
-use super::{boucle, compiler_avec, compiler_lignes, dossier_de, executer_dans, lire_partition, nombres, Etat, Fichiers, Memoire, ARRET,
+use super::{compiler_avec, compiler_lignes, dossier_de, executer_dans, lire_partition, nombres, Etat, Memoire, ARRET,
             ATTENTE_NS, CANAL_ENTREE, CANAL_SORTIE, CLAVIER, COMPLET, DIRECT, PAS_A_PAS, PILE_HAUT, VTXC};
 use super::arbre::{self, Noeud};
+use super::machine64::{compiler64, nombres64, situer_erreur, vers_point32, COMPLET64, PAS_A_PAS64, VTXC64};
+use super::spu64::Spu64;
+use super::pas64::{decoder64, panneau64, table_des_lignes, Moteur, Pas, Vue64};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -141,6 +144,8 @@ extern "system" {
     fn CreatePopupMenu() -> H;
     fn AppendMenuW(m: H, drapeaux: u32, id: usize, t: *const u16) -> i32;
     fn SetMenu(h: H, m: H) -> i32;
+    fn GetMenu(h: H) -> H;
+    fn CheckMenuItem(m: H, id: u32, drapeaux: u32) -> u32;
     fn MessageBoxW(h: H, t: *const u16, titre: *const u16, genre: u32) -> i32;
     fn InvalidateRect(h: H, r: *const Rect, effacer: i32) -> i32;
     fn BeginPaint(h: H, p: *mut PaintStruct) -> H;
@@ -268,6 +273,7 @@ const C_ARRETER: u16 = 1203;
 const C_PAS_DESSUS: u16 = 1206;
 const C_POINT: u16 = 1207;
 const C_FIN_PAS: u16 = 1208;
+const C_MACHINE64: u16 = 1209;
 const C_ASSOCIER: u16 = 1402;
 const C_PURGER: u16 = 1205;
 const C_ETAGE: u16 = 1300; // + 0..3
@@ -337,18 +343,10 @@ struct Atelier {
     rx_sortie: Option<mpsc::Receiver<u32>>,
     tx_entree: Option<mpsc::Sender<u32>>,
     icone: H,
-}
-
-/// Le pas à pas : la machine arrêtée entre deux instructions, et la table adresse -> ligne donnée par vtxc.
-struct Pas {
-    mem: Memoire,
-    et: Etat,
-    fichiers: Fichiers,
-    entrees: Vec<u32>,
-    dossier: PathBuf,
-    debuts: HashMap<u32, usize>,
-    ligne: Option<usize>,
-    fini: bool,
+    // la machine : SPU-64 (vtxc64, mots de 64 bits) ou SPU-32 (vtxc) ; et, après un programme de 64 bits, ses vraies
+    // valeurs (le cube montre leurs points de 32 bits)
+    machine64: bool,
+    vue64: Option<Vue64>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -370,6 +368,7 @@ struct Fini {
     resume: String,
     mem: Option<Memoire>,
     ligne_erreur: Option<usize>,
+    vue64: Option<Vue64>,
 }
 static FINI: Mutex<Option<Fini>> = Mutex::new(None);
 
@@ -393,13 +392,35 @@ fn titre() {
     let nom = at.fichier.as_ref().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or("sans titre".into());
     let modifie = unsafe { SendMessageW(at.source, EM_GETMODIFY, 0, 0) } != 0;
     unsafe {
-        SetWindowTextW(at.fen, w(&format!("{}{} — Atelier vtx", nom, if modifie { " •" } else { "" })).as_ptr());
+        SetWindowTextW(at.fen, w(&format!("{}{} — Atelier vtx · {}", nom, if modifie { " •" } else { "" },
+                                          if at.machine64 { "SPU-64" } else { "SPU-32" })).as_ptr());
     }
 }
 fn etat(t: &str) {
     unsafe {
         SetWindowTextW(a().etat, w(&format!("  {}", t)).as_ptr());
     }
+}
+
+/// La machine : 64 bits (SPU-64, compilée par vtxc64) ou 32 bits (SPU-32, compilée par vtxc). Le menu la coche, le
+/// bouton et le titre la nomment ; le pas à pas en cours est arrêté (il tourne sur l'autre machine).
+fn choisir_machine(m64: bool) {
+    let at = a();
+    if at.en_cours {
+        etat("un programme tourne : la machine changera après lui");
+        return;
+    }
+    if at.pas.is_some() {
+        arreter_pas("pas à pas arrêté : changement de machine");
+    }
+    at.machine64 = m64;
+    unsafe {
+        CheckMenuItem(GetMenu(at.fen), C_MACHINE64 as u32, if m64 { 8 } else { 0 }); // MF_CHECKED
+        if let Some(b) = at.boutons.iter().find(|b| b.1 == C_MACHINE64) {
+            SetWindowTextW(b.0, w(if m64 { "Machine : SPU-64" } else { "Machine : SPU-32" }).as_ptr());
+        }
+    }
+    titre();
 }
 
 // ------------------------------------------------------------------------------------------------ fichiers
@@ -454,6 +475,7 @@ fn effacer_resultats() {
         return;
     }
     at.mem = None;
+    at.vue64 = None;
     at.pas = None;
     at.noeuds.clear();
     at.ouverts.clear();
@@ -479,8 +501,11 @@ fn charger(chemin: &Path) {
     }
     at.fichier = Some(chemin.to_path_buf());
     effacer_resultats();
-    titre();
-    etat(&format!("ouvert : {}", chemin.display()));
+    // les exemples de la machine 32 bits (dossier « exemples ») s'ouvrent sur elle ; tout le reste sur la SPU-64
+    let ancien = chemin.components().any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case("exemples"));
+    choisir_machine(!ancien);
+    etat(&format!("ouvert : {} · machine {}{}", chemin.display(), if ancien { "SPU-32" } else { "SPU-64" },
+                  if ancien { " (dossier exemples ; Exécuter › Machine 64 bits pour changer)" } else { "" }));
 }
 
 /// Enregistre (en demandant un nom s'il n'y en a pas) ; false si l'utilisateur a renoncé ou si l'écriture échoue.
@@ -561,10 +586,12 @@ fn lancer() {
         at.fichier.clone().unwrap()
     };
     let source = lire_texte(at.source).replace("\r\n", "\n");
-    let entrees: Vec<u32> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).map(|x| x as u32).collect();
+    let entrees: Vec<u64> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).collect();
+    let m64 = at.machine64;
     at.en_cours = true;
     // la mémoire du programme précédent est rendue avant d'en prendre une autre
     at.mem = None;
+    at.vue64 = None;
     at.noeuds.clear();
     at.ouverts.clear();
     unsafe {
@@ -572,8 +599,9 @@ fn lancer() {
         InvalidateRect(at.arbre, std::ptr::null(), 0);
     }
     let nom = fichier.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    ajouter_texte(at.sortie, &format!("\n▶ {}\n", nom));
-    ecrire_texte(at.journal, &format!("▶ {} : compilation et exécution…\n", nom));
+    let machine = if m64 { "SPU-64" } else { "SPU-32" };
+    ajouter_texte(at.sortie, &format!("\n▶ {} · {}\n", nom, machine));
+    ecrire_texte(at.journal, &format!("▶ {} : compilation et exécution sur la machine {}…\n", nom, machine));
     montrer_onglet(1);
     etat("compilation et exécution… (la ligne sous le terminal répond au programme ; Maj+F5 l'arrête)");
     // la console du programme passe par le terminal
@@ -590,7 +618,12 @@ fn lancer() {
     }
     let fen = at.fen as usize;
     std::thread::spawn(move || {
-        let fini = executer(&fichier, &source, &entrees);
+        let fini = if m64 {
+            executer64(&fichier, &source, &entrees)
+        } else {
+            let e32: Vec<u32> = entrees.iter().map(|&x| x as u32).collect();
+            executer(&fichier, &source, &e32)
+        };
         DIRECT.store(false, Ordering::Relaxed);
         CLAVIER.store(0, Ordering::Relaxed);
         *CANAL_SORTIE.lock().unwrap() = None;
@@ -612,7 +645,7 @@ fn executer(fichier: &Path, source: &str, entrees: &[u32]) -> Fini {
         Err(e) => {
             let ligne = e.find("erreur ligne ").and_then(|p| e[p + 13..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok());
             let t = e.replace("erreur ligne ", &format!("erreur {}, ligne ", nom));
-            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne };
+            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None };
         }
     };
     let tc = t0.elapsed().as_secs_f64();
@@ -653,7 +686,84 @@ fn executer(fichier: &Path, source: &str, entrees: &[u32]) -> Fini {
             texte.push_str(&resume);
         }
     }
-    Fini { texte, resume, mem: Some(mem), ligne_erreur: None }
+    Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: None }
+}
+
+/// F5 sur la machine 64 bits : vtxc64 (embarqué) compile, la SPU-64 exécute ; sa console passe par le terminal.
+fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
+    let f = fichier.to_string_lossy().into_owned();
+    let base = dossier_de(&f);
+    let t0 = std::time::Instant::now();
+    let mots = match compiler64(&nombres64(VTXC64), source, &base, COMPLET64, false) {
+        Ok((m, _, _)) => m,
+        Err(e) => {
+            let (t, ligne) = situer_erreur(&e, &f);
+            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None };
+        }
+    };
+    let tc = t0.elapsed().as_secs_f64();
+    let mut s = Spu64::nouveau();
+    s.dossier = Some(PathBuf::from(&base));
+    s.charger(&mots);
+    s.entree.extend(entrees.iter().copied());
+    // la console : chaque caractère part aussitôt vers le terminal, et il est gardé pour le compte rendu
+    let ecrit = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let garde = ecrit.clone();
+    s.console_ecrire = Some(Box::new(move |v: u64| {
+        if let Some(tx) = CANAL_SORTIE.lock().unwrap().as_ref() {
+            let _ = tx.send((v & 0x1F_FFFF) as u32);
+        }
+        if let Some(c) = char::from_u32((v & 0x1F_FFFF) as u32) {
+            garde.borrow_mut().push(c);
+        }
+    }));
+    s.console_lire = Some(Box::new(|| {
+        let t = std::time::Instant::now();
+        let r = CANAL_ENTREE.lock().unwrap();
+        let v = match r.as_ref().map(|c| c.recv()) {
+            Some(Ok(v)) => v as u64,
+            _ => u64::MAX,
+        };
+        ATTENTE_NS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        v
+    }));
+    s.arret = Some(&ARRET);
+    s.parler = Some(super::parler_hote);
+    ATTENTE_NS.store(0, Ordering::Relaxed);
+    let t1 = std::time::Instant::now();
+    let r = s.executer(20_000_000_000);
+    let attente = ATTENTE_NS.load(Ordering::Relaxed) as f64 / 1e9;
+    let te = (t1.elapsed().as_secs_f64() - attente).max(0.0);
+    let duree = |t: f64| if t < 1.0 { format!("{:.0} ms", t * 1000.0) } else { format!("{:.2} s", t) };
+    s.console_ecrire = None;
+    s.console_lire = None;
+    let mut texte = ecrit.borrow().clone();
+    let mut resume = String::new();
+    match r {
+        Ok(()) => {
+            resume.push_str(&format!("SPU-64 · {} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), s.pas, duree(te),
+                                     if attente > 0.0 { format!(" (et {} à attendre le clavier)", duree(attente)) } else { String::new() }));
+            if !s.sortie.is_empty() {
+                let v: Vec<String> = s.sortie.iter().map(|v| v.to_string()).collect();
+                resume.push_str(&format!("sorties : {}\n", v.join(",")));
+            }
+            if !texte.is_empty() && !texte.ends_with('\n') {
+                texte.push('\n');
+            }
+            texte.push_str("──────────\n");
+            texte.push_str(&resume);
+        }
+        Err(e) => {
+            resume.push_str(&format!("{}\n", if e.contains("arrêté") { "programme arrêté".to_string() } else { format!("erreur à l'exécution : {}", e) }));
+            if !texte.is_empty() && !texte.ends_with('\n') {
+                texte.push('\n');
+            }
+            texte.push_str(&resume);
+        }
+    }
+    let mut vue = Vue64::depuis(&s);
+    let mem = vue.memoire();
+    Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: Some(vue) }
 }
 
 fn fini() {
@@ -703,13 +813,19 @@ fn fini() {
                 at.base = 0;
             }
         }
-        // un programme qui dessine (ecran(l, h)) : la vue montre son image
-        at.dessin = taille_dessin(&m).is_some();
+        // un programme qui dessine (ecran(l, h)) : la vue montre son image (machine 32 bits)
+        at.dessin = f.vue64.is_none() && taille_dessin(&m).is_some();
         at.mem = Some(m);
+        at.vue64 = f.vue64;
         at.choisi = None;
         rafraichir_arbre();
     }
-    etat(&format!("programme terminé · cube : étage {} · l'arbre montre les objets du tas", at.etage));
+    if at.vue64.is_some() {
+        etat(&format!("programme terminé (SPU-64) · cube : étage {}, cube 0, points profonds vus en 32 bits · clic ou « mot » : la vraie valeur \
+                       · « cube ÉTAGE FRÉQUENCE » change de cube", at.etage));
+    } else {
+        etat(&format!("programme terminé · cube : étage {} · l'arbre montre les objets du tas", at.etage));
+    }
     unsafe {
         InvalidateRect(at.cube, std::ptr::null(), 0);
     }
@@ -864,10 +980,56 @@ fn ligne_terminal() {
     };
     match mots.first().copied() {
         None => {}
-        Some("aide") => ajouter_texte(at.sortie, "commandes : lancer · arreter · mot ADRESSE · mot ÉTAGE ADRESSE · etage N · arbre · effacer · purger\n\
+        Some("aide") => ajouter_texte(at.sortie, "commandes : lancer · arreter · machine 32|64 · cubes · cube ÉTAGE FRÉQUENCE · mot ADRESSE · mot ÉTAGE ADRESSE · etage N · arbre · effacer · purger\n\
             ADRESSE : décimale, #hex ou 0xhex. L'arbre montre le mot choisi et les objets du tas (tableaux, dicos, textes)\n\
             avec leurs liaisons ; un clic sur une ligne l'ouvre ou la ferme. À plat (F6), un clic dans le cube choisit un mot.\n"),
         Some("lancer") => lancer(),
+        Some("cubes") if at.vue64.is_some() => {
+            let v = at.vue64.as_ref().unwrap();
+            let mut t = String::from("SPU-64 · les cubes écrits par le programme :\n");
+            for e in 0..4u32 {
+                let c = v.cubes(e);
+                if !c.is_empty() {
+                    let l: Vec<String> = c.iter().map(|x| x.to_string()).collect();
+                    t.push_str(&format!("   étage {} : {} (regardé : {})\n", e, l.join(", "), v.frequences[e as usize]));
+                }
+            }
+            ajouter_texte(at.sortie, &t);
+        }
+        Some("cubes") => {
+            let d = at.fichier.as_ref().and_then(|f| f.parent().map(|p| p.to_path_buf())).unwrap_or_else(dossier_de_depart);
+            ajouter_texte(at.sortie, &super::texte_cubes(at.mem.as_ref(), &d));
+        }
+        Some("cube") if at.vue64.is_some() => match (mots.get(1).and_then(|x| nombre(x)), mots.get(2).and_then(|x| nombre(x))) {
+            (Some(e), Some(f)) if e < 4 && f < 1 << 24 => {
+                if let (Some(v), Some(m)) = (at.vue64.as_mut(), at.mem.as_ref()) {
+                    v.accorder(m, e, f);
+                }
+                ajouter_texte(at.sortie, &format!("l'étage {} regarde maintenant le cube {} (SPU-64)\n", e, f));
+                commande(C_ETAGE + e as u16);
+                rafraichir_arbre();
+            }
+            _ => ajouter_texte(at.sortie, "cube ÉTAGE FRÉQUENCE (étage 0 à 3) : montre ce cube de la machine 64 bits ; l'arbre liste les cubes écrits\n"),
+        },
+        Some("machine") => {
+            match mots.get(1).copied() {
+                Some("32") => choisir_machine(false),
+                Some("64") => choisir_machine(true),
+                _ => {}
+            }
+            ajouter_texte(at.sortie, &format!("machine : {} (machine 32 ou machine 64 pour changer)\n", if a().machine64 { "SPU-64" } else { "SPU-32" }));
+        }
+        Some("cube") => match (mots.get(1).and_then(|x| nombre(x)), mots.get(2).and_then(|x| nombre(x))) {
+            (Some(e), Some(f)) if (1..4).contains(&e) && at.mem.is_some() => {
+                let d = at.fichier.as_ref().and_then(|f| f.parent().map(|p| p.to_path_buf())).unwrap_or_else(dossier_de_depart);
+                if let Some(m) = &at.mem {
+                    m.accorder(e, f, Some(&d));
+                }
+                ajouter_texte(at.sortie, &format!("l'étage {} regarde maintenant le cube {}\n", e, f));
+                commande(C_ETAGE + e as u16);
+            }
+            _ => ajouter_texte(at.sortie, "cube ÉTAGE FRÉQUENCE (étage 1 à 3, après une exécution) : montre ce cube, en mémoire ou sur disque\n"),
+        },
         Some("arreter") | Some("arrêter") => commande(C_ARRETER),
         Some("effacer") => ecrire_texte(at.sortie, ""),
         Some("purger") => {
@@ -916,9 +1078,12 @@ fn choisir_mot(e: u32, adr: u32) {
             return;
         }
     };
-    let v = mem.lit(e, adr);
     let mut t = format!("@{}[{}]\n", e, adr);
-    for l in arbre::decoder(v) {
+    let lignes = match &at.vue64 {
+        Some(v) => decoder64(e, v.lit(e, (v.frequences[e as usize & 3] as u64) << 24 | adr as u64)),
+        None => arbre::decoder(mem.lit(e, adr)),
+    };
+    for l in lignes {
         t.push_str(&format!("   {}\n", l));
     }
     ajouter_texte(at.sortie, &t);
@@ -931,7 +1096,27 @@ fn rafraichir_arbre() {
     at.noeuds.clear();
     at.ouverts.clear();
     at.defile = 0;
-    if let Some(mem) = &at.mem {
+    if let Some(v) = &at.vue64 {
+        // machine 64 bits : le mot choisi (sa vraie valeur) et les cubes écrits de chaque étage
+        if let Some((e, adr)) = at.choisi {
+            let f = v.frequences[e as usize & 3];
+            let val = v.lit(e, (f as u64) << 24 | adr as u64);
+            let enfants = decoder64(e, val).into_iter().map(|l| Noeud::feuille(l, None)).collect();
+            at.noeuds.push(Noeud { texte: format!("@{}[{}] (cube {})", e, adr, f), mot: Some(vers_point32(val)), logique: None, enfants });
+        }
+        let mut cubes = Noeud::feuille("SPU-64 : les cubes écrits (étage : fréquences)".into(), None);
+        for e in 0..4u32 {
+            let c = v.cubes(e);
+            if !c.is_empty() {
+                let l: Vec<String> = c.iter().take(24).map(|x| x.to_string()).collect();
+                cubes.enfants.push(Noeud::feuille(format!("étage {} : {}{}", e, l.join(", "), if c.len() > 24 { " …" } else { "" }), None));
+            }
+        }
+        at.noeuds.push(cubes);
+        for i in 0..at.noeuds.len() {
+            at.ouverts.insert(vec![i]);
+        }
+    } else if let Some(mem) = &at.mem {
         let lit = |e: u32, x: u32| mem.lit(e, x);
         if let Some((e, adr)) = at.choisi {
             at.noeuds.push(arbre::noeud_mot(&lit, e, adr));
@@ -1103,22 +1288,30 @@ fn panneau_pas() -> String {
         Some(d) => d,
         None => return String::new(),
     };
-    let r = &d.et.r;
     let mut t = String::new();
     let ou = match d.ligne {
         Some(x) => format!("ligne {}", x + 1),
         None => if d.fini { "fini".into() } else { "début".into() },
     };
-    t.push_str(&format!("pas à pas · {} · {} instructions\n", ou, d.et.pas));
+    t.push_str(&format!("pas à pas · {} · {} instructions · {}\n", ou, d.compte(),
+                        if matches!(d.moteur, Moteur::M64(_)) { "SPU-64" } else { "SPU-32" }));
     t.push_str("F7 ligne suivante · F8 sans entrer dans les fonctions · F5 continuer · F9 point d'arrêt · Échap arrêter\n\n");
+    let (mem, et) = match &d.moteur {
+        Moteur::M32 { mem, et, .. } => (mem, et),
+        Moteur::M64(s) => {
+            panneau64(s, &mut t);
+            return t;
+        }
+    };
+    let r = &et.r;
     t.push_str(&format!("{:<5}{:>12}  {:<19}  {}\n", "", "décimal", "quaternaire (15→0)", "Belnap (· f v ±)"));
     for k in 1..13 {
         t.push_str(&ligne_quaternaire(&format!("R{}", k), r[k]));
     }
-    t.push_str(&format!("R13 cadre {} · R14 pile {} · Z {} · C {} · pc {}\n", r[13], r[14], d.et.z as u8, d.et.c as u8, d.et.pc));
+    t.push_str(&format!("R13 cadre {} · R14 pile {} · Z {} · C {} · pc {}\n", r[13], r[14], et.z as u8, et.c as u8, et.pc));
     if r[13] != 0 && r[13] < PILE_HAUT {
         t.push_str("\ncadre de la fonction : variables locales (-1, -2…), paramètres (+2, +3…)\n");
-        let lit = |k: i64| d.mem.lit(0, (r[13] as i64 + k) as u32);
+        let lit = |k: i64| mem.lit(0, (r[13] as i64 + k) as u32);
         for k in 1..9i64 {
             t.push_str(&ligne_quaternaire(&format!("{}", -k), lit(-k)));
         }
@@ -1126,11 +1319,11 @@ fn panneau_pas() -> String {
             t.push_str(&ligne_quaternaire(&format!("+{}", k), lit(k)));
         }
     }
-    if !d.et.sorties.is_empty() {
-        let v: Vec<String> = d.et.sorties.iter().map(|v| v.to_string()).collect();
+    if !et.sorties.is_empty() {
+        let v: Vec<String> = et.sorties.iter().map(|v| v.to_string()).collect();
         t.push_str(&format!("\nsorties : {}\n", v.join(",")));
     }
-    let c: String = d.et.texte.iter().filter_map(|&v| char::from_u32(v & 0x1F_FFFF)).collect();
+    let c: String = et.texte.iter().filter_map(|&v| char::from_u32(v & 0x1F_FFFF)).collect();
     if !c.is_empty() {
         t.push_str("\nce que le programme a écrit :\n");
         for x in c.lines() {
@@ -1162,6 +1355,10 @@ fn debuter_pas() -> bool {
     };
     let source = lire_texte(at.source).replace("\r\n", "\n");
     let base = dossier_de(&fichier.to_string_lossy());
+    let entrees: Vec<u64> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).collect();
+    if at.machine64 {
+        return debuter_pas64(&fichier, &source, &base, entrees);
+    }
     let (mots, _, dbg) = match compiler_lignes(&nombres(VTXC), &source, &base, PAS_A_PAS, true) {
         Ok(r) => r,
         Err(e) => {
@@ -1176,31 +1373,41 @@ fn debuter_pas() -> bool {
     };
     let mut mem = Memoire::new(false);
     super::charger(&mut mem, &mots);
-    let mut debuts = HashMap::new();
-    for p in dbg.chunks(2) {
-        if p.len() == 2 && p[1] >= 1 {
-            debuts.entry(p[0]).or_insert(p[1] as usize - 1);
-        }
-    }
+    let debuts = table_des_lignes(dbg.iter().map(|&x| x as u64));
     let mut et = Etat { r: [0u32; 16], pc: 0, z: false, c: false, pas: 0, ie: 0, sorties: Vec::new(), texte: Vec::new() };
     et.r[14] = PILE_HAUT;
-    let entrees = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).map(|x| x as u32).collect();
+    let entrees = entrees.iter().map(|&x| x as u32).collect();
     at.ligne_erreur = None;
-    at.pas = Some(Pas { mem, et, fichiers: std::sync::Mutex::new(HashMap::new()), entrees, dossier: PathBuf::from(&base), debuts,
-                        ligne: None, fini: false });
+    at.pas = Some(Pas { moteur: Moteur::M32 { mem, et, fichiers: std::sync::Mutex::new(HashMap::new()), entrees, dossier: PathBuf::from(&base) },
+                        debuts, ligne: None, fini: false });
     DIRECT.store(false, Ordering::Relaxed);
     CLAVIER.store(0, Ordering::Relaxed);
     true
 }
 
-/// Une instruction de la machine ; Ok(true) quand le programme est fini.
-fn une_instruction(d: &mut Pas) -> Result<bool, String> {
-    let limite = d.et.pas + 1;
-    match boucle(&d.mem, &mut d.et, &d.entrees, limite, Some(&d.dossier), &d.fichiers, u32::MAX, None, 0) {
-        Ok(()) => Ok(true),
-        Err(e) if e.starts_with("limite") => Ok(false),
-        Err(e) => Err(e),
-    }
+/// Le pas à pas sur la machine 64 bits : vtxc64 compile avec la table des lignes, la SPU-64 attend au début.
+fn debuter_pas64(fichier: &Path, source: &str, base: &str, entrees: Vec<u64>) -> bool {
+    let at = a();
+    let (mots, _, dbg) = match compiler64(&nombres64(VTXC64), source, base, PAS_A_PAS64, true) {
+        Ok(r) => r,
+        Err(e) => {
+            let (t, ligne) = situer_erreur(&e, &fichier.to_string_lossy());
+            ecrire_texte(at.journal, &t);
+            montrer_onglet(0);
+            at.ligne_erreur = ligne;
+            at.vue_lignes = (-1, -1);
+            etat("erreur de compilation : le pas à pas ne peut pas commencer");
+            return false;
+        }
+    };
+    let mut s = Box::new(Spu64::nouveau());
+    s.dossier = Some(PathBuf::from(base));
+    s.charger(&mots);
+    s.entree.extend(entrees);
+    s.parler = Some(super::parler_hote);
+    at.ligne_erreur = None;
+    at.pas = Some(Pas { moteur: Moteur::M64(s), debuts: table_des_lignes(dbg.into_iter()), ligne: None, fini: false });
+    true
 }
 
 /// La ligne l amenée à l'écran, le curseur à son début (sans rien choisir : une touche ne l'effacerait pas) ; la
@@ -1227,18 +1434,18 @@ fn avancer(mode: Avance) {
     if d.fini {
         return;
     }
-    let cadre = d.et.r[13];
-    let depart = d.et.pas;
+    let cadre = d.cadre();
+    let depart = d.compte();
     let mut erreur = None;
     if mode == Avance::Continuer && points.is_empty() {
         // rien pour l'arrêter : on va jusqu'au bout d'un coup
-        match boucle(&d.mem, &mut d.et, &d.entrees, 5_000_000_000, Some(&d.dossier), &d.fichiers, u32::MAX, None, 0) {
+        match d.jusqu_au_bout() {
             Ok(()) => d.fini = true,
             Err(e) => erreur = Some(e),
         }
     } else {
         loop {
-            match une_instruction(d) {
+            match d.une_instruction() {
                 Ok(true) => {
                     d.fini = true;
                     break;
@@ -1249,18 +1456,18 @@ fn avancer(mode: Avance) {
                     break;
                 }
             }
-            if let Some(&l) = d.debuts.get(&d.et.pc) {
+            if let Some(&l) = d.debuts.get(&d.pc()) {
                 d.ligne = Some(l);
                 let arreter = match mode {
                     Avance::Pas => true,
-                    Avance::Dessus => d.et.r[13] >= cadre,
+                    Avance::Dessus => d.cadre() >= cadre,
                     Avance::Continuer => points.contains(&l),
                 };
                 if arreter {
                     break;
                 }
             }
-            if d.et.pas - depart >= LIMITE_PAS {
+            if d.compte() - depart >= LIMITE_PAS {
                 erreur = Some(format!("{} instructions sans atteindre une ligne : arrêt (boucle sans fin ?)", LIMITE_PAS));
                 break;
             }
@@ -1272,7 +1479,7 @@ fn avancer(mode: Avance) {
         etat(&format!("erreur à l'exécution : {}", e));
     } else if d.fini {
         d.ligne = None;
-        etat(&format!("programme fini en {} instructions · le cube et l'arbre montrent sa mémoire · F7 recommence", d.et.pas));
+        etat(&format!("programme fini en {} instructions · le cube et l'arbre montrent sa mémoire · F7 recommence", d.compte()));
     } else {
         etat(&format!("pas à pas · ligne {} · F7 ligne · F8 par-dessus · F5 continuer · F9 point d'arrêt · Échap arrêter",
                       d.ligne.map(|l| l + 1).unwrap_or(0)));
@@ -1282,8 +1489,19 @@ fn avancer(mode: Avance) {
     if fini {
         // le programme est fini : sa mémoire passe au cube et à l'arbre, et l'on revient à l'édition
         if let Some(p) = at.pas.take() {
-            at.dessin = taille_dessin(&p.mem).is_some();
-            at.mem = Some(p.mem);
+            match p.moteur {
+                Moteur::M32 { mem, .. } => {
+                    at.dessin = taille_dessin(&mem).is_some();
+                    at.mem = Some(mem);
+                    at.vue64 = None;
+                }
+                Moteur::M64(s) => {
+                    let mut vue = Vue64::depuis(&s);
+                    at.mem = Some(vue.memoire());
+                    at.vue64 = Some(vue);
+                    at.dessin = false;
+                }
+            }
             at.choisi = None;
             rafraichir_arbre();
             unsafe {
@@ -1493,7 +1711,7 @@ fn creer_controles(fen: H) {
             0, 0, 10, 10, fen, 14 as H, at.inst, std::ptr::null_mut());
         for (t, c) in [("Ouvrir", C_OUVRIR), ("Enregistrer", C_ENREGISTRER), ("▶  Lancer  (F5)", C_LANCER), ("Pas à pas  (F7)", C_PAS),
                        ("0", C_ETAGE), ("1", C_ETAGE + 1), ("2", C_ETAGE + 2), ("3", C_ETAGE + 3), ("Vue : perspective / à plat / quits  (F6)", C_VUE),
-                       ("Largeur", C_LARGEUR)] {
+                       ("Largeur", C_LARGEUR), ("Machine : SPU-64", C_MACHINE64)] {
             let b = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
                                     c as usize as H, at.inst, std::ptr::null_mut());
             at.boutons.push((b, c));
@@ -1574,6 +1792,8 @@ fn disposer(fen: H) {
         MoveWindow(at.boutons[8].0, x, marge, px(270.0), barre - 2 * marge, 1);
         x += px(270.0) + marge;
         MoveWindow(at.boutons[9].0, x, marge, px(70.0), barre - 2 * marge, 1);
+        x += px(70.0) + marge * 3;
+        MoveWindow(at.boutons[10].0, x, marge, px(140.0), barre - 2 * marge, 1);
         // l'éditeur à gauche, le cube et la sortie à droite
         let gauche = (l as f32 * 0.5) as i32;
         let haut_util = h - barre - bas;
@@ -1631,6 +1851,8 @@ fn menus(fen: H) {
         ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
         ajouter(executer, "", 0);
+        ajouter(executer, "&Machine 64 bits (SPU-64, vtxc64)\tCtrl+M", C_MACHINE64);
+        ajouter(executer, "", 0);
         ajouter(executer, "&Pas à pas : ligne suivante\tF7", C_PAS);
         ajouter(executer, "Pas à pas &sans entrer dans les fonctions\tF8", C_PAS_DESSUS);
         ajouter(executer, "Point d'arrêt sur la &ligne\tF9", C_POINT);
@@ -1652,6 +1874,7 @@ fn menus(fen: H) {
             AppendMenuW(barre, MF_POPUP, m as usize, w(t).as_ptr());
         }
         SetMenu(fen, barre);
+        CheckMenuItem(barre, C_MACHINE64 as u32, if a().machine64 { 8 } else { 0 });
     }
 }
 
@@ -1713,6 +1936,11 @@ fn commande(c: u16) {
                     lancer();
                 }
             }
+            C_MACHINE64 => {
+                choisir_machine(!at.machine64);
+                etat(&format!("machine {} : F5 et le pas à pas compilent avec {}", if a().machine64 { "SPU-64" } else { "SPU-32" },
+                              if a().machine64 { "vtxc64" } else { "vtxc" }));
+            }
             C_PURGER => {
                 effacer_resultats();
                 etat("mémoire du programme rendue (cube et arbre vidés)");
@@ -1744,7 +1972,7 @@ fn commande(c: u16) {
             }
             C_VUE => {
                 // image du programme (s'il dessine) → cube en perspective → à plat → en quits → image…
-                let a_dessin = at.mem.as_ref().map(|m| taille_dessin(m).is_some()).unwrap_or(false);
+                let a_dessin = at.vue64.is_none() && at.mem.as_ref().map(|m| taille_dessin(m).is_some()).unwrap_or(false);
                 if at.dessin {
                     at.dessin = false;
                     at.iso = true;
@@ -1777,9 +2005,10 @@ fn commande(c: u16) {
             }
             C_EFFACER => {
                 at.mem = None;
+                at.vue64 = None;
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
-            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique #RRGGBBAA et de la logique à quatre valeurs.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
+            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nMachine SPU-64 (par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine SPU-32 : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine 64 bits (Ctrl+M) passe de l'une à l'autre.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
             _ => {}
         }
     }
@@ -1866,7 +2095,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             pas: None, points: HashSet::new(), pas_texte: std::ptr::null_mut(),
             ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),
             ouverts: HashSet::new(), defile: 0, choisi: None, lignes: std::ptr::null_mut(), vue_lignes: (-1, -1), ligne_erreur: None,
-            dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(),
+            dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(), machine64: true, vue64: None,
         });
         ATELIER = Box::into_raw(boite);
         let curseur = LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16);
@@ -1931,6 +2160,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'O' as u16, cmd: C_OUVRIR },
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'S' as u16, cmd: C_ENREGISTRER },
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'A' as u16, cmd: C_TOUT },
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: b'M' as u16, cmd: C_MACHINE64 },
             Accel { fVirt: FVIRTKEY, key: 0x74, cmd: C_LANCER }, // F5
             Accel { fVirt: FVIRTKEY | 4, key: 0x74, cmd: C_ARRETER }, // Maj+F5
             Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6

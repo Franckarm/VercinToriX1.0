@@ -7,7 +7,7 @@ Ce guide va de zéro à un premier programme : construire `vtx.exe`, installer l
 Il faut Rust (https://rustup.rs). Dans PowerShell, placez-vous dans le dossier `vtx-rs` du paquet :
 
 ```
-cd "C:\chemin\vers\vtx-0.4\vtx-rs"
+cd "C:\chemin\vers\vtx-0.5\vtx-rs"
 cargo build --release
 ```
 
@@ -16,7 +16,7 @@ La première fois, cela prend environ une minute. Le résultat est `vtx-rs\targe
 Pour pouvoir taper simplement `vtx` dans n'importe quel dossier, ajoutez ce dossier au chemin de recherche :
 
 ```
-$env:Path += ";C:\chemin\vers\vtx-0.4\vtx-rs\target\release"
+$env:Path += ";C:\chemin\vers\vtx-0.5\vtx-rs\target\release"
 ```
 
 (valable pour cette fenêtre ; pour toujours : Paramètres Windows, « Modifier les variables d'environnement », variable `Path`, « Nouveau », puis le dossier `...\vtx-rs\target\release`).
@@ -40,16 +40,31 @@ erreur faute.vtx, ligne 3 : symbole attendu : « ; »
 
 **`sortie` ou `afficher` ?** `sortie(x)` écrit le mot de la machine tel quel : un entier de 32 bits sans signe, si bien que `sortie(3 - 5)` donne 4294967294, et un flottant par ses bits (`sortie(3.5)` donne 1080033280). C'est le canal des tests. Pour lire un résultat, utilisez `afficher(x)` : il écrit en clair, sur sa ligne, un entier signé (`-2`), un flottant (`3.5`), un long, un logique (`variable`) ou un texte. Et attention : `7 / 2` entre entiers vaut 3 ; écrivez `7.0 / 2` pour obtenir 3.5.
 
+### La machine 64 bits : vtx64
+
+La même construction fabrique aussi `vtx64.exe`, la machine du SPU-64 avec son compilateur (vtxc64) embarqué :
+
+```
+vtx64 programme.vtx               compile pour le SPU-64 puis exécute (mots de 64 bits, points profonds)
+vtx64 compiler programme.vtx      écrit seulement les mots
+```
+
+Les exemples sont dans `exemples64` (`vtx64 exemples64\bonjour64.vtx`). Le langage du SPU-64 : `docs\vtx64-langage.md`.
+
+**Si `cargo build` dit « linker `link.exe` not found »** alors que Visual Studio est installé (par exemple Visual
+Studio 2026 sur un autre disque) : lancez la construction depuis l'« Invite de commandes développeur » de Visual
+Studio, qui sait où sont ses outils C++ ; ou mettez Rust à jour (`rustup update`).
+
 ## 3. L'éditeur : Visual Studio Code et l'extension vtx
 
 Le paquet contient une extension pour VS Code : couleurs du langage, extraits de code, et un raccourci pour lancer le programme ouvert.
 
-1. Copiez l'extension dans le dossier des extensions de VS Code (PowerShell, depuis le dossier `vtx-0.4`) :
+1. Copiez l'extension dans le dossier des extensions de VS Code (PowerShell, depuis le dossier `vtx-0.5`) :
    ```
    Copy-Item -Recurse editeur\vscode-vtx "$env:USERPROFILE\.vscode\extensions\vercintorix.vtx-0.5.0"
    ```
 2. Fermez et rouvrez VS Code.
-3. Ouvrez le dossier `vtx-0.4` (Fichier, Ouvrir le dossier), puis un fichier `.vtx` : les mots du langage sont en couleur.
+3. Ouvrez le dossier `vtx-0.5` (Fichier, Ouvrir le dossier), puis un fichier `.vtx` : les mots du langage sont en couleur.
 4. **Ctrl+Maj+B** lance le programme ouvert. VS Code demande les entrées (laissez vide s'il n'y en a pas). Une erreur est soulignée à la bonne ligne.
 5. Les extraits : tapez `principal`, `fonction`, `pour`, `si`, `selon`, `structure`, `tableau`… puis Tab, et le squelette s'écrit.
 
@@ -64,11 +79,15 @@ Les autres tâches (Terminal, Exécuter la tâche) : « traduire en code natif �
 - à droite, **le cube** : en perspective (l'étage vu comme un cube de 256 × 256 × 256 mots, chaque mot non nul est un petit cube de sa couleur ; la molette zoome) ou à plat (chaque mot un carré ; un clic donne l'adresse et la valeur, la molette fait défiler). Les petits nombres, presque noirs comme couleurs, prennent une teinte selon leur grandeur (du violet au jaune) ;
 - en dessous, ce qu'a donné le programme : instructions, sorties, et tout ce qu'il a écrit sur la console.
 
-Sous le cube, à gauche, le **terminal** : ce que le programme écrit y apparaît au fur et à mesure ; s'il pose une question (`lire_ligne()`), tapez la réponse dans la ligne du dessous et Entrée ; **Maj+F5** arrête un programme qui ne finit pas. Le reste du temps, cette ligne prend des commandes : `aide`, `lancer`, `mot ADRESSE`, `etage N`, `arbre`, `effacer`.
+Sous le cube, à gauche, le **terminal** : ce que le programme écrit y apparaît au fur et à mesure ; s'il pose une question (`lire_ligne()`), tapez la réponse dans la ligne du dessous et Entrée ; **Maj+F5** arrête un programme qui ne finit pas. Le reste du temps, cette ligne prend des commandes : `aide`, `lancer`, `mot ADRESSE`, `etage N`, `arbre`, `effacer`, et `cubes` (ce que regarde chaque étage, les cubes en mémoire et ceux rangés sur disque, nommés `cube-ÉTAGE-FRÉQUENCE.cub`) avec `cube ÉTAGE FRÉQUENCE` pour en regarder un.
 
 À droite, l'**arbre des liaisons** : après l'exécution, les objets que le programme a créés (tableaux, dictionnaires, textes), chacun avec sa couleur du cube ; un clic ouvre une ligne. Dans un dictionnaire, chaque clé montre son état : vrai en vert, faux en rouge, inconnu en gris, variable en orange. À plat (F6), un clic dans le cube choisit un mot : l'arbre le décode (hex, quits, lecture ADN/ARN) et montre ce qu'il désigne.
 
-Un programme qui **dessine** (`ecran`, `pixel`, `trait`, `rectangle`, `disque`) voit son image à la place du cube ; F6 passe de l'image au cube et à la vue à plat. Les **numéros de ligne** sont à gauche du texte ; une erreur de compilation met le sien en rouge.
+**Plus de précision.** `1.5D` est un flottant de 64 bits (`flottant_64`), `5L` un entier de 64 bits (`entier_64`), `5LL` un entier de 128 bits (`entier_petuar`, ou `entier_128`) : `exemples/flottant64/`, `exemples/entier128/`. **Le flottant quaternaire** : `1.5Q` est un `flottant_petuar`, quatre points du cube (32 chiffres hex, 64 quits, 64 bases d'ADN), environ 34 chiffres, avec un état à quatre valeurs (inconnu, négatif, positif, variable) : `exemples/petuar/` (`decouverte`, `quatre_etats`, `pi_machin`). **Le cube chromatique qui tourne** : `vtx gobatix exemples/gobatix/cube_chromatique.vtx` (une fenêtre sous Windows ; `--images dossier` écrit des PNG) ; en fil de fer : `cube_tournant.vtx`.
+
+**La machine.** L'atelier travaille par défaut sur la **SPU-64** (vtxc64, mots de 64 bits) : le titre et le bouton de la barre la nomment, **Ctrl+M** (ou le menu Exécuter) passe sur la SPU-32 et retour ; un fichier du dossier `exemples` s'ouvre sur la SPU-32. Sur la SPU-64, le cube montre chaque point profond `#RRRRGGGGBBBBAAAA` par l'octet fort de chaque voie ; un clic ou `mot` donne la vraie valeur de 64 bits ; le pas à pas montre les registres sur 64 bits.
+
+Un programme qui **dessine** (`ecran`, `pixel`, `trait`, `rectangle`, `disque`, sur la SPU-32) voit son image à la place du cube ; F6 passe de l'image au cube et à la vue à plat. Les **numéros de ligne** sont à gauche du texte ; une erreur de compilation met le sien en rouge.
 
 **Faire reconnaître les fichiers `.vtx`** : menu Aide, « Associer les fichiers .vtx à l'atelier », ou dans un terminal :
 

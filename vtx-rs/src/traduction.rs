@@ -208,6 +208,38 @@ pub fn traduire(mots: &[u32], nom: &str, table: &[u32]) -> Result<String, String
                 0x4E => res(&format!("(({} as u64 * {} as u64) >> 32) as u32", ra, rb)),
                 0x4F => res(&format!("{{ let x = {} ^ {}; !(x | (x >> 1)) & 0x5555_5555 }}", ra, rb)),
                 0x50 => res(&format!("{}.count_ones()", ra)),
+                // flottants binary64 sur des paires de registres (Rn, Rn+3)
+                0x5B..=0x6B => {
+                    let (is, it) = (g & 15, b >> 4);
+                    let (sl, sh, tl, th) = (reg(is), reg((is + 3) & 15), reg(it), reg((it + 3) & 15));
+                    let x = format!("d64({}, {})", sl, sh);
+                    let y = format!("d64({}, {})", tl, th);
+                    let resd = |v: &str| -> String {
+                        let mut s = format!("{{ let v: u64 = {}; ", v);
+                        if rd != 0 { s += &format!("r{} = v as u32; ", rd); }
+                        if (rd + 3) & 15 != 0 { s += &format!("r{} = (v >> 32) as u32; ", (rd + 3) & 15); }
+                        s + "z = v == 0; c = false; }"
+                    };
+                    match op {
+                        0x5B => resd(&format!("db({} + {})", x, y)),
+                        0x5C => resd(&format!("db({} - {})", x, y)),
+                        0x5D => resd(&format!("db({} * {})", x, y)),
+                        0x5E => resd(&format!("db({} / {})", x, y)),
+                        0x5F => resd(&format!("db({}.sqrt())", x)),
+                        0x60 => res(&format!("({} == {}) as u32", x, y)),
+                        0x61 => res(&format!("({} < {}) as u32", x, y)),
+                        0x62 => res(&format!("({} <= {}) as u32", x, y)),
+                        0x63 => resd(&format!("db({} as f64)", sl)),
+                        0x64 => resd(&format!("db({} as i32 as f64)", sl)),
+                        0x65 => res(&format!("{} as i32 as u32", x)),
+                        0x66 => res(&format!("{}.round_ties_even() as i32 as u32", x)),
+                        0x67 => resd(&format!("db(f({}) as f64)", sl)),
+                        0x68 => res(&format!("fb({} as f32)", x)),
+                        0x69 => resd(&format!("db(((({} as u64) << 32) | {} as u64) as i64 as f64)", sh, sl)),
+                        0x6A => resd(&format!("{} as i64 as u64", x)),
+                        _ => resd(&format!("{}.round_ties_even() as i64 as u64", x)),
+                    }
+                }
                 // sauts : fin du bloc
                 0x30 => { fin = format!("pc = {};", cible(w)); String::new() }
                 0x31 | 0x32 | 0x35 | 0x36 => {

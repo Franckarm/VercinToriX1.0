@@ -9,13 +9,13 @@ Même sémantique que `vtx.py` et les machines JavaScript. Aucune bibliothèque 
 3. **Fermez et rouvrez** tous les terminaux (et VS Code), pour qu'ils trouvent `cargo`.
 4. Vérifiez dans un terminal : `cargo --version` doit afficher un numéro de version.
 5. **VS Code** : onglet Extensions (Ctrl+Maj+X), cherchez et installez **rust-analyzer** (éditeur : rust-lang). C'est facultatif pour compiler, mais il colore et vérifie le code.
-6. Dans VS Code : Fichier > Ouvrir le dossier… > le dossier `vtx-0.4`. Terminal > Nouveau terminal.
+6. Dans VS Code : Fichier > Ouvrir le dossier… > le dossier `vtx-0.5`. Terminal > Nouveau terminal.
 
 Sous macOS ou Linux, l'étape 1 n'existe pas : `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`, puis rouvrir le terminal.
 
 ## Compiler et vérifier
 
-Dans le terminal, depuis le dossier `vtx-0.4` :
+Dans le terminal, depuis le dossier `vtx-0.5` :
 
 ```
 cd vtx-rs
@@ -29,7 +29,7 @@ La première compilation prend une minute environ. Elle produit `target\release\
 - « linker `link.exe` not found » : l'étape 1 manque (outils C++).
 - « cargo n'est pas reconnu » : rouvrir le terminal (étape 3), ou redémarrer l'ordinateur.
 - Un antivirus peut ralentir la première compilation ; c'est sans conséquence.
-- rust-analyzer dit « failed to find any projects » : il cherche `Cargo.toml` dans le dossier ouvert. Ouvrez le dossier `vtx-0.4` (le fichier `.vscode/settings.json` lui indique `vtx-rs/Cargo.toml`) ou directement `vtx-rs`. Cela ne gêne pas la compilation.
+- rust-analyzer dit « failed to find any projects » : il cherche `Cargo.toml` dans le dossier ouvert. Ouvrez le dossier `vtx-0.5` (le fichier `.vscode/settings.json` lui indique `vtx-rs/Cargo.toml`) ou directement `vtx-rs`. Cela ne gêne pas la compilation.
 
 ## vtx.exe : compiler et exécuter sans Python
 
@@ -60,6 +60,7 @@ Ce que vtxc compile : **tout le langage**, avec le prélude, les fichiers import
 | `vtx atelier PROG.vtx` | l'atelier en console : éditeur, compilation et exécution (F5), et le cube : un étage de la mémoire dessiné en couleurs, un mot `#RRGGBBAA` par pixel (voir COMMENCER.md) |
 | `vtx traduire PROG.vtx [SORTIE]` | traduit en code natif : vtxc compile, le code du SPU devient du Rust, rustc (LLVM) en fait un exécutable ; même résultat, environ 12 fois plus vite sur un cœur ; les accords sont joués sur les cœurs de la machine moins un (`VTX_ROTOS` pour en fixer le nombre : *rotos*, la roue en gaulois) |
 | `vtx renouveler VTXC.vtx` | recompile vtxc par lui-même et remplace `vtxc.mots` si le point fixe est atteint |
+| `vtx64 PROG.vtx [ENTRÉES…]` | la machine 64 bits : vtxc64 (embarqué) compile, la SPU-64 exécute ; aussi `vtx64 compiler PROG.vtx`, `vtx64 renouveler vtxc64.vtx` (voir docs/vtx64-langage.md, section 9). L'atelier travaille par défaut sur la SPU-64 (Ctrl+M : SPU-32) |
 | `vtx-spu corpus FICHIER` | rejoue un corpus (une ligne « mots;entrées » par programme), mémoire neuve à chaque programme |
 | `vtx-spu session FICHIER [N]` | première ligne : les mots ; lignes suivantes : entrées d'appels successifs qui partagent la mémoire ; la dernière est rejouée N fois et chronométrée |
 | `vtx-spu lancer FICHIER [MAX_PAS] [CYLINDRES]` | un programme « mots;entrées;table » : instructions, durée, sorties, puis le texte de la console. Avec la table des accords (produite par `python vtx.py exporter prog.vtx [entrées] > prog.txt`), les tâches d'une mesure sont jouées sur plusieurs cœurs : par défaut les cœurs de la machine moins un |

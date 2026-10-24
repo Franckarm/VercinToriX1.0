@@ -1,0 +1,23 @@
+// Des cubes sur disque. ranger_cube(étage, f) écrit le cube de fréquence f dans le fichier cube-ÉTAGE-FRÉQUENCE.cub (à côté
+// du programme) ; un cube qui n'est pas regardé quitte alors la mémoire. accorder(étage, f) le retrouve : en mémoire s'il
+// y est encore, sinon dans son fichier. Lancé deux fois, le programme retrouve au second tour ce que le premier a rangé.
+fonction principal() {
+    accorder(1, 262);
+    si @1[0] == 0 {
+        afficher("première fois : j'écris le cube 262");
+        pour i dans 0..1000 {
+            @1[i * 1000] = 1000 + i;            // 1000 cases réparties sur 16 pages de 65 536 mots
+        }
+        afficher("pages écrites sur disque :", ranger_cube(1, 262));
+    } sinon {
+        afficher("deuxième fois : le cube 262 revient du disque");
+    }
+    afficher(@1[0], @1[1000], @1[999 * 1000]);
+    // un cube quitté, puis rangé sur disque, puis retrouvé
+    accorder(1, 330);
+    @1[3] = 33;
+    accorder(1, 0);
+    afficher("cube 330 rangé :", ranger_cube(1, 330), "page(s)");
+    accorder(1, 330);
+    afficher("cube 330 retrouvé :", @1[3]);
+}

@@ -183,6 +183,113 @@ for _ in range(NF):
             pass
     s = "fonction principal() {\n" + "".join(f"    sortie(bits({t}));\n" for t in lits) + "}\n"
     okf += vtxc(p0, s)[0] == mots_py(s)
+
+
+def litteral_d():
+    k = rf.random()
+    if k < .3:
+        x = struct.unpack("<d", struct.pack("<Q", rf.getrandbits(63)))[0]
+        t = repr(x)
+    elif k < .5:
+        t = f"{rf.randint(0, 10 ** rf.randint(1, 25))}.{rf.randint(0, 10 ** rf.randint(1, 20))}e{rf.randint(-330, 308)}"
+    elif k < .65:
+        m = rf.getrandbits(53) | 1 << 52
+        e = rf.randint(-1074, 970)
+        t = repr((2 * m + 1) * 2.0 ** (e - 1)) if abs(e) < 1000 else repr(m * 2.0 ** e)       # milieu de deux doubles voisins
+    elif k < .8:
+        t = repr(rf.choice([5e-324, 2.5e-324, 2.4703282292062327e-324, 2.4703282292062328e-324, 2.2250738585072014e-308,
+                            2.225073858507201e-308, 1.7976931348623157e308, 9007199254740993.0, 0.1, 1e22, 1e23, 8.5e-324]))
+    else:
+        t = f"{rf.randint(0, 99999)}.{rf.randint(0, 99999)}"
+    if "e" not in t and "." not in t:
+        t += ".0"
+    return t.replace("e+", "e") + "D"
+
+
+NFD = max(1, N // 200)
+okfd = 0
+for _ in range(NFD):
+    lits = []
+    while len(lits) < 60:
+        t = litteral_d()
+        try:
+            vtx.lexer(f"x = {t};")
+            lits.append(t)
+        except vtx.VtxError:
+            pass
+    s = "fonction principal() {\n" + "".join(f"    sortie(bas({t})); sortie(haut({t}));\n" for t in lits) + "}\n"
+    okfd += vtxc(p0, s)[0] == mots_py(s)
+print(f"   {NFD * 60} flottants_64 écrits en décimal (sous-normaux, bords, milieux exacts) : programmes identiques {okfd}/{NFD}")
+
+
+def prog_w():
+    """Un programme entier_128 aléatoire : littéraux LL, opérateurs, comparaisons, conversions, fonctions du prélude."""
+    def lit():
+        v = rf.choice([rf.getrandbits(rf.randint(1, 128)), 0, 1, 2 ** 127 - 1, 2 ** 128 - 1])
+        return f"{v}LL" if rf.random() < .8 else f"(-{v}LL)"
+    v = ["a", "b", "c"]
+    L = ["fonction aide(p: entier_128, q: entier_128): entier_128 {", "    retour p * q - (p >> 3) + (q ^ p);", "}",
+         "fonction principal() {"]
+    for x in v:
+        L.append(f"    soit {x}: entier_128 = {lit()};")
+    for _ in range(rf.randint(4, 8)):
+        x, y, z = (rf.choice(v) for _ in range(3))
+        k = rf.randint(0, 11)
+        e = [f"{y} + {z}", f"{y} - {z}", f"{y} * {z}", f"{y} / ({z} | 1LL)", f"{y} % ({z} | 1LL)", f"{y} << {rf.randint(0, 127)}",
+             f"{y} >> {rf.randint(0, 127)}", f"{y} & {z}", f"aide({y}, {z})", f"abs({y})", f"min({y}, {z})",
+             f"entier_128_de(haut({y}), bas({z}))"][k]
+        L.append(f"    {x} = {e};")
+        c = rf.choice(["<", ">", "<=", ">=", "==", "!="])
+        L.append(f"    si {x} {c} {rf.choice(v)} {{ afficher(1); }} sinon {{ afficher(0); }}")
+    L.append("    afficher(a); afficher(b + 7LL); afficher(bas(c)); afficher(flottant_64(b)); afficher(entier_128(17) + entier_128_signe(0 - 3));")
+    L.append("}")
+    return "\n".join(L) + "\n"
+
+
+NW = max(1, N // 200)
+okw = 0
+for _ in range(NW):
+    s = prog_w()
+    okw += all(vtxc(p0, s, prelude=pr, optim=op)[0] == mots_py(s, pr, None, op) for pr, op in ((True, False), (True, True)))
+exw = os.path.join(racine, "exemples", "entier128")
+okxw = 0
+for nom in sorted(os.listdir(exw)):
+    s = open(os.path.join(exw, nom), encoding="utf-8").read()
+    okxw += vtxc(p0, s, prelude=True, optim=True)[0] == mots_py(s, True, None, True)
+print(f"   {NW} programmes entier_128 aléatoires (prélude, avec et sans optimisation) : identiques {okw}/{NW} ; exemples entier128 : {okxw}/{len(os.listdir(exw))}")
+
+
+def prog_x():
+    """Un programme flottant_petuar aléatoire : littéraux Q, opérateurs, comparaisons, conversions, état, ADN."""
+    def lit():
+        t = rf.choice(["1.5", "0.1", "3", "2.5e10", "7e-300", "123456789.123456789", "1e4000", "4e-4950"])
+        return f"{t}Q" if rf.random() < .8 else f"(-{t}Q)"
+    v = ["a", "b", "c"]
+    L = ["fonction aide(p: flottant_petuar, q: flottant_petuar): flottant_petuar {", "    retour p * q - p / (q + 1Q);", "}",
+         "fonction principal() {"]
+    for x in v:
+        L.append(f"    soit {x}: flottant_petuar = {lit()};")
+    for _ in range(rf.randint(4, 8)):
+        x, y, z = (rf.choice(v) for _ in range(3))
+        e = rf.choice([f"{y} + {z}", f"{y} - {z}", f"{y} * {z}", f"{y} / {z}", f"racine(abs({y}))", f"aide({y}, {z})",
+                       f"min({y}, {z})", f"max({y}, 2)", f"-{y}", f"{y} + 1", f"{y} * 0.5", f"{y} - 2.0D",
+                       f"flottant_petuar(entier_128({z}))", f"de_ieee128(vers_ieee128({y}))"])
+        L.append(f"    {x} = {e};")
+        c = rf.choice(["<", ">", "<=", ">=", "==", "!="])
+        L.append(f"    si {x} {c} {rf.choice(v)} {{ afficher(1); }} sinon {{ afficher(0); }}")
+    L.append("    afficher(a); afficher(texte(b)); afficher(flottant_64(c)); afficher(long(a)); afficher(entier(b));")
+    L.append("    selon etat(a / b) { vrai { afficher(2); } faux { afficher(1); } inconnu { afficher(0); } variable { afficher(3); } }")
+    L.append("    afficher(texte_adn(bits(c))); afficher(pi_petuar()); afficher(flottant(a));")
+    L.append("}")
+    return "\n".join(L) + "\n"
+
+
+NX = max(1, N // 200)
+okx = 0
+for _ in range(NX):
+    s = prog_x()
+    okx += all(vtxc(p0, s, prelude=pr, optim=op)[0] == mots_py(s, pr, None, op) for pr, op in ((True, False), (True, True)))
+print(f"   {NX} programmes flottant_petuar aléatoires (prélude, avec et sans optimisation) : identiques {okx}/{NX}")
 tt = open(os.path.join(racine, "tests", "test_types.py"), encoding="utf-8").read()
 src_f = tt.split('SRC_F = """')[1].split('"""')[0]
 oktf = vtxc(p0, src_f)[0] == mots_py(src_f)
@@ -262,11 +369,17 @@ r_faute = vtxc(p0, fichiers["faute.vtx"], base=dimp)
 okf2 = r_faute[0] is None and "lib/faux.vtx, ligne 3" in r_faute[1]
 print(f"   importer (chemins relatifs, fichier importé deux fois) et donnees : identiques {oki2} ; "
       f"erreur située dans le fichier importé : {okf2}")
-ok = ok if (okf == NF and oktf and okd == N and okt == len(typés) and okp == totp and oki2 and okf2
+ok = ok if (okf == NF and okfd == NFD and okw == NW and okx == NX and okxw == len(os.listdir(exw)) and oktf and okd == N and okt == len(typés) and okp == totp and oki2 and okf2
             and okT == len(vtx.TESTS) and okE == len(vtx.ERREURS) and oks == tots) else -1
 
 # 3. Erreurs
-fautes = ["fonction principal() { sortie(x); }", "fonction principal() { soit a = 1; soit a = 2; }",
+fautes = ["fonction principal() { soit a: entier_128 = 1LL; soit b = 2L; sortie(bas(bas(a + b))); }",
+          "fonction principal() { soit a: entier_128 = 1LL; sortie(a + 1.5D); }",
+          "fonction principal() { soit a: entier_128 = 1LL; soit n: entier = a; sortie(n); }",
+          "fonction principal() { sortie(bas(bas(340282366920938463463374607431768211456LL))); }",
+          "fonction principal() { soit a: entier_128 = 1LL; sortie(a * 2.0); }",
+          "fonction principal() { soit f: flottant_64 = 1.0D; soit a: entier_128 = f; sortie(bas(bas(a))); }",
+          "fonction principal() { sortie(x); }", "fonction principal() { soit a = 1; soit a = 2; }",
           "fonction principal() { inconnue(3); }", "fonction principal() { sortie(1) }", "fonction autre() { }",
           "fonction principal() {\n  sortie(1.5 + 2L);\n}",
           "fonction principal() { soit p: logique = vrai; si p { sortie(1); } }",
@@ -285,6 +398,15 @@ fautes = ["fonction principal() { sortie(x); }", "fonction principal() { soit a 
           "fonction principal() { soit a = 1.5 << 2; }",
           "fonction principal() { sortie(arrondi(3)); }",
           "fonction principal() { sortie(1e39); }",
+          "fonction principal() { sortie(bas(1.0e309D)); }",
+          "fonction principal() { soit a = 1.0D + 2L; }",
+          "fonction principal() { soit a = 1.0D % 2.0D; }",
+          "fonction principal() { soit a = 1.0D & 2; }",
+          "fonction principal() { soit a = 1.0D << 2; }",
+          "fonction principal() { soit a = ~1.0D; }",
+          "fonction principal() { soit a: flottant_64 = 1.0D; soit b = 2.5; b = a; }",
+          "fonction principal() { soit a = 1.0D; soit i = 1; i = a; }",
+          "fonction principal() { sortie(arrondi_long(3)); }",
           "fonction f() { }\nfonction f() { }\nfonction principal() { }",
           "fonction principal(x) { }",
           "fonction sortie(x) { }\nfonction principal() { }"]

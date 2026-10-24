@@ -27,6 +27,15 @@ function SPUTraduit(words) {
   const pair = x => { const f = Math.floor(x), d = x - f; return d < 0.5 ? f : d > 0.5 ? f + 1 : (f % 2 === 0 ? f : f + 1); };
   const ftoi = w => { const x = vf(w); return x !== x ? 0 : sat(Math.trunc(x)); };
   const fround = w => { const x = vf(w); return x !== x ? 0 : !isFinite(x) ? sat(x) : sat(pair(x)); };
+  // flottants binary64 : une paire de registres (Rn, Rn+3), mot bas puis mot haut ; NaN unique 0x7FF8000000000000
+  const DB = new Float64Array(1), DU = new Uint32Array(DB.buffer);
+  const vd = (R, i) => { DU[0] = R[i]; DU[1] = R[(i + 3) & 15]; return DB[0]; };
+  const wm = (R, d, lo, hi) => { if (d) R[d] = lo; const h = (d + 3) & 15; if (h) R[h] = hi; return ((lo | hi) >>> 0) === 0; };
+  const wd = (R, d, v) => { if (v !== v) return wm(R, d, 0, 0x7FF80000); DB[0] = v; return wm(R, d, DU[0], DU[1]); };
+  const wl = (R, d, n) => wm(R, d, Number(n & 0xFFFFFFFFn), Number(n >> 32n));
+  const dtol = (x, rnd) => x !== x ? 0n : x >= 9223372036854775808 ? 0x7FFFFFFFFFFFFFFFn : x < -9223372036854775808 ? 0x8000000000000000n
+    : BigInt.asUintN(64, BigInt(rnd ? pair(x) : Math.trunc(x)));
+  const ltod = (R, i) => Number(BigInt.asIntN(64, (BigInt(R[(i + 3) & 15]) << 32n) | BigInt(R[i])));
   const popc = (x) => { x = x - ((x >>> 1) & 0x55555555); x = (x & 0x33333333) + ((x >>> 2) & 0x33333333);
     return Math.imul((x + (x >>> 4)) & 0x0F0F0F0F, 0x01010101) >>> 24; };
   const mulhu = (a, b) => { const al = a & 0xFFFF, ah = a >>> 16, bl = b & 0xFFFF, bh = b >>> 16;
@@ -129,6 +138,29 @@ function SPUTraduit(words) {
       case 81: return `r=(${A})===0?(C.ii<C.inp.length?C.inp[C.ii++]>>>0:0):4294967295;${ecr(d, "r")}${F}`;
       case 82: return `{const k=${B};if(k===0)C.out.push(${A});else if(k===1)C.texte.push(${A});}`;
       case 83: return `r=(${A})===4?1:(${A})===5?(Math.random()*4294967296)>>>0:4294967295;${ecr(d, "r")}C.z=false;C.c=false;`;
+      case 91: case 92: case 93: case 94: case 95: case 96: case 97: case 98: case 99: case 100: case 101: case 102: case 103:
+      case 104: case 105: case 106: case 107: {
+        const x = `vd(R,${s})`, y = `vd(R,${t})`, W = v => `C.z=${v};C.c=false;`;
+        switch (op) {
+          case 91: return W(`wd(R,${d},${x}+${y})`);
+          case 92: return W(`wd(R,${d},${x}-${y})`);
+          case 93: return W(`wd(R,${d},${x}*${y})`);
+          case 94: return W(`wd(R,${d},${x}/${y})`);
+          case 95: return W(`wd(R,${d},Math.sqrt(${x}))`);
+          case 96: return `r=${x}===${y}?1:0;${ecr(d, "r")}${F}`;
+          case 97: return `r=${x}<${y}?1:0;${ecr(d, "r")}${F}`;
+          case 98: return `r=${x}<=${y}?1:0;${ecr(d, "r")}${F}`;
+          case 99: return W(`wd(R,${d},${A})`);
+          case 100: return W(`wd(R,${d},${A}|0)`);
+          case 101: return `{const x=${x};r=x!==x?0:sat(Math.trunc(x));}${ecr(d, "r")}${F}`;
+          case 102: return `{const x=${x};r=x!==x?0:!isFinite(x)?sat(x):sat(pair(x));}${ecr(d, "r")}${F}`;
+          case 103: return W(`wd(R,${d},vf(${A}))`);
+          case 104: return `r=fb(${x});${ecr(d, "r")}${F}`;
+          case 105: return W(`wd(R,${d},ltod(R,${s}))`);
+          case 106: return W(`wl(R,${d},dtol(${x},false))`);
+          default: return W(`wl(R,${d},dtol(${x},true))`);
+        }
+      }
       case 63: return `return -1;`;
       default: return `throw new Error("code d’opération ${op} à l’adresse ${pc}");`;
     }
@@ -137,8 +169,8 @@ function SPUTraduit(words) {
   // 3. Un bloc = une fonction : nombre d'instructions compté à l'entrée, puis les instructions à la suite.
   const S1 = S[1], S2 = S[2], S3 = S[3];
   const fabrique = (src) => new Function("C", "R", "S1", "S2", "S3", "rd", "wr", "dot", "quit", "gemv", "pile",
-    "vf", "fb", "ftoi", "fround", "mulhu", "popc", src)(ctx, ctx.R, S1, S2, S3, rd, wr, dot, quit, gemv, pile, vf, fb, ftoi, fround,
-    mulhu, popc);
+    "vf", "fb", "ftoi", "fround", "mulhu", "popc", "vd", "wd", "wl", "dtol", "ltod", "sat", "pair", src)(ctx, ctx.R, S1, S2, S3, rd, wr, dot, quit, gemv, pile, vf, fb, ftoi, fround,
+    mulhu, popc, vd, wd, wl, dtol, ltod, sat, pair);
   const adresses = [...instr.keys()].sort((a, b) => a - b);
   const blocs = new Array(words.length + 1);
   let nblocs = 0, i = 0;

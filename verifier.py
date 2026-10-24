@@ -36,6 +36,10 @@ etapes = [
 try:
     import numpy  # noqa: F401
     etapes.append(("flottants et longs (numpy)", [sys.executable, os.path.join("tests", "test_types.py")]))
+    etapes.append(("flottants 64 bits : machine (numpy, quatre machines)", [sys.executable, os.path.join("tests", "test_flottant64_machine.py")]))
+    etapes.append(("flottants 64 bits : langage (opérateurs, conversions, affichage exact)", [sys.executable, os.path.join("tests", "test_flottant64.py")]))
+    etapes.append(("flottants 64 bits : bibliothèque mathématique (sinus_64, exponentielle_64…)", [sys.executable, os.path.join("tests", "test_maths64.py")]))
+    etapes.append(("entiers de 128 bits (entier_128)", [sys.executable, os.path.join("tests", "test_entier128.py")]))
     etapes.append(("ombre binaire du cube (numpy ; grands volumes si cargo est présent)",
                    [sys.executable, os.path.join("ombre", "test_ombre.py")]))
     etapes.append(("feu de camp : scène, ombre quaternaire, rendu PBR (rendu si cargo est présent)",
@@ -46,6 +50,14 @@ if shutil.which("cargo"):
     etapes.append(("machine Rust", None))
     etapes.append(("machine Rust multicœur", [sys.executable, os.path.join("multicoeur", "test_multicoeur.py")]))
     etapes.append(("vtxc : le compilateur écrit en vtx se compile lui-même", [sys.executable, os.path.join("vtxc", "test_vtxc.py")]))
+    etapes.append(("SPU-64 : les deux machines identiques (programmes aléatoires, flottants quaternaires, brin, cubes sur disque)",
+                   [sys.executable, os.path.join("spu64", "test_spu64.py"), "3000" if COMPLET else "1000"]))
+    etapes.append(("SPU-64 : corpus de conformité", [sys.executable, os.path.join("spu64", "verifier_corpus64.py")]))
+    etapes.append(("vtx64 : le compilateur du SPU-64 (entier et flottant quaternaire de 64 bits, 32 et 128 au choix, brin)",
+                   [sys.executable, os.path.join("tests", "test_vtx64.py")]))
+    etapes.append(("vtxc64 : le compilateur écrit en vtx pour le SPU-64 (point fixe, mêmes mots que vtx64.py)", [sys.executable, os.path.join("vtxc", "test_vtxc64.py")] + (["--complet"] if COMPLET else [])))
+    etapes.append(("flottant_petuar : le flottant quaternaire de 128 bits (référence exacte, quatre machines, vtxc, ADN et cube)",
+                   [sys.executable, os.path.join("tests", "test_petuar.py")]))
     etapes.append(("type texte et afficher (vtx.py et vtxc)", [sys.executable, os.path.join("vtxc", "test_textes.py")]))
     etapes.append(("tableaux, dictionnaires, vocabulaire, lire_ligne (vtx.py et vtxc)", [sys.executable, os.path.join("vtxc", "test_tableaux.py")]))
     etapes.append(("mémoire qui se libère et mémoire qui dure (ramasser, sauver_tas)", [sys.executable, os.path.join("vtxc", "test_memoire.py")]))

@@ -1,0 +1,35 @@
+// Flottants de 32 bits contre flottants de 64 bits : la même somme, deux précisions.
+// flottant_64 s'écrit avec le suffixe D (2.5D, 1.0e-3D) ; un entier ou un flottant s'élargit tout seul.
+
+fonction harmonique_32(n): flottant {
+    soit s: flottant = 0.0;
+    pour k dans 1..n + 1 {
+        s = s + 1.0 / flottant_signe(k);
+    }
+    retour s;
+}
+
+fonction harmonique_64(n): flottant_64 {
+    soit s: flottant_64 = 0.0D;
+    pour k dans 1..n + 1 {
+        s = s + 1.0D / k;
+    }
+    retour s;
+}
+
+fonction principal() {
+    afficher("0.1 + 0.2 en 32 bits : ");
+    afficher(0.1 + 0.2);
+    afficher("0.1 + 0.2 en 64 bits : ");
+    afficher(0.1D + 0.2D);
+    afficher("racine de 2 en 32 bits : ");
+    afficher(racine(2.0));
+    afficher("racine de 2 en 64 bits : ");
+    afficher(racine(2.0D));
+    afficher("somme harmonique de 10000 termes, 32 bits : ");
+    afficher(harmonique_32(10000));
+    afficher("somme harmonique de 10000 termes, 64 bits : ");
+    afficher(harmonique_64(10000));
+    afficher("2^53 + 1 en 64 bits (perd le 1) : ");
+    afficher(9007199254740992.0D + 1.0D);
+}

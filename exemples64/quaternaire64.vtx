@@ -1,0 +1,23 @@
+// Les quatre valeurs de Belnap partout : logique (0 inconnu, 1 faux, 2 vrai, 3 variable), état des flottants, quits.
+fonction montrer(x: flottant) {
+    ecrire(x);
+    selon etat(flottant_petuar(x)) {
+        vrai { afficher("  (positif)"); }
+        faux { afficher("  (négatif)"); }
+        inconnu { afficher("  (inconnu)"); }
+        variable { afficher("  (variable : contradiction)"); }
+    }
+}
+tableau q[64] de logique @2[0];
+fonction principal() {
+    montrer(2.5);
+    montrer(-2.5);
+    montrer(racine(-4.0));
+    montrer(comme_flottant(0));               // inconnu : tout à zéro
+    // 32 logiques par mot : un tableau de 64 logiques tient en deux mots
+    pour i dans 0..64 { q[i] = comme_logique(i % 4); }
+    afficher(@2[0] == @2[1]);
+    afficher(binaire(vrai));                  // le code d'échange : 0 non, 1 oui, 2 inconnu, 3 variable
+    afficher(quaternaire(2));
+    afficher(texte_adn(entier_petuar(adn"GATTACA")));
+}

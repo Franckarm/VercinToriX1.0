@@ -1,0 +1,24 @@
+; somme des inverses 1/1 + 1/2 + … + 1/1000 en flottant quaternaire de 64 bits, puis en flottant de 32 bits
+    LDIS R1,#1000
+    LDIS R2,#0
+    ITOF R2,R2              ; s = 0 (64 bits)
+    LDIS R3,#1
+    ITOF R3,R3              ; un
+    LDIS R6,#0
+    ITOF R6,R6
+    FTOS R6,R6              ; s32 = 0
+boucle:
+    ITOF R4,R1
+    FDIV R5,R3,R4
+    FADD R2,R2,R5
+    FTOS R7,R5
+    SADD R6,R6,R7
+    SUBI R1,R1,#1
+    JNZ boucle
+    OUT R2
+    OUT R6
+    FVIEEE R8,R2
+    OUT R8
+    FETAT R9,R2
+    OUT R9
+    HALT

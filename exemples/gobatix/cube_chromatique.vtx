@@ -1,0 +1,100 @@
+// Gobatix : le cube chromatique qui tourne.
+// Le cube de Vercintorix est le cube des couleurs #RRGGBB : un axe par voie (rouge, vert, bleu), 256 niveaux par axe.
+// Ses huit sommets sont #000000 (noir), #FF0000, #00FF00, #0000FF, #FFFF00, #FF00FF, #00FFFF et #FFFFFF (blanc) ;
+// chaque face montre le fondu réel de ses couleurs (triangle, ombrage de Gouraud). Le quadrillage coupe chaque axe en
+// quatre, aux quits du poids fort : 0x40, 0x80, 0xC0 (en base 4 : 1000, 2000, 3000). La diagonale des gris va du noir au
+// blanc, avec ses cinq points #000000, #404040, #808080, #C0C0C0, #FFFFFF.
+// Lancer : vtx gobatix cube_chromatique.vtx (fenêtre) ; vtx gobatix cube_chromatique.vtx --images DOSSIER (images PNG)
+fonction principal() {
+    soit l = 480;
+    soit h = 360;
+    soit px = tableau(8);
+    soit py = tableau(8);
+    soit vx: flottant[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    soit vy: flottant[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    soit vz: flottant[] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    soit t = 0.4;
+    soit fini = 0;
+    soit images = 0;
+    tantque fini == 0 && images < 36000 {
+        ecran(l, h);
+        soit ca = cosinus(t);
+        soit sa = sinus(t);
+        soit cb = cosinus(t * 0.7 + 0.5);
+        soit sb = sinus(t * 0.7 + 0.5);
+        // les huit sommets : le bit 0 du numéro est le rouge, le bit 1 le vert, le bit 2 le bleu
+        pour v dans 0..8 {
+            soit x = flottant(v & 1) * 2.0 - 1.0;
+            soit y = flottant((v >> 1) & 1) * 2.0 - 1.0;
+            soit z = flottant((v >> 2) & 1) * 2.0 - 1.0;
+            soit x1 = x * ca + z * sa;
+            soit z1 = z * ca - x * sa;
+            soit y2 = y * cb - z1 * sb;
+            soit z2 = y * sb + z1 * cb;
+            vx[v] = x1;
+            vy[v] = y2;
+            vz[v] = z2;
+            soit s = 260.0 / (z2 + 4.5);
+            px[v] = entier(flottant(l) * 0.5 + x1 * s + 0.5);
+            py[v] = entier(flottant(h) * 0.5 - y2 * s + 0.5);
+        }
+        // les six faces : l'axe a (0 rouge, 1 vert, 2 bleu) vaut 0 ou 1 ; une face se voit si elle regarde la caméra
+        pour f dans 0..6 {
+            soit a = f >> 1;
+            soit cote = f & 1;
+            soit u = 1 << ((a + 1) % 3);
+            soit w = 1 << ((a + 2) % 3);
+            soit base = cote << a;
+            soit v0 = base;
+            soit v1 = base + u;
+            soit v2 = base + u + w;
+            soit v3 = base + w;
+            // la normale tournée : le centre de la face (le cube va de -1 à 1)
+            soit nz = (vz[v0] + vz[v2]) * 0.5;
+            si 1.0 + 4.5 * nz < 0.0 {
+                triangle(px[v0], py[v0], couleur_sommet(v0), px[v1], py[v1], couleur_sommet(v1), px[v2], py[v2], couleur_sommet(v2));
+                triangle(px[v0], py[v0], couleur_sommet(v0), px[v2], py[v2], couleur_sommet(v2), px[v3], py[v3], couleur_sommet(v3));
+                // le quadrillage quaternaire : 1/4, 2/4, 3/4 de chaque axe de la face
+                pour k dans 1..4 {
+                    soit q = flottant(k) * 0.25;
+                    soit ax = px[v0] + entier_signe_de((px[v1] - px[v0]), q);
+                    soit ay = py[v0] + entier_signe_de((py[v1] - py[v0]), q);
+                    soit bx = px[v3] + entier_signe_de((px[v2] - px[v3]), q);
+                    soit by = py[v3] + entier_signe_de((py[v2] - py[v3]), q);
+                    trait(ax, ay, bx, by, rgb(40, 40, 40));
+                    soit cx = px[v0] + entier_signe_de((px[v3] - px[v0]), q);
+                    soit cy = py[v0] + entier_signe_de((py[v3] - py[v0]), q);
+                    soit dx = px[v1] + entier_signe_de((px[v2] - px[v1]), q);
+                    soit dy = py[v1] + entier_signe_de((py[v2] - py[v1]), q);
+                    trait(cx, cy, dx, dy, rgb(40, 40, 40));
+                }
+            }
+        }
+        // la diagonale des gris, du noir (sommet 0) au blanc (sommet 7), vue à travers le cube
+        trait(px[0], py[0], px[7], py[7], rgb(128, 128, 128));
+        pour k2 dans 0..5 {
+            soit q2 = flottant(k2) * 0.25;
+            soit gx = px[0] + entier_signe_de(px[7] - px[0], q2);
+            soit gy = py[0] + entier_signe_de(py[7] - py[0], q2);
+            soit niveau = k2 * 64;
+            si niveau > 255 { niveau = 255; }
+            disque(gx, gy, 4, rgb(255, 200, 60));
+            disque(gx, gy, 2, rgb(niveau, niveau, niveau));
+        }
+        fini = presenter();
+        t = t + 0.02;
+        images = images + 1;
+    }
+}
+// la couleur d'un sommet du cube : son numéro donne ses trois voies (0 ou 255)
+fonction couleur_sommet(v) {
+    retour rgb((v & 1) * 255, ((v >> 1) & 1) * 255, ((v >> 2) & 1) * 255);
+}
+// d × q pour un écart d signé (en pixels) et une fraction q de 0 à 1
+fonction entier_signe_de(d, q: flottant) {
+    retour entier_arrondi(flottant_signe(d) * q);
+}
+fonction entier_arrondi(x: flottant) {
+    si x < 0.0 { retour 0 - entier(0.5 - x); }
+    retour entier(x + 0.5);
+}

@@ -64,6 +64,13 @@ OPS = {
     # ET4 (v = v1 & v2, f = f1 | f2), OU4 (l'inverse), NON4 (échange v et f), ANTI (NON4 puis complément) ;
     # EXQ Rd,Rs,Rt : le quit Rt & 15 de Rs
     "ET4": (0x56, "rrr"), "OU4": (0x57, "rrr"), "NON4": (0x58, "rr"), "ANTI": (0x59, "rr"), "EXQ": (0x5A, "rrr"),
+    # flottants IEEE 754 binary64 : un flottant de 64 bits occupe une paire de registres (Rn, Rn+3), mot bas puis mot
+    # haut, comme les longs du compilateur (R1:R4, R2:R5). Arrondi au plus proche pair ; tout NaN rendu sous la forme
+    # 0x7FF8000000000000. DEQ, DLT, DLE, DTOI et DROUND rendent un seul mot ; les autres écrivent une paire.
+    "DADD": (0x5B, "rrr"), "DSUB": (0x5C, "rrr"), "DMUL": (0x5D, "rrr"), "DDIV": (0x5E, "rrr"), "DSQRT": (0x5F, "rr"),
+    "DEQ": (0x60, "rrr"), "DLT": (0x61, "rrr"), "DLE": (0x62, "rrr"),
+    "ITOD": (0x63, "rr"), "ITODS": (0x64, "rr"), "DTOI": (0x65, "rr"), "DROUND": (0x66, "rr"),
+    "FTOD": (0x67, "rr"), "DTOF": (0x68, "rr"), "LTOD": (0x69, "rr"), "DTOL": (0x6A, "rr"), "DTOLR": (0x6B, "rr"),
 }
 NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
@@ -194,6 +201,101 @@ def bits32(x):
         return 0xFF800000 if x < 0 else 0x7F800000
 
 
+NAN64 = 0x7FF8000000000000
+
+
+def f64(lo, hi):
+    """Deux mots (bas, haut) -> valeur flottante binary64."""
+    return struct.unpack("<d", struct.pack("<Q", ((hi & MASK) << 32) | (lo & MASK)))[0]
+
+
+def bits64(x):
+    """Flottant binary64 -> entier de 64 bits ; NaN unique 0x7FF8000000000000."""
+    if x != x:
+        return NAN64
+    return struct.unpack("<Q", struct.pack("<d", x))[0]
+
+
+# ---- flottant_petuar : le flottant quaternaire de 128 bits (4 points du cube #RRGGBBAA, 32 chiffres hex, 64 quits)
+# quit 63 : l'état en logique de Belnap (A 0 inconnu, C 1 négatif, G 2 positif, T/U 3 variable) ; quits 62 à 56 :
+# l'exposant en base 4 (biais 8192 ; 16383 : l'infini) ; quits 55 à 0 : la mantisse, 56 chiffres en base 4, le premier
+# non nul (sauf à l'exposant 0, les sous-normaux). Valeur : mantisse × 4^(exposant − 8247).
+PQ_VARIABLE = 3 << 126
+
+
+def petuar_signe(s):
+    return (1 if s else 2) << 126
+
+
+def petuar_arrondi(v):
+    """Fraction v > 0 -> exposant << 112 | mantisse, au plus proche (pair au milieu)."""
+    from fractions import Fraction
+    q = (v.numerator.bit_length() - v.denominator.bit_length()) // 2 - 56
+    while Fraction(4) ** (q + 56) <= v:
+        q += 1
+    while Fraction(4) ** (q + 55) > v:
+        q -= 1
+    q = max(q, 1 - 8247)
+    t = v / Fraction(4) ** q
+    n = t.numerator // t.denominator
+    r = t - n
+    if r > Fraction(1, 2) or (r == Fraction(1, 2) and n & 1):
+        n += 1
+    if n == 1 << 112:
+        n, q = 1 << 110, q + 1
+    if n < 1 << 110:
+        return n
+    if q + 8247 >= 16383:
+        return 16383 << 112
+    return ((q + 8247) << 112) | n
+
+
+def bits_petuar_decimal(t, ligne=0):
+    """Nombre décimal écrit (sans le Q) -> les 128 bits du flottant_petuar le plus proche."""
+    from fractions import Fraction
+    m = re.fullmatch(r"(\d+)(?:\.(\d+))?(?:[eE]([-+]?\d+))?", t)
+    chiffres = m.group(1) + (m.group(2) or "")
+    k = int(m.group(3) or 0) - len(m.group(2) or "")
+    n = int(chiffres)
+    if n == 0:
+        return petuar_signe(0)
+    ordre = k + len(str(n))
+    if ordre > 5000:
+        raise VtxError(f"ligne {ligne} : nombre flottant_petuar trop grand")
+    if ordre < -5000:
+        return petuar_signe(0)
+    v = Fraction(n) * Fraction(10) ** k
+    b = petuar_arrondi(v)
+    if b >> 112 == 16383:
+        raise VtxError(f"ligne {ligne} : nombre flottant_petuar trop grand")
+    return petuar_signe(0) | b
+
+
+def petuar_neg(b):
+    return b ^ (3 << 126) if (b >> 126) in (1, 2) else b
+
+
+def petuar_valeur(b):
+    """Les 128 bits -> (état, Fraction ou None) : pour le débogueur et les tests."""
+    from fractions import Fraction
+    et, e, m = b >> 126, (b >> 112) & 16383, b & ((1 << 112) - 1)
+    if et in (0, 3):
+        return et, None
+    if e == 16383:
+        return et, None
+    v = Fraction(m) * Fraction(4) ** (max(e, 1) - 8247)
+    return et, (-v if et == 1 else v)
+
+
+def sature64(t):
+    """Entier signé -> 64 bits (complément à deux), saturé à l'intervalle des entiers signés de 64 bits."""
+    if t >= 2 ** 63:
+        return 0x7FFFFFFFFFFFFFFF
+    if t < -2 ** 63:
+        return 0x8000000000000000
+    return t & 0xFFFFFFFFFFFFFFFF
+
+
 def sature32(t):
     """Entier signé -> mot, saturé à l'intervalle des entiers signés de 32 bits."""
     if t >= 2 ** 31:
@@ -255,6 +357,47 @@ class CPU:
         n = self.mem.get((et, off), 0)
         return "".join(chr(self.mem.get((et, (off + 1 + i) & 0xFFFFFF), 0) & 0x1FFFFF) for i in range(min(n, 4096)))
 
+    def chemin_cube(self, e, f):
+        return os.path.join(self.dossier_fichiers, f"cube-{e}-{f}.cub")
+
+    def cube_vers_disque(self, e, f, mots):
+        """Un cube sur disque : « VTXCUB01 », puis pour chaque page non nulle son numéro (u32) et ses 65 536 mots."""
+        pages = {}
+        for (_, a), v in mots.items():
+            if v:
+                pages.setdefault(a >> 16, []).append((a & 0xFFFF, v))
+        try:
+            with open(self.chemin_cube(e, f), "wb") as h:
+                h.write(b"VTXCUB01")
+                for k in sorted(pages):
+                    page = [0] * 65536
+                    for o, v in pages[k]:
+                        page[o] = v
+                    h.write(k.to_bytes(4, "little") + b"".join(v.to_bytes(4, "little") for v in page))
+        except OSError:
+            return None
+        return len(pages)
+
+    def cube_depuis_disque(self, e, f):
+        if self.dossier_fichiers is None:
+            return None
+        try:
+            with open(self.chemin_cube(e, f), "rb") as h:
+                b = h.read()
+        except OSError:
+            return None
+        if b[:8] != b"VTXCUB01":
+            return None
+        r, i = {}, 8
+        while i + 4 + 262144 <= len(b):
+            k = int.from_bytes(b[i:i + 4], "little")
+            for j in range(65536):
+                v = int.from_bytes(b[i + 4 + 4 * j:i + 8 + 4 * j], "little")
+                if v:
+                    r[(e, (k << 16) | j)] = v
+            i += 4 + 262144
+        return r
+
     def service(self, code, arg):
         if code in (1, 2):
             if self.dossier_fichiers is None:
@@ -288,11 +431,36 @@ class CPU:
                     del self.mem[k]
                 if rangees:
                     self.cubes[(e, ancienne)] = rangees
-                self.mem.update(self.cubes.pop((e, f), {}))
+                    budget = os.environ.get("VTX_CUBES_PAGES")
+                    if budget and self.dossier_fichiers is not None:
+                        # au-delà du budget de pages en mémoire, le cube quitté va au disque (comme la machine Rust)
+                        pages = sum(len({k[1] >> 16 for k, v in c.items() if v}) for c in self.cubes.values())
+                        if pages > int(budget) and self.cube_vers_disque(e, ancienne, self.cubes[(e, ancienne)]) is not None:
+                            del self.cubes[(e, ancienne)]
+                retrouve = self.cubes.pop((e, f), None)
+                if retrouve is None:
+                    retrouve = self.cube_depuis_disque(e, f)
+                self.mem.update(retrouve or {})
                 self.frequences[e] = f
             return ancienne
         if code == 9:
             return self.frequences[arg & 3]
+        if code == 11:
+            # écrire sur disque le cube de fréquence f de l'étage e (argument f * 4 + e) ; un cube rangé quitte la mémoire
+            e, f = arg & 3, arg >> 2
+            if e == 0 or self.dossier_fichiers is None:
+                return MASK
+            if self.frequences[e] == f:
+                n = self.cube_vers_disque(e, f, {k: v for k, v in self.mem.items() if k[0] == e})
+            elif (e, f) in self.cubes:
+                n = self.cube_vers_disque(e, f, self.cubes[(e, f)])
+                if n is not None:
+                    del self.cubes[(e, f)]
+            else:
+                n = None
+            return MASK if n is None else n
+        if code == 12:
+            return 0                          # présenter l'image : la machine de référence n'a pas de fenêtre
         if code == 10:
             raise VtxError("mémoire pleine : le tas ne peut plus grandir, même après avoir ramassé les miettes")
         if code in (6, 7):
@@ -341,6 +509,74 @@ class CPU:
 
     def drapeaux(self, r, c=False):
         self.z, self.n, self.c = r == 0, (r >> 31) == 1, c
+
+    def paire(self, i):
+        """La paire de registres (Ri, Ri+3) : mot bas, mot haut."""
+        return self.r[i], self.r[(i + 3) & 15]
+
+    def ecrire_paire(self, i, v):
+        self.ecrire(i, v & MASK)
+        self.ecrire((i + 3) & 15, (v >> 32) & MASK)
+        self.drapeaux((v & MASK) | ((v >> 32) & MASK))
+
+    def flottant64(self, op, rd, rs, rt):
+        """Instructions flottantes de 64 bits (0x5B à 0x6B)."""
+        if op in (0x5B, 0x5C, 0x5D, 0x5E, 0x60, 0x61, 0x62):
+            x, y = f64(*self.paire(rs)), f64(*self.paire(rt))
+            if op == 0x5B:
+                v = x + y
+            elif op == 0x5C:
+                v = x - y
+            elif op == 0x5D:
+                v = x * y
+            elif op == 0x5E:
+                if y == 0.0:
+                    v = float("nan") if x == 0.0 or x != x else math.copysign(math.inf, x) * math.copysign(1.0, y)
+                else:
+                    v = x / y
+            else:
+                r = int(x == y) if op == 0x60 else int(x < y) if op == 0x61 else int(x <= y)
+                self.ecrire(rd, r)
+                self.drapeaux(r)
+                return
+            self.ecrire_paire(rd, bits64(v))
+        elif op == 0x5F:
+            x = f64(*self.paire(rs))
+            self.ecrire_paire(rd, bits64(math.sqrt(x) if x >= 0 else (x if x == 0 else float("nan"))))
+        elif op in (0x63, 0x64):
+            a = self.r[rs]
+            self.ecrire_paire(rd, bits64(float(a if op == 0x63 or a < 2 ** 31 else a - 2 ** 32)))
+        elif op in (0x65, 0x66):
+            x = f64(*self.paire(rs))
+            if x != x:
+                r = 0
+            elif x in (math.inf, -math.inf):
+                r = 0x7FFFFFFF if x > 0 else 0x80000000
+            else:
+                r = sature32(math.trunc(x) if op == 0x65 else round(x))
+            self.ecrire(rd, r)
+            self.drapeaux(r)
+        elif op == 0x67:
+            x = f32(self.r[rs])
+            self.ecrire_paire(rd, bits64(x))
+        elif op == 0x68:
+            x = f64(*self.paire(rs))
+            r = bits32(x)
+            self.ecrire(rd, r)
+            self.drapeaux(r)
+        elif op == 0x69:
+            lo, hi = self.paire(rs)
+            n = (hi << 32) | lo
+            self.ecrire_paire(rd, bits64(float(n - 2 ** 64 if n >= 2 ** 63 else n)))
+        else:                                    # 0x6A, 0x6B : flottant vers long signé, tronqué ou arrondi, saturé
+            x = f64(*self.paire(rs))
+            if x != x:
+                r = 0
+            elif x in (math.inf, -math.inf):
+                r = 0x7FFFFFFFFFFFFFFF if x > 0 else 0x8000000000000000
+            else:
+                r = sature64(math.trunc(x) if op == 0x6A else round(x))
+            self.ecrire_paire(rd, r)
 
     def pas_unique(self):
         w = self.mem.get((0, self.pc), 0)
@@ -443,6 +679,8 @@ class CPU:
                     v ^= MASK
             self.ecrire(rd, v)
             self.drapeaux(v)
+        elif 0x5B <= op <= 0x6B:
+            self.flottant64(op, rd, rs, rt)
         elif op == 0x22:
             raise VtxError("DMA non implémentée (utiliser copier du prélude)")
         elif op == 0x23:
@@ -584,8 +822,13 @@ ALIAS = {"et": ("op", "&&"), "ou": ("op", "||"), "non": ("op", "!"), "entree": (
          "données": ("kw", "donnees"), "arreter": ("kw", "arrêter"), "hypothese": ("kw", "hypothèse")}
 JETON = re.compile(
     r"""(?P<ws>\s+)|(?P<comment>//[^\n]*)
+    |(?P<cube4>\#[0-9A-Fa-f]{8}(?:_[0-9A-Fa-f]{8}){3})(?![0-9A-Za-z_])
     |(?P<cube>\#(?:[0-9A-Fa-f]{8}|[0-9A-Fa-f]{6}))(?![0-9A-Za-z_])
-    |(?P<quat>0q[0-3_]+)|(?P<lng>(?:0x[0-9A-Fa-f_]+|\d[\d_]*)L)(?![0-9A-Za-z_])|(?P<hex>0x[0-9A-Fa-f_]+)
+    |(?P<quat>0q[0-3_]+)
+    |(?P<dbl>(?:\d[\d_]*\.\d[\d_]*(?:[eE][-+]?\d+)?|\d[\d_]*[eE][-+]?\d+|\d[\d_]*)D)(?![0-9A-Za-z_])
+    |(?P<pqf>(?:\d[\d_]*\.\d[\d_]*(?:[eE][-+]?\d+)?|\d[\d_]*[eE][-+]?\d+|\d[\d_]*)Q)(?![0-9A-Za-z_])
+    |(?P<wlg>(?:0x[0-9A-Fa-f_]+|\d[\d_]*)LL)(?![0-9A-Za-z_])
+    |(?P<lng>(?:0x[0-9A-Fa-f_]+|\d[\d_]*)L)(?![0-9A-Za-z_])|(?P<hex>0x[0-9A-Fa-f_]+)
     |(?P<flt>\d[\d_]*\.\d[\d_]*(?:[eE][-+]?\d+)?|\d[\d_]*[eE][-+]?\d+)|(?P<dec>\d[\d_]*)
     |(?P<car>'(?:\\.|[^'\\\n])')|(?P<str>"(?:\\.|[^"\\\n])*")
     |(?P<id>[^\W\d]\w*)
@@ -594,7 +837,7 @@ JETON = re.compile(
 )
 
 
-ADN_LIT = re.compile(r'adn"([ACGTUacgtu]{1,16})"')
+ADN_LIT = re.compile(r'adn"([ACGTUacgtu]{1,64})"')
 
 
 def _adn_valeur(m):
@@ -602,7 +845,7 @@ def _adn_valeur(m):
     v = 0
     for lettre in m.group(1).upper():
         v = v * 4 + "ACGT".index("T" if lettre == "U" else lettre)
-    return str(v)
+    return str(v) + ("LL" if len(m.group(1)) > 16 else "")       # plus de 16 bases : un entier_petuar (64 au plus)
 
 
 ECHAPPEMENTS = {"n": "\n", "t": "\t", "\\": "\\", "'": "'", '"': '"', "0": "\0"}
@@ -653,6 +896,22 @@ def lexer(src):
             if b & 0x7FFFFFFF == 0x7F800000:
                 raise VtxError(f"ligne {ligne} : nombre flottant trop grand")
             jetons.append(("flt", b, ligne))
+        elif genre == "dbl":
+            x = float(texte[:-1].replace("_", ""))
+            b = bits64(x)
+            if b & 0x7FFFFFFFFFFFFFFF == 0x7FF0000000000000:
+                raise VtxError(f"ligne {ligne} : nombre flottant_64 trop grand")
+            jetons.append(("dbl", b, ligne))
+        elif genre == "pqf":
+            jetons.append(("pqf", bits_petuar_decimal(texte[:-1].replace("_", ""), ligne), ligne))
+        elif genre == "cube4":
+            jetons.append(("wlg", int(texte[1:].replace("_", ""), 16), ligne))
+        elif genre == "wlg":
+            t = texte[:-2].replace("_", "")
+            v = int(t[2:], 16) if t.startswith("0x") else int(t)
+            if v >= 2 ** 128:
+                raise VtxError(f"ligne {ligne} : nombre trop grand pour 128 bits")
+            jetons.append(("wlg", v, ligne))
         elif genre == "lng":
             t = texte[:-1].replace("_", "")
             v = int(t[2:], 16) if t.startswith("0x") else int(t)
@@ -680,7 +939,14 @@ NIVEAUX = [["||"], ["&&"], ["==", "!=", "<", "<=", ">", ">=", ".<", ".<=", ".>",
            ["<<", ">>", "<<q", ">>q", ".>>"], ["+", "-"], ["*", "/", "%", "./", ".%"]]
 
 
-TYPES = {"entier": "e", "flottant": "f", "long": "l", "logique": "q", "texte": "t"}
+TYPES = {"entier": "e", "flottant": "f", "long": "l", "logique": "q", "texte": "t", "flottant_64": "d", "entier_64": "l",
+         "entier_128": "w", "petuar": "w", "entier_petuar": "w", "flottant_petuar": "x", "flottant_128": "x"}
+# types de plusieurs mots : long et flottant_64 (paire R1:R4) ; entier_petuar et flottant_petuar, quatre points du cube
+# (quadruplet R1, R3, R4, R6)
+LARGES2 = ("l", "d", "w", "x")
+QUATRE = ("w", "x")
+REGS_T = {"l": ("R1", "R4"), "d": ("R1", "R4"), "w": ("R1", "R3", "R4", "R6"), "x": ("R1", "R3", "R4", "R6")}  # mot bas d'abord
+REGS_B = {"l": ("R2", "R5"), "d": ("R2", "R5"), "w": ("R2", "R5", "R7", "R8"), "x": ("R2", "R5", "R7", "R8")}  # 2e opérande
 
 
 class _NomsTypes(dict):
@@ -688,7 +954,8 @@ class _NomsTypes(dict):
         return f"référence à {t[2:]}" if isinstance(t, str) and t.startswith("r:") else str(t)
 
 
-NOM_TYPE = _NomsTypes({"e": "entier", "f": "flottant", "l": "long", "q": "logique"})
+NOM_TYPE = _NomsTypes({"e": "entier", "f": "flottant", "l": "long", "q": "logique", "d": "flottant_64", "w": "entier_128",
+                       "x": "flottant_petuar"})
 TAS_DEBUT, TAS_FIN, TAS_POINTEUR = 0x800000, 0xDFFFF0, 0xDFFFF8   # étage 3 : le tas (nouveau, nouveau_de)
 
 
@@ -833,6 +1100,12 @@ class Analyseur:
             return ("f", x[1] ^ (0x80000000 if neg else 0))
         if x[0] == "lnombre":
             return ("l", ((-x[1]) if neg else x[1]) % 2 ** 64)
+        if x[0] == "dnombre":
+            return ("d", x[1] ^ (0x8000000000000000 if neg else 0))
+        if x[0] == "wnombre":
+            return ("w", ((-x[1]) if neg else x[1]) % 2 ** 128)
+        if x[0] == "xnombre":
+            return ("x", petuar_neg(x[1]) if neg else x[1])
         return self.ce(e, l)
 
     def ce(self, e, l=0):
@@ -1581,6 +1854,15 @@ class Analyseur:
         if k == "flt":
             self.suivant()
             return ("fnombre", v)
+        if k == "dbl":
+            self.suivant()
+            return ("dnombre", v)
+        if k == "wlg":
+            self.suivant()
+            return ("wnombre", v)
+        if k == "pqf":
+            self.suivant()
+            return ("xnombre", v)
         if k == "lng":
             self.suivant()
             return ("lnombre", v)
@@ -1635,7 +1917,7 @@ class Analyseur:
             if v in self.consts:
                 c = self.consts[v]
                 if isinstance(c, tuple):
-                    return ("fnombre" if c[0] == "f" else "lnombre", c[1])
+                    return {"f": "fnombre", "l": "lnombre", "d": "dnombre", "w": "wnombre", "x": "xnombre"}[c[0]], c[1]
                 return ("nombre", c)
             return ("var", v, l)
         if k == "op" and v == "(":
@@ -2222,6 +2504,364 @@ fonction ecrire_long(c, a: long) {
     }
     __mettre(c, 48 + bas(a % 10L));
 }
+// ---- grands entiers (limbes de 16 bits, mot bas d'abord) pour l'écriture décimale exacte des flottants
+fonction __bn_neuf(v) {
+    soit t = tableau(0);
+    si v != 0 {
+        ajouter(t, v & 65535);
+        si (v >> 16) != 0 { ajouter(t, v >> 16); }
+    }
+    retour t;
+}
+fonction __bn_copie(a) {
+    soit r = tableau(0);
+    pour i dans 0..longueur(a) { ajouter(r, a[i]); }
+    retour r;
+}
+fonction __bn_mul(a, m) {
+    soit c = 0;
+    pour i dans 0..longueur(a) {
+        soit p = a[i] * m + c;
+        a[i] = p & 65535;
+        c = p >> 16;
+    }
+    si c != 0 { ajouter(a, c); }
+}
+fonction __bn_mul10(a, n) {
+    tantque n >= 4 { __bn_mul(a, 10000); n = n - 4; }
+    tantque n > 0 { __bn_mul(a, 10); n = n - 1; }
+}
+fonction __bn_cmp(a, b) {
+    soit na = longueur(a);
+    soit nb = longueur(b);
+    si na != nb {
+        si na > nb { retour 1; }
+        retour 2;
+    }
+    soit i = na;
+    tantque i > 0 {
+        i = i - 1;
+        si a[i] != b[i] {
+            si a[i] > b[i] { retour 1; }
+            retour 2;
+        }
+    }
+    retour 0;
+}
+fonction __bn_ajouter(a, b) {
+    soit n = longueur(b);
+    si longueur(a) > n { n = longueur(a); }
+    soit c = 0;
+    pour i dans 0..n {
+        soit x = c;
+        soit na = longueur(a);
+        si i < na { x = x + a[i]; }
+        si i < longueur(b) { x = x + b[i]; }
+        si i < na { a[i] = x & 65535; } sinon { ajouter(a, x & 65535); }
+        c = x >> 16;
+    }
+    si c != 0 { ajouter(a, c); }
+}
+fonction __bn_sub(a, b) {
+    soit emprunt = 0;
+    pour i dans 0..longueur(a) {
+        soit y = emprunt;
+        si i < longueur(b) { y = y + b[i]; }
+        si a[i] >= y { a[i] = a[i] - y; emprunt = 0; } sinon { a[i] = a[i] + 65536 - y; emprunt = 1; }
+    }
+    tantque longueur(a) > 0 && a[longueur(a) - 1] == 0 { retirer(a); }
+}
+fonction __bn_decaler(a, k) {
+    si longueur(a) == 0 { retour; }
+    soit q = k >> 4;
+    soit b = k & 15;
+    si b != 0 {
+        soit c = 0;
+        pour i dans 0..longueur(a) {
+            soit x = (a[i] << b) | c;
+            a[i] = x & 65535;
+            c = x >> 16;
+        }
+        si c != 0 { ajouter(a, c); }
+    }
+    si q != 0 {
+        soit n = longueur(a);
+        pour i dans 0..q { ajouter(a, 0); }
+        soit j = n;
+        tantque j > 0 { j = j - 1; a[j + q] = a[j]; }
+        pour i dans 0..q { a[i] = 0; }
+    }
+}
+fonction __bn_bits(a) {
+    soit n = longueur(a);
+    si n == 0 { retour 0; }
+    soit h = a[n - 1];
+    soit b = 0;
+    tantque h != 0 { b = b + 1; h = h >> 1; }
+    retour 16 * (n - 1) + b;
+}
+// chiffres décimaux les plus courts qui redonnent le flottant f * 2^e (Burger et Dybvig) : le tableau rendu contient
+// k + 20000 (la valeur vaut 0,d1d2d3... fois 10^k) puis les chiffres ; bord vaut 1 si l'écart inférieur est la moitié,
+// 2 s'il est le quart (le bas d'une puissance de 4 du flottant_petuar)
+fonction __dragon(f, e, bord) {
+    soit pair = 1;
+    si f[0] & 1 { pair = 0; }
+    soit r = __bn_copie(f);
+    soit s = __bn_neuf(1);
+    soit mp = __bn_neuf(1);
+    soit mm = __bn_neuf(1);
+    si e < 2147483648 {
+        si bord == 0 {
+            __bn_decaler(r, e + 1);
+            s = __bn_neuf(2);
+            __bn_decaler(mp, e);
+            __bn_decaler(mm, e);
+        } sinon si bord == 1 {
+            __bn_decaler(r, e + 2);
+            s = __bn_neuf(4);
+            __bn_decaler(mp, e + 1);
+            __bn_decaler(mm, e);
+        } sinon {
+            __bn_decaler(r, e + 3);
+            s = __bn_neuf(8);
+            __bn_decaler(mp, e + 2);
+            __bn_decaler(mm, e);
+        }
+    } sinon {
+        soit n = 0 - e;
+        si bord == 0 {
+            __bn_decaler(r, 1);
+            __bn_decaler(s, n + 1);
+        } sinon si bord == 1 {
+            __bn_decaler(r, 2);
+            __bn_decaler(s, n + 2);
+            mp = __bn_neuf(2);
+        } sinon {
+            __bn_decaler(r, 3);
+            __bn_decaler(s, n + 3);
+            mp = __bn_neuf(4);
+        }
+    }
+    // estimation par défaut de l'exposant décimal : log10(2) = 0,30103 ; le reste est corrigé par la boucle
+    soit x = e + __bn_bits(f) - 1;
+    soit est = 0;
+    si x < 2147483648 {
+        est = x * 30102 / 100000;
+        __bn_mul10(s, est);
+    } sinon {
+        soit m = 0 - x;
+        est = (m * 30104 + 99999) / 100000;
+        __bn_mul10(r, est);
+        __bn_mul10(mp, est);
+        __bn_mul10(mm, est);
+        est = 0 - est;
+    }
+    soit k = est;
+    soit encore = 1;
+    tantque encore == 1 {
+        soit t1 = __bn_copie(r);
+        __bn_ajouter(t1, mp);
+        soit c = __bn_cmp(t1, s);
+        si (pair == 1 && c != 2) || (pair == 0 && c == 1) {
+            __bn_mul(s, 10);
+            k = k + 1;
+        } sinon {
+            encore = 0;
+        }
+    }
+    __bn_mul(r, 10);
+    __bn_mul(mp, 10);
+    __bn_mul(mm, 10);
+    soit dig = tableau(0);
+    ajouter(dig, k + 20000);
+    soit fini = 0;
+    tantque fini == 0 {
+        soit d = 0;
+        tantque __bn_cmp(r, s) != 2 {
+            __bn_sub(r, s);
+            d = d + 1;
+        }
+        soit c1 = __bn_cmp(r, mm);
+        soit tc1 = 0;
+        si (pair == 1 && c1 != 1) || (pair == 0 && c1 == 2) { tc1 = 1; }
+        soit t = __bn_copie(r);
+        __bn_ajouter(t, mp);
+        soit c2 = __bn_cmp(t, s);
+        soit tc2 = 0;
+        si (pair == 1 && c2 != 2) || (pair == 0 && c2 == 1) { tc2 = 1; }
+        si tc1 == 0 && tc2 == 0 {
+            ajouter(dig, d);
+            __bn_mul(r, 10);
+            __bn_mul(mp, 10);
+            __bn_mul(mm, 10);
+        } sinon {
+            si tc1 == 1 && tc2 == 0 {
+                ajouter(dig, d);
+            } sinon si tc1 == 0 && tc2 == 1 {
+                ajouter(dig, d + 1);
+            } sinon {
+                __bn_mul(r, 2);
+                si __bn_cmp(r, s) == 2 { ajouter(dig, d); } sinon { ajouter(dig, d + 1); }
+            }
+            fini = 1;
+        }
+    }
+    retour dig;
+}
+fonction __ecrire_chiffres_dec(c, dig, de, a) {
+    pour i dans de..a { __mettre(c, 48 + dig[i]); }
+}
+fonction __bn_divpetit(a, m) {
+    soit r = 0;
+    soit i = longueur(a);
+    tantque i > 0 {
+        i = i - 1;
+        soit x = (r << 16) | a[i];
+        a[i] = x / m;
+        r = x % m;
+    }
+    tantque longueur(a) > 0 && a[longueur(a) - 1] == 0 { retirer(a); }
+    retour r;
+}
+fonction __bn_bit(a, i) {
+    si (i >> 4) >= longueur(a) { retour 0; }
+    retour (a[i >> 4] >> (i & 15)) & 1;
+}
+fonction __bn_bas_nul(a, n) {
+    soit q = n >> 4;
+    pour i dans 0..q {
+        si i < longueur(a) && a[i] != 0 { retour 0; }
+    }
+    si (n & 15) != 0 && q < longueur(a) {
+        si (a[q] & ((1 << (n & 15)) - 1)) != 0 { retour 0; }
+    }
+    retour 1;
+}
+fonction __bn_droite(a, n) {
+    soit q = n >> 4;
+    soit b = n & 15;
+    soit m = longueur(a);
+    pour i dans 0..m {
+        soit lo = 0;
+        si i + q < m { lo = a[i + q] >> b; }
+        soit hi = 0;
+        si b != 0 && i + q + 1 < m { hi = (a[i + q + 1] << (16 - b)) & 65535; }
+        a[i] = lo | hi;
+    }
+    tantque longueur(a) > 0 && a[longueur(a) - 1] == 0 { retirer(a); }
+}
+// f * 2^e écrit avec d décimales exactes (arrondi au plus proche, pair en cas d'égalité, comme printf)
+fonction __ecrire_fixe(c, f, e, d) {
+    soit x = __bn_copie(f);
+    __bn_mul10(x, d);
+    si e < 2147483648 {
+        __bn_decaler(x, e);
+    } sinon {
+        soit n = 0 - e;
+        soit demi = __bn_bit(x, n - 1);
+        soit reste = 1 - __bn_bas_nul(x, n - 1);
+        soit impair = __bn_bit(x, n);
+        __bn_droite(x, n);
+        si demi == 1 && (reste == 1 || impair == 1) { __bn_ajouter(x, __bn_neuf(1)); }
+    }
+    soit dd = tableau(0);
+    tantque longueur(x) > 0 {
+        soit q = __bn_divpetit(x, 10000);
+        ajouter(dd, q % 10);
+        ajouter(dd, (q / 10) % 10);
+        ajouter(dd, (q / 100) % 10);
+        ajouter(dd, q / 1000);
+    }
+    tantque longueur(dd) > d + 1 && dd[longueur(dd) - 1] == 0 { retirer(dd); }
+    tantque longueur(dd) < d + 1 { ajouter(dd, 0); }
+    soit i = longueur(dd);
+    tantque i > d {
+        i = i - 1;
+        __mettre(c, 48 + dd[i]);
+    }
+    si d > 0 {
+        __mettre(c, 46);
+        tantque i > 0 {
+            i = i - 1;
+            __mettre(c, 48 + dd[i]);
+        }
+    }
+}
+// d décimales, ou 4294967295 pour les chiffres les plus courts qui redonnent exactement le nombre
+fonction ecrire_flottant_64(c, x: flottant_64, d) {
+    soit b = bits(x);
+    soit lo = bas(b);
+    soit hi = haut(b);
+    soit ex = (hi >> 20) & 2047;
+    soit mh = hi & 1048575;
+    si ex == 2047 && (mh != 0 || lo != 0) {
+        __mettre(c, 110); __mettre(c, 97); __mettre(c, 110);
+        retour;
+    }
+    si hi >= 2147483648 {
+        __mettre(c, 45);
+    }
+    si ex == 2047 {
+        __mettre(c, 105); __mettre(c, 110); __mettre(c, 102);
+        retour;
+    }
+    soit f = tableau(0);
+    ajouter(f, lo & 65535);
+    ajouter(f, lo >> 16);
+    ajouter(f, mh & 65535);
+    soit t3 = mh >> 16;
+    soit e = 0;
+    si ex == 0 {
+        e = 0 - 1074;
+    } sinon {
+        t3 = t3 | 16;
+        e = ex - 1075;
+    }
+    ajouter(f, t3);
+    tantque longueur(f) > 0 && f[longueur(f) - 1] == 0 { retirer(f); }
+    si d != 4294967295 {
+        si d > 40 { d = 40; }
+        __ecrire_fixe(c, f, e, d);
+        retour;
+    }
+    si longueur(f) == 0 {
+        __mettre(c, 48); __mettre(c, 46); __mettre(c, 48);
+        retour;
+    }
+    soit bord = 0;
+    si ex > 1 && mh == 0 && lo == 0 { bord = 1; }
+    __ecrire_dragon(c, __dragon(f, e, bord));
+}
+// écrit les chiffres rendus par __dragon (en fixe de 10^-3 à 10^16, sinon avec un exposant)
+fonction __ecrire_dragon(c, dig) {
+    soit n = longueur(dig) - 1;
+    soit k = dig[0];
+    si k >= 19997 && k <= 20016 {
+        si k <= 20000 {
+            __mettre(c, 48); __mettre(c, 46);
+            pour i dans 0..(20000 - k) { __mettre(c, 48); }
+            __ecrire_chiffres_dec(c, dig, 1, n + 1);
+        } sinon {
+            soit ent = k - 20000;
+            pour i dans 0..ent {
+                si i < n { __mettre(c, 48 + dig[1 + i]); } sinon { __mettre(c, 48); }
+            }
+            __mettre(c, 46);
+            si n > ent { __ecrire_chiffres_dec(c, dig, 1 + ent, n + 1); } sinon { __mettre(c, 48); }
+        }
+    } sinon {
+        __mettre(c, 48 + dig[1]);
+        __mettre(c, 46);
+        si n > 1 { __ecrire_chiffres_dec(c, dig, 2, n + 1); } sinon { __mettre(c, 48); }
+        __mettre(c, 101);
+        si k < 20001 {
+            __mettre(c, 45);
+            __mettre_nombre(c, 20001 - k);
+        } sinon {
+            __mettre_nombre(c, k - 20001);
+        }
+    }
+}
 fonction ecrire_logique(c, l: logique) {
     selon l {
         vrai { __mettre(c, 118); __mettre(c, 114); __mettre(c, 97); __mettre(c, 105); }
@@ -2236,6 +2876,29 @@ fonction ecrire_logique(c, l: logique) {
         }
     }
 }
+// ---- la frontière avec le binaire : Belnap reste le cœur de Vercintorix ; binaire() donne le code d'échange
+// 0 non, 1 oui, 2 inconnu, 3 variable (le bit fort dit « pas binaire ») ; quaternaire() fait le chemin inverse
+fonction binaire(l: logique) {
+    soit c = entier(l);
+    soit v = c >> 1;
+    retour ((((v ^ c) & 1) ^ 1) << 1) | v;
+}
+fonction quaternaire(b): logique {
+    soit lo = b & 1;
+    soit hi = (b >> 1) & 1;
+    retour comme_logique((lo << 1) | (1 - (hi ^ lo)));
+}
+// les mêmes sur 16 logiques rangés dans un mot (un par quit)
+fonction binaire16(x) {
+    soit v = (x >> 1) & 1431655765;
+    soit f = x & 1431655765;
+    retour ((~(v ^ f) & 1431655765) << 1) | v;
+}
+fonction quaternaire16(b) {
+    soit lo = b & 1431655765;
+    soit hi = (b >> 1) & 1431655765;
+    retour (lo << 1) | (~(hi ^ lo) & 1431655765);
+}
 fonction afficher(x) {
     ecrire_entier(1, x);
     ecrire_car(1, 10);
@@ -2246,6 +2909,10 @@ fonction __afficher_f(x: flottant) {
 }
 fonction __afficher_l(x: long) {
     ecrire_long(1, x);
+    ecrire_car(1, 10);
+}
+fonction __afficher_d(x: flottant_64) {
+    ecrire_flottant_64(1, x, 4294967295);
     ecrire_car(1, 10);
 }
 fonction __afficher_q(x: logique) {
@@ -2264,6 +2931,9 @@ fonction __ecrire_f(x: flottant) {
 }
 fonction __ecrire_l(x: long) {
     ecrire_long(1, x);
+}
+fonction __ecrire_d(x: flottant_64) {
+    ecrire_flottant_64(1, x, 4294967295);
 }
 fonction __ecrire_q(x: logique) {
     ecrire_logique(1, x);
@@ -2296,6 +2966,11 @@ fonction __texte_f(x: flottant): texte {
 fonction __texte_l(x: long): texte {
     soit t = __verifier(nouveau(24));
     ecrire_long(t, x);
+    retour __texte_fin(t);
+}
+fonction __texte_d(x: flottant_64): texte {
+    soit t = __verifier(nouveau(40));
+    ecrire_flottant_64(t, x, 4294967295);
     retour __texte_fin(t);
 }
 fonction __texte_q(x: logique): texte {
@@ -2483,6 +3158,955 @@ fonction arccosinus(x: flottant): flottant {
     si !(abs(x) <= 1.0) { retour comme_flottant(2143289344); }
     retour 1.5707964 - arcsinus(x);
 }
+fonction pi_64(): flottant_64 { retour 3.141592653589793D; }
+fonction __nan_64(): flottant_64 { retour comme_flottant_64(0x7FF8000000000000L); }
+fonction __inf_64(): flottant_64 { retour comme_flottant_64(0x7FF0000000000000L); }
+fonction __p2_64(n): flottant_64 { retour flottant_64_de((n + 1023) << 20, 0); }
+fonction plancher_64(x: flottant_64): flottant_64 {
+    si !(abs(x) < 4503599627370496.0D) || x == 0.0D { retour x; }
+    soit t = flottant_64(long(x));
+    si t > x { t = t - 1.0D; }
+    retour t;
+}
+fonction plafond_64(x: flottant_64): flottant_64 {
+    soit t = plancher_64(x);
+    si t < x { t = t + 1.0D; }
+    retour t;
+}
+fonction __sin_cos_64(x: flottant_64, decale): flottant_64 {
+    soit ax = abs(x);
+    si !(ax < 1647099.0D) { retour __nan_64(); }
+    soit k = 0;
+    soit y0 = x;
+    soit y1 = 0.0D;
+    si ax > 0.7853981633974483D {
+        k = arrondi(x * 0.6366197723675814D);
+        soit fk = flottant_64_signe(k);
+        soit r = x - fk * 1.57079632673412561417D;
+        soit w = fk * 6.07710050650619224932e-11D;
+        y0 = r - w;
+        soit j = (haut(x) >> 20) & 2047;
+        soit i = j - ((haut(y0) >> 20) & 2047);
+        si i > 16 {
+            soit t = r;
+            w = fk * 6.07710050630396597660e-11D;
+            r = t - w;
+            w = fk * 2.02226624879595063154e-21D - ((t - r) - w);
+            y0 = r - w;
+            i = j - ((haut(y0) >> 20) & 2047);
+            si i > 49 {
+                t = r;
+                w = fk * 2.02226624871116645580e-21D;
+                r = t - w;
+                w = fk * 8.47842766036889956997e-32D - ((t - r) - w);
+                y0 = r - w;
+            }
+        }
+        y1 = (r - y0) - w;
+    }
+    soit q = (k + decale) & 3;
+    soit z = y0 * y0;
+    soit v = 0.0D;
+    si (q & 1) == 0 {
+        soit vv = z * y0;
+        soit rr = 8.33333333332248946124e-03D + z * (-1.98412698298579493134e-04D + z * (2.75573137070700676789e-06D
+            + z * (-2.50507602534068634195e-08D + z * 1.58969099521155010221e-10D)));
+        v = y0 - ((z * (0.5D * y1 - vv * rr) - y1) - vv * -1.66666666666666324348e-01D);
+    } sinon {
+        soit rc = z * (4.16666666666666019037e-02D + z * (-1.38888888888741095749e-03D + z * (2.48015872894767294178e-05D
+            + z * (-2.75573143513906633035e-07D + z * (2.08757232129817482790e-09D + z * -1.13596475577881948265e-11D)))));
+        soit hz = 0.5D * z;
+        soit w1 = 1.0D - hz;
+        v = w1 + (((1.0D - w1) - hz) + (z * rc - y0 * y1));
+    }
+    si q >= 2 { retour -v; }
+    retour v;
+}
+fonction sinus_64(x: flottant_64): flottant_64 { retour __sin_cos_64(x, 0); }
+fonction cosinus_64(x: flottant_64): flottant_64 { retour __sin_cos_64(x, 1); }
+fonction tangente_64(x: flottant_64): flottant_64 { retour __sin_cos_64(x, 0) / __sin_cos_64(x, 1); }
+fonction exponentielle_64(x: flottant_64): flottant_64 {
+    si x != x { retour x; }
+    si x > 709.782712893384D { retour __inf_64(); }
+    si x < -745.1332191019411D { retour 0.0D; }
+    si abs(x) < 3.725290298461914e-09D { retour 1.0D + x; }
+    soit k = arrondi(x * 1.44269504088896338700D);
+    soit fk = flottant_64_signe(k);
+    soit hi = x - fk * 6.93147180369123816490e-01D;
+    soit lo = fk * 1.90821492927058770002e-10D;
+    soit r = hi - lo;
+    soit t = r * r;
+    soit c = r - t * (1.66666666666666019037e-01D + t * (-2.77777777770155933842e-03D + t * (6.61375632143793436117e-05D
+        + t * (-1.65339022054652515390e-06D + t * 4.13813679705723846039e-08D))));
+    soit y = 1.0D - ((lo - (r * c) / (2.0D - c)) - hi);
+    si k .> 1023 {
+        retour y * __p2_64(1023) * __p2_64(k - 1023);
+    }
+    si k .< 0 - 1021 {
+        retour y * __p2_64(k + 1000) * __p2_64(0 - 1000);
+    }
+    retour y * __p2_64(k);
+}
+fonction logarithme_64(x: flottant_64): flottant_64 {
+    si x != x { retour x; }
+    si x < 0.0D { retour __nan_64(); }
+    si x == 0.0D { retour -__inf_64(); }
+    si x == __inf_64() { retour x; }
+    soit k = 0;
+    soit hx = haut(x);
+    si hx < 1048576 {
+        k = 0 - 54;
+        x = x * 18014398509481984.0D;
+        hx = haut(x);
+    }
+    k = k + (hx >> 20) - 1023;
+    hx = hx & 1048575;
+    soit i = (hx + 614244) & 1048576;
+    x = flottant_64_de(hx | (i ^ 1072693248), bas(x));
+    k = k + (i >> 20);
+    soit f = x - 1.0D;
+    soit s = f / (2.0D + f);
+    soit dk = flottant_64_signe(k);
+    soit z = s * s;
+    soit w = z * z;
+    soit t1 = w * (3.999999999940941908e-01D + w * (2.222219843214978396e-01D + w * 1.531383769920937332e-01D));
+    soit t2 = z * (6.666666666666735130e-01D + w * (2.857142874366239149e-01D + w * (1.818357216161805012e-01D + w * 1.479819860511658591e-01D)));
+    soit rr = t2 + t1;
+    soit hfsq = 0.5D * f * f;
+    retour dk * 6.93147180369123816490e-01D - ((hfsq - (s * (hfsq + rr) + dk * 1.90821492927058770002e-10D)) - f);
+}
+fonction puissance_64(x: flottant_64, y: flottant_64): flottant_64 {
+    si y == 0.0D { retour 1.0D; }
+    si x != x || y != y { retour __nan_64(); }
+    soit entiere = plancher_64(y) == y;
+    soit impaire = 0;
+    si entiere && abs(y) < 9007199254740992.0D {
+        impaire = (long(abs(y)) & 1L) != 0L;
+    }
+    si x == 0.0D {
+        si y < 0.0D { retour __inf_64(); }
+        retour 0.0D;
+    }
+    si entiere && abs(y) <= 1024.0D {
+        soit n = entier(abs(y));
+        soit b = x;
+        soit r = 1.0D;
+        tantque n != 0 {
+            si (n & 1) == 1 { r = r * b; }
+            b = b * b;
+            n = n >> 1;
+        }
+        si y < 0.0D { retour 1.0D / r; }
+        retour r;
+    }
+    si x < 0.0D {
+        si !entiere { retour __nan_64(); }
+        soit e2 = exponentielle_64(y * logarithme_64(-x));
+        si impaire { retour -e2; }
+        retour e2;
+    }
+    retour exponentielle_64(y * logarithme_64(x));
+}
+fonction arctangente_64(x: flottant_64): flottant_64 {
+    si x != x { retour x; }
+    soit ax = abs(x);
+    soit id = 0 - 1;
+    soit u = ax;
+    si ax >= 7.378697629483821e+19D {
+        si x < 0.0D { retour -1.5707963267948966D; }
+        retour 1.5707963267948966D;
+    }
+    si ax >= 0.4375D {
+        si ax < 1.1875D {
+            si ax < 0.6875D {
+                id = 0;
+                u = (2.0D * ax - 1.0D) / (2.0D + ax);
+            } sinon {
+                id = 1;
+                u = (ax - 1.0D) / (ax + 1.0D);
+            }
+        } sinon {
+            si ax < 2.4375D {
+                id = 2;
+                u = (ax - 1.5D) / (1.0D + 1.5D * ax);
+            } sinon {
+                id = 3;
+                u = -1.0D / ax;
+            }
+        }
+    } sinon {
+        si ax < 7.450580596923828e-09D { retour x; }
+        u = x;
+    }
+    soit z = u * u;
+    soit w = z * z;
+    soit s1 = z * (3.33333333333329318027e-01D + w * (1.42857142725034663711e-01D + w * (9.09088713343650656196e-02D
+        + w * (6.66107313738753120669e-02D + w * (4.97687799461593236017e-02D + w * 1.62858201153657823623e-02D)))));
+    soit s2 = w * (-1.99999999998764832476e-01D + w * (-1.11111104054623557880e-01D + w * (-7.69187620504482999495e-02D
+        + w * (-5.83357013379057348645e-02D + w * -3.65315727442169155270e-02D))));
+    si id .< 0 { retour u - u * (s1 + s2); }
+    soit hi = 0.0D;
+    soit lo = 0.0D;
+    si id == 0 { hi = 4.63647609000806093515e-01D; lo = 2.26987774529616870924e-17D; }
+    si id == 1 { hi = 7.85398163397448278999e-01D; lo = 3.06161699786838301793e-17D; }
+    si id == 2 { hi = 9.82793723247329054082e-01D; lo = 1.39033110312309984516e-17D; }
+    si id == 3 { hi = 1.57079632679489655800e+00D; lo = 6.12323399573676603587e-17D; }
+    soit r = hi - ((u * (s1 + s2) - lo) - u);
+    si x < 0.0D { retour -r; }
+    retour r;
+}
+fonction arctangente2_64(y: flottant_64, x: flottant_64): flottant_64 {
+    si x != x || y != y { retour __nan_64(); }
+    si x == 0.0D {
+        si y > 0.0D { retour 1.5707963267948966D; }
+        si y < 0.0D { retour -1.5707963267948966D; }
+        retour 0.0D;
+    }
+    soit z = arctangente_64(abs(y / x));
+    si x > 0.0D {
+        si y < 0.0D { retour -z; }
+        retour z;
+    }
+    si y < 0.0D { retour (z - 1.2246467991473531772e-16D) - 3.141592653589793D; }
+    retour 3.141592653589793D - (z - 1.2246467991473531772e-16D);
+}
+fonction arcsinus_64(x: flottant_64): flottant_64 {
+    si !(abs(x) <= 1.0D) { retour __nan_64(); }
+    retour arctangente2_64(x, racine((1.0D - x) * (1.0D + x)));
+}
+fonction arccosinus_64(x: flottant_64): flottant_64 {
+    si !(abs(x) <= 1.0D) { retour __nan_64(); }
+    retour 2.0D * arctangente2_64(racine(1.0D - x), racine(1.0D + x));
+}
+fonction __qlt(a: entier_128, b: entier_128) {
+    soit x = haut(haut(a)) ^ 2147483648;
+    soit y = haut(haut(b)) ^ 2147483648;
+    si x != y { retour x < y; }
+    x = bas(haut(a));
+    y = bas(haut(b));
+    si x != y { retour x < y; }
+    x = haut(bas(a));
+    y = haut(bas(b));
+    si x != y { retour x < y; }
+    retour bas(bas(a)) < bas(bas(b));
+}
+fonction __qltu(a: entier_128, b: entier_128) {
+    soit x = haut(haut(a));
+    soit y = haut(haut(b));
+    si x != y { retour x < y; }
+    x = bas(haut(a));
+    y = bas(haut(b));
+    si x != y { retour x < y; }
+    x = haut(bas(a));
+    y = haut(bas(b));
+    si x != y { retour x < y; }
+    retour bas(bas(a)) < bas(bas(b));
+}
+fonction __qshl(a: entier_128, n): entier_128 {
+    soit k = n & 127;
+    soit w0 = bas(bas(a));
+    soit w1 = haut(bas(a));
+    soit w2 = bas(haut(a));
+    soit w3 = haut(haut(a));
+    tantque k >= 32 {
+        w3 = w2;
+        w2 = w1;
+        w1 = w0;
+        w0 = 0;
+        k = k - 32;
+    }
+    si k > 0 {
+        w3 = (w3 << k) | (w2 >> (32 - k));
+        w2 = (w2 << k) | (w1 >> (32 - k));
+        w1 = (w1 << k) | (w0 >> (32 - k));
+        w0 = w0 << k;
+    }
+    retour entier_128_de(long_de(w3, w2), long_de(w1, w0));
+}
+fonction __qshr_rempli(a: entier_128, n, s): entier_128 {
+    soit k = n & 127;
+    soit w0 = bas(bas(a));
+    soit w1 = haut(bas(a));
+    soit w2 = bas(haut(a));
+    soit w3 = haut(haut(a));
+    tantque k >= 32 {
+        w0 = w1;
+        w1 = w2;
+        w2 = w3;
+        w3 = s;
+        k = k - 32;
+    }
+    si k > 0 {
+        w0 = (w0 >> k) | (w1 << (32 - k));
+        w1 = (w1 >> k) | (w2 << (32 - k));
+        w2 = (w2 >> k) | (w3 << (32 - k));
+        w3 = (w3 >> k) | (s << (32 - k));
+    }
+    retour entier_128_de(long_de(w3, w2), long_de(w1, w0));
+}
+fonction __qshr(a: entier_128, n): entier_128 { retour __qshr_rempli(a, n, 0); }
+fonction __qsar(a: entier_128, n): entier_128 {
+    si haut(haut(a)) >= 2147483648 { retour __qshr_rempli(a, n, 4294967295); }
+    retour __qshr_rempli(a, n, 0);
+}
+fonction __qmul(a: entier_128, b: entier_128): entier_128 {
+    soit al = bas(a);
+    soit ah = haut(a);
+    soit bl = bas(b);
+    soit bh = haut(b);
+    soit a0 = long(bas(al));
+    soit a1 = long(haut(al));
+    soit b0 = long(bas(bl));
+    soit b1 = long(haut(bl));
+    soit r = entier_128_de(0L, a0 * b0);
+    r = r + (entier_128_de(0L, a0 * b1) << 32) + (entier_128_de(0L, a1 * b0) << 32) + entier_128_de(a1 * b1, 0L);
+    retour r + entier_128_de(ah * bl + al * bh, 0L);
+}
+fonction __qdivu(a: entier_128, b: entier_128, reste): entier_128 {
+    soit q = 0LL;
+    soit r = 0LL;
+    pour i dans 0..128 {
+        soit dessus = haut(haut(a)) >> 31;
+        soit rtop = haut(haut(r)) >> 31;
+        a = a + a;
+        r = r + r + entier_128(dessus);
+        q = q + q;
+        si rtop == 1 || !__qltu(r, b) {
+            r = r - b;
+            q = q + 1;
+        }
+    }
+    si reste == 1 { retour r; }
+    retour q;
+}
+fonction __qdiv(a: entier_128, b: entier_128, reste): entier_128 {
+    soit na = haut(haut(a)) >> 31;
+    soit nb = haut(haut(b)) >> 31;
+    si na == 1 { a = 0 - a; }
+    si nb == 1 { b = 0 - b; }
+    soit q = __qdivu(a, b, reste);
+    si reste == 1 {
+        si na == 1 { retour 0 - q; }
+        retour q;
+    }
+    si na != nb { retour 0 - q; }
+    retour q;
+}
+fonction __qabs(a: entier_128): entier_128 {
+    si haut(haut(a)) >= 2147483648 { retour 0 - a; }
+    retour a;
+}
+fonction __qmin(a: entier_128, b: entier_128): entier_128 {
+    si __qlt(b, a) { retour b; }
+    retour a;
+}
+fonction __qmax(a: entier_128, b: entier_128): entier_128 {
+    si __qlt(a, b) { retour b; }
+    retour a;
+}
+fonction __qtod(x: entier_128): flottant_64 {
+    soit neg = haut(haut(x)) >> 31;
+    si neg == 1 { x = 0 - x; }
+    soit w3 = haut(haut(x));
+    soit w2 = bas(haut(x));
+    soit w1 = haut(bas(x));
+    soit w0 = bas(bas(x));
+    soit n = 0;
+    soit top = w0;
+    si w3 != 0 { n = 96; top = w3; } sinon si w2 != 0 { n = 64; top = w2; } sinon si w1 != 0 { n = 32; top = w1; }
+    tantque top != 0 {
+        n = n + 1;
+        top = top >> 1;
+    }
+    soit d = 0.0D;
+    si n < 64 {
+        d = flottant_64(bas(x));
+    } sinon {
+        soit s = n - 63;
+        soit q = __qshr(x, s);
+        soit t = bas(q);
+        si __qshl(q, s) != x { t = t | 1L; }
+        d = flottant_64(t) * __p2_64(s);
+    }
+    si neg == 1 { retour -d; }
+    retour d;
+}
+fonction __dtoq(x: flottant_64): entier_128 {
+    si x != x { retour 0LL; }
+    soit neg = haut(x) >> 31;
+    soit ax = abs(x);
+    si ax < 9223372036854775808.0D { retour entier_128(long(x)); }
+    si ax >= 170141183460469231731687303715884105728.0D {
+        si neg == 1 { retour 0x80000000000000000000000000000000LL; }
+        retour 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;
+    }
+    soit e = ((haut(x) >> 20) & 2047) - 1023;
+    soit m = long_de((haut(x) & 1048575) | 1048576, bas(x));
+    soit r = __qshl(entier_128_de(0L, m), e - 52);
+    si neg == 1 { retour 0 - r; }
+    retour r;
+}
+fonction ecrire_entier_128(c, a: entier_128) {
+    si a < 0 {
+        __mettre(c, 45);
+        a = 0 - a;
+    }
+    soit t0 = 0;
+    soit t1 = 0;
+    soit t2 = 0;
+    soit t3 = 0;
+    soit t4 = 0;
+    soit k = 0;
+    tantque k == 0 || a != 0 {
+        soit q = __qdivu(a, 1000000000, 0);
+        soit r = bas(bas(a - q * 1000000000));
+        si k == 0 { t0 = r; } sinon si k == 1 { t1 = r; } sinon si k == 2 { t2 = r; } sinon si k == 3 { t3 = r; } sinon { t4 = r; }
+        a = q;
+        k = k + 1;
+    }
+    soit premier = 1;
+    tantque k > 0 {
+        k = k - 1;
+        soit v = t0;
+        si k == 1 { v = t1; } sinon si k == 2 { v = t2; } sinon si k == 3 { v = t3; } sinon si k == 4 { v = t4; }
+        si premier == 1 {
+            __mettre_nombre(c, v);
+            premier = 0;
+        } sinon {
+            __ecrire_chiffres(c, v, 9);
+        }
+    }
+}
+fonction __afficher_w(x: entier_128) {
+    ecrire_entier_128(1, x);
+    ecrire_car(1, 10);
+}
+fonction __ecrire_w(x: entier_128) {
+    ecrire_entier_128(1, x);
+}
+fonction __texte_w(x: entier_128): texte {
+    soit t = __verifier(nouveau(48));
+    ecrire_entier_128(t, x);
+    retour __texte_fin(t);
+}
+// ---- arrondi binaire et produit de 64 bits (pour le flottant_petuar et ses échanges avec l'IEEE 754)
+// ---- flottant_128 (binary128 de l'IEEE 754 : 1 bit de signe, 15 d'exposant, 112 de fraction), calculé sur ses bits
+// rangés comme un entier_128 ; arrondi au plus proche, pair en cas d'égalité, comme le matériel des flottants
+fonction __xbits(m: entier_128) {
+    soit top = bas(bas(m));
+    soit n = 0;
+    si haut(haut(m)) != 0 { n = 96; top = haut(haut(m)); } sinon si bas(haut(m)) != 0 { n = 64; top = bas(haut(m)); } sinon si haut(bas(m)) != 0 { n = 32; top = haut(bas(m)); }
+    si top >= 65536 { n = n + 16; top = top >> 16; }
+    si top >= 256 { n = n + 8; top = top >> 8; }
+    si top >= 16 { n = n + 4; top = top >> 4; }
+    si top >= 4 { n = n + 2; top = top >> 2; }
+    si top >= 2 { retour n + 2; }
+    retour n + top;
+}
+// arrondi de m × 2^E (E signé) à p bits de mantisse ; b : le biais, emax : l'exposant de l'infini ; collant : des bits non
+// nuls sous m (m a alors au moins p + 2 bits). Rend les bits sans le signe : exposant << (p - 1), plus la fraction.
+fonction __xarrondi(m: entier_128, ex, collant, p, b, emax): entier_128 {
+    si m == 0LL { retour 0LL; }
+    soit n = __xbits(m);
+    soit qmin = 2 - b - p;
+    soit k = n - p;
+    si (ex + k) .< qmin { k = qmin - ex; }
+    soit q = 0LL;
+    si k .> 0 {
+        si k <= 128 {
+            soit bas_ = m;
+            si k < 128 {
+                q = __qshr(m, k);
+                bas_ = m - __qshl(q, k);
+            }
+            soit demi = __qshl(1LL, k - 1);
+            si __qltu(demi, bas_) || (bas_ == demi && (collant != 0 || (bas(bas(q)) & 1) == 1)) {
+                q = q + 1LL;
+            }
+        }
+        ex = ex + k;
+        si q == __qshl(1LL, p) {
+            q = __qshr(q, 1);
+            ex = ex + 1;
+        }
+    } sinon {
+        q = __qshl(m, 0 - k);
+        ex = ex + k;
+    }
+    soit cache = __qshl(1LL, p - 1);
+    si __qltu(q, cache) { retour q; }
+    soit be = ex + p - 1 + b;
+    si be .>= emax { retour __qshl(entier_128(emax), p - 1); }
+    retour __qshl(entier_128(be), p - 1) | (q - cache);
+}
+// produit de deux entiers de 64 bits sans signe, sur 128 bits
+fonction __xmul64(a: long, b: long): entier_128 {
+    soit a0 = long(bas(a));
+    soit a1 = long(haut(a));
+    soit b0 = long(bas(b));
+    soit b1 = long(haut(b));
+    soit m = entier_128_de(0L, a0 * b1) + entier_128_de(0L, a1 * b0);
+    retour entier_128_de(a1 * b1, a0 * b0) + entier_128_de(long_de(bas(haut(m)), haut(bas(m))), long_de(bas(bas(m)), 0));
+}
+// ---- flottant_petuar : le flottant quaternaire de 128 bits de Vercintorix (4 points du cube, 32 chiffres hex, 64 quits)
+// quit 63 : l'état, en logique de Belnap (A 0 inconnu, C 1 négatif, G 2 positif, T/U 3 variable) ; quits 62 à 56 :
+// l'exposant en base 4 (7 quits, biais 8192, 16383 : l'infini) ; quits 55 à 0 : la mantisse, 56 chiffres en base 4, le
+// premier non nul (sauf sous l'exposant 0). Valeur : mantisse × 4^(exposant − 8247). Arrondi au plus proche, pair au milieu.
+fonction __pq_etat(a: entier_128) { retour haut(haut(a)) >> 30; }
+fonction __pq_ef(a: entier_128) { retour (haut(haut(a)) >> 16) & 16383; }
+fonction __pq_mant(a: entier_128): entier_128 { retour a & 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFLL; }
+// l'exposant binaire du quit 0 de la mantisse : 2 × (exposant − 8247), l'exposant 0 compté comme 1 (sous-normaux)
+fonction __pq_ex2(a: entier_128) {
+    soit e = __pq_ef(a);
+    si e == 0 { e = 1; }
+    retour 2 * (e - 8247);
+}
+fonction __pq_variable(): entier_128 { retour 0xC0000000000000000000000000000000LL; }
+fonction __pq_signe(s): entier_128 {
+    si s == 1 { retour 0x40000000000000000000000000000000LL; }
+    retour 0x80000000000000000000000000000000LL;
+}
+fonction __pq_inf(s): entier_128 { retour __pq_signe(s) | 0x3FFF0000000000000000000000000000LL; }
+// inconnu l'emporte sur un nombre, variable sur tout : 1LL quand les deux sont des nombres (zéros et infinis compris)
+fonction __pq_special(a: entier_128, b: entier_128): entier_128 {
+    soit ea = __pq_etat(a);
+    soit eb = __pq_etat(b);
+    si ea == 3 || eb == 3 { retour __pq_variable(); }
+    si ea == 0 || eb == 0 { retour 0LL; }
+    retour 1LL;
+}
+// m × 2^ex (ex signé) arrondi : exposant << 112, plus la mantisse (sans l'état) ; collant : des bits non nuls sous m
+fonction __pq_arrondi(m: entier_128, ex, collant): entier_128 {
+    si m == 0LL { retour 0LL; }
+    soit n = __xbits(m);
+    soit k = n - 112;
+    si ((ex + k) & 1) == 1 { k = k + 1; }
+    si (ex + k) .< 0 - 16492 { k = 0 - 16492 - ex; }
+    soit q = 0LL;
+    si k .> 0 {
+        si k <= 128 {
+            soit bas_ = m;
+            si k < 128 {
+                q = __qshr(m, k);
+                bas_ = m - __qshl(q, k);
+            }
+            soit demi = __qshl(1LL, k - 1);
+            si __qltu(demi, bas_) || (bas_ == demi && (collant != 0 || (bas(bas(q)) & 1) == 1)) {
+                q = q + 1LL;
+            }
+        }
+        ex = ex + k;
+        si q == 0x00010000000000000000000000000000LL {
+            q = 0x00004000000000000000000000000000LL;
+            ex = ex + 2;
+        }
+    } sinon {
+        q = __qshl(m, 0 - k);
+        ex = ex + k;
+    }
+    si __qltu(q, 0x00004000000000000000000000000000LL) { retour q; }
+    soit h = 0;
+    si ex .< 0 { h = 0 - ((0 - ex) >> 1); } sinon { h = ex >> 1; }
+    soit e = h + 8247;
+    si e .>= 16383 { retour 0x3FFF0000000000000000000000000000LL; }
+    retour __qshl(entier_128(e), 112) | q;
+}
+fonction __pq_de_mag(m: entier_128, ex, s): entier_128 {
+    retour __pq_signe(s) | __pq_arrondi(m, ex, 0);
+}
+// la mantisse ramenée à 112 bits, et son exposant binaire
+fonction __pq_norm(m: entier_128) { retour 112 - __xbits(m); }
+fonction __pq_add(a: entier_128, b: entier_128): entier_128 {
+    soit sp = __pq_special(a, b);
+    si sp != 1LL { retour sp; }
+    soit sa = __pq_etat(a) & 1;
+    soit sb = __pq_etat(b) & 1;
+    soit fa = __pq_ef(a);
+    soit fb = __pq_ef(b);
+    si fa == 16383 || fb == 16383 {
+        si fa == 16383 && fb == 16383 && sa != sb { retour __pq_variable(); }
+        si fa == 16383 { retour a; }
+        retour b;
+    }
+    soit ma = __pq_mant(a);
+    soit mb = __pq_mant(b);
+    si ma == 0LL {
+        si mb == 0LL && sa != sb { retour __pq_signe(0); }
+        retour b;
+    }
+    si mb == 0LL { retour a; }
+    soit xa = __pq_ex2(a);
+    soit xb = __pq_ex2(b);
+    si xa .< xb {
+        soit t = ma; ma = mb; mb = t;
+        soit u = xa; xa = xb; xb = u;
+        soit v = sa; sa = sb; sb = v;
+    }
+    ma = __qshl(ma, 4);
+    mb = __qshl(mb, 4);
+    soit d = xa - xb;
+    si d > 120 {
+        mb = 1LL;
+    } sinon si d != 0 {
+        soit q = __qshr(mb, d);
+        si __qshl(q, d) != mb { q = q | 1LL; }
+        mb = q;
+    }
+    soit s = sa;
+    soit m = ma + mb;
+    si sa != sb {
+        si __qltu(ma, mb) {
+            m = mb - ma;
+            s = sb;
+        } sinon {
+            m = ma - mb;
+        }
+        si m == 0LL { retour __pq_signe(0); }
+    }
+    retour __pq_signe(s) | __pq_arrondi(m, xa - 4, 0);
+}
+fonction __pq_neg(a: entier_128): entier_128 {
+    soit e = __pq_etat(a);
+    si e == 1 || e == 2 { retour a ^ 0xC0000000000000000000000000000000LL; }
+    retour a;
+}
+fonction __pq_sub(a: entier_128, b: entier_128): entier_128 { retour __pq_add(a, __pq_neg(b)); }
+fonction __pq_mul(a: entier_128, b: entier_128): entier_128 {
+    soit sp = __pq_special(a, b);
+    si sp != 1LL { retour sp; }
+    soit s = 1;
+    si __pq_etat(a) == __pq_etat(b) { s = 0; }
+    soit ma = __pq_mant(a);
+    soit mb = __pq_mant(b);
+    soit fa = __pq_ef(a);
+    soit fb = __pq_ef(b);
+    si fa == 16383 || fb == 16383 {
+        si (fa != 16383 && ma == 0LL) || (fb != 16383 && mb == 0LL) { retour __pq_variable(); }
+        retour __pq_inf(s);
+    }
+    si ma == 0LL || mb == 0LL { retour __pq_signe(s); }
+    soit ka = __pq_norm(ma);
+    soit kb = __pq_norm(mb);
+    ma = __qshl(ma, ka);
+    mb = __qshl(mb, kb);
+    soit al = bas(ma);
+    soit ah = haut(ma);
+    soit bl = bas(mb);
+    soit bh = haut(mb);
+    soit lo = __xmul64(al, bl);
+    soit mi = __xmul64(ah, bl) + __xmul64(al, bh);
+    soit hi = __xmul64(ah, bh) + entier_128_de(0L, haut(mi));
+    soit lo2 = lo + entier_128_de(bas(mi), 0L);
+    si __qltu(lo2, lo) { hi = hi + 1LL; }
+    soit m = __qshl(hi, 29) | __qshr(lo2, 99);
+    soit collant = 0;
+    si __qshl(lo2, 29) != 0LL { collant = 1; }
+    retour __pq_signe(s) | __pq_arrondi(m, __pq_ex2(a) - ka + __pq_ex2(b) - kb + 99, collant);
+}
+fonction __pq_div(a: entier_128, b: entier_128): entier_128 {
+    soit sp = __pq_special(a, b);
+    si sp != 1LL { retour sp; }
+    soit s = 1;
+    si __pq_etat(a) == __pq_etat(b) { s = 0; }
+    soit ma = __pq_mant(a);
+    soit mb = __pq_mant(b);
+    soit fa = __pq_ef(a);
+    soit fb = __pq_ef(b);
+    si fa == 16383 {
+        si fb == 16383 { retour __pq_variable(); }
+        retour __pq_inf(s);
+    }
+    si fb == 16383 { retour __pq_signe(s); }
+    si mb == 0LL {
+        si ma == 0LL { retour __pq_variable(); }
+        retour __pq_inf(s);
+    }
+    si ma == 0LL { retour __pq_signe(s); }
+    soit ka = __pq_norm(ma);
+    soit kb = __pq_norm(mb);
+    ma = __qshl(ma, ka);
+    mb = __qshl(mb, kb);
+    soit r = ma;
+    soit q = 0LL;
+    pour i dans 0..117 {
+        q = q + q;
+        si !__qltu(r, mb) {
+            r = r - mb;
+            q = q + 1LL;
+        }
+        r = r + r;
+    }
+    soit collant = 0;
+    si r != 0LL { collant = 1; }
+    retour __pq_signe(s) | __pq_arrondi(q, (__pq_ex2(a) - ka) - (__pq_ex2(b) - kb) - 116, collant);
+}
+fonction __pq_racine(a: entier_128): entier_128 {
+    soit st = __pq_etat(a);
+    si st == 0 || st == 3 { retour a; }
+    soit m = __pq_mant(a);
+    soit f0 = __pq_ef(a);
+    si f0 != 16383 && m == 0LL { retour a; }
+    si st == 1 { retour __pq_variable(); }
+    si f0 == 16383 { retour a; }
+    soit k = __pq_norm(m);
+    m = __qshl(m, k);
+    soit x = __pq_ex2(a) - k;
+    si (x & 1) == 1 {
+        m = m + m;
+        x = x - 1;
+    }
+    soit nb = __xbits(m);
+    soit paires = (nb + 121) / 2;
+    soit f = __qshl(m, 248 - 2 * paires);
+    soit res = 0LL;
+    soit reste = 0LL;
+    pour j dans 0..paires {
+        soit deux = haut(haut(f)) >> 30;
+        f = f + f;
+        f = f + f;
+        reste = reste + reste;
+        reste = reste + reste + entier_128(deux);
+        soit t = res + res;
+        t = t + t + 1LL;
+        res = res + res;
+        si !__qltu(reste, t) {
+            reste = reste - t;
+            res = res + 1LL;
+        }
+    }
+    soit collant = 0;
+    si reste != 0LL { collant = 1; }
+    soit y = x - 120;
+    si y .< 0 { y = 0 - ((0 - y) >> 1); } sinon { y = y >> 1; }
+    retour __pq_signe(0) | __pq_arrondi(res, y, collant);
+}
+// 0 : égaux, 1 : a < b, 2 : a > b, 3 : sans ordre (inconnu ou variable)
+fonction __pq_cmp(a: entier_128, b: entier_128) {
+    si __pq_special(a, b) != 1LL { retour 3; }
+    soit ma = a & 0x3FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;
+    soit mb = b & 0x3FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;
+    soit na = __pq_etat(a) & 1;
+    soit nb = __pq_etat(b) & 1;
+    si ma == 0LL && mb == 0LL { retour 0; }
+    si na != nb {
+        si na == 1 { retour 1; }
+        retour 2;
+    }
+    si ma == mb { retour 0; }
+    si __qltu(ma, mb) != na { retour 1; }
+    retour 2;
+}
+fonction __pq_lt(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) == 1; }
+fonction __pq_le(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) < 2; }
+fonction __pq_gt(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) == 2; }
+fonction __pq_ge(a: entier_128, b: entier_128) { retour (__pq_cmp(a, b) & 1) == 0; }
+fonction __pq_eq(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) == 0; }
+fonction __pq_ne(a: entier_128, b: entier_128) { retour __pq_cmp(a, b) != 0; }
+// conversions
+fonction __pq_de_e(x): entier_128 {
+    si x == 0 { retour __pq_signe(0); }
+    retour __pq_de_mag(entier_128_de(0L, long(x)), 0, 0);
+}
+fonction __pq_de_w(w: entier_128): entier_128 {
+    si w == 0LL { retour __pq_signe(0); }
+    si (haut(haut(w)) >> 31) == 1 { retour __pq_de_mag(0LL - w, 0, 1); }
+    retour __pq_de_mag(w, 0, 0);
+}
+fonction __pq_de_l(x: long): entier_128 { retour __pq_de_w(entier_128(x)); }
+fonction __pq_de_d(dx: flottant_64): entier_128 {
+    soit lo = bas(dx);
+    soit hi = haut(dx);
+    soit e = (hi >> 20) & 2047;
+    soit s = hi >> 31;
+    soit m = entier_128_de(0L, long_de(hi & 1048575, lo));
+    si e == 2047 {
+        si m != 0LL { retour __pq_variable(); }
+        retour __pq_inf(s);
+    }
+    si e == 0 && m == 0LL { retour __pq_signe(s); }
+    soit x = 0 - 1074;
+    si e != 0 {
+        m = m | 0x10000000000000LL;
+        x = e - 1075;
+    }
+    retour __pq_de_mag(m, x, s);
+}
+// vers binary64 (les 64 bits dans la moitié basse) : inconnu et variable donnent le NaN
+fonction __pq_vers_d(a: entier_128): flottant_64 {
+    soit st = __pq_etat(a);
+    si st == 0 || st == 3 { retour comme_flottant_64(0x7FF8000000000000L); }
+    soit r = 0x7FF0000000000000LL;
+    si __pq_ef(a) != 16383 { r = __xarrondi(__pq_mant(a), __pq_ex2(a), 0, 53, 1023, 2047); }
+    si st == 1 { r = r | 0x8000000000000000LL; }
+    retour comme_flottant_64(bas(r));
+}
+// vers binary32, en un seul arrondi
+fonction __pq_vers_f(a: entier_128): flottant {
+    soit st = __pq_etat(a);
+    si st == 0 || st == 3 { retour comme_flottant(2143289344); }
+    soit r = 2139095040;
+    si __pq_ef(a) != 16383 { r = bas(bas(__xarrondi(__pq_mant(a), __pq_ex2(a), 0, 24, 127, 255))); }
+    si st == 1 { r = r | 2147483648; }
+    retour comme_flottant(r);
+}
+// vers entier_128 en tronquant vers zéro, saturé aux bornes ; inconnu et variable donnent 0
+fonction __pq_vers_w(a: entier_128): entier_128 {
+    soit st = __pq_etat(a);
+    si st == 0 || st == 3 { retour 0LL; }
+    soit m = __pq_mant(a);
+    soit x = __pq_ex2(a);
+    si __pq_ef(a) == 16383 || (m != 0LL && x .>= 0 && x + __xbits(m) > 127) {
+        si st == 1 { retour 0x80000000000000000000000000000000LL; }
+        retour 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;
+    }
+    si m == 0LL { retour 0LL; }
+    si x .>= 0 {
+        m = __qshl(m, x);
+    } sinon si (0 - x) >= 128 {
+        m = 0LL;
+    } sinon {
+        m = __qshr(m, 0 - x);
+    }
+    si st == 1 { retour 0LL - m; }
+    retour m;
+}
+// échange avec le binary128 de l'IEEE 754 : vers lui c'est exact, depuis lui on arrondit (111 à 112 bits ici, 113 là-bas)
+fonction __pq_vers_ieee(a: entier_128): entier_128 {
+    soit st = __pq_etat(a);
+    si st == 0 || st == 3 { retour 0x7FFF8000000000000000000000000000LL; }
+    soit r = 0x7FFF0000000000000000000000000000LL;
+    si __pq_ef(a) != 16383 { r = __xarrondi(__pq_mant(a), __pq_ex2(a), 0, 113, 16383, 32767); }
+    si st == 1 { retour r | 0x80000000000000000000000000000000LL; }
+    retour r;
+}
+fonction __pq_de_ieee(b: entier_128): entier_128 {
+    soit s = haut(haut(b)) >> 31;
+    soit e = (haut(haut(b)) >> 16) & 32767;
+    soit f = b & 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;
+    si e == 32767 {
+        si f != 0LL { retour __pq_variable(); }
+        retour __pq_inf(s);
+    }
+    si e == 0 && f == 0LL { retour __pq_signe(s); }
+    si e == 0 { retour __pq_de_mag(f, 0 - 16494, s); }
+    retour __pq_de_mag(f | 0x00010000000000000000000000000000LL, e - 16495, s);
+}
+fonction __pq_abs(a: entier_128): entier_128 {
+    si __pq_etat(a) == 1 { retour a ^ 0xC0000000000000000000000000000000LL; }
+    retour a;
+}
+fonction __pq_min(a: entier_128, b: entier_128): entier_128 {
+    soit sp = __pq_special(a, b);
+    si sp != 1LL { retour sp; }
+    si __pq_cmp(b, a) == 1 { retour b; }
+    retour a;
+}
+fonction __pq_max(a: entier_128, b: entier_128): entier_128 {
+    soit sp = __pq_special(a, b);
+    si sp != 1LL { retour sp; }
+    si __pq_cmp(a, b) == 1 { retour b; }
+    retour a;
+}
+// l'état d'un flottant_petuar, en logique de Belnap : inconnu, faux (négatif), vrai (positif), variable (contradiction)
+fonction etat(x: flottant_petuar): logique { retour comme_logique(__pq_etat(bits(x))); }
+fonction pi_petuar(): flottant_petuar { retour 3.14159265358979323846264338327950288419716939937510582Q; }
+fonction inconnu_petuar(): flottant_petuar { retour comme_flottant_petuar(0LL); }
+fonction variable_petuar(): flottant_petuar { retour comme_flottant_petuar(0xC0000000000000000000000000000000LL); }
+// écriture décimale : les chiffres les plus courts qui redonnent exactement le nombre (d = 4294967295), ou d décimales
+fonction ecrire_flottant_petuar(c, x: flottant_petuar, d) {
+    soit a = bits(x);
+    soit st = __pq_etat(a);
+    si st == 0 {
+        __mettre(c, 105); __mettre(c, 110); __mettre(c, 99); __mettre(c, 111); __mettre(c, 110); __mettre(c, 110); __mettre(c, 117);
+        retour;
+    }
+    si st == 3 {
+        __mettre(c, 118); __mettre(c, 97); __mettre(c, 114); __mettre(c, 105); __mettre(c, 97); __mettre(c, 98); __mettre(c, 108);
+        __mettre(c, 101);
+        retour;
+    }
+    si st == 1 { __mettre(c, 45); }
+    soit ef = __pq_ef(a);
+    si ef == 16383 {
+        __mettre(c, 105); __mettre(c, 110); __mettre(c, 102);
+        retour;
+    }
+    soit m = __pq_mant(a);
+    soit f = tableau(0);
+    soit w0 = bas(bas(m));
+    soit w1 = haut(bas(m));
+    soit w2 = bas(haut(m));
+    soit w3 = haut(haut(m));
+    ajouter(f, w0 & 65535); ajouter(f, w0 >> 16);
+    ajouter(f, w1 & 65535); ajouter(f, w1 >> 16);
+    ajouter(f, w2 & 65535); ajouter(f, w2 >> 16);
+    ajouter(f, w3 & 65535);
+    tantque longueur(f) > 0 && f[longueur(f) - 1] == 0 { retirer(f); }
+    soit e = __pq_ex2(a);
+    si d != 4294967295 {
+        si d > 60 { d = 60; }
+        __ecrire_fixe(c, f, e, d);
+        retour;
+    }
+    si longueur(f) == 0 {
+        __mettre(c, 48); __mettre(c, 46); __mettre(c, 48);
+        retour;
+    }
+    // au bas d'une puissance de 4, le voisin du dessous est quatre fois plus près
+    soit bord = 0;
+    si ef > 1 && m == 0x00004000000000000000000000000000LL { bord = 2; }
+    __ecrire_dragon(c, __dragon(f, e, bord));
+}
+fonction __afficher_x(x: flottant_petuar) {
+    ecrire_flottant_petuar(1, x, 4294967295);
+    ecrire_car(1, 10);
+}
+fonction __ecrire_x(x: flottant_petuar) {
+    ecrire_flottant_petuar(1, x, 4294967295);
+}
+fonction __texte_x(x: flottant_petuar): texte {
+    soit t = __verifier(nouveau(48));
+    ecrire_flottant_petuar(t, x, 4294967295);
+    retour __texte_fin(t);
+}
+// les 64 quits d'un entier_petuar en bases (A C G T, ou U pour l'ARN), le quit 63 d'abord ; et ses quatre points du cube
+fonction ecrire_adn(c, w: entier_128, arn) {
+    pour i dans 0..64 {
+        soit k = 63 - i;
+        soit mot = bas(bas(w));
+        si k >= 48 { mot = haut(haut(w)); } sinon si k >= 32 { mot = bas(haut(w)); } sinon si k >= 16 { mot = haut(bas(w)); }
+        soit q = (mot >> ((k & 15) * 2)) & 3;
+        si q == 0 { __mettre(c, 65); } sinon si q == 1 { __mettre(c, 67); } sinon si q == 2 { __mettre(c, 71); }
+        sinon si arn == 1 { __mettre(c, 85); } sinon { __mettre(c, 84); }
+    }
+}
+fonction __hexa8(c, n) {
+    pour i dans 0..8 {
+        soit k = (n >> (28 - 4 * i)) & 15;
+        si k < 10 { __mettre(c, 48 + k); } sinon { __mettre(c, 55 + k); }
+    }
+}
+fonction ecrire_cube(c, w: entier_128) {
+    ecrire_hexa(c, haut(haut(w)));
+    __mettre(c, 95); __hexa8(c, bas(haut(w)));
+    __mettre(c, 95); __hexa8(c, haut(bas(w)));
+    __mettre(c, 95); __hexa8(c, bas(bas(w)));
+}
+fonction texte_adn(w: entier_128): texte {
+    soit t = __verifier(nouveau(68));
+    ecrire_adn(t, w, 0);
+    retour __texte_fin(t);
+}
+fonction texte_arn(w: entier_128): texte {
+    soit t = __verifier(nouveau(68));
+    ecrire_adn(t, w, 1);
+    retour __texte_fin(t);
+}
+fonction texte_cube(w: entier_128): texte {
+    soit t = __verifier(nouveau(40));
+    ecrire_cube(t, w);
+    retour __texte_fin(t);
+}
 fonction graine(n) {
     soit x = n ^ 2463534242;
     si x == 0 { x = 1; }
@@ -2614,6 +4238,16 @@ fonction accorder(etage, f) {
 fonction frequence(etage) {
     retour __service(9, etage & 3);
 }
+fonction presenter() {
+    // Gobatix : montre l'image préparée par ecran(l, h) ; rend 0 tant que tout va bien (la machine sans fenêtre rend toujours 0),
+    // 1 quand la fenêtre a été fermée, 4294967295 si le programme n'a pas préparé d'image
+    retour __service(12, 0);
+}
+fonction ranger_cube(etage, f) {
+    // écrit sur disque le cube de fréquence f de l'étage (fichier cube-ÉTAGE-FRÉQUENCE.cub, à côté du programme) ; un cube
+    // qui n'est pas regardé quitte la mémoire, accorder(étage, f) le retrouve dans son fichier ; rend le nombre de pages
+    retour __service(11, (f << 2) | (etage & 3));
+}
 fonction parler(t) {
     soit c = ouvrir_ecriture("voix:");
     si c != 4294967295 {
@@ -2683,6 +4317,60 @@ fonction trait(x0, y0, x1, y1, c) {
                 y0 = y0 + sy;
             }
         }
+    }
+}
+// triangle plein dont la couleur se fond d'un sommet à l'autre (ombrage de Gouraud) : chaque sommet a sa couleur #RRGGBBAA
+fonction triangle(x0, y0, c0, x1, y1, c1, x2, y2, c2) {
+    soit l = @3[14680058];
+    soit h = @3[14680059];
+    soit aire = (x1 - x0) * (y2 - y0) - (y1 - y0) * (x2 - x0);
+    si aire == 0 { retour; }
+    si aire .< 0 {
+        soit tx = x1; x1 = x2; x2 = tx;
+        soit ty = y1; y1 = y2; y2 = ty;
+        soit tc = c1; c1 = c2; c2 = tc;
+        aire = 0 - aire;
+    }
+    // la boîte du triangle, coupée aux bords de l'image
+    soit xa = x0; si x1 .< xa { xa = x1; } si x2 .< xa { xa = x2; } si xa .< 0 { xa = 0; }
+    soit ya = y0; si y1 .< ya { ya = y1; } si y2 .< ya { ya = y2; } si ya .< 0 { ya = 0; }
+    soit xb = x0; si x1 .> xb { xb = x1; } si x2 .> xb { xb = x2; } si xb .>= l { xb = l - 1; }
+    soit yb = y0; si y1 .> yb { yb = y1; } si y2 .> yb { yb = y2; } si yb .>= h { yb = h - 1; }
+    si xa .> xb || ya .> yb { retour; }
+    // les trois poids (fonctions d'arête), qui avancent d'un pas constant d'un point au suivant
+    soit r0 = c0 >> 24; soit g0 = (c0 >> 16) & 255; soit b0 = (c0 >> 8) & 255;
+    soit r1 = c1 >> 24; soit g1 = (c1 >> 16) & 255; soit b1 = (c1 >> 8) & 255;
+    soit r2 = c2 >> 24; soit g2 = (c2 >> 16) & 255; soit b2 = (c2 >> 8) & 255;
+    soit a0 = y1 - y2; soit b0p = x2 - x1;
+    soit a1 = y2 - y0; soit b1p = x0 - x2;
+    soit a2 = y0 - y1; soit b2p = x1 - x0;
+    soit w0l = (x2 - x1) * (ya - y1) - (y2 - y1) * (xa - x1);
+    soit w1l = (x0 - x2) * (ya - y2) - (y0 - y2) * (xa - x2);
+    soit w2l = (x1 - x0) * (ya - y0) - (y1 - y0) * (xa - x0);
+    soit y = ya;
+    tantque y .<= yb {
+        soit w0 = w0l;
+        soit w1 = w1l;
+        soit w2 = w2l;
+        soit p = y * l + xa;
+        soit x = xa;
+        tantque x .<= xb {
+            si (w0 | w1 | w2) < 2147483648 {
+                soit r = (w0 * r0 + w1 * r1 + w2 * r2) / aire;
+                soit g = (w0 * g0 + w1 * g1 + w2 * g2) / aire;
+                soit b = (w0 * b0 + w1 * b1 + w2 * b2) / aire;
+                @1[p] = (r << 24) | (g << 16) | (b << 8) | 255;
+            }
+            w0 = w0 + a0;
+            w1 = w1 + a1;
+            w2 = w2 + a2;
+            p = p + 1;
+            x = x + 1;
+        }
+        w0l = w0l + b0p;
+        w1l = w1l + b1p;
+        w2l = w2l + b2p;
+        y = y + 1;
     }
 }
 fonction __somme_f(t): flottant {
@@ -3063,17 +4751,23 @@ fonction borne(x, a, b) {
 }
 """
 
-INTEGRES = {"lire_car": 1, "ecrire_car": 2, "ouvrir_lecture": 1, "ouvrir_ecriture": 1, "fermer": 1, "fin_de": 1, "bruit": 0, "pile": 0, "__service": 2,
+INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1, "vers_ieee128": 1, "de_ieee128": 1,
+            "entier_128": 1, "entier_128_signe": 1, "entier_128_de": 2, "flottant_64": 1, "flottant_64_signe": 1, "flottant_64_de": 2, "comme_flottant_64": 1, "arrondi_long": 1,
+            "lire_car": 1, "ecrire_car": 2, "ouvrir_lecture": 1, "ouvrir_ecriture": 1, "fermer": 1, "fin_de": 1, "bruit": 0, "pile": 0, "__service": 2,
             "sortie": 1, "entrée": 0, "min4": 2, "max4": 2, "addm4": 2, "cmp3": 1, "gdot": 2, "gemv": 5, "qegal": 2,
             "nb_bits": 1,
             "flottant": 1, "flottant_signe": 1, "entier": 1, "arrondi": 1, "racine": 1, "comme_flottant": 1, "bits": 1,
             "long": 1, "long_signe": 1, "long_de": 2, "bas": 1, "haut": 1}
-RETOURS = {"flottant": "f", "flottant_signe": "f", "racine": "f", "comme_flottant": "f",
-           "long": "l", "long_signe": "l", "long_de": "l"}
+RETOURS = {"flottant_petuar": "x", "flottant_128": "x", "comme_flottant_petuar": "x", "vers_ieee128": "w", "de_ieee128": "x",
+           "entier_128": "w", "entier_128_signe": "w", "entier_128_de": "w", "flottant": "f", "flottant_signe": "f", "racine": "f", "comme_flottant": "f",
+           "long": "l", "long_signe": "l", "long_de": "l",
+           "flottant_64": "d", "flottant_64_signe": "d", "flottant_64_de": "d", "comme_flottant_64": "d", "arrondi_long": "l"}
 SURCHARGES = ("abs", "min", "max")
+PQ_DEPUIS = {"e": "__pq_de_e", "f": "__pq_de_d", "d": "__pq_de_d", "l": "__pq_de_l", "w": "__pq_de_w"}
 BINAIRES = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "&": "AND", "|": "OR", "^": "XOR",
             "<<": "SHL", ">>": "SHR"}
 FBINAIRES = {"+": "FADD", "-": "FSUB", "*": "FMUL", "/": "FDIV"}
+DBINAIRES = {"+": "DADD", "-": "DSUB", "*": "DMUL", "/": "DDIV"}
 COMPARAISONS = {"==": ("R1,R2", "JZ"), "!=": ("R1,R2", "JNZ"), "<": ("R1,R2", "JC"), ">=": ("R1,R2", "JNC"),
                 ">": ("R2,R1", "JC"), "<=": ("R2,R1", "JNC")}
 COMP_FAUX = {"==": ("R1,R2", "JNZ"), "!=": ("R1,R2", "JZ"), "<": ("R1,R2", "JNC"), ">=": ("R1,R2", "JC"),
@@ -3612,7 +5306,7 @@ class Generateur:
         return f"{base}{self.n}"
 
     def generer(self):
-        self.sortie.append("; programme généré par vtx 0.4")
+        self.sortie.append("; programme généré par vtx 0.5")
         self.emettre(f"LDI R14,{STACK_TOP}")
         self.emettre("CALL F_principal")
         self.emettre("HALT")
@@ -3646,10 +5340,25 @@ class Generateur:
     def joindre(self, a, b, ligne, op):
         if a == b:
             return a
+        if "x" in (a, b):
+            if {a, b} <= {"x", "e", "f", "d"}:
+                return "x"                   # un entier, un flottant ou un flottant_64 s'élargit en flottant_petuar
+            raise VtxError(f"ligne {ligne} : « {op} » mélange un {NOM_TYPE[a]} et un {NOM_TYPE[b]} : convertissez avec "
+                           f"flottant_petuar()")
         if {a, b} == {"e", "f"}:
             return "f"
         if {a, b} == {"e", "l"}:
             return "l"
+        if {a, b} == {"e", "w"}:
+            return "w"                       # un entier s'élargit en entier_128 (zéros à gauche, comme vers long)
+        if "w" in (a, b):
+            raise VtxError(f"ligne {ligne} : « {op} » mélange un {NOM_TYPE[a]} et un {NOM_TYPE[b]} : convertissez avec "
+                           f"entier_128()")
+        if "d" in (a, b) and {a, b} <= {"e", "f", "d"}:
+            return "d"                       # un entier ou un flottant s'élargit en flottant_64 (sans perte)
+        if "d" in (a, b):
+            raise VtxError(f"ligne {ligne} : « {op} » mélange un {NOM_TYPE[a]} et un {NOM_TYPE[b]} : convertissez avec "
+                           f"flottant_64() ou long()")
         raise VtxError(f"ligne {ligne} : « {op} » mélange un flottant et un long : convertissez avec flottant(), long() ou entier()")
 
     def typ(self, e):
@@ -3662,6 +5371,12 @@ class Generateur:
             return "f"
         if g == "lnombre":
             return "l"
+        if g == "dnombre":
+            return "d"
+        if g == "wnombre":
+            return "w"
+        if g == "xnombre":
+            return "x"
         if g == "qnombre":
             return "q"
         if g == "var":
@@ -3678,7 +5393,7 @@ class Generateur:
             return "e"
         if g == "non":
             t = self.typ(e[1])
-            if t == "f":
+            if t in ("f", "d", "x"):
                 raise VtxError(f"ligne {ligne_de(e)} : « ~ » ne s'applique pas à un flottant")
             if t == "q":
                 raise VtxError(f"ligne {ligne_de(e)} : « ~ » ne s'applique pas à un logique : utilisez non4() ou anti()")
@@ -3705,16 +5420,16 @@ class Generateur:
                 return "e"
             if op in ARITH:
                 t = self.joindre(ta, tb, l, op)
-                if t == "f" and op == "%":
+                if t in ("f", "d", "x") and op == "%":
                     raise VtxError(f"ligne {l} : le reste « % » n'est pas défini pour les flottants")
                 return t
             if op in BITS_OPS:
                 t = self.joindre(ta, tb, l, op)
-                if t == "f":
+                if t in ("f", "d", "x"):
                     raise VtxError(f"ligne {l} : « {op} » ne s'applique pas à un flottant (voir bits())")
                 return t
             if op in ("<<", ">>"):
-                if ta == "f" or tb != "e":
+                if ta in ("f", "d", "x") or tb != "e":
                     raise VtxError(f"ligne {l} : décalage d'un entier ou d'un long par un entier seulement")
                 return ta
             if ta != "e" or tb != "e":
@@ -3734,13 +5449,19 @@ class Generateur:
                 return "q"
             if nom == "__code_logique":
                 return "e"
+            if nom in ("racine", "bits") and len(e[2]) == 1 and self.typ(e[2][0]) == "x":
+                return "x" if nom == "racine" else "w"      # bits(x) : les quatre points, comme un entier_petuar
+            if nom in ("racine", "bits") and len(e[2]) == 1 and self.typ(e[2][0]) == "d":
+                return "d" if nom == "racine" else "l"      # racine d'un flottant_64 ; bits(x) : ses 64 bits, comme long
+            if nom in ("bas", "haut") and len(e[2]) == 1 and self.typ(e[2][0]) == "w":
+                return "l"                                  # les deux moitiés de 64 bits d'un entier_128
             if nom in RETOURS:
                 return RETOURS[nom]
             if nom in INTEGRES:
                 return "e"
             if nom in SURCHARGES:
                 ts = [self.typ(a) for a in e[2]]
-                if "f" in ts or "l" in ts:
+                if "f" in ts or "l" in ts or "d" in ts or "w" in ts or "x" in ts:
                     t = ts[0]
                     for x in ts[1:]:
                         t = self.joindre(t, x, e[3], nom)
@@ -3778,6 +5499,13 @@ class Generateur:
             self.emettre("ITOF R1,R1")
         elif (t, voulu) == ("e", "l"):
             self.emettre("ADDI R4,R0,#0")
+        elif (t, voulu) == ("e", "w"):
+            for r in ("R3", "R4", "R6"):
+                self.emettre(f"ADDI {r},R0,#0")
+        elif (t, voulu) == ("e", "d"):
+            self.emettre("ITOD R1,R1")
+        elif (t, voulu) == ("f", "d"):
+            self.emettre("FTOD R1,R1")
         else:
             raise VtxError(f"ligne {ligne} : conversion implicite impossible de {NOM_TYPE[t]} vers {NOM_TYPE[voulu]} : "
                            f"utilisez entier(), flottant(), long() ou logique()")
@@ -3829,7 +5557,10 @@ class Generateur:
         for p, t in reversed(list(zip(f.params, f.ptypes))):
             if p in self.vars:
                 raise VtxError(f"ligne {f.ligne} : paramètre « {p} » en double")
-            if t == "l":
+            if t in QUATRE:
+                self.vhaut[p], self.vars[p] = o + 2, o + 3     # le mot k est à vars - k
+                o += 4
+            elif t in LARGES2:
                 self.vhaut[p], self.vars[p] = o, o + 1
                 o += 2
             else:
@@ -3857,15 +5588,17 @@ class Generateur:
             self.vtypes[nom] = t
             nl += 1
             self.vars[nom] = -nl
-            if t == "l":
+            if t in LARGES2:
                 nl += 1
                 self.vhaut[nom] = -nl
+                if t in QUATRE:
+                    nl += 2
         # les variables en registres (voir REGISTRES) : par usages pondérés, à égalité la plus haute dans le cadre
         self.regs = {}
         if REGISTRES and self.optim and not sans_registres(f.corps):
             sc = {}
             compter_usages(f.corps, 0, sc)
-            cand = [n for n in self.vars if sc.get(n, 0) >= 16 and self.vtypes.get(n, "e") != "l" and not n.startswith("__q")]
+            cand = [n for n in self.vars if sc.get(n, 0) >= 16 and self.vtypes.get(n, "e") not in LARGES2 and not n.startswith("__q")]
             cand.sort(key=lambda n: (-sc[n], -self.vars[n]))
             for k, n in enumerate(cand[:len(REGS_VARIABLES)]):
                 self.regs[n] = REGS_VARIABLES[k]
@@ -3893,8 +5626,9 @@ class Generateur:
         for s in f.corps:
             self.instr(s)
         self.emettre("ADDI R1,R0,#0")
-        if f.rtype == "l":
-            self.emettre("ADDI R4,R0,#0")
+        if f.rtype in LARGES2:
+            for r in REGS_T[f.rtype][1:]:
+                self.emettre(f"ADDI {r},R0,#0")
         self.etiquette(self.fin)
         for k, r in enumerate(gardes):
             self.emettre(f"LDF R{r},#{-(nl + 1 + k)}")
@@ -3917,8 +5651,9 @@ class Generateur:
             self.emettre(f"MOV R{self.regs[nom]},R1")
             return
         self.emettre(f"STF R1,#{off}")
-        if t == "l":
-            self.emettre(f"STF R4,#{self.vhaut[nom]}")
+        if t in LARGES2:
+            for k, r in enumerate(REGS_T[t][1:], 1):
+                self.emettre(f"STF {r},#{off - k}")
 
     # ---------------------------------------------------------------- conditions
     def refuser_logique(self, e):
@@ -3929,11 +5664,22 @@ class Generateur:
     def expr_bool(self, e):
         """Valeur de vérité dans R1 (non nulle = vrai) : un flottant est vrai s'il n'est pas ±0, un long s'il n'est pas nul."""
         self.refuser_logique(e)
+        if self.typ(e) == "x":
+            raise VtxError(f"ligne {ligne_de(e)} : un flottant_petuar a un état à quatre valeurs et ne sert pas de condition : "
+                           f"comparez-le, ou utilisez « selon etat(x) »")
         t = self.expr(e)
         if t == "f":
             self.emettre("LDI R2,2147483647")
             self.emettre("AND R1,R1,R2")
         elif t == "l":
+            self.emettre("OR R1,R1,R4")
+        elif t == "d":
+            self.emettre("LDI R2,2147483647")
+            self.emettre("AND R4,R4,R2")
+            self.emettre("OR R1,R1,R4")
+        elif t == "w":
+            self.emettre("OR R1,R1,R3")
+            self.emettre("OR R4,R4,R6")
             self.emettre("OR R1,R1,R4")
 
     def saut_faux(self, e, lab):
@@ -4015,16 +5761,16 @@ class Generateur:
             self.ranger(s[1], t, s[3])
         elif g == "ecrire_champ":
             _st, pos, t = self.champ_de(("champ_ref", s[1], s[2], s[4]))
-            if t in ("l",):
-                raise VtxError(f"ligne {s[4]} : un champ ne peut pas contenir un long")
+            if t in LARGES2:
+                raise VtxError(f"ligne {s[4]} : un champ ne peut pas contenir un {NOM_TYPE[t]}")
             self.expr(s[3], t)
             self.emettre("PUSH R1")
             self.adresse_champ(s[1], pos)
             self.emettre("POP R7")
             self.emettre("STX R1,R7,R2")
         elif g == "ecrire":
-            if self.typ(s[3]) == "l":
-                raise VtxError(f"ligne {s[4]} : un long occupe deux mots : écrivez bas(x) et haut(x) séparément")
+            if self.typ(s[3]) in LARGES2:
+                raise VtxError(f"ligne {s[4]} : un {NOM_TYPE[self.typ(s[3])]} occupe deux mots : écrivez bas(x) et haut(x) séparément")
             et = s[1]
             q = motif_ecriture_quit(s) if self.optim else None
             if q:
@@ -4127,8 +5873,9 @@ class Generateur:
         elif g == "retour":
             if s[1] is None:
                 self.emettre("ADDI R1,R0,#0")
-                if self.f.rtype == "l":
-                    self.emettre("ADDI R4,R0,#0")
+                if self.f.rtype in LARGES2:
+                    for r in REGS_T[self.f.rtype][1:]:
+                        self.emettre(f"ADDI {r},R0,#0")
             else:
                 self.expr(s[1], self.f.rtype)
             self.emettre(f"JMP {self.fin}")
@@ -4176,14 +5923,14 @@ class Generateur:
     def paire(self, a, b, t):
         """Évalue a et b convertis au type t : R1 et R2 (entier, flottant) ou R1:R4 et R2:R5 (long, mot bas d'abord)."""
         self.expr(a, t)
-        if t == "l":
-            self.emettre("PUSH R1")
-            self.emettre("PUSH R4")
-            self.expr(b, "l")
-            self.emettre("MOV R2,R1")
-            self.emettre("MOV R5,R4")
-            self.emettre("POP R4")
-            self.emettre("POP R1")
+        if t in LARGES2:
+            for r in REGS_T[t]:
+                self.emettre(f"PUSH {r}")
+            self.expr(b, t)
+            for rb, ra in zip(REGS_B[t], REGS_T[t]):
+                self.emettre(f"MOV {rb},{ra}")
+            for r in reversed(REGS_T[t]):
+                self.emettre(f"POP {r}")
             return
         if self.optim and b[0] == "blit" and t in ("e", "q"):
             self.charger("R2", b[2] if t == "e" else b[1])
@@ -4254,8 +6001,8 @@ class Generateur:
                 for champ, val in e[2]:
                     pos = self.structs[e[1]].index(champ)
                     tc = self.types_champs.get(e[1], {}).get(champ, "e")
-                    if tc == "l":
-                        raise VtxError(f"ligne {e[4]} : un champ ne peut pas contenir un long")
+                    if tc in LARGES2:
+                        raise VtxError(f"ligne {e[4]} : un champ ne peut pas contenir un {NOM_TYPE[tc]}")
                     self.expr(val, tc)
                     self.emettre("MOV R7,R1")
                     self.emettre("POP R1")
@@ -4276,6 +6023,9 @@ class Generateur:
             if voulu is not None and voulu != t:
                 self.conv(t, voulu, ligne_de(e))
             return t
+        if voulu == "x" and t in ("e", "f", "d"):
+            self.conversion("flottant_petuar", [e], ligne_de(e))      # élargi en flottant_petuar par le prélude
+            return "x"
         if t == "e":
             self.expr_e(e)
         elif t == "f":
@@ -4285,6 +6035,12 @@ class Generateur:
                 self.charger("R1", e[1])
             else:
                 self.expr_e(e)
+        elif t == "d":
+            self.expr_d(e)
+        elif t == "w":
+            self.expr_w(e)
+        elif t == "x":
+            self.expr_x(e)
         else:
             self.expr_l(e)
         if voulu is not None and voulu != t:
@@ -4364,6 +6120,10 @@ class Generateur:
                     self.etiquette(fin)
                     return
                 t = self.joindre(self.typ(e[2]), self.typ(e[3]), ligne_de(e), op)
+                if t == "x":
+                    nom = {"==": "__pq_eq", "!=": "__pq_ne", "<": "__pq_lt", "<=": "__pq_le", ">": "__pq_gt", ">=": "__pq_ge"}[op]
+                    self.appel(("appel", nom, [self.bits_x(e[2]), self.bits_x(e[3])], ligne_de(e)))
+                    return
                 if t == "f":
                     self.paire(e[2], e[3], "f")
                     instr = {"==": "FEQ R1,R1,R2", "!=": "FEQ R1,R1,R2", "<": "FLT R1,R1,R2", "<=": "FLE R1,R1,R2",
@@ -4376,6 +6136,38 @@ class Generateur:
                 if t == "l":
                     self.paire(e[2], e[3], "l")
                     self.booleen(lambda vrai: self.saut_long(op, vrai))
+                    return
+                if t == "w":
+                    if op in ("==", "!="):
+                        self.paire(e[2], e[3], "w")
+                        for ra, rb in zip(REGS_T["w"], REGS_B["w"]):
+                            self.emettre(f"XOR {ra},{ra},{rb}")
+                        self.emettre("OR R1,R1,R3")
+                        self.emettre("OR R4,R4,R6")
+                        self.emettre("OR R1,R1,R4")
+                        vrai, fin = self.nouvelle("Lvrai"), self.nouvelle("Lfin")
+                        self.emettre("CMP R1,R0")
+                        self.emettre(f"{'JZ' if op == '==' else 'JNZ'} {vrai}")
+                        self.emettre("ADDI R1,R0,#0")
+                        self.emettre(f"JMP {fin}")
+                        self.etiquette(vrai)
+                        self.emettre("ADDI R1,R0,#1")
+                        self.etiquette(fin)
+                        return
+                    a_, b_ = (e[2], e[3]) if op in ("<", ">=") else (e[3], e[2])
+                    self.appel(("appel", "__qlt", [a_, b_], ligne_de(e)))      # a < b ; a >= b : l'inverse
+                    if op in ("<=", ">="):
+                        self.emettre("ADDI R2,R0,#1")
+                        self.emettre("XOR R1,R1,R2")
+                    return
+                if t == "d":
+                    self.paire(e[2], e[3], "d")
+                    instr = {"==": "DEQ R1,R1,R2", "!=": "DEQ R1,R1,R2", "<": "DLT R1,R1,R2", "<=": "DLE R1,R1,R2",
+                             ">": "DLT R1,R2,R1", ">=": "DLE R1,R2,R1"}[op]
+                    self.emettre(instr)
+                    if op == "!=":
+                        self.emettre("ADDI R2,R0,#1")
+                        self.emettre("XOR R1,R1,R2")
                     return
             if op in ("<<q", ">>q"):
                 self.deux(e[2], e[3])
@@ -4449,6 +6241,99 @@ class Generateur:
             self.expr_e(e)
         else:
             raise VtxError(f"ligne {ligne_de(e)} : expression flottante inattendue")
+
+    def expr_d(self, e):
+        """Flottant de 64 bits : mot bas dans R1, mot haut dans R4 (la paire de registres des instructions D)."""
+        g = e[0]
+        if g == "dnombre":
+            self.charger("R1", e[1] & MASK)
+            self.charger("R4", e[1] >> 32)
+        elif g == "var":
+            self.emettre(f"LDF R1,#{self.variable(e[1], e[2])}")
+            self.emettre(f"LDF R4,#{self.vhaut[e[1]]}")
+        elif g == "bin":
+            op = e[1]
+            if op == "-" and e[2] in (("nombre", 0), ("fnombre", 0), ("dnombre", 0)):
+                self.expr(e[3], "d")
+                self.emettre("LDI R2,2147483648")
+                self.emettre("XOR R4,R4,R2")
+                return
+            self.paire(e[2], e[3], "d")
+            self.emettre(f"{DBINAIRES[op]} R1,R1,R2")
+        elif g == "appel":
+            self.appel(e)
+        else:
+            raise VtxError(f"ligne {ligne_de(e)} : expression flottante_64 inattendue")
+
+    def expr_w(self, e):
+        """Entier de 128 bits : quatre mots dans R1, R3, R4, R6 (le mot bas d'abord) ; deuxième opérande dans R2, R5, R7, R8."""
+        g = e[0]
+        if g == "wnombre":
+            for k, r in enumerate(REGS_T["w"]):
+                self.charger(r, (e[1] >> (32 * k)) & MASK)
+        elif g == "var":
+            off = self.variable(e[1], e[2])
+            for k, r in enumerate(REGS_T["w"]):
+                self.emettre(f"LDF {r},#{off - k}")
+        elif g == "non":
+            self.expr(e[1], "w")
+            for r in REGS_T["w"]:
+                self.emettre(f"CMP3 {r},{r}")
+        elif g == "bin":
+            op, l = e[1], ligne_de(e)
+            if op in ("*", "/", "%"):
+                if op == "*":
+                    self.appel(("appel", "__qmul", [e[2], e[3]], l))
+                else:
+                    self.appel(("appel", "__qdiv", [e[2], e[3], ("nombre", 1 if op == "%" else 0)], l))
+                return
+            if op in ("<<", ">>"):
+                self.appel(("appel", "__qshl" if op == "<<" else "__qsar", [e[2], e[3]], l))
+                return
+            self.paire(e[2], e[3], "w")
+            if op in ("+", "-"):
+                for k, (ra, rb) in enumerate(zip(REGS_T["w"], REGS_B["w"])):
+                    self.emettre(f"{('ADD' if op == '+' else 'SUB') if k == 0 else ('ADC' if op == '+' else 'SBC')} {ra},{ra},{rb}")
+            elif op in BITS_OPS:
+                for ra, rb in zip(REGS_T["w"], REGS_B["w"]):
+                    self.emettre(f"{BINAIRES[op]} {ra},{ra},{rb}")
+            else:
+                raise VtxError(f"ligne {l} : « {op} » ne s'applique pas à un entier_128")
+        elif g == "appel":
+            self.appel(e)
+        else:
+            raise VtxError(f"ligne {ligne_de(e)} : expression entier_128 inattendue")
+
+    def bits_x(self, a):
+        """Les quatre points d'un flottant_petuar (élargi d'abord s'il le faut), vus comme un entier_petuar."""
+        l = ligne_de(a)
+        if self.typ(a) != "x":
+            a = ("appel", "flottant_petuar", [a], l)
+        return ("appel", "bits", [a], l)
+
+    def expr_x(self, e):
+        """flottant_petuar : quatre points du cube dans R1, R3, R4, R6 (le point bas d'abord) ; le calcul par le prélude."""
+        g = e[0]
+        if g == "xnombre":
+            for k, r in enumerate(REGS_T["x"]):
+                self.charger(r, (e[1] >> (32 * k)) & MASK)
+        elif g == "var":
+            off = self.variable(e[1], e[2])
+            for k, r in enumerate(REGS_T["x"]):
+                self.emettre(f"LDF {r},#{off - k}")
+        elif g == "bin":
+            op, l = e[1], ligne_de(e)
+            if op == "-" and e[2] in (("nombre", 0), ("fnombre", 0), ("dnombre", 0)):
+                self.appel(("appel", "__pq_neg", [self.bits_x(e[3])], l))
+                return
+            if op not in ("+", "-", "*", "/"):
+                raise VtxError(f"ligne {l} : « {op} » ne s'applique pas à un flottant_petuar")
+            nom = {"+": "__pq_add", "-": "__pq_sub", "*": "__pq_mul", "/": "__pq_div"}[op]
+            self.appel(("appel", nom, [self.bits_x(e[2]), self.bits_x(e[3])], l))
+        elif g == "appel":
+            self.appel(e)
+        else:
+            raise VtxError(f"ligne {ligne_de(e)} : expression flottant_petuar inattendue")
 
     def expr_l(self, e):
         g = e[0]
@@ -4559,8 +6444,9 @@ class Generateur:
             if nom == "sortie":
                 t = self.expr(args[0])
                 self.emettre("OUT R1")
-                if t == "l":
-                    self.emettre("OUT R4")
+                if t in LARGES2:
+                    for r in REGS_T[t][1:]:
+                        self.emettre(f"OUT {r}")
             elif nom == "entrée":
                 self.emettre("IN R1")
             elif nom == "cmp3":
@@ -4608,7 +6494,13 @@ class Generateur:
             else:
                 self.conversion(nom, args, ligne)
             return
-        if nom in SURCHARGES and self.typ(e) in ("f", "l"):
+        if nom in SURCHARGES and self.typ(e) == "w":
+            self.appel(("appel", "__q" + nom, args, ligne))
+            return
+        if nom in SURCHARGES and self.typ(e) == "x":
+            self.appel(("appel", "__pq_" + nom, [self.bits_x(a) for a in args], ligne))
+            return
+        if nom in SURCHARGES and self.typ(e) in ("f", "l", "d"):
             self.surcharge(nom, args, self.typ(e), ligne)
             return
         if nom in ("afficher", "ecrire", "texte") and len(args) == 1:
@@ -4618,7 +6510,7 @@ class Generateur:
             if pf is not None and getattr(pf, "origine", "") == "prélude":
                 a0 = args[0]
                 ta = "q" if a0[0] == "blit" else self.typ(a0)
-                if ta in ("f", "l", "q"):
+                if ta in ("f", "l", "q", "d", "w", "x"):
                     nom = "__" + nom + "_" + ta
         f = self.signature(nom, ligne)
         if len(args) != len(f.params):
@@ -4628,9 +6520,10 @@ class Generateur:
             self.expr(a, t)
             self.emettre("PUSH R1")
             mots += 1
-            if t == "l":
-                self.emettre("PUSH R4")
-                mots += 1
+            if t in LARGES2:
+                for r in REGS_T[t][1:]:
+                    self.emettre(f"PUSH {r}")
+                    mots += 1
         self.emettre(f"CALL F_{nom}")
         if mots:
             self.emettre(f"ADDI R14,R14,#{mots}")
@@ -4640,12 +6533,56 @@ class Generateur:
         t = self.typ(x)
         def interdit():
             raise VtxError(f"ligne {ligne} : « {nom} » ne s'applique pas à un {NOM_TYPE[t]}")
+        if nom in ("flottant_petuar", "flottant_128"):
+            if t == "x":
+                self.expr(x)
+            elif t in PQ_DEPUIS:
+                if t == "f":
+                    x = ("appel", "flottant_64", [x], ligne)
+                self.appel(("appel", PQ_DEPUIS[t], [x], ligne))
+            else:
+                interdit()
+            return
+        if nom == "comme_flottant_petuar":
+            if t != "w":
+                interdit()
+            self.expr(x)
+            return
+        if nom == "vers_ieee128":
+            if t != "x":
+                interdit()
+            self.appel(("appel", "__pq_vers_ieee", [self.bits_x(x)], ligne))
+            return
+        if nom == "de_ieee128":
+            if t != "w":
+                interdit()
+            self.appel(("appel", "__pq_de_ieee", [x], ligne))
+            return
+        if t == "x":
+            # un flottant_petuar vers les autres types : par le prélude
+            if nom == "bits":
+                self.expr(x)
+            elif nom == "racine":
+                self.appel(("appel", "__pq_racine", [self.bits_x(x)], ligne))
+            elif nom == "flottant_64":
+                self.appel(("appel", "__pq_vers_d", [self.bits_x(x)], ligne))
+            elif nom == "flottant":
+                self.appel(("appel", "__pq_vers_f", [self.bits_x(x)], ligne))
+            elif nom in ("entier_128", "long", "entier"):
+                self.appel(("appel", "__pq_vers_w", [self.bits_x(x)], ligne))
+                if nom == "long":
+                    self.emettre("MOV R4,R3")
+            else:
+                interdit()
+            return
         if nom == "flottant":
             if t == "l":
                 interdit()
             self.expr(x)
             if t == "e":
                 self.emettre("ITOF R1,R1")
+            elif t == "d":
+                self.emettre("DTOF R1,R1")
         elif nom == "flottant_signe":
             if t != "e":
                 interdit()
@@ -4655,23 +6592,97 @@ class Generateur:
             self.expr(x)
             if t == "f":
                 self.emettre("FTOI R1,R1")
+            elif t == "d":
+                self.emettre("DTOI R1,R1")
             # un logique donne son code : inconnu 0, faux 1, vrai 2, variable 3
         elif nom == "arrondi":
-            if t != "f":
+            if t not in ("f", "d"):
                 interdit()
             self.expr(x)
-            self.emettre("FROUND R1,R1")
+            self.emettre("FROUND R1,R1" if t == "f" else "DROUND R1,R1")
+        elif nom == "arrondi_long":
+            if t != "d":
+                interdit()
+            self.expr(x)
+            self.emettre("DTOLR R1,R1")
         elif nom == "racine":
-            self.expr(x, "f")
-            self.emettre("FSQRT R1,R1")
+            if t == "d":
+                self.expr(x)
+                self.emettre("DSQRT R1,R1")
+            else:
+                self.expr(x, "f")
+                self.emettre("FSQRT R1,R1")
         elif nom in ("comme_flottant", "bits"):
-            if t == "l":
+            if t == "l" or (t == "d" and nom == "comme_flottant"):
+                interdit()
+            self.expr(x)             # bits(flottant_64) : les 64 bits, vus comme un long (même paire de registres)
+        elif nom == "entier_128":
+            if t not in ("e", "l", "w", "d"):
+                interdit()
+            if t == "d":
+                self.appel(("appel", "__dtoq", [x], ligne))
+                return
+            self.expr(x)
+            if t == "e":
+                for r in ("R3", "R4", "R6"):
+                    self.emettre(f"ADDI {r},R0,#0")
+            elif t == "l":                       # d'un long : le signe se recopie sur les mots hauts
+                self.emettre("MOV R3,R4")
+                self.emettre("ADDI R2,R0,#31")
+                self.emettre("SHR R4,R4,R2")
+                self.emettre("SUB R4,R0,R4")
+                self.emettre("MOV R6,R4")
+        elif nom == "entier_128_signe":
+            if t != "e":
+                interdit()
+            self.expr(x)
+            self.emettre("ADDI R2,R0,#31")
+            self.emettre("SHR R4,R1,R2")
+            self.emettre("SUB R4,R0,R4")
+            self.emettre("MOV R3,R4")
+            self.emettre("MOV R6,R4")
+        elif nom == "entier_128_de":
+            if t != "l" or self.typ(args[1]) != "l":
+                raise VtxError(f"ligne {ligne} : entier_128_de(haut, bas) prend deux longs")
+            self.paire(args[0], args[1], "l")
+            self.emettre("MOV R6,R4")
+            self.emettre("MOV R3,R5")
+            self.emettre("MOV R4,R1")
+            self.emettre("MOV R1,R2")
+        elif nom == "flottant_64" and t == "w":
+            self.appel(("appel", "__qtod", [x], ligne))
+        elif nom == "flottant_64":
+            if t not in ("e", "f", "d", "l"):
+                interdit()
+            self.expr(x)
+            if t != "d":
+                self.emettre({"e": "ITOD R1,R1", "f": "FTOD R1,R1", "l": "LTOD R1,R1"}[t])
+        elif nom == "flottant_64_signe":
+            if t != "e":
+                interdit()
+            self.expr(x)
+            self.emettre("ITODS R1,R1")
+        elif nom == "flottant_64_de":
+            if t != "e" or self.typ(args[1]) != "e":
+                raise VtxError(f"ligne {ligne} : flottant_64_de(haut, bas) prend deux entiers")
+            self.deux(args[0], args[1])
+            self.emettre("MOV R4,R1")
+            self.emettre("MOV R1,R2")
+        elif nom == "comme_flottant_64":
+            if t != "l":
                 interdit()
             self.expr(x)
         elif nom == "long":
             if t == "f":
                 interdit()
-            self.expr(x, "l")
+            if t == "d":
+                self.expr(x)
+                self.emettre("DTOL R1,R1")
+            elif t == "w":
+                self.expr(x)
+                self.emettre("MOV R4,R3")
+            else:
+                self.expr(x, "l")
         elif nom == "long_signe":
             if t != "e":
                 interdit()
@@ -4685,8 +6696,15 @@ class Generateur:
             self.deux(args[0], args[1])
             self.emettre("MOV R4,R1")
             self.emettre("MOV R1,R2")
+        elif nom in ("bas", "haut") and t == "w":
+            self.expr(x)
+            if nom == "bas":
+                self.emettre("MOV R4,R3")             # le long du bas : R1:R3 -> R1:R4
+            else:
+                self.emettre("MOV R1,R4")             # le long du haut : R4:R6 -> R1:R4
+                self.emettre("MOV R4,R6")
         elif nom in ("bas", "haut"):
-            if t != "l":
+            if t not in LARGES2:
                 interdit()
             self.expr(x)
             if nom == "haut":
@@ -4701,6 +6719,9 @@ class Generateur:
             if t == "f":
                 self.emettre("LDI R2,2147483647")
                 self.emettre("AND R1,R1,R2")
+            elif t == "d":
+                self.emettre("LDI R2,2147483647")
+                self.emettre("AND R4,R4,R2")
             else:
                 fin = self.nouvelle("Lfin")
                 self.emettre("LDI R8,2147483648")
@@ -4719,6 +6740,10 @@ class Generateur:
             self.emettre("FLT R3,R2,R1" if nom == "min" else "FLT R3,R1,R2")
             self.emettre("CMP R3,R0")
             self.emettre(f"JNZ {prendre}")
+        elif t == "d":
+            self.emettre("DLT R3,R2,R1" if nom == "min" else "DLT R3,R1,R2")
+            self.emettre("CMP R3,R0")
+            self.emettre(f"JNZ {prendre}")
         else:
             if nom == "min":
                 self.saut_long("<", prendre, ("R2", "R5"), ("R1", "R4"))
@@ -4727,7 +6752,7 @@ class Generateur:
         self.emettre(f"JMP {fin}")
         self.etiquette(prendre)
         self.emettre("MOV R1,R2")
-        if t == "l":
+        if t in LARGES2:
             self.emettre("MOV R4,R5")
         self.etiquette(fin)
 
@@ -5633,6 +7658,12 @@ def executer(src, entrees=(), max_pas=5_000_000, mem=None, optim=True, dossier=N
 
 
 TESTS = [
+    ("frontière binaire : binaire, quaternaire et leurs formes sur 16 quits",
+     "fonction principal() { sortie(binaire(faux)); sortie(binaire(vrai)); sortie(binaire(inconnu)); "
+     "sortie(binaire(variable)); sortie(entier(quaternaire(0))); sortie(entier(quaternaire(1))); "
+     "sortie(entier(quaternaire(2))); sortie(entier(quaternaire(3))); sortie(binaire16(0q0123)); "
+     "sortie(quaternaire16(binaire16(0q3210_0123_2301_1032))); }",
+     (), [0, 1, 2, 3, 1, 2, 0, 3, 2863311495, 3827020110]),
     ("somme de 1 à 10",
      "fonction principal() { soit t = 0; soit i = 10; tantque i != 0 { t = t + i; i = i - 1; } sortie(t); }",
      (), [55]),
@@ -5809,7 +7840,7 @@ ERREURS = [
     ("écriture étage 0 dans une hypothèse", "fonction principal() { hypothèse { @0[5] = 1; } }"),
     ("arrêter sort d'une hypothèse", "fonction principal() { pour i dans 0..3 { hypothèse { arrêter; } } }"),
     ("annuler dans une boucle de l'hypothèse", "fonction principal() { hypothèse { pour i dans 0..3 { annuler; } } }"),
-    ("littéral ADN trop long", 'fonction principal() { sortie(adn"ACGTACGTACGTACGTA"); }'),
+    ("littéral ADN trop long", 'fonction principal() { sortie(adn"' + "ACGT" * 16 + 'A"); }'),
     ("segment qui modifie une variable extérieure", "fonction principal() { soit s = 0; pour i dans 0..8 en segments { s = s + i; } }"),
     ("retour dans un segment", "fonction principal() { pour i dans 0..8 en segments { retour; } }"),
     ("arrêter dans un segment", "fonction principal() { pour i dans 0..8 en segments { arrêter; } }"),
@@ -6079,6 +8110,23 @@ class Debogueur:
             w = (lit(haut) << 32) | v
             sv = w - 2 ** 64 if w >= 2 ** 63 else w
             return f"{sv} (long, #{w:016X})", sv
+        if t == "d":
+            w = (lit(haut) << 32) | v
+            x = f64(v, w >> 32)
+            return f"{x!r} (flottant_64, #{w:016X})", x
+        if t == "w":
+            w = (lit(off - 3) << 96) | (lit(off - 2) << 64) | (lit(haut) << 32) | v
+            sv = w - 2 ** 128 if w >= 2 ** 127 else w
+            return f"{sv} (entier_128, #{w:032X})", sv
+        if t == "x":
+            w = (lit(off - 3) << 96) | (lit(off - 2) << 64) | (lit(haut) << 32) | v
+            et, val = petuar_valeur(w)
+            pts = "_".join(f"{(w >> (32 * k)) & MASK:08X}" for k in (3, 2, 1, 0))
+            adn = "".join("ACGT"[(w >> (2 * (63 - i))) & 3] for i in range(64))
+            if val is None:
+                nom = {0: "inconnu", 3: "variable"}.get(et, "-inf" if et == 1 else "inf")
+                return f"{nom} (flottant_petuar, #{pts}, {adn})", nom
+            return f"{float(val)!r} (flottant_petuar, #{pts}, {adn})", val
         if t == "q":
             return f"{NOM_LOGIQUE.get(v & 3, '?')} (logique, code {v})", v
         sv = v - 2 ** 32 if v >= 2 ** 31 else v
