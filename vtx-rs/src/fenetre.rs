@@ -153,6 +153,8 @@ extern "system" {
     fn GetClientRect(h: H, r: *mut Rect) -> i32;
     fn LoadCursorW(inst: H, nom: *const u16) -> H;
     fn SetFocus(h: H) -> H;
+    fn SetCapture(h: H) -> H;
+    fn ReleaseCapture() -> i32;
     fn GetFocus() -> H;
     fn SetProcessDPIAware() -> i32;
     fn GetDC(h: H) -> H;
@@ -205,6 +207,18 @@ const WM_COMMAND: u32 = 0x0111;
 const WM_CTLCOLOREDIT: u32 = 0x0133;
 const WM_CTLCOLORSTATIC: u32 = 0x0138;
 const WM_LBUTTONDOWN: u32 = 0x0201;
+const WM_MOUSEMOVE: u32 = 0x0200;
+const WM_LBUTTONUP: u32 = 0x0202;
+const WM_LBUTTONDBLCLK: u32 = 0x0203;
+const WM_RBUTTONDOWN: u32 = 0x0204;
+const WM_RBUTTONUP: u32 = 0x0205;
+const WM_MBUTTONDOWN: u32 = 0x0207;
+const WM_MBUTTONUP: u32 = 0x0208;
+const WM_KEYDOWN: u32 = 0x0100;
+const WM_KEYUP: u32 = 0x0101;
+const WM_SYSKEYDOWN: u32 = 0x0104;
+const WM_SYSKEYUP: u32 = 0x0105;
+const WM_KILLFOCUS: u32 = 0x0008;
 const WM_MOUSEWHEEL: u32 = 0x020A;
 const WM_CUT: u32 = 0x0300;
 const WM_COPY: u32 = 0x0301;
@@ -284,6 +298,8 @@ const C_ONGLET_SORTIE: u16 = 1313;
 const C_ONGLET_TERMINAL: u16 = 1314;
 const C_ONGLET_PAS: u16 = 1315;
 const C_APROPOS: u16 = 1401;
+const C_GIF: u16 = 1316;
+const C_PNG: u16 = 1317;
 
 const FOND: u32 = 0x001E1E1E; // COLORREF : 0x00BBGGRR
 const TEXTE: u32 = 0x00D4D4D4;
@@ -347,6 +363,10 @@ struct Atelier {
     // valeurs (le cube montre leurs points de 32 bits)
     machine64: bool,
     vue64: Option<Vue64>,
+    // la vue en perspective tournée à la souris : quarts de tour, décalage en pixels, glissement en cours
+    quart: u32,
+    decal: (i32, i32),
+    glisse: Option<(i32, i32)>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -369,6 +389,8 @@ struct Fini {
     mem: Option<Memoire>,
     ligne_erreur: Option<usize>,
     vue64: Option<Vue64>,
+    // l'image que le programme laisse (ecran(l, h)), en 0x00RRGGBB
+    image: Option<(usize, usize, Vec<u32>)>,
 }
 static FINI: Mutex<Option<Fini>> = Mutex::new(None);
 
@@ -481,6 +503,7 @@ fn effacer_resultats() {
     at.ouverts.clear();
     at.choisi = None;
     at.dessin = false;
+    *IMAGE.lock().unwrap() = None;
     at.ligne_erreur = None;
     at.vue_lignes = (-1, -1);
     ecrire_texte(at.journal, "");
@@ -612,6 +635,13 @@ fn lancer() {
     at.rx_sortie = Some(rx_s);
     at.tx_entree = Some(tx_e);
     ARRET.store(false, Ordering::Relaxed);
+    // les images du programme (presenter()) viennent dans la vue du cube ; la souris et le clavier y vont au programme
+    *IMAGE.lock().unwrap() = None;
+    at.dessin = false;
+    super::hote::remettre();
+    super::hote::FENETRE.store(true, Ordering::Relaxed);
+    super::gobatix::installer(Some(Box::new(VueAtelier { cube: at.cube as usize })));
+    ANNONCEE.store(false, Ordering::Relaxed);
     unsafe {
         SetFocus(at.term_entree);
         SetTimer(at.fen, 1, 30, std::ptr::null());
@@ -645,7 +675,7 @@ fn executer(fichier: &Path, source: &str, entrees: &[u32]) -> Fini {
         Err(e) => {
             let ligne = e.find("erreur ligne ").and_then(|p| e[p + 13..].chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse().ok());
             let t = e.replace("erreur ligne ", &format!("erreur {}, ligne ", nom));
-            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None };
+            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None, image: None };
         }
     };
     let tc = t0.elapsed().as_secs_f64();
@@ -658,7 +688,8 @@ fn executer(fichier: &Path, source: &str, entrees: &[u32]) -> Fini {
     CLAVIER.store(2, Ordering::Relaxed);
     ATTENTE_NS.store(0, Ordering::Relaxed);
     let t1 = std::time::Instant::now();
-    let r = executer_dans(&mem, entrees, 5_000_000_000, Some(Path::new(&base)), part.as_ref());
+    // sans limite : un programme interactif tourne tant qu'on veut ; Maj+F5 l'arrête
+    let r = executer_dans(&mem, entrees, u64::MAX / 4, Some(Path::new(&base)), part.as_ref());
     // le temps passé à attendre le clavier n'est pas du calcul
     let attente = ATTENTE_NS.load(Ordering::Relaxed) as f64 / 1e9;
     let te = (t1.elapsed().as_secs_f64() - attente).max(0.0);
@@ -686,7 +717,8 @@ fn executer(fichier: &Path, source: &str, entrees: &[u32]) -> Fini {
             texte.push_str(&resume);
         }
     }
-    Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: None }
+    let image = image32(&mem);
+    Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: None, image }
 }
 
 /// F5 sur la machine 64 bits : vtxc64 (embarqué) compile, la SPU-64 exécute ; sa console passe par le terminal.
@@ -698,7 +730,7 @@ fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
         Ok((m, _, _)) => m,
         Err(e) => {
             let (t, ligne) = situer_erreur(&e, &f);
-            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None };
+            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None, image: None };
         }
     };
     let tc = t0.elapsed().as_secs_f64();
@@ -729,9 +761,10 @@ fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     }));
     s.arret = Some(&ARRET);
     s.parler = Some(super::parler_hote);
+    s.presenter = Some(Box::new(super::gobatix::presenter64));
     ATTENTE_NS.store(0, Ordering::Relaxed);
     let t1 = std::time::Instant::now();
-    let r = s.executer(20_000_000_000);
+    let r = s.executer(u64::MAX / 4);
     let attente = ATTENTE_NS.load(Ordering::Relaxed) as f64 / 1e9;
     let te = (t1.elapsed().as_secs_f64() - attente).max(0.0);
     let duree = |t: f64| if t < 1.0 { format!("{:.0} ms", t * 1000.0) } else { format!("{:.2} s", t) };
@@ -761,9 +794,10 @@ fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
             texte.push_str(&resume);
         }
     }
+    let image = super::gobatix::image64(&s);
     let mut vue = Vue64::depuis(&s);
     let mem = vue.memoire();
-    Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: Some(vue) }
+    Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: Some(vue), image }
 }
 
 fn fini() {
@@ -773,6 +807,19 @@ fn fini() {
         Some(f) => f,
         None => return,
     };
+    super::gobatix::installer(None);
+    super::hote::FENETRE.store(false, Ordering::Relaxed);
+    super::hote::tout_relacher();
+    unsafe {
+        ReleaseCapture();
+    }
+    // une animation en cours d'enregistrement est écrite à la fin du programme
+    if super::gobatix::ENREGISTRER.load(Ordering::Relaxed) {
+        basculer_enregistrement();
+    }
+    if let Some(img) = f.image.clone() {
+        *IMAGE.lock().unwrap() = Some(img);
+    }
     // le terminal : le reste de ce que le programme a écrit, puis le bilan
     vider_sortie_programme();
     at.rx_sortie = None;
@@ -813,8 +860,8 @@ fn fini() {
                 at.base = 0;
             }
         }
-        // un programme qui dessine (ecran(l, h)) : la vue montre son image (machine 32 bits)
-        at.dessin = f.vue64.is_none() && taille_dessin(&m).is_some();
+        // un programme qui dessine (ecran(l, h)) : la vue montre son image (les deux machines)
+        at.dessin = IMAGE.lock().unwrap().is_some();
         at.mem = Some(m);
         at.vue64 = f.vue64;
         at.choisi = None;
@@ -1491,15 +1538,17 @@ fn avancer(mode: Avance) {
         if let Some(p) = at.pas.take() {
             match p.moteur {
                 Moteur::M32 { mem, .. } => {
-                    at.dessin = taille_dessin(&mem).is_some();
+                    *IMAGE.lock().unwrap() = image32(&mem);
+                    at.dessin = IMAGE.lock().unwrap().is_some();
                     at.mem = Some(mem);
                     at.vue64 = None;
                 }
                 Moteur::M64(s) => {
+                    *IMAGE.lock().unwrap() = super::gobatix::image64(&s);
+                    at.dessin = IMAGE.lock().unwrap().is_some();
                     let mut vue = Vue64::depuis(&s);
                     at.mem = Some(vue.memoire());
                     at.vue64 = Some(vue);
-                    at.dessin = false;
                 }
             }
             at.choisi = None;
@@ -1544,8 +1593,195 @@ fn basculer_point() {
     suivre_lignes();
 }
 
+// ------------------------------------------------------------------------------------------------ l'image du programme
+/// L'image du programme : la dernière que presenter() a montrée pendant l'exécution, ou celle qu'il laisse en finissant
+/// (0x00RRGGBB). C'est l'image finie ; le programme dessine déjà la suivante dans l'étage 1 sans qu'on la voie.
+static IMAGE: Mutex<Option<(usize, usize, Vec<u32>)>> = Mutex::new(None);
+/// Où l'image est peinte dans la vue du cube (x0, y0, largeur, hauteur), pour situer la souris dans l'image.
+static PLACE: Mutex<(i32, i32, i32, i32)> = Mutex::new((0, 0, 0, 0));
+static ANNONCEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// La sortie de Gobatix dans l'atelier : chaque image présentée remplace la précédente dans la vue du cube.
+struct VueAtelier {
+    cube: usize,
+}
+impl super::gobatix::Sortie for VueAtelier {
+    fn montrer(&mut self, l: usize, h: usize, px: &[u32]) -> bool {
+        {
+            let mut im = IMAGE.lock().unwrap();
+            match im.as_mut() {
+                Some((il, ih, v)) if *il == l && *ih == h => v.copy_from_slice(px),
+                _ => *im = Some((l, h, px.to_vec())),
+            }
+        }
+        unsafe {
+            InvalidateRect(self.cube as H, std::ptr::null(), 0);
+        }
+        !ARRET.load(Ordering::Relaxed)
+    }
+}
+
+/// L'image d'un programme du SPU-32 (ecran(l, h) : @3[14680058], @3[14680059], points #RRGGBBAA dans l'étage 1).
+fn image32(mem: &Memoire) -> Option<(usize, usize, Vec<u32>)> {
+    let (l, h) = taille_dessin(mem)?;
+    let px = (0..l * h).map(|i| mem.lit(1, i) >> 8).collect();
+    Some((l as usize, h as usize, px))
+}
+
+/// Peint l'image (il × ih) dans la vue (l × h) : agrandie d'un nombre entier de fois quand elle tient (des pixels nets),
+/// sinon réduite ; centrée. Rend sa place.
+fn peindre_image(il: usize, ih: usize, ipx: &[u32], l: usize, h: usize, px: &mut [u32]) -> (i32, i32, i32, i32) {
+    if il == 0 || ih == 0 || ipx.len() < il * ih {
+        return (0, 0, 0, 0);
+    }
+    let e = (l as f32 / il as f32).min(h as f32 / ih as f32);
+    let e = if e >= 1.0 { e.floor() } else { e.max(0.01) };
+    let (dl, dh) = (((il as f32 * e) as usize).clamp(1, l), ((ih as f32 * e) as usize).clamp(1, h));
+    let (x0, y0) = ((l - dl) / 2, (h - dh) / 2);
+    for y in 0..dh {
+        let sy = (y * ih / dh).min(ih - 1);
+        let ligne = &ipx[sy * il..sy * il + il];
+        let dest = &mut px[(y0 + y) * l + x0..(y0 + y) * l + x0 + dl];
+        for (x, d) in dest.iter_mut().enumerate() {
+            *d = ligne[(x * il / dl).min(il - 1)];
+        }
+    }
+    (x0 as i32, y0 as i32, dl as i32, dh as i32)
+}
+
+/// La souris dans la vue du cube. Pendant l'exécution, sur l'image : elle va au programme (souris()). Le programme
+/// fini, en perspective : glisser à gauche tourne le cube d'un quart de tour, glisser à droite le déplace, un double
+/// clic le remet. Rend vrai si le message est traité.
+unsafe fn souris_vue(h: H, m: u32, wp: usize, lp: isize) -> bool {
+    let at = a();
+    let (mx, my) = ((lp & 0xFFFF) as i16 as i32, ((lp >> 16) & 0xFFFF) as i16 as i32);
+    let b = (wp as u32 & 1) | (wp as u32 & 2) | if wp & 16 != 0 { 4 } else { 0 };
+    let presse = matches!(m, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_LBUTTONDBLCLK);
+    let lache = matches!(m, WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP);
+    if at.en_cours {
+        let taille = IMAGE.lock().unwrap().as_ref().map(|(l, h, _)| (*l, *h));
+        let (il, ih) = match taille {
+            Some(t) => t,
+            None => return false,
+        };
+        if presse {
+            SetFocus(h);
+            SetCapture(h);
+        } else if lache && b == 0 {
+            ReleaseCapture();
+        }
+        let (x0, y0, dl, dh) = *PLACE.lock().unwrap();
+        super::hote::souris_dans_vue(mx, my, x0, y0, dl, dh, il, ih, b);
+        return true;
+    }
+    if !at.iso || at.dessin || at.mem.is_none() {
+        return false;
+    }
+    match m {
+        WM_LBUTTONDBLCLK => {
+            at.quart = 0;
+            at.decal = (0, 0);
+            at.zoom = 1.0;
+            at.glisse = None;
+            InvalidateRect(h, std::ptr::null(), 0);
+        }
+        WM_LBUTTONDOWN | WM_RBUTTONDOWN => {
+            at.glisse = Some((mx, my));
+            SetCapture(h);
+        }
+        WM_LBUTTONUP | WM_RBUTTONUP => {
+            at.glisse = None;
+            ReleaseCapture();
+        }
+        WM_MOUSEMOVE => {
+            if let Some((x, y)) = at.glisse {
+                let seuil = (60.0 * at.echelle) as i32;
+                if b & 1 != 0 && (mx - x).abs() >= seuil {
+                    at.quart = (at.quart + if mx > x { 1 } else { 3 }) % 4;
+                    at.glisse = Some((mx, my));
+                    InvalidateRect(h, std::ptr::null(), 0);
+                } else if b & 2 != 0 {
+                    at.decal = (at.decal.0 + mx - x, at.decal.1 + my - y);
+                    at.glisse = Some((mx, my));
+                    InvalidateRect(h, std::ptr::null(), 0);
+                }
+            }
+        }
+        _ => return false,
+    }
+    true
+}
+
+/// Un nom libre à côté du programme : « programme-1.gif », « programme-2.gif »…
+fn chemin_libre(ext: &str) -> PathBuf {
+    let at = a();
+    let (dossier, nom) = match &at.fichier {
+        Some(f) => (f.parent().map(|p| p.to_path_buf()).unwrap_or_default(),
+                    f.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "image".into())),
+        None => (std::env::temp_dir(), "sans titre".to_string()),
+    };
+    let mut k = 1;
+    loop {
+        let p = dossier.join(format!("{}-{}.{}", nom, k, ext));
+        if !p.exists() {
+            return p;
+        }
+        k += 1;
+    }
+}
+
+/// Ctrl+G : commencer l'enregistrement de l'animation (chaque image que présente le programme), ou le finir et
+/// écrire le GIF à côté du programme.
+fn basculer_enregistrement() {
+    let at = a();
+    let marche = !super::gobatix::ENREGISTRER.load(Ordering::Relaxed);
+    if marche {
+        *super::gobatix::ENREGISTREMENT.lock().unwrap() = None;
+        super::gobatix::ENREGISTRER.store(true, Ordering::Relaxed);
+        etat("enregistrement : chaque image que montre presenter() s'ajoute à l'animation · F5 pour lancer · Ctrl+G pour finir");
+    } else {
+        super::gobatix::ENREGISTRER.store(false, Ordering::Relaxed);
+        let g = super::gobatix::ENREGISTREMENT.lock().unwrap().take();
+        match g {
+            None => etat("aucune image enregistrée : le programme doit dessiner (ecran) et appeler presenter()"),
+            Some(g) => {
+                let n = g.images;
+                let o = g.finir();
+                let p = chemin_libre("gif");
+                match std::fs::write(&p, &o) {
+                    Ok(()) => {
+                        let t = format!("animation écrite : {} ({} images, {} Ko)", p.display(), n, (o.len() + 1023) / 1024);
+                        ajouter_texte(at.journal, &format!("{}\n", t));
+                        etat(&t);
+                    }
+                    Err(e) => message(&format!("Impossible d'écrire {} : {}", p.display(), e)),
+                }
+            }
+        }
+    }
+    if let Some(b) = at.boutons.iter().find(|b| b.1 == C_GIF) {
+        ecrire_texte(b.0, if marche { "■  Finir l'enregistrement" } else { "●  Enregistrer (GIF)" });
+    }
+}
+
+/// L'image du programme en PNG, à côté du programme.
+fn image_png() {
+    let img = IMAGE.lock().unwrap().clone();
+    match img {
+        None => etat("pas d'image : le programme doit dessiner (ecran(l, h), pixel, trait…)"),
+        Some((l, h, px)) => {
+            let png = super::cube::png_de(&px.iter().map(|&v| v | 0xFF00_0000).collect::<Vec<u32>>(), l, h);
+            let p = chemin_libre("png");
+            match std::fs::write(&p, png) {
+                Ok(()) => etat(&format!("image écrite : {}", p.display())),
+                Err(e) => message(&format!("Impossible d'écrire {} : {}", p.display(), e)),
+            }
+        }
+    }
+}
+
 // ------------------------------------------------------------------------------------------------ le cube
-use super::cube::{rendre_dessin, rendre_iso, rendre_plan, rendre_quits, taille_dessin};
+use super::cube::{rendre_iso, rendre_plan, rendre_quits, taille_dessin};
 
 unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize {
     match m {
@@ -1558,13 +1794,21 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
             let (l, ht) = ((r.right - r.left).max(1) as usize, (r.bottom - r.top).max(1) as usize);
             let mut px = vec![0x0010_1418u32; l * ht];
             let at = a();
-            if let Some(mem) = &at.mem {
-                if at.dessin && rendre_dessin(mem, l, ht, &mut px) {
-                    let (dl, dh) = taille_dessin(mem).unwrap_or((0, 0));
-                    etat(&format!("image du programme : {} × {} points · F6 : image, cube en perspective, à plat", dl, dh));
-                } else if at.iso {
-                    let n = rendre_iso(mem, at.etage, at.zoom, l, ht, &mut px);
-                    etat(&format!("cube en perspective · étage {} · {} mots non nuls · molette : zoom", at.etage, n));
+            let image = if at.en_cours || at.dessin { IMAGE.lock().unwrap().clone() } else { None };
+            if let Some((il, ih, ipx)) = &image {
+                *PLACE.lock().unwrap() = peindre_image(*il, *ih, ipx, l, ht, &mut px);
+                if !at.en_cours {
+                    etat(&format!("image du programme : {} × {} points · F6 : image, cube en perspective, à plat, quits · Cube › Image en PNG",
+                                  il, ih));
+                } else if !ANNONCEE.swap(true, Ordering::Relaxed) {
+                    etat(&format!("image du programme : {} × {} · cliquez l'image : la souris et le clavier vont au programme · \
+                                   Ctrl+G : enregistrer l'animation (GIF) · Maj+F5 : arrêter", il, ih));
+                }
+            } else if let Some(mem) = &at.mem {
+                if at.iso {
+                    let n = rendre_iso(mem, at.etage, at.zoom, at.quart, at.decal, l, ht, &mut px);
+                    etat(&format!("cube en perspective · étage {} · {} mots non nuls · molette : zoom · glisser : tourner (gauche), \
+                                   déplacer (droit) · double clic : revenir", at.etage, n));
                 } else if at.vue_quits {
                     rendre_quits(mem, at.etage, at.largeur, at.base, l, ht, &mut px);
                 } else {
@@ -1579,6 +1823,17 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
             };
             StretchDIBits(dc, 0, 0, l as i32, ht as i32, 0, 0, l as i32, ht as i32, px.as_ptr() as *const c_void, &info, 0, SRCCOPY);
             EndPaint(h, &ps);
+            0
+        }
+        WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP
+        | WM_LBUTTONDBLCLK if souris_vue(h, m, wp, lp) => 0,
+        WM_KEYDOWN | WM_KEYUP | WM_CHAR | WM_SYSKEYDOWN | WM_SYSKEYUP if a().en_cours => {
+            // le programme qui tourne reçoit le clavier (touche(), appuyee())
+            super::hote::clavier_windows(m, wp);
+            if m == WM_SYSKEYDOWN || m == WM_SYSKEYUP { DefWindowProcW(h, m, wp, lp) } else { 0 }
+        }
+        WM_KILLFOCUS => {
+            super::hote::tout_relacher();
             0
         }
         WM_LBUTTONDOWN => {
@@ -1606,6 +1861,10 @@ unsafe extern "system" fn proc_cube(h: H, m: u32, wp: usize, lp: isize) -> isize
         WM_MOUSEWHEEL => {
             let at = a();
             let cran = ((wp >> 16) & 0xFFFF) as i16 as i32 / 120;
+            if at.en_cours && IMAGE.lock().unwrap().is_some() {
+                super::hote::ajouter_molette(cran);
+                return 0;
+            }
             if at.iso {
                 at.zoom = (at.zoom * if cran > 0 { 1.25 } else { 0.8 }).clamp(0.2, 64.0);
             } else {
@@ -1711,7 +1970,7 @@ fn creer_controles(fen: H) {
             0, 0, 10, 10, fen, 14 as H, at.inst, std::ptr::null_mut());
         for (t, c) in [("Ouvrir", C_OUVRIR), ("Enregistrer", C_ENREGISTRER), ("▶  Lancer  (F5)", C_LANCER), ("Pas à pas  (F7)", C_PAS),
                        ("0", C_ETAGE), ("1", C_ETAGE + 1), ("2", C_ETAGE + 2), ("3", C_ETAGE + 3), ("Vue : perspective / à plat / quits  (F6)", C_VUE),
-                       ("Largeur", C_LARGEUR), ("Machine : SPU-64", C_MACHINE64)] {
+                       ("Largeur", C_LARGEUR), ("Machine : SPU-64", C_MACHINE64), ("●  Enregistrer (GIF)", C_GIF)] {
             let b = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
                                     c as usize as H, at.inst, std::ptr::null_mut());
             at.boutons.push((b, c));
@@ -1794,6 +2053,8 @@ fn disposer(fen: H) {
         MoveWindow(at.boutons[9].0, x, marge, px(70.0), barre - 2 * marge, 1);
         x += px(70.0) + marge * 3;
         MoveWindow(at.boutons[10].0, x, marge, px(140.0), barre - 2 * marge, 1);
+        x += px(140.0) + marge;
+        MoveWindow(at.boutons[11].0, x, marge, px(200.0), barre - 2 * marge, 1);
         // l'éditeur à gauche, le cube et la sortie à droite
         let gauche = (l as f32 * 0.5) as i32;
         let haut_util = h - barre - bas;
@@ -1867,6 +2128,9 @@ fn menus(fen: H) {
         ajouter(cube, "&Vue : perspective, à plat, en quits\tF6", C_VUE);
         ajouter(cube, "&Largeur de l'image (à plat)", C_LARGEUR);
         ajouter(cube, "&Effacer la mémoire affichée", C_EFFACER);
+        ajouter(cube, "", 0);
+        ajouter(cube, "Enregistrer l'&animation (GIF) : commencer, finir\tCtrl+G", C_GIF);
+        ajouter(cube, "&Image du programme en PNG", C_PNG);
         let aide = CreatePopupMenu();
         ajouter(aide, "&Associer les fichiers .vtx à l'atelier", C_ASSOCIER);
         ajouter(aide, "À &propos", C_APROPOS);
@@ -1960,6 +2224,8 @@ fn commande(c: u16) {
                 Ok(m) => message(&m),
                 Err(e) => message(&e),
             },
+            C_GIF => basculer_enregistrement(),
+            C_PNG => image_png(),
             C_PAS => avancer(Avance::Pas),
             C_PAS_DESSUS => avancer(Avance::Dessus),
             C_POINT => basculer_point(),
@@ -1972,7 +2238,7 @@ fn commande(c: u16) {
             }
             C_VUE => {
                 // image du programme (s'il dessine) → cube en perspective → à plat → en quits → image…
-                let a_dessin = at.vue64.is_none() && at.mem.as_ref().map(|m| taille_dessin(m).is_some()).unwrap_or(false);
+                let a_dessin = IMAGE.lock().unwrap().is_some();
                 if at.dessin {
                     at.dessin = false;
                     at.iso = true;
@@ -2096,6 +2362,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),
             ouverts: HashSet::new(), defile: 0, choisi: None, lignes: std::ptr::null_mut(), vue_lignes: (-1, -1), ligne_erreur: None,
             dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(), machine64: true, vue64: None,
+            quart: 0, decal: (0, 0), glisse: None,
         });
         ATELIER = Box::into_raw(boite);
         let curseur = LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16);
@@ -2130,7 +2397,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
         };
         RegisterClassExW(&classe_lignes);
         let classe_cube = WndClassEx {
-            cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0x3, lpfnWndProc: proc_cube, cbClsExtra: 0, cbWndExtra: 0,
+            cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0xB, lpfnWndProc: proc_cube, cbClsExtra: 0, cbWndExtra: 0,
             hInstance: inst, hIcon: std::ptr::null_mut(), hCursor: curseur, hbrBackground: std::ptr::null_mut(),
             lpszMenuName: std::ptr::null(), lpszClassName: nom_cube.as_ptr(), hIconSm: std::ptr::null_mut(),
         };
@@ -2161,6 +2428,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'S' as u16, cmd: C_ENREGISTRER },
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'A' as u16, cmd: C_TOUT },
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'M' as u16, cmd: C_MACHINE64 },
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: b'G' as u16, cmd: C_GIF },
             Accel { fVirt: FVIRTKEY, key: 0x74, cmd: C_LANCER }, // F5
             Accel { fVirt: FVIRTKEY | 4, key: 0x74, cmd: C_ARRETER }, // Maj+F5
             Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6
@@ -2172,7 +2440,11 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
         let table = CreateAcceleratorTableW(raccourcis.as_ptr(), raccourcis.len() as i32);
         let mut msg: Msg = std::mem::zeroed();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
-            if TranslateAcceleratorW(fen, table, &mut msg) == 0 {
+            // pendant l'exécution, les touches tapées dans l'image vont au programme (Échap compris), sauf F5 et Maj+F5
+            let at = a();
+            let direct = at.en_cours && msg.hwnd == at.cube && matches!(msg.message, WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP)
+                && msg.wParam != 0x74;
+            if direct || TranslateAcceleratorW(fen, table, &mut msg) == 0 {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }

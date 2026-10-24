@@ -24,6 +24,10 @@ mod atelier;
 mod arbre;
 mod cube;
 mod gobatix;
+#[allow(dead_code)]
+mod hote;
+#[allow(dead_code)]
+mod gif;
 // la machine SPU-64 et son compilateur embarqué (vtxc64) : l'atelier s'en sert
 #[allow(dead_code)]
 mod qflot;
@@ -716,6 +720,8 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                     11 => mem.ranger_cube(rb & 3, rb >> 2, dossier),
                     // 12 : présenter l'image du programme (Gobatix) ; rend 1 si la fenêtre a été fermée
                     12 => gobatix::presenter(mem),
+                    // 16 à 21 : la souris, les touches, l'horloge, la cadence (hote.rs)
+                    16..=21 => hote::service(ra as u64, rb as u64, 0xFFFF_FFFF).unwrap_or(0) as u32,
                     10 => return Err("mémoire pleine : le tas ne peut plus grandir, même après avoir ramassé les miettes".to_string()),
                     9 => mem.frequence(rb & 3),
                     // 6 et 7 : écrire ou lire un bloc de mots dans un fichier (nom, adresse globale et nombre de mots
@@ -1359,7 +1365,8 @@ fn main() {
         Some("image") => cube::image(&args[2..]),
         Some("dessin") => cube::dessin(&args[2..]),
         Some("cubes") => print!("{}", texte_cubes(None, std::path::Path::new(args.get(2).map(|s| s.as_str()).unwrap_or(".")))),
-        Some("gobatix") => gobatix::lancer(&args[2..]),
+        Some("gobatix") => gobatix::lancer(&args[2..], false),
+        Some("gobatix64") => gobatix::lancer(&args[2..], true),
         Some("quits") => cube::image_quits(&args[2..]),
         Some("icone") if args.len() > 2 => {
             let f = &args[2];

@@ -10,6 +10,8 @@ mod qflot;
 #[allow(dead_code)]
 mod spu64;
 #[allow(dead_code)]
+mod hote;
+#[allow(dead_code)]
 mod machine64;
 use machine64::{compiler64, dossier_de64, nombres64, situer_erreur, COMPILATEUR64, COMPLET64, VTXC64};
 use spu64::Spu64;

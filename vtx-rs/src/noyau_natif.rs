@@ -383,6 +383,12 @@ impl Es {
                 Some(fi) if fi.lecture && fi.pos < fi.car.len() => 0,
                 _ => 1,
             },
+            // sans fenêtre : ni souris, ni touche, ni molette ; cadence sans effet ; l'horloge en millisecondes
+            16 | 17 | 19 | 20 | 21 => 0,
+            18 => {
+                static DEBUT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+                DEBUT.get_or_init(std::time::Instant::now).elapsed().as_millis() as u32
+            }
             _ => 0xFFFF_FFFF,
         }
     }

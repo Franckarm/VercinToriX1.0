@@ -1,41 +1,109 @@
-// Gobatix, premier pas : le service graphique de la machine.
+// Gobatix : le service graphique de la machine, sur le SPU-32 et le SPU-64.
 //
 // Un programme vtx dessine dans l'image de l'étage 1 (ecran, pixel, trait, rectangle, disque : le prélude) puis appelle
 // presenter() : la machine copie l'image vers une sortie, la montre, et rend 0 pour continuer, 1 si l'utilisateur a
-// fermé la fenêtre, 4294967295 si le programme n'a pas préparé d'image. Deux sorties :
-//   - la fenêtre (Windows) : une fenêtre Win32 écrite directement, à 60 images par seconde au plus ;
-//   - les fichiers (toutes les machines) : une image PNG par appel, pour vérifier une animation sans écran.
-// vtx gobatix PROG.vtx                                 la fenêtre (Windows)
-// vtx gobatix PROG.vtx --images DOSSIER [--max N] [--pas K]   les images image-0001.png… (une sur K, au plus N appels)
+// fermé la fenêtre, le plus grand nombre si le programme n'a pas préparé d'image. L'image montrée est une image finie :
+// le programme dessine déjà la suivante sans que l'écran le voie (le double tampon : l'anti-cube de l'image).
+// Les sorties :
+//   - la fenêtre (Windows) : une fenêtre Win32 écrite directement, à la cadence choisie par cadence(ms) (60 images par
+//     seconde par défaut) ; la souris et le clavier y sont transmis au programme (souris(), touche(), appuyee()) ;
+//   - les images PNG (toutes les machines), une par appel, pour vérifier une animation sans écran ;
+//   - une animation GIF (toutes les machines), écrite par différence d'une image à l'autre (gif.rs) ;
+//   - l'atelier, qui montre les images dans sa vue du cube et peut les enregistrer en GIF.
+// vtx gobatix PROG.vtx                                    la fenêtre (Windows), SPU-32
+// vtx gobatix64 PROG.vtx                                  la même chose sur le SPU-64
+// … --images DOSSIER [--max N] [--pas K]                  les images image-0001.png… (une sur K, au plus N appels)
+// … --gif FICHIER.gif [--max N] [--pas K]                 une animation GIF
+// … --scenario FICHIER                                   des gestes (souris, touches) rejoués image par image (hote.rs)
 use super::cube::taille_dessin;
+use super::gif::Gif;
+use super::spu64::Spu64;
 use super::Memoire;
+use super::hote;
 use std::sync::Mutex;
 
 pub trait Sortie: Send {
     /// Montre une image de l × h points (0x00RRGGBB, ligne par ligne). Rend faux quand il faut s'arrêter.
     fn montrer(&mut self, l: usize, h: usize, px: &[u32]) -> bool;
-    /// Après la fin du programme : la fenêtre reste ouverte jusqu'à sa fermeture.
+    /// Après la fin du programme : la fenêtre reste ouverte jusqu'à sa fermeture ; un fichier est écrit.
     fn attendre_fin(&mut self) {}
 }
 
 static SORTIE: Mutex<Option<Box<dyn Sortie>>> = Mutex::new(None);
+/// L'enregistrement (l'atelier : bouton « Enregistrer ») : tant qu'il est demandé, chaque image montrée s'ajoute à
+/// l'animation, commencée à la première image.
+pub static ENREGISTRER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub static ENREGISTREMENT: Mutex<Option<Gif>> = Mutex::new(None);
+/// Au plus tant d'images dans un enregistrement (une minute à 30 images par seconde).
+pub const MAX_IMAGES: usize = 1800;
 
-/// Le service 12 : présenter l'image du programme.
+/// Choisit la sortie des images (None : aucune, presenter() rend 0 sans rien montrer).
+pub fn installer(s: Option<Box<dyn Sortie>>) {
+    *SORTIE.lock().unwrap() = s;
+}
+
+/// Le délai d'une image dans une animation : la cadence du programme (20 ms au moins, 1/50 de seconde).
+fn delai_ms() -> u32 {
+    hote::CADENCE_MS.load(std::sync::atomic::Ordering::Relaxed).max(20)
+}
+
+/// Commun aux deux machines : l'image part vers la sortie et l'enregistrement, puis la cadence est respectée.
+fn montrer(l: usize, h: usize, px: &[u32]) -> bool {
+    {
+        if ENREGISTRER.load(std::sync::atomic::Ordering::Relaxed) {
+            let mut e = ENREGISTREMENT.lock().unwrap();
+            let g = e.get_or_insert_with(|| Gif::new(l, h));
+            if g.images < MAX_IMAGES {
+                g.ajouter(l, h, px, delai_ms());
+            }
+        }
+    }
+    let continuer = match SORTIE.lock().unwrap().as_mut() {
+        Some(s) => s.montrer(l, h, px),
+        None => true,
+    };
+    hote::attendre_cadence();
+    hote::image_presentee();
+    continuer
+}
+
+/// Le service 12 du SPU-32 : présenter l'image du programme.
 pub fn presenter(mem: &Memoire) -> u32 {
     let (l, h) = match taille_dessin(mem) {
         Some((l, h)) => (l as usize, h as usize),
         None => return 0xFFFF_FFFF,
     };
-    let mut garde = SORTIE.lock().unwrap();
-    let sortie = match garde.as_mut() {
-        Some(s) => s,
-        None => return 0,
-    };
     let mut px = vec![0u32; l * h];
     for (i, p) in px.iter_mut().enumerate() {
         *p = mem.lit(1, i as u32) >> 8;
     }
-    if sortie.montrer(l, h, &px) { 0 } else { 1 }
+    if montrer(l, h, &px) { 0 } else { 1 }
+}
+
+/// La taille de l'image d'un programme du SPU-64 (@3[14680058], @3[14680059]), si elle est raisonnable.
+pub fn taille_dessin64(s: &Spu64) -> Option<(usize, usize)> {
+    let (l, h) = (s.regarder((3u64 << 62) | 14_680_058), s.regarder((3u64 << 62) | 14_680_059));
+    if (1..=4096).contains(&l) && (1..=4096).contains(&h) && l * h <= 1 << 24 { Some((l as usize, h as usize)) } else { None }
+}
+
+/// L'image d'un programme du SPU-64 : chaque point profond #RRRRGGGGBBBBAAAA vu en 0x00RRGGBB (l'octet fort de chaque voie).
+pub fn image64(s: &Spu64) -> Option<(usize, usize, Vec<u32>)> {
+    let (l, h) = taille_dessin64(s)?;
+    let px = (0..l * h).map(|i| point64(s.regarder((1u64 << 62) | i as u64))).collect();
+    Some((l, h, px))
+}
+
+/// Un point profond vu en 0x00RRGGBB (toujours l'octet fort de chaque voie : rgb(0, 0, 0) = #000000000000FFFF est noir).
+pub fn point64(v: u64) -> u32 {
+    (((v >> 56) & 0xFF) << 16 | ((v >> 40) & 0xFF) << 8 | ((v >> 24) & 0xFF)) as u32
+}
+
+/// Le service 12 du SPU-64.
+pub fn presenter64(s: &Spu64) -> u64 {
+    match image64(s) {
+        Some((l, h, px)) => if montrer(l, h, &px) { 0 } else { 1 },
+        None => u64::MAX,
+    }
 }
 
 struct Fichiers {
@@ -58,21 +126,54 @@ impl Sortie for Fichiers {
     }
 }
 
-/// vtx gobatix PROG.vtx [--images DOSSIER] [--max N] [--pas K]
-pub fn lancer(args: &[String]) {
+/// Une animation GIF : une image sur `pas`, au plus `max` appels ; le fichier est écrit à la fin.
+struct Animation {
+    chemin: std::path::PathBuf,
+    gif: Option<Gif>,
+    appels: usize,
+    pas: usize,
+    max: usize,
+}
+
+impl Sortie for Animation {
+    fn montrer(&mut self, l: usize, h: usize, px: &[u32]) -> bool {
+        self.appels += 1;
+        if (self.appels - 1) % self.pas == 0 {
+            let g = self.gif.get_or_insert_with(|| Gif::new(l, h));
+            g.ajouter(l, h, px, delai_ms() * self.pas as u32);
+        }
+        self.appels < self.max
+    }
+    fn attendre_fin(&mut self) {
+        if let Some(g) = self.gif.take() {
+            let n = g.images;
+            let o = g.finir();
+            match std::fs::write(&self.chemin, &o) {
+                Ok(()) => eprintln!("{} : {} images, {} octets", self.chemin.display(), n, o.len()),
+                Err(e) => eprintln!("{} : écriture impossible ({})", self.chemin.display(), e),
+            }
+        }
+    }
+}
+
+/// vtx gobatix PROG.vtx [--images DOSSIER | --gif FICHIER] [--max N] [--pas K] ; m64 : sur le SPU-64.
+pub fn lancer(args: &[String], m64: bool) {
     use super::{compiler_avec, dossier_de, executer_dans, nombres, COMPLET, VTXC};
+    let usage = if m64 { "vtx gobatix64" } else { "vtx gobatix" };
     if args.is_empty() {
-        eprintln!("utilisation : vtx gobatix PROG.vtx [--images DOSSIER] [--max N] [--pas K]");
+        eprintln!("utilisation : {} PROG.vtx [--images DOSSIER | --gif FICHIER.gif] [--max N] [--pas K] [--scenario FICHIER]", usage);
         std::process::exit(2);
     }
-    let (mut images, mut max, mut pas) = (None, usize::MAX, 1usize);
+    let (mut images, mut gif, mut max, mut pas, mut scenario) = (None, None, usize::MAX, 1usize, None);
     let mut i = 1;
     while i < args.len() {
         let v = args.get(i + 1);
         match args[i].as_str() {
             "--images" => images = v.cloned(),
+            "--gif" => gif = v.cloned(),
             "--max" => max = v.and_then(|x| x.parse().ok()).unwrap_or(usize::MAX),
             "--pas" => pas = v.and_then(|x| x.parse().ok()).unwrap_or(1).max(1),
+            "--scenario" => scenario = v.cloned(),
             autre => {
                 eprintln!("option inconnue : {}", autre);
                 std::process::exit(2);
@@ -85,30 +186,64 @@ pub fn lancer(args: &[String]) {
         std::process::exit(1)
     });
     let base = dossier_de(&args[0]);
-    let (mots, _) = compiler_avec(&nombres(VTXC), &source, &base, COMPLET).unwrap_or_else(|e| {
-        eprint!("{}", e);
-        std::process::exit(1)
-    });
-    let sortie: Box<dyn Sortie> = match images {
-        Some(d) => {
+    let sortie: Box<dyn Sortie> = match (images, gif) {
+        (Some(d), _) => {
             let _ = std::fs::create_dir_all(&d);
             Box::new(Fichiers { dossier: d.into(), appels: 0, ecrites: 0, pas, max })
         }
-        None => match fenetre(&args[0]) {
+        (None, Some(f)) => Box::new(Animation { chemin: f.into(), gif: None, appels: 0, pas, max }),
+        (None, None) => match fenetre(&args[0]) {
             Some(s) => s,
             None => {
-                eprintln!("pas de fenêtre sur cette machine : utilisez --images DOSSIER");
+                eprintln!("pas de fenêtre sur cette machine : utilisez --images DOSSIER ou --gif FICHIER.gif");
                 std::process::exit(2)
             }
         },
     };
-    *SORTIE.lock().unwrap() = Some(sortie);
-    let mut mem = Memoire::new(false);
-    super::charger(&mut mem, &mots);
-    let r = executer_dans(&mem, &[], u64::MAX / 4, Some(std::path::Path::new(&base)), None);
+    hote::remettre();
+    if let Some(f) = scenario {
+        let t = std::fs::read_to_string(&f).unwrap_or_else(|e| {
+            eprintln!("scénario illisible : {}", e);
+            std::process::exit(1)
+        });
+        if let Err(e) = hote::charger_scenario(&t) {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    }
+    installer(Some(sortie));
+    let r: Result<(), String> = if m64 {
+        use super::machine64::{compiler64, nombres64, COMPLET64, VTXC64};
+        let mots = match compiler64(&nombres64(VTXC64), &source, &base, COMPLET64, false) {
+            Ok((m, _, _)) => m,
+            Err(e) => {
+                eprint!("{}", e);
+                std::process::exit(1)
+            }
+        };
+        let mut s = Spu64::nouveau();
+        s.dossier = Some(std::path::PathBuf::from(&base));
+        s.charger(&mots);
+        super::machine64::brancher_terminal(&mut s);
+        s.presenter = Some(Box::new(presenter64));
+        let r = s.executer(u64::MAX);
+        if !s.sortie.is_empty() {
+            println!("{}", s.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+        }
+        r
+    } else {
+        let (mots, _) = compiler_avec(&nombres(VTXC), &source, &base, COMPLET).unwrap_or_else(|e| {
+            eprint!("{}", e);
+            std::process::exit(1)
+        });
+        let mut mem = Memoire::new(false);
+        super::charger(&mut mem, &mots);
+        executer_dans(&mem, &[], u64::MAX / 4, Some(std::path::Path::new(&base)), None).map(|_| ())
+    };
     if let Some(s) = SORTIE.lock().unwrap().as_mut() {
         s.attendre_fin();
     }
+    installer(None);
     if let Err(e) = r {
         eprintln!("erreur : {}", e);
         std::process::exit(1);
@@ -177,6 +312,9 @@ mod fen {
         fn LoadCursorW(inst: H, nom: *const u16) -> H;
         fn DestroyWindow(h: H) -> i32;
         fn SetProcessDPIAware() -> i32;
+        fn SetCapture(h: H) -> H;
+        fn ReleaseCapture() -> i32;
+        fn ScreenToClient(h: H, p: *mut Point) -> i32;
     }
     #[link(name = "gdi32")]
     extern "system" {
@@ -193,6 +331,15 @@ mod fen {
     const WM_PAINT: u32 = 0x000F;
     const WM_CLOSE: u32 = 0x0010;
     const WM_ERASEBKGND: u32 = 0x0014;
+    const WM_KILLFOCUS: u32 = 0x0008;
+    const WM_MOUSEMOVE: u32 = 0x0200;
+    const WM_LBUTTONDOWN: u32 = 0x0201;
+    const WM_LBUTTONUP: u32 = 0x0202;
+    const WM_RBUTTONDOWN: u32 = 0x0204;
+    const WM_RBUTTONUP: u32 = 0x0205;
+    const WM_MBUTTONDOWN: u32 = 0x0207;
+    const WM_MBUTTONUP: u32 = 0x0208;
+    const WM_MOUSEWHEEL: u32 = 0x020A;
     const WS_OVERLAPPEDWINDOW: u32 = 0x00CF_0000;
     const WS_VISIBLE: u32 = 0x1000_0000;
     const CW_USEDEFAULT: i32 = 0x8000_0000u32 as i32;
@@ -205,8 +352,11 @@ mod fen {
         l: usize,
         h: usize,
         ferme: bool,
+        // où l'image est peinte dans la fenêtre (pour situer la souris dans l'image)
+        place: (i32, i32, i32, i32),
     }
-    static IMAGE: Mutex<Image> = Mutex::new(Image { px: Vec::new(), l: 0, h: 0, ferme: false });
+    static IMAGE: Mutex<Image> = Mutex::new(Image { px: Vec::new(), l: 0, h: 0, ferme: false, place: (0, 0, 0, 0) });
+    static BOUTONS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
     fn w(s: &str) -> Vec<u16> {
         s.encode_utf16().chain(std::iter::once(0)).collect()
@@ -221,12 +371,13 @@ mod fen {
                 let mut r = Rect::default();
                 GetClientRect(h, &mut r);
                 let (cl, ch) = ((r.right - r.left).max(1), (r.bottom - r.top).max(1));
-                let im = IMAGE.lock().unwrap();
+                let mut im = IMAGE.lock().unwrap();
                 if im.l > 0 && im.h > 0 && im.px.len() == im.l * im.h {
                     // l'image remplit la fenêtre sans être déformée (bandes noires sinon)
                     let e = (cl as f32 / im.l as f32).min(ch as f32 / im.h as f32);
                     let (dl, dh) = (((im.l as f32 * e) as i32).max(1), ((im.h as f32 * e) as i32).max(1));
                     let (x0, y0) = ((cl - dl) / 2, (ch - dh) / 2);
+                    im.place = (x0, y0, dl, dh);
                     let info = BitmapInfo {
                         bmiHeader: BitmapInfoHeader { biSize: std::mem::size_of::<BitmapInfoHeader>() as u32, biWidth: im.l as i32,
                             biHeight: -(im.h as i32), biPlanes: 1, biBitCount: 32, biCompression: 0, biSizeImage: 0,
@@ -237,6 +388,34 @@ mod fen {
                 }
                 drop(im);
                 EndPaint(h, &ps);
+                0
+            }
+            WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_MBUTTONDOWN | WM_MBUTTONUP => {
+                // la souris, en points de l'image ; boutons : gauche 1, droit 2, milieu 4 (MK_LBUTTON 1, MK_RBUTTON 2,
+                // MK_MBUTTON 16 dans wParam)
+                let b = (wp as u32 & 1) | (wp as u32 & 2) | if wp & 16 != 0 { 4 } else { 0 };
+                BOUTONS.store(b, std::sync::atomic::Ordering::Relaxed);
+                match m {
+                    WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN => { SetCapture(h); }
+                    WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP if b == 0 => { ReleaseCapture(); }
+                    _ => {}
+                }
+                let (mx, my) = ((lp & 0xFFFF) as i16 as i32, ((lp >> 16) & 0xFFFF) as i16 as i32);
+                let im = IMAGE.lock().unwrap();
+                let (x0, y0, dl, dh) = im.place;
+                super::hote::souris_dans_vue(mx, my, x0, y0, dl, dh, im.l, im.h, b);
+                0
+            }
+            WM_MOUSEWHEEL => {
+                super::hote::ajouter_molette(((wp >> 16) & 0xFFFF) as i16 as i32 / 120);
+                0
+            }
+            0x100 | 0x101 | 0x102 | 0x104 | 0x105 => {
+                super::hote::clavier_windows(m, wp);
+                DefWindowProcW(h, m, wp, lp)
+            }
+            WM_KILLFOCUS => {
+                super::hote::tout_relacher();
                 0
             }
             WM_CLOSE => {
@@ -321,16 +500,13 @@ mod fen {
             if let Some(hw) = self.hwnd {
                 unsafe { InvalidateRect(hw as H, std::ptr::null(), 0) };
             }
-            // 60 images par seconde au plus
-            let cadence = Duration::from_micros(16_667);
-            let ecoule = self.dernier.elapsed();
-            if ecoule < cadence {
-                std::thread::sleep(cadence - ecoule);
-            }
+            // la cadence (60 images par seconde par défaut, cadence(ms) la change) : hote::attendre_cadence
+            super::hote::FENETRE.store(true, std::sync::atomic::Ordering::Relaxed);
             self.dernier = Instant::now();
             true
         }
         fn attendre_fin(&mut self) {
+            super::hote::FENETRE.store(false, std::sync::atomic::Ordering::Relaxed);
             // le programme est fini : l'image reste affichée jusqu'à la fermeture de la fenêtre
             while self.hwnd.is_some() && !IMAGE.lock().unwrap().ferme {
                 std::thread::sleep(Duration::from_millis(50));

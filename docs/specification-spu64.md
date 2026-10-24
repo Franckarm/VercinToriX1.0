@@ -142,7 +142,16 @@ Les `flottant_petuar` (128 bits) se calculent par le prélude sur des paires de 
 | 10 | arrêt « mémoire pleine » |
 | 11 | ranger sur disque le cube T (T = adresse longue d'un mot du cube) ; rend le nombre de pages écrites |
 | 13 | jeter le cube T (le cube de transfert jetable) : ses pages quittent la mémoire d'un coup, mots et brins, sans être relues du disque ; rend le nombre de pages jetées |
-| 12 | présenter l'image (Gobatix) : largeur et hauteur en `M[3:14680058]` et `M[3:14680059]` (étage 3, fréquence 0), points en étage 1, fréquence 0, ligne par ligne ; un point profond donne la couleur de ses octets forts |
+| 12 | présenter l'image (Gobatix) : largeur et hauteur en `M[3:14680058]` et `M[3:14680059]` (étage 3, fréquence 0), points en étage 1, fréquence 0, ligne par ligne ; un point profond donne la couleur de ses octets forts ; rend 0, 1 si la fenêtre a été fermée, 2^64 − 1 sans image |
+| 16 | la souris : x (bits 0-11) et y (12-23) en points de l'image, boutons (24-26 : gauche 1, droit 2, milieu 4), dans l'image (27) ; 0 sans fenêtre |
+| 17 | la prochaine touche appuyée, sans attendre (un caractère, ou 65 536 + code de touche) ; 0 s'il n'y en a pas |
+| 18 | les millisecondes depuis le lancement |
+| 19 | la cadence : T millisecondes au moins entre deux présentations (16 au départ) ; rend l'ancienne |
+| 20 | les crans de molette depuis le dernier appel (signé) |
+| 21 | 1 si la touche T est enfoncée, sinon 0 |
+
+Les services 16 à 21 sont les mêmes au SPU-32 (sur 32 bits). Sans fenêtre (machines de référence, tests), 16, 17, 20
+et 21 rendent 0.
 
 Canaux : 0 les nombres (IN et OUT), 1 la console en texte (un caractère par mot), 2 et suivants les fichiers.
 

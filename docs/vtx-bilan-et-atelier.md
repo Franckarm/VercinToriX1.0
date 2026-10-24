@@ -48,8 +48,8 @@
 
 | Service | Rôle | Existe ? |
 |---|---|---|
-| Fenêtre | montrer l'image de l'étage 1 | oui (12, `presenter`) ; à étendre : taille de la fenêtre, redimensionnement |
-| Événements | touches (avec Ctrl, Maj, Alt), caractères tapés, souris (position, clics, molette), fermeture | non : **nouveau** |
+| Fenêtre | montrer l'image de l'étage 1 | oui (12, `presenter`, double tampon ; 19, `cadence`) ; à étendre : taille de la fenêtre, redimensionnement |
+| Événements | touches (avec Ctrl, Maj, Alt), caractères tapés, souris (position, clics, molette), fermeture | **oui** (0.5) : souris, molette, touches, touches enfoncées dont Maj, Ctrl, Alt, horloge (16 à 21) ; la fermeture : `presenter()` rend 1 |
 | Fichiers | lire, écrire | oui (canaux) |
 | Dossiers | lister un dossier | non : **nouveau** |
 | Presse-papiers | copier, coller avec Windows | non : **nouveau** |

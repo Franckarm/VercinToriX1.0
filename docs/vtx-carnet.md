@@ -265,6 +265,13 @@ compilateur sans Python.
   pas : service graphique, cube qui tourne, cube chromatique dessiné. Décidé : un cube vide comme zone de
   modélisation, de texture et de peinture, repérée en xyz hexadécimal ; la case contient un point profond (couleur,
   et l'état de Belnap dans l'alpha : inconnu = vide, vrai = matière, faux = creusé, variable = conflit).
+  Deuxième pas (24 octobre, 0.5) : **l'interactif**, sur les deux machines (services 16 à 21) : `souris()`,
+  `touche()`, `appuyee()`, `molette()`, `horloge()`, `cadence()` ; l'image finie (double tampon) ; l'atelier montre
+  l'animation pendant qu'elle tourne, lui donne la souris et le clavier, l'enregistre en **GIF** (Ctrl+G) ;
+  `vtx gobatix64`. **L'anti-cube exploité** : `anti_couleur` (255 − c, involutive) pose curseurs et objets animés sans
+  sauvegarder le fond ; le GIF n'écrit que la différence d'une image à l'autre, les points inchangés étant *inconnus*
+  (transparents). Les scénarios de gestes (`--scenario`) rejouent un programme interactif sans écran :
+  `tests/test_gobatix.py`, même GIF octet pour octet sur le SPU-32 et le SPU-64.
 
 ---
 

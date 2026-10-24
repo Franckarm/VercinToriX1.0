@@ -92,7 +92,9 @@ pub fn rendre_quits(mem: &Memoire, etage: u32, largeur: u32, base: u32, l: usize
 /// En perspective isométrique : l'étage est un cube de 256 × 256 × 256 mots (adresse = x + 256 y + 65536 z, z vers
 /// le haut) ; chaque mot non nul est un petit cube de sa couleur, les plus proches devant. Le cadrage suit les mots
 /// présents ; la molette zoome.
-pub fn rendre_iso(mem: &Memoire, etage: u32, zoom: f32, l: usize, h: usize, px: &mut [u32]) -> usize {
+/// `quart` : le cube tourné de quart × 90° autour de l'axe vertical (B) ; `decal` : décalé de tant de pixels.
+#[allow(clippy::too_many_arguments)]
+pub fn rendre_iso(mem: &Memoire, etage: u32, zoom: f32, quart: u32, decal: (i32, i32), l: usize, h: usize, px: &mut [u32]) -> usize {
     for p in px.iter_mut() {
         *p = 0x0010_1418;
     }
@@ -135,13 +137,25 @@ pub fn rendre_iso(mem: &Memoire, etage: u32, zoom: f32, l: usize, h: usize, px: 
     elargir(&mut x0, &mut x1);
     elargir(&mut y0, &mut y1);
     elargir(&mut z0, &mut z1);
-    let (dx, dy, dz) = ((x1 - x0 + 1) as f32, (y1 - y0 + 1) as f32, (z1 - z0 + 1) as f32);
+    // la boîte dans le repère tourné : un quart de tour échange ses côtés x et y
+    let (bx, by) = (x1 - x0 + 1, y1 - y0 + 1);
+    let quart = quart & 3;
+    let (rx, ry) = if quart & 1 == 1 { (by, bx) } else { (bx, by) };
+    let tourner = move |x: u32, y: u32| -> (u32, u32) {
+        match quart {
+            1 => (by - 1 - y, x),
+            2 => (bx - 1 - x, by - 1 - y),
+            3 => (y, bx - 1 - x),
+            _ => (x, y),
+        }
+    };
+    let (dx, dy, dz) = (rx as f32, ry as f32, (z1 - z0 + 1) as f32);
     let c30 = 0.866_025_4f32;
     let largeur_p = (dx + dy) * c30;
     let hauteur_p = (dx + dy) * 0.5 + dz;
     let u = ((l as f32 * 0.9) / largeur_p).min((h as f32 * 0.9) / hauteur_p) * zoom;
-    let ox = l as f32 / 2.0 - (dx - dy) * c30 * u / 2.0;
-    let oy = h as f32 / 2.0 - ((dx + dy) * 0.5 - dz) * u / 2.0;
+    let ox = l as f32 / 2.0 - (dx - dy) * c30 * u / 2.0 + decal.0 as f32;
+    let oy = h as f32 / 2.0 - ((dx + dy) * 0.5 - dz) * u / 2.0 + decal.1 as f32;
     let proj = |x: f32, y: f32, z: f32| -> (f32, f32) { (ox + (x - y) * c30 * u, oy + (x + y) * 0.5 * u - z * u) };
     // les arêtes de la boîte
     let trait_ = |a: (f32, f32), b: (f32, f32), c: u32, px: &mut [u32]| {
@@ -163,9 +177,10 @@ pub fn rendre_iso(mem: &Memoire, etage: u32, zoom: f32, l: usize, h: usize, px: 
     let mut z = vec![i32::MIN; l * h];
     for &(adr, m) in &voxels {
         let (x, y, zz) = ((adr & 255) - x0, ((adr >> 8) & 255) - y0, (adr >> 16) - z0);
-        if x as f32 >= dx || y as f32 >= dy || zz as f32 >= dz {
+        if x >= bx || y >= by || zz as f32 >= dz {
             continue;
         }
+        let (x, y) = tourner(x, y);
         let profondeur = (x + y + zz) as i32;
         let c = couleur(m, max_petit);
         let (xf, yf, zf) = (x as f32, y as f32, zz as f32);
@@ -254,7 +269,7 @@ pub fn image(args: &[String]) {
     if args.get(3).map(|s| s.as_str()) == Some("plan") {
         rendre_plan(&mem, etage, 128, 0, l, h, &mut px);
     } else {
-        let n = rendre_iso(&mem, etage, 1.0, l, h, &mut px);
+        let n = rendre_iso(&mem, etage, 1.0, 0, (0, 0), l, h, &mut px);
         println!("{} mots non nuls dans l'étage {}", n, etage);
     }
     let mut o = format!("P6\n{} {}\n255\n", l, h).into_bytes();

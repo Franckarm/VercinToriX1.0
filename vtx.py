@@ -461,6 +461,16 @@ class CPU:
             return MASK if n is None else n
         if code == 12:
             return 0                          # présenter l'image : la machine de référence n'a pas de fenêtre
+        if code in (16, 17, 20, 21):
+            return 0                          # souris, touche, molette, appuyee : pas de fenêtre ici
+        if code == 19:
+            ancienne = self.__dict__.get("_cadence", 16)   # cadence : gardée, sans effet sans fenêtre
+            self._cadence = min(arg, 60000)
+            return ancienne
+        if code == 18:
+            import time                       # horloge : millisecondes depuis le lancement
+            debut = self.__dict__.setdefault("_debut", time.monotonic())
+            return int((time.monotonic() - debut) * 1000) & MASK
         if code == 10:
             raise VtxError("mémoire pleine : le tas ne peut plus grandir, même après avoir ramassé les miettes")
         if code in (6, 7):
@@ -4371,6 +4381,85 @@ fonction triangle(x0, y0, c0, x1, y1, c1, x2, y2, c2) {
         w1l = w1l + b1p;
         w2l = w2l + b2p;
         y = y + 1;
+    }
+}
+// ---- l'interactif (une fenêtre : Gobatix ou l'atelier ; sans fenêtre, souris, touche et molette rendent 0)
+fonction cadence(ms) {
+    // presenter() attend au moins ms millisecondes depuis l'image précédente (16 par défaut : 60 images par seconde ; 0 : sans
+    // attendre) ; c'est aussi la durée de chaque image d'une animation GIF ; rend l'ancienne cadence
+    retour __service(19, ms);
+}
+fonction horloge() {
+    // les millisecondes écoulées depuis le lancement du programme
+    retour __service(18, 0);
+}
+fonction souris() {
+    // la souris dans l'image du programme, en un mot : x (bits 0 à 11), y (12 à 23), boutons (24 à 26 : gauche 1, droit 2,
+    // milieu 4), dans l'image (27) ; voir souris_x, souris_y, souris_boutons, souris_dedans
+    retour __service(16, 0);
+}
+fonction souris_x(m) {
+    retour m & 4095;
+}
+fonction souris_y(m) {
+    retour (m >> 12) & 4095;
+}
+fonction souris_boutons(m) {
+    retour (m >> 24) & 7;
+}
+fonction souris_dedans(m) {
+    retour (m >> 27) & 1;
+}
+fonction molette() {
+    // les crans de molette depuis le dernier appel (vers l'avant : positif)
+    retour __service(20, 0);
+}
+fonction touche() {
+    // la prochaine touche appuyée, sans attendre : un caractère, ou 65536 + le code d'une touche sans caractère (les
+    // flèches : touche_gauche()…) ; 0 s'il n'y en a pas
+    retour __service(17, 0);
+}
+fonction appuyee(t) {
+    // 1 si la touche t (un caractère, ou touche_gauche()…) est enfoncée en ce moment, sinon 0 : pour un jeu
+    retour __service(21, t);
+}
+fonction touche_gauche() {
+    retour 65573;
+}
+fonction touche_haut() {
+    retour 65574;
+}
+fonction touche_droite() {
+    retour 65575;
+}
+fonction touche_bas() {
+    retour 65576;
+}
+fonction touche_entree() {
+    retour 13;
+}
+fonction touche_echap() {
+    retour 27;
+}
+fonction touche_espace() {
+    retour 32;
+}
+// ---- l'anti-cube des couleurs : anti(c) = 255 - c sur chaque voie (symétrie par le gris du centre du cube), l'alpha gardé ;
+// anti(anti(c)) = c : un curseur ou une sélection se pose et s'enlève sans garder le fond
+fonction anti_couleur(c) {
+    retour c ^ 4294967040;
+}
+fonction pixel_anti(x, y) {
+    soit l = @3[14680058];
+    si x < l && y < @3[14680059] {
+        @1[y * l + x] = @1[y * l + x] ^ 4294967040;
+    }
+}
+fonction rectangle_anti(x, y, l, h) {
+    pour j dans 0..h {
+        pour i dans 0..l {
+            pixel_anti(x + i, y + j);
+        }
     }
 }
 fonction __somme_f(t): flottant {

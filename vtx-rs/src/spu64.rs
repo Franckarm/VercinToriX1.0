@@ -386,6 +386,7 @@ impl Spu64 {
             10 => Err("mémoire pleine".into()),
             11 => Ok(self.ranger_cube(arg)),
             13 => Ok(self.jeter_cube(arg)),
+            16..=21 => Ok(crate::hote::service(code, arg, u64::MAX).unwrap_or(0)),
             12 => {
                 if let Some(mut f) = self.presenter.take() {
                     let r = f(self);

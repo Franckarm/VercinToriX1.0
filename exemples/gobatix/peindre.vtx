@@ -1,0 +1,143 @@
+// Gobatix : peindre à la souris, avec un objet animé par-dessus.
+//
+// Bouton gauche : peindre. Bouton droit : effacer. Molette, ou + et - : la taille du pinceau.
+// 1 à 6, ou un clic sur la palette en haut : la couleur. E : tout effacer. Flèches : pousser le carré. Échap : finir.
+//
+// Le curseur et le carré qui rebondit sont posés en anti-couleur (anti(c) = 255 - c, la symétrie du cube par son centre
+// gris) juste avant presenter(), puis enlevés juste après par un second anti : anti(anti(c)) = c. La peinture dessous
+// revient intacte, sans avoir gardé le fond nulle part.
+//
+// Lancer : dans l'atelier (F5, la vue du cube montre l'image, la souris et le clavier y vont), ou vtx gobatix peindre.vtx.
+// Sur le SPU-64 le même programme marche (atelier en 64 bits, ou vtx gobatix64 peindre.vtx).
+
+fonction couleur(k) {
+    si k == 0 { retour rgb(255, 255, 255); }
+    si k == 1 { retour rgb(255, 51, 51); }
+    si k == 2 { retour rgb(255, 204, 0); }
+    si k == 3 { retour rgb(51, 204, 102); }
+    si k == 4 { retour rgb(51, 153, 255); }
+    retour rgb(204, 102, 255);
+}
+
+// la palette : six cases en haut à gauche, la case choisie soulignée
+fonction palette(choisie) {
+    pour k dans 0..6 {
+        rectangle(4 + k * 18, 4, 14, 10, couleur(k));
+        soit s = rgb(0, 0, 0);
+        si k == choisie { s = rgb(255, 255, 255); }
+        rectangle(4 + k * 18, 16, 14, 2, s);
+    }
+}
+
+// un trait épais : des disques le long du segment (les coordonnées restent positives : (a × (n - k) + b × k) / n)
+fonction pinceau(x0, y0, x1, y1, r, c) {
+    soit dx = x1 - x0;
+    si x0 > x1 { dx = x0 - x1; }
+    soit dy = y1 - y0;
+    si y0 > y1 { dy = y0 - y1; }
+    soit n = dx;
+    si dy > n { n = dy; }
+    soit pas = r / 2 + 1;
+    n = n / pas + 1;
+    pour k dans 0..(n + 1) {
+        disque((x0 * (n - k) + x1 * k) / n, (y0 * (n - k) + y1 * k) / n, r, c);
+    }
+}
+
+// le curseur : une croix en anti-couleur (deux appels la posent puis l'enlèvent)
+fonction croix_anti(x, y) {
+    pour i dans 1..6 {
+        pixel_anti(x + i, y);
+        pixel_anti(x - i, y);
+        pixel_anti(x, y + i);
+        pixel_anti(x, y - i);
+    }
+    pixel_anti(x, y);
+}
+
+fonction principal() {
+    soit l = 320;
+    soit h = 200;
+    ecran(l, h);
+    soit choisie = 0;
+    soit r = 3;
+    palette(choisie);
+    // le carré qui rebondit : position, et sens (1 : vers la droite ou le bas)
+    soit bx = 150;
+    soit by = 90;
+    soit sx = 1;
+    soit sy = 1;
+    soit ax = 0;
+    soit ay = 0;
+    soit avant = 0;
+    soit fini = 0;
+    soit n = 0;
+    cadence(33);
+    tantque fini == 0 && n < 1000000 {
+        soit m = souris();
+        soit x = souris_x(m);
+        soit y = souris_y(m);
+        soit b = souris_boutons(m);
+        si souris_dedans(m) == 1 && (b & 3) != 0 {
+            si y < 20 && x < 112 {
+                // un clic sur la palette choisit la couleur
+                si (x - 4) % 18 < 14 && x >= 4 {
+                    choisie = (x - 4) / 18;
+                    palette(choisie);
+                }
+                avant = 0;
+            } sinon {
+                soit c = couleur(choisie);
+                si (b & 2) != 0 { c = rgb(0, 0, 0); }
+                si avant == 1 {
+                    pinceau(ax, ay, x, y, r, c);
+                } sinon {
+                    disque(x, y, r, c);
+                }
+                avant = 1;
+            }
+        } sinon {
+            avant = 0;
+        }
+        ax = x;
+        ay = y;
+        soit w = molette();
+        si w != 0 {
+            si w .> 0 { r = r + 1; } sinon { si r > 1 { r = r - 1; } }
+        }
+        soit k = touche();
+        tantque k != 0 {
+            si k >= 49 && k <= 54 {
+                choisie = k - 49;
+                palette(choisie);
+            }
+            si k == 43 { r = r + 1; }
+            si k == 45 && r > 1 { r = r - 1; }
+            si k == 101 || k == 69 {
+                ecran(l, h);
+                palette(choisie);
+            }
+            si k == touche_echap() { fini = 1; }
+            k = touche();
+        }
+        si r > 30 { r = 30; }
+        // le carré : il rebondit sur les bords ; les flèches le poussent
+        si appuyee(touche_gauche()) == 1 && bx > 4 { bx = bx - 3; }
+        si appuyee(touche_droite()) == 1 && bx < l - 16 { bx = bx + 3; }
+        si appuyee(touche_haut()) == 1 && by > 24 { by = by - 3; }
+        si appuyee(touche_bas()) == 1 && by < h - 16 { by = by + 3; }
+        si sx == 1 { bx = bx + 2; } sinon { bx = bx - 2; }
+        si sy == 1 { by = by + 1; } sinon { by = by - 1; }
+        si bx >= l - 14 { sx = 0; }
+        si bx <= 2 { sx = 1; }
+        si by >= h - 14 { sy = 0; }
+        si by <= 22 { sy = 1; }
+        // l'anti-cube : poser, montrer, enlever
+        rectangle_anti(bx, by, 12, 12);
+        croix_anti(x, y);
+        fini = fini | presenter();
+        croix_anti(x, y);
+        rectangle_anti(bx, by, 12, 12);
+        n = n + 1;
+    }
+}

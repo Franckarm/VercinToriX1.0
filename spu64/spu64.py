@@ -323,6 +323,16 @@ class CPU:
             return self.presenter(self) if self.presenter else 0
         if code == 13:
             return self.jeter_cube(arg)
+        if code in (16, 17, 20, 21):
+            return 0                          # souris, touche, molette, appuyee : pas de fenêtre ici
+        if code == 19:
+            ancienne = self.__dict__.get("_cadence", 16)   # cadence : gardée, sans effet sans fenêtre
+            self._cadence = min(arg, 60000)
+            return ancienne
+        if code == 18:
+            import time                       # horloge : millisecondes depuis le lancement
+            debut = self.__dict__.setdefault("_debut", time.monotonic())
+            return int((time.monotonic() - debut) * 1000)
         return M64
 
     def jeter_cube(self, adr):

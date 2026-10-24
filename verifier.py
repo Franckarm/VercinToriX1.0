@@ -50,6 +50,7 @@ if shutil.which("cargo"):
     etapes.append(("machine Rust", None))
     etapes.append(("machine Rust multicœur", [sys.executable, os.path.join("multicoeur", "test_multicoeur.py")]))
     etapes.append(("vtxc : le compilateur écrit en vtx se compile lui-même", [sys.executable, os.path.join("vtxc", "test_vtxc.py")]))
+    etapes.append(("Gobatix interactif : souris, touches, cadence, anti-couleur, GIF (32 et 64 bits)", [sys.executable, os.path.join("tests", "test_gobatix.py")]))
     etapes.append(("SPU-64 : les deux machines identiques (programmes aléatoires, flottants quaternaires, brin, cubes sur disque)",
                    [sys.executable, os.path.join("spu64", "test_spu64.py"), "3000" if COMPLET else "1000"]))
     etapes.append(("SPU-64 : corpus de conformité", [sys.executable, os.path.join("spu64", "verifier_corpus64.py")]))

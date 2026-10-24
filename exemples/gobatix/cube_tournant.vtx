@@ -1,7 +1,9 @@
 // Gobatix, premier pas : un cube qui tourne.
 // ecran(l, h) prépare l'image (étage 1) ; trait y dessine ; presenter() la montre (fenêtre, ou fichiers avec --images)
-// et rend 0 tant que la fenêtre est ouverte. Lancer : vtx gobatix cube_tournant.vtx
+// et rend 0 tant que la fenêtre est ouverte. Lancer : vtx gobatix cube_tournant.vtx, ou F5 dans l'atelier.
 // Le calcul est en flottants 32 bits, la rotation autour de deux axes, la projection en perspective.
+// À la souris : bouton gauche enfoncé, le cube suit la main ; relâché, il continue de lui-même. Molette : plus ou
+// moins près. Espace : pause.
 fonction principal() {
     soit l = 400;
     soit h = 300;
@@ -11,10 +13,45 @@ fonction principal() {
     soit t = 0.0;
     soit fini = 0;
     soit images = 0;
+    // les angles, et l'élan que donne la souris
+    soit a = 0.0;
+    soit b = 0.0;
+    soit va = 0.03;
+    soit vb = 0.021;
+    soit ax = 0;
+    soit ay = 0;
+    soit tenu = 0;
+    soit pause = 0;
+    soit recul = 4.5;
     tantque fini == 0 && images < 36000 {
         ecran(l, h);
-        soit a = t;
-        soit b = t * 0.7;
+        soit m = souris();
+        si (souris_boutons(m) & 1) == 1 && souris_dedans(m) == 1 {
+            si tenu == 1 {
+                // un point de déplacement = un centième de tour ; l'élan garde le dernier geste
+                va = flottant(souris_x(m)) * 0.0157 - flottant(ax) * 0.0157;
+                vb = flottant(souris_y(m)) * 0.0157 - flottant(ay) * 0.0157;
+            }
+            tenu = 1;
+            ax = souris_x(m);
+            ay = souris_y(m);
+        } sinon {
+            tenu = 0;
+        }
+        soit cran = molette();
+        si cran != 0 {
+            si cran .> 0 { recul = recul - 0.3; } sinon { recul = recul + 0.3; }
+            si recul < 2.5 { recul = 2.5; }
+        }
+        soit k = touche();
+        tantque k != 0 {
+            si k == touche_espace() { pause = 1 - pause; }
+            k = touche();
+        }
+        si pause == 0 || tenu == 1 {
+            a = a + va;
+            b = b + vb;
+        }
         soit ca = cosinus(a);
         soit sa = sinus(a);
         soit cb = cosinus(b);
@@ -27,7 +64,7 @@ fonction principal() {
             soit z1 = z * ca - x * sa;
             soit y2 = y * cb - z1 * sb;
             soit z2 = y * sb + z1 * cb;
-            soit s = 230.0 / (z2 + 4.5);
+            soit s = 230.0 / (z2 + recul);
             px[v] = entier(flottant(l) * 0.5 + x1 * s + 0.5);
             py[v] = entier(flottant(h) * 0.5 + y2 * s + 0.5);
             pz[v] = entier((z2 + 2.0) * 40.0);          // 0 (devant) à 160 (derrière) : la couleur suit la profondeur

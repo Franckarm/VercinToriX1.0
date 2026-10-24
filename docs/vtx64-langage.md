@@ -272,3 +272,50 @@ porte le cube), et son pointeur est rangé dans le cube 2999 : plus de plafond. 
 déjà son contrôle (purge, puis nul quand il est plein) ; sa taille, environ 5,7 millions de mots, pourrait s'étendre de
 la même façon.
 
+
+## 12. Gobatix interactif : la souris, le clavier, l'animation, l'anti-cube
+
+Les mêmes fonctions sur le SPU-32 et le SPU-64 (services 16 à 21 de la machine, `vtx-rs/src/hote.rs`), au prélude des
+deux compilateurs de chaque machine, avec les mêmes mots (`tests/test_gobatix.py`) :
+
+| Fonction | Rend | Service |
+|---|---|---|
+| `souris()` | x (bits 0-11), y (12-23) en points de l'image, boutons (24-26 : gauche 1, droit 2, milieu 4), dans l'image (27) | 16 |
+| `touche()` | la prochaine touche appuyée, sans attendre : un caractère, ou 65536 + code ; 0 s'il n'y en a pas | 17 |
+| `horloge()` | les millisecondes depuis le lancement | 18 |
+| `cadence(ms)` | l'ancienne cadence ; presenter() attend au moins ms entre deux images (16 par défaut) | 19 |
+| `molette()` | les crans depuis le dernier appel, signé | 20 |
+| `appuyee(t)` | 1 si la touche t est enfoncée | 21 |
+
+Sans fenêtre, 16, 17, 20 et 21 rendent 0 (sur les quatre machines : Python, Rust, et le code natif traduit) ; la
+cadence est gardée sans effet ; l'horloge marche partout.
+
+**L'image finie (double tampon).** `presenter()` copie l'image de l'étage 1 vers la sortie : la fenêtre de Gobatix, la
+vue du cube de l'atelier, des PNG, un GIF. La sortie ne montre que des images finies ; le programme dessine la
+suivante dans l'étage 1 sans être vu. Jusqu'ici l'atelier ne montrait l'image qu'à la fin du programme : il la montre
+maintenant à chaque `presenter()`, sur les deux machines (le SPU-64 n'avait aucune sortie d'image : `presenter64`,
+`vtx gobatix64`). Un point profond est vu par l'octet fort de chaque voie.
+
+**L'anti-cube des couleurs.** `anti_couleur(c)` = 255 − c par voie (65 535 − c en 64 bits), l'alpha gardé : c'est le
+« ou exclusif » de la couleur avec #FFFFFF00, la symétrie du cube par son centre gris. Involutive, elle donne les
+curseurs, les sélections et les objets animés **sans sauvegarde du fond** : poser en anti, présenter, reposer en anti.
+C'est la vieille astuce du curseur en XOR des premiers écrans ; dans le cube, elle a une géométrie (le triangle
+rouge-vert-bleu devient cyan-magenta-jaune, et un gris moyen reste presque gris : c'est sa limite, un curseur sur un fond
+gris #808080 se voit mal).
+
+**Le GIF par l'anti-cube de Belnap.** Chaque image n'est écrite que par sa différence avec la précédente : un point
+inchangé n'apporte aucune preuve nouvelle, il est *inconnu* et devient l'index transparent ; seul le rectangle des
+changements est écrit, et une image identique allonge la précédente au lieu de s'ajouter. Le cube tournant (400 × 300,
+120 images) tient en 190 Ko ; peindre (320 × 200, 200 images) en 42 Ko. La palette est le cube réduit à 6 niveaux par
+voie, 216 couleurs, et 39 gris, avec une trame ordonnée de Bayer qui garde exactes les couleurs de la grille (0, 51…
+255). Vérifié : chaque image décodée par Pillow est exactement l'image tramée attendue. Honnêtement : une palette fixe
+trame les dégradés fins (le cube chromatique se voit légèrement grenu) ; une palette choisie pour l'animation ferait mieux.
+
+**Les scénarios.** `--scenario FICHIER` rejoue des gestes image par image ; le même scénario donne le même GIF octet
+pour octet sur le SPU-32 et le SPU-64 (`peindre.scenario`).
+
+**L'atelier.** Pendant l'exécution, la vue du cube montre la dernière image ; un clic sur l'image lui donne la souris et
+le clavier (Échap compris ; F5 et Maj+F5 restent à l'atelier). Ctrl+G commence et finit l'enregistrement d'un GIF
+(`programme-1.gif` à côté du programme) ; Cube › Image en PNG. Le programme fini, la vue en perspective se tourne à la
+souris (glisser à gauche : un quart de tour ; glisser à droite : déplacer ; double clic : revenir). La limite d'instructions
+de F5 est levée : un programme interactif tourne tant qu'on veut, Maj+F5 l'arrête.

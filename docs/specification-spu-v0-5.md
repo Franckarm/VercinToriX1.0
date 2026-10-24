@@ -121,7 +121,7 @@ Registres : `R0` (toujours nul) à `R15` de 32 bits, compteur de programme `PC` 
 | 50 | COMPTE | nombre de bits à 1 du mot (0 à 32) |
 | 51 | ENTC | lit un mot sur le canal donné par un registre (0 : entrées numériques, 1 : console en texte, 2 et suivants : fichiers) ; 4294967295 si rien à lire |
 | 52 | SORC | écrit un mot sur un canal |
-| 53 | SYS | service de la machine hôte : 1 ouvrir en lecture, 2 ouvrir en écriture (nom = texte en mémoire), 3 fermer, 4 fin atteinte |
+| 53 | SYS | service de la machine hôte : 1 ouvrir en lecture, 2 ouvrir en écriture (nom = texte en mémoire), 3 fermer, 4 fin atteinte ; 12 présenter l'image ; 16 à 21 la souris, la touche suivante, l'horloge, la cadence, la molette, une touche enfoncée (comme au SPU-64, `docs/specification-spu64.md`) |
 | 54 | LDQ | `LDQ Rd, Rs, Rt, @e` : lit un quit d'un tableau rangé (16 quits par mot, le quit 0 dans les bits bas) : mot `e:[Rs + (Rt >> 4)]`, place `(Rt & 15) × 2` ; Rd reçoit le quit (0 à 3) ; pose Z, remet C à zéro |
 | 55 | STQ | `STQ Rd, Rs, Rt, @e` : écrit `Rd & 3` à la même place, sans toucher aux 15 autres quits du mot ; ne change pas les drapeaux |
 | 56 | ET4 | et de Belnap sur les 16 quits : preuve du vrai (bit haut de chaque quit) `v1 & v2`, preuve du faux (bit bas) `f1 | f2` |

@@ -17,7 +17,11 @@ Langage, compilateur, assembleur et émulateur du SPU à cube chromatique.
   défaut sur la SPU-64 (Ctrl+M : SPU-32).
 - **Les optimisations** : variables en registres, épissage (dont la règle échange, comme l'auto-épissage des introns),
   expansion en ligne des petites fonctions, tables de noms dans les cubes.
-- Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là, inchangé.
+- **Gobatix interactif** : la souris, le clavier, la molette, l'horloge et la cadence des images pour les programmes
+  qui dessinent, sur les deux machines ; l'atelier montre l'animation pendant qu'elle tourne et l'enregistre en GIF
+  (Ctrl+G), écrit par différence d'une image à l'autre ; l'anti-cube des couleurs pour les curseurs et les objets
+  animés (`exemples/gobatix/peindre.vtx`).
+- Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là ; il reçoit les mêmes fonctions de Gobatix.
 
 L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/vtx-0-5-autonomie.md`.
 

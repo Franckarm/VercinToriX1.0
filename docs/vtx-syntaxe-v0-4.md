@@ -254,7 +254,11 @@ selon porte {
 | `flottant_petuar` : `+ - * /`, comparaisons, `etat(x)` | flottant quaternaire de 128 bits (quatre points du cube) | prélude (sur ADC, SBC…) |
 | `accorder(étage, f)`, `frequence(étage)` | l'étage regarde le cube de fréquence f | SYS 8, SYS 9 |
 | `ranger_cube(étage, f)` | écrit le cube sur disque (`cube-ÉTAGE-FRÉQUENCE.cub`) | SYS 11 |
-| `presenter()` | montre l'image de l'étage 1 (Gobatix : fenêtre ou PNG) | SYS 12 |
+| `presenter()` | montre l'image de l'étage 1 (Gobatix : fenêtre, atelier, PNG ou GIF) | SYS 12 |
+| `souris()`, `souris_x(m)`, `souris_y(m)`, `souris_boutons(m)`, `souris_dedans(m)` | la souris dans l'image (0 sans fenêtre) | SYS 16, prélude |
+| `touche()`, `appuyee(t)`, `touche_gauche()`… | la prochaine touche (sans attendre), une touche enfoncée | SYS 17, SYS 21 |
+| `molette()`, `horloge()`, `cadence(ms)` | crans de molette, millisecondes, cadence des images | SYS 20, 18, 19 |
+| `anti_couleur(c)`, `pixel_anti(x, y)`, `rectangle_anti(x, y, l, h)` | l'anti-cube des couleurs (255 − c, involutif) | prélude |
 | conversions | voir la section 3 | ITOF, ITOFS, FTOI, FROUND, ITOD, DTOI… |
 
 ## 8. Prélude
@@ -375,9 +379,19 @@ La machine Rust ne prend la mémoire que là où l'on écrit (pages de 65 536 mo
 
 ### Dessiner
 
-**Gobatix, premier pas.** `presenter()` montre l'image préparée par `ecran` : la machine la copie vers une sortie et rend 0 tant que tout va bien, 1 quand la fenêtre a été fermée, 4294967295 si le programme n'a pas d'image (service 12). `vtx gobatix prog.vtx` ouvre une fenêtre Win32 (60 images par seconde au plus ; l'image est agrandie sans déformation) ; `vtx gobatix prog.vtx --images DOSSIER [--max N] [--pas K]` écrit `image-0001.png`… sans fenêtre (toutes les machines). Exemples : `exemples/gobatix/cube_tournant.vtx`, un cube en fil de fer qui tourne (flottants 32 bits, projection en perspective) ; `exemples/gobatix/cube_chromatique.vtx`, **le cube chromatique lui-même** : ses huit sommets sont les couleurs `#000000`… `#FFFFFF`, chaque face montre le fondu réel de ses couleurs, un quadrillage coupe chaque axe aux quits du poids fort (`0x40`, `0x80`, `0xC0`), et la diagonale des gris porte ses cinq points.
+**Gobatix, premier pas.** `presenter()` montre l'image préparée par `ecran` : la machine la copie vers une sortie et rend 0 tant que tout va bien, 1 quand la fenêtre a été fermée, 4294967295 si le programme n'a pas d'image (service 12). `vtx gobatix prog.vtx` ouvre une fenêtre Win32 (60 images par seconde au plus, `cadence(ms)` la change ; l'image est agrandie sans déformation ; la souris et le clavier y vont au programme) ; `vtx gobatix prog.vtx --images DOSSIER [--max N] [--pas K]` écrit `image-0001.png`… sans fenêtre (toutes les machines). Exemples : `exemples/gobatix/cube_tournant.vtx`, un cube en fil de fer qui tourne (flottants 32 bits, projection en perspective) ; `exemples/gobatix/cube_chromatique.vtx`, **le cube chromatique lui-même** : ses huit sommets sont les couleurs `#000000`… `#FFFFFF`, chaque face montre le fondu réel de ses couleurs, un quadrillage coupe chaque axe aux quits du poids fort (`0x40`, `0x80`, `0xC0`), et la diagonale des gris porte ses cinq points.
 
 `ecran(l, h)` prépare une image de l × h points, rangée ligne par ligne dans l'étage 1 (sa taille en `@3[14680058]` et `@3[14680059]`) : chaque pixel est un point `#RRGGBBAA` du cube. `pixel(x, y, c)`, `trait(x0, y0, x1, y1, c)`, `rectangle(x, y, l, h, c)`, `disque(cx, cy, r, c)`, `triangle(x0, y0, c0, x1, y1, c1, x2, y2, c2)` (plein, la couleur fondue d'un sommet à l'autre : ombrage de Gouraud) y dessinent (ce qui sort de l'image est ignoré) ; `rgb(r, g, b)` donne la couleur `#RRGGBBFF`. Après l'exécution, l'atelier montre l'image (F6 : image, cube en perspective, à plat) ; `vtx dessin prog.vtx image.png [échelle]` l'écrit en PNG. Exemple : `exemples/premiers/dessin.vtx`.
+
+**Gobatix interactif : souris, clavier, animation.** Mêmes fonctions sur le SPU-32 et le SPU-64 ; sans fenêtre (tests, fichiers), la souris, les touches et la molette valent 0.
+
+- `presenter()` montre une **image finie** : le programme dessine déjà la suivante dans l'étage 1 sans que l'écran le voie (le double tampon), ce qui supprime le scintillement. `cadence(ms)` règle l'intervalle minimal entre deux images (16 ms par défaut, 60 images par seconde ; 0 : sans attendre) et rend l'ancienne ; c'est aussi la durée de chaque image d'un GIF. `horloge()` : les millisecondes depuis le lancement.
+- `souris()` rend un mot : x (bits 0 à 11), y (12 à 23), en points de l'image ; boutons (24 à 26 : gauche 1, droit 2, milieu 4) ; « dans l'image » (27). `souris_x(m)`, `souris_y(m)`, `souris_boutons(m)`, `souris_dedans(m)` les lisent. `molette()` : les crans depuis le dernier appel (vers l'avant : positif ; comparer avec `.>`).
+- `touche()` rend la prochaine touche appuyée **sans attendre** (0 s'il n'y en a pas) : un caractère (`97` pour « a », `13` Entrée, `27` Échap, `32` espace), ou 65536 + le code d'une touche sans caractère : `touche_gauche()`, `touche_haut()`, `touche_droite()`, `touche_bas()` (et F1 à F12, début, fin, pages, insertion, suppression). `appuyee(t)` rend 1 tant que la touche est enfoncée (pour un jeu : `si appuyee(touche_gauche()) == 1 { … }` ; Maj, Ctrl et Alt : `appuyee(65552)`, `appuyee(65553)`, `appuyee(65554)`). `lire_ligne()` reste la lecture d'une ligne entière dans le terminal.
+- **L'anti-cube des couleurs.** `anti_couleur(c)` = 255 − c sur chaque voie (65 535 − c en points profonds), l'alpha gardé : la symétrie du cube par son centre gris, celle qui échange le triangle rouge-vert-bleu et le triangle cyan-magenta-jaune. Comme `anti(anti(c)) = c`, `pixel_anti(x, y)` et `rectangle_anti(x, y, l, h)` posent un curseur, une sélection ou un objet qui bouge **sans garder le fond** : on le pose avant `presenter()`, on le repose après, et l'image revient intacte (`exemples/gobatix/peindre.vtx`).
+- Exemples : `exemples/gobatix/peindre.vtx` (peindre à la souris, palette, molette, un carré qui rebondit, poussé aux flèches) ; `exemples/gobatix/cube_tournant.vtx` (le cube suit la souris, molette : plus ou moins près, espace : pause).
+- **Enregistrer.** Dans l'atelier, **Ctrl+G** (ou le bouton « Enregistrer (GIF) ») commence et finit l'enregistrement : chaque image présentée s'ajoute, et `programme-1.gif` s'écrit à côté du programme. Hors de l'atelier : `vtx gobatix prog.vtx --gif anim.gif [--max N] [--pas K]`. Le GIF garde la palette du cube (6 niveaux par voie, 216 couleurs, et 39 gris ; une trame ordonnée garde exactes les couleurs de la grille 0, 51, 102… 255) ; chaque image n'écrit que ce qui a changé : un point inchangé n'apporte aucune preuve nouvelle, il est *inconnu* et devient transparent ; une image identique allonge la précédente.
+- **Rejouer des gestes.** `--scenario FICHIER` rejoue souris, touches et molette image par image (une ligne « IMAGE souris X Y BOUTONS », « IMAGE touche CODE », « IMAGE appui CODE », « IMAGE relache CODE », « IMAGE molette CRANS ») : pour montrer ou vérifier un programme interactif sans écran (`exemples/gobatix/peindre.scenario`, `tests/test_gobatix.py`).
 
 ### Correction d'erreur diamant (`importer "bibliotheque/diamant.vtx";`)
 
@@ -402,7 +416,7 @@ Un mot de 16 quits lu sur un canal bruité peut avoir un quit décalé d'un nive
 | `vtx icone fichier.ico\|.png [taille]` | écrit l'icône du cube chromatique |
 | `vtx arbre prog.vtx [entrées]` | exécute, puis écrit l'arbre des liaisons de la mémoire (objets du tas, dicos et leurs états, hypothèses) |
 | `vtx dessin prog.vtx image.png [échelle]` | exécute, puis écrit l'image dessinée par le programme |
-| `vtx gobatix prog.vtx [--images DOSSIER] [--max N] [--pas K]` | exécute un programme qui appelle `presenter()` : fenêtre (Windows) ou images PNG |
+| `vtx gobatix prog.vtx [--images DOSSIER \| --gif FICHIER] [--max N] [--pas K] [--scenario FICHIER]` | exécute un programme qui appelle `presenter()` : fenêtre (Windows), images PNG ou animation GIF ; `vtx gobatix64` : la même chose sur le SPU-64 |
 | `vtx cubes [DOSSIER]` | liste les cubes rangés sur disque (`cube-ÉTAGE-FRÉQUENCE.cub`) avec le nom de la note |
 | `python3 vtx.py profil prog.vtx [entrées]` | histogramme des instructions et des accès par étage |
 | `python3 vtx.py compile prog.vtx` / `asm prog.vtx` | assembleur, ou code machine en hexadécimal |
