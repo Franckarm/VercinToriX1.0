@@ -53,7 +53,7 @@ NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
 
 # ---- les cubes sur disque : le miroir inversé et l'ombre (comme vtx-rs/src/miroir.rs). À côté de chaque cube, son
-# anti-cube (« anti » devant le nom, chaque octet après l'en-tête complémenté) et son ombre (« ombre » à la place de
+# anti-cube (« anti » devant le nom : l'opposé par le centre, valeurs complémentées et places opposées, #FFFFFF - adresse) et son ombre (« ombre » à la place de
 # « cube ») : pour chaque page et chaque colonne GG, neuf mots en ou exclusif, o0 sur les 256 mots BB, ok sur ceux dont
 # le bit k de BB vaut 1 ; une erreur par colonne s'y retrouve (o0) et s'y situe (les ok). À la lecture : vrai (2) tout
 # s'accorde, faux (1) réparé, variable (3) contradiction que rien ne tranche, inconnu (0) rien.
@@ -86,6 +86,24 @@ def _pages(corps, fmt):
         m[int.from_bytes(corps[i:i + 4], "little")] = bytes(corps[i + 4:i + t])
         i += t
     return m
+
+
+def _retourner(page, fmt):
+    """La page vue par le centre du cube : le mot GGBB passe en #FFFF - GGBB (les brins aussi) ; deux fois, elle revient."""
+    mot, suite = fmt
+    n = _MOTS * mot
+    mots = [page[j * mot:(j + 1) * mot] for j in range(_MOTS)]
+    r = bytearray(b"".join(reversed(mots)))
+    if suite:
+        br = page[n:]
+        nb = bytearray(suite)
+        for j in range(_MOTS):
+            q = (br[j // 4] >> (2 * (j % 4))) & 3
+            if q:
+                i = _MOTS - 1 - j
+                nb[i // 4] |= q << (2 * (i % 4))
+        r += nb
+    return bytes(r)
 
 
 def _mots(page, mot):
@@ -125,9 +143,12 @@ def _juger(calc, lue):
 def ecrire_double(chemin, octets):
     with open(chemin, "wb") as h:
         h.write(octets)
-    with open(_prefixe(chemin, "anti"), "wb") as h:
-        h.write(_entete_avec(octets[:8], b"ANT") + bytes(255 - x for x in octets[8:]))
     mot, suite = _format(octets[:8])
+    # l'anti-cube : chaque page à sa place opposée (255 - k), chaque mot à la sienne (#FFFF - GGBB), tout complémenté
+    pages = _pages(octets[8:], (mot, suite))
+    corps = b"".join((255 - (k & 255)).to_bytes(4, "little") + _retourner(pg, (mot, suite)) for k, pg in sorted(pages.items(), reverse=True))
+    with open(_prefixe(chemin, "anti"), "wb") as h:
+        h.write(_entete_avec(octets[:8], b"ANS") + bytes(255 - x for x in corps))
     o = [_entete_avec(octets[:8], b"OMB")]
     for k, p in sorted(_pages(octets[8:], (mot, suite)).items()):
         o.append(k.to_bytes(4, "little") + b"".join(v.to_bytes(8, "little") for v in _ombre_page(p, mot)))
@@ -147,7 +168,7 @@ def lire_double(chemin, entete):
     fmt = _format(entete)
     mot, suite = fmt
     p = lire(chemin, entete)
-    a = lire(_prefixe(chemin, "anti"), _entete_avec(entete, b"ANT"))
+    a = lire(_prefixe(chemin, "anti"), _entete_avec(entete, b"ANS"))
     if p is None and a is None:
         return None, 0
     ob = lire(_chemin_ombre(chemin), _entete_avec(entete, b"OMB"))
@@ -159,7 +180,10 @@ def lire_double(chemin, entete):
             ombres[k] = [int.from_bytes(ob[i + 4 + 8 * j:i + 12 + 8 * j], "little") for j in range(256 * 9)]
             i += t
     pp = _pages(p[8:], fmt) if p is not None else {}
-    pa = _pages(bytes(255 - x for x in a[8:]), fmt) if a is not None else {}
+    pa = {}
+    if a is not None:
+        # l'anti-cube relu : complémenté, puis chaque page et chaque mot remis à leur place
+        pa = {255 - (k & 255): _retourner(pg, fmt) for k, pg in _pages(bytes(255 - x for x in a[8:]), fmt).items()}
     rang = {0: 0, 2: 1, 1: 2, 3: 3}
     etat = 2
     ombre_fausse = ombres is None and p is not None and a is not None

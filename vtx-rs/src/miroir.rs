@@ -1,10 +1,13 @@
 // Les cubes sur disque : le miroir inversé et l'ombre (dans l'ordre des choses : cube, hex, ADN, ARN).
 //
 // Le miroir inversé. À côté de chaque fichier de cube (cube-E-F.cub au SPU-32, cube64-E-F.cub au SPU-64) s'écrit son
-// anti-cube (anticube-E-F.cub, anticube64-E-F.cub) : le même contenu, chaque octet après l'en-tête complémenté
-// (« VTXCUB… » devient « VTXANT… »). Une panne qui frappe deux copies identiques de la même façon (une page remise à
-// zéro, un fichier tronqué, une écriture folle) les laisserait d'accord dans l'erreur ; une copie et son opposée, non.
-// Bit par bit, la paire (copie, anti-copie) est un quit de Belnap.
+// anti-cube (anticube-E-F.cub, anticube64-E-F.cub, en-tête « VTXANS… ») : l'opposé complet du cube, celui de la
+// figure du cube et de l'anti-cube, vu par son centre gris. Les valeurs sont opposées (chaque octet complémenté, comme
+// 255 - c pour une couleur) et les places aussi : le mot #RRGGBB est rangé à #(FF-RR)(FF-GG)(FF-BB). Une panne qui
+// frappe deux copies identiques de la même façon (une page remise à zéro, un fichier tronqué, le même bit inversé au
+// même endroit des deux fichiers) les laisserait d'accord dans l'erreur ; ici, la même place des deux fichiers porte deux
+// mots différents du cube (aucun point n'est son propre opposé : 256 est pair), donc toute panne « en mode commun »
+// devient deux erreurs distinctes, que l'ombre rectifie. Bit par bit, la paire (copie, anti-copie) est un quit de Belnap.
 //
 // L'ombre : la troisième voix, qui tranche quand les deux copies se contredisent. Chaque page d'un cube (les mots
 // #RRGGBB d'un même RR) a ses colonnes de liaison : pour chaque GG, la colonne des 256 mots BB = 00 à FF. L'ombre d'une
@@ -127,6 +130,25 @@ impl Format {
     }
 }
 
+/// Une page vue par le centre du cube : le mot GGBB passe en #FFFF - GGBB (les brins du SPU-64 aussi, quit par quit).
+/// Deux fois, la page revient : c'est l'opposé des adresses, comme 255 - c est l'opposé des couleurs.
+fn retourner(p: &[u8], f: Format) -> Vec<u8> {
+    let mut r = vec![0u8; p.len()];
+    for j in 0..MOTS {
+        let (o, d) = (j * f.mot, (MOTS - 1 - j) * f.mot);
+        r[d..d + f.mot].copy_from_slice(&p[o..o + f.mot]);
+    }
+    if f.suite > 0 {
+        let b = MOTS * f.mot;
+        for j in 0..MOTS {
+            let q = (p[b + j / 4] >> (2 * (j % 4))) & 3;
+            let i = MOTS - 1 - j;
+            r[b + i / 4] |= q << (2 * (i % 4));
+        }
+    }
+    r
+}
+
 /// Les pages d'un fichier de cube (sans son en-tête) : numéro -> octets de la page.
 fn pages_de(corps: &[u8], f: Format) -> BTreeMap<u32, Vec<u8>> {
     let mut m = BTreeMap::new();
@@ -192,10 +214,17 @@ fn juger(calc: &[u64], lue: &[u64]) -> Colonne {
 pub fn ecrire_double(chemin: &Path, octets: &[u8]) -> std::io::Result<()> {
     std::fs::write(chemin, octets)?;
     let entete = &octets[..8.min(octets.len())];
-    let mut a = entete_avec(entete, b"ANT");
-    a.extend(octets.iter().skip(8).map(|b| !b));
-    std::fs::write(chemin_anti(chemin), a)?;
     let f = format_de(entete);
+    // l'anti-cube : chaque page à sa place opposée (255 - k), chaque mot à la sienne (#FFFF - GGBB), le tout complémenté
+    let mut corps_anti: Vec<u8> = Vec::new();
+    let pages = pages_de(&octets[8.min(octets.len())..], f);
+    for (k, p) in pages.iter().rev() {
+        corps_anti.extend_from_slice(&(255 - (*k & 255)).to_le_bytes());
+        corps_anti.extend_from_slice(&retourner(p, f));
+    }
+    let mut a = entete_avec(entete, b"ANS");
+    a.extend(corps_anti.iter().map(|b| !b));
+    std::fs::write(chemin_anti(chemin), a)?;
     let mut o = entete_avec(entete, b"OMB");
     for (k, p) in pages_de(&octets[8.min(octets.len())..], f) {
         o.extend_from_slice(&k.to_le_bytes());
@@ -211,7 +240,7 @@ pub fn ecrire_double(chemin: &Path, octets: &[u8]) -> std::io::Result<()> {
 pub fn lire_double(chemin: &Path, entete: &[u8]) -> Option<Vec<u8>> {
     let f = format_de(entete);
     let p = std::fs::read(chemin).ok().filter(|b| b.len() >= 8 && &b[..8] == entete);
-    let ea = entete_avec(entete, b"ANT");
+    let ea = entete_avec(entete, b"ANS");
     let a = std::fs::read(chemin_anti(chemin)).ok().filter(|b| b.len() >= 8 && b[..8] == ea[..]);
     if p.is_none() && a.is_none() {
         noter(INCONNU);
@@ -233,7 +262,11 @@ pub fn lire_double(chemin: &Path, entete: &[u8]) -> Option<Vec<u8>> {
             m
         });
     let pp = p.as_ref().map(|b| pages_de(&b[8..], f)).unwrap_or_default();
-    let pa = a.as_ref().map(|b| pages_de(&b[8..].iter().map(|x| !x).collect::<Vec<u8>>(), f)).unwrap_or_default();
+    // l'anti-cube relu : complémenté, puis chaque page et chaque mot remis à leur place (l'opposée de l'opposée)
+    let pa: BTreeMap<u32, Vec<u8>> = a.as_ref()
+        .map(|b| pages_de(&b[8..].iter().map(|x| !x).collect::<Vec<u8>>(), f).into_iter()
+            .map(|(k, p)| (255 - (k & 255), retourner(&p, f))).collect())
+        .unwrap_or_default();
     let mut etat = VRAI;
     let mut ombre_fausse = ombres.is_none() && p.is_some() && a.is_some();
     let mut numeros: Vec<u32> = pp.keys().chain(pa.keys()).copied().collect();

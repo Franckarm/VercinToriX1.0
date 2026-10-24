@@ -281,6 +281,9 @@ compilateur sans Python.
   avec une formule intégrant le hex ») : par colonne de 256 mots, neuf ou exclusifs, dont huit suivent les bits de la
   coordonnée BB ; un mot abîmé est retrouvé, situé et rectifié ; les contradictions entre le cube et son anti-cube sont
   tranchées. 3,5 % du cube.
+  **L'abîme en mode commun résolu** : l'anti-cube est rangé par symétrie centrale (le mot #RRGGBB à
+  #(FF-RR)(FF-GG)(FF-BB), valeurs complémentées) ; la même place des deux fichiers porte deux mots différents, donc le
+  même bit inversé ou la même page effacée dans les deux devient deux erreurs distinctes, rectifiées par l'ombre.
 
 ---
 

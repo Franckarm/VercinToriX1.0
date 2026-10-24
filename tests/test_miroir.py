@@ -99,6 +99,14 @@ def avarie(d, nom, genre, mot):
     elif genre == "le même mot abîmé autrement dans les deux":
         changer(p, mot, 97 * 5)
         changer(a, mot, 97 * 5, 0x03)
+    elif genre == "le même bit inversé au même endroit des deux fichiers":
+        changer(p, mot, 97 * 5)
+        changer(a, mot, 97 * 5)
+    elif genre == "la même page remise à zéro dans les deux fichiers":
+        for c in (p, a):
+            b = bytearray(open(c, "rb").read())
+            b[8 + 4:8 + 4 + 65536 * mot] = bytes(65536 * mot)
+            open(c, "wb").write(bytes(b))
     elif genre == "copie seule, un mot changé":
         os.remove(a)
         changer(p, mot, 97 * 5)
@@ -115,7 +123,9 @@ def avarie(d, nom, genre, mot):
 # (avarie, état attendu, valeurs justes : oui, non, ou rien relu)
 CAS = [("intact", 2, True), ("copie effacée", 1, True), ("anti-copie effacée", 1, True), ("copie tronquée", 1, True),
        ("un mot changé", 1, True), ("les deux copies changées, ailleurs", 1, True),
-       ("le même mot abîmé autrement dans les deux", 1, True), ("copie seule, un mot changé", 1, True),
+       ("le même mot abîmé autrement dans les deux", 1, True),
+       ("le même bit inversé au même endroit des deux fichiers", 1, True),
+       ("la même page remise à zéro dans les deux fichiers", 1, True), ("copie seule, un mot changé", 1, True),
        ("ombre effacée", 2, True), ("un mot changé, sans ombre", 3, False), ("les deux effacées", 0, None)]
 machines = ["py32", "py64"] + (["rs32", "rs64"] if cargo else [])
 ok = total = 0
