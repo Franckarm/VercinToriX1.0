@@ -97,10 +97,180 @@ fn analyser(mots: &[u32], bornes: &BTreeSet<u32>) -> Result<(BTreeSet<u32>, BTre
     Ok((vues, tetes))
 }
 
+/// Un bloc traduit : ses lignes de Rust, son nombre d'instructions et sa fin (le saut).
+struct Bloc {
+    corps: String,
+    n: u64,
+    fin: String,
+}
+
+fn traduire_bloc(mots: &[u32], debut: u32, vues: &BTreeSet<u32>, tetes: &BTreeSet<u32>) -> Bloc {
+    let mot = |a: u32| -> u32 { mots.get(a as usize).copied().unwrap_or(0) };
+    // les instructions du bloc
+    let mut corps = String::new();
+    let mut n: u64 = 0;
+    let mut pc = debut;
+    let mut fin = String::new();
+    loop {
+        let w = mot(pc);
+        let (op, g, b, etage) = champs(w);
+        let rd = g >> 4;
+        let ra = reg(g & 15);
+        let rb = reg(b >> 4);
+        let decal = if b > 127 { b as i64 - 256 } else { b as i64 };
+        let mut suivant = (pc + 1) & ADR;
+        n += 1;
+        let ecrire = |v: &str| -> String {
+            if rd == 0 { format!("{{ let _v: u32 = {}; }}", v) } else { format!("r{} = {};", rd, v) }
+        };
+        let res = |v: &str| -> String {
+            if rd == 0 {
+                format!("{{ let v: u32 = {}; z = v == 0; c = false; }}", v)
+            } else {
+                format!("{{ let v: u32 = {}; r{} = v; z = v == 0; c = false; }}", v, rd)
+            }
+        };
+        let ligne = match op {
+            0x00 => String::new(),
+            0x01 | 0x06 => {
+                let y = if op == 0x01 { format!("{} as u64", rb) } else { format!("{}u64", b) };
+                format!("{{ let s = {} as u64 + {}; {} z = (s & MASK) == 0; c = s > MASK; }}", ra, y, ecrire("s as u32"))
+            }
+            0x02 | 0x07 | 0x0E => {
+                let y = if op == 0x07 { format!("{}u32", b) } else { rb.clone() };
+                let w_ = if op == 0x0E { String::new() } else { ecrire("v") };
+                format!("{{ let a = {}; let y = {}; let v = a.wrapping_sub(y); {} z = v == 0; c = a < y; }}", ra, y, w_)
+            }
+            0x03 => res(&format!("{}.wrapping_mul({})", ra, rb)),
+            0x04 => res(&format!("{} << 2", ra)),
+            0x05 => res(&format!("{} >> 2", ra)),
+            0x08 => res(&format!("{} << ({} & 31)", ra, rb)),
+            0x09 => res(&format!("{} >> ({} & 31)", ra, rb)),
+            0x0A => {
+                let v = mot(suivant);
+                suivant = (suivant + 1) & ADR;
+                res(&format!("{}u32", v))
+            }
+            0x0B => ecrire(&ra),
+            0x0C => res(&format!("{{ let (a, y) = ({}, {}); if y == 0 {{ u32::MAX }} else {{ a / y }} }}", ra, rb)),
+            0x0D => res(&format!("{{ let (a, y) = ({}, {}); if y == 0 {{ a }} else {{ a % y }} }}", ra, rb)),
+            0x10 | 0x11 | 0x13 => res(&format!("quits({}, {}, {})", ra, rb, op)),
+            0x12 => res(&format!("!{}", ra)),
+            0x14 => res(&format!("{} & {}", ra, rb)),
+            0x15 => res(&format!("{} | {}", ra, rb)),
+            0x16 => res(&format!("{} ^ {}", ra, rb)),
+            0x20 if etage == 0 => res(&format!("mem.lit0({})", ra)),
+            0x21 if etage == 0 => format!("mem.ecrit0({}, {});", reg(rd), ra),
+            0x20 => res(&format!("mem.lit({}, {})", etage, ra)),
+            0x21 => format!("mem.ecrit({}, {}, {});", etage, reg(rd), ra),
+            0x22 => "return Err(\"DMA non implémentée\".into());".to_string(),
+            0x23 => ecrire("es.entree()"),
+            0x24 => format!("es.sorties.push({});", ra),
+            0x51 => res(&format!("es.entc({})", ra)),
+            0x52 => format!("es.sorc({}, {});", ra, rb),
+            0x53 => res(&format!("es.sys(mem, {}, {})", ra, rb)),
+            0x25 => ecrire(&format!("mem.lit0(r13.wrapping_add({}u32))", decal as i32 as u32)),
+            0x26 => format!("mem.ecrit0(r13.wrapping_add({}u32), {});", decal as i32 as u32, reg(rd)),
+            0x27 => format!("{{ let v = {}; r14 = r14.wrapping_sub(1) & ADR; mem.ecrit0(r14, v); }}", ra),
+            0x28 => format!("{{ let v = mem.lit0(r14); r14 = (r14 + 1) & ADR; {} }}", ecrire("v")),
+            0x29 => res(&format!("mem.lit({} & 3, {})", rb, ra)),
+            0x2A => format!("mem.ecrit({} & 3, {}, {});", rb, reg(rd), ra),
+            0x56 => res(&format!("(({a} & {b}) & 0xAAAA_AAAA) | (({a} | {b}) & 0x5555_5555)", a = ra, b = rb)),
+            0x57 => res(&format!("(({a} | {b}) & 0xAAAA_AAAA) | (({a} & {b}) & 0x5555_5555)", a = ra, b = rb)),
+            0x58 => res(&format!("(({a} & 0xAAAA_AAAA) >> 1) | (({a} & 0x5555_5555) << 1)", a = ra)),
+            0x59 => res(&format!("!((({a} & 0xAAAA_AAAA) >> 1) | (({a} & 0x5555_5555) << 1))", a = ra)),
+            0x5A => res(&format!("({} >> (({} & 15) * 2)) & 3", ra, rb)),
+            0x54 => res(&format!("(mem.lit({}, {}.wrapping_add({} >> 4) & ADR) >> (({} & 15) * 2)) & 3", etage, ra, rb, rb)),
+            0x55 => format!("{{ let a = {}.wrapping_add({} >> 4) & ADR; let d = ({} & 15) * 2; \
+                             let v = (mem.lit({}, a) & !(3u32 << d)) | (({} & 3) << d); mem.ecrit({}, a, v); }}",
+                            ra, rb, rb, etage, reg(rd), etage),
+            0x38 => res(&format!("dot({}, {}) as u32", ra, rb)),
+            0x39 => "gemv(mem, r14);".to_string(),
+            0x40 => res(&format!("fb(f({}) + f({}))", ra, rb)),
+            0x41 => res(&format!("fb(f({}) - f({}))", ra, rb)),
+            0x42 => res(&format!("fb(f({}) * f({}))", ra, rb)),
+            0x43 => res(&format!("fb(f({}) / f({}))", ra, rb)),
+            0x44 => res(&format!("(f({}) == f({})) as u32", ra, rb)),
+            0x45 => res(&format!("(f({}) < f({})) as u32", ra, rb)),
+            0x46 => res(&format!("(f({}) <= f({})) as u32", ra, rb)),
+            0x47 => res(&format!("fb(f({}).sqrt())", ra)),
+            0x48 => res(&format!("fb({} as f32)", ra)),
+            0x49 => res(&format!("fb({} as i32 as f32)", ra)),
+            0x4A => res(&format!("f({}) as i32 as u32", ra)),
+            0x4B => res(&format!("f({}).round_ties_even() as i32 as u32", ra)),
+            0x4C => format!("{{ let s = {} as u64 + {} as u64 + c as u64; {} z = (s & MASK) == 0; c = s > MASK; }}", ra, rb, ecrire("s as u32")),
+            0x4D => format!("{{ let a = {} as u64; let y = {} as u64 + c as u64; let v = a.wrapping_sub(y) as u32; {} z = v == 0; c = a < y; }}",
+                            ra, rb, ecrire("v")),
+            0x4E => res(&format!("(({} as u64 * {} as u64) >> 32) as u32", ra, rb)),
+            0x4F => res(&format!("{{ let x = {} ^ {}; !(x | (x >> 1)) & 0x5555_5555 }}", ra, rb)),
+            0x50 => res(&format!("{}.count_ones()", ra)),
+            // flottants binary64 sur des paires de registres (Rn, Rn+3)
+            0x5B..=0x6B => {
+                let (is, it) = (g & 15, b >> 4);
+                let (sl, sh, tl, th) = (reg(is), reg((is + 3) & 15), reg(it), reg((it + 3) & 15));
+                let x = format!("d64({}, {})", sl, sh);
+                let y = format!("d64({}, {})", tl, th);
+                let resd = |v: &str| -> String {
+                    let mut s = format!("{{ let v: u64 = {}; ", v);
+                    if rd != 0 { s += &format!("r{} = v as u32; ", rd); }
+                    if (rd + 3) & 15 != 0 { s += &format!("r{} = (v >> 32) as u32; ", (rd + 3) & 15); }
+                    s + "z = v == 0; c = false; }"
+                };
+                match op {
+                    0x5B => resd(&format!("db({} + {})", x, y)),
+                    0x5C => resd(&format!("db({} - {})", x, y)),
+                    0x5D => resd(&format!("db({} * {})", x, y)),
+                    0x5E => resd(&format!("db({} / {})", x, y)),
+                    0x5F => resd(&format!("db({}.sqrt())", x)),
+                    0x60 => res(&format!("({} == {}) as u32", x, y)),
+                    0x61 => res(&format!("({} < {}) as u32", x, y)),
+                    0x62 => res(&format!("({} <= {}) as u32", x, y)),
+                    0x63 => resd(&format!("db({} as f64)", sl)),
+                    0x64 => resd(&format!("db({} as i32 as f64)", sl)),
+                    0x65 => res(&format!("{} as i32 as u32", x)),
+                    0x66 => res(&format!("{}.round_ties_even() as i32 as u32", x)),
+                    0x67 => resd(&format!("db(f({}) as f64)", sl)),
+                    0x68 => res(&format!("fb({} as f32)", x)),
+                    0x69 => resd(&format!("db(((({} as u64) << 32) | {} as u64) as i64 as f64)", sh, sl)),
+                    0x6A => resd(&format!("{} as i64 as u64", x)),
+                    _ => resd(&format!("{}.round_ties_even() as i64 as u64", x)),
+                }
+            }
+            // sauts : fin du bloc
+            0x30 => { fin = format!("pc = {};", cible(w)); String::new() }
+            0x31 | 0x32 | 0x35 | 0x36 => {
+                let cond = match op { 0x31 => "z", 0x32 => "!z", 0x35 => "c", _ => "!c" };
+                fin = format!("pc = if {} {{ {} }} else {{ {} }};", cond, cible(w), suivant);
+                String::new()
+            }
+            0x33 => {
+                fin = format!("r14 = r14.wrapping_sub(1) & ADR; mem.ecrit0(r14, {}); pc = {};", suivant, cible(w));
+                String::new()
+            }
+            0x34 => { fin = "pc = mem.lit0(r14); r14 = (r14 + 1) & ADR;".to_string(); String::new() }
+            0x3F => { fin = "return Ok(pas);".to_string(); String::new() }
+            _ => format!("return Err(format!(\"code d'opération inconnu {:#04x} à l'adresse {}\"));", op, pc),
+        };
+        if !ligne.is_empty() {
+            writeln!(corps, "                {}", ligne).unwrap();
+        }
+        if !fin.is_empty() || op == 0x22 {
+            break;
+        }
+        pc = suivant;
+        if tetes.contains(&pc) || !vues.contains(&pc) {
+            fin = format!("pc = {};", pc);
+            break;
+        }
+    }
+    Bloc { corps, n, fin }
+}
+
 /// La fonction traduite : elle part de et.pc avec les registres de et, et s'arrête au HALT ou à l'adresse arret
 /// (fin d'une tâche) ; elle rend le nombre d'instructions jouées.
-pub fn traduire(mots: &[u32], nom: &str, table: &[u32]) -> Result<String, String> {
-    let mot = |a: u32| -> u32 { mots.get(a as usize).copied().unwrap_or(0) };
+/// `compter` : compter les instructions jouées et s'arrêter à max_pas (le corpus de conformité, qui compare ce compte) ;
+/// sans, le programme va au plus vite (le compte rendu vaut 0).
+pub fn traduire(mots: &[u32], nom: &str, table: &[u32], compter: bool) -> Result<String, String> {
     let (debuts, bornes) = adresses_accords(table);
     let (vues, tetes) = analyser(mots, &bornes)?;
     let mut s = String::new();
@@ -112,161 +282,7 @@ pub fn traduire(mots: &[u32], nom: &str, table: &[u32]) -> Result<String, String
     // l'arrêt d'une tâche ne peut tomber que sur une borne de la table : le test n'est fait qu'à ces adresses
     s.push_str("        match pc {\n");
     for &debut in tetes.iter().filter(|t| vues.contains(t)) {
-        // les instructions du bloc
-        let mut corps = String::new();
-        let mut n: u64 = 0;
-        let mut pc = debut;
-        let mut fin = String::new();
-        loop {
-            let w = mot(pc);
-            let (op, g, b, etage) = champs(w);
-            let rd = g >> 4;
-            let ra = reg(g & 15);
-            let rb = reg(b >> 4);
-            let decal = if b > 127 { b as i64 - 256 } else { b as i64 };
-            let mut suivant = (pc + 1) & ADR;
-            n += 1;
-            let ecrire = |v: &str| -> String {
-                if rd == 0 { format!("{{ let _v: u32 = {}; }}", v) } else { format!("r{} = {};", rd, v) }
-            };
-            let res = |v: &str| -> String {
-                if rd == 0 {
-                    format!("{{ let v: u32 = {}; z = v == 0; c = false; }}", v)
-                } else {
-                    format!("{{ let v: u32 = {}; r{} = v; z = v == 0; c = false; }}", v, rd)
-                }
-            };
-            let ligne = match op {
-                0x00 => String::new(),
-                0x01 | 0x06 => {
-                    let y = if op == 0x01 { format!("{} as u64", rb) } else { format!("{}u64", b) };
-                    format!("{{ let s = {} as u64 + {}; {} z = (s & MASK) == 0; c = s > MASK; }}", ra, y, ecrire("s as u32"))
-                }
-                0x02 | 0x07 | 0x0E => {
-                    let y = if op == 0x07 { format!("{}u32", b) } else { rb.clone() };
-                    let w_ = if op == 0x0E { String::new() } else { ecrire("v") };
-                    format!("{{ let a = {}; let y = {}; let v = a.wrapping_sub(y); {} z = v == 0; c = a < y; }}", ra, y, w_)
-                }
-                0x03 => res(&format!("{}.wrapping_mul({})", ra, rb)),
-                0x04 => res(&format!("{} << 2", ra)),
-                0x05 => res(&format!("{} >> 2", ra)),
-                0x08 => res(&format!("{} << ({} & 31)", ra, rb)),
-                0x09 => res(&format!("{} >> ({} & 31)", ra, rb)),
-                0x0A => {
-                    let v = mot(suivant);
-                    suivant = (suivant + 1) & ADR;
-                    res(&format!("{}u32", v))
-                }
-                0x0B => ecrire(&ra),
-                0x0C => res(&format!("{{ let (a, y) = ({}, {}); if y == 0 {{ u32::MAX }} else {{ a / y }} }}", ra, rb)),
-                0x0D => res(&format!("{{ let (a, y) = ({}, {}); if y == 0 {{ a }} else {{ a % y }} }}", ra, rb)),
-                0x10 | 0x11 | 0x13 => res(&format!("quits({}, {}, {})", ra, rb, op)),
-                0x12 => res(&format!("!{}", ra)),
-                0x14 => res(&format!("{} & {}", ra, rb)),
-                0x15 => res(&format!("{} | {}", ra, rb)),
-                0x16 => res(&format!("{} ^ {}", ra, rb)),
-                0x20 => res(&format!("mem.lit({}, {})", etage, ra)),
-                0x21 => format!("mem.ecrit({}, {}, {});", etage, reg(rd), ra),
-                0x22 => "return Err(\"DMA non implémentée\".into());".to_string(),
-                0x23 => ecrire("es.entree()"),
-                0x24 => format!("es.sorties.push({});", ra),
-                0x51 => res(&format!("es.entc({})", ra)),
-                0x52 => format!("es.sorc({}, {});", ra, rb),
-                0x53 => res(&format!("es.sys(mem, {}, {})", ra, rb)),
-                0x25 => ecrire(&format!("mem.lit(0, (r13 as i64 + {}) as u32)", decal)),
-                0x26 => format!("mem.ecrit(0, (r13 as i64 + {}) as u32, {});", decal, reg(rd)),
-                0x27 => format!("{{ let v = {}; r14 = r14.wrapping_sub(1) & ADR; mem.ecrit(0, r14, v); }}", ra),
-                0x28 => format!("{{ let v = mem.lit(0, r14); r14 = (r14 + 1) & ADR; {} }}", ecrire("v")),
-                0x29 => res(&format!("mem.lit({} & 3, {})", rb, ra)),
-                0x2A => format!("mem.ecrit({} & 3, {}, {});", rb, reg(rd), ra),
-                0x56 => res(&format!("(({a} & {b}) & 0xAAAA_AAAA) | (({a} | {b}) & 0x5555_5555)", a = ra, b = rb)),
-                0x57 => res(&format!("(({a} | {b}) & 0xAAAA_AAAA) | (({a} & {b}) & 0x5555_5555)", a = ra, b = rb)),
-                0x58 => res(&format!("(({a} & 0xAAAA_AAAA) >> 1) | (({a} & 0x5555_5555) << 1)", a = ra)),
-                0x59 => res(&format!("!((({a} & 0xAAAA_AAAA) >> 1) | (({a} & 0x5555_5555) << 1))", a = ra)),
-                0x5A => res(&format!("({} >> (({} & 15) * 2)) & 3", ra, rb)),
-                0x54 => res(&format!("(mem.lit({}, {}.wrapping_add({} >> 4) & ADR) >> (({} & 15) * 2)) & 3", etage, ra, rb, rb)),
-                0x55 => format!("{{ let a = {}.wrapping_add({} >> 4) & ADR; let d = ({} & 15) * 2; \
-                                 let v = (mem.lit({}, a) & !(3u32 << d)) | (({} & 3) << d); mem.ecrit({}, a, v); }}",
-                                ra, rb, rb, etage, reg(rd), etage),
-                0x38 => res(&format!("dot({}, {}) as u32", ra, rb)),
-                0x39 => "gemv(mem, r14);".to_string(),
-                0x40 => res(&format!("fb(f({}) + f({}))", ra, rb)),
-                0x41 => res(&format!("fb(f({}) - f({}))", ra, rb)),
-                0x42 => res(&format!("fb(f({}) * f({}))", ra, rb)),
-                0x43 => res(&format!("fb(f({}) / f({}))", ra, rb)),
-                0x44 => res(&format!("(f({}) == f({})) as u32", ra, rb)),
-                0x45 => res(&format!("(f({}) < f({})) as u32", ra, rb)),
-                0x46 => res(&format!("(f({}) <= f({})) as u32", ra, rb)),
-                0x47 => res(&format!("fb(f({}).sqrt())", ra)),
-                0x48 => res(&format!("fb({} as f32)", ra)),
-                0x49 => res(&format!("fb({} as i32 as f32)", ra)),
-                0x4A => res(&format!("f({}) as i32 as u32", ra)),
-                0x4B => res(&format!("f({}).round_ties_even() as i32 as u32", ra)),
-                0x4C => format!("{{ let s = {} as u64 + {} as u64 + c as u64; {} z = (s & MASK) == 0; c = s > MASK; }}", ra, rb, ecrire("s as u32")),
-                0x4D => format!("{{ let a = {} as u64; let y = {} as u64 + c as u64; let v = a.wrapping_sub(y) as u32; {} z = v == 0; c = a < y; }}",
-                                ra, rb, ecrire("v")),
-                0x4E => res(&format!("(({} as u64 * {} as u64) >> 32) as u32", ra, rb)),
-                0x4F => res(&format!("{{ let x = {} ^ {}; !(x | (x >> 1)) & 0x5555_5555 }}", ra, rb)),
-                0x50 => res(&format!("{}.count_ones()", ra)),
-                // flottants binary64 sur des paires de registres (Rn, Rn+3)
-                0x5B..=0x6B => {
-                    let (is, it) = (g & 15, b >> 4);
-                    let (sl, sh, tl, th) = (reg(is), reg((is + 3) & 15), reg(it), reg((it + 3) & 15));
-                    let x = format!("d64({}, {})", sl, sh);
-                    let y = format!("d64({}, {})", tl, th);
-                    let resd = |v: &str| -> String {
-                        let mut s = format!("{{ let v: u64 = {}; ", v);
-                        if rd != 0 { s += &format!("r{} = v as u32; ", rd); }
-                        if (rd + 3) & 15 != 0 { s += &format!("r{} = (v >> 32) as u32; ", (rd + 3) & 15); }
-                        s + "z = v == 0; c = false; }"
-                    };
-                    match op {
-                        0x5B => resd(&format!("db({} + {})", x, y)),
-                        0x5C => resd(&format!("db({} - {})", x, y)),
-                        0x5D => resd(&format!("db({} * {})", x, y)),
-                        0x5E => resd(&format!("db({} / {})", x, y)),
-                        0x5F => resd(&format!("db({}.sqrt())", x)),
-                        0x60 => res(&format!("({} == {}) as u32", x, y)),
-                        0x61 => res(&format!("({} < {}) as u32", x, y)),
-                        0x62 => res(&format!("({} <= {}) as u32", x, y)),
-                        0x63 => resd(&format!("db({} as f64)", sl)),
-                        0x64 => resd(&format!("db({} as i32 as f64)", sl)),
-                        0x65 => res(&format!("{} as i32 as u32", x)),
-                        0x66 => res(&format!("{}.round_ties_even() as i32 as u32", x)),
-                        0x67 => resd(&format!("db(f({}) as f64)", sl)),
-                        0x68 => res(&format!("fb({} as f32)", x)),
-                        0x69 => resd(&format!("db(((({} as u64) << 32) | {} as u64) as i64 as f64)", sh, sl)),
-                        0x6A => resd(&format!("{} as i64 as u64", x)),
-                        _ => resd(&format!("{}.round_ties_even() as i64 as u64", x)),
-                    }
-                }
-                // sauts : fin du bloc
-                0x30 => { fin = format!("pc = {};", cible(w)); String::new() }
-                0x31 | 0x32 | 0x35 | 0x36 => {
-                    let cond = match op { 0x31 => "z", 0x32 => "!z", 0x35 => "c", _ => "!c" };
-                    fin = format!("pc = if {} {{ {} }} else {{ {} }};", cond, cible(w), suivant);
-                    String::new()
-                }
-                0x33 => {
-                    fin = format!("r14 = r14.wrapping_sub(1) & ADR; mem.ecrit(0, r14, {}); pc = {};", suivant, cible(w));
-                    String::new()
-                }
-                0x34 => { fin = "pc = mem.lit(0, r14); r14 = (r14 + 1) & ADR;".to_string(); String::new() }
-                0x3F => { fin = "return Ok(pas);".to_string(); String::new() }
-                _ => format!("return Err(format!(\"code d'opération inconnu {:#04x} à l'adresse {}\"));", op, pc),
-            };
-            if !ligne.is_empty() {
-                writeln!(corps, "                {}", ligne).unwrap();
-            }
-            if !fin.is_empty() || op == 0x22 {
-                break;
-            }
-            pc = suivant;
-            if tetes.contains(&pc) || !vues.contains(&pc) {
-                fin = format!("pc = {};", pc);
-                break;
-            }
-        }
+        let Bloc { corps, n, fin, .. } = traduire_bloc(mots, debut, &vues, &tetes);
         writeln!(s, "            {} => {{", debut).unwrap();
         if bornes.contains(&debut) {
             writeln!(s, "                if pc == arret {{ et.r = [0, r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12, r13, r14, r15]; et.pc = pc; et.z = z; et.c = c; return Ok(pas); }}").unwrap();
@@ -279,8 +295,10 @@ pub fn traduire(mots: &[u32], nom: &str, table: &[u32]) -> Result<String, String
             writeln!(s, "                    r13 = et.r[13]; r14 = et.r[14]; pc = et.pc; continue;").unwrap();
             writeln!(s, "                }} }}").unwrap();
         }
-        writeln!(s, "                if pas + {} > max_pas {{ return Err(format!(\"limite de {{}} instructions atteinte\", max_pas)); }}", n).unwrap();
-        writeln!(s, "                pas += {};", n).unwrap();
+        if compter {
+            writeln!(s, "                if pas + {} > max_pas {{ return Err(format!(\"limite de {{}} instructions atteinte\", max_pas)); }}", n).unwrap();
+            writeln!(s, "                pas += {};", n).unwrap();
+        }
         s.push_str(&corps);
         writeln!(s, "                {}", fin).unwrap();
         writeln!(s, "            }}").unwrap();
@@ -303,7 +321,7 @@ pub fn programme_complet(mots: &[u32], table: &[u32]) -> Result<String, String> 
     }
     s.push_str("\n];\n\n");
     write!(s, "static TABLE: [u32; {}] = {:?};\n\n", table.len(), table).unwrap();
-    s.push_str(&traduire(mots, "programme", table)?);
+    s.push_str(&traduire(mots, "programme", table, false)?);
     s.push_str(r#"
 fn main() {
     let entrees: Vec<u32> = std::env::args().skip(1).map(|t| t.parse::<u64>().expect("entrée : un nombre") as u32).collect();
@@ -339,7 +357,7 @@ fn main() {
 pub fn corpus_complet(lignes: &[(Vec<u32>, Vec<u32>)]) -> Result<String, String> {
     let mut s = String::from(include_str!("noyau_natif.rs"));
     for (k, (mots, _)) in lignes.iter().enumerate() {
-        s.push_str(&traduire(mots, &format!("programme_{}", k), &[])?);
+        s.push_str(&traduire(mots, &format!("programme_{}", k), &[], true)?);
     }
     s.push_str("\nfn lancer(k: usize, mem: &Memoire, es: &mut Es) -> Result<u64, String> {\n    match k {\n");
     for k in 0..lignes.len() {

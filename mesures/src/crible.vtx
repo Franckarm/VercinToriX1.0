@@ -1,0 +1,19 @@
+constante N = 5000000;
+tableau p[N] @1[0];
+fonction principal() {
+    pour q dans 2..N { p[q] = 1; }
+    soit i = 2;
+    tantque i * i < N {
+        si p[i] == 1 {
+            soit j = i * i;
+            tantque j < N {
+                p[j] = 0;
+                j = j + i;
+            }
+        }
+        i = i + 1;
+    }
+    soit n = 0;
+    pour k dans 2..N { n = n + p[k]; }
+    sortie(n);
+}

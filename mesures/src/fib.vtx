@@ -1,0 +1,7 @@
+fonction fib(n) {
+    si n < 2 { retour n; }
+    retour fib(n - 1) + fib(n - 2);
+}
+fonction principal() {
+    sortie(fib(32));
+}

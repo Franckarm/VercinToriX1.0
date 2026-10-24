@@ -1,0 +1,416 @@
+[
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "C (gcc -O2)",
+"famille": "compilé",
+"secondes": 0.0057,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "Rust (rustc -O)",
+"famille": "compilé",
+"secondes": 0.0092,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "Go",
+"famille": "géré",
+"secondes": 0.0141,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "Java",
+"famille": "géré",
+"secondes": 0.0495,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "JavaScript (Node)",
+"famille": "interprété",
+"secondes": 0.0494,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "Python 3",
+"famille": "interprété",
+"secondes": 0.2678,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "vtx, SPU-32 émulé (vtx.exe)",
+"famille": "vtx",
+"secondes": 0.6488,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "vtx, traduit en code natif",
+"famille": "vtx",
+"secondes": 0.0551,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "fib",
+"titre": "Fibonacci récursif (appels)",
+"langage": "vtx, SPU-64 émulé (vtx64.exe)",
+"famille": "vtx",
+"secondes": 0.853,
+"resultat": "2178309",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "C (gcc -O2)",
+"famille": "compilé",
+"secondes": 0.0323,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "Rust (rustc -O)",
+"famille": "compilé",
+"secondes": 0.0318,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "Go",
+"famille": "géré",
+"secondes": 0.0383,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "Java",
+"famille": "géré",
+"secondes": 0.0824,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "JavaScript (Node)",
+"famille": "interprété",
+"secondes": 0.0752,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "Python 3",
+"famille": "interprété",
+"secondes": 1.2013,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "vtx, SPU-32 émulé (vtx.exe)",
+"famille": "vtx",
+"secondes": 1.2099,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "vtx, traduit en code natif",
+"famille": "vtx",
+"secondes": 0.1036,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "crible",
+"titre": "Crible d'Ératosthène (tableaux)",
+"langage": "vtx, SPU-64 émulé (vtx64.exe)",
+"famille": "vtx",
+"secondes": 1.556,
+"resultat": "348513",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "C (gcc -O2)",
+"famille": "compilé",
+"secondes": 0.019,
+"resultat": "5648809",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "Rust (rustc -O)",
+"famille": "compilé",
+"secondes": 0.0186,
+"resultat": "5648809",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "Go",
+"famille": "géré",
+"secondes": 0.0212,
+"resultat": "5648809",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "Java",
+"famille": "géré",
+"secondes": 0.0678,
+"resultat": "5648809",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "JavaScript (Node)",
+"famille": "interprété",
+"secondes": 0.1347,
+"resultat": "5648809",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "Python 3",
+"famille": "interprété",
+"secondes": 1.4786,
+"resultat": "5648015",
+"meme_resultat": false
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "vtx, SPU-32 émulé (vtx.exe)",
+"famille": "vtx",
+"secondes": 0.9614,
+"resultat": "5648809",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "vtx, traduit en code natif",
+"famille": "vtx",
+"secondes": 0.0711,
+"resultat": "5648809",
+"meme_resultat": true
+},
+{
+"programme": "mandel",
+"titre": "Mandelbrot (flottants 32 bits)",
+"langage": "vtx, SPU-64 émulé (vtx64.exe)",
+"famille": "vtx",
+"secondes": 2.6749,
+"resultat": "5648170",
+"meme_resultat": false
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "C (gcc -O2)",
+"famille": "compilé",
+"secondes": 0.0483,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "Rust (rustc -O)",
+"famille": "compilé",
+"secondes": 0.0463,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "Go",
+"famille": "géré",
+"secondes": 0.0509,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "Java",
+"famille": "géré",
+"secondes": 0.1243,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "JavaScript (Node)",
+"famille": "interprété",
+"secondes": 0.1371,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "Python 3",
+"famille": "interprété",
+"secondes": 1.2881,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "vtx, SPU-32 émulé (vtx.exe)",
+"famille": "vtx",
+"secondes": 0.7664,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "vtx, traduit en code natif",
+"famille": "vtx",
+"secondes": 0.1244,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "tri",
+"titre": "Tri rapide (comparaisons, échanges)",
+"langage": "vtx, SPU-64 émulé (vtx64.exe)",
+"famille": "vtx",
+"secondes": 0.99,
+"resultat": "2664010383",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "C (gcc -O2)",
+"famille": "compilé",
+"secondes": 0.0224,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "C, écrit par un expert (16 bases par mot)",
+"famille": "compilé",
+"secondes": 0.009,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "Rust (rustc -O)",
+"famille": "compilé",
+"secondes": 0.0274,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "Go",
+"famille": "géré",
+"secondes": 0.0736,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "Java",
+"famille": "géré",
+"secondes": 0.101,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "JavaScript (Node)",
+"famille": "interprété",
+"secondes": 0.2121,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "Python 3",
+"famille": "interprété",
+"secondes": 7.0143,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "vtx, SPU-32 émulé (vtx.exe)",
+"famille": "vtx",
+"secondes": 0.2703,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "vtx, traduit en code natif",
+"famille": "vtx",
+"secondes": 0.0108,
+"resultat": "8391588",
+"meme_resultat": true
+},
+{
+"programme": "adn",
+"titre": "ADN : bases égales (quaternaire)",
+"langage": "vtx, SPU-64 émulé (vtx64.exe)",
+"famille": "vtx",
+"secondes": 0.261,
+"resultat": "8391588",
+"meme_resultat": true
+}
+]

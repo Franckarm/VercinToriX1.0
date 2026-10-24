@@ -1322,6 +1322,10 @@ fn traduire_programme(fichier: &str, sortie: Option<&String>) {
         .args(["--edition", "2021", "-C", "opt-level=3", "-C", "panic=abort", "-o", &exe])
         .arg(&rs)
         .status();
+    // VTX_GARDER_RS : garder le programme Rust traduit, à côté de l'exécutable (pour l'étudier)
+    if env::var("VTX_GARDER_RS").is_ok() {
+        let _ = fs::copy(&rs, format!("{}.rs", exe));
+    }
     let _ = fs::remove_file(&rs);
     match r {
         Ok(st) if st.success() => println!("{} : {} mots traduits en code natif en {:.1} s", exe, mots.len(), debut.elapsed().as_secs_f64()),

@@ -1,0 +1,24 @@
+// deux brins de 8 388 608 bases (16 par mot), comparés base par base : combien de bases égales ?
+constante M = 524288;
+tableau u[M] @1[0];
+tableau v[M] @2[0];
+fonction principal() {
+    soit x = 2463534242;
+    pour i dans 0..M {
+        x = (x ^ (x << 13)) & 4294967295;
+        x = x ^ (x >> 17);
+        x = (x ^ (x << 5)) & 4294967295;
+        u[i] = x;
+        x = (x ^ (x << 13)) & 4294967295;
+        x = x ^ (x >> 17);
+        x = (x ^ (x << 5)) & 4294967295;
+        v[i] = x;
+    }
+    soit n = 0;
+    pour r dans 0..4 {
+        pour i dans 0..M {
+            n = n + nb_bits(qegal(u[i], v[i]) & 1431655765);   // les 16 bases de chaque mot (en 64 bits, la moitié haute est vide)
+        }
+    }
+    sortie(n);
+}

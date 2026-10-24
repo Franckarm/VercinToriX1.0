@@ -116,6 +116,16 @@ impl Memoire {
         }
         self.ecrit_i(i, v);
     }
+    /// L'étage 0 (la pile, le cadre des fonctions, le code), sans détour : il est d'un seul bloc ; ses écritures ne sont
+    /// pas suivies (l'état comparé par le corpus ne porte que sur les étages 1 à 3).
+    #[inline(always)]
+    fn lit0(&self, a: u32) -> u32 {
+        unsafe { *self.base0.add((a & ADR) as usize) }
+    }
+    #[inline(always)]
+    fn ecrit0(&self, a: u32, v: u32) {
+        unsafe { *self.base0.add((a & ADR) as usize) = v };
+    }
     fn etat(&mut self) -> Vec<(u32, u32)> {
         let mut ec = std::mem::take(self.ecrites.get_mut());
         ec.sort_unstable();

@@ -1,0 +1,43 @@
+constante N = 500000;
+tableau a[N] @1[0];
+fonction trier(g, d) {
+    tantque g < d {
+        soit p = a[(g + d) / 2];
+        soit i = g;
+        soit j = d;
+        tantque i <= j {
+            tantque a[i] < p { i = i + 1; }
+            tantque a[j] > p { j = j - 1; }
+            si i <= j {
+                soit t = a[i];
+                a[i] = a[j];
+                a[j] = t;
+                i = i + 1;
+                j = j - 1;
+            }
+        }
+        // la plus petite moitié d'abord, en récursion ; la plus grande en boucle
+        si j - g < d - i {
+            si g < j { trier(g, j); }
+            g = i;
+        } sinon {
+            si i < d { trier(i, d); }
+            d = j;
+        }
+    }
+}
+fonction principal() {
+    soit x = 2463534242;
+    pour i dans 0..N {
+        x = (x ^ (x << 13)) & 4294967295;
+        x = x ^ (x >> 17);
+        x = (x ^ (x << 5)) & 4294967295;
+        a[i] = x & 16777215;
+    }
+    trier(0, N - 1);
+    soit s = 0;
+    pour i dans 0..N {
+        s = (s * 31 + a[i]) & 4294967295;
+    }
+    sortie(s);
+}
