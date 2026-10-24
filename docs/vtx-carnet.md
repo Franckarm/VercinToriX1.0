@@ -277,6 +277,10 @@ compilateur sans Python.
   Réalisé : **les cubes sur disque en miroir inversé** (le cube et son anti-cube, `etat_disque()`, réparation d'une
   copie perdue) ; **le cube des noms** dans vtxc64 (chaque nom haché une fois, sa place est son identité, les tables des
   rôles en miroir : −8,7 % sur la compilation de vtxc64) ; **les appels en série** `f(a): x, y, z;` (écrire moins).
+  **L'ombre, troisième voix** (idée du créateur, « l'ombre en binaire, comparée sur les colonnes de liaison du cube,
+  avec une formule intégrant le hex ») : par colonne de 256 mots, neuf ou exclusifs, dont huit suivent les bits de la
+  coordonnée BB ; un mot abîmé est retrouvé, situé et rectifié ; les contradictions entre le cube et son anti-cube sont
+  tranchées. 3,5 % du cube.
 
 ---
 

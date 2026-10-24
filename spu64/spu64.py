@@ -52,55 +52,170 @@ NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
 
 
-# ---- les cubes sur disque en miroir inversé (comme vtx-rs/src/miroir.rs) : à côté de chaque cube, son anti-cube
-# (« anti » devant le nom du fichier), chaque octet après l'en-tête complémenté ; à la lecture, les deux s'accordent :
-# vrai (2) d'accord, faux (1) une seule copie lisible (réparée), variable (3) contradiction (la première gardée),
-# inconnu (0) ni l'une ni l'autre.
-def _chemin_anti(chemin):
+# ---- les cubes sur disque : le miroir inversé et l'ombre (comme vtx-rs/src/miroir.rs). À côté de chaque cube, son
+# anti-cube (« anti » devant le nom, chaque octet après l'en-tête complémenté) et son ombre (« ombre » à la place de
+# « cube ») : pour chaque page et chaque colonne GG, neuf mots en ou exclusif, o0 sur les 256 mots BB, ok sur ceux dont
+# le bit k de BB vaut 1 ; une erreur par colonne s'y retrouve (o0) et s'y situe (les ok). À la lecture : vrai (2) tout
+# s'accorde, faux (1) réparé, variable (3) contradiction que rien ne tranche, inconnu (0) rien.
+_MOTS = 65536
+
+
+def _prefixe(chemin, avant):
     d, n = os.path.split(chemin)
-    return os.path.join(d, "anti" + n)
+    return os.path.join(d, avant + n)
 
 
-def _entete_anti(entete):
-    return entete[:3] + b"ANT" + entete[6:]
+def _chemin_ombre(chemin):
+    d, n = os.path.split(chemin)
+    return os.path.join(d, n.replace("cube", "ombre", 1))
+
+
+def _entete_avec(entete, quoi):
+    return entete[:3] + quoi + entete[6:]
+
+
+def _format(entete):
+    return (8, _MOTS // 4) if entete == b"VTXCUB64" else (4, 0)
+
+
+def _pages(corps, fmt):
+    mot, suite = fmt
+    t = 4 + _MOTS * mot + suite
+    m, i = {}, 0
+    while i + t <= len(corps):
+        m[int.from_bytes(corps[i:i + 4], "little")] = bytes(corps[i + 4:i + t])
+        i += t
+    return m
+
+
+def _mots(page, mot):
+    return [int.from_bytes(page[j * mot:(j + 1) * mot], "little") for j in range(_MOTS)]
+
+
+def _ombre_page(page, mot):
+    w = _mots(page, mot)
+    o = [0] * (256 * 9)
+    for gg in range(256):
+        b = gg * 9
+        for bb in range(256):
+            v = w[gg * 256 + bb]
+            if v:
+                o[b] ^= v
+                for k in range(8):
+                    if bb >> k & 1:
+                        o[b + 1 + k] ^= v
+    return o
+
+
+def _juger(calc, lue):
+    d = [calc[k] ^ lue[k] for k in range(9)]
+    if not any(d):
+        return ("juste",)
+    if d[0] == 0:
+        return ("juste",) if sum(1 for x in d if x) == 1 else ("fausse",)
+    bb = 0
+    for k in range(8):
+        if d[1 + k] == d[0]:
+            bb |= 1 << k
+        elif d[1 + k]:
+            return ("fausse",)
+    return ("rectifiable", bb, d[0])
 
 
 def ecrire_double(chemin, octets):
     with open(chemin, "wb") as h:
         h.write(octets)
-    with open(_chemin_anti(chemin), "wb") as h:
-        h.write(_entete_anti(octets[:8]) + bytes(255 - x for x in octets[8:]))
+    with open(_prefixe(chemin, "anti"), "wb") as h:
+        h.write(_entete_avec(octets[:8], b"ANT") + bytes(255 - x for x in octets[8:]))
+    mot, suite = _format(octets[:8])
+    o = [_entete_avec(octets[:8], b"OMB")]
+    for k, p in sorted(_pages(octets[8:], (mot, suite)).items()):
+        o.append(k.to_bytes(4, "little") + b"".join(v.to_bytes(8, "little") for v in _ombre_page(p, mot)))
+    with open(_chemin_ombre(chemin), "wb") as h:
+        h.write(b"".join(o))
 
 
 def lire_double(chemin, entete):
-    """Rend (contenu retenu ou None, état de Belnap) ; une copie absente ou abîmée est refaite à partir de l'autre."""
-    def lire(c):
+    """Rend (contenu retenu ou None, état de Belnap) ; ce qui a été réparé est réécrit."""
+    def lire(c, e):
         try:
             with open(c, "rb") as h:
-                return h.read()
+                b = h.read()
         except OSError:
             return None
-    p, a = lire(chemin), lire(_chemin_anti(chemin))
-    p = p if p is not None and p[:8] == entete else None
-    a = entete + bytes(255 - x for x in a[8:]) if a is not None and a[:8] == _entete_anti(entete) else None
+        return b if b[:8] == e else None
+    fmt = _format(entete)
+    mot, suite = fmt
+    p = lire(chemin, entete)
+    a = lire(_prefixe(chemin, "anti"), _entete_avec(entete, b"ANT"))
     if p is None and a is None:
         return None, 0
-    if p is not None and a is not None:
-        if p == a:
-            return p, 2
-        if len(a) > len(p) and a.startswith(p):
-            garde, etat = a, 1
-        elif len(p) > len(a) and p.startswith(a):
-            garde, etat = p, 1
+    ob = lire(_chemin_ombre(chemin), _entete_avec(entete, b"OMB"))
+    ombres = None
+    if ob is not None:
+        ombres, t, i = {}, 4 + 256 * 9 * 8, 8
+        while i + t <= len(ob):
+            k = int.from_bytes(ob[i:i + 4], "little")
+            ombres[k] = [int.from_bytes(ob[i + 4 + 8 * j:i + 12 + 8 * j], "little") for j in range(256 * 9)]
+            i += t
+    pp = _pages(p[8:], fmt) if p is not None else {}
+    pa = _pages(bytes(255 - x for x in a[8:]), fmt) if a is not None else {}
+    rang = {0: 0, 2: 1, 1: 2, 3: 3}
+    etat = 2
+    ombre_fausse = ombres is None and p is not None and a is not None
+
+    def pire(e):
+        nonlocal etat
+        if rang[e] > rang[etat]:
+            etat = e
+    corps = [entete]
+    for k in sorted(set(pp) | set(pa)):
+        x, y = pp.get(k), pa.get(k)
+        o = ombres.get(k) if ombres is not None else None
+        if x is not None and x == y:
+            if o is not None and _ombre_page(x, mot) != o:
+                ombre_fausse = True
+            page = x
         else:
-            return p, 3
-    else:
-        garde, etat = (p, 1) if p is not None else (a, 1)
-    try:
-        ecrire_double(chemin, garde)
-    except OSError:
-        pass
-    return garde, etat
+            pire(1)
+            if o is None:
+                if x is not None and y is not None:
+                    pire(3)
+                page = x if x is not None else y
+            else:
+                cx = _ombre_page(x, mot) if x is not None else None
+                cy = _ombre_page(y, mot) if y is not None else None
+                r = bytearray(x if x is not None else y)
+                for gg in range(256):
+                    lue = o[gg * 9:gg * 9 + 9]
+                    jx = _juger(cx[gg * 9:gg * 9 + 9], lue) if cx is not None else None
+                    jy = _juger(cy[gg * 9:gg * 9 + 9], lue) if cy is not None else None
+                    d0, d1 = gg * 256 * mot, (gg + 1) * 256 * mot
+                    if jx and jx[0] == "juste":
+                        r[d0:d1] = x[d0:d1]
+                    elif jy and jy[0] == "juste":
+                        r[d0:d1] = y[d0:d1]
+                    elif (jx and jx[0] == "rectifiable") or (jy and jy[0] == "rectifiable"):
+                        src, j = (x, jx) if jx and jx[0] == "rectifiable" else (y, jy)
+                        r[d0:d1] = src[d0:d1]
+                        q = (gg * 256 + j[1]) * mot
+                        v = int.from_bytes(r[q:q + mot], "little") ^ j[2]
+                        r[q:q + mot] = v.to_bytes(mot, "little")
+                    else:
+                        pire(3)
+                if x is not None and y is not None and x[_MOTS * mot:] != y[_MOTS * mot:]:
+                    pire(3)
+                page = bytes(r)
+        corps.append(k.to_bytes(4, "little") + page)
+    corps = b"".join(corps)
+    if etat == 2 and ombre_fausse and ombres is not None:
+        etat = 1
+    if etat == 1 or (etat == 2 and ombre_fausse):
+        try:
+            ecrire_double(chemin, corps)
+        except OSError:
+            pass
+    return corps, etat
 
 
 def noter_etat(machine, etat):

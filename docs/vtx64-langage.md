@@ -342,6 +342,8 @@ tables. Le reste du temps de vtxc64 est ailleurs : `ajouter` (16 %), l'analyse d
 quatre compilateurs (vtx.py, vtxc, vtx64.py, vtxc64), avec les mêmes mots que la forme écrite à la main
 (`tests/test_serie.py`).
 
-**Le miroir inversé des cubes sur disque.** Chaque cube rangé s'écrit avec son anti-cube (le contenu complémenté) ;
-`etat_disque()` (service 22) dit vrai, faux (réparé à partir d'une seule copie, l'autre refaite), variable (contradiction)
-ou inconnu. Sur les quatre machines (`tests/test_miroir.py`, `vtx-rs/src/miroir.rs`).
+**Le miroir inversé et l'ombre des cubes sur disque.** Chaque cube rangé s'écrit avec son anti-cube (le contenu
+complémenté) et son ombre : pour chaque colonne de liaison (un RR, un GG, les 256 BB), neuf ou exclusifs, dont huit
+suivent les bits de la coordonnée hex BB. Une erreur par colonne s'y retrouve et s'y situe, puis se rectifie ; l'ombre
+tranche ainsi les contradictions entre les deux copies. `etat_disque()` (service 22) dit vrai, faux (réparé), variable
+(contradiction que rien ne tranche) ou inconnu. Sur les quatre machines (`tests/test_miroir.py`, `vtx-rs/src/miroir.rs`).

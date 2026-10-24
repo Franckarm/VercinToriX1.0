@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Les cubes sur disque en miroir inversé : chaque cube rangé s'écrit avec son anti-cube (« anticube-… »), et la
-relecture rend un état de Belnap (etat_disque()) : vrai (les deux s'accordent), faux (une seule copie lisible : réparée),
-variable (les deux se contredisent), inconnu (rien).
+"""Les cubes sur disque : le miroir inversé et l'ombre. Chaque cube rangé s'écrit avec son anti-cube (« anticube-… ») et
+son ombre (« ombre-… » : par colonne de 256 mots, neuf ou exclusifs dont huit suivent les bits de la coordonnée hex).
+La relecture rend un état de Belnap (etat_disque()) : vrai (tout s'accorde), faux (réparé : par l'autre copie, ou par
+l'ombre qui retrouve et rectifie un mot), variable (contradiction que rien ne tranche), inconnu (rien).
 
 Pour chaque machine (SPU-32 et SPU-64 ; Python et Rust) : un programme range un cube, un autre le relit, après
-chaque sorte d'avarie : rien, la copie effacée, l'anti-copie effacée, la copie tronquée, un octet changé, les deux
-effacées. On vérifie l'état rendu, les valeurs relues, et que la copie abîmée a été refaite.
+chaque sorte d'avarie (onze, de « intact » à « les deux effacées »). On vérifie l'état rendu, les valeurs relues, et que la copie abîmée a été refaite.
 """
 import os
 import shutil
@@ -74,8 +74,16 @@ def lancer(machine, src, d):
     return [int(x) for x in lignes[-1].split(",")] if lignes else []
 
 
-def avarie(d, nom, genre):
+def changer(chemin, mot, j, masque=0x10):
+    """Change un octet du mot j de la première page."""
+    b = bytearray(open(chemin, "rb").read())
+    b[8 + 4 + j * mot] ^= masque
+    open(chemin, "wb").write(bytes(b))
+
+
+def avarie(d, nom, genre, mot):
     p, a = os.path.join(d, nom), os.path.join(d, "anti" + nom)
+    o = os.path.join(d, nom.replace("cube", "ombre", 1))
     if genre == "copie effacée":
         os.remove(p)
     elif genre == "anti-copie effacée":
@@ -83,17 +91,32 @@ def avarie(d, nom, genre):
     elif genre == "copie tronquée":
         b = open(p, "rb").read()
         open(p, "wb").write(b[:len(b) // 2])
-    elif genre == "un octet changé":
-        b = bytearray(open(p, "rb").read())
-        b[8 + 4 + 97 * 4 * 5] ^= 0x10
-        open(p, "wb").write(bytes(b))
+    elif genre == "un mot changé":
+        changer(p, mot, 97 * 5)
+    elif genre == "les deux copies changées, ailleurs":
+        changer(p, mot, 97 * 5)
+        changer(a, mot, 97 * 300)
+    elif genre == "le même mot abîmé autrement dans les deux":
+        changer(p, mot, 97 * 5)
+        changer(a, mot, 97 * 5, 0x03)
+    elif genre == "copie seule, un mot changé":
+        os.remove(a)
+        changer(p, mot, 97 * 5)
+    elif genre == "ombre effacée":
+        os.remove(o)
+    elif genre == "un mot changé, sans ombre":
+        os.remove(o)
+        changer(p, mot, 97 * 5)
     elif genre == "les deux effacées":
         os.remove(p)
         os.remove(a)
 
 
+# (avarie, état attendu, valeurs justes : oui, non, ou rien relu)
 CAS = [("intact", 2, True), ("copie effacée", 1, True), ("anti-copie effacée", 1, True), ("copie tronquée", 1, True),
-       ("un octet changé", 3, False), ("les deux effacées", 0, None)]
+       ("un mot changé", 1, True), ("les deux copies changées, ailleurs", 1, True),
+       ("le même mot abîmé autrement dans les deux", 1, True), ("copie seule, un mot changé", 1, True),
+       ("ombre effacée", 2, True), ("un mot changé, sans ombre", 3, False), ("les deux effacées", 0, None)]
 machines = ["py32", "py64"] + (["rs32", "rs64"] if cargo else [])
 ok = total = 0
 for m in machines:
@@ -103,17 +126,19 @@ for m in machines:
     for genre, etat_attendu, valeurs_justes in CAS:
         d = tempfile.mkdtemp(prefix="miroir-")
         lancer(m, ECRIRE64 if m64 else ECRIRE32, d)
-        present = os.path.exists(os.path.join(d, nom)) and os.path.exists(os.path.join(d, "anti" + nom))
-        avarie(d, nom, genre)
+        present = all(os.path.exists(os.path.join(d, x)) for x in (nom, "anti" + nom, nom.replace("cube", "ombre", 1)))
+        avarie(d, nom, genre, 8 if m64 else 4)
         s = lancer(m, LIRE64 if m64 else LIRE32, d)
         etat, somme = (s + [None, None])[:2]
         bon = present and etat == etat_attendu
         if valeurs_justes is True:
             bon = bon and somme == SOMME
+        elif valeurs_justes is False:
+            bon = bon and somme != SOMME
         elif valeurs_justes is None:
             bon = bon and somme == 0
-        if etat_attendu == 1:
-            # réparé : les deux copies sont refaites, et une seconde lecture les trouve d'accord
+        if etat_attendu == 1 or genre == "ombre effacée":
+            # réparé : les trois fichiers sont refaits, et une seconde lecture les trouve d'accord
             s2 = lancer(m, LIRE64 if m64 else LIRE32, d)
             bon = bon and s2[:1] == [2] and s2[1:2] == [SOMME]
         bilan.append(f"{genre} → {['inconnu', 'faux', 'vrai', 'variable'][etat] if etat is not None else '?'}"

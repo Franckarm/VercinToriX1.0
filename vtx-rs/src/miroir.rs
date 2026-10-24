@@ -1,19 +1,30 @@
-// Les cubes sur disque en miroir inversé (un RAID 1 dont la seconde copie est l'opposée de la première).
+// Les cubes sur disque : le miroir inversé et l'ombre (dans l'ordre des choses : cube, hex, ADN, ARN).
 //
-// À côté de chaque fichier de cube (cube-E-F.cub au SPU-32, cube64-E-F.cub au SPU-64) s'écrit son anti-cube
-// (anticube-E-F.cub, anticube64-E-F.cub) : le même contenu, chaque octet après l'en-tête complémenté (« VTXCUB… »
-// devient « VTXANT… »). Pourquoi l'opposé plutôt qu'une copie identique : une panne qui frappe les deux copies de la
-// même façon (une page remise à zéro, un fichier tronqué au même endroit, une écriture folle) donnerait deux copies
-// d'accord dans l'erreur ; avec l'opposé, l'accord parfait des deux est « tout à 1 », que de telles pannes cassent.
+// Le miroir inversé. À côté de chaque fichier de cube (cube-E-F.cub au SPU-32, cube64-E-F.cub au SPU-64) s'écrit son
+// anti-cube (anticube-E-F.cub, anticube64-E-F.cub) : le même contenu, chaque octet après l'en-tête complémenté
+// (« VTXCUB… » devient « VTXANT… »). Une panne qui frappe deux copies identiques de la même façon (une page remise à
+// zéro, un fichier tronqué, une écriture folle) les laisserait d'accord dans l'erreur ; une copie et son opposée, non.
+// Bit par bit, la paire (copie, anti-copie) est un quit de Belnap.
 //
-// Bit par bit, la paire (copie, anti-copie) est un quit de Belnap : (1, 0) et (0, 1) sont les deux valeurs sûres,
-// (0, 0) l'absence (inconnu), (1, 1) la contradiction (variable). Pour un cube entier, la lecture rend :
-//   vrai      les deux copies s'accordent ;
-//   faux      une seule copie est lisible (l'autre manque, est abîmée ou tronquée) : le cube est réparé à partir
-//             d'elle, et la copie abîmée réécrite ;
-//   variable  les deux copies se contredisent : la première est gardée, la contradiction est signalée ;
-//   inconnu   ni l'une ni l'autre.
+// L'ombre : la troisième voix, qui tranche quand les deux copies se contredisent. Chaque page d'un cube (les mots
+// #RRGGBB d'un même RR) a ses colonnes de liaison : pour chaque GG, la colonne des 256 mots BB = 00 à FF. L'ombre d'une
+// colonne, ce sont neuf mots, en binaire (ou exclusif) :
+//   o0 = le ou exclusif des 256 mots de la colonne ;
+//   ok = le ou exclusif des mots dont la coordonnée hex BB a son bit k à 1 (k = 0 à 7).
+// La formule intègre le hex : un mot abîmé à BB change o0 de son erreur e, et chaque ok de e ou de 0 selon les bits de
+// BB. Relire l'ombre redonne donc à la fois l'erreur (o0) et l'adresse (les ok) : le mot est retrouvé et rectifié par un
+// seul ou exclusif, sans autre copie. Une erreur par colonne se corrige ; davantage se voit. Coût : 9 mots par colonne
+// de 256, soit 3,5 % du cube, dans un troisième fichier (ombre-E-F.cub, « VTXOMB… »).
+//
+// À la relecture (le passage de l'ADN rangé à l'ARN de travail), page par page et colonne par colonne :
+//   vrai      les deux copies s'accordent (et l'ombre avec elles) ;
+//   faux      quelque chose a été réparé : une copie manquante, tronquée ou abîmée, tranchée par l'autre copie ou par
+//             l'ombre ; les trois fichiers sont réécrits ;
+//   variable  une contradiction que rien ne tranche (pas d'ombre, ou plusieurs erreurs dans une même colonne des deux
+//             copies) : la copie est gardée, la contradiction signalée ;
+//   inconnu   ni l'une ni l'autre copie.
 // etat_disque() (service 22) rend le pire état vu depuis son dernier appel (inconnu < vrai < faux < variable).
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -33,6 +44,12 @@ fn gravite(e: u8) -> u8 {
     }
 }
 
+fn pire(etat: &mut u8, e: u8) {
+    if gravite(e) > gravite(*etat) {
+        *etat = e;
+    }
+}
+
 /// Retient un état de lecture (le plus grave l'emporte).
 pub fn noter(e: u8) {
     let mut v = ETAT.load(Ordering::Relaxed);
@@ -49,62 +66,256 @@ pub fn prendre_etat() -> u8 {
     ETAT.swap(INCONNU, Ordering::Relaxed)
 }
 
-/// Le chemin de l'anti-cube : « anti » devant le nom du fichier.
-pub fn chemin_anti(chemin: &Path) -> PathBuf {
+fn prefixe(chemin: &Path, avant: &str) -> PathBuf {
     let nom = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    chemin.with_file_name(format!("anti{}", nom))
+    chemin.with_file_name(format!("{}{}", avant, nom))
 }
 
-fn entete_anti(entete: &[u8]) -> Vec<u8> {
+/// Le chemin de l'anti-cube : « anti » devant le nom du fichier.
+pub fn chemin_anti(chemin: &Path) -> PathBuf {
+    prefixe(chemin, "anti")
+}
+
+/// Le chemin de l'ombre : « ombre » à la place de « cube » (ombre-1-262.cub, ombre64-1-42.cub).
+pub fn chemin_ombre(chemin: &Path) -> PathBuf {
+    let nom = chemin.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    chemin.with_file_name(nom.replacen("cube", "ombre", 1))
+}
+
+fn entete_avec(entete: &[u8], quoi: &[u8; 3]) -> Vec<u8> {
     let mut e = entete.to_vec();
     if e.len() >= 6 {
-        e[3..6].copy_from_slice(b"ANT");
+        e[3..6].copy_from_slice(quoi);
     }
     e
 }
 
-/// Écrit le cube (son en-tête de 8 octets, puis le corps) et son anti-cube.
-pub fn ecrire_double(chemin: &Path, octets: &[u8]) -> std::io::Result<()> {
-    std::fs::write(chemin, octets)?;
-    let mut a = entete_anti(&octets[..8.min(octets.len())]);
-    a.extend(octets.iter().skip(8).map(|b| !b));
-    std::fs::write(chemin_anti(chemin), a)
+/// Le format d'un fichier de cube : la taille d'un mot et ce qui suit les mots dans une page (les brins au SPU-64).
+#[derive(Clone, Copy)]
+struct Format {
+    mot: usize,
+    suite: usize,
 }
 
-/// Lit un cube et son anti-cube, les accorde (voir plus haut) et rend le contenu retenu (en-tête compris), ou None ; une
-/// copie absente ou abîmée est réécrite à partir de l'autre.
-pub fn lire_double(chemin: &Path, entete: &[u8]) -> Option<Vec<u8>> {
-    let anti = chemin_anti(chemin);
-    let p = std::fs::read(chemin).ok().filter(|b| b.len() >= 8 && &b[..8] == entete);
-    let ea = entete_anti(entete);
-    let a = std::fs::read(&anti).ok().filter(|b| b.len() >= 8 && b[..8] == ea[..]).map(|b| {
-        let mut v = entete.to_vec();
-        v.extend(b.iter().skip(8).map(|x| !x));
+const MOTS: usize = 65536;
+
+fn format_de(entete: &[u8]) -> Format {
+    if entete == b"VTXCUB64" {
+        Format { mot: 8, suite: MOTS / 4 }
+    } else {
+        Format { mot: 4, suite: 0 }
+    }
+}
+
+impl Format {
+    fn page(&self) -> usize {
+        MOTS * self.mot + self.suite
+    }
+    fn lire_mot(&self, p: &[u8], j: usize) -> u64 {
+        let o = j * self.mot;
+        let mut v = 0u64;
+        for (i, b) in p[o..o + self.mot].iter().enumerate() {
+            v |= (*b as u64) << (8 * i);
+        }
         v
-    });
-    let (garde, etat) = match (p, a) {
-        (Some(p), Some(a)) => {
-            if p == a {
-                (p, VRAI)
-            } else if a.len() > p.len() && a.starts_with(&p) {
-                (a, FAUX) // la copie est tronquée : l'anti-copie la complète
-            } else if p.len() > a.len() && p.starts_with(&a) {
-                (p, FAUX)
-            } else {
-                (p, VARIABLE)
+    }
+    fn ecrire_mot(&self, p: &mut [u8], j: usize, v: u64) {
+        let o = j * self.mot;
+        for i in 0..self.mot {
+            p[o + i] = (v >> (8 * i)) as u8;
+        }
+    }
+}
+
+/// Les pages d'un fichier de cube (sans son en-tête) : numéro -> octets de la page.
+fn pages_de(corps: &[u8], f: Format) -> BTreeMap<u32, Vec<u8>> {
+    let mut m = BTreeMap::new();
+    let t = 4 + f.page();
+    let mut i = 0;
+    while i + t <= corps.len() {
+        let k = u32::from_le_bytes([corps[i], corps[i + 1], corps[i + 2], corps[i + 3]]);
+        m.insert(k, corps[i + 4..i + t].to_vec());
+        i += t;
+    }
+    m
+}
+
+/// L'ombre d'une page : pour chaque colonne GG, les neuf mots o0, o1…o8 (voir plus haut).
+fn ombre_page(p: &[u8], f: Format) -> Vec<u64> {
+    let mut o = vec![0u64; 256 * 9];
+    for gg in 0..256 {
+        let c = &mut o[gg * 9..gg * 9 + 9];
+        for bb in 0..256 {
+            let w = f.lire_mot(p, gg * 256 + bb);
+            if w == 0 {
+                continue;
+            }
+            c[0] ^= w;
+            for k in 0..8 {
+                if bb >> k & 1 == 1 {
+                    c[1 + k] ^= w;
+                }
             }
         }
-        (Some(p), None) => (p, FAUX),
-        (None, Some(a)) => (a, FAUX),
-        (None, None) => {
-            noter(INCONNU);
-            return None;
+    }
+    o
+}
+
+/// Une colonne relue contre son ombre : juste, rectifiable (le mot BB et son erreur), ou fausse.
+enum Colonne {
+    Juste,
+    Rectifiable(usize, u64),
+    Fausse,
+}
+
+fn juger(calc: &[u64], lue: &[u64]) -> Colonne {
+    let d: Vec<u64> = (0..9).map(|k| calc[k] ^ lue[k]).collect();
+    if d.iter().all(|&x| x == 0) {
+        return Colonne::Juste;
+    }
+    if d[0] == 0 {
+        // l'erreur est dans l'ombre elle-même si un seul de ses mots diffère
+        return if d.iter().filter(|&&x| x != 0).count() == 1 { Colonne::Juste } else { Colonne::Fausse };
+    }
+    let mut bb = 0;
+    for k in 0..8 {
+        if d[1 + k] == d[0] {
+            bb |= 1 << k;
+        } else if d[1 + k] != 0 {
+            return Colonne::Fausse;
         }
-    };
-    if etat == FAUX {
-        // la copie absente ou abîmée est refaite : les deux redeviennent l'une l'opposée de l'autre
-        let _ = ecrire_double(chemin, &garde);
+    }
+    Colonne::Rectifiable(bb, d[0])
+}
+
+/// Écrit le cube (en-tête de 8 octets, puis les pages), son anti-cube et son ombre.
+pub fn ecrire_double(chemin: &Path, octets: &[u8]) -> std::io::Result<()> {
+    std::fs::write(chemin, octets)?;
+    let entete = &octets[..8.min(octets.len())];
+    let mut a = entete_avec(entete, b"ANT");
+    a.extend(octets.iter().skip(8).map(|b| !b));
+    std::fs::write(chemin_anti(chemin), a)?;
+    let f = format_de(entete);
+    let mut o = entete_avec(entete, b"OMB");
+    for (k, p) in pages_de(&octets[8.min(octets.len())..], f) {
+        o.extend_from_slice(&k.to_le_bytes());
+        for v in ombre_page(&p, f) {
+            o.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    std::fs::write(chemin_ombre(chemin), o)
+}
+
+/// Lit un cube, son anti-cube et son ombre, les accorde page par page et colonne par colonne (voir plus haut) et rend
+/// le contenu retenu (en-tête compris), ou None ; ce qui a été réparé est réécrit.
+pub fn lire_double(chemin: &Path, entete: &[u8]) -> Option<Vec<u8>> {
+    let f = format_de(entete);
+    let p = std::fs::read(chemin).ok().filter(|b| b.len() >= 8 && &b[..8] == entete);
+    let ea = entete_avec(entete, b"ANT");
+    let a = std::fs::read(chemin_anti(chemin)).ok().filter(|b| b.len() >= 8 && b[..8] == ea[..]);
+    if p.is_none() && a.is_none() {
+        noter(INCONNU);
+        return None;
+    }
+    let eo = entete_avec(entete, b"OMB");
+    let ombres: Option<BTreeMap<u32, Vec<u64>>> = std::fs::read(chemin_ombre(chemin)).ok()
+        .filter(|b| b.len() >= 8 && b[..8] == eo[..])
+        .map(|b| {
+            let mut m = BTreeMap::new();
+            let t = 4 + 256 * 9 * 8;
+            let mut i = 8;
+            while i + t <= b.len() {
+                let k = u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
+                let v = (0..256 * 9).map(|j| u64::from_le_bytes(b[i + 4 + 8 * j..i + 12 + 8 * j].try_into().unwrap())).collect();
+                m.insert(k, v);
+                i += t;
+            }
+            m
+        });
+    let pp = p.as_ref().map(|b| pages_de(&b[8..], f)).unwrap_or_default();
+    let pa = a.as_ref().map(|b| pages_de(&b[8..].iter().map(|x| !x).collect::<Vec<u8>>(), f)).unwrap_or_default();
+    let mut etat = VRAI;
+    let mut ombre_fausse = ombres.is_none() && p.is_some() && a.is_some();
+    let mut numeros: Vec<u32> = pp.keys().chain(pa.keys()).copied().collect();
+    numeros.sort_unstable();
+    numeros.dedup();
+    let mut corps: Vec<u8> = entete.to_vec();
+    for k in numeros {
+        let ombre = ombres.as_ref().and_then(|m| m.get(&k));
+        let page = match (pp.get(&k), pa.get(&k)) {
+            (Some(x), Some(y)) if x == y => {
+                if let Some(o) = ombre {
+                    if ombre_page(x, f) != *o {
+                        ombre_fausse = true; // les deux copies s'accordent : c'est l'ombre qui est refaite
+                    }
+                }
+                x.clone()
+            }
+            (x, y) => {
+                pire(&mut etat, FAUX);
+                match ombre {
+                    None => match (x, y) {
+                        (Some(x), Some(_)) => {
+                            pire(&mut etat, VARIABLE);
+                            x.clone()
+                        }
+                        (Some(x), None) => x.clone(),
+                        (None, Some(y)) => y.clone(),
+                        (None, None) => continue,
+                    },
+                    Some(o) => {
+                        // colonne par colonne : la copie juste, sinon la copie que l'ombre rectifie
+                        let cx = x.map(|x| ombre_page(x, f));
+                        let cy = y.map(|y| ombre_page(y, f));
+                        let mut r = x.or(y).unwrap().clone();
+                        for gg in 0..256 {
+                            let lue = &o[gg * 9..gg * 9 + 9];
+                            let jx = cx.as_ref().map(|c| juger(&c[gg * 9..gg * 9 + 9], lue));
+                            let jy = cy.as_ref().map(|c| juger(&c[gg * 9..gg * 9 + 9], lue));
+                            let copier = |r: &mut Vec<u8>, s: &[u8]| {
+                                let d = gg * 256 * f.mot;
+                                r[d..d + 256 * f.mot].copy_from_slice(&s[d..d + 256 * f.mot]);
+                            };
+                            match (jx, jy) {
+                                (Some(Colonne::Juste), _) => copier(&mut r, x.unwrap()),
+                                (_, Some(Colonne::Juste)) => copier(&mut r, y.unwrap()),
+                                (Some(Colonne::Rectifiable(bb, e)), _) => {
+                                    copier(&mut r, x.unwrap());
+                                    let j = gg * 256 + bb;
+                                    let v = f.lire_mot(&r, j) ^ e;
+                                    f.ecrire_mot(&mut r, j, v);
+                                }
+                                (_, Some(Colonne::Rectifiable(bb, e))) => {
+                                    copier(&mut r, y.unwrap());
+                                    let j = gg * 256 + bb;
+                                    let v = f.lire_mot(&r, j) ^ e;
+                                    f.ecrire_mot(&mut r, j, v);
+                                }
+                                _ => pire(&mut etat, VARIABLE),
+                            }
+                        }
+                        // ce qui suit les mots (les brins) : celui de la copie, sinon de l'anti-copie
+                        if let (Some(x), Some(y)) = (x, y) {
+                            if x[MOTS * f.mot..] != y[MOTS * f.mot..] {
+                                pire(&mut etat, VARIABLE);
+                            }
+                        }
+                        r
+                    }
+                }
+            }
+        };
+        corps.extend_from_slice(&k.to_le_bytes());
+        corps.extend_from_slice(&page);
+    }
+    if etat == VRAI && ombre_fausse && ombres.is_some() {
+        etat = FAUX;
+    }
+    // ce qui a été réparé est réécrit : les trois fichiers redeviennent d'accord (une ombre absente est ajoutée) ; une
+    // contradiction que rien n'a tranchée est laissée sur le disque, telle quelle, pour qu'on puisse l'examiner
+    if etat == FAUX || (etat == VRAI && ombre_fausse) {
+        let _ = ecrire_double(chemin, &corps);
     }
     noter(etat);
-    Some(garde)
+    Some(corps)
 }
