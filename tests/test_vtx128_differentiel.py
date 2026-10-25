@@ -19,6 +19,8 @@ import vtx64 as V64  # noqa: E402
 import vtx128 as V128  # noqa: E402
 from hasard64 import G  # noqa: E402
 
+V128.SORTIE_DEUX_MOTS = True    # un entier_128 ou un flottant de 128 bits sort en deux mots, comme au SPU-64
+
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 300
 GRAINE = int(sys.argv[2]) if len(sys.argv) > 2 else 128
 EXT = ".exe" if os.name == "nt" else ""

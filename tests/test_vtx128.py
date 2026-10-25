@@ -341,7 +341,7 @@ def pq_max(a, b):
 
 def attendu5(a, b, w, d, e):
     out = []
-    p = lambda x: out.extend(deux(x))
+    p = lambda x: out.append(x)               # Lugus : un flottant_petuar sort en un mot
     p(R.add(a, b)); p(R.sub(a, b)); p(R.mul(a, b)); p(R.div(a, b)); p(R.racine(a)); p(R.neg(a))
     c = R.cmp(a, b)
     out += [int(c == 0), int(c != 0), int(c == 1), int(c in (0, 1)), int(c == 2), int(c in (0, 2))]
@@ -378,7 +378,7 @@ for a, b, w, d, e in cas5:
 sor5, _, m5 = lancer(SRC5, ent5)
 ec = [i for i, (u, v) in enumerate(zip(sor5, att5)) if u != v]
 par = len(att5) // len(cas5)
-verifier(f"flottant_petuar (deux mots) : opérations, comparaisons, conversions contre la référence exacte ({len(cas5)} cas)",
+verifier(f"flottant_petuar (un mot de Lugus, instructions natives) : opérations, comparaisons, conversions contre la référence exacte ({len(cas5)} cas)",
          not ec and len(sor5) == len(att5),
          f"{len(ec)} écart(s) ; premier : cas {ec[0] // par if ec else '-'}, place {ec[0] % par if ec else '-'} ; "
          f"longueurs {len(sor5)}/{len(att5)}")
@@ -411,7 +411,7 @@ fonction principal() {
 def attendu6(a, b, k):
     o = []
     sa, sb = s128(a), s128(b)
-    p = lambda x: o.extend(deux(x & M128))
+    p = lambda x: o.append(x & M128)          # Lugus : un entier_petuar sort en un mot
     p(a + b); p(a - b); p(a * b)
     if b:
         q = tronc(sa, sb)
@@ -445,9 +445,10 @@ for a, b, k in cas6:
     att6 += attendu6(a, b, k)
     txt_att6.append(str(s128(a)))
 sor6, txt6, _ = lancer(SRC6, ent6)
-# la division par zéro n'est pas comparée (convention du prélude) : on retire les places 6 à 9 des cas à b nul
+# la division par zéro n'est pas comparée (Lugus : quotient tout à un, quel que soit le signe ; le prélude du SPU-64 corrigeait
+# le signe) : on retire les places 3 et 4 des cas à b nul
 par = len(att6) // len(cas6)
-ec = [i for i, (u, v) in enumerate(zip(sor6, att6)) if u != v and not (cas6[i // par][1] == 0 and 6 <= i % par < 10)]
+ec = [i for i, (u, v) in enumerate(zip(sor6, att6)) if u != v and not (cas6[i // par][1] == 0 and 3 <= i % par < 5)]
 verifier(f"entier_petuar : opérations, décalages, comparaisons signées ({len(cas6)} cas)", not ec and len(sor6) == len(att6),
          f"{len(ec)} écart(s) ; premier : cas {ec[0] // par if ec else '-'}, place {ec[0] % par if ec else '-'}")
 verifier("afficher(entier_petuar) : écriture décimale signée", txt6.split("\n")[:len(cas6)] == txt_att6,

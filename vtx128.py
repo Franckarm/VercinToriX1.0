@@ -81,7 +81,10 @@ def lugus_asm(texte):
             sortie.append(l)
             continue
         mn, args = parts[0].upper(), (parts[1].strip() if len(parts) > 1 else "")
-        if mn in A_LA_LARGEUR_64:
+        if "." in mn and not mn.startswith("."):
+            # écrite par le générateur pour Lugus : .L toute la largeur (128 bits), .64 et .32 telles quelles
+            sortie.append(f"{tete}    {mn[:-2] if mn.endswith('.L') else mn} {args}")
+        elif mn in A_LA_LARGEUR_64:
             sortie.append(f"{tete}    {mn}.64 {args}")
         elif mn in FAMILLE_S:
             sortie.append(f"{tete}    {FAMILLE_S[mn]}.32 {args}")
@@ -344,7 +347,7 @@ TYPES = {"entier": "e", "entier_64": "e", "long": "e", "entier_32": "i", "flotta
          "flottant_32": "s", "logique": "q", "texte": "t",
          "entier_128": "w", "petuar": "w", "entier_petuar": "w", "flottant_petuar": "x", "flottant_128": "x"}
 # types de deux mots (paire R1:R4, deuxième opérande R2:R5, le mot bas d'abord)
-LARGES2 = ("w", "x")
+LARGES2 = ()          # Lugus : l'entier_128 et le flottant_petuar tiennent en un mot
 QUATRE = ()
 REGS_T = {"w": ("R1", "R4"), "x": ("R1", "R4")}
 REGS_B = {"w": ("R2", "R5"), "x": ("R2", "R5")}
@@ -4873,6 +4876,14 @@ RETOURS = {"flottant_petuar": "x", "flottant_128": "x", "comme_flottant_petuar":
            "flottant": "f", "flottant_64": "f", "flottant_signe": "f", "comme_flottant": "f", "de_ieee64": "f",
            "flottant_32": "s", "comme_flottant_32": "s", "entier_32": "i"}
 SURCHARGES = ("abs", "min", "max")
+SORTIE_DEUX_MOTS = False   # vrai pour comparer au SPU-64 : sortie(entier_128) en deux mots, le bas d'abord
+# l'entier_128 à toute la largeur ; « / », « % » et « >> » sont signés, comme au SPU-64 (__qdiv, __qsar)
+W_OPS = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIVS", "%": "MODS", "./": "DIVS", ".%": "MODS", "<<": "SHL", ">>": "SAR",
+         ".>>": "SAR", "&": "AND", "|": "OR", "^": "XOR"}
+# vers le flottant de 128 bits : depuis l'entier (sans signe), l'entier_32, le flottant de 64 et de 32 bits, l'entier_128
+# (signé, comme au SPU-64)
+X_DEPUIS = {"x": None, "e": "ITOF.L R1,R1,#1", "i": "ITOF.L R1,R1,#2", "f": "FCONV.L R1,R1,#1", "s": "FCONV.L R1,R1,#2",
+            "w": "ITOFS.L R1,R1,#0"}
 PQ_DEPUIS = {"e": "__pq_de_e", "i": "__pq_de_e", "f": "__pq_de_f", "s": "__pq_de_s", "w": "__pq_de_w"}
 BINAIRES = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "&": "AND", "|": "OR", "^": "XOR",
             "<<": "SHL", ">>": "SHR"}
@@ -5221,7 +5232,13 @@ RI_RRR = {"ADD", "SUB", "MUL", "SHL", "SHR", "SAR", "DIV", "MOD", "DIVS", "MODS"
           "SLE", "MULHU", "MULHS", "QEGAL", "LDX", "LDQ", "ET4", "OU4", "EXQ", "ETGX"}
 RI_RR = {"SHL4", "SHR4", "MOV", "CMP3", "FSQRT", "ITOF", "ITOFS", "FTOI", "FROUND", "FNEG", "FETAT", "FVIEEE", "FDIEEE",
          "SSQRT", "SNEG", "STOF", "FTOS", "ZEXT32", "SEXT32", "COMPTE", "ADDI", "SUBI", "ETG", "LD", "NON4", "ANTI", "BRIN"}
-RI_DEST = RI_RRR | RI_RR | {"LDI", "LDIS", "LDIU", "LDF"}   # le premier registre est seulement écrit
+# Lugus : les opérations écrites à leur largeur par le générateur (.L toute la largeur, .64, .32) ; LDIH lit et écrit son
+# registre (il garde les 64 bits bas) : il reste une barrière
+RI_RRR |= {o + ".L" for o in ("ADD", "SUB", "MUL", "DIVS", "MODS", "SHL", "SHR", "SAR", "AND", "OR", "XOR", "FADD", "FSUB",
+                              "FMUL", "FDIV", "FEQ", "FLT", "FLE")}
+RI_RR |= {"CMP3.L", "FNEG.L", "FSQRT.L", "ITOF.L", "ITOFS.L", "FCONV.L", "FCONV.64", "FCONV.32", "FTOI.L", "FTOI.64",
+          "FTOI.32", "ZEXT.64", "ZEXT.32", "SEXT.64", "SEXT.32", "FVIEEE.L", "FDIEEE.L"}
+RI_DEST = RI_RRR | RI_RR | {"LDI", "LDIS", "LDIU", "LDF", "LDIS.L"}   # le premier registre est seulement écrit
 RI_SAUTS = {"JMP", "JZ", "JNZ", "JC", "JNC", "CALL", "RET", "HALT"}
 RI_TOUS = 0x1FE                                     # R1 à R8
 # La règle échange, comme l'auto-épissage des introns de groupe I et II : deux transestérifications. Le MOV (l'intron)
@@ -5247,11 +5264,11 @@ def ri_acces(op, args):
         return {r[0]}, {r[1], r[2]}
     if op in RI_RR:
         return {r[0]}, {r[1]}
-    if op in ("LDI", "LDIS", "LDIU", "LDF", "IN", "POP"):
+    if op in ("LDI", "LDIS", "LDIU", "LDF", "IN", "POP", "LDIS.L"):
         return {r[0]}, set()
     if op in ("STF", "OUT", "PUSH", "CMPI"):
         return set(), {r[0]}
-    if op in ("CMP", "ST"):
+    if op in ("CMP", "ST", "CMP.L"):
         return set(), {r[0], r[1]}
     if op in ("STX", "STQ"):
         return set(), {r[0], r[1], r[2]}
@@ -5266,7 +5283,7 @@ def ri_lus_places(op):
         return (1,)
     if op in ("STF", "OUT", "PUSH", "CMPI"):
         return (0,)
-    if op in ("CMP", "ST"):
+    if op in ("CMP", "ST", "CMP.L"):
         return (0, 1)
     if op in ("STX", "STQ"):
         return (0, 1, 2)
@@ -5837,13 +5854,25 @@ class Generateur:
             self.emettre("ITOF R1,R1")
             self.emettre("FTOS R1,R1")
         elif voulu == "w" and t in ENTIERS:
-            self.emettre("LDIS R4,#0")
+            return                                   # l'entier de 64 bits est déjà étendu par des zéros
         elif voulu == "i" and t == "e" and e is not None and e[0] == "nombre" and e[1] <= MASK32:
             return                                   # un nombre écrit qui tient dans 32 bits
         else:
             raise VtxError(f"ligne {ligne} : conversion implicite impossible de {NOM_TYPE[t]} vers {NOM_TYPE[voulu]} : "
                            f"utilisez entier(), entier_32(), flottant(), flottant_32(), entier_petuar(), "
                            f"flottant_petuar() ou logique()")
+
+    def charger_l(self, reg, v):
+        """Une constante de 128 bits : celle de 64 bits si elle y tient, LDIS sur 128 bits si elle est un petit négatif,
+        sinon LDI (les 64 bits bas) puis LDIH (les 64 bits hauts)."""
+        v &= (1 << 128) - 1
+        if v <= MASK:
+            self.charger(reg, v)
+        elif v >= (1 << 128) - (1 << 31):
+            self.emettre(f"LDIS.L {reg},#{v - (1 << 128)}")
+        else:
+            self.emettre(f"LDI {reg},{v & MASK}")
+            self.emettre(f"LDIH {reg},{v >> 64}")
 
     def charger(self, reg, v):
         """Une constante de 64 bits dans un registre : LDIS (32 bits signés), LDIU (32 bits sans signe) ou LDI."""
@@ -6067,7 +6096,10 @@ class Generateur:
             self.charger("R2", (1 << 30) - 1)
             self.emettre("AND R1,R1,R2")
         elif t == "w":
-            self.emettre("OR R1,R1,R4")
+            # vrai s'il n'est pas nul : les 64 bits hauts repliés sur les bas (la condition se teste sur 64 bits)
+            self.emettre("LDIS R2,#64")
+            self.emettre("SHR.L R2,R1,R2")
+            self.emettre("OR R1,R1,R2")
 
     def comparer_entiers(self, op, a, b, faux, lab):
         """Compare deux entiers (entier ou entier_32) et saute à lab si la comparaison est vraie (ou fausse, avec faux).
@@ -6482,8 +6514,14 @@ class Generateur:
                 o = op[1:] if op in SIGNEES_COMP else op
                 t = self.joindre(ta_, tb_, ligne_de(e), op)
                 if t == "x":
-                    nom = {"==": "__pq_eq", "!=": "__pq_ne", "<": "__pq_lt", "<=": "__pq_le", ">": "__pq_gt", ">=": "__pq_ge"}[o]
-                    self.appel(("appel", nom, [self.bits_x(e[2]), self.bits_x(e[3])], ligne_de(e)))
+                    # 1 ou 0 ; faux si l'un est inconnu ou variable (sauf « != »)
+                    self.paire(e[2], e[3], "x")
+                    instr = {"==": "FEQ.L R1,R1,R2", "!=": "FEQ.L R1,R1,R2", "<": "FLT.L R1,R1,R2",
+                             "<=": "FLE.L R1,R1,R2", ">": "FLT.L R1,R2,R1", ">=": "FLE.L R1,R2,R1"}[o]
+                    self.emettre(instr)
+                    if o == "!=":
+                        self.emettre("LDIS R2,#1")
+                        self.emettre("XOR R1,R1,R2")
                     return
                 if t in ("f", "s"):
                     self.paire(e[2], e[3], t)
@@ -6496,19 +6534,14 @@ class Generateur:
                         self.emettre("XOR R1,R1,R2")
                     return
                 if t == "w":
-                    if o in ("==", "!="):
-                        self.paire(e[2], e[3], "w")
-                        self.emettre("XOR R1,R1,R2")
-                        self.emettre("XOR R4,R4,R5")
-                        self.emettre("OR R1,R1,R4")
-                        self.booleen(lambda vrai: (self.emettre("CMP R1,R0"),
-                                                   self.emettre(f"{'JZ' if o == '==' else 'JNZ'} {vrai}")))
-                        return
-                    a_, b_ = (e[2], e[3]) if o in ("<", ">=") else (e[3], e[2])
-                    self.appel(("appel", "__qlt", [a_, b_], ligne_de(e)))     # signé, comme avant
-                    if o in ("<=", ">="):
-                        self.emettre("LDIS R2,#1")
-                        self.emettre("XOR R1,R1,R2")
+                    # à toute la largeur ; signé (le bit 127 basculé), comme au SPU-64, sauf l'égalité
+                    self.paire(e[2], e[3], "w")
+                    if o not in ("==", "!="):
+                        self.charger_l("R3", 1 << 127)
+                        self.emettre("XOR.L R1,R1,R3")
+                        self.emettre("XOR.L R2,R2,R3")
+                    regs, saut = COMPARAISONS[o]
+                    self.booleen(lambda vrai: (self.emettre(f"CMP.L {regs}"), self.emettre(f"{saut} {vrai}")))
                     return
                 self.booleen_comparaison(op, e[2], e[3])
                 return
@@ -6583,50 +6616,21 @@ class Generateur:
             raise VtxError(f"ligne {ligne_de(e)} : expression flottante inattendue")
 
     def expr_w(self, e):
-        """Entier de 128 bits : deux mots dans R1:R4 (le mot bas d'abord) ; deuxième opérande dans R2:R5."""
+        """Entier de 128 bits : un mot de Lugus, calculé à toute la largeur (.L)."""
         g = e[0]
         if g == "wnombre":
-            self.charger("R1", e[1] & MASK)
-            self.charger("R4", e[1] >> 64)
-        elif g == "var":
-            off = self.variable(e[1], e[2])
-            self.emettre(f"LDF R1,#{off}")
-            self.emettre(f"LDF R4,#{off - 1}")
+            self.charger_l("R1", e[1])
         elif g == "non":
             self.expr(e[1], "w")
-            self.emettre("CMP3 R1,R1")
-            self.emettre("CMP3 R4,R4")
+            self.emettre("CMP3.L R1,R1")
         elif g == "bin":
             op, l = e[1], ligne_de(e)
-            if op in ("/", "%", "./", ".%"):
-                self.appel(("appel", "__qdiv", [e[2], e[3], ("nombre", 1 if op in ("%", ".%") else 0)], l))
-                return
-            if op in ("<<", ">>", ".>>"):
-                self.appel(("appel", "__qshl" if op == "<<" else "__qsar", [e[2], e[3]], l))
-                return
-            self.paire(e[2], e[3], "w")
-            if op == "+":
-                self.emettre("ADD R1,R1,R2")
-                self.emettre("ADC R4,R4,R5")
-            elif op == "-":
-                self.emettre("SUB R1,R1,R2")
-                self.emettre("SBC R4,R4,R5")
-            elif op == "*":
-                self.emettre("MULHU R6,R1,R2")
-                self.emettre("MUL R7,R1,R5")
-                self.emettre("ADD R6,R6,R7")
-                self.emettre("MUL R7,R4,R2")
-                self.emettre("ADD R4,R6,R7")
-                self.emettre("MUL R1,R1,R2")
-            elif op in BITS_OPS:
-                self.emettre(f"{BINAIRES[op]} R1,R1,R2")
-                self.emettre(f"{BINAIRES[op]} R4,R4,R5")
-            else:
+            if op not in W_OPS:
                 raise VtxError(f"ligne {l} : « {op} » ne s'applique pas à un entier_petuar")
-        elif g == "appel":
-            self.appel(e)
+            self.paire(e[2], e[3], "w")
+            self.emettre(f"{W_OPS[op]}.L R1,R1,R2")
         else:
-            raise VtxError(f"ligne {ligne_de(e)} : expression entier_petuar inattendue")
+            self.expr_e(e)
 
     def bits_x(self, a):
         """Les deux mots d'un flottant_petuar (élargi d'abord s'il le faut), vus comme un entier_petuar."""
@@ -6636,28 +6640,22 @@ class Generateur:
         return ("appel", "bits", [a], l)
 
     def expr_x(self, e):
-        """flottant_petuar : deux mots dans R1:R4 (le mot bas d'abord) ; le calcul par le prélude."""
+        """Flottant de 128 bits (le flottant_petuar) : une instruction de Lugus (FADD … à la largeur 128)."""
         g = e[0]
         if g == "xnombre":
-            self.charger("R1", e[1] & MASK)
-            self.charger("R4", e[1] >> 64)
-        elif g == "var":
-            off = self.variable(e[1], e[2])
-            self.emettre(f"LDF R1,#{off}")
-            self.emettre(f"LDF R4,#{off - 1}")
+            self.charger_l("R1", e[1])
         elif g == "bin":
             op, l = e[1], ligne_de(e)
             if op == "-" and e[2] in (("nombre", 0), ("fnombre", 0)):
-                self.appel(("appel", "__pq_neg", [self.bits_x(e[3])], l))
+                self.expr(e[3], "x")
+                self.emettre("FNEG.L R1,R1")
                 return
             if op not in ("+", "-", "*", "/"):
                 raise VtxError(f"ligne {l} : « {op} » ne s'applique pas à un flottant_petuar")
-            nom = {"+": "__pq_add", "-": "__pq_sub", "*": "__pq_mul", "/": "__pq_div"}[op]
-            self.appel(("appel", nom, [self.bits_x(e[2]), self.bits_x(e[3])], l))
-        elif g == "appel":
-            self.appel(e)
+            self.paire(e[2], e[3], "x")
+            self.emettre(f"F{ {'+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV'}[op] }.L R1,R1,R2")
         else:
-            raise VtxError(f"ligne {ligne_de(e)} : expression flottant_petuar inattendue")
+            self.expr_e(e)
 
     def logique(self, nom, args, ligne):
         """Opérations de la logique à quatre valeurs : de simples ET / OU sur les deux bits de chaque quit, donc la même
@@ -6721,9 +6719,14 @@ class Generateur:
                 raise VtxError(f"ligne {ligne} : « {nom} » attend {INTEGRES[nom]} argument(s)")
             if nom == "sortie":
                 t = self.expr(args[0])
+                if t in ("w", "x") and SORTIE_DEUX_MOTS:
+                    # pour comparer au SPU-64 : le mot bas, puis le mot haut
+                    self.emettre("MOV R2,R1")
+                    self.emettre("ZEXT.64 R1,R1")
+                    self.emettre("OUT R1")
+                    self.emettre("LDIS R3,#64")
+                    self.emettre("SHR.L R1,R2,R3")
                 self.emettre("OUT R1")
-                if t in LARGES2:
-                    self.emettre("OUT R4")
             elif nom == "entrée":
                 self.emettre("IN R1")
             elif nom == "cmp3":
@@ -6827,12 +6830,11 @@ class Generateur:
         def interdit():
             raise VtxError(f"ligne {ligne} : « {nom} » ne s'applique pas à un {NOM_TYPE[t]}")
         if nom in ("flottant_petuar", "flottant_128"):
-            if t == "x":
-                self.expr(x)
-            elif t in PQ_DEPUIS:
-                self.appel(("appel", PQ_DEPUIS[t], [x], ligne))
-            else:
+            if t not in X_DEPUIS:
                 interdit()
+            self.expr(x)
+            if X_DEPUIS[t]:
+                self.emettre(X_DEPUIS[t])
             return
         if nom == "comme_flottant_petuar":
             if t != "w":
@@ -6842,33 +6844,40 @@ class Generateur:
         if nom == "vers_ieee128":
             if t != "x":
                 interdit()
-            self.appel(("appel", "__pq_vers_ieee", [self.bits_x(x)], ligne))
+            self.expr(x)
+            self.emettre("FVIEEE.L R1,R1")
             return
         if nom == "de_ieee128":
             if t != "w":
                 interdit()
-            self.appel(("appel", "__pq_de_ieee", [x], ligne))
+            self.expr(x)
+            self.emettre("FDIEEE.L R1,R1")
             return
         if t == "x":
-            # un flottant_petuar vers les autres types : par le prélude
+            # un flottant de 128 bits vers les autres types : une instruction
+            self.expr(x)
             if nom == "bits":
-                self.expr(x)
+                pass
             elif nom == "racine":
-                self.appel(("appel", "__pq_racine", [self.bits_x(x)], ligne))
+                self.emettre("FSQRT.L R1,R1")
             elif nom in ("flottant", "flottant_64"):
-                self.appel(("appel", "__pq_vers_f", [self.bits_x(x)], ligne))
+                self.emettre("FCONV.64 R1,R1,#0")
             elif nom == "flottant_32":
-                self.appel(("appel", "__pq_vers_s", [self.bits_x(x)], ligne))
+                self.emettre("FCONV.32 R1,R1,#0")
             elif nom in ("entier_128", "entier_petuar", "entier", "entier_32"):
-                self.appel(("appel", "__pq_vers_w", [self.bits_x(x)], ligne))
-                if nom == "entier_32":
-                    self.emettre("ZEXT32 R1,R1")
+                self.emettre("FTOI.L R1,R1,#0")      # tronqué, saturé aux entiers signés de 128 bits
+                if nom == "entier":
+                    self.emettre("ZEXT.64 R1,R1")
+                elif nom == "entier_32":
+                    self.emettre("ZEXT.32 R1,R1")
             else:
                 interdit()
             return
         if nom in ("flottant", "flottant_64"):
             if t == "w":
-                self.appel(("appel", "__pq_vers_f", [("appel", "__pq_de_w", [x], ligne)], ligne))
+                self.expr(x)
+                self.emettre("ITOFS.L R1,R1,#0")
+                self.emettre("FCONV.64 R1,R1,#0")
                 return
             if t not in ("e", "i", "f", "s"):
                 interdit()
@@ -6894,7 +6903,8 @@ class Generateur:
             self.emettre("ITOFS R1,R1")
         elif nom in ("entier", "entier_32"):
             if t == "w":
-                self.expr(x)                         # le mot bas
+                self.expr(x)
+                self.emettre("ZEXT.64 R1,R1")        # les 64 bits bas
             else:
                 self.expr(x)
                 if t == "s":
@@ -6931,33 +6941,33 @@ class Generateur:
             self.emettre("FVIEEE R1,R1" if nom == "vers_ieee64" else "FDIEEE R1,R1")
         elif nom in ("entier_128", "entier_petuar"):
             if t in ("f", "s"):
-                self.appel(("appel", "__pq_vers_w", [("appel", "flottant_petuar", [x], ligne)], ligne))
+                self.expr(x)
+                self.emettre(f"FTOI.{'64' if t == 'f' else '32'} R1,R1,#0")   # vers un entier signé de 128 bits
                 return
             if t not in ("e", "i", "w"):
                 interdit()
             self.expr(x)
-            if t in ENTIERS:
-                self.emettre("LDIS R4,#0")
         elif nom in ("entier_128_signe", "entier_petuar_signe"):
             if t not in ENTIERS:
                 interdit()
             self.expr(x)
-            if t == "i":
-                self.emettre("SEXT32 R1,R1")
-            self.emettre("LDIS R2,#63")
-            self.emettre("SAR R4,R1,R2")
+            self.emettre("SEXT.32 R1,R1" if t == "i" else "SEXT.64 R1,R1")
         elif nom in ("entier_128_de", "entier_petuar_de"):
             if t not in ENTIERS or self.typ(args[1]) not in ENTIERS:
                 raise VtxError(f"ligne {ligne} : {nom}(haut, bas) prend deux entiers")
             self.deux(args[0], args[1])
-            self.emettre("MOV R4,R1")
-            self.emettre("MOV R1,R2")
+            self.emettre("LDIS R3,#64")
+            self.emettre("SHL.L R1,R1,R3")
+            self.emettre("OR.L R1,R1,R2")
         elif nom in ("bas", "haut"):
-            if t not in LARGES2:
+            if t not in ("w", "x"):
                 interdit()
             self.expr(x)
             if nom == "haut":
-                self.emettre("MOV R1,R4")
+                self.emettre("LDIS R2,#64")
+                self.emettre("SHR.L R1,R1,R2")
+            else:
+                self.emettre("ZEXT.64 R1,R1")
 
     def surcharge(self, nom, args, t, ligne):
         """abs, min et max des flottants (64 et 32 bits) et des entier_32, en ligne."""
@@ -7895,7 +7905,7 @@ TESTS = [
      "sortie(bits(x)); sortie(bits(x + 1.0S)); sortie(#0123456789ABCDEF); sortie(bas(#0123456789ABCDEF_FEDCBA9876543210)); "
      "sortie(haut(#0123456789ABCDEF_FEDCBA9876543210)); soit w = 5LL; sortie(w * w); sortie(bits(1.0)); }",
      (), [2 * 4000000000 - 2 ** 32, Q32.depuis(Fraction(3, 2)), Q32.depuis(Fraction(5, 2)), 0x0123456789ABCDEF,
-          0xFEDCBA9876543210, 0x0123456789ABCDEF, 25, 0, Q64.depuis(Fraction(1))]),
+          0xFEDCBA9876543210, 0x0123456789ABCDEF, 25, Q64.depuis(Fraction(1))]),   # Lugus : un entier_petuar, un mot
     ("SPU-64 : adresse longue @[a], cubes par fréquence, étage dynamique",
      "fonction principal() { soit a = cube_adresse(2, 5, 100); @[a] = 7; @[a + 1] = 8; sortie(@[a] + @[a + 1]); "
      "sortie(@2[100]); @2[100] = 9; soit b = cube_adresse(2, 6, 100); @[b] = 11; sortie(@[a] * 100 + @[b]); "
@@ -7911,7 +7921,7 @@ TESTS = [
      "fonction principal() { sortie(mul_haut(18446744073709551615, 3)); sortie(mul_haut_signe(0 - 2, 3)); "
      "sortie(vers_ieee64(1.5)); sortie(bits(de_ieee64(4609434218613702656))); soit w = entier_petuar_signe(0 - 5); "
      "sortie(w); }",
-     (), [2, 2 ** 64 - 1, 0x3FF8000000000000, Q64.depuis(Fraction(3, 2)), 2 ** 64 - 5, 2 ** 64 - 1]),
+     (), [2, 2 ** 64 - 1, 0x3FF8000000000000, Q64.depuis(Fraction(3, 2)), 2 ** 128 - 5]),
     ("SPU-64 : couleurs profondes (16 bits par canal)",
      "fonction principal() { soit c = rgb(255, 128, 0); sortie(c); sortie(c.r); sortie(c.v); sortie(c.b); sortie(c.a); "
      "sortie(rgb16(1, 2, 3)); sortie(#FF8000.r); }",
@@ -7920,7 +7930,7 @@ TESTS = [
      "tableau q[100] de quits @2[0]; fonction principal() { pour i dans 0..100 { q[i] = i % 4; } soit s = 0; "
      "pour i dans 0..100 { s = s + q[i]; } sortie(s); sortie(@2[1] == @2[0]); sortie(adn\"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT\"); "
      "sortie(adn\"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"); }",
-     (), [150, 1, 2 ** 64 - 1, 0, 1]),
+     (), [150, 1, 2 ** 64 - 1, 2 ** 64]),
 ]
 
 ERREURS = [
