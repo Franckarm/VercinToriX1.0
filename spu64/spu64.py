@@ -75,7 +75,14 @@ def _entete_avec(entete, quoi):
 
 
 def _format(entete):
+    if entete == b"VTXCU128":
+        return (16, _MOTS // 4)          # Lugus, le SPU-128 : mots de 16 octets, et leurs brins
     return (8, _MOTS // 4) if entete == b"VTXCUB64" else (4, 0)
+
+
+def _taille_ombre(mot):
+    """Les mots de l'ombre : 8 octets (comme ceux du SPU-64, et pour le SPU-32), 16 pour Lugus."""
+    return 16 if mot == 16 else 8
 
 
 def _pages(corps, fmt):
@@ -151,7 +158,7 @@ def ecrire_double(chemin, octets):
         h.write(_entete_avec(octets[:8], b"ANS") + bytes(255 - x for x in corps))
     o = [_entete_avec(octets[:8], b"OMB")]
     for k, p in sorted(_pages(octets[8:], (mot, suite)).items()):
-        o.append(k.to_bytes(4, "little") + b"".join(v.to_bytes(8, "little") for v in _ombre_page(p, mot)))
+        o.append(k.to_bytes(4, "little") + b"".join(v.to_bytes(_taille_ombre(mot), "little") for v in _ombre_page(p, mot)))
     with open(_chemin_ombre(chemin), "wb") as h:
         h.write(b"".join(o))
 
@@ -174,10 +181,11 @@ def lire_double(chemin, entete):
     ob = lire(_chemin_ombre(chemin), _entete_avec(entete, b"OMB"))
     ombres = None
     if ob is not None:
-        ombres, t, i = {}, 4 + 256 * 9 * 8, 8
+        oz = _taille_ombre(mot)
+        ombres, t, i = {}, 4 + 256 * 9 * oz, 8
         while i + t <= len(ob):
             k = int.from_bytes(ob[i:i + 4], "little")
-            ombres[k] = [int.from_bytes(ob[i + 4 + 8 * j:i + 12 + 8 * j], "little") for j in range(256 * 9)]
+            ombres[k] = [int.from_bytes(ob[i + 4 + oz * j:i + 4 + oz * (j + 1)], "little") for j in range(256 * 9)]
             i += t
     pp = _pages(p[8:], fmt) if p is not None else {}
     pa = {}

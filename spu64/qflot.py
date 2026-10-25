@@ -255,3 +255,59 @@ def de_ieee64(d):
     if v == 0:
         return F.signe(s)
     return F.signe(s) | F.arrondi(v)
+
+
+# --- binary32, binary64, binary128 de l'IEEE : l'échange, pour toutes les tailles (Lugus, le SPU-128)
+IEEE = {32: (24, 127, 255), 64: (53, 1023, 2047), 128: (113, 16383, 32767)}     # précision, biais, exposant maximal
+
+
+def ieee_arrondi(v, k):
+    """Bits (sans signe) du binary de k bits le plus proche de v > 0."""
+    p, b, emax = IEEE[k]
+    qmin = 2 - b - p
+    e = v.numerator.bit_length() - v.denominator.bit_length()
+    if Fraction(2) ** e > v:
+        e -= 1
+    if Fraction(2) ** (e + 1) <= v:
+        e += 1
+    q = max(e - (p - 1), qmin)
+    t = v / Fraction(2) ** q
+    n = t.numerator // t.denominator
+    r = t - n
+    if r > Fraction(1, 2) or (r == Fraction(1, 2) and n & 1):
+        n += 1
+    if n == 1 << p:
+        n, q = n >> 1, q + 1
+    if n >= 1 << (p - 1):
+        be = q + (p - 1) + b
+        if be >= emax:
+            return emax << (p - 1)
+        return (be << (p - 1)) | (n - (1 << (p - 1)))
+    return n
+
+
+def vers_ieee(F, a, k):
+    """Le flottant quaternaire a (format F) vers les bits du binary de k bits ; inconnu et variable : le NaN canonique."""
+    p, b, emax = IEEE[k]
+    if not F.est_nombre(a):
+        return ((emax << (p - 1)) | (1 << (p - 2)))
+    s = F.etat(a) == 1
+    if F.est_inf(a):
+        return (emax << (p - 1)) | (s << (k - 1))
+    v = abs(F.valeur(a))
+    return (ieee_arrondi(v, k) if v else 0) | (s << (k - 1))
+
+
+def de_ieee(F, d, k):
+    """Les bits d'un binary de k bits vers le format F (un NaN donne variable)."""
+    p, b, emax = IEEE[k]
+    s = (d >> (k - 1)) & 1
+    e = (d >> (p - 1)) & emax
+    m = d & ((1 << (p - 1)) - 1)
+    if e == emax:
+        return F.VARIABLE if m else F.inf(s)
+    v = Fraction(m) * Fraction(2) ** (2 - b - p) if e == 0 else Fraction(m | (1 << (p - 1))) * Fraction(2) ** (e - b - p + 1)
+    if v == 0:
+        return F.signe(s)
+    return F.signe(s) | F.arrondi(v)
+
