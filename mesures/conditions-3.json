@@ -1,0 +1,26 @@
+[
+{
+"cle": "Machine",
+"valeur": "Intel Xeon 2,1 GHz, 2 cœurs, Linux (machine de travail de Claude, pas ton PC)"
+},
+{
+"cle": "Méthode",
+"valeur": "médiane de 5 lancements, temps réel, démarrage du processus compris"
+},
+{
+"cle": "Compilateurs",
+"valeur": "gcc 13.3 -O2, rustc 1.97 -O, Go, Java (OpenJDK), Node 22, Python 3.13"
+},
+{
+"cle": "vtx",
+"valeur": "vtx 0.5i : SPU-32 émulé, traduit en natif (vtx traduire), forgé (la forge : l'arbre du programme en Rust, puis rustc -O3), SPU-64 émulé"
+},
+{
+"cle": "Date",
+"valeur": "25 octobre 2026"
+},
+{
+"cle": "Labyrinthe (300 images de la vue 3D)",
+"valeur": "émulé 13,3 ms par image ; traduit 0,45 ms ; forgé 0,15 ms ; même empreinte de l'image"
+}
+]

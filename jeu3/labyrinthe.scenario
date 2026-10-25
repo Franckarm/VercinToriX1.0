@@ -1,0 +1,14 @@
+# Une partie courte du labyrinthe : Entrée, avancer, tourner, avancer encore, la souris, reculer.
+2 touche 13
+5 appui 122
+70 relache 122
+70 appui 65573
+95 relache 65573
+95 appui 122
+170 relache 122
+170 souris 120 60 1
+171 glisse 40 0
+175 glisse 40 0
+180 souris 120 60 0
+182 appui 115
+220 relache 115

@@ -1,0 +1,267 @@
+{
+ "fib": {
+  "C (gcc -O2)": {
+   "s": 0.0041526789999579705,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "Rust (rustc -O)": {
+   "s": 0.007906482000066717,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "Go": {
+   "s": 0.01632974500000728,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "Java": {
+   "s": 0.0601601959999698,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "JavaScript (Node)": {
+   "s": 0.047541210999952455,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "Python 3": {
+   "s": 0.272001457999977,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "vtx, SPU-32 émulé (vtx.exe)": {
+   "s": 0.6211942859999908,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "vtx, traduit en code natif": {
+   "s": 0.04749484100000245,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "vtx, forgé (forge → Rust → natif)": {
+   "s": 0.007774353000058909,
+   "resultat": "2178309",
+   "juste": true
+  },
+  "vtx, SPU-64 émulé (vtx64.exe)": {
+   "s": 0.780172331000017,
+   "resultat": "2178309",
+   "juste": true
+  }
+ },
+ "crible": {
+  "C (gcc -O2)": {
+   "s": 0.032749666999961846,
+   "resultat": "348513",
+   "juste": true
+  },
+  "Rust (rustc -O)": {
+   "s": 0.031740693999950054,
+   "resultat": "348513",
+   "juste": true
+  },
+  "Go": {
+   "s": 0.03868025899998884,
+   "resultat": "348513",
+   "juste": true
+  },
+  "Java": {
+   "s": 0.07823238999992554,
+   "resultat": "348513",
+   "juste": true
+  },
+  "JavaScript (Node)": {
+   "s": 0.06802975199991579,
+   "resultat": "348513",
+   "juste": true
+  },
+  "Python 3": {
+   "s": 1.0146245590000262,
+   "resultat": "348513",
+   "juste": true
+  },
+  "vtx, SPU-32 émulé (vtx.exe)": {
+   "s": 0.9323870539999461,
+   "resultat": "348513",
+   "juste": true
+  },
+  "vtx, traduit en code natif": {
+   "s": 0.09284487800005081,
+   "resultat": "348513",
+   "juste": true
+  },
+  "vtx, forgé (forge → Rust → natif)": {
+   "s": 0.046518131000084395,
+   "resultat": "348513",
+   "juste": true
+  },
+  "vtx, SPU-64 émulé (vtx64.exe)": {
+   "s": 1.2643383559999393,
+   "resultat": "348513",
+   "juste": true
+  }
+ },
+ "mandel": {
+  "C (gcc -O2)": {
+   "s": 0.020119490000070073,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "Rust (rustc -O)": {
+   "s": 0.018893380999998044,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "Go": {
+   "s": 0.02077000399992812,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "Java": {
+   "s": 0.05596944199999143,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "JavaScript (Node)": {
+   "s": 0.12264281199998095,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "Python 3": {
+   "s": 1.4056657430000996,
+   "resultat": "5648015",
+   "juste": false
+  },
+  "vtx, SPU-32 émulé (vtx.exe)": {
+   "s": 0.8955666660000361,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "vtx, traduit en code natif": {
+   "s": 0.07214076599996133,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "vtx, forgé (forge → Rust → natif)": {
+   "s": 0.02203114999997524,
+   "resultat": "5648809",
+   "juste": true
+  },
+  "vtx, SPU-64 émulé (vtx64.exe)": {
+   "s": 2.637806896000029,
+   "resultat": "5648170",
+   "juste": false
+  }
+ },
+ "tri": {
+  "C (gcc -O2)": {
+   "s": 0.04927365599996847,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "Rust (rustc -O)": {
+   "s": 0.04859069400004046,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "Go": {
+   "s": 0.050436913999988064,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "Java": {
+   "s": 0.12771554999994805,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "JavaScript (Node)": {
+   "s": 0.11570035699992332,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "Python 3": {
+   "s": 1.2828194300000177,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "vtx, SPU-32 émulé (vtx.exe)": {
+   "s": 0.7241960390000486,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "vtx, traduit en code natif": {
+   "s": 0.1235626019999927,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "vtx, forgé (forge → Rust → natif)": {
+   "s": 0.06714218399997662,
+   "resultat": "2664010383",
+   "juste": true
+  },
+  "vtx, SPU-64 émulé (vtx64.exe)": {
+   "s": 0.8873796060000814,
+   "resultat": "2664010383",
+   "juste": true
+  }
+ },
+ "adn": {
+  "C (gcc -O2)": {
+   "s": 0.023078029000089373,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "C, écrit par un expert (16 bases par mot)": {
+   "s": 0.009598423999932493,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "Rust (rustc -O)": {
+   "s": 0.021906582000042363,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "Go": {
+   "s": 0.06758907100004308,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "Java": {
+   "s": 0.11656123900002058,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "JavaScript (Node)": {
+   "s": 0.23660832200005188,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "Python 3": {
+   "s": 6.773925597999892,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "vtx, SPU-32 émulé (vtx.exe)": {
+   "s": 0.21924691000003804,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "vtx, traduit en code natif": {
+   "s": 0.012545534999958363,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "vtx, forgé (forge → Rust → natif)": {
+   "s": 0.009667889999946055,
+   "resultat": "8391588",
+   "juste": true
+  },
+  "vtx, SPU-64 émulé (vtx64.exe)": {
+   "s": 0.27032004900001994,
+   "resultat": "8391588",
+   "juste": true
+  }
+ }
+}

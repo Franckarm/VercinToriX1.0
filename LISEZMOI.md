@@ -25,6 +25,12 @@ Langage, compilateur, assembleur et émulateur du SPU à cube chromatique.
   variable, inconnu), le cube des noms dans vtxc64 (chaque nom haché une fois), les appels en série
   `ajouter(l): 1, 2, 3;`.
 - Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là ; il reçoit les mêmes fonctions de Gobatix.
+- **La forge (0.5i)** : un programme vtx devient un exécutable natif, par Rust : `python forge/forge.py programme.vtx`.
+  Chaque fonction vtx devient une fonction Rust, avec la mémoire, les cubes et Gobatix de la machine ; mêmes sorties
+  que le SPU émulé (3 267 programmes vérifiés), de 0,4 à 2 fois le temps du C, de 20 à 90 fois plus vite que
+  l'émulation (`docs/vtx-forge.md`).
+- **Le labyrinthe tout en vtx** : `jeu3/labyrinthe.vtx`, le jeu sans la page web (`vtx gobatix jeu3/labyrinthe.vtx`,
+  ou forgé en `labyrinthe.exe`) ; l'image vit dans un cube à elle.
 
 L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/vtx-0-5-autonomie.md`.
 
@@ -75,7 +81,8 @@ Sous Windows, remplacez `python3` par `py` ou `python`.
 | `machines/` | émulateurs JavaScript (`vm_rapide.js` interprète, `vm_traduite.js` traduction en JavaScript, environ 3,5 fois plus rapide), utilisés par le jeu dans le navigateur ; `conformite.js` les vérifie. La machine Java a été retirée : Rust la remplace |
 | `bibliotheque/` | `cube.vtx` (voies du mot RGBA, gris, distance, mélange, centrage), `adn.vtx` (couche ADN et ARN), `fixe.vtx` (64 bits et virgule fixe 16.16), avec leurs tests |
 | `exemples/` | chariot d'usine, appariement spectral, mémoire associative, canal caché T/U, lancer de rayons, démonstration |
-| `jeu3/`, `jeu2/` | le jeu « Labyrinthe du cube » en vtx |
+| `jeu3/`, `jeu2/` | le jeu « Labyrinthe du cube » en vtx ; `jeu3/labyrinthe.vtx` : le jeu complet en Gobatix |
+| `forge/` | la forge : vtx en code natif par Rust (`forge.py`, `noyau_forge.rs`), et son test contre la machine émulée |
 | `debogueur/` | programme de démonstration du débogueur et son test |
 | `partition/` | démonstrations de la partition des tâches (sans segments, en segments, avec tableaux cumulés) et leur test |
 | `ombre/` | ombre binaire du cube : volume en voxels, ombre fine et grossière, rayons qui sautent le vide ; test contre une référence numpy |

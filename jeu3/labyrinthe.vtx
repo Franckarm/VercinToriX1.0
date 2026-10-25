@@ -1,0 +1,269 @@
+// machine : spu-32
+importer "rendu3.vtx";
+importer "donnees_monde.vtx";
+
+// Le labyrinthe du cube, tout en vtx : la boucle du jeu, le clavier, la souris, le temps et l'affichage sont dans le
+// programme ; la page web n'est plus nécessaire. vtx gobatix labyrinthe.vtx ouvre la fenêtre (Windows) ; la forge en
+// fait un exécutable seul (python3 forge/forge.py labyrinthe.vtx).
+//   Z / W / ↑ avancer · S / ↓ reculer · Q / A pas à gauche · D pas à droite · ← → tourner · souris (bouton gauche
+//   tenu) : tourner · Entrée : jouer · P : pause · Échap : quitter
+// L'image montrée vit dans un cube à elle : l'étage 1 porte la carte, les textures et les tables du jeu (cube 0) ; pour
+// présenter, l'étage 1 s'accorde sur le cube IMAGE, la vue (cadre, étage 2) et le tableau de bord y sont peints,
+// puis l'étage revient au cube du jeu. Deux cubes, un seul étage : rien n'est déplacé.
+// Avec l'entrée 1 : le banc d'essai (300 images rendues sur un chemin fixe, sans fenêtre ; sort une empreinte de
+// l'image), pour comparer les machines.
+
+constante IMAGE = 12;          // le cube de l'image (fréquence 12)
+constante LI = 256;            // l'image : la vue 256 × 128, puis le tableau de bord
+constante HI = 172;
+constante TOUR_MS = 620;       // un tour des ennemis
+constante PHASE_MS = 70;       // une image d'animation des ennemis
+constante MINI = 40000;        // @2[40000..41024] : la petite carte, préparée avant de passer au cube de l'image
+
+tableau etat_jeu[8] @2[41100];   // 0 en jeu, 1 en pause, 2 message (code), 3 fin du message (ms), 4 dernière fin (1 perdu, 2 gagné)
+
+fonction nouvelle_partie() {
+    pour k dans 0..16 {
+        config[k] = 0;
+    }
+    pour k2 dans 0..6 {
+        config[k2] = k2 + 1;
+    }
+    charger_monde();
+    joueur[6] = 13;
+    joueur[7] = 6;
+    joueur[2] = 0;
+    rp[0] = 255;
+    rp[1] = 0;
+}
+
+// Les six commandes tenues (indices de config) : 0 avancer, 1 reculer, 2 pas à gauche, 3 pas à droite, 4 et 5 tourner.
+fonction tenue(t) {
+    si t == 0 { retour appuyee(122) | appuyee(119) | appuyee(touche_haut()); }
+    si t == 1 { retour appuyee(115) | appuyee(touche_bas()); }
+    si t == 2 { retour appuyee(113) | appuyee(97); }
+    si t == 3 { retour appuyee(100); }
+    si t == 4 { retour appuyee(touche_gauche()); }
+    retour appuyee(touche_droite());
+}
+
+fonction annoncer(code, maintenant) {
+    etat_jeu[2] = code;
+    etat_jeu[3] = maintenant + 2200;
+}
+
+// Un pas de simulation (1/60 s) : chaque commande tenue est appliquée.
+fonction pas_de_simulation(maintenant) {
+    pour t dans 0..6 {
+        si tenue(t) == 1 {
+            appliquer(t);
+        }
+    }
+    soit e = joueur[4];
+    si e == 1 || e == 2 || e == 3 || e == 7 {
+        annoncer(e, maintenant);
+    }
+    joueur[4] = 0;
+    si joueur[5] == 2 {
+        etat_jeu[0] = 0;
+        etat_jeu[4] = 2;
+    }
+}
+
+fonction tour_ennemis(maintenant) {
+    tour_complet();
+    si joueur[4] == 6 {
+        annoncer(6, maintenant);
+    }
+    joueur[4] = 0;
+    si joueur[5] == 1 {
+        etat_jeu[0] = 0;
+        etat_jeu[4] = 1;
+    }
+}
+
+// La petite carte (32 × 32), lue dans le cube du jeu : murs, portes, clés, soin, ennemis, joueur.
+fonction preparer_carte() {
+    pour i dans 0..1024 {
+        soit t = carte[i];
+        soit c = rgb(36, 39, 52);
+        si t == 1 { c = rgb(150, 72, 46); }
+        si t == 2 { c = rgb(80, 100, 150); }
+        si t == 5 { c = rgb(200, 160, 40); }
+        si t == 6 { c = rgb(90, 150, 220); }
+        si t > 6 { c = rgb(100, 220, 230); }
+        @2[MINI + i] = c;
+    }
+    pour j dans 0..32 {
+        soit o = objets[j];
+        soit ty = (o >> 8) & 255;
+        si (ty == 1 || ty == 2 || ty == 7) && (o & 1) == 1 {
+            soit c2 = rgb(255, 220, 90);
+            si ty == 7 { c2 = rgb(240, 240, 232); }
+            @2[MINI + ((o >> 16) & 255) * 32 + (o >> 24)] = c2;
+        }
+    }
+    pour k dans 0..NE {
+        soit m = mem_adn[k];
+        @2[MINI + ((m >> 16) & 255) * 32 + (m >> 24)] = rgb(240, 60, 50);
+    }
+    @2[MINI + (joueur[1] >> 8) * 32 + (joueur[0] >> 8)] = rgb(245, 245, 240);
+}
+
+fonction message(code): texte {
+    si code == 1 { retour "Clé A prise"; }
+    si code == 2 { retour "Clé B prise"; }
+    si code == 3 { retour "Porte ouverte"; }
+    si code == 7 { retour "Soigné : +35"; }
+    retour "Touché : " + texte(vie[0]) + " PV";
+}
+
+// Peint l'image (étage 1 accordé sur le cube IMAGE) : la vue, puis le tableau de bord.
+fonction peindre(maintenant) {
+    pour q dans 0..32768 {
+        @1[q] = cadre[q];
+    }
+    rectangle(0, 128, LI, HI - 128, rgb(22, 24, 33));
+    pour y dans 0..32 {
+        pour x dans 0..32 {
+            @1[(134 + y) * LI + 6 + x] = @2[MINI + y * 32 + x];
+        }
+    }
+    soit pv = vie[0];
+    texte_image(46, 133, "Points de vie " + texte(pv), rgb(230, 230, 220));
+    rectangle(46, 143, 100, 5, rgb(60, 30, 30));
+    soit cb = rgb(90, 200, 110);
+    si pv < 35 { cb = rgb(230, 70, 60); }
+    rectangle(46, 143, pv, 5, cb);
+    soit ca = rgb(80, 80, 90);
+    si (joueur[3] & 1) == 1 { ca = rgb(255, 220, 90); }
+    texte_image(46, 153, "clé A", ca);
+    soit cbb = rgb(80, 80, 90);
+    si (joueur[3] & 2) == 2 { cbb = rgb(255, 220, 90); }
+    texte_image(86, 153, "clé B", cbb);
+    si etat_jeu[2] != 0 && maintenant < etat_jeu[3] {
+        texte_image(130, 143, message(etat_jeu[2]), rgb(255, 235, 150));
+    }
+    texte_image(46, 163, "Échap quitter · P pause · souris : tourner", rgb(110, 115, 135));
+    si etat_jeu[0] == 0 {
+        rectangle(48, 40, 160, 48, rgb(10, 11, 16));
+        soit titre = "Le labyrinthe du cube";
+        soit ct = rgb(240, 240, 232);
+        si etat_jeu[4] == 2 { titre = "Sortie atteinte"; ct = rgb(110, 220, 120); }
+        si etat_jeu[4] == 1 { titre = "Vaincu"; ct = rgb(240, 80, 70); }
+        texte_image_grand(128 - largeur_texte(titre, 1), 48, titre, ct, 2);
+        soit s = "Entrée : jouer";
+        texte_image(128 - largeur_texte(s, 1) / 2, 72, s, rgb(200, 200, 210));
+    }
+    si etat_jeu[0] == 1 {
+        texte_image(108, 60, "Pause", rgb(255, 255, 255));
+    }
+}
+
+fonction rendre_vue(interp, phase) {
+    rp[0] = interp;
+    rp[1] = phase & 255;
+    rendre3(joueur[0], joueur[1], joueur[2]);
+    dessiner_sprites(joueur[0], joueur[1], joueur[2]);
+}
+
+// Le banc d'essai : 300 images sur un chemin fixe (avancer, tourner, tours des ennemis), sans fenêtre.
+fonction banc_essai() {
+    nouvelle_partie();
+    soit empreinte = 0;
+    pour n dans 0..300 {
+        si n % 40 < 30 {
+            appliquer(0);
+        } sinon {
+            appliquer(4);
+        }
+        si n % 37 == 36 {
+            tour_complet();
+        }
+        rendre_vue((n % 37) * 7, n / 4);
+        pour q dans 0..32768 {
+            empreinte = (empreinte * 31 + cadre[q]) ^ (empreinte >> 7);
+        }
+    }
+    sortie(empreinte);
+    sortie(joueur[0]);
+    sortie(joueur[1]);
+}
+
+fonction principal() {
+    si entrée() == 1 {
+        banc_essai();
+        retour 0;
+    }
+    nouvelle_partie();
+    accorder(1, IMAGE);
+    ecran(LI, HI);
+    accorder(1, 0);
+    cadence(16);
+    soit dernier = horloge();
+    soit accu = 0;
+    soit tour_accu = 0;
+    soit phase = 0;
+    soit phase_accu = 0;
+    tantque vrai {
+        soit maintenant = horloge();
+        soit dt = maintenant - dernier;
+        si dt > 100 { dt = 100; }
+        dernier = maintenant;
+        // les touches du moment : Entrée, P, Échap
+        soit k = touche();
+        tantque k != 0 {
+            si k == touche_echap() {
+                retour 0;
+            }
+            si k == touche_entree() && etat_jeu[0] == 0 {
+                nouvelle_partie();
+                etat_jeu[0] = 2;
+                etat_jeu[2] = 0;
+                accu = 0;
+                tour_accu = 0;
+            }
+            si (k == 112 || k == 80) && etat_jeu[0] != 0 {
+                etat_jeu[0] = 3 - etat_jeu[0];
+            }
+            k = touche();
+        }
+        si etat_jeu[0] == 1 {
+            dt = 0;
+        }
+        si etat_jeu[0] == 2 {
+            // la souris, bouton gauche tenu : tourner la tête
+            soit g = souris_glisse();
+            si (souris_boutons(souris()) & 1) == 1 && glisse_x(g) != 0 {
+                tourner(glisse_x(g) * 2);
+            }
+            // les pas de simulation (1/60 s chacun), en soixantièmes de milliseconde
+            accu = accu + dt * 60;
+            tantque accu >= 1000 && etat_jeu[0] == 2 {
+                pas_de_simulation(maintenant);
+                accu = accu - 1000;
+            }
+            tour_accu = tour_accu + dt;
+            si tour_accu >= TOUR_MS && etat_jeu[0] == 2 {
+                tour_accu = tour_accu - TOUR_MS;
+                tour_ennemis(maintenant);
+            }
+            phase_accu = phase_accu + dt;
+            tantque phase_accu >= PHASE_MS {
+                phase = phase + 1;
+                phase_accu = phase_accu - PHASE_MS;
+            }
+        }
+        soit interp = 255 * tour_accu / TOUR_MS;
+        si interp > 255 { interp = 255; }
+        rendre_vue(interp, phase);
+        preparer_carte();
+        accorder(1, IMAGE);
+        peindre(maintenant);
+        soit fin = presenter();
+        accorder(1, 0);
+        si fin == 1 {
+            retour 0;
+        }
+    }
+}

@@ -1,0 +1,111 @@
+# La forge : Vercintorix en code natif
+
+*vtx 0.5i. La forge est un prototype en Python (`forge/forge.py`) ; son portage dans vtxc, pour que vtx écrive lui-même
+son code natif, est la prochaine étape.*
+
+## L'idée
+
+Trois façons de faire tourner un programme vtx existaient :
+
+1. **le SPU émulé** (`vtx programme.vtx`) : une instruction après l'autre ;
+2. **la traduction des mots** (`vtx traduire`, dossier `natif/`) : chaque instruction du SPU devient une ligne de
+   Rust. La boucle d'interprétation disparaît, mais le programme garde la convention du SPU : chaque variable vit
+   dans le cadre de sa fonction, en mémoire, chaque appel empile ses arguments ;
+3. **la forge** (nouvelle) : on ne part plus des mots, mais de **l'arbre du programme**, tel que vtx.py le lit et le
+   type. Chaque fonction vtx devient une fonction Rust, chaque variable une variable Rust. rustc (LLVM) range alors
+   les variables dans les registres de la machine, déroule et vectorise les boucles, met en ligne les petites
+   fonctions.
+
+La forge garde **le sens exact du SPU** : entiers de 32 bits sans signe, division par zéro définie (le plus grand nombre,
+le reste vaut le dividende), décalages pris modulo 32, flottants IEEE au NaN unique (0x7FC00000), longs signés,
+flottant_64, entier_128, petuar (par le prélude, comme sur le SPU), logique de Belnap, quits. Les fonctions du
+prélude sont forgées comme les autres.
+
+## Autour du programme : la même machine
+
+Le programme forgé emporte la machine (`forge/noyau_forge.rs`), faite des fichiers mêmes de la machine émulée :
+
+| Fichier de vtx-rs | Rôle dans le programme forgé |
+|---|---|
+| `memoire.rs` | les quatre étages, les cubes (fréquences), les cubes sur disque |
+| `miroir.rs` | chaque cube écrit avec son anti-cube et son ombre ; `etat_disque()` |
+| `sortie.rs`, `gif.rs`, `hote.rs` | Gobatix : la fenêtre (Windows), l'animation GIF, les images PNG, la souris, le clavier, l'horloge, les scénarios |
+
+L'image du programme compilé par vtx.py est chargée telle quelle dans l'étage 0 : les textes et les données sont aux
+mêmes adresses que sur le SPU. Un programme forgé se lance comme `vtx programme.vtx` (les entrées sur la ligne de
+commande), et un programme Gobatix comme `vtx gobatix programme.vtx` : la première image ouvre la fenêtre, ou
+`--gif FICHIER`, `--images DOSSIER`, `--max N`, `--pas K`, `--scenario FICHIER`.
+
+## Deux points délicats
+
+**Le ramasse-miettes.** Celui du prélude cherche les références vivantes dans la pile du SPU, de `pile()` au haut de
+la pile. Dans un programme forgé, les variables sont dans les registres de la machine : il ne les verrait pas. Une
+fonction forgée qui appelle, de près ou de loin, le ramasse-miettes garde donc un cadre dans la pile du SPU, et y
+recopie ses variables juste avant chaque appel qui peut ramasser ; une valeur déjà calculée au milieu d'une expression
+(un argument, l'adresse d'une structure en construction) y est posée aussi, comme le SPU l'empile. Les autres
+fonctions (les boucles de calcul) n'ont aucun cadre. Le ramasse-miettes étant conservateur, il garde tout ce qu'un mot
+de la pile semble désigner ; la pile du SPU porte d'autres mots périmés que celle d'un programme forgé : après une
+purge, la taille du tas peut différer de quelques blocs (`purge.vtx` : 5 670 238 mots au lieu de 5 691 343). Les
+valeurs gardées sont les mêmes.
+
+**Les flottants.** Le SPU rend tout NaN sous une forme unique. Le faire à chaque opération coûte une comparaison ; or
+cela ne change rien tant que les bits ne sont pas regardés. La forge repère les variables flottantes dont les bits ne
+sont jamais lus (elles ne servent qu'au calcul, aux comparaisons, à `entier()`, `racine()`…) : elles vivent comme des
+flottants de la machine, et le NaN unique n'est imposé que là où les bits se voient. Dans `mandel`, la boucle
+intérieure devient celle qu'écrirait un programmeur C.
+
+## Vérification
+
+- `forge/test_forge.py N` : les exemples du paquet qui se terminent seuls, et N programmes tirés au hasard (le
+  générateur du test différentiel) ; sorties, texte et mémoire finale (étages 1 à 3) comparés au SPU émulé.
+  **3 267 programmes en tout, aucun écart** (seule la mesure du tas de `purge.vtx` et `ramasser.vtx` diffère, voir plus haut).
+- `--recolte FICHIER` ajoute les programmes des tests de types (flottants, longs, flottant_64, entier_128, petuar),
+  avec leurs entrées, récoltés par `forge/recolte.py`.
+- Gobatix : `peindre.vtx` (avec son scénario de gestes), `cube_tournant.vtx`, `cube_chromatique.vtx` et
+  `jeu3/labyrinthe.vtx` (avec `labyrinthe.scenario`) donnent **la même animation GIF, octet pour octet**, émulés et
+  forgés.
+
+## Mesures
+
+Médiane de 5 lancements, lancement du processus compris ; machine de mesure : Xeon 2,1 GHz (VM). La fiche complète
+(C, Rust, Go, Java, JavaScript, Python) est dans `mesures/`.
+
+| Programme | C (gcc -O2) | Rust | vtx forgé | rapport au C | vtx traduit | vtx émulé |
+|---|---|---|---|---|---|---|
+| fib(32) | 0,004 s | 0,008 s | 0,008 s | 2,0 | 0,047 s | 0,62 s |
+| crible | 0,033 s | 0,032 s | 0,047 s | 1,4 | 0,093 s | 0,93 s |
+| mandel | 0,020 s | 0,019 s | 0,022 s | 1,1 | 0,072 s | 0,90 s |
+| tri | 0,049 s | 0,049 s | 0,067 s | 1,4 | 0,12 s | 0,72 s |
+| adn | 0,023 s | 0,022 s | 0,010 s | **0,43** | 0,013 s | 0,22 s |
+
+Le labyrinthe (300 images de la vue 3D, `jeu3/labyrinthe.vtx 1`) : **13,3 ms par image émulé, 0,45 ms traduit,
+0,15 ms forgé** ; la même empreinte de l'image dans les trois cas.
+
+Pour fib, gcc transforme lui-même la récursion ; Rust écrit à la main fait comme la forge (0,009 s). Pour adn, le
+mot ADN de vtx range 16 bases et l'instruction QEGAL les compare d'un coup : le C écrit simplement compare base par
+base.
+
+## Le labyrinthe, tout en vtx
+
+`jeu3/labyrinthe.vtx` est le jeu complet sans la page web : la boucle (pas de simulation de 1/60 s, tours des
+ennemis, animation), le clavier (`appuyee`, `touche`), la souris (`souris_glisse`), l'horloge, et l'affichage. L'image
+montrée vit **dans un cube à elle** : l'étage 1 porte la carte, les textures et les tables du jeu (cube 0) ; pour
+présenter, l'étage 1 s'accorde sur le cube 12, la vue et le tableau de bord y sont peints, puis l'étage revient au
+cube du jeu. Deux cubes, un seul étage : rien n'est déplacé.
+
+`vtx gobatix jeu3/labyrinthe.vtx` le joue sur la machine émulée ; `python forge/forge.py jeu3/labyrinthe.vtx` en
+fait un exécutable seul.
+
+## L'horloge des images
+
+Une animation (`--gif`, `--images`) ou un scénario n'a pas de temps réel à suivre : `horloge()` y compte désormais le
+temps des images déjà présentées (la cadence de chacune). Un programme qui mesure le temps, comme le labyrinthe, se
+rejoue ainsi à l'identique, sur toutes les machines et à toutes les vitesses ; c'est ce qui permet de comparer les
+animations octet pour octet.
+
+## La suite
+
+- **vtxc écrit le Rust** : porter la forge dans le compilateur écrit en vtx (même texte que forge.py), pour que
+  `vtx forger programme.vtx` n'ait besoin que de rustc ;
+- **le SPU-64** forgé de même (vtxc64) ;
+- **le générateur x86-64 propre**, plus tard, comparé à la forge.

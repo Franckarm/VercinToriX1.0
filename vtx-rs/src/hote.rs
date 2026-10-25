@@ -10,7 +10,7 @@
 //   21 appuyee(t)    1 si la touche t est enfoncée en ce moment, sinon 0
 //   23 souris_glisse()  le déplacement de la souris depuis le dernier appel : dx (bits 0-15), dy (16-31), signés
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -27,6 +27,11 @@ static ENFONCEES: [AtomicU32; 8] = [const { AtomicU32::new(0) }; 8];
 pub static CADENCE_MS: AtomicU32 = AtomicU32::new(16);
 static DEBUT: Mutex<Option<Instant>> = Mutex::new(None);
 static DERNIERE: Mutex<Option<Instant>> = Mutex::new(None);
+/// L'horloge des images : une animation (GIF, images PNG) ou un scénario n'a pas de temps réel à suivre ; horloge()
+/// y compte le temps des images déjà présentées (la cadence de chacune), et le programme se rejoue à l'identique,
+/// sur toutes les machines et à toutes les vitesses.
+pub static HORLOGE_IMAGES: AtomicBool = AtomicBool::new(false);
+static TEMPS_IMAGES: AtomicU64 = AtomicU64::new(0);
 /// Vrai quand une fenêtre écoute (sinon presenter() n'attend pas : les fichiers et les tests vont à pleine vitesse).
 pub static FENETRE: AtomicBool = AtomicBool::new(false);
 
@@ -34,6 +39,7 @@ pub static FENETRE: AtomicBool = AtomicBool::new(false);
 pub fn remettre() {
     *DEBUT.lock().unwrap() = Some(Instant::now());
     *DERNIERE.lock().unwrap() = None;
+    TEMPS_IMAGES.store(0, Ordering::Relaxed);
     TOUCHES.lock().unwrap().clear();
     MOLETTE.store(0, Ordering::Relaxed);
     CADENCE_MS.store(16, Ordering::Relaxed);
@@ -46,6 +52,9 @@ pub fn remettre() {
 }
 
 fn depuis_debut() -> u64 {
+    if HORLOGE_IMAGES.load(Ordering::Relaxed) {
+        return TEMPS_IMAGES.load(Ordering::Relaxed);
+    }
     let mut d = DEBUT.lock().unwrap();
     d.get_or_insert_with(Instant::now).elapsed().as_millis() as u64
 }
@@ -264,6 +273,7 @@ fn appliquer_scenario(image: usize) {
 
 /// Une image vient d'être présentée : les gestes prévus après elle.
 pub fn image_presentee() {
+    TEMPS_IMAGES.fetch_add(CADENCE_MS.load(Ordering::Relaxed) as u64, Ordering::Relaxed);
     let image = {
         let mut s = SCENARIO.lock().unwrap();
         if s.0.is_empty() {
