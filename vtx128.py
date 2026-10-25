@@ -1447,6 +1447,22 @@ class Analyseur:
 
 
 PRELUDE = """
+// les constantes de la bibliothèque mathématique du flottant de 128 bits (maths/constantes128.py)
+constante __X_LN2_HAUT = 6.9314718055994530941723154115927820850644e-1Q;
+constante __X_LN2_BAS = 5.8029889835956905832474927907501940845467e-25Q;
+constante __X_INV_LN2 = 1.4426950408889634073599246810018921374266e0Q;
+constante __X_PI2_1 = 1.5707963267948966192313210548080350910036e0Q;
+constante __X_PI2_2 = 6.3683171635109501396177662014579131818934e-25Q;
+constante __X_PI2_3 = 5.5622711043168266913366080774328491080069e-50Q;
+constante __X_DEUX_SUR_PI = 6.3661977236758134307553505349005744813784e-1Q;
+constante __X_PI = 3.1415926535897932384626433832795028841972e0Q;
+constante __X_PI2 = 1.5707963267948966192313216916397514420986e0Q;
+constante __X_RACINE2 = 1.4142135623730950488016887242096980785697e0Q;
+constante __X_ATAN_DEMI = 4.6364760900080611621425623146121440202854e-1Q;
+constante __X_PI4 = 7.8539816339744830961566084581987572104929e-1Q;
+constante __X_ATAN_3DEMIS = 9.8279372324732906798571061101466601449688e-1Q;
+constante __X_EXP_MAX = 1.1355137111933024058873096613727848538020e4Q;
+constante __X_EXP_MIN = 0 - 1.1431383301794618042908992147088247960701e4Q;
 fonction abs(x) { si x .< 0 { retour 0 - x; } retour x; }
 fonction inf(a, b) { retour a .< b; }
 fonction sup(a, b) { retour a .> b; }
@@ -2731,21 +2747,6 @@ fonction arccosinus(x: flottant): flottant {
 // ---- la bibliothèque mathématique du flottant de 128 bits (Lugus) : chaque opération est une instruction de la
 // machine ; les séries sont évaluées par Horner, après une réduction de l'argument avec des constantes en deux ou trois
 // parties (maths/constantes128.py). Vérifiée contre une référence à 80 chiffres (tests/test_maths128.py).
-constante __X_LN2_HAUT = 6.9314718055994530941723154115927820850644e-1Q;
-constante __X_LN2_BAS = 5.8029889835956905832474927907501940845467e-25Q;
-constante __X_INV_LN2 = 1.4426950408889634073599246810018921374266e0Q;
-constante __X_PI2_1 = 1.5707963267948966192313210548080350910036e0Q;
-constante __X_PI2_2 = 6.3683171635109501396177662014579131818934e-25Q;
-constante __X_PI2_3 = 5.5622711043168266913366080774328491080069e-50Q;
-constante __X_DEUX_SUR_PI = 6.3661977236758134307553505349005744813784e-1Q;
-constante __X_PI = 3.1415926535897932384626433832795028841972e0Q;
-constante __X_PI2 = 1.5707963267948966192313216916397514420986e0Q;
-constante __X_RACINE2 = 1.4142135623730950488016887242096980785697e0Q;
-constante __X_ATAN_DEMI = 4.6364760900080611621425623146121440202854e-1Q;
-constante __X_PI4 = 7.8539816339744830961566084581987572104929e-1Q;
-constante __X_ATAN_3DEMIS = 9.8279372324732906798571061101466601449688e-1Q;
-constante __X_EXP_MAX = 1.1355137111933024058873096613727848538020e4Q;
-constante __X_EXP_MIN = 0 - 1.1431383301794618042908992147088247960701e4Q;
 // 2^k, exact : la mantisse 2^110 ou 2^111 (normalisée : son quit de tête n'est pas nul), l'exposant en base 4
 fonction __x_p2(k): flottant_petuar {
     si k .> 16381 { retour comme_flottant_petuar(0xBFFF0000000000000000000000000000LL); }
@@ -5597,13 +5598,16 @@ RI_RRR = {"ADD", "SUB", "MUL", "SHL", "SHR", "SAR", "DIV", "MOD", "DIVS", "MODS"
           "SLE", "MULHU", "MULHS", "QEGAL", "LDX", "LDQ", "ET4", "OU4", "EXQ", "ETGX"}
 RI_RR = {"SHL4", "SHR4", "MOV", "CMP3", "FSQRT", "ITOF", "ITOFS", "FTOI", "FROUND", "FNEG", "FETAT", "FVIEEE", "FDIEEE",
          "SSQRT", "SNEG", "STOF", "FTOS", "ZEXT32", "SEXT32", "COMPTE", "ADDI", "SUBI", "ETG", "LD", "NON4", "ANTI", "BRIN"}
-# Lugus : les opérations écrites à leur largeur par le générateur (.L toute la largeur, .64, .32) ; LDIH lit et écrit son
-# registre (il garde les 64 bits bas) : il reste une barrière
-RI_RRR |= {o + ".L" for o in ("ADD", "SUB", "MUL", "DIVS", "MODS", "SHL", "SHR", "SAR", "AND", "OR", "XOR", "FADD", "FSUB",
-                              "FMUL", "FDIV", "FEQ", "FLT", "FLE")}
-RI_RR |= {"CMP3.L", "FNEG.L", "FSQRT.L", "ITOF.L", "ITOFS.L", "FCONV.L", "FCONV.64", "FCONV.32", "FTOI.L", "FTOI.64",
-          "FTOI.32", "ZEXT.64", "ZEXT.32", "SEXT.64", "SEXT.32", "FVIEEE.L", "FDIEEE.L"}
-RI_DEST = RI_RRR | RI_RR | {"LDI", "LDIS", "LDIU", "LDF", "LDIS.L"}   # le premier registre est seulement écrit
+# Lugus : une opération écrite à sa largeur par le générateur (.L toute la largeur, .64, .32) se lit comme l'opération
+# de base (ADD.L comme ADD, ZEXT.64 comme ZEXT32 : même code d'opération) ; les règles qui nomment une opération
+# (constante : LDIS puis ADD ou SUB ; copie : MOV) ne visent que la forme sans largeur. VEXT, MATL, MATE, MELANGE,
+# ANTIPOINT, VINS et LDIH (qui garde les 64 bits bas de son registre) restent des barrières.
+RI_RR |= {"ZEXT", "SEXT", "FCONV"}
+RI_DEST = RI_RRR | RI_RR | {"LDI", "LDIS", "LDIU", "LDF"}   # le premier registre est seulement écrit
+
+
+def ri_base(op):
+    return op.split(".")[0]
 RI_SAUTS = {"JMP", "JZ", "JNZ", "JC", "JNC", "CALL", "RET", "HALT"}
 RI_TOUS = 0x1FE                                     # R1 à R8
 # La règle échange, comme l'auto-épissage des introns de groupe I et II : deux transestérifications. Le MOV (l'intron)
@@ -5624,16 +5628,17 @@ def ri_reg(a):
 
 def ri_acces(op, args):
     """(registres écrits, registres lus) d'une instruction simple ; None si elle fait autre chose (barrière)."""
+    op = ri_base(op)
     r = [ri_reg(a) for a in args]
     if op in RI_RRR:
         return {r[0]}, {r[1], r[2]}
     if op in RI_RR:
         return {r[0]}, {r[1]}
-    if op in ("LDI", "LDIS", "LDIU", "LDF", "IN", "POP", "LDIS.L"):
+    if op in ("LDI", "LDIS", "LDIU", "LDF", "IN", "POP"):
         return {r[0]}, set()
     if op in ("STF", "OUT", "PUSH", "CMPI"):
         return set(), {r[0]}
-    if op in ("CMP", "ST", "CMP.L"):
+    if op in ("CMP", "ST"):
         return set(), {r[0], r[1]}
     if op in ("STX", "STQ"):
         return set(), {r[0], r[1], r[2]}
@@ -5642,13 +5647,14 @@ def ri_acces(op, args):
 
 def ri_lus_places(op):
     """Les places (dans les arguments) des registres lus par une instruction simple."""
+    op = ri_base(op)
     if op in RI_RRR:
         return (1, 2)
     if op in RI_RR:
         return (1,)
     if op in ("STF", "OUT", "PUSH", "CMPI"):
         return (0,)
-    if op in ("CMP", "ST", "CMP.L"):
+    if op in ("CMP", "ST"):
         return (0, 1)
     if op in ("STX", "STQ"):
         return (0, 1, 2)
@@ -5819,7 +5825,7 @@ def epissage(lignes):
 
     def regle_copie(i):
         j = suivant(i)
-        if el[i][1] not in RI_DEST or j < 0 or el[j][1] != "MOV":
+        if ri_base(el[i][1]) not in RI_DEST or j < 0 or el[j][1] != "MOV":
             return False
         x = ri_reg(el[i][2][0])
         y, x2 = ri_reg(el[j][2][0]), ri_reg(el[j][2][1])

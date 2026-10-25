@@ -69,6 +69,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_maths128.py"), "300" if COMPLET else "60"]))
     etapes.append(("vtx128 : mêmes sorties que le SPU-64 (programmes au hasard, exemples)",
                    [sys.executable, os.path.join("tests", "test_vtx128_differentiel.py"), "300" if COMPLET else "60"]))
+    etapes.append(("vtxc128 : le compilateur écrit en vtx pour Lugus (point fixe, mêmes mots que vtx128.py)",
+                   [sys.executable, os.path.join("vtxc", "test_vtxc128.py")] + (["--complet"] if COMPLET else [])))
     etapes.append(("flottant_petuar : le flottant quaternaire de 128 bits (référence exacte, quatre machines, vtxc, ADN et cube)",
                    [sys.executable, os.path.join("tests", "test_petuar.py")]))
     etapes.append(("type texte et afficher (vtx.py et vtxc)", [sys.executable, os.path.join("vtxc", "test_textes.py")]))
