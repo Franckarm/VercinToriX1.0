@@ -19,6 +19,8 @@ pub struct Mode128 {
 
 /// Un programme : prélude, optimisations, partition (comme vtx128.py par défaut).
 pub const COMPLET128: Mode128 = Mode128 { prelude: true, optim: true, partition: true };
+/// Le pas à pas de l'atelier : sans partition (l'exécution reste en séquence, ligne après ligne).
+pub const PAS_A_PAS128: Mode128 = Mode128 { prelude: true, optim: true, partition: false };
 /// vtxc128 lui-même : sans prélude (il a ses propres outils), optimisé, sans partition.
 pub const COMPILATEUR128: Mode128 = Mode128 { prelude: false, optim: true, partition: false };
 

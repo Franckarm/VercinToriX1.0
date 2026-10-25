@@ -1,0 +1,28 @@
+// machine : lugus
+// Un dégradé de points de matière : chaque point de l'image est le mélange de deux couleurs, et sa transparence
+// descend de gauche à droite. La vue du cube montre la transparence en alpha ; l'image, les couleurs.
+fonction principal() {
+    soit l = 64;
+    soit h = 48;
+    ecran(l, h);
+    soit braise = #FF4000;
+    soit nuit = #102060;
+    pour y dans 0..h {
+        pour x dans 0..l {
+            soit p = braise;
+            si x * 4 < l {
+                p = melanger(braise, nuit, 64);
+            } sinon si x * 2 < l {
+                p = melanger(braise, nuit, 128);
+            } sinon si x * 4 < l * 3 {
+                p = melanger(braise, nuit, 192);
+            } sinon {
+                p = nuit;
+            }
+            @1[y * l + x] = avec_transparence(p, 63 - x);
+        }
+    }
+    presenter();
+    sortie(comme_point(@1[0]).transparence);
+    sortie(comme_point(@1[l - 1]).transparence);
+}

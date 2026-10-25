@@ -6,6 +6,8 @@ que vtx128.py (le langage de Lugus : flottant de 128 bits par défaut, point de 
  2. La suite de vtx128.py (ses programmes, ceux du SPU-64 et ceux de Lugus), avec le prélude, sans et avec optimisation.
  3. Des programmes aléatoires (vtxc/hasard64.py) : prélude, optimisations, partition.
  4. Avec les optimisations, vtxc128 se compile comme vtx128.py ; le compilateur embarqué dans lugus est à jour.
+ 5. L'atelier sur Lugus (vtx-spu essai-pas128) : pas à pas ligne par ligne, par-dessus les fonctions et d'un coup, la
+    vue du cube, sur les exemples de Lugus (exemples128).
 
     python3 vtxc/test_vtxc128.py [--complet] [--sans-point-fixe] [--seul MOT]"""
 import os
@@ -133,6 +135,19 @@ if not seul and "--sans-point-fixe" not in sys.argv:
     arbre = lire(os.path.join(ici, "vtxc128.mots"))
     verifier(f"vtx-rs/vtxc128.mots (embarqué dans lugus) = vtxc/vtxc128.mots = vtxc128 optimisé ({len(emb)} mots)",
              emb == arbre == m_opt, "refaire : lugus renouveler vtxc/vtxc128.vtx, puis copier vtxc/vtxc128.mots dans vtx-rs")
+
+if not seul:
+    spu = os.path.join(racine, "vtx-rs", "target", "release", "vtx-spu" + (".exe" if os.name == "nt" else ""))
+    dex = os.path.join(racine, "exemples128")
+    exs = sorted(f for f in os.listdir(dex) if f.endswith(".vtx"))
+    ecarts = []
+    for f in exs:
+        r = subprocess.run([spu, "essai-pas128", os.path.join(dex, f)], cwd=TMP, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        if r.returncode != 0 or not r.stdout.rstrip().endswith("conforme") or "NON CONFORME" in r.stdout:
+            ecarts.append(f)
+    verifier(f"atelier sur Lugus : {len(exs) - len(ecarts)}/{len(exs)} exemples, pas à pas et vue conformes", not ecarts,
+             str(ecarts))
 
 shutil.rmtree(TMP, ignore_errors=True)
 print("vtxc128 : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))

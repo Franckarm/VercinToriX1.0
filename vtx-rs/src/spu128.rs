@@ -41,6 +41,12 @@ pub struct Spu128 {
     pages_vues: std::collections::HashSet<(usize, u128)>,
     pub pas: u64,
     pub presenter: Option<Box<dyn FnMut(&Spu128) -> u128>>,
+    // la console branchée ailleurs (l'atelier, un terminal) : ce que le programme écrit et lit sur le canal 1 passe
+    // par elles au lieu du texte gardé ; arret : Maj+F5 de l'atelier ; parler : la voix (le canal « voix: »)
+    pub console_ecrire: Option<Box<dyn FnMut(u128)>>,
+    pub console_lire: Option<Box<dyn FnMut() -> u128>>,
+    pub arret: Option<&'static std::sync::atomic::AtomicBool>,
+    pub parler: Option<fn(&str)>,
 }
 
 pub type Resultat = Result<(), String>;
@@ -95,6 +101,10 @@ impl Spu128 {
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
             presenter: None,
+            console_ecrire: None,
+            console_lire: None,
+            arret: None,
+            parler: None,
         }
     }
 
@@ -108,6 +118,7 @@ impl Spu128 {
     // --- mémoire
     /// (étage, indice) : adresse courte si les 64 bits hauts sont nuls (étage 63-62, indice 47-0, celle du SPU-64),
     /// longue sinon (étage 127-126, indice 119-0).
+    #[inline(always)]
     fn place(adr: u128) -> (usize, u128) {
         if adr >> 64 == 0 {
             ((adr >> 62) as usize, adr & ((1u128 << 48) - 1))
@@ -176,6 +187,23 @@ impl Spu128 {
         unsafe { &mut *ptr }
     }
 
+    /// Pour la forge : la page d'une adresse (le pointeur sur son premier mot ; elle est créée au besoin), la clé de
+    /// la page (étage et numéro) et si des mots de la page ont un brin (ADN ou ARN : l'écriture passe alors par
+    /// ecrire_mem, qui les vérifie).
+    pub fn page_de(&mut self, adr: u128) -> (*mut u128, u128, bool) {
+        let (e, i) = Self::place(adr);
+        let p = self.page_mut(e, i);
+        let brins = p.brins.is_some();
+        (p.mots.as_mut_ptr(), ((e as u128) << 120) | (i >> 16), brins)
+    }
+
+    /// La clé de page d'une adresse (étage et numéro de page), comme page_de.
+    #[inline(always)]
+    pub fn cle_page(adr: u128) -> (u128, usize) {
+        let (e, i) = Self::place(adr);
+        (((e as u128) << 120) | (i >> 16), (i as usize) & (PAGE - 1))
+    }
+
     pub fn lire(&mut self, adr: u128) -> u128 {
         let (e, i) = Self::place(adr);
         let cle = i >> 16;
@@ -212,6 +240,17 @@ impl Spu128 {
             }
         };
         if p & 1 == 0 { (w >> 64) as u64 } else { w as u64 }
+    }
+
+    /// Les pages écrites de l'étage e : (le premier indice de la page, ses mots), dans l'ordre (pour les vues).
+    pub fn pages_etage(&self, e: usize) -> Vec<(u128, &[u128])> {
+        let mut v: Vec<(u128, &[u128])> = self.pages[e].iter().map(|(k, p)| (k << 16, &p.mots[..])).collect();
+        v.sort_by_key(|x| x.0);
+        v
+    }
+
+    pub fn drapeaux(&self) -> (bool, bool) {
+        (self.z, self.c)
     }
 
     /// Un mot lu sans rien changer : pour les vues.
@@ -251,7 +290,7 @@ impl Spu128 {
         Ok(())
     }
 
-    fn marquer(&mut self, adr: u128, q: u8) {
+    pub fn marquer(&mut self, adr: u128, q: u8) {
         let (e, i) = Self::place(adr);
         if q == 1 {
             self.a_des_adn = true;
@@ -282,11 +321,14 @@ impl Spu128 {
     }
 
     // --- canaux et services
-    fn lire_canal(&mut self, c: u128) -> u128 {
+    pub fn lire_canal(&mut self, c: u128) -> u128 {
         if c == 0 {
             return self.entree.pop_front().unwrap_or(0);
         }
         if c == 1 {
+            if let Some(f) = self.console_lire.as_mut() {
+                return f();
+            }
             return self.texte_entree.pop_front().unwrap_or(u128::MAX);
         }
         match self.fichiers.get_mut(&c) {
@@ -297,11 +339,14 @@ impl Spu128 {
             _ => u128::MAX,
         }
     }
-    fn ecrire_canal(&mut self, c: u128, v: u128) {
+    pub fn ecrire_canal(&mut self, c: u128, v: u128) {
         if c == 0 {
             self.sortie.push(v);
         } else if c == 1 {
-            self.texte.push(v);
+            match self.console_ecrire.as_mut() {
+                Some(f) => f(v),
+                None => self.texte.push(v),
+            }
         } else if let Some(f) = self.fichiers.get_mut(&c) {
             if !f.0 {
                 f.1.push(v);
@@ -312,7 +357,7 @@ impl Spu128 {
         let n = self.lire(adr).min(4096);
         (0..n).map(|k| char::from_u32((self.lire(adr.wrapping_add(1 + k)) & 0x1F_FFFF) as u32).unwrap_or('?')).collect()
     }
-    fn service(&mut self, code: u128, arg: u128) -> Result<u128, String> {
+    pub fn service(&mut self, code: u128, arg: u128) -> Result<u128, String> {
         match code {
             1 | 2 => {
                 let d = match &self.dossier {
@@ -337,6 +382,13 @@ impl Spu128 {
                 if let Some(f) = self.fichiers.remove(&arg) {
                     if !f.0 {
                         let t: String = f.1.iter().map(|&c| char::from_u32((c & 0x1F_FFFF) as u32).unwrap_or('?')).collect();
+                        if std::path::Path::new(&f.3).file_name().map(|n| n == "voix:").unwrap_or(false) {
+                            // le canal « voix: » : le texte est dit par la voix de la machine hôte (jamais écrit)
+                            if let Some(p) = self.parler {
+                                p(&t);
+                            }
+                            return Ok(0);
+                        }
                         if std::fs::write(&f.3, t).is_err() {
                             return Ok(u128::MAX);
                         }
@@ -452,6 +504,13 @@ impl Spu128 {
         while !self.arrete {
             if self.pas >= max_pas {
                 return Err(format!("limite de {} instructions atteinte", max_pas));
+            }
+            if self.pas & 0xF_FFFF == 0 {
+                if let Some(a) = self.arret {
+                    if a.load(std::sync::atomic::Ordering::Relaxed) {
+                        return Err("programme arrêté".into());
+                    }
+                }
             }
             self.pas_unique()?;
         }

@@ -8,9 +8,12 @@
 use super::{compiler_avec, compiler_lignes, dossier_de, executer_dans, lire_partition, nombres, Etat, Memoire, ARRET,
             ATTENTE_NS, CANAL_ENTREE, CANAL_SORTIE, CLAVIER, COMPLET, DIRECT, PAS_A_PAS, PILE_HAUT, VTXC};
 use super::arbre::{self, Noeud};
-use super::machine64::{compiler64, nombres64, situer_erreur, vers_point32, COMPLET64, PAS_A_PAS64, VTXC64};
+use super::machine64::{compiler64, nombres64, situer_erreur, COMPLET64, PAS_A_PAS64, VTXC64};
 use super::spu64::Spu64;
-use super::pas64::{decoder64, panneau64, table_des_lignes, Moteur, Pas, Vue64};
+use super::pas64::{panneau64, table_des_lignes, Moteur, Pas, Vue64};
+use super::spu128::Spu128;
+use super::pas128::{image128, panneau128, presenter128};
+use super::machine128::{compiler128, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -291,7 +294,10 @@ const C_ARRETER: u16 = 1203;
 const C_PAS_DESSUS: u16 = 1206;
 const C_POINT: u16 = 1207;
 const C_FIN_PAS: u16 = 1208;
-const C_MACHINE64: u16 = 1209;
+const C_MACHINE64: u16 = 1209; // la machine suivante (Ctrl+M, le bouton)
+const C_LUGUS: u16 = 1210;
+const C_M32: u16 = 1211;
+const C_M64: u16 = 1212;
 const C_ASSOCIER: u16 = 1402;
 const C_PURGER: u16 = 1205;
 const C_ETAGE: u16 = 1300; // + 0..3
@@ -363,9 +369,9 @@ struct Atelier {
     rx_sortie: Option<mpsc::Receiver<u32>>,
     tx_entree: Option<mpsc::Sender<u32>>,
     icone: H,
-    // la machine : SPU-64 (vtxc64, mots de 64 bits) ou SPU-32 (vtxc) ; et, après un programme de 64 bits, ses vraies
-    // valeurs (le cube montre leurs points de 32 bits)
-    machine64: bool,
+    // la machine : 32 (SPU-32, vtxc), 64 (SPU-64, vtxc64, mots de 64 bits) ou 128 (Lugus, vtxc128, mots de 128 bits) ;
+    // et, après un programme de 64 ou 128 bits, ses vraies valeurs (le cube montre leurs points de 32 bits)
+    machine: u32,
     vue64: Option<Vue64>,
     // la vue en perspective tournée à la souris : quarts de tour, décalage en pixels, glissement en cours
     quart: u32,
@@ -419,7 +425,7 @@ fn titre() {
     let modifie = unsafe { SendMessageW(at.source, EM_GETMODIFY, 0, 0) } != 0;
     unsafe {
         SetWindowTextW(at.fen, w(&format!("{}{} — Atelier vtx · {}", nom, if modifie { " •" } else { "" },
-                                          if at.machine64 { "SPU-64" } else { "SPU-32" })).as_ptr());
+                                          nom_machine(at.machine))).as_ptr());
     }
 }
 fn etat(t: &str) {
@@ -428,9 +434,26 @@ fn etat(t: &str) {
     }
 }
 
-/// La machine : 64 bits (SPU-64, compilée par vtxc64) ou 32 bits (SPU-32, compilée par vtxc). Le menu la coche, le
-/// bouton et le titre la nomment ; le pas à pas en cours est arrêté (il tourne sur l'autre machine).
-fn choisir_machine(m64: bool) {
+fn nom_machine(m: u32) -> &'static str {
+    match m {
+        128 => "Lugus",
+        64 => "SPU-64",
+        _ => "SPU-32",
+    }
+}
+
+fn compilateur_de(m: u32) -> &'static str {
+    match m {
+        128 => "vtxc128",
+        64 => "vtxc64",
+        _ => "vtxc",
+    }
+}
+
+/// La machine : 128 bits (Lugus, compilée par vtxc128), 64 bits (SPU-64, compilée par vtxc64) ou 32 bits (SPU-32,
+/// compilée par vtxc). Le menu la coche, le bouton et le titre la nomment ; le pas à pas en cours est arrêté (il tourne
+/// sur l'autre machine).
+fn choisir_machine(m: u32) {
     let at = a();
     if at.en_cours {
         etat("un programme tourne : la machine changera après lui");
@@ -439,11 +462,13 @@ fn choisir_machine(m64: bool) {
     if at.pas.is_some() {
         arreter_pas("pas à pas arrêté : changement de machine");
     }
-    at.machine64 = m64;
+    at.machine = m;
     unsafe {
-        CheckMenuItem(GetMenu(at.fen), C_MACHINE64 as u32, if m64 { 8 } else { 0 }); // MF_CHECKED
+        for (c, x) in [(C_M32, 32), (C_M64, 64), (C_LUGUS, 128)] {
+            CheckMenuItem(GetMenu(at.fen), c as u32, if m == x { 8 } else { 0 }); // MF_CHECKED
+        }
         if let Some(b) = at.boutons.iter().find(|b| b.1 == C_MACHINE64) {
-            SetWindowTextW(b.0, w(if m64 { "Machine : SPU-64" } else { "Machine : SPU-32" }).as_ptr());
+            SetWindowTextW(b.0, w(&format!("Machine : {}", nom_machine(m))).as_ptr());
         }
     }
     titre();
@@ -528,23 +553,23 @@ fn charger(chemin: &Path) {
     }
     at.fichier = Some(chemin.to_path_buf());
     effacer_resultats();
-    // la machine : celle que le fichier nomme dans ses premières lignes (« // machine : spu-32 » ou « spu-64 ») ; sinon les
-    // exemples de la machine 32 bits (dossier « exemples ») s'ouvrent sur elle, tout le reste sur la SPU-64. Ctrl+M
-    // change toujours de machine.
-    let (m64, pourquoi) = match machine_ecrite(&texte) {
+    // la machine : celle que le fichier nomme dans ses premières lignes (« // machine : spu-32 », « spu-64 » ou
+    // « lugus ») ; sinon les exemples de la machine 32 bits (dossier « exemples ») s'ouvrent sur elle, ceux de Lugus
+    // (dossier « exemples128 ») sur Lugus, tout le reste sur la SPU-64. Ctrl+M change toujours de machine.
+    let dossier_nomme = |n: &str| chemin.components().any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case(n));
+    let (m, pourquoi) = match machine_ecrite(&texte) {
         Some(m) => (m, " (écrite dans le fichier ; Ctrl+M pour changer)"),
-        None => {
-            let ancien = chemin.components().any(|c| c.as_os_str().to_string_lossy().eq_ignore_ascii_case("exemples"));
-            (!ancien, if ancien { " (dossier exemples ; Ctrl+M pour changer)" } else { "" })
-        }
+        None if dossier_nomme("exemples") => (32, " (dossier exemples ; Ctrl+M pour changer)"),
+        None if dossier_nomme("exemples128") => (128, " (dossier exemples128 ; Ctrl+M pour changer)"),
+        None => (64, ""),
     };
-    choisir_machine(m64);
-    etat(&format!("ouvert : {} · machine {}{}", chemin.display(), if m64 { "SPU-64" } else { "SPU-32" }, pourquoi));
+    choisir_machine(m);
+    etat(&format!("ouvert : {} · machine {}{}", chemin.display(), nom_machine(m), pourquoi));
 }
 
 /// La machine écrite en tête d'un programme, dans ses dix premières lignes : « // machine : spu-32 » (ou « 32 ») rend
-/// Some(false), « spu-64 » (ou « 64 ») Some(true).
-pub fn machine_ecrite(texte: &str) -> Option<bool> {
+/// Some(32), « spu-64 » (ou « 64 ») Some(64), « lugus » (ou « spu-128 », « 128 ») Some(128).
+pub fn machine_ecrite(texte: &str) -> Option<u32> {
     for ligne in texte.lines().take(10) {
         let l = ligne.trim();
         if let Some(r) = l.strip_prefix("//") {
@@ -552,10 +577,13 @@ pub fn machine_ecrite(texte: &str) -> Option<bool> {
             if let Some(m) = r.strip_prefix("machine") {
                 let m = m.trim_start_matches([' ', ':', '\u{a0}']).trim();
                 if m.starts_with("spu-32") || m.starts_with("spu32") || m.starts_with("32") {
-                    return Some(false);
+                    return Some(32);
                 }
                 if m.starts_with("spu-64") || m.starts_with("spu64") || m.starts_with("64") {
-                    return Some(true);
+                    return Some(64);
+                }
+                if m.starts_with("lugus") || m.starts_with("spu-128") || m.starts_with("spu128") || m.starts_with("128") {
+                    return Some(128);
                 }
             }
         }
@@ -642,7 +670,7 @@ fn lancer() {
     };
     let source = lire_texte(at.source).replace("\r\n", "\n");
     let entrees: Vec<u64> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).collect();
-    let m64 = at.machine64;
+    let m = at.machine;
     at.en_cours = true;
     // la mémoire du programme précédent est rendue avant d'en prendre une autre
     at.mem = None;
@@ -654,7 +682,7 @@ fn lancer() {
         InvalidateRect(at.arbre, std::ptr::null(), 0);
     }
     let nom = fichier.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let machine = if m64 { "SPU-64" } else { "SPU-32" };
+    let machine = nom_machine(m);
     ajouter_texte(at.sortie, &format!("\n▶ {} · {}\n", nom, machine));
     ecrire_texte(at.journal, &format!("▶ {} : compilation et exécution sur la machine {}…\n", nom, machine));
     montrer_onglet(1);
@@ -681,7 +709,9 @@ fn lancer() {
     }
     let fen = at.fen as usize;
     std::thread::spawn(move || {
-        let fini = if m64 {
+        let fini = if m == 128 {
+            executer128(&fichier, &source, &entrees)
+        } else if m == 64 {
             executer64(&fichier, &source, &entrees)
         } else {
             let e32: Vec<u32> = entrees.iter().map(|&x| x as u32).collect();
@@ -833,6 +863,84 @@ fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: Some(vue), image }
 }
 
+/// F5 sur Lugus : vtxc128 (embarqué) compile, Lugus exécute ; sa console passe par le terminal.
+fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
+    let f = fichier.to_string_lossy().into_owned();
+    let base = dossier_de(&f);
+    let t0 = std::time::Instant::now();
+    let mots = match compiler128(&nombres128(VTXC128), source, &base, COMPLET128, false) {
+        Ok((m, _, _)) => m,
+        Err(e) => {
+            let (t, ligne) = situer_erreur(&e, &f);
+            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None, image: None };
+        }
+    };
+    let tc = t0.elapsed().as_secs_f64();
+    let mut s = Spu128::nouveau();
+    s.dossier = Some(PathBuf::from(&base));
+    s.charger(&mots);
+    s.entree.extend(entrees.iter().map(|&x| x as u128));
+    let ecrit = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
+    let garde = ecrit.clone();
+    s.console_ecrire = Some(Box::new(move |v: u128| {
+        if let Some(tx) = CANAL_SORTIE.lock().unwrap().as_ref() {
+            let _ = tx.send((v & 0x1F_FFFF) as u32);
+        }
+        if let Some(c) = char::from_u32((v & 0x1F_FFFF) as u32) {
+            garde.borrow_mut().push(c);
+        }
+    }));
+    s.console_lire = Some(Box::new(|| {
+        let t = std::time::Instant::now();
+        let r = CANAL_ENTREE.lock().unwrap();
+        let v = match r.as_ref().map(|c| c.recv()) {
+            Some(Ok(v)) => v as u128,
+            _ => u128::MAX,
+        };
+        ATTENTE_NS.fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        v
+    }));
+    s.arret = Some(&ARRET);
+    s.parler = Some(super::parler_hote);
+    s.presenter = Some(Box::new(presenter128));
+    ATTENTE_NS.store(0, Ordering::Relaxed);
+    let t1 = std::time::Instant::now();
+    let r = s.executer(u64::MAX / 4);
+    let attente = ATTENTE_NS.load(Ordering::Relaxed) as f64 / 1e9;
+    let te = (t1.elapsed().as_secs_f64() - attente).max(0.0);
+    let duree = |t: f64| if t < 1.0 { format!("{:.0} ms", t * 1000.0) } else { format!("{:.2} s", t) };
+    s.console_ecrire = None;
+    s.console_lire = None;
+    let mut texte = ecrit.borrow().clone();
+    let mut resume = String::new();
+    match r {
+        Ok(()) => {
+            resume.push_str(&format!("Lugus · {} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), s.pas, duree(te),
+                                     if attente > 0.0 { format!(" (et {} à attendre le clavier)", duree(attente)) } else { String::new() }));
+            if !s.sortie.is_empty() {
+                let v: Vec<String> = s.sortie.iter().map(|v| v.to_string()).collect();
+                resume.push_str(&format!("sorties : {}\n", v.join(",")));
+            }
+            if !texte.is_empty() && !texte.ends_with('\n') {
+                texte.push('\n');
+            }
+            texte.push_str("──────────\n");
+            texte.push_str(&resume);
+        }
+        Err(e) => {
+            resume.push_str(&format!("{}\n", if e.contains("arrêté") { "programme arrêté".to_string() } else { format!("erreur à l'exécution : {}", e) }));
+            if !texte.is_empty() && !texte.ends_with('\n') {
+                texte.push('\n');
+            }
+            texte.push_str(&resume);
+        }
+    }
+    let image = image128(&s);
+    let mut vue = Vue64::depuis128(&s);
+    let mem = vue.memoire();
+    Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: Some(vue), image }
+}
+
 fn fini() {
     let at = a();
     at.en_cours = false;
@@ -903,9 +1011,9 @@ fn fini() {
         at.choisi = None;
         rafraichir_arbre();
     }
-    if at.vue64.is_some() {
-        etat(&format!("programme terminé (SPU-64) · cube : étage {}, cube 0, points profonds vus en 32 bits · clic ou « mot » : la vraie valeur \
-                       · « cube ÉTAGE FRÉQUENCE » change de cube", at.etage));
+    if let Some(v) = &at.vue64 {
+        etat(&format!("programme terminé ({}) · cube : étage {}, cube 0, points vus en 32 bits · clic ou « mot » : la vraie valeur \
+                       · « cube ÉTAGE FRÉQUENCE » change de cube", v.nom(), at.etage));
     } else {
         etat(&format!("programme terminé · cube : étage {} · l'arbre montre les objets du tas", at.etage));
     }
@@ -1063,13 +1171,13 @@ fn ligne_terminal() {
     };
     match mots.first().copied() {
         None => {}
-        Some("aide") => ajouter_texte(at.sortie, "commandes : lancer · arreter · machine 32|64 · cubes · cube ÉTAGE FRÉQUENCE · mot ADRESSE · mot ÉTAGE ADRESSE · etage N · arbre · effacer · purger\n\
+        Some("aide") => ajouter_texte(at.sortie, "commandes : lancer · arreter · machine 32|64|128 · cubes · cube ÉTAGE FRÉQUENCE · mot ADRESSE · mot ÉTAGE ADRESSE · etage N · arbre · effacer · purger\n\
             ADRESSE : décimale, #hex ou 0xhex. L'arbre montre le mot choisi et les objets du tas (tableaux, dicos, textes)\n\
             avec leurs liaisons ; un clic sur une ligne l'ouvre ou la ferme. À plat (F6), un clic dans le cube choisit un mot.\n"),
         Some("lancer") => lancer(),
         Some("cubes") if at.vue64.is_some() => {
             let v = at.vue64.as_ref().unwrap();
-            let mut t = String::from("SPU-64 · les cubes écrits par le programme :\n");
+            let mut t = format!("{} · les cubes écrits par le programme :\n", v.nom());
             for e in 0..4u32 {
                 let c = v.cubes(e);
                 if !c.is_empty() {
@@ -1085,22 +1193,25 @@ fn ligne_terminal() {
         }
         Some("cube") if at.vue64.is_some() => match (mots.get(1).and_then(|x| nombre(x)), mots.get(2).and_then(|x| nombre(x))) {
             (Some(e), Some(f)) if e < 4 && f < 1 << 24 => {
+                let mut nom = "";
                 if let (Some(v), Some(m)) = (at.vue64.as_mut(), at.mem.as_ref()) {
                     v.accorder(m, e, f);
+                    nom = v.nom();
                 }
-                ajouter_texte(at.sortie, &format!("l'étage {} regarde maintenant le cube {} (SPU-64)\n", e, f));
+                ajouter_texte(at.sortie, &format!("l'étage {} regarde maintenant le cube {} ({})\n", e, f, nom));
                 commande(C_ETAGE + e as u16);
                 rafraichir_arbre();
             }
-            _ => ajouter_texte(at.sortie, "cube ÉTAGE FRÉQUENCE (étage 0 à 3) : montre ce cube de la machine 64 bits ; l'arbre liste les cubes écrits\n"),
+            _ => ajouter_texte(at.sortie, "cube ÉTAGE FRÉQUENCE (étage 0 à 3) : montre ce cube de la machine 64 ou 128 bits ; l'arbre liste les cubes écrits\n"),
         },
         Some("machine") => {
             match mots.get(1).copied() {
-                Some("32") => choisir_machine(false),
-                Some("64") => choisir_machine(true),
+                Some("32") => choisir_machine(32),
+                Some("64") => choisir_machine(64),
+                Some("128") | Some("lugus") => choisir_machine(128),
                 _ => {}
             }
-            ajouter_texte(at.sortie, &format!("machine : {} (machine 32 ou machine 64 pour changer)\n", if a().machine64 { "SPU-64" } else { "SPU-32" }));
+            ajouter_texte(at.sortie, &format!("machine : {} (machine 32, 64 ou 128 pour changer)\n", nom_machine(a().machine)));
         }
         Some("cube") => match (mots.get(1).and_then(|x| nombre(x)), mots.get(2).and_then(|x| nombre(x))) {
             (Some(e), Some(f)) if (1..4).contains(&e) && at.mem.is_some() => {
@@ -1163,7 +1274,7 @@ fn choisir_mot(e: u32, adr: u32) {
     };
     let mut t = format!("@{}[{}]\n", e, adr);
     let lignes = match &at.vue64 {
-        Some(v) => decoder64(e, v.lit(e, (v.frequences[e as usize & 3] as u64) << 24 | adr as u64)),
+        Some(v) => v.decoder(e, v.lit(e, (v.frequences[e as usize & 3] as u128) << 24 | adr as u128)),
         None => arbre::decoder(mem.lit(e, adr)),
     };
     for l in lignes {
@@ -1180,14 +1291,14 @@ fn rafraichir_arbre() {
     at.ouverts.clear();
     at.defile = 0;
     if let Some(v) = &at.vue64 {
-        // machine 64 bits : le mot choisi (sa vraie valeur) et les cubes écrits de chaque étage
+        // machine 64 ou 128 bits : le mot choisi (sa vraie valeur) et les cubes écrits de chaque étage
         if let Some((e, adr)) = at.choisi {
             let f = v.frequences[e as usize & 3];
-            let val = v.lit(e, (f as u64) << 24 | adr as u64);
-            let enfants = decoder64(e, val).into_iter().map(|l| Noeud::feuille(l, None)).collect();
-            at.noeuds.push(Noeud { texte: format!("@{}[{}] (cube {})", e, adr, f), mot: Some(vers_point32(val)), logique: None, enfants });
+            let val = v.lit(e, (f as u128) << 24 | adr as u128);
+            let enfants = v.decoder(e, val).into_iter().map(|l| Noeud::feuille(l, None)).collect();
+            at.noeuds.push(Noeud { texte: format!("@{}[{}] (cube {})", e, adr, f), mot: Some(v.point32(val)), logique: None, enfants });
         }
-        let mut cubes = Noeud::feuille("SPU-64 : les cubes écrits (étage : fréquences)".into(), None);
+        let mut cubes = Noeud::feuille(format!("{} : les cubes écrits (étage : fréquences)", v.nom()), None);
         for e in 0..4u32 {
             let c = v.cubes(e);
             if !c.is_empty() {
@@ -1377,12 +1488,16 @@ fn panneau_pas() -> String {
         None => if d.fini { "fini".into() } else { "début".into() },
     };
     t.push_str(&format!("pas à pas · {} · {} instructions · {}\n", ou, d.compte(),
-                        if matches!(d.moteur, Moteur::M64(_)) { "SPU-64" } else { "SPU-32" }));
+                        match d.moteur { Moteur::M128(_) => "Lugus", Moteur::M64(_) => "SPU-64", _ => "SPU-32" }));
     t.push_str("F7 ligne suivante · F8 sans entrer dans les fonctions · F5 continuer · F9 point d'arrêt · Échap arrêter\n\n");
     let (mem, et) = match &d.moteur {
         Moteur::M32 { mem, et, .. } => (mem, et),
         Moteur::M64(s) => {
             panneau64(s, &mut t);
+            return t;
+        }
+        Moteur::M128(s) => {
+            panneau128(s, &mut t);
             return t;
         }
     };
@@ -1439,7 +1554,10 @@ fn debuter_pas() -> bool {
     let source = lire_texte(at.source).replace("\r\n", "\n");
     let base = dossier_de(&fichier.to_string_lossy());
     let entrees: Vec<u64> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).collect();
-    if at.machine64 {
+    if at.machine == 128 {
+        return debuter_pas128(&fichier, &source, &base, entrees);
+    }
+    if at.machine == 64 {
         return debuter_pas64(&fichier, &source, &base, entrees);
     }
     let (mots, _, dbg) = match compiler_lignes(&nombres(VTXC), &source, &base, PAS_A_PAS, true) {
@@ -1490,6 +1608,32 @@ fn debuter_pas64(fichier: &Path, source: &str, base: &str, entrees: Vec<u64>) ->
     s.parler = Some(super::parler_hote);
     at.ligne_erreur = None;
     at.pas = Some(Pas { moteur: Moteur::M64(s), debuts: table_des_lignes(dbg.into_iter()), ligne: None, fini: false });
+    true
+}
+
+/// Le pas à pas sur Lugus : vtxc128 compile avec la table des lignes (en demi-mots : le pc de Lugus), Lugus attend au
+/// début.
+fn debuter_pas128(fichier: &Path, source: &str, base: &str, entrees: Vec<u64>) -> bool {
+    let at = a();
+    let (mots, _, dbg) = match compiler128(&nombres128(VTXC128), source, base, PAS_A_PAS128, true) {
+        Ok(r) => r,
+        Err(e) => {
+            let (t, ligne) = situer_erreur(&e, &fichier.to_string_lossy());
+            ecrire_texte(at.journal, &t);
+            montrer_onglet(0);
+            at.ligne_erreur = ligne;
+            at.vue_lignes = (-1, -1);
+            etat("erreur de compilation : le pas à pas ne peut pas commencer");
+            return false;
+        }
+    };
+    let mut s = Box::new(Spu128::nouveau());
+    s.dossier = Some(PathBuf::from(base));
+    s.charger(&mots);
+    s.entree.extend(entrees.into_iter().map(|x| x as u128));
+    s.parler = Some(super::parler_hote);
+    at.ligne_erreur = None;
+    at.pas = Some(Pas { moteur: Moteur::M128(s), debuts: table_des_lignes(dbg.into_iter().map(|x| x as u64)), ligne: None, fini: false });
     true
 }
 
@@ -1583,6 +1727,13 @@ fn avancer(mode: Avance) {
                     *IMAGE.lock().unwrap() = super::gobatix::image64(&s);
                     at.dessin = IMAGE.lock().unwrap().is_some();
                     let mut vue = Vue64::depuis(&s);
+                    at.mem = Some(vue.memoire());
+                    at.vue64 = Some(vue);
+                }
+                Moteur::M128(s) => {
+                    *IMAGE.lock().unwrap() = image128(&s);
+                    at.dessin = IMAGE.lock().unwrap().is_some();
+                    let mut vue = Vue64::depuis128(&s);
                     at.mem = Some(vue.memoire());
                     at.vue64 = Some(vue);
                 }
@@ -2162,7 +2313,10 @@ fn menus(fen: H) {
         ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
         ajouter(executer, "", 0);
-        ajouter(executer, "&Machine 64 bits (SPU-64, vtxc64)\tCtrl+M", C_MACHINE64);
+        ajouter(executer, "Machine &suivante (SPU-64 → Lugus → SPU-32)\tCtrl+M", C_MACHINE64);
+        ajouter(executer, "Machine &64 bits (SPU-64, vtxc64)", C_M64);
+        ajouter(executer, "Machine L&ugus (SPU-128, vtxc128)", C_LUGUS);
+        ajouter(executer, "Machine 3&2 bits (SPU-32, vtxc)", C_M32);
         ajouter(executer, "", 0);
         ajouter(executer, "&Pas à pas : ligne suivante\tF7", C_PAS);
         ajouter(executer, "Pas à pas &sans entrer dans les fonctions\tF8", C_PAS_DESSUS);
@@ -2188,7 +2342,9 @@ fn menus(fen: H) {
             AppendMenuW(barre, MF_POPUP, m as usize, w(t).as_ptr());
         }
         SetMenu(fen, barre);
-        CheckMenuItem(barre, C_MACHINE64 as u32, if a().machine64 { 8 } else { 0 });
+        for (c, x) in [(C_M32, 32), (C_M64, 64), (C_LUGUS, 128)] {
+            CheckMenuItem(barre, c as u32, if a().machine == x { 8 } else { 0 });
+        }
     }
 }
 
@@ -2250,10 +2406,16 @@ fn commande(c: u16) {
                     lancer();
                 }
             }
-            C_MACHINE64 => {
-                choisir_machine(!at.machine64);
-                etat(&format!("machine {} : F5 et le pas à pas compilent avec {}", if a().machine64 { "SPU-64" } else { "SPU-32" },
-                              if a().machine64 { "vtxc64" } else { "vtxc" }));
+            C_MACHINE64 | C_M32 | C_M64 | C_LUGUS => {
+                let m = match c {
+                    C_M32 => 32,
+                    C_M64 => 64,
+                    C_LUGUS => 128,
+                    _ => match at.machine { 64 => 128, 128 => 32, _ => 64 },
+                };
+                choisir_machine(m);
+                let m = a().machine;
+                etat(&format!("machine {} : F5 et le pas à pas compilent avec {}", nom_machine(m), compilateur_de(m)));
             }
             C_PURGER => {
                 effacer_resultats();
@@ -2324,7 +2486,7 @@ fn commande(c: u16) {
                 at.vue64 = None;
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
-            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nMachine SPU-64 (par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine SPU-32 : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine 64 bits (Ctrl+M) passe de l'une à l'autre.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
+            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nMachine SPU-64 (par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine Lugus (SPU-128) : mots de 128 bits, points de matière (trois couleurs de 32 bits et la matière), flottants de 128 bits, compilés par vtxc128 ; le cube les montre aussi en points de 32 bits (la transparence en alpha). Machine SPU-32 : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine suivante (Ctrl+M) passe de l'une à l'autre ; « // machine : lugus » en tête d'un programme la choisit.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
             _ => {}
         }
     }
@@ -2417,7 +2579,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             pas: None, points: HashSet::new(), pas_texte: std::ptr::null_mut(),
             ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),
             ouverts: HashSet::new(), defile: 0, choisi: None, lignes: std::ptr::null_mut(), vue_lignes: (-1, -1), ligne_erreur: None,
-            dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(), machine64: true, vue64: None,
+            dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(), machine: 64, vue64: None,
             quart: 0, decal: (0, 0), glisse: None,
         });
         ATELIER = Box::into_raw(boite);

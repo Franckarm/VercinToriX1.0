@@ -9086,11 +9086,16 @@ fonction principal() {
             ecrire_car(s, ';');
         }
         ecrire_car(s, ';');
+        // les adresses en demi-mots de Lugus (le pc de la machine) : la place de chaque mot du code du SPU-64
         pour j dans 0..c.dbg.n {
             si j > 0 {
                 ecrire_car(s, ',');
             }
-            ecrire_nombre(s, elem(c.dbg, j));
+            si j % 2 == 0 {
+                ecrire_nombre(s, elem(c.lugus_place, elem(c.dbg, j)));
+            } sinon {
+                ecrire_nombre(s, elem(c.dbg, j));
+            }
         }
     }
     fermer(s);

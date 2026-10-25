@@ -4,6 +4,8 @@
 // « vtx-spu essai-pas64 PROG.vtx » les vérifie partout (même sous Linux).
 use super::machine64::vers_point32;
 use super::spu64::Spu64;
+use super::spu128::Spu128;
+use super::pas128::{decoder128, vers_point32_128};
 use super::{boucle, Etat, Fichiers, Memoire};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -20,6 +22,7 @@ pub struct Pas {
 pub enum Moteur {
     M32 { mem: Memoire, et: Etat, fichiers: Fichiers, entrees: Vec<u32>, dossier: PathBuf },
     M64(Box<Spu64>),
+    M128(Box<Spu128>),
 }
 
 impl Pas {
@@ -27,12 +30,14 @@ impl Pas {
         match &self.moteur {
             Moteur::M32 { et, .. } => et.pc as u64,
             Moteur::M64(s) => s.pc,
+            Moteur::M128(s) => s.pc as u64,
         }
     }
     pub fn compte(&self) -> u64 {
         match &self.moteur {
             Moteur::M32 { et, .. } => et.pas,
             Moteur::M64(s) => s.pas,
+            Moteur::M128(s) => s.pas,
         }
     }
     /// R13 : le cadre de la fonction en cours (il monte quand une fonction rend la main)
@@ -40,6 +45,7 @@ impl Pas {
         match &self.moteur {
             Moteur::M32 { et, .. } => et.r[13] as u64,
             Moteur::M64(s) => s.r[13],
+            Moteur::M128(s) => s.r[13] as u64,
         }
     }
     /// Une instruction ; Ok(true) quand le programme est fini.
@@ -57,6 +63,10 @@ impl Pas {
                 s.pas_unique()?;
                 Ok(s.arrete)
             }
+            Moteur::M128(s) => {
+                s.pas_unique()?;
+                Ok(s.arrete)
+            }
         }
     }
     /// Jusqu'au bout, d'un coup.
@@ -66,18 +76,22 @@ impl Pas {
                 boucle(mem, et, entrees, 5_000_000_000, Some(dossier), fichiers, u32::MAX, None, 0)
             }
             Moteur::M64(s) => s.executer(20_000_000_000),
+            Moteur::M128(s) => s.executer(20_000_000_000),
         }
     }
 }
 
-/// Ce qu'a laissé un programme de la machine 64 bits : ses pages (les vraies valeurs, sur 64 bits) et la fréquence
-/// que regarde chaque étage du cube. Le cube de l'atelier dessine des points de 32 bits : un point profond
-/// #RRRRGGGGBBBBAAAA y paraît par l'octet fort de chaque voie (vers_point32) ; le clic et « mot » rendent la vraie
+/// Ce qu'a laissé un programme de la machine 64 bits ou de Lugus : ses pages (les vraies valeurs, sur 64 ou 128 bits)
+/// et la fréquence que regarde chaque étage du cube. Le cube de l'atelier dessine des points de 32 bits : un point
+/// profond #RRRRGGGGBBBBAAAA y paraît par l'octet fort de chaque voie (vers_point32), un point de matière de Lugus par
+/// l'octet fort de ses trois couleurs et sa transparence (vers_point32_128) ; le clic et « mot » rendent la vraie
 /// valeur.
 pub struct Vue64 {
-    // (étage, adresse sur 48 bits >> 16) -> les 65 536 mots de la page
-    pub pages: HashMap<(u32, u64), Box<[u64]>>,
+    // (étage, indice >> 16) -> les 65 536 mots de la page ; la fréquence (le cube) est l'indice >> 24
+    pub pages: HashMap<(u32, u128), Box<[u128]>>,
     pub frequences: [u32; 4],
+    // 64 : la SPU-64 ; 128 : Lugus
+    pub largeur: u32,
 }
 
 impl Vue64 {
@@ -85,14 +99,38 @@ impl Vue64 {
         let mut pages = HashMap::new();
         for e in 0..4usize {
             for (adr, mots) in s.pages_etage(e) {
-                pages.insert((e as u32, (adr & 0xFFFF_FFFF_FFFF) >> 16), mots.to_vec().into_boxed_slice());
+                let v: Vec<u128> = mots.iter().map(|&x| x as u128).collect();
+                pages.insert((e as u32, ((adr & 0xFFFF_FFFF_FFFF) >> 16) as u128), v.into_boxed_slice());
             }
         }
-        Vue64 { pages, frequences: [0; 4] }
+        Vue64 { pages, frequences: [0; 4], largeur: 64 }
     }
-    /// Le mot de l'étage e à l'adresse a (fréquence et #RRGGBB, 48 bits).
-    pub fn lit(&self, e: u32, a: u64) -> u64 {
-        self.pages.get(&(e & 3, (a & 0xFFFF_FFFF_FFFF) >> 16)).map(|p| p[(a & 0xFFFF) as usize]).unwrap_or(0)
+    pub fn depuis128(s: &Spu128) -> Vue64 {
+        let mut pages = HashMap::new();
+        for e in 0..4usize {
+            for (i, mots) in s.pages_etage(e) {
+                // les cubes au-delà de 2^32 restent hors de la vue (le cube de l'atelier les numérote sur 32 bits)
+                if (i >> 24) >> 32 == 0 {
+                    pages.insert((e as u32, i >> 16), mots.to_vec().into_boxed_slice());
+                }
+            }
+        }
+        Vue64 { pages, frequences: [0; 4], largeur: 128 }
+    }
+    pub fn nom(&self) -> &'static str {
+        if self.largeur == 128 { "Lugus" } else { "SPU-64" }
+    }
+    /// Le mot de l'étage e à l'indice a (la fréquence au-dessus du bit 24).
+    pub fn lit(&self, e: u32, a: u128) -> u128 {
+        self.pages.get(&(e & 3, a >> 16)).map(|p| p[(a & 0xFFFF) as usize]).unwrap_or(0)
+    }
+    /// Un mot vu en point de 32 bits #RRGGBBAA.
+    pub fn point32(&self, v: u128) -> u32 {
+        if self.largeur == 128 { vers_point32_128(v) } else { vers_point32(v as u64) }
+    }
+    /// Ce que dit un mot de la machine.
+    pub fn decoder(&self, e: u32, v: u128) -> Vec<String> {
+        if self.largeur == 128 { decoder128(e, v) } else { decoder64(e, v as u64) }
     }
     /// Les fréquences (cubes) écrites de l'étage e.
     pub fn cubes(&self, e: u32) -> Vec<u32> {
@@ -104,7 +142,7 @@ impl Vue64 {
     /// L'étage e de la vue (mots de 32 bits) passe de son cube actuel au cube f.
     pub fn accorder(&mut self, mem: &Memoire, e: u32, f: u32) {
         let e = e & 3;
-        let ancien = self.frequences[e as usize] as u64;
+        let ancien = self.frequences[e as usize] as u128;
         for (k, _) in self.pages.iter().filter(|(k, _)| k.0 == e && k.1 >> 8 == ancien) {
             let base = ((k.1 & 0xFF) << 16) as u32;
             for i in 0..65536u32 {
@@ -112,11 +150,11 @@ impl Vue64 {
             }
         }
         self.frequences[e as usize] = f;
-        for (k, p) in self.pages.iter().filter(|(k, _)| k.0 == e && k.1 >> 8 == f as u64) {
+        for (k, p) in self.pages.iter().filter(|(k, _)| k.0 == e && k.1 >> 8 == f as u128) {
             let base = ((k.1 & 0xFF) << 16) as u32;
             for (i, &v) in p.iter().enumerate() {
                 if v != 0 {
-                    mem.ecrit(e, base | i as u32, vers_point32(v));
+                    mem.ecrit(e, base | i as u32, self.point32(v));
                 }
             }
         }
@@ -320,11 +358,11 @@ pub fn essai(args: &[String]) {
                 let mut n = 0u64;
                 let mut faux = 0u64;
                 let f0 = vue.frequences[e as usize] as u64;
-                for (k, p) in vue.pages.iter().filter(|(k, _)| k.0 == e && k.1 >> 8 == f0) {
+                for (k, p) in vue.pages.iter().filter(|(k, _)| k.0 == e && k.1 >> 8 == f0 as u128) {
                     for (i, &v) in p.iter().enumerate() {
                         if v != 0 {
                             n += 1;
-                            if mem.lit(e, (((k.1 & 0xFF) << 16) as u32) | i as u32) != vers_point32(v) {
+                            if mem.lit(e, (((k.1 & 0xFF) << 16) as u32) | i as u32) != vue.point32(v) {
                                 faux += 1;
                             }
                         }
@@ -336,8 +374,8 @@ pub fn essai(args: &[String]) {
                     // changer de cube : l'ancien disparaît de la vue, le nouveau paraît
                     let f = *c.iter().find(|&&x| x as u64 != f0).unwrap();
                     vue.accorder(&mem, e, f);
-                    let reste = vue.pages.iter().filter(|(k, _)| k.0 == e && k.1 >> 8 == f as u64)
-                        .all(|(k, p)| p.iter().enumerate().all(|(i, &v)| mem.lit(e, (((k.1 & 0xFF) << 16) as u32) | i as u32) == vers_point32(v)));
+                    let reste = vue.pages.iter().filter(|(k, _)| k.0 == e && k.1 >> 8 == f as u128)
+                        .all(|(k, p)| p.iter().enumerate().all(|(i, &v)| mem.lit(e, (((k.1 & 0xFF) << 16) as u32) | i as u32) == vue.point32(v)));
                     println!("   cube {} : {}", f, if reste { "bien vu" } else { "MAL VU" });
                     bilan.push(reste);
                     vue.accorder(&mem, e, f0 as u32);

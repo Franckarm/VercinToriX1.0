@@ -1,0 +1,24 @@
+// machine : lugus
+// Bonjour, Lugus : la machine de 128 bits. Le flottant y a 128 bits (112 de mantisse, en base 4), l'entier_petuar
+// tient 38 chiffres, et une couleur écrite est un point de matière : trois couleurs de 32 bits et sa matière (l'état,
+// le reflet, la lumière, la transparence, la profondeur, la rugosité).
+fonction principal() {
+    afficher("Bonjour, Lugus !");
+    // pi à 33 chiffres : le flottant par défaut
+    soit x = pi();
+    afficher(x);
+    // 30 ! tient dans un entier_petuar (2^128 ≈ 3,4 × 10^38)
+    soit f: entier_petuar = 1LL;
+    pour k dans 1..31 {
+        f = f * entier_petuar(k);
+    }
+    afficher(f);
+    // une couleur, et sa matière
+    soit p = #FF8000;
+    sortie(p.r);
+    sortie(p.transparence);
+    soit verre = avec_transparence(avec_reflet(#80C0FF, 50), 60);
+    soit q = melanger(p, verre, 128);
+    sortie(q.v);
+    sortie(q.reflet);
+}

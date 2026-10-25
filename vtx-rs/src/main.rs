@@ -38,6 +38,14 @@ mod spu64;
 #[allow(dead_code)]
 mod machine64;
 mod pas64;
+// Lugus (le SPU-128) et son compilateur embarqué (vtxc128) : l'atelier s'en sert aussi
+#[allow(dead_code)]
+mod qflot128;
+#[allow(dead_code)]
+mod spu128;
+#[allow(dead_code)]
+mod machine128;
+mod pas128;
 #[cfg(any(windows, feature = "verif_fenetre"))]
 mod fenetre;
 
@@ -1061,6 +1069,7 @@ fn main() {
             }
         },
         Some("essai-pas64") => pas64::essai(&args[2..]),
+        Some("essai-pas128") => pas128::essai(&args[2..]),
         Some("atelier") => atelier::atelier(args.get(2).map(|s| s.as_str())),
         Some("traduire") if args.len() > 2 => traduire_programme(&args[2], args.get(3)),
         Some("traduire-corpus") if args.len() > 3 => {

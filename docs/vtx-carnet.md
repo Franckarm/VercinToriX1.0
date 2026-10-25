@@ -1006,3 +1006,31 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 - **La bibliothèque mathématique de 128 bits** : exponentielle, logarithme, sinus, cosinus, tangente, arc tangente (atan2), arc sinus, arc cosinus, puissance, plancher, plafond, choisies d'après le type de l'argument. Mesurées contre une référence à 80 chiffres : à moins de 3 ulps de 112 bits. Leçon du quaternaire : multiplier par 2 n'est exact qu'une fois sur deux (la mantisse est en base 4), par 4 toujours ; la réduction de l'exponentielle se fait donc par ln 4, le logarithme sépare les puissances de 4, et l'arc tangente finit par × 4. Puissance : jusqu'à une trentaine d'ulps quand |y log x| est grand (l'erreur du logarithme multipliée) ; à reprendre avec un logarithme en deux parties.
 - **Le langage du SPU-64 reste disponible sur Lugus** (`COMPAT_64`) : les 348 programmes de comparaison et toute la suite de vtx64 passent toujours.
 - **Suite** : vtxc128, le compilateur écrit en vtx, qui doit donner les mêmes mots.
+
+### vtxc128, la forge de Lugus, la puissance mesurée, l'atelier (25 octobre, soir)
+
+- **vtxc128** : le compilateur écrit en vtx pour Lugus donne exactement les mêmes mots que vtx128.py (138 compilations
+  de la suite, des programmes au hasard) et se compile lui-même (point fixe, 158 969 mots optimisés). `lugus PROG.vtx`
+  compile et lance sans Python. Sa table des lignes (le pas à pas) est désormais en demi-mots, le pc de Lugus.
+- **La forge de Lugus** (`forge/forge128.py`) : l'arbre du programme écrit en Rust sur des u128, avec la mémoire, le brin,
+  les cubes sur disque et les services de Lugus (`noyau_forge128.rs`), puis rustc. Les programmes forgés rendent les
+  mêmes sorties, le même texte et la même mémoire finale que Lugus émulé (la suite, dans les deux langages, et des
+  programmes au hasard : 168 puis 104 programmes, aucun écart ; les boucles sans fin du générateur sont écartées).
+- **Les flottants quaternaires plus vite** : addition et multiplication de 128 bits en u128, les bits perdus résumés
+  en un bit collé (même arrondi, vérifié contre les fractions exactes sur 1 400 000 opérations choisies pour piéger
+  l'arrondi : écarts d'exposant, annulations, sous-normaux).
+- **La mesure** (`mesures/mesurer128.py`, médiane de cinq lancements) : sur les entiers, Lugus forgé prend de 0,7 à 4,2 fois
+  le temps du C (adn plus vite que le C, tri 2,0, fib 3,4, crible 4,2). Le crible range 5 millions de mots de 16 octets : 0,160 s, contre 0,150 s pour le
+  même Rust écrit sur des u128 : la forge est à 7 % du plancher, le reste est la place du mot. Mandelbrot en flottant
+  quaternaire de 128 bits : 1,27 s, contre 1,10 s pour le C en __float128 (le binary128 logiciel de gcc) : 1,16 fois.
+  Le flottant de 64 bits forgé (1,05 s) reste logiciel, loin du double matériel (0,021 s). Émulé, Lugus prend environ
+  1,6 fois le temps du SPU-64 émulé.
+- Honnêtement : la conception visait « dix à cinquante instructions par opération flottante » ; la multiplication en fait
+  encore environ 150 (mesuré). Le quaternaire n'a pas de matériel : il ne rattrapera le double que dans un circuit.
+- **L'atelier sur Lugus** : troisième machine (menu Exécuter, Ctrl+M passe SPU-64 → Lugus → SPU-32, « machine 128 » au
+  terminal, `// machine : lugus` en tête du fichier, le dossier `exemples128`). F5 compile avec vtxc128 et exécute, la
+  console passe par le terminal, Maj+F5 arrête ; le pas à pas (F7, F8, F9, F5) avec les registres de 128 bits en quatre
+  voies ; le cube montre les points de matière en points de 32 bits, **la transparence en alpha** ; le clic et « mot »
+  décodent la vraie valeur (couleurs, les six codons de la matière, demi-instructions, flottant, Belnap) ; Gobatix
+  montre l'image d'un programme qui dessine en points de matière. `vtx-spu essai-pas128` vérifie tout cela sans fenêtre.
+
