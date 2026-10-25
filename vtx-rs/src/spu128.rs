@@ -458,6 +458,44 @@ impl Spu128 {
         Ok(())
     }
 
+    /// Une opération entière à la largeur 64, calculée en u64 ; faux si elle n'est pas de celles-là (chemin général).
+    #[inline(always)]
+    fn court64(&mut self, op: u16, d: usize, s: usize, t: usize, h: u64) -> bool {
+        let sv = self.r[s] as u64;
+        let tv = self.r[t] as u64;
+        let si = (h as u32 as i32) as i64 as u64;
+        let (v, c) = match op {
+            0x01 => sv.overflowing_add(tv),
+            0x06 => sv.overflowing_add(si),
+            0x02 | 0x07 | 0x0E | 0x0F => {
+                let y = if op == 0x02 || op == 0x0E { tv } else { si };
+                let x = sv.wrapping_sub(y);
+                if (op == 0x02 || op == 0x07) && d != 0 {
+                    self.r[d] = x as u128;
+                }
+                self.z = x == 0;
+                self.c = sv < y;
+                return true;
+            }
+            0x03 => (sv.wrapping_mul(tv), false),
+            0x14 => (sv & tv, false),
+            0x15 => (sv | tv, false),
+            0x16 => (sv ^ tv, false),
+            0x08 => (sv << (tv & 63), false),
+            0x09 => (sv >> (tv & 63), false),
+            0x17 => (((sv as i64) >> (tv & 63)) as u64, false),
+            0x18 => (si, false),
+            0x19 => (h & 0xFFFF_FFFF, false),
+            _ => return false,
+        };
+        if d != 0 {
+            self.r[d] = v as u128;
+        }
+        self.z = v == 0;
+        self.c = c;
+        true
+    }
+
     pub fn pas_unique(&mut self) -> Resultat {
         let h = self.demi(self.pc);
         let op = (h >> 48) as u16;
@@ -465,6 +503,12 @@ impl Spu128 {
         let s = ((h >> 40) & 15) as usize;
         let t = ((h >> 36) & 15) as usize;
         let wl = ((h >> 32) & 15) as u32;
+        // le chemin court : les opérations entières à la largeur 64 (l'entier par défaut du langage), en u64
+        if wl == 1 && self.court64(op, d, s, t, h) {
+            self.pc = (self.pc + 1) & M120;
+            self.pas += 1;
+            return Ok(());
+        }
         let imm = (h & 0xFFFF_FFFF) as u128;
         let si = (imm as u32 as i32) as i128 as u128;
         let l: u32 = match wl {

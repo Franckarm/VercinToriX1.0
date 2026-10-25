@@ -152,7 +152,7 @@ for k, (nom, ref, _) in enumerate(fonctions):
     ok = pire < 4
     mauvais += not ok
     print(f"  {'ok  ' if ok else 'ÉCART'} {nom} : pire écart {pire:.2f} ulp, moyen {sum(pires) / len(pires):.2f} ({N} valeurs)")
-# puissance(x, y) = exp(y log x) : l'erreur du logarithme est multipliée par |y log x| ; mesurée, pas exigée
+# puissance(x, y) = exp(y log x), avec y log x en deux parties (sinon l'erreur du logarithme serait multipliée par |y log x|)
 src_p = src.split("fonction principal")[0] + "fonction principal() { soit n = entrée(); pour i dans 0..n { soit x = lire(); soit y = lire(); sortie(bits(puissance_128(x, y))); } }\n"
 paires = [(bits_au_hasard(g.uniform(0.1, 10)), bits_au_hasard(g.uniform(-10, 10))) for _ in range(N)]
 ent_p = [N]
@@ -165,8 +165,10 @@ lp = subprocess.run([EXE, "corpus", nomf], capture_output=True, text=True).stdou
 os.unlink(nomf)
 res_p = [int(v) for v in lp.split("|")[1].split(",")]
 ep = [ulps(v, (D(Q128.valeur(y)) * D(Q128.valeur(x)).ln()).exp()) for (x, y), v in zip(paires, res_p)]
-print(f"  info puissance_128 (x de 0,1 à 10, y de -10 à 10) : pire écart {max(ep):.1f} ulp, moyen {sum(ep) / len(ep):.1f} "
-      f"(l'erreur du logarithme, multipliée par |y log x|)")
+okp = max(ep) < 8
+mauvais += not okp
+print(f"  {'ok  ' if okp else 'ÉCART'} puissance_128 (x de 0,1 à 10, y de -10 à 10) : pire écart {max(ep):.2f} ulp, moyen "
+      f"{sum(ep) / len(ep):.2f} (y log x et le logarithme en deux parties ; exigé : moins de 8)")
 print(f"{len(fonctions) * N} appels, {pas} instructions de Lugus ({pas // (len(fonctions) * N)} par appel en moyenne)")
 print("Tout est conforme." if not mauvais else f"{mauvais} fonction(s) au-delà de 4 ulps")
 sys.exit(1 if mauvais else 0)

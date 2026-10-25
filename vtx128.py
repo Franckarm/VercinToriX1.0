@@ -2781,14 +2781,18 @@ fonction plafond_128(x: flottant_petuar): flottant_petuar {
     si t < x { t = t + 1.0Q; }
     retour t;
 }
-fonction exponentielle_128(x: flottant_petuar): flottant_petuar {
+fonction exponentielle_128(x: flottant_petuar): flottant_petuar { retour __x_exp_parties(x, 0.0Q); }
+// exp(p + q), q petit devant p (puissance le donne en deux parties, pour ne pas perdre les bits bas de y log x)
+fonction __x_exp_parties(p: flottant_petuar, q: flottant_petuar): flottant_petuar {
+    soit x = p + q;
     si x != x { retour x; }
     si x > __X_EXP_MAX { retour __x_inf(0); }
     si x < __X_EXP_MIN { retour 0.0Q; }
-    // x = k ln(4) + r : multiplier par 4^k est exact (le quaternaire), par 2^k ne l'est qu'une fois sur deux
+    // x = k ln(4) + r : multiplier par 4^k est exact (le quaternaire), par 2^k ne l'est qu'une fois sur deux ;
+    // p - 2k ln2 (partie haute) est exact : les deux sont proches, et 2k × la partie haute de ln 2 tient en 112 bits
     soit k = arrondi(x * __X_INV_LN2 * 0.5Q);
     soit fk = __x_signe(2 * k);
-    soit r = (x - fk * __X_LN2_HAUT) - fk * __X_LN2_BAS;
+    soit r = ((p - fk * __X_LN2_HAUT) + q) - fk * __X_LN2_BAS;
     // |r| <= ln(2) : 36 termes de la série (le dernier vaut moins de 2^-125)
     soit s = 1.0Q;
     soit n = 36;
@@ -2800,11 +2804,18 @@ fonction exponentielle_128(x: flottant_petuar): flottant_petuar {
     si k .< 0 - 8000 { retour s * __x_p2(0 - 16000) * __x_p2(2 * k + 16000); }
     retour s * __x_p2(2 * k);
 }
+// x tronqué à ses 56 bits de tête (la moitié basse de la mantisse effacée) : le produit de deux tels nombres est exact
+fonction __x_tronque(x: flottant_petuar): flottant_petuar {
+    retour comme_flottant_petuar(bits(x) & 0xFFFFFFFFFFFFFFFFFF00000000000000LL);
+}
 fonction exp2_128(x: flottant_petuar): flottant_petuar {
     soit k = plancher_128(x);
     retour exponentielle_128((x - k) * __X_LN2_HAUT + (x - k) * __X_LN2_BAS) * __x_p2(entier(k));
 }
-fonction logarithme_128(x: flottant_petuar): flottant_petuar {
+fonction logarithme_128(x: flottant_petuar): flottant_petuar { retour __x_log_parties(x, 0); }
+// le logarithme en deux parties : partie 0 le résultat arrondi h, partie 1 ce qui lui manque (log x = h + b, à 2^-220
+// près quand log x est grand) ; puissance s'en sert
+fonction __x_log_parties(x: flottant_petuar, partie): flottant_petuar {
     si x != x { retour x; }
     si x < 0.0Q { retour __x_variable(); }
     si x == 0.0Q { retour __x_inf(1); }
@@ -2828,13 +2839,26 @@ fonction logarithme_128(x: flottant_petuar): flottant_petuar {
     // le facteur 2 est dans les coefficients (2 / (2n + 1)) : multiplier par 2 arrondit, en quaternaire
     soit t = 2.0Q / 49.0Q;
     soit n = 23;
-    tantque n > 0 {
+    tantque n > 1 {
         t = 2.0Q / flottant_petuar(2 * n + 1) + z * t;
         n = n - 1;
     }
-    t = 2.0Q + z * t;
+    // log m = 2s + s w, w = z (2/3 + z t) ; 2s en deux parties (s + s, et ce que l'arrondi a laissé : exact)
+    soit w = z * (2.0Q / 3.0Q + z * t);
+    soit d = s + s;
+    soit db = (s - d) + s;
     soit fe = __x_signe(e);
-    retour fe * __X_LN2_HAUT + (fe * __X_LN2_BAS + s * t);
+    soit a = fe * __X_LN2_HAUT;
+    soit reste = s * w + fe * __X_LN2_BAS + db;
+    soit bh = d + reste;
+    soit bb = (d - bh) + reste;
+    si e == 0 {
+        si partie == 0 { retour bh; }
+        retour bb;
+    }
+    soit h = a + bh;
+    si partie == 0 { retour h; }
+    retour ((a - h) + bh) + bb;
 }
 fonction __x_sin_cos(x: flottant_petuar, decale): flottant_petuar {
     si x != x { retour x; }
@@ -2954,11 +2978,24 @@ fonction puissance_128(x: flottant_petuar, y: flottant_petuar): flottant_petuar 
     }
     si x < 0.0Q {
         si !entiere { retour __x_variable(); }
-        soit e2 = exponentielle_128(y * logarithme_128(-x));
+        soit e2 = __x_puissance(-x, y);
         si impaire { retour -e2; }
         retour e2;
     }
-    retour exponentielle_128(y * logarithme_128(x));
+    retour __x_puissance(x, y);
+}
+// x^y = exp(y log x), x > 0, avec y log x en deux parties : y et log x coupés en 56 + 56 bits, le produit des parties
+// hautes est exact, le reste ne compte que pour les bits bas
+fonction __x_puissance(x: flottant_petuar, y: flottant_petuar): flottant_petuar {
+    soit lh = __x_log_parties(x, 0);
+    soit lb = __x_log_parties(x, 1);
+    soit yh = __x_tronque(y);
+    soit yb = y - yh;
+    soit lhh = __x_tronque(lh);
+    soit lhb = lh - lhh;
+    soit p = yh * lhh;
+    soit q = yh * lhb + yb * lh + y * lb;
+    retour __x_exp_parties(p, q);
 }
 // les noms de la version 0.4 (le flottant de 64 bits y était à part)
 fonction pi_64(): flottant { retour 3.141592653589793; }
