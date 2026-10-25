@@ -58,6 +58,16 @@ fn voies(x: u128) -> [u128; 4] {
     [x & M32, (x >> 32) & M32, (x >> 64) & M32, x >> 96]
 }
 
+/// Les quatre voies à la largeur l : de l / 4 bits chacune.
+fn voies_l(x: u128, l: u32) -> [u128; 4] {
+    if l == 128 {
+        return voies(x);
+    }
+    let b = l / 4;
+    let mk = (1u128 << b) - 1;
+    [x & mk, (x >> b) & mk, (x >> (2 * b)) & mk, (x >> (3 * b)) & mk]
+}
+
 fn de_voies(v: [u128; 4]) -> u128 {
     (v[0] & M32) | ((v[1] & M32) << 32) | ((v[2] & M32) << 64) | ((v[3] & M32) << 96)
 }
@@ -96,8 +106,14 @@ impl Spu128 {
     }
 
     // --- mémoire
+    /// (étage, indice) : adresse courte si les 64 bits hauts sont nuls (étage 63-62, indice 47-0, celle du SPU-64),
+    /// longue sinon (étage 127-126, indice 119-0).
     fn place(adr: u128) -> (usize, u128) {
-        ((adr >> 126) as usize, adr & M120)
+        if adr >> 64 == 0 {
+            ((adr >> 62) as usize, adr & ((1u128 << 48) - 1))
+        } else {
+            ((adr >> 126) as usize, adr & M120)
+        }
     }
 
     fn page_disque(&mut self, e: usize, i: u128) {
@@ -540,11 +556,13 @@ impl Spu128 {
                 self.poser(d, v, false, 128);
                 suivant = (suivant + 1) & M120;
             }
-            0x18 => self.poser(d, si, false, 128),
-            0x19 => self.poser(d, imm, false, 128),
+            0x18 => self.poser(d, si, false, l),
+            0x19 => self.poser(d, imm, false, l),
             0x0B => self.ecrire(d, sv),
-            0x1F => self.ecrire(d, (sv & !(3u128 << 126)) | ((imm & 3) << 126)),
-            0x22 => self.ecrire(d, (sv & !(3u128 << 126)) | ((tv & 3) << 126)),
+            0x1F | 0x22 => {
+                let e = if op == 0x1F { imm & 3 } else { tv & 3 };
+                self.ecrire(d, (sm & !(3u128 << (l - 2))) | (e << (l - 2)));
+            }
             0x10 | 0x11 | 0x13 => {
                 let mut r = 0u128;
                 for k in 0..nq {
@@ -570,34 +588,36 @@ impl Spu128 {
             }
             0x5A => self.poser(d, (sm >> ((tv & (nq as u128 - 1)) * 2)) & 3, false, 128),
             0x54 => {
-                let v = (self.lire(sv.wrapping_add(tv >> 6)) >> ((tv & 63) * 2)) & 3;
+                let n = nq as u128;
+                let v = (self.lire(sv.wrapping_add(tv / n)) >> ((tv % n) * 2)) & 3;
                 self.poser(d, v, false, 128);
             }
             0x55 => {
-                let a = sv.wrapping_add(tv >> 6);
-                let k = (tv & 63) * 2;
+                let n = nq as u128;
+                let a = sv.wrapping_add(tv / n);
+                let k = (tv % n) * 2;
                 let v = (self.lire(a) & !(3u128 << k)) | ((dv & 3) << k);
                 self.ecrire_mem(a, v)?;
             }
             0x38 => {
-                let (a, b) = (voies(sv), voies(tv));
+                let (a, b) = (voies_l(sv, l), voies_l(tv, l));
                 let v = (0..4).fold(0u128, |acc, k| acc.wrapping_add(a[k] * b[k]));
-                self.poser(d, v, false, 128);
+                self.poser(d, v, false, l);
             }
             0x39 => {
                 let sp = self.r[14];
                 let lit = |mm: &mut Spu128, j: u128| mm.lire(sp.wrapping_add(4).wrapping_sub(j) & M120);
                 let (n, wd, q, k, o) = (lit(self, 0), lit(self, 1), lit(self, 2), lit(self, 3), lit(self, 4));
-                let qs: Vec<[u128; 4]> = (0..wd).map(|j| voies(self.lire(q.wrapping_add(j)))).collect();
+                let qs: Vec<[u128; 4]> = (0..wd).map(|j| voies_l(self.lire(q.wrapping_add(j)), l)).collect();
                 for i in 0..n {
                     let mut acc = 0u128;
                     for j in 0..wd {
-                        let p = voies(self.lire(k.wrapping_add(i.wrapping_mul(wd)).wrapping_add(j)));
+                        let p = voies_l(self.lire(k.wrapping_add(i.wrapping_mul(wd)).wrapping_add(j)), l);
                         for mm in 0..4 {
                             acc = acc.wrapping_add(qs[j as usize][mm] * p[mm]);
                         }
                     }
-                    self.ecrire_mem(o.wrapping_add(i), acc)?;
+                    self.ecrire_mem(o.wrapping_add(i), acc & m)?;
                 }
             }
             0x20 => {
@@ -651,12 +671,12 @@ impl Spu128 {
             0x24 => self.sortie.push(sv),
             0x51 => {
                 let v = self.lire_canal(sv);
-                self.poser(d, v, false, 128);
+                self.poser(d, v, false, l);
             }
             0x52 => self.ecrire_canal(tv, sv),
             0x53 => {
                 let v = self.service(sv, tv)?;
-                self.poser(d, v, false, 128);
+                self.poser(d, v, false, l);
             }
             0x5E => {
                 let q = (si & 3) as u8;

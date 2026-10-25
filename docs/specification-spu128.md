@@ -47,7 +47,16 @@ Une adresse est un mot de 128 bits (l'adresse du SPU-64, élargie) :
 | 23 à 0 | `#RRGGBB` : le point dans le cube de 256³ (x = RR, y = GG, z = BB) |
 
 L'**indice** d'un mot dans son étage est l'adresse modulo 2^120 : un tableau qui dépasse `#FFFFFF` continue dans le cube
-de la fréquence suivante. La mémoire est faite de pages de 65 536 mots, créées à la première écriture ; lire une case
+de la fréquence suivante.
+
+**L'adresse courte** (correction du 25 octobre, avant le compilateur). Une adresse dont les 64 bits hauts sont nuls est
+lue comme l'adresse du SPU-64 : l'étage dans les bits 63-62, la fréquence dans les bits 47-24, `#RRGGBB` dans les bits
+23-0 (les bits 61-48 sont ignorés) ; l'indice est l'adresse modulo 2^48. Elle désigne la même case que l'adresse
+longue de même étage et de même fréquence. Ainsi un entier de 64 bits, l'entier par défaut du langage, porte une
+adresse et se calcule à la largeur 64 (`@[t + 1 + i]`, le tas, les textes, le ramasse-miettes) sans perdre son étage ;
+l'adresse longue reste là pour l'espace entier (96 bits de fréquence, le type et l'état). Une adresse longue de
+l'étage 0, de type 0 et d'état 0 dont la fréquence dépasse 2^24 sans atteindre 2^40 serait lue comme courte : ces
+cubes de l'étage 0 ne s'atteignent pas (l'étage 0 est celui du code et de la pile). La mémoire est faite de pages de 65 536 mots, créées à la première écriture ; lire une case
 jamais écrite rend 0.
 
 **Le brin** de chaque mot : comme au SPU-64 (un quit hors de la valeur : 0 libre, 1 ADN fixé, 2 ARN en travail,
@@ -75,7 +84,10 @@ l'étage 0, la moitié haute si p est pair, la moitié basse s'il est impair. Le
 
 **La largeur** `w` (les bits 35-32, qui étaient réservés au SPU-64) : 0 = 128 bits, 1 = 64 bits, 2 = 32 bits (3 est
 refusé). Une opération entière à la largeur 64 ou 32 calcule sur les bits bas de ses opérandes, range son résultat
-étendu par des zéros, et pose Z, N et C à cette largeur. Pour une opération flottante, `w` choisit le format
+étendu par des zéros, et pose Z, N et C à cette largeur. La règle vaut aussi pour LDIS et LDIU (`LDIS.64 R1, -1` donne
+2^64 − 1), COMPTE, ENTC et SYS (le résultat ramené à la largeur), ETG et ETGX (l'étage dans les deux bits du haut de la
+largeur : 63-62 à la largeur 64, l'adresse courte), LDQ et STQ (L / 2 quits par mot), GDOT et GEMV (voies de L / 4
+bits). MOV, LD, ST, LDX, STX, LDF, STF, PUSH, POP, IN, OUT et SEXT gardent les 128 bits. Pour une opération flottante, `w` choisit le format
 (section 4.4). L'entier par défaut du langage étant de 64 bits, la plupart des opérations du code compilé ont w = 1 :
 une seule instruction, sans masque.
 
@@ -110,9 +122,9 @@ opérations communes ; les familles nouvelles commencent à 80 (hex).
 | 4C / 4D | ADC / SBC | avec la retenue C ; C = nouvelle retenue / nouvel emprunt |
 | 50 | COMPTE | nombre de bits à 1 des L bits bas |
 | 0A / 2B | LDI / LDIH | constante de la demi-instruction suivante : `d` = elle / `d` = ses 64 bits en haut, les 64 bits bas de D gardés |
-| 18 / 19 | LDIS / LDIU | `d = sext(imm)` / `d = imm` |
+| 18 / 19 | LDIS / LDIU | `d = sext(imm) & mask` / `d = imm` |
 | 0B | MOV | `d = S` |
-| 1F / 22 | ETG / ETGX | `d = S` placé à l'étage `imm & 3` / `T & 3` (bits 127-126 remplacés) |
+| 1F / 22 | ETG / ETGX | `d = S & mask` placé à l'étage `imm & 3` / `T & 3` (les bits L−1 et L−2 remplacés : 127-126, ou 63-62 pour l'adresse courte) |
 
 ### 4.2 Quaternaire (L / 2 quits ; quit 0 dans les bits bas)
 
@@ -123,9 +135,9 @@ opérations communes ; les familles nouvelles commencent à 80 (hex).
 | 56 / 57 | ET4 / OU4 | Belnap par quit : v = v1 ∧ v2, f = f1 ∨ f2 / l'inverse (bit haut du quit : v, bit bas : f) |
 | 58 / 59 | NON4 / ANTI | échange v et f / puis complément |
 | 5A | EXQ | `d = (S >> ((T & (L/2 − 1)) × 2)) & 3` |
-| 54 | LDQ | `d` = le quit `T & 63` du mot `M[S + (T >> 6)]` |
-| 55 | STQ | écrit `D & 3` dans ce quit, sans toucher aux 63 autres |
-| 39 | GEMV | comme au SPU-64, avec GDOT (4.5) |
+| 54 | LDQ | avec n = L / 2 quits par mot : `d` = le quit `T mod n` du mot `M[S + T / n]` (64 quits par mot à w = 0, 32 à w = 1) |
+| 55 | STQ | écrit `D & 3` dans ce quit, sans toucher aux autres |
+| 39 | GEMV | comme au SPU-64, avec GDOT (4.5) à la largeur w ; chaque résultat ramené à la largeur |
 
 ### 4.3 Mémoire, pile, sauts, entrées et sorties, brin
 
@@ -169,7 +181,7 @@ le quit d'état à 3 et rien d'autre, zéro = l'état seul, infini = l'état et 
 | 80 / 81 / 82 | VADD / VSUB / VMUL | par voie, modulo 2^32 (VMUL : les 32 bits bas du produit) |
 | 83 / 84 | VMIN / VMAX | par voie, sans signe |
 | 85 / 86 / 87 / 88 | VFADD / VFSUB / VFMUL / VFDIV | par voie, chaque voie lue comme un `flottant_32` quaternaire |
-| 38 | GDOT | somme des produits des quatre voies de S et T (128 bits ; les produits de 64 bits, la somme exacte) |
+| 38 | GDOT | somme des produits des quatre voies de S et T, ramenée à la largeur (voies de L / 4 bits : 32 à w = 0, 16 à w = 1 comme au SPU-64) |
 | 89 | VBCAST | les 32 bits bas de S recopiés dans les quatre voies |
 | 8A | VEXT | `d` = la voie `T & 3` de S (étendue par des zéros) |
 | 8B | VINS | `d` = D, sa voie `imm & 3` remplacée par les 32 bits bas de S |
@@ -203,6 +215,8 @@ LDIH comptent pour un).
 - Les flottants par la largeur : le flottant de 128 bits (l'ancien `flottant_petuar`) devient une instruction ; la
   famille S (60 à 6A) disparaît, remplacée par w = 2 ; FCONV remplace STOF et FTOS.
 - Nouveau : LDIH, les voies (80 à 8B), la matière (90 à 93), GDOT sur quatre voies de 32 bits.
+- L'adresse courte (64 bits hauts nuls) est l'adresse du SPU-64 : le code du SPU-64, compilé avec w = 1, garde ses
+  adresses, son tas et ses textes.
 
 ## 8. Notes honnêtes
 

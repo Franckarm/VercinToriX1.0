@@ -21,6 +21,7 @@ from spu64 import ecrire_double, lire_double, noter_etat  # noqa: E402  (le miro
 M128 = (1 << 128) - 1
 M120 = (1 << 120) - 1
 M64 = (1 << 64) - 1
+M48 = (1 << 48) - 1
 M32 = (1 << 32) - 1
 PILE = 0x7FFFFFFF
 LARGEUR = {0: 128, 1: 64, 2: 32}
@@ -94,9 +95,9 @@ def assembler(texte):
         return 2 if t0 in ("LDI", "LDIH") else 1
 
     etiquettes, lignes, h = {}, [], 0
+    noms = []                    # une étiquette seule sur sa ligne va à la ligne suivante (mot ou instruction)
     for brut in texte.splitlines():
         ligne = brut.split(";")[0].strip()
-        noms = []
         while ":" in ligne:
             nom, ligne = ligne.split(":", 1)
             noms.append(nom.strip().upper())
@@ -107,12 +108,16 @@ def assembler(texte):
                 etiquettes[n] = h // 2
             lignes.append(ligne)
             h += 2 * len(ligne.split(None, 1)[1].split(","))
+            noms = []
             continue
-        for n in noms:
-            etiquettes[n] = h
         if ligne:
+            for n in noms:
+                etiquettes[n] = h
+            noms = []
             lignes.append(ligne)
             h += taille(ligne)
+    for n in noms:               # étiquettes de la fin : l'indice du mot qui suit
+        etiquettes[n] = (h + 1) // 2
 
     def reg(s):
         m = re.fullmatch(r"[Rr](\d+)", s.strip())
@@ -201,8 +206,10 @@ def quits(f, a, b, n):
 V128, F128 = int("AA" * 16, 16), int("55" * 16, 16)
 
 
-def voies(x):
-    return [(x >> (32 * k)) & M32 for k in range(4)]
+def voies(x, L=128):
+    """Les quatre voies d'un mot : de 32 bits à la largeur 128 (R, V, B, M), de L / 4 bits sinon."""
+    b = L // 4
+    return [(x >> (b * k)) & ((1 << b) - 1) for k in range(4)]
 
 
 def de_voies(v):
@@ -235,7 +242,11 @@ class CPU:
     # --- mémoire
     @staticmethod
     def place(adr):
+        """(étage, indice) d'une adresse : courte si ses 64 bits hauts sont nuls (celle du SPU-64 : étage 63-62,
+        fréquence 47-24, #RRGGBB 23-0), longue sinon (étage 127-126, fréquence 119-24, #RRGGBB 23-0)."""
         adr &= M128
+        if adr >> 64 == 0:
+            return adr >> 62, adr & M48
         return adr >> 126, adr & M120
 
     def page_disque(self, e, i):
@@ -504,15 +515,15 @@ class CPU:
             self.poser(d, k if op == 0x0A else (k << 64) | (D & M64))
             suivant = (suivant + 1) & M120
         elif op == 0x18:
-            self.poser(d, si)
+            self.poser(d, si, False, L)
         elif op == 0x19:
-            self.poser(d, imm)
+            self.poser(d, imm, False, L)
         elif op == 0x0B:
             self.ecrire(d, S)
-        elif op == 0x1F:
-            self.ecrire(d, (S & ~(3 << 126)) | ((imm & 3) << 126))
-        elif op == 0x22:
-            self.ecrire(d, (S & ~(3 << 126)) | ((T & 3) << 126))
+        elif op in (0x1F, 0x22):
+            # l'étage dans les deux bits du haut de la largeur : 127-126 (adresse longue), 63-62 (adresse courte)
+            e = (imm if op == 0x1F else T) & 3
+            self.ecrire(d, (Sm & ~(3 << (L - 2))) | (e << (L - 2)))
         # --- quaternaire
         elif op in (0x10, 0x11, 0x13):
             f = {0x10: min, 0x11: max, 0x13: lambda x, y: (x + y) & 3}[op]
@@ -530,21 +541,22 @@ class CPU:
         elif op == 0x5A:
             self.poser(d, (Sm >> ((T & (nq - 1)) * 2)) & 3)
         elif op == 0x54:
-            self.poser(d, (self.lire(S + (T >> 6)) >> ((T & 63) * 2)) & 3)
+            # un mot porte L / 2 quits (64 à la largeur 128, 32 à la largeur 64, 16 à la largeur 32)
+            self.poser(d, (self.lire(S + T // nq) >> ((T % nq) * 2)) & 3)
         elif op == 0x55:
-            a, k = (S + (T >> 6)) & M128, (T & 63) * 2
+            a, k = (S + T // nq) & M128, (T % nq) * 2
             self.ecrire_mem(a, (self.lire(a) & ~(3 << k)) | ((D & 3) << k))
         elif op == 0x38:
-            self.poser(d, sum(x * y for x, y in zip(voies(S), voies(T))))
+            self.poser(d, sum(x * y for x, y in zip(voies(S, L), voies(T, L))), False, L)
         elif op == 0x39:
             sp = self.r[14]
             n, wd, q, k, o = [self.mem.get((0, (sp + 4 - j) & M120), 0) for j in range(5)]
-            qs = [voies(self.lire(q + j)) for j in range(wd)]
+            qs = [voies(self.lire(q + j), L) for j in range(wd)]
             for i in range(n):
                 acc = 0
                 for j in range(wd):
-                    acc += sum(x * y for x, y in zip(qs[j], voies(self.lire(k + i * wd + j))))
-                self.ecrire_mem(o + i, acc & M128)
+                    acc += sum(x * y for x, y in zip(qs[j], voies(self.lire(k + i * wd + j), L)))
+                self.ecrire_mem(o + i, acc & m)
         # --- mémoire, pile, sauts, canaux, brin
         elif op == 0x20:
             self.poser(d, self.lire(S + si))
@@ -580,11 +592,11 @@ class CPU:
         elif op == 0x24:
             self.sortie.append(S)
         elif op == 0x51:
-            self.poser(d, self.lire_canal(S))
+            self.poser(d, self.lire_canal(S), False, L)
         elif op == 0x52:
             self.ecrire_canal(T, S)
         elif op == 0x53:
-            self.poser(d, self.service(S, T))
+            self.poser(d, self.service(S, T), False, L)
         elif op == 0x5E:
             q = si & 3
             for k in range(T):

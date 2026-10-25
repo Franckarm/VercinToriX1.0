@@ -59,6 +59,14 @@ if shutil.which("cargo"):
     etapes.append(("vtx64 : le compilateur du SPU-64 (entier et flottant quaternaire de 64 bits, 32 et 128 au choix, brin)",
                    [sys.executable, os.path.join("tests", "test_vtx64.py")]))
     etapes.append(("vtxc64 : le compilateur écrit en vtx pour le SPU-64 (point fixe, mêmes mots que vtx64.py)", [sys.executable, os.path.join("vtxc", "test_vtxc64.py")] + (["--complet"] if COMPLET else [])))
+    etapes.append(("Lugus (SPU-128) : la machine de référence (flottant de 128 bits = flottant_petuar, largeurs, matière, voies, brin, cubes)",
+                   [sys.executable, os.path.join("spu128", "test_spu128.py")]))
+    etapes.append(("Lugus : les deux machines identiques (programmes aléatoires)", [sys.executable, os.path.join("spu128", "test_lugus.py"), "3000" if COMPLET else "1000"]))
+    etapes.append(("Lugus : corpus de conformité", [sys.executable, os.path.join("spu128", "verifier_corpus128.py")]))
+    etapes.append(("vtx128 : le langage du SPU-64 sur Lugus (suite de vtx64, types, bibliothèque, deux machines)",
+                   [sys.executable, os.path.join("tests", "test_vtx128.py")]))
+    etapes.append(("vtx128 : mêmes sorties que le SPU-64 (programmes au hasard, exemples)",
+                   [sys.executable, os.path.join("tests", "test_vtx128_differentiel.py"), "300" if COMPLET else "60"]))
     etapes.append(("flottant_petuar : le flottant quaternaire de 128 bits (référence exacte, quatre machines, vtxc, ADN et cube)",
                    [sys.executable, os.path.join("tests", "test_petuar.py")]))
     etapes.append(("type texte et afficher (vtx.py et vtxc)", [sys.executable, os.path.join("vtxc", "test_textes.py")]))

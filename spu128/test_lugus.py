@@ -84,8 +84,8 @@ def valeur():
 LARG = ["", "", ".64", ".64", ".32"]
 RRR_W = ["ADD", "SUB", "MUL", "MULHU", "MULHS", "DIV", "MOD", "DIVS", "MODS", "SHL", "SHR", "SAR", "AND", "OR", "XOR",
          "MIN", "MAX", "ADDM4", "QEGAL", "ET4", "OU4", "EXQ", "ADC", "SBC",
-         "FADD", "FSUB", "FMUL", "FDIV", "FEQ", "FLT", "FLE", "FCMP"]
-RRR = ["GDOT", "ETGX", "VADD", "VSUB", "VMUL", "VMIN", "VMAX", "VFADD", "VFSUB", "VFMUL", "VFDIV", "VEXT", "MATL"]
+         "FADD", "FSUB", "FMUL", "FDIV", "FEQ", "FLT", "FLE", "FCMP", "GDOT", "ETGX"]
+RRR = ["VADD", "VSUB", "VMUL", "VMIN", "VMAX", "VFADD", "VFSUB", "VFMUL", "VFDIV", "VEXT", "MATL"]
 RR_W = ["SHL4", "SHR4", "CMP3", "ZEXT", "SEXT", "COMPTE", "NON4", "ANTI", "FSQRT", "FNEG", "FETAT", "FVIEEE", "FDIEEE"]
 RR = ["MOV", "VBCAST", "ANTIPOINT"]
 RRI_W = ["ITOF", "ITOFS", "FTOI", "FROUND", "FCONV"]
@@ -99,7 +99,10 @@ def programme():
     for r in (10, 11):
         e = g.randint(1, 3)
         f = g.choice([0, 1, 262, g.getrandbits(24), g.getrandbits(96)])
-        L.append(f"LDI128 R{r},{(e << 126) | (f << 24) | g.getrandbits(24) & 0xFFFF00}")
+        if g.random() < 0.5:       # une adresse longue
+            L.append(f"LDI128 R{r},{(e << 126) | (f << 24) | g.getrandbits(24) & 0xFFFF00}")
+        else:                      # une adresse courte (64 bits hauts nuls : celle du SPU-64)
+            L.append(f"LDI R{r},{(e << 62) | ((f & 0xFFFFFF) << 24) | g.getrandbits(24) & 0xFFFF00}")
     L.append(f"LDIS R12,{g.randint(0, 40)}")
     L.append("LDI R13,16777216")
     lab = 0
@@ -125,9 +128,10 @@ def programme():
                 L.append(f"{op} R{x},R{y},R{z},{g.randint(0, 300) if op == 'MELANGE' else g.randint(0, 7)}")
         elif c < 0.69:
             L.append(f"{g.choice(['ADDI', 'SUBI'])}{w} R{x},R{y},{g.randint(-2**31, 2**31 - 1)}" if g.random() < 0.8
-                     else f"ETG R{x},R{y},{g.randint(-3, 7)}")
+                     else f"ETG{w} R{x},R{y},{g.randint(-3, 7)}")
         elif c < 0.71:
-            L.append(f"{g.choice(['LDIS', 'LDIU'])} R{x},{g.randint(0, 2**31 - 1)}")
+            L.append(f"LDIS{w} R{x},{g.randint(-2**31, 2**31 - 1)}" if g.random() < 0.5
+                     else f"LDIU{w} R{x},{g.randint(0, 2**32 - 1)}")
         elif c < 0.74:
             L.append(f"CMP{w} R{x},R{y}" if g.random() < 0.5 else f"CMPI{w} R{x},{g.randint(-1000, 1000)}")
             L.append(f"LDIS R{z},0")
@@ -145,7 +149,7 @@ def programme():
             elif op == "STX":
                 L.append(f"STX R{a},R{x},R12")
             else:
-                L.append(f"{op} R{x},R{a},R12")
+                L.append(f"{op}{w} R{x},R{a},R12")
         elif c < 0.85:
             L.append(f"STF R{x},{g.randint(-5, 5)}" if g.random() < 0.5 else f"LDF R{x},{g.randint(-5, 5)}")
         elif c < 0.88:
@@ -158,7 +162,7 @@ def programme():
             L.append(f"BRIN R{x},R{a}")
         elif c < 0.94:
             L.append(f"LDIS R{y},{g.choice([1, 3, 4, 11, 12, 99])}")
-            L.append(f"SYS R{x},R{y},R{z}")
+            L.append(f"SYS{w} R{x},R{y},R{z}")
         elif c < 0.97:
             L.append(f"LDIS R12,{g.randint(1, 5)}")
             L.append(f"boucle{lab}:")
@@ -181,7 +185,7 @@ def programme():
             L.append("PUSH R10")
             L.append("PUSH R11")
             L.append("PUSH R10")
-            L.append("GEMV")
+            L.append(f"GEMV{w}")
             L.append("ADDI R14,R14,5")
             L.append("LDIS R12,3")
     for r in range(1, 13):

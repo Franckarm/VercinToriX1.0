@@ -194,6 +194,28 @@ att = [Q128.depuis(Fraction(9, 4)), Q64.depuis(10), Q128.depuis(10), Q128.vers(Q
        struct.unpack("<Q", struct.pack("<d", 10.0))[0]]
 verifier("2g. flottants aux trois largeurs, conversions, échange IEEE", c.sortie == att, c.sortie)
 
+c = lancer("""
+    LDI R1, 0x8000000500000064        ; adresse courte : étage 2, fréquence 5, case 100
+    LDI128 R2, 0x80000000000000000000000500000064   ; la même, longue
+    LDIS R3, 7
+    ST R1, R3, 0
+    LD R4, R2, 0
+    OUT R4
+    LDIU R5, 100
+    ETG.64 R6, R5, 2          ; l'étage dans les bits 63-62 : une adresse courte
+    OUT R6
+    LDIS.64 R7, -1            ; à la largeur 64 : 2^64 - 1
+    OUT R7
+    LDIU R8, 70
+    LDIS R9, 2
+    STQ.64 R9, R1, R8         ; le quit 70 à la largeur 64 : mot 2, quit 6
+    LD R10, R1, 2
+    OUT R10
+    HALT
+""")
+verifier("2h. adresse courte (celle du SPU-64) = adresse longue de même fréquence ; ETG, LDIS, STQ à la largeur 64",
+         c.sortie == [7, (2 << 62) | 100, M64, 2 << 12], c.sortie)
+
 # --- 3. le brin, les cubes sur disque
 ok = False
 try:
