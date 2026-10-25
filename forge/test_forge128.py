@@ -62,7 +62,7 @@ appels = "\n".join(f"        {k} => p{k}::lancer(&a[2..])," for k in range(len(g
 main = f"fn main() {{\n    let a: Vec<String> = std::env::args().collect();\n    match a[1].parse::<usize>().unwrap() {{\n{appels}\n        _ => {{}}\n    }}\n}}\n"
 rs = os.path.join(TMP, "tous.rs")
 open(rs, "w", encoding="utf-8").write(forge128.noyau() + "\n" + "\n".join(modules) + main)
-exe = os.path.join(TMP, "tous")
+exe = os.path.join(TMP, "tous" + (".exe" if os.name == "nt" else ""))
 r = subprocess.run([rustc] + forge128.rustc_options() + ["-o", exe, rs], capture_output=True, text=True)
 if r.returncode:
     print("rustc a refusé les programmes forgés :\n" + r.stderr[-4000:])
