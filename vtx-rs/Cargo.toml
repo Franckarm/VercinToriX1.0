@@ -20,6 +20,10 @@ path = "src/atelier_exe.rs"
 name = "vtx64"
 path = "src/vtx64.rs"
 
+[[bin]]
+name = "lugus"
+path = "src/lugus.rs"
+
 [dependencies]
 
 [profile.release]

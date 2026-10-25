@@ -98,15 +98,19 @@ fn entete_avec(entete: &[u8], quoi: &[u8; 3]) -> Vec<u8> {
 struct Format {
     mot: usize,
     suite: usize,
+    // la taille d'un mot de l'ombre (8 octets aux SPU-32 et SPU-64, 16 pour Lugus, le SPU-128)
+    ombre: usize,
 }
 
 const MOTS: usize = 65536;
 
 fn format_de(entete: &[u8]) -> Format {
-    if entete == b"VTXCUB64" {
-        Format { mot: 8, suite: MOTS / 4 }
+    if entete == b"VTXCU128" {
+        Format { mot: 16, suite: MOTS / 4, ombre: 16 }
+    } else if entete == b"VTXCUB64" {
+        Format { mot: 8, suite: MOTS / 4, ombre: 8 }
     } else {
-        Format { mot: 4, suite: 0 }
+        Format { mot: 4, suite: 0, ombre: 8 }
     }
 }
 
@@ -114,15 +118,15 @@ impl Format {
     fn page(&self) -> usize {
         MOTS * self.mot + self.suite
     }
-    fn lire_mot(&self, p: &[u8], j: usize) -> u64 {
+    fn lire_mot(&self, p: &[u8], j: usize) -> u128 {
         let o = j * self.mot;
-        let mut v = 0u64;
+        let mut v = 0u128;
         for (i, b) in p[o..o + self.mot].iter().enumerate() {
-            v |= (*b as u64) << (8 * i);
+            v |= (*b as u128) << (8 * i);
         }
         v
     }
-    fn ecrire_mot(&self, p: &mut [u8], j: usize, v: u64) {
+    fn ecrire_mot(&self, p: &mut [u8], j: usize, v: u128) {
         let o = j * self.mot;
         for i in 0..self.mot {
             p[o + i] = (v >> (8 * i)) as u8;
@@ -163,8 +167,8 @@ fn pages_de(corps: &[u8], f: Format) -> BTreeMap<u32, Vec<u8>> {
 }
 
 /// L'ombre d'une page : pour chaque colonne GG, les neuf mots o0, o1…o8 (voir plus haut).
-fn ombre_page(p: &[u8], f: Format) -> Vec<u64> {
-    let mut o = vec![0u64; 256 * 9];
+fn ombre_page(p: &[u8], f: Format) -> Vec<u128> {
+    let mut o = vec![0u128; 256 * 9];
     for gg in 0..256 {
         let c = &mut o[gg * 9..gg * 9 + 9];
         for bb in 0..256 {
@@ -186,12 +190,12 @@ fn ombre_page(p: &[u8], f: Format) -> Vec<u64> {
 /// Une colonne relue contre son ombre : juste, rectifiable (le mot BB et son erreur), ou fausse.
 enum Colonne {
     Juste,
-    Rectifiable(usize, u64),
+    Rectifiable(usize, u128),
     Fausse,
 }
 
-fn juger(calc: &[u64], lue: &[u64]) -> Colonne {
-    let d: Vec<u64> = (0..9).map(|k| calc[k] ^ lue[k]).collect();
+fn juger(calc: &[u128], lue: &[u128]) -> Colonne {
+    let d: Vec<u128> = (0..9).map(|k| calc[k] ^ lue[k]).collect();
     if d.iter().all(|&x| x == 0) {
         return Colonne::Juste;
     }
@@ -229,7 +233,7 @@ pub fn ecrire_double(chemin: &Path, octets: &[u8]) -> std::io::Result<()> {
     for (k, p) in pages_de(&octets[8.min(octets.len())..], f) {
         o.extend_from_slice(&k.to_le_bytes());
         for v in ombre_page(&p, f) {
-            o.extend_from_slice(&v.to_le_bytes());
+            o.extend_from_slice(&v.to_le_bytes()[..f.ombre]);
         }
     }
     std::fs::write(chemin_ombre(chemin), o)
@@ -247,15 +251,20 @@ pub fn lire_double(chemin: &Path, entete: &[u8]) -> Option<Vec<u8>> {
         return None;
     }
     let eo = entete_avec(entete, b"OMB");
-    let ombres: Option<BTreeMap<u32, Vec<u64>>> = std::fs::read(chemin_ombre(chemin)).ok()
+    let ombres: Option<BTreeMap<u32, Vec<u128>>> = std::fs::read(chemin_ombre(chemin)).ok()
         .filter(|b| b.len() >= 8 && b[..8] == eo[..])
         .map(|b| {
             let mut m = BTreeMap::new();
-            let t = 4 + 256 * 9 * 8;
+            let oz = f.ombre;
+            let t = 4 + 256 * 9 * oz;
             let mut i = 8;
             while i + t <= b.len() {
                 let k = u32::from_le_bytes([b[i], b[i + 1], b[i + 2], b[i + 3]]);
-                let v = (0..256 * 9).map(|j| u64::from_le_bytes(b[i + 4 + 8 * j..i + 12 + 8 * j].try_into().unwrap())).collect();
+                let v = (0..256 * 9).map(|j| {
+                    let mut x = [0u8; 16];
+                    x[..oz].copy_from_slice(&b[i + 4 + oz * j..i + 4 + oz * (j + 1)]);
+                    u128::from_le_bytes(x)
+                }).collect();
                 m.insert(k, v);
                 i += t;
             }
