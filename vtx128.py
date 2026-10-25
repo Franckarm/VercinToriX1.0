@@ -233,6 +233,24 @@ JETON = re.compile(
 )
 
 
+# ---- le point de matière de Lugus : #RRRRRRRR_VVVVVVVV_BBBBBBBB_MMMMMMMM
+COMPAT_64 = False          # vrai : les couleurs écrites gardent leur sens du SPU-64 (pour comparer les deux machines)
+MATIERE_DEFAUT = (2 << 30) | (63 << 12)     # une couleur écrite : état vrai, transparence entièrement à 1, le reste à 0
+CHAMPS_POINT = {"r": ("v", 3), "v": ("v", 2), "b": ("v", 1), "etat": ("m", 0), "reflet": ("m", 1), "lumiere": ("m", 2),
+                "transparence": ("m", 3), "profondeur": ("m", 4), "rugosite": ("m", 5)}
+CODONS_AVEC = {"avec_etat": 0, "avec_reflet": 1, "avec_lumiere": 2, "avec_transparence": 3, "avec_profondeur": 4,
+               "avec_rugosite": 5}
+
+
+def point_de_couleur(c):
+    """#RRGGBB -> le point de matière : chaque octet sur 32 bits (c × 16 843 009 : #FF donne #FFFFFFFF), la matière par
+    défaut (état vrai, transparence à 1)."""
+    v = 0
+    for k, dec in ((2, 96), (1, 64), (0, 32)):
+        v |= (((c >> (8 * k)) & 255) * 0x01010101) << dec
+    return v | MATIERE_DEFAUT
+
+
 def approfondir(c):
     """#RRGGBBAA (8 bits par canal) -> point profond #RRRRGGGGBBBBAAAA (16 bits par canal : c × 257)."""
     return sum((((c >> (8 * k)) & 255) * 257) << (16 * k) for k in range(4))
@@ -267,7 +285,9 @@ def echappements(t, ligne):
     return "".join(out)
 
 
-def lexer(src):
+def lexer(src, compat=None):
+    """Les jetons. compat : les couleurs écrites au sens du SPU-64 (le prélude, et COMPAT_64)."""
+    compat = COMPAT_64 if compat is None else compat
     src = ADN_LIT.sub(_adn_valeur, src)
     jetons, pos, ligne = [], 0, 1
     while pos < len(src):
@@ -303,6 +323,10 @@ def lexer(src):
             jetons.append(("num32", v, ligne))
         elif genre == "pqf":
             jetons.append(("pqf", bits_petuar_decimal(texte[:-1].replace("_", ""), ligne), ligne))
+        elif genre == "cube4" and not compat:
+            jetons.append(("pnt", int(texte[1:].replace("_", ""), 16), ligne))     # un point de matière, tel quel
+        elif genre == "cube" and len(texte) == 7 and not compat:
+            jetons.append(("pnt", point_de_couleur(int(texte[1:], 16)), ligne))  # #RRGGBB : la couleur, la matière par défaut
         elif genre in ("cube4", "cube2"):
             jetons.append(("wlg", int(texte[1:].replace("_", ""), 16), ligne))
         elif genre == "wlg":
@@ -345,7 +369,8 @@ NIVEAUX = [["||"], ["&&"], ["==", "!=", "<", "<=", ">", ">=", ".<", ".<=", ".>",
 # un flottant quaternaire (état Belnap, exposant en base 4, mantisse en quits).
 TYPES = {"entier": "e", "entier_64": "e", "long": "e", "entier_32": "i", "flottant": "f", "flottant_64": "f",
          "flottant_32": "s", "logique": "q", "texte": "t",
-         "entier_128": "w", "petuar": "w", "entier_petuar": "w", "flottant_petuar": "x", "flottant_128": "x"}
+         "entier_128": "w", "petuar": "w", "entier_petuar": "w", "flottant_petuar": "x", "flottant_128": "x",
+         "point": "p", "point_de_matiere": "p"}
 # types de deux mots (paire R1:R4, deuxième opérande R2:R5, le mot bas d'abord)
 LARGES2 = ()          # Lugus : l'entier_128 et le flottant_petuar tiennent en un mot
 QUATRE = ()
@@ -361,7 +386,7 @@ class _NomsTypes(dict):
 
 
 NOM_TYPE = _NomsTypes({"e": "entier", "i": "entier_32", "f": "flottant", "s": "flottant_32", "q": "logique",
-                       "w": "entier_petuar", "x": "flottant_petuar"})
+                       "w": "entier_petuar", "x": "flottant_petuar", "p": "point"})
 TAS_DEBUT, TAS_FIN, TAS_POINTEUR = 0x800000, 0xDFFFF0, 0xDFFFF8   # étage 3 : le tas (nouveau, nouveau_de)
 
 
@@ -515,6 +540,8 @@ class Analyseur:
             return ("w", ((-x[1]) if neg else x[1]) % 2 ** 128)
         if x[0] == "xnombre":
             return ("x", petuar_neg(x[1]) if neg else x[1])
+        if x[0] == "pnombre" and not neg:
+            return ("p", x[1])
         return self.ce(e, l)
 
     def ce(self, e, l=0):
@@ -1330,6 +1357,9 @@ class Analyseur:
         if k == "pqf":
             self.suivant()
             return ("xnombre", v)
+        if k == "pnt":
+            self.suivant()
+            return ("pnombre", v)
         if k == "str":
             self.suivant()
             n = self.textes.setdefault(v, len(self.textes))
@@ -1381,7 +1411,8 @@ class Analyseur:
             if v in self.consts:
                 c = self.consts[v]
                 if isinstance(c, tuple):
-                    return {"f": "fnombre", "s": "snombre", "i": "inombre", "w": "wnombre", "x": "xnombre"}[c[0]], c[1]
+                    return {"f": "fnombre", "s": "snombre", "i": "inombre", "w": "wnombre", "x": "xnombre",
+                            "p": "pnombre"}[c[0]], c[1]
                 return ("nombre", c)
             return ("var", v, l)
         if k == "op" and v == "(":
@@ -2826,6 +2857,27 @@ fonction ecrire_entier_128(c, a: entier_128) {
     }
 }
 fonction ecrire_entier_petuar(c, a: entier_128) { ecrire_entier_128(c, a); }
+// ---- le point de matière de Lugus, écrit en hex : #RRRRRRRR_VVVVVVVV_BBBBBBBB_MMMMMMMM
+fonction ecrire_point(c, x: entier_128) {
+    __mettre(c, 35);
+    pour k dans 0..32 {
+        si k > 0 && k % 8 == 0 { __mettre(c, 95); }
+        soit d = bas((x >> (124 - 4 * k)) & 15LL);
+        si d < 10 { __mettre(c, 48 + d); } sinon { __mettre(c, 55 + d); }
+    }
+}
+fonction __afficher_p(x: point) {
+    ecrire_point(1, bits(x));
+    ecrire_car(1, 10);
+}
+fonction __ecrire_p(x: point) {
+    ecrire_point(1, bits(x));
+}
+fonction __texte_p(x: point): texte {
+    soit t = __verifier(nouveau(40));
+    ecrire_point(t, bits(x));
+    retour __texte_fin(t);
+}
 fonction __afficher_w(x: entier_128) {
     ecrire_entier_128(1, x);
     ecrire_car(1, 10);
@@ -4869,12 +4921,16 @@ INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1,
             "brin": 1, "marquer_adn": 2, "marquer_arn": 2, "liberer_brin": 2,
             "flottant": 1, "flottant_64": 1, "flottant_32": 1, "flottant_signe": 1, "entier": 1, "entier_32": 1,
             "arrondi": 1, "racine": 1, "comme_flottant": 1, "comme_flottant_32": 1, "bits": 1,
-            "vers_ieee64": 1, "de_ieee64": 1}
+            "vers_ieee64": 1, "de_ieee64": 1,
+            "point": 3, "point32": 3, "matiere": 8, "comme_point": 1, "melanger": 3, "antipoint": 1,
+            **{n: 2 for n in CODONS_AVEC}}
 RETOURS = {"flottant_petuar": "x", "flottant_128": "x", "comme_flottant_petuar": "x", "vers_ieee128": "w", "de_ieee128": "x",
            "entier_128": "w", "entier_petuar": "w", "entier_128_signe": "w", "entier_petuar_signe": "w",
            "entier_128_de": "w", "entier_petuar_de": "w",
            "flottant": "f", "flottant_64": "f", "flottant_signe": "f", "comme_flottant": "f", "de_ieee64": "f",
-           "flottant_32": "s", "comme_flottant_32": "s", "entier_32": "i"}
+           "flottant_32": "s", "comme_flottant_32": "s", "entier_32": "i",
+           "point": "p", "point32": "p", "matiere": "p", "comme_point": "p", "melanger": "p", "antipoint": "p",
+           **{n: "p" for n in CODONS_AVEC}}
 SURCHARGES = ("abs", "min", "max")
 SORTIE_DEUX_MOTS = False   # vrai pour comparer au SPU-64 : sortie(entier_128) en deux mots, le bas d'abord
 # l'entier_128 à toute la largeur ; « / », « % » et « >> » sont signés, comme au SPU-64 (__qdiv, __qsar)
@@ -5728,6 +5784,13 @@ class Generateur:
             return "w"
         if g == "xnombre":
             return "x"
+        if g == "pnombre":
+            return "p"
+        if g in ("champ", "champ_ref") and isinstance(e[2], str) and self.typ(e[1]) == "p":
+            if e[2] not in CHAMPS_POINT:
+                raise VtxError(f"ligne {ligne_de(e)} : un point a les champs r, v, b, etat, reflet, lumiere, transparence, "
+                               f"profondeur et rugosite (pas « {e[2]} »)")
+            return "q" if e[2] == "etat" else "e"
         if g == "qnombre":
             return "q"
         if g == "var":
@@ -5744,6 +5807,8 @@ class Generateur:
             return "e"
         if g == "non":
             t = self.typ(e[1])
+            if t == "p":
+                raise VtxError(f"ligne {ligne_de(e)} : « ~ » ne s'applique pas à un point : utilisez antipoint()")
             if t in FLOTTANTS:
                 raise VtxError(f"ligne {ligne_de(e)} : « ~ » ne s'applique pas à un flottant")
             if t == "q":
@@ -5757,6 +5822,11 @@ class Generateur:
                     return "e"
                 raise VtxError(f"ligne {l} : « {op} » ne s'applique pas à une {NOM_TYPE[ta if est_ref(ta) else tb]} : "
                                f"comparez seulement (== ou !=) à une référence de même structure ou à nul")
+            if "p" in (ta, tb):
+                if op in ("==", "!=") and ta == tb:
+                    return "e"
+                raise VtxError(f"ligne {l} : « {op} » ne s'applique pas à un point (seulement == et != entre deux points ; "
+                               f"voir melanger(), antipoint(), bits())")
             if "q" in (ta, tb):
                 if op in ("==", "!=") and (ta == tb or e[2][0] == "blit" or e[3][0] == "blit"):
                     return "e"
@@ -5809,6 +5879,8 @@ class Generateur:
                 t0 = self.typ(e[2][0])
                 if t0 == "x":
                     return "x" if nom == "racine" else "w"      # bits(x) : les deux mots, comme un entier_petuar
+                if t0 == "p" and nom == "bits":
+                    return "w"
                 if nom == "racine":
                     return "s" if t0 == "s" else "f"
                 return "e"
@@ -6085,6 +6157,8 @@ class Generateur:
         """Valeur de vérité dans R1 (non nulle = vrai) : un flottant est vrai s'il est un nombre non nul (zéro, inconnu
         et variable sont faux), un entier_petuar s'il n'est pas nul."""
         self.refuser_logique(e)
+        if self.typ(e) == "p":
+            raise VtxError(f"ligne {ligne_de(e)} : un point ne sert pas de condition : comparez-le, ou regardez son état (p.etat)")
         if self.typ(e) == "x":
             raise VtxError(f"ligne {ligne_de(e)} : un flottant_petuar a un état à quatre valeurs et ne sert pas de condition : "
                            f"comparez-le, ou utilisez « selon etat(x) »")
@@ -6433,6 +6507,11 @@ class Generateur:
             self.expr_w(e)
         elif t == "x":
             self.expr_x(e)
+        elif t == "p":
+            if e[0] == "pnombre":
+                self.charger_l("R1", e[1])
+            else:
+                self.expr_e(e)
         if voulu is not None and voulu != t:
             self.conv(t, voulu, ligne_de(e), e)
             return voulu
@@ -6533,6 +6612,11 @@ class Generateur:
                         self.emettre("LDIS R2,#1")
                         self.emettre("XOR R1,R1,R2")
                     return
+                if t == "p":
+                    self.paire(e[2], e[3], "p")
+                    regs, saut = COMPARAISONS[o]
+                    self.booleen(lambda vrai: (self.emettre(f"CMP.L {regs}"), self.emettre(f"{saut} {vrai}")))
+                    return
                 if t == "w":
                     # à toute la largeur ; signé (le bit 127 basculé), comme au SPU-64, sauf l'égalité
                     self.paire(e[2], e[3], "w")
@@ -6567,6 +6651,12 @@ class Generateur:
             self.emettre(f"{BINAIRES[op] if op in BINAIRES else SIGNEES[op]} R1,{ra},{rb}")
             if t == "i" and op in ("+", "-", "*", "<<", "/"):
                 self.emettre("ZEXT32 R1,R1")             # x / 0 vaut 2^32 - 1, comme les autres débordements
+        elif g in ("champ", "champ_ref") and isinstance(e[2], str) and self.typ(e[1]) == "p":
+            # une voie de couleur (32 bits) ou un codon de matière d'un point
+            genre, k = CHAMPS_POINT[e[2]]
+            self.expr(e[1], "p")
+            self.emettre(f"LDIS R2,#{k}")
+            self.emettre(f"{'VEXT' if genre == 'v' else 'MATL'} R1,R1,R2")
         elif g == "champ_ref" or (g == "champ" and est_ref(self.typ(e[1]))):
             _st, pos, _t = self.champ_de(e)
             self.expr(e[1])
@@ -6804,7 +6894,7 @@ class Generateur:
             if pf is not None and getattr(pf, "origine", "") == "prélude":
                 a0 = args[0]
                 ta = "q" if a0[0] == "blit" else self.typ(a0)
-                if ta in ("i", "f", "s", "q", "w", "x"):
+                if ta in ("i", "f", "s", "q", "w", "x", "p"):
                     nom = "__" + nom + "_" + ta
         if self.recopier(("appel", nom, args, ligne), False):
             return
@@ -6823,7 +6913,55 @@ class Generateur:
         if mots:
             self.emettre(f"ADDI R14,R14,#{mots}")
 
+    def fonction_point(self, nom, args, ligne):
+        """Les points de matière : point(r, v, b) en octets (comme #RRGGBB), point32(r, v, b) en voies de 32 bits,
+        matiere(r, v, b, reflet, lumiere, transparence, profondeur, rugosite), comme_point(bits), melanger(a, b, poids),
+        antipoint(p), avec_reflet(p, x) … avec_etat(p, l)."""
+        if nom in ("point", "point32", "matiere"):
+            self.charger_l("R1", MATIERE_DEFAUT if nom == "point" else 2 << 30)
+            for voie, a in zip((3, 2, 1), args[:3]):
+                self.emettre("PUSH R1")
+                self.expr(a, "e")
+                if nom == "point":
+                    self.emettre("LDIS R2,#255")
+                    self.emettre("AND R1,R1,R2")
+                    self.emettre("LDIU R2,#16843009")
+                    self.emettre("MUL R1,R1,R2")
+                self.emettre("MOV R2,R1")
+                self.emettre("POP R1")
+                self.emettre(f"VINS R1,R2,#{voie}")
+            for k, a in enumerate(args[3:], 1):
+                self.emettre("PUSH R1")
+                self.expr(a, "e")
+                self.emettre("MOV R2,R1")
+                self.emettre("POP R1")
+                self.emettre(f"MATE R1,R1,R2,#{k}")
+        elif nom == "comme_point":
+            if self.typ(args[0]) not in ("w", "e", "i", "p"):
+                raise VtxError(f"ligne {ligne} : comme_point() prend les bits d'un point (un entier_128)")
+            self.expr(args[0])
+        elif nom == "melanger":
+            p = args[2]
+            if p[0] != "nombre" or p[1] > 256:
+                raise VtxError(f"ligne {ligne} : melanger(a, b, poids) : le poids est un nombre écrit, de 0 (tout a) à 256 "
+                               f"(tout b)")
+            self.paire(args[0], args[1], "p")
+            self.emettre(f"MELANGE R1,R1,R2,#{p[1]}")
+        elif nom == "antipoint":
+            self.expr(args[0], "p")
+            self.emettre("ANTIPOINT R1,R1")
+        else:
+            self.expr(args[0], "p")
+            self.emettre("PUSH R1")
+            self.expr(args[1], "q" if nom == "avec_etat" else "e")
+            self.emettre("MOV R2,R1")
+            self.emettre("POP R1")
+            self.emettre(f"MATE R1,R1,R2,#{CODONS_AVEC[nom]}")
+
     def conversion(self, nom, args, ligne):
+        if nom in RETOURS and RETOURS[nom] == "p":
+            self.fonction_point(nom, args, ligne)
+            return
         x = args[0]
         t = self.typ(x)
 
@@ -6944,7 +7082,7 @@ class Generateur:
                 self.expr(x)
                 self.emettre(f"FTOI.{'64' if t == 'f' else '32'} R1,R1,#0")   # vers un entier signé de 128 bits
                 return
-            if t not in ("e", "i", "w"):
+            if t not in ("e", "i", "w", "p"):
                 interdit()
             self.expr(x)
         elif nom in ("entier_128_signe", "entier_petuar_signe"):
@@ -7382,7 +7520,7 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
         noms = {f.nom for f in fs}
         # le prélude continue la numérotation des textes du programme (un texte écrit dans le prélude a sa propre
         # étiquette, et pas celle d'un texte du programme)
-        ap = Analyseur(lexer(PRELUDE))
+        ap = Analyseur(lexer(PRELUDE, True))
         ap.textes = a.textes
         pre = [f for f in ap.programme() if f.nom not in noms]
         for f in pre:
@@ -7762,7 +7900,7 @@ TESTS = [
     ("cube approfondi (#RRGGBBAA -> #RRRRGGGGBBBBAAAA), champs de 16 bits et quits",
      "fonction principal() { soit p = #3A7F1C80; sortie(p.r); sortie(p.v); sortie(p.b); sortie(p.a); "
      "sortie(p.q(3)); sortie(0q0123); sortie(#3A7F1C); }",
-     (), [0x3A3A, 0x7F7F, 0x1C1C, 0x8080, 2, 27, 0x3A3A7F7F1C1C0000]),
+     (), [0x3A3A, 0x7F7F, 0x1C1C, 0x8080, 2, 27, point_de_couleur(0x3A7F1C)]),   # Lugus : #RRGGBB est un point de matière
     ("complément et produit scalaire",
      "fonction principal() { sortie(~27); sortie(gdot(#01020304, #0A0B0C0D)); sortie(min4(27, 39)); "
      "sortie(max4(27, 39)); sortie(addm4(27, 27)); }",
@@ -7925,7 +8063,7 @@ TESTS = [
     ("SPU-64 : couleurs profondes (16 bits par canal)",
      "fonction principal() { soit c = rgb(255, 128, 0); sortie(c); sortie(c.r); sortie(c.v); sortie(c.b); sortie(c.a); "
      "sortie(rgb16(1, 2, 3)); sortie(#FF8000.r); }",
-     (), [0xFFFF808000000000 | 0xFFFF, 65535, 0x8080, 0, 65535, 0x0001000200030000 | 0xFFFF, 65535]),
+     (), [0xFFFF808000000000 | 0xFFFF, 65535, 0x8080, 0, 65535, 0x0001000200030000 | 0xFFFF, 0xFFFFFFFF]),  # #FF8000.r : voie de 32 bits
     ("SPU-64 : 32 quits par mot (tableaux rangés), adn de 32 bases dans un entier",
      "tableau q[100] de quits @2[0]; fonction principal() { pour i dans 0..100 { q[i] = i % 4; } soit s = 0; "
      "pour i dans 0..100 { s = s + q[i]; } sortie(s); sortie(@2[1] == @2[0]); sortie(adn\"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT\"); "
@@ -7933,7 +8071,23 @@ TESTS = [
      (), [150, 1, 2 ** 64 - 1, 2 ** 64]),
 ]
 
+TESTS += [
+    ("Lugus : le point de matière (couleur écrite, voies, codons, matiere(), melanger, antipoint, avec_…, afficher)",
+     "fonction principal() { soit p = #FF8000; sortie(p); sortie(p.r); sortie(p.v); sortie(p.b); sortie(p.transparence); "
+     "sortie(entier(p.etat)); soit q = matiere(100, 200, 300, 10, 20, 30, 40, 50); sortie(q); sortie(q.reflet + q.rugosite); "
+     "sortie(melanger(p, q, 128)); sortie(antipoint(p)); soit r = avec_reflet(p, 63); sortie(r); sortie(r == p); "
+     "sortie(r != p); sortie(point(255, 128, 0) == p); sortie(#01234567_89ABCDEF_FEDCBA98_76543210); "
+     "sortie(entier(avec_etat(p, faux).etat)); sortie(bits(point32(1, 2, 3))); }",
+     (), [0xFFFFFFFF_80808080_00000000_8003F000, 0xFFFFFFFF, 0x80808080, 0, 63, 2, 0x00000064_000000C8_0000012C_8A51EA32,
+          60, 0x80000031_404040A4_00000096_852AE519, 0x00000000_7F7F7F7F_FFFFFFFF_8003F000,
+          0xFFFFFFFF_80808080_00000000_BF03F000, 0, 1, 1, 0x01234567_89ABCDEF_FEDCBA98_76543210, 1,
+          0x00000001_00000002_00000003_80000000]),
+]
+
 ERREURS = [
+    ("Lugus : un point ne s'additionne pas", "fonction principal() { soit p = #FF8000 + #000001; }"),
+    ("Lugus : champ inconnu d'un point", "fonction principal() { soit p = #FF8000; sortie(p.a); }"),
+    ("Lugus : poids de melanger écrit", "fonction principal() { soit k = 3; soit p = melanger(#FF8000, #000000, k); }"),
     ("SPU-64 : écrire dans le code (ADN) arrête la machine", "fonction principal() { @0[3] = 1; }"),
     ("SPU-64 : écrire dans un texte fixé", "fonction principal() { soit t = copier_arn(\"ab\"); fixer(t); changer_car(t, 0, 66); }"),
     ("SPU-64 : entier rangé dans un entier_32 sans conversion", "fonction principal() { soit a = 5; soit b: entier_32 = a; }"),
