@@ -1,4 +1,4 @@
-# SPU-128 : conception (à valider avant tout code)
+# Lugus, le SPU-128 : conception (à valider avant tout code)
 
 *25 octobre 2026. Décisions du créateur : le 128 bits devient le standard moyen, le 64 la configuration minimale ; le 32
 est gelé pour la rétro-ingénierie des programmes écrits dans d'autres langages. Le cube chromatique reste inchangé (le
@@ -38,7 +38,9 @@ avec 32 bits par voie : la précision des images HDR du cinéma. Le noir est `#0
 | 5 à 3 | 11-6 | la **profondeur** (la distance où la lumière s'éteint dans la matière) | 64 degrés |
 | 2 à 0 | 5-0 | la **rugosité** | 64 degrés |
 
-Chaque propriété tient en **trois quits, donc trois bases : un codon**, comme le code génétique (trois bases, 64
+En hex, la voie se lit par groupes entiers : l'état et le reflet font les deux premiers chiffres (8 bits), la lumière
+et la transparence les trois suivants (12 bits), la profondeur et la rugosité les trois derniers (12 bits). Le mot garde
+ses 32 chiffres hex. Chaque propriété tient en **trois quits, donc trois bases : un codon**, comme le code génétique (trois bases, 64
 possibilités). La voie de matière est l'état suivi de cinq codons : 1 073 741 824 matières. En tout, un mot de 128 bits
 distingue 2^128 points de matière (340 282 366 920 938 463 463 374 607 431 768 211 456).
 
@@ -53,32 +55,37 @@ façon ; la machine ne regarde la matière que dans les instructions qui la lise
 profond garde ainsi ses couleurs. Sa voie A (l'alpha) devient la matière : proposition, l'alpha opaque donne la
 transparence nulle, et les autres propriétés valent zéro, l'état « vrai ».
 
-## 2. L'adresse : une place dans le cube de l'espace
+## 2. L'adresse : celle du SPU-64, élargie
 
-Proposition : l'adresse a la même forme que le point de matière, avec trois voies de place et une voie de nature.
+Décidé : l'adresse du SPU-64 (étage, fréquence, `#RRGGBB`), élargie à 128 bits. Les programmes, l'atelier et les
+fichiers de cubes passent du 64 au 128 sans changer de logique.
 
-| Voie | Bits | Contenu |
-|---|---|---|
-| E (la plus haute) | 127-96 | l'étage (1 quit), le type (1 quit : donnée, instruction, adresse, contrôle), l'état (1 quit), 26 bits réservés |
-| X | 95-64 | la colonne |
-| Y | 63-32 | la ligne |
-| Z | 31-0 | la profondeur |
+| Bits | Champ |
+|---|---|
+| 127, 126 | l'étage (0 code et pile, 1, 2, 3) |
+| 125, 124 | le type (donnée, instruction, adresse, contrôle) |
+| 123, 122 | l'état (Belnap ; le pointeur nul est *inconnu*) |
+| 121 à 120 | réserve |
+| 119 à 24 | la fréquence : le cube (2^96 cubes par étage) |
+| 23 à 0 | `#RRGGBB` : le point dans le cube de 256³ (x = RR, y = GG, z = BB) |
 
-- **Tout passe par le cube** : une adresse est un point (x, y, z) de l'espace des places, avec 2^32 places par axe.
-- **Les fréquences** du SPU-64 deviennent les sous-cubes : les 8 bits bas de chaque voie (x, y, z) désignent la place
-  dans un cube de 256³ (le `#RRGGBB` d'aujourd'hui) ; les 24 bits hauts de chaque voie désignent le cube. Un cube de
-  256³ est donc une fréquence, et il y en a 2^72 par étage.
-- **Ajouter 1 à une adresse** avance d'abord en z, puis en y, puis en x, comme aujourd'hui (`#RRGGBB`, BB le plus
-  rapide) : un tableau parcourt le cube naturellement, et l'arithmétique des pointeurs reste une addition.
-- La mémoire reste faite de pages créées à la première écriture : l'espace d'adresses n'est pas réservé. Le pointeur
-  nul porte l'état inconnu.
+- **Tout passe par le cube** : une adresse est un point `#RRGGBB` d'un cube, et la fréquence dit lequel. Les 96 bits de
+  fréquence se lisent aussi comme trois coordonnées de 32 bits dans le « cube des cubes » : l'espace des places a la même
+  forme que le point de matière.
+- **Ajouter 1 à une adresse** avance en BB, puis GG, puis RR, puis dans le cube de la fréquence suivante, comme au
+  SPU-64 : un tableau parcourt le cube naturellement, l'arithmétique des pointeurs reste une addition.
+- La mémoire reste faite de pages créées à la première écriture : l'espace d'adresses n'est pas réservé.
+
+(Proposition écartée : l'adresse en trois voies de place x, y, z. Elle revient au même par un autre rangement des bits,
+mais elle aurait obligé à tout reprendre.)
 
 ## 3. Les nombres
 
 | Type | Taille | Écriture | Format |
 |---|---|---|---|
-| `entier` | 128 | `5` | entier de 128 bits (64 quits), complément à quatre pour les signés |
-| `entier_64`, `entier_32` | 64, 32 | `5L`, `5S` | dans la moitié, le quart bas d'un registre |
+| `entier` | 64 | `5` | entier de 64 bits (32 quits) : le plus rapide, natif sur toutes les machines hôtes |
+| `entier_128` (aussi `petuar`) | 128 | `5LL` | entier de 128 bits (64 quits), complément à quatre pour les signés ; une instruction du SPU-128 |
+| `entier_32` | 32 | `5S` | dans le quart bas d'un registre |
 | `flottant` | 128 | `1.5` | **le flottant quaternaire** (l'ancien `flottant_petuar`, devenu natif) : 1 quit d'état, 7 quits d'exposant, 56 quits de mantisse |
 | `flottant_64` | 64 | `1.5D` | le flottant quaternaire du SPU-64 (1 quit d'état, 5 d'exposant, 26 de mantisse) |
 | `flottant_32` | 32 | `1.5S` | le flottant quaternaire de 32 bits du SPU-64 |
@@ -97,14 +104,16 @@ calculent les quatre voies d'un coup.
 
 **L'échange avec l'IEEE** : `vers_ieee32/64/128` et `de_ieee32/64/128`, comme aujourd'hui.
 
-**Correction honnête.** Un `entier` de 128 bits pour un compteur de boucle prend 16 octets au lieu de 8 : la mémoire
-double par rapport au SPU-64. L'addition, la soustraction et les opérations bit à bit restent d'une instruction de la
-machine hôte (ou deux) ; la multiplication en coûte trois ou quatre, la division bien plus. Le compilateur pourra
-ranger un compteur dont il prouve les bornes dans un `entier_32`, sans que le programme ait à l'écrire.
+**L'entier par défaut reste de 64 bits** (décidé, pour la rapidité). Les processeurs hôtes calculent nativement sur
+64 bits ; sur 128, l'addition coûte deux instructions, la multiplication trois ou quatre, la division bien plus (un
+appel de fonction), et chaque valeur prend deux fois plus de place en mémoire et dans le cache. Compteurs, indices,
+tailles : 64 bits suffisent toujours. Le 128 est là pour ce qui en a besoin : les points de matière, le flottant
+quaternaire, l'ADN de 64 bases, les grands nombres. Un entier de 64 bits occupe la moitié basse d'un registre ou d'un
+mot ; plus tard, un tableau d'entiers de 64 bits pourra en ranger deux par mot.
 
 ## 4. Le jeu d'instructions
 
-**Le mot d'instruction porte deux instructions** (proposition) : la double hélice du code. Une instruction du SPU-128
+**Le mot d'instruction porte deux instructions** (décidé) : la double hélice du code. Une instruction du SPU-128
 garde le format du SPU-64 (64 bits : opération sur 16 bits, quatre registres, une valeur immédiate de 32 bits) ; un mot
 de 128 bits en porte deux, jouées l'une après l'autre. Le code est aussi dense qu'au SPU-64, et le mot reste lisible
 en hex, en quits et en ADN. Un saut vise une demi-instruction (l'indice du mot × 2 + la moitié).
@@ -185,12 +194,21 @@ en hex, en quits et en ADN. Un saut vise une demi-instruction (l'indice du mot �
 Le SPU-32 reste tel quel, gelé, avec ses 487 programmes de conformité ; le SPU-64 reste la configuration minimale,
 toujours vérifiée. C'est un chantier de plusieurs séances, chacune vérifiée.
 
-## 8. Questions à trancher
+## 8. Décisions du 25 octobre (midi)
 
-1. Le partage de la voie de matière : l'état puis cinq codons de 64 degrés, ou une autre répartition (plus de finesse
-   pour la transparence et la profondeur) ?
-2. L'adresse en trois voies de place (x, y, z de 32 bits) : d'accord, ou garder l'adresse du SPU-64 (étage, fréquence,
-   `#RRGGBB`) élargie ?
-3. L'`entier` de 128 bits par défaut, ou un entier de 64 bits par défaut avec le 128 au choix ?
-4. Deux instructions par mot : d'accord ?
-5. Les noms : SPU-128, ou par la profondeur des voies (4×32), ou un nom gaulois ?
+1. **La voie de matière** : l'état puis cinq codons de 64 degrés (le plus efficace, et le mot garde ses 32 chiffres hex :
+   la voie se lit par groupes de 2, 3 et 3 chiffres). La répartition pourra être revue après la mesure de la prévision
+   (section 5).
+2. **L'adresse** : celle du SPU-64, élargie (section 2).
+3. **L'entier par défaut** : 64 bits, pour la rapidité ; le 128 au choix (section 3).
+4. **Deux instructions par mot** : oui (section 4).
+5. **Les noms** : un nom gaulois pour chaque SPU (section 9).
+
+## 9. Les noms gaulois des machines (hommage, formes à valider avec un spécialiste)
+
+| Machine | Nom | Sens | Pourquoi |
+|---|---|---|---|
+| SPU-32 | **Senos** | vieux, ancien (dans les noms de lieu comme *Senomagos*) | la machine gelée, gardée pour la mémoire des anciens programmes |
+| SPU-64 | **Dunon** | la forteresse, l'enceinte (Lug*dunum*, Ver*dun*) | le socle, la configuration minimale |
+| SPU-128 | **Lugus** | le dieu de la lumière et de tous les arts | la machine de la lumière et de la matière ; et *Lugdunum*, « la forteresse de Lug », Lyon : Lugus bâti sur Dunon |
+| SPU-256 (plus tard) | **Albios** | le monde lumineux, le blanc (dans *Albiorix*, « roi du monde ») | le pôle blanc du cube, la profondeur la plus grande |

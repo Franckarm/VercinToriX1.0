@@ -445,6 +445,10 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 | mémoire, étages | *nemeton* | sanctuaire | attestée |
 | segments 1 à 10 | *cintux, allos, tritios, petuarios, pinpetos, suexos, sextametos, oxtumetos, nametos, decametos* | premier à dixième | comptes de La Graufesenque |
 | Gobatix | en référence à un dieu gaulois (peut-être *Gobannos*, le forgeron : à confirmer) | le modeleur | nom choisi |
+| SPU-32 | *senos* | vieux, ancien | proposé (25 octobre) |
+| SPU-64 | *dunon* | forteresse, enceinte | attesté (Lugdunum, Verdun) ; proposé |
+| SPU-128 | *Lugus* | dieu de la lumière et de tous les arts | attesté ; proposé (Lugdunum : Lugus bâti sur Dunon) |
+| SPU-256 | *albios* | monde lumineux, blanc | attesté (Albiorix) ; proposé, pour plus tard |
 
 ## 13. Glossaire
 
@@ -980,4 +984,4 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 - **Décision (utilisateur)** : le cube chromatique reste inchangé : chaque point à sa place (R, V, B), le noir et le blanc aux coins opposés, **la diagonale des gris du noir au blanc** ; la matière s'ajoute à chaque point, dans le même mot. Indispensable pour exploiter le cube avec l'IA (un point = un vecteur de huit nombres : R, V, B, reflet, lumière, transparence, profondeur, rugosité ; la distance dans le cube a un sens) et pour la suite. La règle « la matière entre les couleurs » devient une façon de parcourir le cube, pas de le ranger. Figure : `docs/figures/cube_diagonale.png`.
 - **Le mot de 128 bits** (proposé) : 96 bits de couleur (3 × 32 : 79 228 162 514 264 337 593 543 950 336 couleurs), 30 bits de matière (5 × 6 : 1 073 741 824 matières, 64 degrés chacune), 2 bits d'état (un quit de Belnap). 64 bits : 3 × 16 de couleur (281 474 976 710 656 couleurs), 5 × 3 de matière, 1 bit d'état. 32 bits : la rétro-ingénierie (RGBA).
 - **Remarque de l'utilisateur** : la répartition des reflets et de la lumière dans le cube ; de là, retravailler la compression, la répartition et la fiabilité.
-
+- **Décisions du 25 octobre (midi)** sur la conception du SPU-128 (`docs/vtx-spu128-conception.md`) : la voie de matière en état + cinq codons (le mot garde ses 32 chiffres hex) ; l'adresse du SPU-64 élargie ; l'entier par défaut de 64 bits pour la rapidité, le 128 au choix ; deux instructions par mot ; un nom gaulois par machine (proposés : Senos, Dunon, Lugus, Albios).
