@@ -81,8 +81,8 @@ def entier(t):
     return int(t)
 
 
-def assembler(texte):
-    """Assemble ; rend les mots de 128 bits (deux instructions par mot, la première en haut).
+def assembler(texte, avec_etiquettes=False):
+    """Assemble ; rend les mots de 128 bits (et les étiquettes, avec avec_etiquettes) (deux instructions par mot, la première en haut).
 
     Une ligne : « étiquette: OP args ; commentaire ». OP.64 ou OP.32 choisit la largeur (128 sans suffixe).
     « LDI rd, v » range une constante de 64 bits ; « LDI128 rd, v » une constante de 128 bits (LDI puis LDIH).
@@ -191,7 +191,8 @@ def assembler(texte):
             demis.append(val(args[1]) & M64)
     if len(demis) & 1:
         demis.append(0)
-    return [(demis[k] << 64) | demis[k + 1] for k in range(0, len(demis), 2)]
+    mots = [(demis[k] << 64) | demis[k + 1] for k in range(0, len(demis), 2)]
+    return (mots, etiquettes) if avec_etiquettes else mots
 
 
 def signe(v, L):

@@ -105,6 +105,24 @@ impl U256 {
         }
         (q, r)
     }
+    /// quotient et reste par d < 2^127 (d non nul), par morceaux : à chaque pas le reste (plus petit que d) reçoit les
+    /// bits suivants du dividende, autant qu'il en tient dans 128 bits, et une division de u128 donne le chiffre suivant
+    pub fn divrem_u128(&self, d: u128) -> (U256, u128) {
+        let k = (d.leading_zeros() as i64).max(1);       // bits libres au-dessus de d
+        let n = self.bits();
+        let mut q = U256::ZERO;
+        let mut r = 0u128;
+        let mut i = n;
+        while i > 0 {
+            let t = k.min(i);
+            i -= t;
+            let morceau = self.shr(i).bas(t).lo;
+            let x = (r << t) | morceau;
+            q = q.shl(t).add(&U256::de(x / d));
+            r = x % d;
+        }
+        (q, r)
+    }
     pub fn isqrt(&self) -> U256 {
         if self.est_nul() {
             return U256::ZERO;
@@ -191,8 +209,61 @@ impl Fmt {
         (U256::de(a & self.mant_masque()), 2 * (e - self.biais))
     }
 
+    /// le même arrondi, quand m tient dans 128 bits (le cas le plus courant) : sans U256
+    fn arrondir_u(&self, m: u128, ex: i64, collant: bool) -> u128 {
+        let p = self.p;
+        if m == 0 {
+            return 0;
+        }
+        let mut ex = ex;
+        let mut k = (128 - m.leading_zeros() as i64) - p;
+        if (ex + k) & 1 != 0 {
+            k += 1;
+        }
+        let qmin = 2 * (1 - self.biais);
+        if ex + k < qmin {
+            k = qmin - ex;
+        }
+        let mut q: u128;
+        if k > 0 {
+            if k > 128 {
+                q = 0;
+            } else if k == 128 {
+                // q = 0 ; le reste est m, la moitié 2^127
+                let demi = 1u128 << 127;
+                q = (m > demi || (m == demi && collant)) as u128;
+            } else {
+                q = m >> k;
+                let bas = m & ((1u128 << k) - 1);
+                let demi = 1u128 << (k - 1);
+                if bas > demi || (bas == demi && (collant || q & 1 == 1)) {
+                    q += 1;
+                }
+            }
+            ex += k;
+            if q == 1u128 << p {
+                q = 1u128 << (p - 2);
+                ex += 2;
+            }
+        } else {
+            q = m << (-k);
+            ex += k;
+        }
+        if q < 1u128 << (p - 2) {
+            return q;
+        }
+        let e = ex / 2 + self.biais;
+        if e >= self.emax() as i64 {
+            return self.emax() << p;
+        }
+        ((e as u128) << p) | q
+    }
+
     /// m × 2^ex arrondi (m > 0) : exposant << p | mantisse, sans l'état. collant : des bits non nuls sous m.
     pub fn arrondir(&self, m: U256, ex: i64, collant: bool) -> u128 {
+        if m.hi == 0 {
+            return self.arrondir_u(m.lo, ex, collant);
+        }
         let p = self.p;
         if m.est_nul() {
             return 0;
@@ -293,6 +364,33 @@ impl Fmt {
         }
         // l'écart permet la somme exacte sur 256 bits ; sinon b est bien plus petit que a, et a reçoit 128 bits de garde
         let d = xa - xb;
+        if ma.bits() + d <= 126 {
+            // tout tient dans 128 bits : la somme exacte en u128
+            let (a_, b_) = (ma.lo << d, mb.lo);
+            let (m, s) = if sa == sb {
+                (a_ + b_, sa)
+            } else if a_ < b_ {
+                (b_ - a_, sb)
+            } else {
+                (a_ - b_, sa)
+            };
+            if m == 0 {
+                return self.signe(false);
+            }
+            return self.signe(s) | self.arrondir_u(m, xb, false);
+        }
+        if d < 250 {
+            // b est loin sous a : a reçoit g bits de garde (tout tient dans 127 bits), b est décalé et ses bits perdus
+            // se résument en un bit collé (le bit 0, toujours 1 s'il en manque). Le résultat garde au moins g - 1 bits
+            // sous la mantisse, et le vrai résultat et le résultat collé ne sont séparés par aucune limite d'arrondi
+            // (des entiers pairs) : l'arrondi est le même.
+            let g = 126 - ma.bits();
+            let a_ = ma.lo << g;
+            let sh = d - g;
+            let b_ = if sh >= 128 { 1 } else { (mb.lo >> sh) | ((mb.lo & ((1u128 << sh) - 1) != 0) as u128) };
+            let (m, s) = if sa == sb { (a_ + b_, sa) } else { (a_ - b_, sa) };
+            return self.signe(s) | self.arrondir_u(m, xa - g, false);
+        }
         let (m_a, m_b, ex) = if d <= 120 {
             (ma.shl(d), mb, xb)
         } else {
@@ -337,7 +435,27 @@ impl Fmt {
         }
         let (ma, xa) = self.decode(a);
         let (mb, xb) = self.decode(b);
-        self.depuis(s, U256::mul(ma.lo, mb.lo), xa + xb, false)
+        if self.p <= 63 {
+            // deux mantisses de 52 bits au plus : le produit tient dans 128 bits
+            let m = ma.lo * mb.lo;
+            if m == 0 {
+                return self.signe(s);
+            }
+            return self.signe(s) | self.arrondir_u(m, xa + xb, false);
+        }
+        let m = U256::mul(ma.lo, mb.lo);
+        if m.est_nul() {
+            return self.signe(s);
+        }
+        // le produit ramené à 126 bits, les bits perdus collés au bit 0 (comme pour l'addition) : au moins 12 bits sous
+        // la mantisse, le même arrondi
+        let n = m.bits();
+        if n <= 126 {
+            return self.signe(s) | self.arrondir_u(m.lo, xa + xb, false);
+        }
+        let sh = n - 126;              // de 1 à 100 : m.hi n'est pas nul
+        let q = (m.hi << (128 - sh)) | (m.lo >> sh) | ((m.lo & ((1u128 << sh) - 1) != 0) as u128);
+        self.signe(s) | self.arrondir_u(q, xa + xb + sh, false)
     }
 
     pub fn div(&self, a: u128, b: u128) -> u128 {
@@ -361,8 +479,8 @@ impl Fmt {
         let (mb, xb) = self.decode(b);
         let sh = 255 - ma.bits();
         let n = ma.shl(sh);
-        let (q, r) = n.divrem(&mb);
-        self.depuis(s, q, xa - xb - sh, !r.est_nul())
+        let (q, r) = n.divrem_u128(mb.lo);
+        self.depuis(s, q, xa - xb - sh, r != 0)
     }
 
     pub fn racine(&self, a: u128) -> u128 {

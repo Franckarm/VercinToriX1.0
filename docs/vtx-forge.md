@@ -85,6 +85,33 @@ Pour fib, gcc transforme lui-même la récursion ; Rust écrit à la main fait c
 mot ADN de vtx range 16 bases et l'instruction QEGAL les compare d'un coup : le C écrit simplement compare base par
 base.
 
+## La forge de Lugus (le SPU-128)
+
+`python forge/forge128.py PROG.vtx [-o EXE] [--natif]` : la même idée sur Lugus. Chaque valeur est un u128 ; les
+opérations suivent la largeur des instructions de Lugus (l'entier par défaut à 64 bits, l'entier_petuar à 128, le
+flottant quaternaire de 128 bits par défaut, 64 et 32 au choix, le point de matière et ses voies). Autour du programme,
+la machine Rust de Lugus elle-même (`spu128.rs`, `qflot128.rs`, `miroir.rs`, `hote.rs`, recopiés dans le noyau
+`noyau_forge128.rs`) : mémoire, brin ADN, cubes sur disque, services. Un petit cache de 16 pages évite la table de
+pages à chaque accès.
+
+Vérification : `forge/test_forge128.py N` forge la suite de vtx128.py dans les deux langages (celui de Lugus et celui du
+SPU-64) et N programmes au hasard, tous dans un seul programme Rust, et compare sorties, texte et mémoire finale à Lugus
+émulé : aucun écart.
+
+| Programme | C (gcc -O2) | Rust | Lugus forgé | rapport au C | Lugus émulé | SPU-64 émulé |
+|---|---|---|---|---|---|---|
+| fib(32) | 0,005 s | 0,008 s | 0,017 s | 3,4 | 1,43 s | 0,94 s |
+| crible | 0,038 s | 0,037 s | 0,160 s | 4,2 | 2,95 s | 1,76 s |
+| mandel | 0,023 s | 0,021 s | 1,27 s | 55 | 4,68 s | 3,31 s |
+| tri | 0,054 s | 0,057 s | 0,106 s | 2,0 | 1,98 s | 1,27 s |
+| adn | 0,028 s | 0,021 s | 0,020 s | **0,71** | 0,69 s | 0,35 s |
+
+Ce qui est comparable : le crible écrit en Rust sur des cases de 128 bits prend 0,150 s (la forge est à 7 % de ce
+plancher : le mot de Lugus a 16 octets) ; Mandelbrot en C sur `__float128` (113 bits, logiciel) prend 1,10 s, Lugus
+forgé 1,27 s en flottant quaternaire de 128 bits (et 1,05 s en flottant de 64 bits, logiciel aussi). Le C en float ou
+en double calcule en matériel, avec une autre précision (et un autre résultat). Mesures : `mesures/mesurer128.py`,
+fiche `mesures/mesures-lugus.json`.
+
 ## Le labyrinthe, tout en vtx
 
 `jeu3/labyrinthe.vtx` est le jeu complet sans la page web : la boucle (pas de simulation de 1/60 s, tours des

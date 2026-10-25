@@ -1,0 +1,308 @@
+[
+ {
+  "programme": "fib",
+  "titre": "Fibonacci récursif (appels)",
+  "langage": "C (gcc -O2)",
+  "famille": "compilé",
+  "secondes": 0.0051,
+  "resultat": "2178309",
+  "meme_resultat": true
+ },
+ {
+  "programme": "fib",
+  "titre": "Fibonacci récursif (appels)",
+  "langage": "Rust (rustc -O)",
+  "famille": "compilé",
+  "secondes": 0.0083,
+  "resultat": "2178309",
+  "meme_resultat": true
+ },
+ {
+  "programme": "fib",
+  "titre": "Fibonacci récursif (appels)",
+  "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.0171,
+  "resultat": "2178309",
+  "meme_resultat": true
+ },
+ {
+  "programme": "fib",
+  "titre": "Fibonacci récursif (appels)",
+  "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.0092,
+  "resultat": "2178309",
+  "meme_resultat": true
+ },
+ {
+  "programme": "fib",
+  "titre": "Fibonacci récursif (appels)",
+  "langage": "vtx, Lugus émulé (lugus)",
+  "famille": "vtx",
+  "secondes": 1.4324,
+  "resultat": "2178309",
+  "meme_resultat": true
+ },
+ {
+  "programme": "fib",
+  "titre": "Fibonacci récursif (appels)",
+  "langage": "vtx, SPU-64 émulé (vtx64)",
+  "famille": "vtx",
+  "secondes": 0.9419,
+  "resultat": "2178309",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "C (gcc -O2)",
+  "famille": "compilé",
+  "secondes": 0.0375,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "Rust (rustc -O)",
+  "famille": "compilé",
+  "secondes": 0.0369,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "Rust, cases de 128 bits (u128)",
+  "famille": "compilé",
+  "secondes": 0.1502,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.1601,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.0635,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "vtx, Lugus émulé (lugus)",
+  "famille": "vtx",
+  "secondes": 2.9541,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "vtx, SPU-64 émulé (vtx64)",
+  "famille": "vtx",
+  "secondes": 1.764,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "C (gcc -O2)",
+  "famille": "compilé",
+  "secondes": 0.0233,
+  "resultat": "5648809",
+  "meme_resultat": false
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "Rust (rustc -O)",
+  "famille": "compilé",
+  "secondes": 0.0214,
+  "resultat": "5648809",
+  "meme_resultat": false
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "C, en double (64 bits, matériel)",
+  "famille": "compilé",
+  "secondes": 0.0213,
+  "resultat": "5648015",
+  "meme_resultat": false
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "C, en __float128 (113 bits, logiciel)",
+  "famille": "compilé",
+  "secondes": 1.1009,
+  "resultat": "5648060",
+  "meme_resultat": false
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 1.2729,
+  "resultat": "5648170",
+  "meme_resultat": true
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "vtx, forgé pour Lugus, en flottant de 64 bits (1.5D)",
+  "famille": "vtx",
+  "secondes": 1.055,
+  "resultat": "5648170",
+  "meme_resultat": true
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.021,
+  "resultat": "5648809",
+  "meme_resultat": false
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "vtx, Lugus émulé (lugus)",
+  "famille": "vtx",
+  "secondes": 4.6794,
+  "resultat": "5648170",
+  "meme_resultat": true
+ },
+ {
+  "programme": "mandel",
+  "titre": "Mandelbrot (flottants)",
+  "langage": "vtx, SPU-64 émulé (vtx64)",
+  "famille": "vtx",
+  "secondes": 3.3083,
+  "resultat": "5648170",
+  "meme_resultat": true
+ },
+ {
+  "programme": "tri",
+  "titre": "Tri rapide (mémoire, comparaisons)",
+  "langage": "C (gcc -O2)",
+  "famille": "compilé",
+  "secondes": 0.0542,
+  "resultat": "2664010383",
+  "meme_resultat": true
+ },
+ {
+  "programme": "tri",
+  "titre": "Tri rapide (mémoire, comparaisons)",
+  "langage": "Rust (rustc -O)",
+  "famille": "compilé",
+  "secondes": 0.0569,
+  "resultat": "2664010383",
+  "meme_resultat": true
+ },
+ {
+  "programme": "tri",
+  "titre": "Tri rapide (mémoire, comparaisons)",
+  "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.1062,
+  "resultat": "2664010383",
+  "meme_resultat": true
+ },
+ {
+  "programme": "tri",
+  "titre": "Tri rapide (mémoire, comparaisons)",
+  "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.0791,
+  "resultat": "2664010383",
+  "meme_resultat": true
+ },
+ {
+  "programme": "tri",
+  "titre": "Tri rapide (mémoire, comparaisons)",
+  "langage": "vtx, Lugus émulé (lugus)",
+  "famille": "vtx",
+  "secondes": 1.9772,
+  "resultat": "2664010383",
+  "meme_resultat": true
+ },
+ {
+  "programme": "tri",
+  "titre": "Tri rapide (mémoire, comparaisons)",
+  "langage": "vtx, SPU-64 émulé (vtx64)",
+  "famille": "vtx",
+  "secondes": 1.2742,
+  "resultat": "2664010383",
+  "meme_resultat": true
+ },
+ {
+  "programme": "adn",
+  "titre": "Deux brins d'ADN comparés base par base",
+  "langage": "C (gcc -O2)",
+  "famille": "compilé",
+  "secondes": 0.0278,
+  "resultat": "8391588",
+  "meme_resultat": true
+ },
+ {
+  "programme": "adn",
+  "titre": "Deux brins d'ADN comparés base par base",
+  "langage": "Rust (rustc -O)",
+  "famille": "compilé",
+  "secondes": 0.0205,
+  "resultat": "8391588",
+  "meme_resultat": true
+ },
+ {
+  "programme": "adn",
+  "titre": "Deux brins d'ADN comparés base par base",
+  "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.0196,
+  "resultat": "8391588",
+  "meme_resultat": true
+ },
+ {
+  "programme": "adn",
+  "titre": "Deux brins d'ADN comparés base par base",
+  "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
+  "famille": "vtx",
+  "secondes": 0.0144,
+  "resultat": "8391588",
+  "meme_resultat": true
+ },
+ {
+  "programme": "adn",
+  "titre": "Deux brins d'ADN comparés base par base",
+  "langage": "vtx, Lugus émulé (lugus)",
+  "famille": "vtx",
+  "secondes": 0.6935,
+  "resultat": "8391588",
+  "meme_resultat": true
+ },
+ {
+  "programme": "adn",
+  "titre": "Deux brins d'ADN comparés base par base",
+  "langage": "vtx, SPU-64 émulé (vtx64)",
+  "famille": "vtx",
+  "secondes": 0.3465,
+  "resultat": "8391588",
+  "meme_resultat": true
+ }
+]

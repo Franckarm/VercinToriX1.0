@@ -100,11 +100,11 @@ def lugus_asm(texte):
     return "\n".join(sortie) + "\n"
 
 
-def assembler(texte):
+def assembler(texte, avec_etiquettes=False):
     lignes = [l for l in texte.splitlines() if not (l.split(";")[0].strip() and
                                                      l.split(";")[0].split()[0].upper() in DIRECTIVES)]
     try:
-        return _spu128.assembler(lugus_asm("\n".join(lignes)))
+        return _spu128.assembler(lugus_asm("\n".join(lignes)), avec_etiquettes)
     except (_spu128.Erreur, KeyError, ValueError) as e:
         raise VtxError(f"assembleur de Lugus : {e}")
 
