@@ -311,6 +311,9 @@ def lexer(src, compat=None):
             jetons.append(("num", ord(echappements(texte[1:-1], ligne)), ligne))
         elif genre == "str":
             jetons.append(("str", echappements(texte[1:-1], ligne), ligne))
+        elif genre == "flt" and not compat:
+            # Lugus : un nombre à virgule est un flottant de 128 bits (le flottant par défaut) ; 1.5D en garde 64
+            jetons.append(("pqf", bits_petuar_decimal(texte.replace("_", ""), ligne), ligne))
         elif genre in ("flt", "dbl"):
             jetons.append(("flt", bits_quaternaire(Q64, texte.rstrip("D").replace("_", ""), ligne), ligne))
         elif genre == "sflt":
@@ -524,6 +527,8 @@ class Analyseur:
             self.suivant()
             self.attendre("]")
             return "F"
+        if v == "flottant" and not getattr(self, "compat", True):
+            return "x"                         # Lugus : le flottant par défaut a 128 bits
         return TYPES[v]
 
     def cval(self, e, l):
@@ -771,11 +776,13 @@ class Analyseur:
                     self.ctx.append(("boucle",))
                     corps = self.bloc()
                     self.ctx.pop()
-                    if annot not in (None, "t", "f"):
+                    if annot not in (None, "t", "f", "x"):
                         raise VtxError(f"ligne {l} : la variable d'une boucle « pour … dans » est un entier, un flottant ou un texte")
                     el = self.element(("var", tt, l), ("var", kk, l))
                     if annot == "f":
                         el = ("appel", "comme_flottant", [el], l)
+                    elif annot == "x":
+                        el = ("appel", "comme_flottant_petuar", [el], l)
                     x = ("soit", nom, el, l, annot, "chaque")
                     return [("soit", tt, a, l, None),
                             ("pour", kk, ("nombre", 0), ("appel", "longueur", [("var", tt, l)], l), [x] + corps, l, 1)]
@@ -2721,6 +2728,238 @@ fonction arccosinus(x: flottant): flottant {
     si !(abs(x) <= 1.0) { retour __f_variable(); }
     retour 2.0 * arctangente2(racine(1.0 - x), racine(1.0 + x));
 }
+// ---- la bibliothèque mathématique du flottant de 128 bits (Lugus) : chaque opération est une instruction de la
+// machine ; les séries sont évaluées par Horner, après une réduction de l'argument avec des constantes en deux ou trois
+// parties (maths/constantes128.py). Vérifiée contre une référence à 80 chiffres (tests/test_maths128.py).
+constante __X_LN2_HAUT = 6.9314718055994530941723154115927820850644e-1Q;
+constante __X_LN2_BAS = 5.8029889835956905832474927907501940845467e-25Q;
+constante __X_INV_LN2 = 1.4426950408889634073599246810018921374266e0Q;
+constante __X_PI2_1 = 1.5707963267948966192313210548080350910036e0Q;
+constante __X_PI2_2 = 6.3683171635109501396177662014579131818934e-25Q;
+constante __X_PI2_3 = 5.5622711043168266913366080774328491080069e-50Q;
+constante __X_DEUX_SUR_PI = 6.3661977236758134307553505349005744813784e-1Q;
+constante __X_PI = 3.1415926535897932384626433832795028841972e0Q;
+constante __X_PI2 = 1.5707963267948966192313216916397514420986e0Q;
+constante __X_RACINE2 = 1.4142135623730950488016887242096980785697e0Q;
+constante __X_ATAN_DEMI = 4.6364760900080611621425623146121440202854e-1Q;
+constante __X_PI4 = 7.8539816339744830961566084581987572104929e-1Q;
+constante __X_ATAN_3DEMIS = 9.8279372324732906798571061101466601449688e-1Q;
+constante __X_EXP_MAX = 1.1355137111933024058873096613727848538020e4Q;
+constante __X_EXP_MIN = 0 - 1.1431383301794618042908992147088247960701e4Q;
+// 2^k, exact : la mantisse 2^110 ou 2^111 (normalisée : son quit de tête n'est pas nul), l'exposant en base 4
+fonction __x_p2(k): flottant_petuar {
+    si k .> 16381 { retour comme_flottant_petuar(0xBFFF0000000000000000000000000000LL); }
+    si k .< 0 - 16382 { retour __x_p2(0 - 16382) * __x_p2(k + 16382); }
+    soit r = (k + 110) & 1;
+    soit q = (k - 110 - r) ./ 2;
+    retour comme_flottant_petuar(entier_128_de(9223372036854775808 | ((q + 8247) << 48), 0) | (1LL << (110 + r)));
+}
+// l'exposant binaire : 2^e <= |x| < 2^(e+1)
+fonction __x_ex2(x: flottant_petuar) {
+    soit b = bits(x);
+    soit m = b & 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFLL;
+    si m == 0LL { retour 0 - 20000; }
+    soit e = (haut(b) >> 48) & 16383;
+    si e == 0 { e = 1; }
+    retour __xbits(m) - 1 + 2 * (e - 8247);
+}
+fonction __x_signe(k): flottant_petuar { retour flottant_petuar(entier_petuar_signe(k)); }
+fonction __x_variable(): flottant_petuar { retour comme_flottant_petuar(0xC0000000000000000000000000000000LL); }
+fonction __x_inf(s): flottant_petuar {
+    si s == 1 { retour comme_flottant_petuar(0x7FFF0000000000000000000000000000LL); }
+    retour comme_flottant_petuar(0xBFFF0000000000000000000000000000LL);
+}
+fonction pi_128(): flottant_petuar { retour __X_PI; }
+fonction plancher_128(x: flottant_petuar): flottant_petuar {
+    si !(abs(x) < 2596148429267413814265248164610048.0Q) || x == 0.0Q { retour x; }
+    soit t = flottant_petuar(entier_petuar(x));
+    si t > x { t = t - 1.0Q; }
+    retour t;
+}
+fonction plafond_128(x: flottant_petuar): flottant_petuar {
+    soit t = plancher_128(x);
+    si t < x { t = t + 1.0Q; }
+    retour t;
+}
+fonction exponentielle_128(x: flottant_petuar): flottant_petuar {
+    si x != x { retour x; }
+    si x > __X_EXP_MAX { retour __x_inf(0); }
+    si x < __X_EXP_MIN { retour 0.0Q; }
+    // x = k ln(4) + r : multiplier par 4^k est exact (le quaternaire), par 2^k ne l'est qu'une fois sur deux
+    soit k = arrondi(x * __X_INV_LN2 * 0.5Q);
+    soit fk = __x_signe(2 * k);
+    soit r = (x - fk * __X_LN2_HAUT) - fk * __X_LN2_BAS;
+    // |r| <= ln(2) : 36 termes de la série (le dernier vaut moins de 2^-125)
+    soit s = 1.0Q;
+    soit n = 36;
+    tantque n > 0 {
+        s = 1.0Q + s * r / flottant_petuar(n);
+        n = n - 1;
+    }
+    si k .> 8000 { retour s * __x_p2(16000) * __x_p2(2 * k - 16000); }
+    si k .< 0 - 8000 { retour s * __x_p2(0 - 16000) * __x_p2(2 * k + 16000); }
+    retour s * __x_p2(2 * k);
+}
+fonction exp2_128(x: flottant_petuar): flottant_petuar {
+    soit k = plancher_128(x);
+    retour exponentielle_128((x - k) * __X_LN2_HAUT + (x - k) * __X_LN2_BAS) * __x_p2(entier(k));
+}
+fonction logarithme_128(x: flottant_petuar): flottant_petuar {
+    si x != x { retour x; }
+    si x < 0.0Q { retour __x_variable(); }
+    si x == 0.0Q { retour __x_inf(1); }
+    si x == __x_inf(0) { retour x; }
+    // x = m × 4^q, 1 <= m < 4 (diviser par 4^q est exact ; par 2 ne l'est pas toujours, en quaternaire) ; puis
+    // log m = j ln 2 + 2 artanh((m - 2^j) / (m + 2^j)), j = 0, 1 ou 2 selon m, et |s| <= 0,1716 : 24 termes
+    soit q = __x_ex2(x);
+    q = (q - (q & 1)) ./ 2;
+    soit m = x * __x_p2(0 - 2 * q);
+    soit e = 2 * q;
+    soit c = 1.0Q;
+    si m >= 2.0Q * __X_RACINE2 {
+        c = 4.0Q;
+        e = e + 2;
+    } sinon si m >= __X_RACINE2 {
+        c = 2.0Q;
+        e = e + 1;
+    }
+    soit s = (m - c) / (m + c);
+    soit z = s * s;
+    // le facteur 2 est dans les coefficients (2 / (2n + 1)) : multiplier par 2 arrondit, en quaternaire
+    soit t = 2.0Q / 49.0Q;
+    soit n = 23;
+    tantque n > 0 {
+        t = 2.0Q / flottant_petuar(2 * n + 1) + z * t;
+        n = n - 1;
+    }
+    t = 2.0Q + z * t;
+    soit fe = __x_signe(e);
+    retour fe * __X_LN2_HAUT + (fe * __X_LN2_BAS + s * t);
+}
+fonction __x_sin_cos(x: flottant_petuar, decale): flottant_petuar {
+    si x != x { retour x; }
+    si !(abs(x) < 1000000000.0Q) { retour __x_variable(); }
+    soit k = arrondi(x * __X_DEUX_SUR_PI);
+    soit fk = __x_signe(k);
+    soit r = ((x - fk * __X_PI2_1) - fk * __X_PI2_2) - fk * __X_PI2_3;
+    soit z = r * r;
+    soit q = (k + decale) & 3;
+    // |r| <= pi / 4 : 18 termes
+    soit v = 1.0Q;
+    soit n = 18;
+    si (q & 1) == 0 {
+        tantque n > 0 {
+            v = 1.0Q - z * v / flottant_petuar((2 * n) * (2 * n + 1));
+            n = n - 1;
+        }
+        v = r * v;
+    } sinon {
+        tantque n > 0 {
+            v = 1.0Q - z * v / flottant_petuar((2 * n - 1) * (2 * n));
+            n = n - 1;
+        }
+    }
+    si q >= 2 { retour -v; }
+    retour v;
+}
+fonction sinus_128(x: flottant_petuar): flottant_petuar { retour __x_sin_cos(x, 0); }
+fonction cosinus_128(x: flottant_petuar): flottant_petuar { retour __x_sin_cos(x, 1); }
+fonction tangente_128(x: flottant_petuar): flottant_petuar { retour __x_sin_cos(x, 0) / __x_sin_cos(x, 1); }
+fonction arctangente_128(x: flottant_petuar): flottant_petuar {
+    si x != x { retour x; }
+    soit ax = abs(x);
+    si ax > 1.0e40Q {
+        si x < 0.0Q { retour -__X_PI2; }
+        retour __X_PI2;
+    }
+    // atan(ax) = atan(c) + atan(u), u = (ax - c) / (1 + c ax), c = 0, 1/2, 1, 3/2 ; au-delà, pi/2 - atan(1/ax)
+    soit h = 0.0Q;
+    soit u = ax;
+    si ax >= 0.4375Q {
+        si ax < 0.6875Q {
+            h = __X_ATAN_DEMI;
+            u = (ax - 0.5Q) / (1.0Q + 0.5Q * ax);
+        } sinon si ax < 1.1875Q {
+            h = __X_PI4;
+            u = (ax - 1.0Q) / (ax + 1.0Q);
+        } sinon si ax < 2.4375Q {
+            h = __X_ATAN_3DEMIS;
+            u = (ax - 1.5Q) / (1.0Q + 1.5Q * ax);
+        } sinon {
+            h = __X_PI2;
+            u = -1.0Q / ax;
+        }
+    }
+    // |u| <= 0,42 : 48 termes de la série
+    soit z = u * u;
+    soit t = 1.0Q / 97.0Q;
+    soit n = 47;
+    tantque n > 0 {
+        soit c = 1.0Q / flottant_petuar(2 * n + 1);
+        si (n & 1) == 1 { c = -c; }
+        t = c + z * t;
+        n = n - 1;
+    }
+    t = 1.0Q + z * t;
+    soit r = h + u * t;
+    si x < 0.0Q { retour -r; }
+    retour r;
+}
+fonction arctangente2_128(y: flottant_petuar, x: flottant_petuar): flottant_petuar {
+    si x != x || y != y { retour __x_variable(); }
+    si x == 0.0Q {
+        si y > 0.0Q { retour __X_PI2; }
+        si y < 0.0Q { retour -__X_PI2; }
+        retour 0.0Q;
+    }
+    soit z = arctangente_128(abs(y / x));
+    si x > 0.0Q {
+        si y < 0.0Q { retour -z; }
+        retour z;
+    }
+    si y < 0.0Q { retour z - __X_PI; }
+    retour __X_PI - z;
+}
+fonction arcsinus_128(x: flottant_petuar): flottant_petuar {
+    si !(abs(x) <= 1.0Q) { retour __x_variable(); }
+    retour arctangente2_128(x, racine((1.0Q - x) * (1.0Q + x)));
+}
+fonction arccosinus_128(x: flottant_petuar): flottant_petuar {
+    si !(abs(x) <= 1.0Q) { retour __x_variable(); }
+    retour arctangente2_128(racine((1.0Q - x) * (1.0Q + x)), x);
+}
+fonction puissance_128(x: flottant_petuar, y: flottant_petuar): flottant_petuar {
+    si y == 0.0Q { retour 1.0Q; }
+    si x != x || y != y { retour __x_variable(); }
+    soit entiere = plancher_128(y) == y;
+    soit impaire = 0;
+    si entiere && abs(y) < 2596148429267413814265248164610048.0Q {
+        impaire = (bas(entier_petuar(abs(y))) & 1) != 0;
+    }
+    si x == 0.0Q {
+        si y < 0.0Q { retour __x_inf(0); }
+        retour 0.0Q;
+    }
+    si entiere && abs(y) <= 1024.0Q {
+        soit n = entier(abs(y));
+        soit b = x;
+        soit r = 1.0Q;
+        tantque n != 0 {
+            si (n & 1) == 1 { r = r * b; }
+            b = b * b;
+            n = n >> 1;
+        }
+        si y < 0.0Q { retour 1.0Q / r; }
+        retour r;
+    }
+    si x < 0.0Q {
+        si !entiere { retour __x_variable(); }
+        soit e2 = exponentielle_128(y * logarithme_128(-x));
+        si impaire { retour -e2; }
+        retour e2;
+    }
+    retour exponentielle_128(y * logarithme_128(x));
+}
 // les noms de la version 0.4 (le flottant de 64 bits y était à part)
 fonction pi_64(): flottant { retour 3.141592653589793; }
 fonction sinus_64(x: flottant): flottant { retour sinus(x); }
@@ -4541,6 +4780,39 @@ fonction __somme_f(t): flottant {
     }
     retour s;
 }
+fonction __somme_x(t): flottant_petuar {
+    soit p = t & 16777215;
+    soit d = @3[p + 2];
+    soit s = 0.0Q;
+    pour k dans 0..@3[p] {
+        s = s + comme_flottant_petuar(entier_petuar(@3[d + k]));
+    }
+    retour s;
+}
+fonction __cle_x(b: entier_128): entier_128 {
+    si (b >> 126) & 3LL == 1LL {
+        retour 0x7FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFLL - b;
+    }
+    retour b;
+}
+fonction __trier_x(t) {
+    soit p = t & 16777215;
+    soit d = @3[p + 2];
+    soit n = @3[p];
+    soit ecart = n / 2;
+    tantque ecart > 0 {
+        pour i dans ecart..n {
+            soit x = entier_petuar(@3[d + i]);
+            soit j = i;
+            tantque j >= ecart && __qltu(__cle_x(x), __cle_x(entier_petuar(@3[d + j - ecart]))) {
+                @3[d + j] = @3[d + j - ecart];
+                j = j - ecart;
+            }
+            @3[d + j] = x;
+        }
+        ecart = ecart / 2;
+    }
+}
 // la clé de tri d'un flottant quaternaire : les négatifs (état 1) à l'envers et sous les positifs (état 2)
 fonction __cle_f(b) {
     si (b >> 62) == 1 {
@@ -4912,7 +5184,7 @@ fonction borne(x, a, b) {
 }
 """
 
-INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1, "vers_ieee128": 1, "de_ieee128": 1,
+INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "flottant_petuar_signe": 1, "__mot128": 1, "comme_flottant_petuar": 1, "vers_ieee128": 1, "de_ieee128": 1,
             "entier_128": 1, "entier_petuar": 1, "entier_128_signe": 1, "entier_petuar_signe": 1, "entier_128_de": 2,
             "entier_petuar_de": 2, "bas": 1, "haut": 1,
             "lire_car": 1, "ecrire_car": 2, "ouvrir_lecture": 1, "ouvrir_ecriture": 1, "fermer": 1, "fin_de": 1, "bruit": 0,
@@ -4924,7 +5196,7 @@ INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1,
             "vers_ieee64": 1, "de_ieee64": 1,
             "point": 3, "point32": 3, "matiere": 8, "comme_point": 1, "melanger": 3, "antipoint": 1,
             **{n: 2 for n in CODONS_AVEC}}
-RETOURS = {"flottant_petuar": "x", "flottant_128": "x", "comme_flottant_petuar": "x", "vers_ieee128": "w", "de_ieee128": "x",
+RETOURS = {"flottant_petuar": "x", "flottant_128": "x", "flottant_petuar_signe": "x", "comme_flottant_petuar": "x", "vers_ieee128": "w", "de_ieee128": "x",
            "entier_128": "w", "entier_petuar": "w", "entier_128_signe": "w", "entier_petuar_signe": "w",
            "entier_128_de": "w", "entier_petuar_de": "w",
            "flottant": "f", "flottant_64": "f", "flottant_signe": "f", "comme_flottant": "f", "de_ieee64": "f",
@@ -5732,6 +6004,9 @@ class Generateur:
         self.etiquette("FIN_CODE")
         return "\n".join(self.sortie) + "\n"
 
+    def fonctions_du_programme(self):
+        return {n for n, f in self.fonctions.items() if getattr(f, "origine", "") != "prélude"}
+
     def signature(self, nom, ligne):
         """Fonction appelée : définie, ou prise dans le prélude à la demande."""
         if nom in self.fonctions:
@@ -5884,6 +6159,8 @@ class Generateur:
                 if nom == "racine":
                     return "s" if t0 == "s" else "f"
                 return "e"
+            if nom in MATHS_128 and any(self.typ(a) == "x" for a in e[2]):
+                return "x"
             if nom in RETOURS:
                 return RETOURS[nom]
             if nom in INTEGRES:
@@ -6878,6 +7155,9 @@ class Generateur:
             else:
                 self.conversion(nom, args, ligne)
             return
+        if nom in MATHS_128 and any(self.typ(a) == "x" for a in args) and nom not in self.fonctions_du_programme():
+            nom = nom + "_128"
+            e = ("appel", nom, args, ligne)
         if nom in SURCHARGES and self.typ(e) == "w":
             self.appel(("appel", "__q" + nom, args, ligne))
             return
@@ -6975,9 +7255,18 @@ class Generateur:
                 self.emettre(X_DEPUIS[t])
             return
         if nom == "comme_flottant_petuar":
-            if t != "w":
+            if t not in ("w", "e", "i", "x"):
                 interdit()
             self.expr(x)
+            return
+        if nom == "__mot128":
+            self.expr(x)                         # les 128 bits, vus comme un entier (rangés tels quels)
+            return
+        if nom == "flottant_petuar_signe":
+            if t not in ENTIERS:
+                interdit()
+            self.expr(x)
+            self.emettre(f"ITOFS.L R1,R1,#{1 if t == 'e' else 2}")
             return
         if nom == "vers_ieee128":
             if t != "x":
@@ -7002,12 +7291,15 @@ class Generateur:
                 self.emettre("FCONV.64 R1,R1,#0")
             elif nom == "flottant_32":
                 self.emettre("FCONV.32 R1,R1,#0")
-            elif nom in ("entier_128", "entier_petuar", "entier", "entier_32"):
+            elif nom in ("entier_128", "entier_petuar"):
                 self.emettre("FTOI.L R1,R1,#0")      # tronqué, saturé aux entiers signés de 128 bits
-                if nom == "entier":
-                    self.emettre("ZEXT.64 R1,R1")
-                elif nom == "entier_32":
-                    self.emettre("ZEXT.32 R1,R1")
+            elif nom == "entier":
+                self.emettre("FTOI.L R1,R1,#1")      # tronqué, saturé aux entiers signés de 64 bits (comme entier(flottant))
+            elif nom == "arrondi":
+                self.emettre("FROUND.L R1,R1,#1")    # vers un entier signé de 64 bits, au plus proche pair, saturé
+            elif nom == "entier_32":
+                self.emettre("FTOI.L R1,R1,#0")
+                self.emettre("ZEXT.32 R1,R1")
             else:
                 interdit()
             return
@@ -7288,6 +7580,32 @@ DERNIERE_PARTITION = {"accords": [], "notes": {}}
 # texte redevient « entier » : la génération du code ne le voit plus. La partition voit les appels : les tâches qui
 # fabriquent des textes écrivent dans le tas, et ne sont pas jouées ensemble par erreur.
 
+# Lugus : dans le programme (pas dans le prélude, écrit pour le flottant de 64 bits), le flottant par défaut a 128 bits
+RENOMS_128 = {"flottant": "flottant_petuar", "comme_flottant": "comme_flottant_petuar", "flottant_signe": "flottant_petuar_signe",
+              "pi": "pi_128", "__somme_f": "__somme_x", "__trier_f": "__trier_x", "ecrire_flottant": "ecrire_flottant_petuar"}
+MATHS_128 = {"sinus", "cosinus", "tangente", "exponentielle", "exp2", "logarithme", "puissance", "arctangente",
+             "arctangente2", "arcsinus", "arccosinus", "plancher", "plafond"}
+
+
+def vers_lugus(fs):
+    """Les appels du programme qui nomment le flottant de 64 bits du SPU-64 (flottant(), comme_flottant(), pi()…)
+    nomment celui de 128 bits ; une fonction du programme qui porte l'un de ces noms garde le sien."""
+    siens = {f.nom for f in fs if getattr(f, "origine", "") != "prélude"}
+
+    def rw(x):
+        if isinstance(x, list):
+            return [rw(y) for y in x]
+        if not isinstance(x, tuple) or not x:
+            return x
+        x = tuple(rw(y) if isinstance(y, (list, tuple)) else y for y in x)
+        if x[0] == "appel" and isinstance(x[1], str) and x[1] in RENOMS_128 and x[1] not in siens:
+            return ("appel", RENOMS_128[x[1]]) + x[2:]
+        return x
+    for f in fs:
+        if getattr(f, "origine", "") != "prélude":
+            f.corps = rw(f.corps)
+
+
 def typer_textes(fs, types_champs):
     rtexte = {f.nom for f in fs if f.rtype == "t"}
     du_prelude = {f.nom for f in fs if getattr(f, "origine", "") == "prélude"}
@@ -7479,6 +7797,21 @@ def bits_flottant(n):
 
 def en_bits(v):
     """Une valeur rangée dans un tableau de flottants : ses bits ; un nombre écrit est converti dès la compilation."""
+    if not COMPAT_64:
+        # Lugus : un tableau de flottants range des flottants de 128 bits
+        # (un mot de 128 bits passé comme un entier : __mot128 ne le tronque pas)
+        l = ligne_de(v)
+        if v[0] == "xnombre":
+            w = ("wnombre", v[1])
+        elif v[0] == "bin" and v[1] == "-" and v[2] == ("nombre", 0) and v[3][0] == "xnombre":
+            w = ("wnombre", petuar_neg(v[3][1]))
+        elif v[0] == "nombre":
+            w = ("wnombre", Q128.de_entier(v[1]))
+        elif v[0] == "bin" and v[1] == "-" and v[2] == ("nombre", 0) and v[3][0] == "nombre":
+            w = ("wnombre", Q128.de_entier(-v[3][1]))
+        else:
+            w = ("appel", "bits", [("appel", "flottant_petuar", [v], l)], l)
+        return ("appel", "__mot128", [w], l)
     if v[0] == "fnombre":
         return ("nombre", v[1])
     if v[0] == "bin" and v[1] == "-" and v[2] == ("nombre", 0) and v[3][0] == "fnombre":
@@ -7498,7 +7831,8 @@ def en_bits_litteral(x):
 
 
 def flottant_ecrit(v):
-    return v[0] == "fnombre" or (v[0] == "bin" and v[1] == "-" and v[2] == ("nombre", 0) and v[3][0] == "fnombre")
+    f = "fnombre" if COMPAT_64 else "xnombre"
+    return v[0] == f or (v[0] == "bin" and v[1] == "-" and v[2] == ("nombre", 0) and v[3][0] == f)
 
 
 def sans_type_texte(x):
@@ -7513,6 +7847,7 @@ def sans_type_texte(x):
 
 def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
     a = Analyseur(lexer(src))
+    a.compat = COMPAT_64
     fs = a.programme()
     if a.donnees:
         fs = injecter_donnees(fs, a.donnees)
@@ -7527,6 +7862,8 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
             f.origine = "prélude"
         fs = fs + pre
     typer_textes(fs, a.types_champs)
+    if not COMPAT_64:
+        vers_lugus(fs)
     gardees = elaguer(fs) if optim else fs
     reserve = {f.nom: f for f in fs if f not in gardees}
     DERNIERE_PARTITION["accords"], DERNIERE_PARTITION["notes"] = [], {}
@@ -7900,7 +8237,7 @@ TESTS = [
     ("cube approfondi (#RRGGBBAA -> #RRRRGGGGBBBBAAAA), champs de 16 bits et quits",
      "fonction principal() { soit p = #3A7F1C80; sortie(p.r); sortie(p.v); sortie(p.b); sortie(p.a); "
      "sortie(p.q(3)); sortie(0q0123); sortie(#3A7F1C); }",
-     (), [0x3A3A, 0x7F7F, 0x1C1C, 0x8080, 2, 27, point_de_couleur(0x3A7F1C)]),   # Lugus : #RRGGBB est un point de matière
+     (), [0x3A3A, 0x7F7F, 0x1C1C, 0x8080, 2, 27, 0x3A3A7F7F1C1C0000]),
     ("complément et produit scalaire",
      "fonction principal() { sortie(~27); sortie(gdot(#01020304, #0A0B0C0D)); sortie(min4(27, 39)); "
      "sortie(max4(27, 39)); sortie(addm4(27, 27)); }",
@@ -8063,7 +8400,7 @@ TESTS = [
     ("SPU-64 : couleurs profondes (16 bits par canal)",
      "fonction principal() { soit c = rgb(255, 128, 0); sortie(c); sortie(c.r); sortie(c.v); sortie(c.b); sortie(c.a); "
      "sortie(rgb16(1, 2, 3)); sortie(#FF8000.r); }",
-     (), [0xFFFF808000000000 | 0xFFFF, 65535, 0x8080, 0, 65535, 0x0001000200030000 | 0xFFFF, 0xFFFFFFFF]),  # #FF8000.r : voie de 32 bits
+     (), [0xFFFF808000000000 | 0xFFFF, 65535, 0x8080, 0, 65535, 0x0001000200030000 | 0xFFFF, 65535]),
     ("SPU-64 : 32 quits par mot (tableaux rangés), adn de 32 bases dans un entier",
      "tableau q[100] de quits @2[0]; fonction principal() { pour i dans 0..100 { q[i] = i % 4; } soit s = 0; "
      "pour i dans 0..100 { s = s + q[i]; } sortie(s); sortie(@2[1] == @2[0]); sortie(adn\"TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT\"); "
@@ -8071,7 +8408,8 @@ TESTS = [
      (), [150, 1, 2 ** 64 - 1, 2 ** 64]),
 ]
 
-TESTS += [
+# Lugus, le langage natif (COMPAT_64 faux) : le point de matière, le flottant de 128 bits par défaut
+TESTS_128 = [
     ("Lugus : le point de matière (couleur écrite, voies, codons, matiere(), melanger, antipoint, avec_…, afficher)",
      "fonction principal() { soit p = #FF8000; sortie(p); sortie(p.r); sortie(p.v); sortie(p.b); sortie(p.transparence); "
      "sortie(entier(p.etat)); soit q = matiere(100, 200, 300, 10, 20, 30, 40, 50); sortie(q); sortie(q.reflet + q.rugosite); "
@@ -8082,12 +8420,28 @@ TESTS += [
           60, 0x80000031_404040A4_00000096_852AE519, 0x00000000_7F7F7F7F_FFFFFFFF_8003F000,
           0xFFFFFFFF_80808080_00000000_BF03F000, 0, 1, 1, 0x01234567_89ABCDEF_FEDCBA98_76543210, 1,
           0x00000001_00000002_00000003_80000000]),
+    ("Lugus : le flottant par défaut a 128 bits (littéraux, 1.5D, conversions, tableaux, fonctions mathématiques)",
+     "fonction principal() { soit x = 0.1; sortie(bits(x)); sortie(bits(0.1D)); sortie(bits(x + 0.2)); "
+     "sortie(bits(flottant(3) / 7.0)); sortie(bits(flottant_64(x))); soit t = [3.5, 1.25, -2.0, 10.0]; trier(t); "
+     "pour v: flottant dans t { sortie(bits(v)); } sortie(bits(somme(t))); sortie(bits(racine(2.0))); "
+     "sortie(entier(2.75)); sortie(arrondi(2.5)); sortie(bits(sinus(0.0))); sortie(bits(exponentielle(0.0))); "
+     "sortie(bits(pi())); sortie(bits(flottant_signe(0 - 4))); sortie(bits(comme_flottant(bits(1.0)))); }",
+     (), [Q128.depuis(Fraction(1, 10)), Q64.depuis(Fraction(1, 10)),
+          Q128.add(Q128.depuis(Fraction(1, 10)), Q128.depuis(Fraction(2, 10))),
+          Q128.div(Q128.depuis(3), Q128.depuis(7)), Q128.vers(Q64, Q128.depuis(Fraction(1, 10))),
+          Q128.depuis(-2), Q128.depuis(Fraction(5, 4)), Q128.depuis(Fraction(7, 2)), Q128.depuis(10),
+          Q128.depuis(Fraction(51, 4)), Q128.racine(Q128.depuis(2)), 2, 2, Q128.depuis(0), Q128.depuis(1),
+          Q128.depuis(Fraction(3141592653589793238462643383279502884197, 10 ** 39)), Q128.depuis(-4), Q128.depuis(1)]),
 ]
 
-ERREURS = [
+ERREURS_128 = [
     ("Lugus : un point ne s'additionne pas", "fonction principal() { soit p = #FF8000 + #000001; }"),
     ("Lugus : champ inconnu d'un point", "fonction principal() { soit p = #FF8000; sortie(p.a); }"),
     ("Lugus : poids de melanger écrit", "fonction principal() { soit k = 3; soit p = melanger(#FF8000, #000000, k); }"),
+    ("Lugus : un flottant de 128 bits ne se range pas en 64 sans le dire", "fonction principal() { soit d: flottant_64 = 1.5; }"),
+]
+
+ERREURS = [
     ("SPU-64 : écrire dans le code (ADN) arrête la machine", "fonction principal() { @0[3] = 1; }"),
     ("SPU-64 : écrire dans un texte fixé", "fonction principal() { soit t = copier_arn(\"ab\"); fixer(t); changer_car(t, 0, 66); }"),
     ("SPU-64 : entier rangé dans un entier_32 sans conversion", "fonction principal() { soit a = 5; soit b: entier_32 = a; }"),
@@ -8147,8 +8501,13 @@ def interp_reference(a, b, c, d, u, v):
 
 
 def tests():
+    """La suite : les programmes du SPU-64 dans le langage du SPU-64 (COMPAT_64), puis ceux du langage de Lugus."""
+    global COMPAT_64
     ok = 0
-    for nom, src, entrees, attendu in TESTS:
+    ancien = COMPAT_64
+    cas = [(t, True) for t in TESTS] + [(t, False) for t in TESTS_128]
+    for (nom, src, entrees, attendu), compat in cas:
+        COMPAT_64 = compat
         try:
             cpu, _, mots = executer(src, entrees)
             if attendu is None:
@@ -8162,13 +8521,15 @@ def tests():
             ok += statut
         except VtxError as e:
             print(f"ÉCHEC  {nom} : {e}")
-    for nom, src in ERREURS:
+    for (nom, src), compat in [(t, True) for t in ERREURS] + [(t, False) for t in ERREURS_128]:
+        COMPAT_64 = compat
         try:
             executer(src)
             print(f"ÉCHEC  erreur non détectée : {nom}")
         except VtxError as e:
             print(f"OK   erreur détectée : {nom} -> {e}")
             ok += 1
+    COMPAT_64 = True
     import tempfile
     extra = []
     with tempfile.TemporaryDirectory() as d:
@@ -8180,10 +8541,11 @@ def tests():
             extra.append((f"importer un fichier ({e})", False))
     _, _, mots = executer("donnees @1[0] = { %s }; fonction principal() { sortie(1); }" % ", ".join(str(i) for i in range(3000)))
     extra.append((f"3 000 données tiennent en {len(mots)} mots (moins de 3 200)", len(mots) < 3200))
+    COMPAT_64 = ancien
     for nom, bon in extra:
         print(f"{'OK ' if bon else 'ÉCHEC'}  {nom}")
         ok += bon
-    total = len(TESTS) + len(ERREURS) + len(extra)
+    total = len(cas) + len(ERREURS) + len(ERREURS_128) + len(extra)
     print(f"\n{ok}/{total} tests réussis")
     return ok == total
 

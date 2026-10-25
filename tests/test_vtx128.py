@@ -21,6 +21,7 @@ sys.path.insert(0, ici)
 sys.path.insert(0, os.path.join(racine, "spu64"))
 sys.path.insert(0, os.path.join(racine, "spu128"))
 import vtx128 as V  # noqa: E402
+V.COMPAT_64 = True      # cette suite est celle de vtx64 : le langage du SPU-64 (flottant de 64 bits, couleurs du 64)
 import spu128 as S  # noqa: E402
 from qflot import Q32, Q64, Q128  # noqa: E402
 import ref_petuar as R  # noqa: E402

@@ -65,6 +65,8 @@ if shutil.which("cargo"):
     etapes.append(("Lugus : corpus de conformité", [sys.executable, os.path.join("spu128", "verifier_corpus128.py")]))
     etapes.append(("vtx128 : le langage du SPU-64 sur Lugus (suite de vtx64, types, bibliothèque, deux machines)",
                    [sys.executable, os.path.join("tests", "test_vtx128.py")]))
+    etapes.append(("vtx128 : la bibliothèque mathématique du flottant de 128 bits (référence à 80 chiffres)",
+                   [sys.executable, os.path.join("tests", "test_maths128.py"), "300" if COMPLET else "60"]))
     etapes.append(("vtx128 : mêmes sorties que le SPU-64 (programmes au hasard, exemples)",
                    [sys.executable, os.path.join("tests", "test_vtx128_differentiel.py"), "300" if COMPLET else "60"]))
     etapes.append(("flottant_petuar : le flottant quaternaire de 128 bits (référence exacte, quatre machines, vtxc, ADN et cube)",
