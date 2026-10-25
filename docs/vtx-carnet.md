@@ -948,3 +948,28 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 - **Le labyrinthe tout en vtx** (`jeu3/labyrinthe.vtx`) : boucle, clavier, souris, horloge, tableau de bord ; l'image vit dans un cube à elle (l'étage 1 s'accorde sur le cube 12 le temps de peindre et présenter).
 - **Horloge des images** : sous `--gif`, `--images` ou `--scenario`, `horloge()` compte le temps des images présentées : une partie se rejoue à l'identique sur toutes les machines.
 - **Suite** : porter la forge dans vtxc (même texte Rust que forge.py), pour que `vtx forger` n'ait besoin que de rustc ; puis le SPU-64 ; le générateur x86-64 propre viendra après, comparé à la forge.
+
+### Le chemin, le point de matière et la triangulation (25 octobre, réflexion en cours)
+
+**Décisions et propositions de l'utilisateur**
+- **Le 128 bits devient le standard moyen**, le 64 la configuration minimale ; le 32 est gelé, gardé pour la rétro-ingénierie des programmes écrits dans d'autres langages (avec son corpus de conformité). Les méthodes du 64 s'inscrivent dans le 128. Noms à fixer : par bits par voie (8, 16, 32, 64), ou 4×8, 4×16, 4×32, 4×64 (proposé par Claude, pour ne pas confondre avec les noms actuels).
+- **L'écriture hex est gardée** : elle ne coûte rien à la machine (le compilateur la lit une fois ; seuls les bits sont rangés). Le chemin reste intact.
+- **Fini le RGB(A), place au cumul des couleurs avec la matière** : le mot n'est plus seulement une couleur, c'est un *point de matière* : la couleur cumulée (le cube RGB, ce que la matière absorbe et renvoie), et la profondeur, la transparence, le reflet, la luminosité (l'émission)… On ne comprime plus : on étend le mot avec ce que le programme irait chercher ailleurs, et on accélère (une seule lecture, quatre voies calculées ensemble dans un registre vectoriel de 128 bits).
+- **Respecter le chemin dans tout le fonctionnement** : les adresses, l'intégration des données, tout passe par le cube d'abord ; l'ADN vient après.
+
+**Le chemin, pour toute chose** (à compléter et corriger)
+
+| Étape | Ce que c'est | Exemples |
+|---|---|---|
+| Cube | tout est un point : une **place** (l'adresse, ses coordonnées dans le cube) et un **contenu** (couleur et matière) ; un compteur est un pas le long d'un axe | `#RRGGBB` d'une adresse ; un pixel ; une valeur |
+| Hex | l'écriture exacte du point, pour l'humain ; aucun coût à l'exécution | `#A000C90F_…` |
+| ADN | la forme rangée et transmise, ce qui dure : le programme compilé (les mots), les cubes sur disque avec leur anti-cube et leur ombre | `cube-1-42.cub`, les mots du SPU |
+| ARN | la copie transcrite pour agir, ce qui s'exécute : la forge transcrit l'ADN du programme en ARN natif | le programme forgé |
+| Programme | ce qui agit ; ses résultats redeviennent des points du cube (chemin inverse) | sorties, images, cubes écrits |
+
+**Proposition pour le point de matière en 4×32** (Claude, à discuter) : trois voies de 32 bits pour la couleur (le cube chromatique, avec la précision du HDR) ; la quatrième voie, la matière, en quatre quarts de 8 bits (transparence, profondeur de transparence, reflet, rugosité ; la luminosité pour le feu reste à placer). Base physique : la lumière qui touche une matière est absorbée, transmise ou réfléchie, et les trois parts font toujours le tout (conservation de l'énergie) ; la profondeur de transparence est la distance où la lumière s'éteint dans la matière (Beer-Lambert).
+
+**La triangulation** (idée de l'utilisateur) : un reflet, une illumination, et l'ombre en dessous référencent chaque colonne du cube sous trois angles : une triangulation. De quoi fiabiliser la recherche d'un hex, et traiter tout ce sur quoi on s'est cassé la tête : l'ordre, la perte, l'erreur. Avec l'alignement du code entre ces repères.
+- Ce qui existe déjà : l'ombre (une projection : neuf ou exclusifs par colonne, localise et corrige un mot) et le miroir inversé (une copie par symétrie centrale).
+- Ce que la triangulation ajoute : trois projections sous trois angles différents. Deux projections se croisent en un seul point : la place d'une erreur est trouvée par intersection ; la troisième confirme, et permet d'en traiter plusieurs. Une projection droite ne voit pas deux mots échangés dans une même colonne ; une projection en biais les voit : l'ordre devient vérifiable. C'est le principe de la tomographie (reconstruire un volume à partir de ses projections) et des codes à projections discrètes (transformée Mojette), qui servent à reconstruire des données perdues.
+- À préciser : les trois angles (lumière d'en haut, reflet en biais, ombre au sol ?), ce que chaque projection additionne (ou exclusif, somme, somme pondérée), et ce que veut dire « l'alignement du code entre ».
