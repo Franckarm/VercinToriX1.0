@@ -187,15 +187,40 @@ font aussi 6 bits.
 
 Chaque essai a sa mesure avant et après, comme le crible.
 
-## 11. Décisions à prendre
+## 11. Décisions (30 octobre, soir)
 
-1. **L'encodage d'une liaison** : sa taille (les deux atomes, son type), et s'il faut un indice relatif à la molécule ou
-   une adresse du cube.
-2. **La colonne de Fischer** : quelle colonne du cube porte une chaîne (le fil de Hilbert du 24 octobre, ou la colonne de
-   la couleur et de la matière).
-3. **La syntaxe** : des lignes de texte avec des liaisons écrites (le plus sûr pour commencer), ou un langage entièrement
-   en réactions, à la manière de Gamma.
-4. **Les éléments du langage** au-delà de C H O N : lesquels d'abord, et pour quelles capacités.
+1. **Une liaison désigne une adresse du cube.** Pour garder la densité : les deux liaisons de la chaîne (en haut et en
+   bas de la croix de Fischer) sont **implicites** : l'atome précédent et le suivant dans la colonne, sans rien ranger.
+   Seuls les bras horizontaux et les branches rangent une adresse.
+2. **Le cube est le support, Fischer est l'indexation.** La croix de Fischer s'intègre aux colonnes couleur et matière :
+   le cube dit *où*, Fischer dit *dans quel ordre on lit*, les atomes disent *ce qui y est*.
+3. **La syntaxe est la surface (Blueprint)** : on programme en posant des cases et en tirant des liaisons. Elle s'enregistre
+   en texte (les cases, leurs valeurs, leurs liaisons), lisible et comparable : c'est le Hex. Une case peut garder des
+   lignes de vtx classique, pour que rien de l'existant ne se perde.
+4. **Les éléments de l'atelier sont une représentation**, pas une contrainte : on prend dans la chimie, la biologie ou la
+   physique ce qui est le plus efficace pour chaque besoin (section 11 bis).
+5. **Pas d'épissage entre le Hex et l'ADN** : l'épissage se fait à la transcription (ADN → ARN). L'épissage actuel des
+   instructions, aujourd'hui fait à la compilation, est à déplacer ou à renommer (voir la question ouverte).
+
+## 11 bis. Le plus efficace, besoin par besoin
+
+| Besoin | Discipline | Ce qu'on prend | Pourquoi c'est efficace |
+|---|---|---|---|
+| la structure du programme | chimie | atomes, valence, liaisons | la valence borne les fils d'une case : un graphe toujours lisible |
+| ranger et lire | chimie | Fischer, hybridation | la chaîne se lit à la suite : le processeur charge d'avance |
+| garder et exécuter | biologie | ADN, ARN, épissage, codons | ce qui dure garde tout, ce qui s'exécute n'a que l'utile |
+| le temps et l'ordre | physique | énergie d'activation, fronts d'onde | une case part quand ses entrées sont connues ; une vague à la fois, toutes les cases prêtes ensemble |
+| la mémoire | physique | conservation | une valeur appartient à une seule molécule à la fois : pas de copie cachée, pas de fuite |
+| la fiabilité | physique | triangulation, projections | trois témoins indépendants localisent et réparent |
+
+## Question ouverte : l'épissage existant
+
+L'épissage des instructions (sections 27 et 38 de vtx-0-5-autonomie.md) se fait à la compilation, entre le Hex et l'ADN.
+Deux possibilités :
+- **le déplacer à la transcription** : l'ADN garde le code tel qu'écrit, l'ARN est épissé ; la machine émulée transcrit
+  aussi l'ADN en ARN au chargement (un temps de chargement en plus, mesurable), et la forge transcrit de même ;
+- **le garder à la compilation sous un autre nom** (la maturation, par exemple), et réserver « épissage » à la
+  transcription des atomes.
 
 ## 12. Ordre de travail
 
