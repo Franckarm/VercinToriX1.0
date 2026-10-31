@@ -14,6 +14,7 @@ use super::pas64::{panneau64, table_des_lignes, Moteur, Pas, Vue64};
 use super::spu128::Spu128;
 use super::pas128::{image128, panneau128, presenter128};
 use super::machine128::{compiler128, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
+use super::adn;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -298,6 +299,7 @@ const C_MACHINE64: u16 = 1209; // la machine suivante (Ctrl+M, le bouton)
 const C_LUGUS: u16 = 1210;
 const C_M32: u16 = 1211;
 const C_M64: u16 = 1212;
+const C_LANCER_ADN: u16 = 1213;
 const C_ASSOCIER: u16 = 1402;
 const C_PURGER: u16 = 1205;
 const C_ETAGE: u16 = 1300; // + 0..3
@@ -492,16 +494,20 @@ fn dossier_de_depart() -> PathBuf {
 }
 
 fn dialogue_fichier(enregistrer: bool) -> Option<PathBuf> {
+    dialogue_filtre(enregistrer, "Programmes vtx (*.vtx)\0*.vtx\0Tous les fichiers\0*.*\0\0", "vtx")
+}
+
+fn dialogue_filtre(enregistrer: bool, filtre: &str, extension: &str) -> Option<PathBuf> {
     let at = a();
     let mut tampon = vec![0u16; 2048];
     if let Some(f) = &at.fichier {
         let n: Vec<u16> = f.file_name().map(|n| n.to_string_lossy().encode_utf16().collect()).unwrap_or_default();
         tampon[..n.len().min(2000)].copy_from_slice(&n[..n.len().min(2000)]);
     }
-    let filtre: Vec<u16> = "Programmes vtx (*.vtx)\0*.vtx\0Tous les fichiers\0*.*\0\0".encode_utf16().collect();
+    let filtre: Vec<u16> = filtre.encode_utf16().collect();
     let depart = at.fichier.as_ref().and_then(|f| f.parent().map(|p| p.to_path_buf())).unwrap_or_else(dossier_de_depart);
     let depart = w(&depart.to_string_lossy());
-    let ext = w("vtx");
+    let ext = w(extension);
     let mut o = OpenFileName {
         lStructSize: std::mem::size_of::<OpenFileName>() as u32, hwndOwner: at.fen, hInstance: std::ptr::null_mut(),
         lpstrFilter: filtre.as_ptr(), lpstrCustomFilter: std::ptr::null_mut(), nMaxCustFilter: 0, nFilterIndex: 1,
@@ -648,6 +654,17 @@ const MODELE: &str = "fonction principal() {\n    afficher(\"Bonjour, Vercintori
 
 // ------------------------------------------------------------------------------------------------ lancer
 fn lancer() {
+    lancer_avec(None);
+}
+
+/// lancer un ADN rangé (PROG.adn) : vérifié, réparé s'il le faut, puis lancé sur Lugus
+fn lancer_adn() {
+    if let Some(f) = dialogue_filtre(false, "ADN de vtx (*.adn)\0*.adn\0Tous les fichiers\0*.*\0\0", "adn") {
+        lancer_avec(Some(f));
+    }
+}
+
+fn lancer_avec(adn_range: Option<PathBuf>) {
     let at = a();
     if at.en_cours {
         etat("un programme tourne déjà");
@@ -655,7 +672,9 @@ fn lancer() {
     }
     at.pas = None;
     // sans nom : on lance quand même, depuis un fichier temporaire (rien n'est demandé)
-    let fichier = if at.fichier.is_none() {
+    let fichier = if let Some(f) = &adn_range {
+        f.clone()
+    } else if at.fichier.is_none() {
         let f = std::env::temp_dir().join("sans titre.vtx");
         if std::fs::write(&f, lire_texte(at.source).replace("\r\n", "\n")).is_err() {
             message("Impossible d'écrire le fichier temporaire.");
@@ -670,7 +689,7 @@ fn lancer() {
     };
     let source = lire_texte(at.source).replace("\r\n", "\n");
     let entrees: Vec<u64> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).collect();
-    let m = at.machine;
+    let m = if adn_range.is_some() { 128 } else { at.machine };
     at.en_cours = true;
     // la mémoire du programme précédent est rendue avant d'en prendre une autre
     at.mem = None;
@@ -709,7 +728,9 @@ fn lancer() {
     }
     let fen = at.fen as usize;
     std::thread::spawn(move || {
-        let fini = if m == 128 {
+        let fini = if adn_range.is_some() {
+            executer_adn(&fichier, &entrees)
+        } else if m == 128 {
             executer128(&fichier, &source, &entrees)
         } else if m == 64 {
             executer64(&fichier, &source, &entrees)
@@ -876,9 +897,61 @@ fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
         }
     };
     let tc = t0.elapsed().as_secs_f64();
+    // l'ADN : rangé à côté du programme (PROG.adn, ses trois témoins), puis lu comme au lancement d'un ADN
+    let (mols, mut t) = adn::ranger(&mots);
+    let mut mots = mots;
+    let (etat_adn, _) = adn::lire(&mut mots, &mols, &mut t);
+    let temp = fichier.starts_with(std::env::temp_dir());
+    let chemin_adn = fichier.with_extension("adn");
+    let ecrit = !temp && adn::ecrire_adn(&chemin_adn.to_string_lossy(), &mots, &mols, &t).is_ok();
+    let p = adn::place_des_temoins(&mots, &mols);
+    let note_adn = format!("ADN {} : {} molécules, {:.1} % de témoins{}", adn::nom_etat(etat_adn), mols.len(),
+                           100.0 * p as f64 / mots.len().max(1) as f64,
+                           if ecrit { format!(", rangé dans {}", chemin_adn.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()) } else { String::new() });
+    jouer128(&mots, &base, entrees, &format!("compilé en {}", duree_txt(tc)), &note_adn)
+}
+
+fn duree_txt(t: f64) -> String {
+    if t < 1.0 { format!("{:.0} ms", t * 1000.0) } else { format!("{:.2} s", t) }
+}
+
+/// « Lancer un ADN rangé » : l'ADN est vérifié et réparé (et réécrit s'il l'a été), puis ses mots sont lancés
+fn executer_adn(fichier: &Path, entrees: &[u64]) -> Fini {
+    let f = fichier.to_string_lossy().into_owned();
+    let base = dossier_de(&f);
+    let (mut mots, mols, mut t) = match adn::lire_adn(&f) {
+        Ok(x) => x,
+        Err(e) => {
+            let t = format!("{}\n", e);
+            return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: None, vue64: None, image: None };
+        }
+    };
+    let (etat_adn, rapport) = adn::lire(&mut mots, &mols, &mut t);
+    let mut details = String::new();
+    for (j, e, quoi) in &rapport {
+        if *e != adn::VRAI {
+            details.push_str(&format!("  molécule m{} : {}, {}\n", mols[*j].debut, adn::nom_etat(*e), quoi));
+        }
+    }
+    if etat_adn == adn::VARIABLE {
+        let t = format!("{}ADN variable : abîmé au-delà de ses témoins ; il n'est pas lancé, et il est gardé tel qu'il a été lu\n", details);
+        return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: None, vue64: None, image: None };
+    }
+    let mut note = format!("ADN {} : {} molécules", adn::nom_etat(etat_adn), mols.len());
+    if etat_adn == adn::FAUX && adn::ecrire_adn(&f, &mots, &mols, &t).is_ok() {
+        note.push_str(", réparé et réécrit");
+    }
+    if !details.is_empty() {
+        note = format!("{}{}", details, note);
+    }
+    jouer128(&mots, &base, entrees, "lu depuis l'ADN", &note)
+}
+
+/// Lugus exécute les mots ; sa console passe par le terminal
+fn jouer128(mots: &[u128], base: &str, entrees: &[u64], comment: &str, note_adn: &str) -> Fini {
     let mut s = Spu128::nouveau();
-    s.dossier = Some(PathBuf::from(&base));
-    s.charger(&mots);
+    s.dossier = Some(PathBuf::from(base));
+    s.charger(mots);
     s.entree.extend(entrees.iter().map(|&x| x as u128));
     let ecrit = std::rc::Rc::new(std::cell::RefCell::new(String::new()));
     let garde = ecrit.clone();
@@ -908,15 +981,18 @@ fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     let r = s.executer(u64::MAX / 4);
     let attente = ATTENTE_NS.load(Ordering::Relaxed) as f64 / 1e9;
     let te = (t1.elapsed().as_secs_f64() - attente).max(0.0);
-    let duree = |t: f64| if t < 1.0 { format!("{:.0} ms", t * 1000.0) } else { format!("{:.2} s", t) };
+    let duree = duree_txt;
     s.console_ecrire = None;
     s.console_lire = None;
     let mut texte = ecrit.borrow().clone();
     let mut resume = String::new();
     match r {
         Ok(()) => {
-            resume.push_str(&format!("Lugus (SPU-128) · {} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), s.pas, duree(te),
+            resume.push_str(&format!("Lugus (SPU-128) · {} mots, {} ; {} instructions en {}{}\n", mots.len(), comment, s.pas, duree(te),
                                      if attente > 0.0 { format!(" (et {} à attendre le clavier)", duree(attente)) } else { String::new() }));
+            if !note_adn.is_empty() {
+                resume.push_str(&format!("{}\n", note_adn));
+            }
             if !s.sortie.is_empty() {
                 let v: Vec<String> = s.sortie.iter().map(|v| v.to_string()).collect();
                 resume.push_str(&format!("sorties : {}\n", v.join(",")));
@@ -2311,6 +2387,7 @@ fn menus(fen: H) {
         let executer = CreatePopupMenu();
         ajouter(executer, "&Lancer\tF5", C_LANCER);
         ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
+        ajouter(executer, "Lancer un &ADN rangé (vérifié, réparé)…", C_LANCER_ADN);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
         ajouter(executer, "", 0);
         ajouter(executer, "Machine &suivante (Dunon → Lugus → Senos)\tCtrl+M", C_MACHINE64);
@@ -2404,6 +2481,11 @@ fn commande(c: u16) {
                     avancer(Avance::Continuer);
                 } else {
                     lancer();
+                }
+            }
+            C_LANCER_ADN => {
+                if at.pas.is_none() {
+                    lancer_adn();
                 }
             }
             C_MACHINE64 | C_M32 | C_M64 | C_LUGUS => {

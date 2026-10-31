@@ -4,6 +4,9 @@
 //   lugus PROG.vtx [ENTRÉES…]       compile avec vtxc128 (embarqué) puis exécute : ni Python ni étape .mots
 //   lugus compiler PROG.vtx [SORTIE.mots]   écrit seulement les mots
 //   lugus renouveler vtxc128.vtx    vtxc128 se recompile lui-même ; point fixe exigé avant d'écrire vtxc128.mots
+//   lugus ranger PROG.vtx [PROG.adn]        compile et range l'ADN : les mots et leurs trois témoins
+//   lugus transcrire PROG.adn [PROG.mots]   vérifie et répare l'ADN, retire les témoins : les mots (l'ARN)
+//   lugus PROG.adn [ENTRÉES…]       vérifie et répare l'ADN, puis le lance
 #[allow(dead_code)]
 mod qflot128;
 #[allow(dead_code)]
@@ -14,6 +17,8 @@ mod hote;
 mod miroir;
 #[allow(dead_code)]
 mod machine128;
+#[allow(dead_code)]
+mod adn;
 use machine128::{compiler128, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, VTXC128};
 use spu128::Spu128;
 
@@ -125,12 +130,47 @@ fn main() {
         let chemin = std::path::Path::new(&args[2]).with_extension("mots");
         ecrire_mots(&chemin.to_string_lossy(), &m1);
         println!("point fixe : {} mots -> {}", m1.len(), chemin.display());
+    } else if args.len() >= 3 && args[1] == "ranger" {
+        let mots = compiler_ou_sortir(&nombres128(VTXC128), &args[2], COMPLET128);
+        let sortie = if args.len() > 3 { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("adn").to_string_lossy().into_owned() };
+        let (mols, t) = adn::ranger(&mots);
+        if let Err(e) = adn::ecrire_adn(&sortie, &mots, &mols, &t) {
+            eprintln!("écriture de {} impossible : {}", sortie, e);
+            std::process::exit(1);
+        }
+        let p = adn::place_des_temoins(&mots, &mols);
+        println!("{} mots, {} molécules, témoins {} mots ({:.1} %) -> {}", mots.len(), mols.len(), p,
+                 100.0 * p as f64 / mots.len() as f64, sortie);
+    } else if args.len() >= 3 && args[1] == "transcrire" {
+        match adn::transcrire(&args[2], true) {
+            Ok((mots, _)) => {
+                let sortie = if args.len() > 3 { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("mots").to_string_lossy().into_owned() };
+                ecrire_mots(&sortie, &mots);
+                println!("l'ARN (les mots seuls, les témoins retirés) -> {}", sortie);
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
+    } else if args.len() >= 2 && args[1].ends_with(".adn") {
+        // l'ADN est vérifié et réparé avant de tourner : seul un ADN vrai ou réparé est lancé
+        match adn::transcrire(&args[1], false) {
+            Ok((mots, _)) => {
+                let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
+                jouer(&mots, &args[2..], dossier);
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                std::process::exit(1);
+            }
+        }
     } else if args.len() >= 2 && args[1].ends_with(".vtx") {
         let mots = compiler_ou_sortir(&nombres128(VTXC128), &args[1], COMPLET128);
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus transcrire PROG.adn [PROG.mots] | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
         std::process::exit(2);
     }
 }

@@ -462,9 +462,21 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - **Les comparaisons** :
     - le miroir inversé double la place (100 %) ;
     - l'ombre des cubes sur disque (3,5 %) répare un mot par colonne.
+  - **Lugus et Ogmios lisent l'ADN** (`vtx-rs/src/adn.rs`) :
+    - le découpage se fait d'après les mots seuls : la tête, puis une molécule par fonction, de la cible d'un CALL à la
+      suivante. La signature est un mélange de 64 bits refait à l'identique des deux côtés. Rust et Python font donc le
+      même ADN, octet pour octet ;
+    - Rust lit chaque avarie comme Python : 132 avaries sur 132, même état, mêmes mots, même ADN réparé
+      (`tests/test_adn.py`) ;
+    - `lugus ranger PROG.vtx` range l'ADN ; `lugus transcrire PROG.adn` vérifie, répare et rend les mots ;
+      `lugus PROG.adn` vérifie, répare, puis lance (rien n'est lancé d'un ADN variable) ;
+    - dans Ogmios, F5 sur Lugus range l'ADN à côté du programme (`PROG.adn`) et le lit avant de lancer ; le résumé dit
+      son état et la place des témoins. « Exécuter > Lancer un ADN rangé » vérifie un `.adn`, le répare (et le réécrit),
+      puis le lance ;
+    - `python chimie/adn.py abimer PROG.adn N` abîme N mots, pour essayer la réparation.
   - **Ce qui reste** :
     - les isotopes (`lourd`), pour des neutrons sur une molécule choisie ;
-    - la lecture de l'ADN par Lugus et Ogmios, en Rust puis en vtx ;
+    - la lecture de l'ADN dans vtxc128 (en vtx), pour Ogmios écrit en vtx ;
     - la provenance rangée dans l'ADN ;
     - la patrouille : relire l'ADN pendant que la machine attend.
 

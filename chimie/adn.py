@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """La fiabilité de l'ADN par son code chimique (docs/vtx-reactions.md, étape 5, deuxième temps).
 
-L'ADN d'un programme, ce sont ses mots compilés, rangés pour durer. Il est découpé en molécules : chaque fonction (ou
-réaction), la tête du programme, ses textes et ses données. Trois témoins indépendants se recoupent (la triangulation) :
+L'ADN d'un programme, ce sont ses mots compilés, rangés pour durer. Il est découpé en molécules, d'après les mots seuls
+(Python et Lugus en Rust font le même découpage, le même ADN) : la tête du programme, puis une molécule par fonction (ou
+réaction), de son début (la cible d'un CALL) au début de la suivante ; la dernière garde les textes et les données. Trois témoins indépendants se recoupent (la triangulation) :
 
   1. la signature de chaque molécule : l'empreinte de ses mots (64 bits). Elle voit tout changement, sans dire où, et
      confirme chaque réparation : un mot réparé de travers ne passe pas ;
@@ -22,8 +23,8 @@ refait), variable (abîmée au-delà de ses témoins : gardée telle quelle, pou
 
     python3 chimie/adn.py ranger PROG.vtx [PROG.adn]      l'ADN : les mots et les témoins
     python3 chimie/adn.py transcrire PROG.adn [PROG.mots]  vérifie, répare, épisse : les mots
+    python3 chimie/adn.py abimer PROG.adn [N] [GRAINE]     abîme N mots au hasard (pour essayer la réparation)
     python3 chimie/adn.py essai [PROG.vtx…]                les avaries mesurées (détection, réparation, place)"""
-import hashlib
 import os
 import random
 import sys
@@ -46,11 +47,24 @@ def pire(a, b):
 
 
 # ---------------------------------------------------------------------------------------------------- les témoins
+M64 = (1 << 64) - 1
+
+
+def melanger(z):
+    """le mélange de splitmix64"""
+    z = (z + 0x9E3779B97F4A7C15) & M64
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & M64
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & M64
+    return z ^ (z >> 31)
+
+
 def signature(mots):
-    h = hashlib.blake2b(digest_size=8)
+    """l'empreinte d'une molécule : 64 bits, chaque moitié de mot mêlée à son tour (la même en Rust : vtx-rs/src/adn.rs)"""
+    h = melanger(0x5643_5458_4144_4E00 ^ len(mots))      # « VCTXADN »
     for w in mots:
-        h.update(w.to_bytes(16, "little"))
-    return int.from_bytes(h.digest(), "little")
+        h = melanger(h ^ (w & M64))
+        h = melanger(h ^ (w >> 64))
+    return h
 
 
 def crc8(w):
@@ -190,29 +204,46 @@ def lire(mots, molecules, t):
 
 
 # ---------------------------------------------------------------------------------------------------- le découpage
-ECRIT_OU_SORT = {"ST", "STQ", "STX", "OUT", "SORC", "SYS", "MARQUE", "GEMV", "BRIN"}   # pas STF : le cadre
+
+
+
+# les codes d'opération de Lugus (spu128.py) : CALL, LDI et LDIH (suivis d'une constante), ceux qui écrivent ou sortent
+OP_CALL, OP_LDI, OP_LDIH = 0x33, 0x0A, 0x2B
+OPS_FRONTIERE = {0x21, 0x24, 0x2A, 0x39, 0x52, 0x53, 0x55, 0x5E, 0x5F}   # ST OUT STX GEMV SORC SYS STQ MARQUE BRIN
+
+
+def demis(mots):
+    """les demi-instructions (la haute d'abord), chacune avec un drapeau : vraie instruction ou constante d'un LDI"""
+    lit = False
+    for w in mots:
+        for h in (w >> 64, w & M64):
+            yield h, lit
+            lit = not lit and (h >> 48) in (OP_LDI, OP_LDIH)
+
+
+def decouper(mots):
+    """les molécules, d'après les mots seuls : la tête, puis une par fonction (de la cible d'un CALL à la suivante).
+    Une molécule est une frontière (O) si son code écrit en mémoire ou sort quelque chose."""
+    n = len(mots)
+    debuts = {0} | {(h & 0xFFFFFFFF) // 2 for h, lit in demis(mots) if not lit and (h >> 48) == OP_CALL}
+    debuts = sorted(d for d in debuts if d < n)
+    molecules = []
+    for a, b in zip(debuts, debuts[1:] + [n]):
+        frontiere = any(not lit and (h >> 48) in OPS_FRONTIERE for h, lit in demis(mots[a:b]))
+        molecules.append(Molecule(f"m{a}", a, b, frontiere))
+    return molecules
 
 
 def molecules_du_programme(src, dossier=None):
-    """(les mots, les molécules) : une par fonction (de son étiquette à la suivante), la tête, les textes et données.
-    Une molécule est une frontière (O) si son code écrit en mémoire ou sort quelque chose."""
+    """(les mots, les molécules), le programme compilé comme le fait Lugus (le prélude, les optimisations)"""
     import vtx128
     vtx128.COMPAT_64 = False
     asm = vtx128.compiler(src, dossier=dossier)
     mots, etiq = vtx128.assembler(asm, True)
-    n = len(mots)
-    debuts = sorted({(v // 2, k) for k, v in etiq.items() if k.startswith("F_") and not k.endswith("_FIN")})
-    donnees = [v for k, v in etiq.items() if k.startswith(("TEXTE", "DONNEES")) and v < n]
-    fin_code = min(donnees) if donnees else n
-    coupes = [(0, "tête")] + [(d, k[2:].lower()) for d, k in debuts if 0 < d < fin_code] + [(fin_code, "textes et données")]
-    noms_ops = vtx128._spu128.NOMS
-    molecules = []
-    for (a, nom), (b, _) in zip(coupes, coupes[1:] + [(n, "")]):
-        if b <= a:
-            continue
-        frontiere = nom != "textes et données" and any(
-            noms_ops.get(h >> 48, "") in ECRIT_OU_SORT for w in mots[a:b] for h in (w >> 64, w & ((1 << 64) - 1)))
-        molecules.append(Molecule(nom, a, b, frontiere))
+    molecules = decouper(mots)
+    noms = {v // 2: k[2:].lower() for k, v in etiq.items() if k.startswith("F_") and not k.endswith("_FIN")}
+    for m in molecules:
+        m.nom = "tête" if m.debut == 0 else noms.get(m.debut, m.nom)
     return mots, molecules
 
 
@@ -308,7 +339,7 @@ def ecrire_adn(chemin, mots, molecules, t):
     with open(chemin, "w", encoding="utf-8") as f:
         f.write("VTXADN02\n")
         f.write(",".join(map(str, mots)) + "\n")
-        f.write("\t".join(f"{m.nom}|{m.debut}|{m.fin}|{int(m.frontiere)}|{s}" for m, s in zip(molecules, t["signatures"])) + "\n")
+        f.write("\t".join(f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{s}" for m, s in zip(molecules, t["signatures"])) + "\n")
         f.write(";".join(",".join(map(str, o)) for o in t["ombres"]) + "\n")
         f.write(",".join(f"{i}:{v}" for i, v in sorted(t["neutrons"].items())) + "\n")
 
@@ -358,6 +389,15 @@ def main():
         if etat == FAUX:
             ecrire_adn(sys.argv[2], mots, molecules, t)          # l'ADN réparé est réécrit
             print("l'ADN réparé est réécrit")
+    elif cmd == "abimer":
+        mots, molecules, t = lire_adn(sys.argv[2])
+        n = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+        g = random.Random(int(sys.argv[4]) if len(sys.argv) > 4 else 1)
+        places = g.sample(range(len(mots)), n)
+        for i in places:
+            mots[i] ^= g.getrandbits(128) | 1
+        ecrire_adn(sys.argv[2], mots, molecules, t)
+        print(f"{n} mot(s) abîmé(s) : {sorted(places)}")
     elif cmd == "essai":
         fichiers = sys.argv[2:] or [os.path.join(racine, "exemples128", f) for f in
                                     ("panel.vtx", "chute.vtx", "scene_incrementale.vtx", "bonjour128.vtx")]

@@ -49,7 +49,7 @@ muettes = sum(c["muet"] for c in r.values())
 verifier("aucune erreur muette (rien n'est réparé de travers, rien ne passe sans être vu)", muettes == 0, str(muettes))
 toutes = ["un bit", "un mot", "un mot effacé", "deux mots échangés", "deux mots d'une molécule", "une rafale de quatre mots",
           "une rafale de huit mots", "un témoin", "un mot et sa signature"]
-verifier("chute.vtx (1 929 mots, 5,6 % de témoins) : tout réparé, jusqu'aux rafales de huit mots",
+verifier("chute.vtx (1 929 mots, 6 % de témoins) : tout réparé, jusqu'aux rafales de huit mots",
          all(r[("chute.vtx", gnr)]["réparé"] == 40 for gnr in toutes), str({gnr: r[("chute.vtx", gnr)] for gnr in toutes}))
 verifier("panel.vtx (89 mots, une seule colonne) : un ou deux mots abîmés, un témoin : réparés",
          all(r[("panel.vtx", gnr)]["réparé"] == 40 for gnr in toutes[:5] + toutes[7:]))
@@ -72,5 +72,45 @@ arn = [int(x) for x in open(os.path.join(d, "chute.mots")).read().split(";")[0].
 s2 = subprocess.run(py + ["transcrire", f_adn, os.path.join(d, "chute2.mots")], capture_output=True, text=True)
 verifier("ranger, abîmer quatre mots, transcrire : l'ARN est le programme d'origine, l'ADN réparé réécrit",
          arn == mots and "faux (réparé)" in s.stdout and "l'ADN : vrai" in s2.stdout, s.stdout + s.stderr)
+# 4. Lugus en Rust : le même ADN que Python, et la même lecture de chaque avarie (l'état, les mots, l'ADN réécrit)
+lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
+if os.path.exists(lugus):
+    f_rs = os.path.join(d, "chute-rs.adn")
+    f_py = os.path.join(d, "chute-py.adn")
+    subprocess.run([lugus, "ranger", os.path.join(dex, "chute.vtx"), f_rs], capture_output=True, text=True)
+    subprocess.run(py + ["ranger", os.path.join(dex, "chute.vtx"), f_py], capture_output=True, text=True)
+    verifier("Lugus range le même ADN que Python, octet pour octet", open(f_rs).read() == open(f_py).read())
+    mots0, molecules, t0 = adn.lire_adn(f_py)
+    g = random.Random(23)
+    ecarts, n = [], 0
+    for genre in adn.GENRES:
+        for k in range(12):
+            abime, t = list(mots0), adn.copie_temoins(t0)
+            adn.avarie(genre, abime, t, molecules, g)
+            f_a = os.path.join(d, "abime.adn")
+            adn.ecrire_adn(f_a, abime, molecules, t)
+            # Python
+            m_py, t_py = list(abime), adn.copie_temoins(t)
+            etat_py, _ = adn.lire(m_py, molecules, t_py)
+            # Rust
+            r = subprocess.run([lugus, "transcrire", f_a, os.path.join(d, "abime.mots")], capture_output=True, text=True,
+                               encoding="utf-8")
+            etat_rs = next((l.split(" : ", 1)[1] for l in r.stderr.splitlines() if l.startswith("l'ADN : ")), "?")
+            n += 1
+            if etat_rs != adn.NOM_ETAT[etat_py]:
+                ecarts.append((genre, "état", etat_py, etat_rs))
+                continue
+            if etat_py != adn.VARIABLE:
+                m_rs = [int(x) for x in open(os.path.join(d, "abime.mots")).read().split(";")[0].split(",")]
+                if m_rs != m_py:
+                    ecarts.append((genre, "mots"))
+                elif etat_py == adn.FAUX:
+                    adn.ecrire_adn(os.path.join(d, "attendu.adn"), m_py, molecules, t_py)
+                    if open(f_a).read() != open(os.path.join(d, "attendu.adn")).read():
+                        ecarts.append((genre, "ADN réécrit"))
+    verifier(f"Lugus lit l'ADN comme Python : {n - len(ecarts)}/{n} avaries, même état, mêmes mots, même ADN réparé",
+             not ecarts, str(ecarts[:4]))
+    r = subprocess.run([lugus, f_rs], capture_output=True, text=True, encoding="utf-8")
+    verifier("lugus PROG.adn : vérifié, puis lancé (la chute : 2500)", r.stdout.startswith("2500"), r.stdout + r.stderr)
 print("ADN : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)

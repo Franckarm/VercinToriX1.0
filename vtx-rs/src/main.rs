@@ -46,6 +46,8 @@ mod spu128;
 #[allow(dead_code)]
 mod machine128;
 mod pas128;
+#[allow(dead_code)]
+mod adn;
 #[cfg(any(windows, feature = "verif_fenetre"))]
 mod fenetre;
 
