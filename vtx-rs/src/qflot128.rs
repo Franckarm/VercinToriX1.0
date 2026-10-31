@@ -157,6 +157,142 @@ pub const Q32: Fmt = Fmt { p: 22, ebits: 8, biais: 138, taille: 32 };
 pub const Q64: Fmt = Fmt { p: 52, ebits: 10, biais: 537, taille: 64 };
 pub const Q128: Fmt = Fmt { p: 112, ebits: 14, biais: 8247, taille: 128 };
 
+// --- Le calcul par le matériel (flottants de 32 et 64 bits) : un flottant quaternaire m × 4^e est exactement un double
+// m × 2^(2e). Le processeur calcule le résultat exact en deux doubles (hi + lo : somme exacte, produit exact, ou reste
+// exact de la division), puis ce résultat est ramené sur la grille quaternaire, arrondi au plus près (pair en cas
+// d'égalité) : le même résultat que le calcul logiciel, en quelques instructions. Hors de la zone sûre (zéros, infinis,
+// nombres sous-normaux, exposants extrêmes), le calcul logiciel reprend.
+#[inline(always)]
+fn pow2(k: i64) -> f64 {
+    f64::from_bits(((k + 1023) as u64) << 52)
+}
+
+/// le produit exact a × b = hi + lo
+#[inline(always)]
+fn produit_exact(a: f64, b: f64) -> (f64, f64) {
+    let hi = a * b;
+    #[cfg(target_feature = "fma")]
+    {
+        (hi, a.mul_add(b, -hi))
+    }
+    #[cfg(not(target_feature = "fma"))]
+    {
+        // Dekker : chaque facteur coupé en deux moitiés de 26 bits
+        let coupe = |x: f64| {
+            let c = 134_217_729.0 * x;
+            let h = c - (c - x);
+            (h, x - h)
+        };
+        let (ah, al) = coupe(a);
+        let (bh, bl) = coupe(b);
+        (hi, ((ah * bh - hi) + ah * bl + al * bh) + al * bl)
+    }
+}
+
+impl Fmt {
+    /// le double exact d'un nombre du format (zéro compris, avec son signe), s'il est dans la zone sûre ; tout en
+    /// entiers de 64 bits (les formats de 32 et 64 bits y tiennent)
+    #[inline(always)]
+    fn en_double(&self, a: u128) -> Option<f64> {
+        let a = a as u64;
+        let t = self.taille as u64;
+        let p = self.p as u64;
+        let e = a >> (t - 2);
+        if e.wrapping_sub(1) > 1 {
+            return None;                                        // inconnu ou variable
+        }
+        let emax = (1u64 << self.ebits) - 1;
+        let ef = (a >> p) & emax;
+        let q = a & ((1u64 << p) - 1);
+        let neg = e == 1;
+        if ef == emax {
+            return None;                                        // l'infini (et ce qui suit l'exposant maximal)
+        }
+        if q == 0 {
+            return Some(if neg { -0.0 } else { 0.0 });
+        }
+        let ex = 2 * (ef.max(1) as i64 - self.biais);
+        if !(-900..=900).contains(&ex) {
+            return None;
+        }
+        let v = (q as f64) * pow2(ex);
+        Some(if neg { -v } else { v })
+    }
+
+    /// hi + lo (exact, |lo| au plus la moitié d'une unité de hi) arrondi sur la grille quaternaire
+    #[inline(always)]
+    fn de_double(&self, hi: f64, lo: f64) -> Option<u128> {
+        let t = self.taille as u64;
+        let p = self.p as u64;
+        let bits = hi.to_bits();
+        let neg = bits >> 63 == 1;
+        let b = bits & 0x7FFF_FFFF_FFFF_FFFF;
+        if b == 0 {
+            return Some(((if neg { 1u64 } else { 2u64 }) << (t - 2)) as u128);      // un zéro, avec son signe
+        }
+        let e2 = (b >> 52) as i64 - 1023;
+        if !(-900..=900).contains(&e2) {
+            return None;
+        }
+        let m = (b & ((1u64 << 52) - 1)) | (1u64 << 52);       // hi = m × 2^(e2 - 52)
+        let e4 = e2 >> 1;                                        // division par 2 vers le bas
+        let mut k = 2 * e4 - (self.p - 2);                      // l'exposant du bit 0 de la mantisse quaternaire
+        let s = (k - (e2 - 52)) as u64;                         // ce que la grille retire à hi (au moins 1)
+        let mut q = m >> s;
+        let reste = m & ((1u64 << s) - 1);
+        let demi = 1u64 << (s - 1);
+        // lo, du côté de |hi| : positif si la vraie valeur est au-delà de |hi|
+        let lo_dehors = if neg { -lo } else { lo };
+        if reste > demi || (reste == demi && (lo_dehors > 0.0 || (lo_dehors == 0.0 && q & 1 == 1))) {
+            q += 1;
+            if q == 1u64 << p {
+                q = 1u64 << (p - 2);
+                k += 2;
+            }
+        }
+        let ef = k / 2 + self.biais;
+        if ef <= 0 || ef >= ((1i64 << self.ebits) - 1) {
+            return None;
+        }
+        Some((((if neg { 1u64 } else { 2u64 }) << (t - 2)) | ((ef as u64) << p) | q) as u128)
+    }
+
+    #[inline(always)]
+    fn add_materiel(&self, a: u128, b: u128) -> Option<u128> {
+        let (x, y) = (self.en_double(a)?, self.en_double(b)?);
+        // la somme exacte (Knuth) ; deux zéros, ou une annulation exacte, suivent la règle du calcul logiciel (et d'IEEE) :
+        // un zéro négatif seulement si les deux le sont
+        let hi = x + y;
+        let bb = hi - x;
+        let lo = (x - (hi - bb)) + (y - bb);
+        self.de_double(hi, lo)
+    }
+
+    #[inline(always)]
+    fn mul_materiel(&self, a: u128, b: u128) -> Option<u128> {
+        let (x, y) = (self.en_double(a)?, self.en_double(b)?);
+        let (hi, lo) = produit_exact(x, y);
+        self.de_double(hi, lo)
+    }
+
+    #[inline(always)]
+    fn div_materiel(&self, a: u128, b: u128) -> Option<u128> {
+        let (x, y) = (self.en_double(a)?, self.en_double(b)?);
+        if y == 0.0 {
+            return None;
+        }
+        let hi = x / y;
+        if hi == 0.0 {
+            return if x == 0.0 { Some(self.signe(self.etat(a) != self.etat(b))) } else { None };
+        }
+        // le reste exact x - hi × y ; la vraie valeur est hi + reste / y
+        let (p, e) = produit_exact(hi, y);
+        let r = (x - p) - e;
+        let lo = if r == 0.0 { 0.0 } else if (r > 0.0) == (y > 0.0) { f64::MIN_POSITIVE } else { -f64::MIN_POSITIVE };
+        self.de_double(hi, lo)
+    }
+}
+
 pub fn format(w: u32) -> Fmt {
     match w {
         1 => Q64,
@@ -331,7 +467,20 @@ impl Fmt {
         if self.est_nombre(a) { a ^ (3u128 << (self.taille - 2)) } else { a }
     }
 
+    /// le chemin du matériel d'abord (copié dans l'appelant : le format y est connu, ses champs deviennent des
+    /// constantes), sinon le calcul logiciel
+    #[inline(always)]
     pub fn add(&self, a: u128, b: u128) -> u128 {
+        if self.p <= 52 {
+            if let Some(r) = self.add_materiel(a, b) {
+                return r;
+            }
+        }
+        self.add_logiciel(a, b)
+    }
+
+    #[inline(never)]
+    fn add_logiciel(&self, a: u128, b: u128) -> u128 {
         if let Some(s) = self.special(a, b) {
             return s;
         }
@@ -418,11 +567,25 @@ impl Fmt {
         self.depuis(s, m, ex, false)
     }
 
+    #[inline(always)]
     pub fn sub(&self, a: u128, b: u128) -> u128 {
         self.add(a, self.neg(b))
     }
 
+    /// le chemin du matériel d'abord (copié dans l'appelant : le format y est connu, ses champs deviennent des
+    /// constantes), sinon le calcul logiciel
+    #[inline(always)]
     pub fn mul(&self, a: u128, b: u128) -> u128 {
+        if self.p <= 52 {
+            if let Some(r) = self.mul_materiel(a, b) {
+                return r;
+            }
+        }
+        self.mul_logiciel(a, b)
+    }
+
+    #[inline(never)]
+    fn mul_logiciel(&self, a: u128, b: u128) -> u128 {
         if let Some(s) = self.special(a, b) {
             return s;
         }
@@ -458,7 +621,20 @@ impl Fmt {
         self.signe(s) | self.arrondir_u(q, xa + xb + sh, false)
     }
 
+    /// le chemin du matériel d'abord (copié dans l'appelant : le format y est connu, ses champs deviennent des
+    /// constantes), sinon le calcul logiciel
+    #[inline(always)]
     pub fn div(&self, a: u128, b: u128) -> u128 {
+        if self.p <= 52 {
+            if let Some(r) = self.div_materiel(a, b) {
+                return r;
+            }
+        }
+        self.div_logiciel(a, b)
+    }
+
+    #[inline(never)]
+    fn div_logiciel(&self, a: u128, b: u128) -> u128 {
         if let Some(s) = self.special(a, b) {
             return s;
         }
