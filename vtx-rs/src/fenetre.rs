@@ -437,8 +437,8 @@ fn etat(t: &str) {
 fn nom_machine(m: u32) -> &'static str {
     match m {
         128 => "Lugus",
-        64 => "SPU-64",
-        _ => "SPU-32",
+        64 => "Dunon",
+        _ => "Senos",
     }
 }
 
@@ -576,10 +576,10 @@ pub fn machine_ecrite(texte: &str) -> Option<u32> {
             let r = r.trim().to_lowercase();
             if let Some(m) = r.strip_prefix("machine") {
                 let m = m.trim_start_matches([' ', ':', '\u{a0}']).trim();
-                if m.starts_with("spu-32") || m.starts_with("spu32") || m.starts_with("32") {
+                if m.starts_with("senos") || m.starts_with("spu-32") || m.starts_with("spu32") || m.starts_with("32") {
                     return Some(32);
                 }
-                if m.starts_with("spu-64") || m.starts_with("spu64") || m.starts_with("64") {
+                if m.starts_with("dunon") || m.starts_with("spu-64") || m.starts_with("spu64") || m.starts_with("64") {
                     return Some(64);
                 }
                 if m.starts_with("lugus") || m.starts_with("spu-128") || m.starts_with("spu128") || m.starts_with("128") {
@@ -837,7 +837,7 @@ fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     let mut resume = String::new();
     match r {
         Ok(()) => {
-            resume.push_str(&format!("SPU-64 · {} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), s.pas, duree(te),
+            resume.push_str(&format!("Dunon (SPU-64) · {} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), s.pas, duree(te),
                                      if attente > 0.0 { format!(" (et {} à attendre le clavier)", duree(attente)) } else { String::new() }));
             if !s.sortie.is_empty() {
                 let v: Vec<String> = s.sortie.iter().map(|v| v.to_string()).collect();
@@ -915,7 +915,7 @@ fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     let mut resume = String::new();
     match r {
         Ok(()) => {
-            resume.push_str(&format!("Lugus · {} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), s.pas, duree(te),
+            resume.push_str(&format!("Lugus (SPU-128) · {} mots, compilé en {} ; {} instructions en {}{}\n", mots.len(), duree(tc), s.pas, duree(te),
                                      if attente > 0.0 { format!(" (et {} à attendre le clavier)", duree(attente)) } else { String::new() }));
             if !s.sortie.is_empty() {
                 let v: Vec<String> = s.sortie.iter().map(|v| v.to_string()).collect();
@@ -1171,7 +1171,7 @@ fn ligne_terminal() {
     };
     match mots.first().copied() {
         None => {}
-        Some("aide") => ajouter_texte(at.sortie, "commandes : lancer · arreter · machine 32|64|128 · cubes · cube ÉTAGE FRÉQUENCE · mot ADRESSE · mot ÉTAGE ADRESSE · etage N · arbre · effacer · purger\n\
+        Some("aide") => ajouter_texte(at.sortie, "commandes : lancer · arreter · machine senos|dunon|lugus · cubes · cube ÉTAGE FRÉQUENCE · mot ADRESSE · mot ÉTAGE ADRESSE · etage N · arbre · effacer · purger\n\
             ADRESSE : décimale, #hex ou 0xhex. L'arbre montre le mot choisi et les objets du tas (tableaux, dicos, textes)\n\
             avec leurs liaisons ; un clic sur une ligne l'ouvre ou la ferme. À plat (F6), un clic dans le cube choisit un mot.\n"),
         Some("lancer") => lancer(),
@@ -1206,12 +1206,12 @@ fn ligne_terminal() {
         },
         Some("machine") => {
             match mots.get(1).copied() {
-                Some("32") => choisir_machine(32),
-                Some("64") => choisir_machine(64),
+                Some("32") | Some("senos") => choisir_machine(32),
+                Some("64") | Some("dunon") => choisir_machine(64),
                 Some("128") | Some("lugus") => choisir_machine(128),
                 _ => {}
             }
-            ajouter_texte(at.sortie, &format!("machine : {} (machine 32, 64 ou 128 pour changer)\n", nom_machine(a().machine)));
+            ajouter_texte(at.sortie, &format!("machine : {} (machine senos, dunon ou lugus, ou 32, 64, 128, pour changer)\n", nom_machine(a().machine)));
         }
         Some("cube") => match (mots.get(1).and_then(|x| nombre(x)), mots.get(2).and_then(|x| nombre(x))) {
             (Some(e), Some(f)) if (1..4).contains(&e) && at.mem.is_some() => {
@@ -1488,7 +1488,7 @@ fn panneau_pas() -> String {
         None => if d.fini { "fini".into() } else { "début".into() },
     };
     t.push_str(&format!("pas à pas · {} · {} instructions · {}\n", ou, d.compte(),
-                        match d.moteur { Moteur::M128(_) => "Lugus", Moteur::M64(_) => "SPU-64", _ => "SPU-32" }));
+                        match d.moteur { Moteur::M128(_) => "Lugus", Moteur::M64(_) => "Dunon", _ => "Senos" }));
     t.push_str("F7 ligne suivante · F8 sans entrer dans les fonctions · F5 continuer · F9 point d'arrêt · Échap arrêter\n\n");
     let (mem, et) = match &d.moteur {
         Moteur::M32 { mem, et, .. } => (mem, et),
@@ -2171,7 +2171,7 @@ fn creer_controles(fen: H) {
             0, 0, 10, 10, fen, 14 as H, at.inst, std::ptr::null_mut());
         for (t, c) in [("Ouvrir", C_OUVRIR), ("Enregistrer", C_ENREGISTRER), ("▶  Lancer  (F5)", C_LANCER), ("Pas à pas  (F7)", C_PAS),
                        ("0", C_ETAGE), ("1", C_ETAGE + 1), ("2", C_ETAGE + 2), ("3", C_ETAGE + 3), ("Vue : perspective / à plat / quits  (F6)", C_VUE),
-                       ("Largeur", C_LARGEUR), ("Machine : SPU-64", C_MACHINE64), ("●  Enregistrer (GIF)", C_GIF)] {
+                       ("Largeur", C_LARGEUR), ("Machine : Dunon", C_MACHINE64), ("●  Enregistrer (GIF)", C_GIF)] {
             let b = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
                                     c as usize as H, at.inst, std::ptr::null_mut());
             at.boutons.push((b, c));
@@ -2313,10 +2313,10 @@ fn menus(fen: H) {
         ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
         ajouter(executer, "", 0);
-        ajouter(executer, "Machine &suivante (SPU-64 → Lugus → SPU-32)\tCtrl+M", C_MACHINE64);
-        ajouter(executer, "Machine &64 bits (SPU-64, vtxc64)", C_M64);
-        ajouter(executer, "Machine L&ugus (SPU-128, vtxc128)", C_LUGUS);
-        ajouter(executer, "Machine 3&2 bits (SPU-32, vtxc)", C_M32);
+        ajouter(executer, "Machine &suivante (Dunon → Lugus → Senos)\tCtrl+M", C_MACHINE64);
+        ajouter(executer, "Machine &Dunon (SPU-64, 64 bits, vtxc64)", C_M64);
+        ajouter(executer, "Machine L&ugus (SPU-128, 128 bits, vtxc128)", C_LUGUS);
+        ajouter(executer, "Machine &Senos (SPU-32, 32 bits, vtxc)", C_M32);
         ajouter(executer, "", 0);
         ajouter(executer, "&Pas à pas : ligne suivante\tF7", C_PAS);
         ajouter(executer, "Pas à pas &sans entrer dans les fonctions\tF8", C_PAS_DESSUS);
@@ -2486,7 +2486,7 @@ fn commande(c: u16) {
                 at.vue64 = None;
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
-            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nMachine SPU-64 (par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine Lugus (SPU-128) : mots de 128 bits, points de matière (trois couleurs de 32 bits et la matière), flottants de 128 bits, compilés par vtxc128 ; le cube les montre aussi en points de 32 bits (la transparence en alpha). Machine SPU-32 : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine suivante (Ctrl+M) passe de l'une à l'autre ; « // machine : lugus » en tête d'un programme la choisit.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
+            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nLes machines portent des noms gaulois : Senos l'ancien (SPU-32), Dunon la forteresse (SPU-64), Lugus la lumière (SPU-128), bâti sur Dunon comme Lugdunum.\n\nMachine Dunon (SPU-64, par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine Lugus (SPU-128) : mots de 128 bits, points de matière (trois couleurs de 32 bits et la matière), flottants de 128 bits, compilés par vtxc128 ; le cube les montre aussi en points de 32 bits (la transparence en alpha). Machine Senos (SPU-32) : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine suivante (Ctrl+M) passe de l'une à l'autre ; « // machine : lugus » en tête d'un programme la choisit.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
             _ => {}
         }
     }

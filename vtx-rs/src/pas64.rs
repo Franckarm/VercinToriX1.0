@@ -118,7 +118,7 @@ impl Vue64 {
         Vue64 { pages, frequences: [0; 4], largeur: 128 }
     }
     pub fn nom(&self) -> &'static str {
-        if self.largeur == 128 { "Lugus" } else { "SPU-64" }
+        if self.largeur == 128 { "Lugus" } else { "Dunon" }
     }
     /// Le mot de l'étage e à l'indice a (la fréquence au-dessus du bit 24).
     pub fn lit(&self, e: u32, a: u128) -> u128 {

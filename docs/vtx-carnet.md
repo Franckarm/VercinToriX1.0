@@ -1034,3 +1034,15 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
   décodent la vraie valeur (couleurs, les six codons de la matière, demi-instructions, flottant, Belnap) ; Gobatix
   montre l'image d'un programme qui dessine en points de matière. `vtx-spu essai-pas128` vérifie tout cela sans fenêtre.
 
+### Les noms gaulois adoptés (31 octobre)
+
+- **Senos** (l'ancien) pour le SPU-32, **Dunon** (la forteresse) pour le SPU-64, **Lugus** (la lumière) pour le SPU-128 :
+  dans l'atelier (titre, menu, bouton, terminal : `machine senos|dunon|lugus`, `// machine : dunon` en tête d'un
+  programme). Albios (le monde lumineux) reste réservé au SPU-256.
+- La chimie de Vercintorix (`docs/vtx-chimie.md`) : la liaison est la donnée, les atomes sont le code, le cube est le
+  support, Fischer l'indexation, la surface façon Blueprint la syntaxe ; l'épissage là où la mesure le montre utile.
+- Avis de Claude, demandé : la densité est la voie prouvée (le crible en quits égale le C) ; le flottant quaternaire
+  restera plus lent que le matériel binaire tant qu'il n'existe pas de processeur quaternaire. Méthode retenue : une
+  idée, un essai chiffré. Dans l'ordre : la forge range chaque tableau selon ce qu'on y écrit (adaptation automatique),
+  les pages fixées sans vérification du brin, les flottants calculés par le matériel, les carreaux sp2, la surface.
+

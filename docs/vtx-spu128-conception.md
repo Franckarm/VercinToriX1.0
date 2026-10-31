@@ -206,6 +206,10 @@ toujours vérifiée. C'est un chantier de plusieurs séances, chacune vérifiée
 
 ## 9. Les noms gaulois des machines (hommage, formes à valider avec un spécialiste)
 
+**Adoptés le 31 octobre** (décision de l'utilisateur) : l'atelier les montre dans son titre, son menu, son bouton et son
+terminal (`machine senos`, `machine dunon`, `machine lugus`), et `// machine : dunon` en tête d'un programme choisit la
+machine (les anciennes formes `spu-64`, `64`… restent comprises). Les commandes (`vtx`, `vtx64`, `lugus`) gardent leur nom.
+
 | Machine | Nom | Sens | Pourquoi |
 |---|---|---|---|
 | SPU-32 | **Senos** | vieux, ancien (dans les noms de lieu comme *Senomagos*) | la machine gelée, gardée pour la mémoire des anciens programmes |
