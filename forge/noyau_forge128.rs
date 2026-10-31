@@ -24,6 +24,8 @@ struct Ctx {
     pl: [*mut u128; 16],
     ce: [u128; 16],
     pe: [*mut u128; 16],
+    // les tableaux rangés hors du cube (l'adaptation automatique) : leur recopie dans le cube, avant toute fin
+    vider: fn(&mut Ctx),
 }
 
 /// la case d'une page dans le petit cache : son numéro et son étage mêlés
@@ -109,6 +111,7 @@ impl Ctx {
 
 /// Une erreur de la machine (écriture dans un mot ADN…) : la ligne du corpus « ERREUR … », ou le message.
 fn arreter(c: &mut Ctx, e: &str) -> ! {
+    (c.vider)(c);
     if std::env::var("FORGE_LIGNE").is_ok() {
         println!("ERREUR {}", e);
     } else {
@@ -252,13 +255,15 @@ fn finir(c: &mut Ctx) {
     print!("{}", t);
 }
 
-fn lancer_programme(principal: fn(&mut Ctx) -> u128, mots: &[u128], fin_code: u128, nom: &str, entrees: &[String]) {
+fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vider: fn(&mut Ctx), mots: &[u128], fin_code: u128,
+                    nom: &str, entrees: &[String]) {
     let mut m = Spu128::nouveau();
     m.dossier = std::env::current_dir().ok();
     m.charger(mots);
     m.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
     let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 16], pl: [std::ptr::null_mut(); 16], ce: [u128::MAX; 16],
-                      pe: [std::ptr::null_mut(); 16] };
+                      pe: [std::ptr::null_mut(); 16], vider };
+    debuter(&mut c);
     // le brin : le code, les textes écrits et les données du programme sont de l'ADN (comme au début du programme
     // compilé : MARQUE R0, FIN_CODE, 1), puis l'appel de principal (CALL : l'adresse de retour dans la pile)
     c.marquer(0, fin_code, 1);
@@ -266,6 +271,7 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, mots: &[u128], fin_code: u1
     let debut = std::time::Instant::now();
     principal(&mut c);
     let duree = debut.elapsed();
+    vider(&mut c);
     finir(&mut c);
     if std::env::var("FORGE_TEMPS").is_ok() {
         eprintln!("{} : {:.3} s", nom, duree.as_secs_f64());

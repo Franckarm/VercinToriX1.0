@@ -94,6 +94,10 @@ class Forge(V.Generateur):
         self.ramasse = None
         self.graphe = {}
         self.forgees = []
+        # l'adaptation automatique (les tableaux rangés selon ce qu'on y écrit) : ce que le premier passage a vu écrire
+        # dans chaque zone, puis le plan (zone -> (numéro, type Rust)) ; None au premier passage
+        self.ecrits = {}
+        self.plan = None
 
     def signature(self, nom, ligne):
         f = super().signature(nom, ligne)
@@ -194,6 +198,11 @@ class Forge(V.Generateur):
             out.append(f"fn f_{nom}({sig}) -> u128 {{")
         for v in locales:
             out.append(f"    let mut v_{ident(v)}: u128 = 0;")
+        # les tableaux serrés : leur adresse lue une fois (nulle s'ils restent dans le cube) ; une écriture d'octet ne
+        # peut pas la changer, la boucle reste serrée
+        for k in sorted({k for k, _ in (self.plan or {}).values()}):
+            if any(f"z{k}." in l for l in corps):
+                out.append(f"    let z{k} = unsafe {{ if ZA{k} {{ Z{k} }} else {{ std::ptr::null_mut() }} }};")
         out += corps
         out.append("    0")
         out.append("}")
@@ -224,7 +233,18 @@ class Forge(V.Generateur):
             self.ligne(self.b([b, v], "c.ecrire({0}.wrapping_add(" + str(pos) + "), {1})") + ";")
         elif g == "ecrire":
             et, adr, val = s[1], s[2], s[3]
-            if isinstance(et, int) and adr[0] == "nombre":
+            zone = s[5] if len(s) > 5 else None
+            if zone is not None and self.plan is None:
+                self.ecrits.setdefault(zone, []).append(val[1] if val[0] == "nombre" else self.typ(val))
+            if zone is not None and self.plan and zone in self.plan:
+                k, ty = self.plan[zone]
+                a = self.val(adr, "e")
+                v = self.val(val)
+                self.ligne(self.b([a, v], gabarit(f"{{ let a = @0; let v = @1; let i = ((a as u64) & 0xFFFF_FFFF_FFFF)"
+                                                  f".wrapping_sub({zone[1]}) as usize; if !z{k}.is_null() && i < "
+                                                  f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) = v as {ty}; }} }} else "
+                                                  f"{{ c.ecrire(etg(a, {et}), v); }} }}")) + ";")
+            elif isinstance(et, int) and adr[0] == "nombre":
                 a = lit((adr[1] & ~(3 << 62) & M64) | (et << 62))
                 self.ligne(self.b([self.val(val)], "c.ecrire(" + a + ", {0})") + ";")
             else:
@@ -509,6 +529,13 @@ class Forge(V.Generateur):
         if g == "quit":
             return self.b([self.val(e[1]), self.val(e[2], "e")], "((({0} as u64) >> ((({1} as u64) & 31) * 2)) & 3) as u128")
         if g == "lire":
+            zone = e[3] if len(e) > 3 else None
+            if zone is not None and self.plan and zone in self.plan:
+                k, ty = self.plan[zone]
+                return self.b([self.val(e[2], "e")], gabarit(f"{{ let a = @0; let i = ((a as u64) & 0xFFFF_FFFF_FFFF)"
+                                                            f".wrapping_sub({zone[1]}) as usize; if !z{k}.is_null() && i < "
+                                                            f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) as u128 }} }} else "
+                                                            f"{{ c.lire(etg(a, {e[1]})) }} }}"))
             if isinstance(e[1], int) and e[2][0] == "nombre":
                 return f"c.lire({lit((e[2][1] & ~(3 << 62) & M64) | (e[1] << 62))})"
             return self.b([self.adresse(e[1], e[2])], "c.lire({0})")
@@ -838,10 +865,120 @@ class Forge(V.Generateur):
                     ramasse.add(n)
                     change = True
         self.ramasse = ramasse
+        self.plan = planifier_zones(self.forgees, self.ecrits, bool(self.blobs and any(v for _, _, v in self.blobs)),
+                                    self.blobs)
         return [self.fonction_rs(f) for f in self.forgees]
 
 
 # ------------------------------------------------------------------------------------------------------------------
+# L'adaptation automatique : un tableau que seul son nom touche (aucun accès par @, aucune référence, aucun service qui
+# lit la mémoire, aucun brin posé) est rangé hors du cube, dans un tableau Rust serré, du plus petit type qui tient ce
+# qu'on y écrit : des nombres écrits jusqu'à 255 dans des octets, des entiers de 64 bits dans des u64, le reste en u128.
+# À la fin (ou à une erreur), son contenu est recopié dans le cube : la mémoire finale est celle de la machine.
+SERVICES_MEMOIRE = {6, 7, 11, 12, 13, 22}          # ils lisent ou écrivent la mémoire du programme
+TYPES_64 = {"e", "i", "s", "q"}
+
+
+def gabarit(t):
+    """Un morceau de Rust écrit avec @0, @1 pour les valeurs : la forme de bloc() (accolades doublées)."""
+    return t.replace("{", "{{").replace("}", "}}").replace("@0", "{0}").replace("@1", "{1}")
+
+
+def _parcourir(n, f):
+    if isinstance(n, tuple):
+        f(n)
+        for x in n:
+            _parcourir(x, f)
+    elif isinstance(n, list):
+        for x in n:
+            _parcourir(x, f)
+
+
+def planifier_zones(fonctions, ecrits, _blobs_presents, blobs):
+    zones, bruts, refus = set(), [], [False]
+
+    def voir(n):
+        g = n[0] if n and isinstance(n[0], str) else None
+        if g == "lire" and len(n) in (3, 4):
+            if len(n) == 4 and isinstance(n[3], tuple):
+                zones.add(n[3])
+            else:
+                bruts.append((n[1], n[2]))
+        elif g == "ecrire" and len(n) >= 5:
+            if len(n) > 5 and isinstance(n[5], tuple):
+                zones.add(n[5])
+            else:
+                bruts.append((n[1], n[2]))
+        elif g in ("champ_ref", "ecrire_champ"):
+            bruts.append((None, None))
+        elif g == "appel" and len(n) > 2 and isinstance(n[1], str):
+            nom, args = n[1], n[2]
+            if nom in ("marquer_adn", "marquer_arn", "liberer_brin", "pile", "gemv") or nom.startswith("ranger") \
+                    or nom.startswith("jeter") or nom.startswith("sauver") or nom.startswith("charger"):
+                refus[0] = True
+            if nom == "__service":
+                c = args[0] if args else None
+                if not (isinstance(c, tuple) and c[0] == "nombre" and c[1] not in SERVICES_MEMOIRE):
+                    refus[0] = True
+    for f in fonctions:
+        _parcourir(f.corps, voir)
+    for et, adr, vals in blobs:
+        if vals:
+            bruts.append((et, ("intervalle", adr, adr + len(vals))))
+    if refus[0] or any(et is None or not isinstance(et, int) for et, _ in bruts):
+        return {}
+    plan = {}
+    for z in sorted(zones):
+        et, debut, fin = z
+        if et == 0 or fin - debut < 64:
+            continue
+        if any(z2 != z and z2[0] == et and z2[1] < fin and debut < z2[2] for z2 in zones):
+            continue
+        touche = False
+        for e2, a2 in bruts:
+            if e2 != et:
+                continue
+            if a2[0] == "nombre":
+                touche = touche or debut <= (a2[1] & 0xFFFF_FFFF_FFFF) < fin
+            elif a2[0] == "intervalle":
+                touche = touche or (a2[1] < fin and debut < a2[2])
+            else:
+                touche = True
+        if touche:
+            continue
+        vus = ecrits.get(z, [])
+        if vus and all(isinstance(v, int) for v in vus):
+            m = max(vus)
+            ty = "u8" if m < 1 << 8 else "u16" if m < 1 << 16 else "u32" if m < 1 << 32 else "u64" if m < 1 << 64 else "u128"
+        elif all(isinstance(v, int) and v < 1 << 64 or v in TYPES_64 for v in vus):
+            ty = "u64"
+        else:
+            ty = "u128"
+        plan[z] = (len(plan), ty)
+    return plan
+
+
+def code_zones(plan):
+    """Les tableaux serrés : leur place, leur départ (vide, ou le cube s'il en existe sur disque pour leur étage : alors
+    ils restent dans le cube) et leur recopie dans le cube."""
+    s = []
+    for (et, debut, fin), (k, ty) in sorted(plan.items(), key=lambda x: x[1][0]):
+        s.append(f"static mut Z{k}: *mut {ty} = std::ptr::null_mut();\nstatic mut ZA{k}: bool = false;")
+    s.append("fn debuter_zones(c: &mut Ctx) {")
+    s.append("    let disque = |e: u32| c.m.dossier.as_ref().map(|d| std::fs::read_dir(d).map(|l| l.flatten().any(|f| "
+             "f.file_name().to_string_lossy().starts_with(&format!(\"cube128-{}-\", e)))).unwrap_or(false)).unwrap_or(false);")
+    for (et, debut, fin), (k, ty) in sorted(plan.items(), key=lambda x: x[1][0]):
+        s.append(f"    if !disque({et}) {{ unsafe {{ Z{k} = Box::leak(vec![0{ty}; {fin - debut}].into_boxed_slice()).as_mut_ptr(); "
+                 f"ZA{k} = true; }} }}")
+    s.append("}")
+    s.append("fn vider_zones(c: &mut Ctx) {")
+    for (et, debut, fin), (k, ty) in sorted(plan.items(), key=lambda x: x[1][0]):
+        s.append(f"    unsafe {{ if ZA{k} {{ ZA{k} = false; for i in 0..{fin - debut}usize {{ let v = *Z{k}.add(i) as u128; "
+                 f"if v != 0 {{ let _ = c.m.ecrire_mem(etg({debut}u128 + i as u128, {et}), v); }} }} }} }}")
+    s.append("}")
+    return "\n".join(s)
+
+
 ATTRIBUTS = ("#![allow(unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, dead_code, "
              "clippy::all, non_snake_case, unused_imports, unused_labels, unused_braces)]")
 MODULES = ["qflot128", "spu128", "hote", "miroir"]     # recopiés de vtx-rs/src
@@ -866,7 +1003,9 @@ def programme_rust(src, dossier=None, nom="programme"):
          f"const FIN_CODE: u128 = {etiquettes['FIN_CODE']};",
          f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n"]
     s += [x.replace(MARQUE, "") for x in fonctions]
-    s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, &MOTS, FIN_CODE, NOM, entrees);\n}\n")
+    s.append(code_zones(fo.plan or {}))
+    s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
+             "NOM, entrees);\n}\n")
     return "\n".join(s), mots
 
 

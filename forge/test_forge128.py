@@ -39,6 +39,30 @@ TMP = tempfile.mkdtemp(prefix="forge128-test-")
 # les programmes au hasard dans le langage du SPU-64 (le générateur l'écrit), puis dans celui de Lugus
 cas = [(nom, src, list(e), False) for nom, src, e, _ in vtx128.TESTS + vtx128.TESTS_128]
 cas += [(nom + " [64]", src, list(e), True) for nom, src, e, _ in vtx128.TESTS]
+# l'adaptation automatique : des tableaux que seul leur nom touche, rangés serrés hors du cube (octets, u64, u128)
+SERRES = [
+    ("serré : octets écrits", "tableau t[300] @1[0]; fonction principal() { pour i dans 0..300 { t[i] = 1; } "
+     "pour i dans 0..100 { t[i * 3] = 0; } t[7] = 255; soit s = 0; pour i dans 0..300 { s = s + t[i]; } sortie(s); }"),
+    ("serré : entiers de 64 bits, négatifs", "tableau t[500] @2[100]; fonction principal() { pour i dans 0..500 "
+     "{ t[i] = i * i - 1000; } soit s = 0; pour i dans 0..500 { s = s + t[i]; } sortie(s); sortie(t[3]); }"),
+    ("serré : flottants de 128 bits", "tableau t[200] @1[0]; fonction principal() { pour i dans 0..200 "
+     "{ t[i] = bits(flottant(i) * 1.5); } soit x = 0.0; pour i dans 0..200 { x = x + comme_flottant(t[i]); } "
+     "sortie(bits(x)); }"),
+    ("serré : structures", "structure P { x, y } tableau ps[100] de P @1[0]; fonction principal() { pour i dans 0..100 "
+     "{ ps[i].x = i; ps[i].y = i * 3; } soit s = 0; pour i dans 0..100 { s = s + ps[i].x * ps[i].y; } sortie(s); }"),
+    ("serré : deux tableaux et un accès voisin", "tableau a[100] @1[0]; tableau b[100] @1[100]; fonction principal() "
+     "{ @1[5000] = 7; pour i dans 0..100 { a[i] = i; b[i] = a[i] * 2; } sortie(a[99] + b[99] + @1[5000]); }"),
+    ("serré : indice hors du tableau", "tableau a[100] @1[0]; fonction principal() { soit k = 150; "
+     "pour i dans 0..100 { a[i] = i; } a[k] = 9; sortie(a[k] + a[99]); }"),
+    ("serré : entier_32 et logiques", "tableau a[100] @3[0]; tableau b[100] @2[0]; fonction principal() { "
+     "pour i dans 0..100 { a[i] = entier_32(i) * 7S; b[i] = entier(i % 3 == 0); } soit s = 0; "
+     "pour i dans 0..100 { s = s + entier(a[i]) + b[i]; } sortie(s); }"),
+    ("serré : points de matière", "tableau a[100] @1[0]; fonction principal() { pour i dans 0..100 "
+     "{ a[i] = bits(avec_reflet(#FF8000, i % 64)); } sortie(a[50]); sortie(comme_point(a[63]).reflet); }"),
+    ("serré : une erreur au milieu", "tableau a[100] @1[0]; fonction principal() { pour i dans 0..100 { a[i] = i + 1; } "
+     "@0[3] = 1; sortie(a[5]); }"),
+]
+cas += [(nom, src, [], False) for nom, src in SERRES]
 for k in range(N):
     src = G(random.Random(GRAINE * 7919 + k)).programme()
     cas.append((f"hasard {k} [64]", src, [], True))

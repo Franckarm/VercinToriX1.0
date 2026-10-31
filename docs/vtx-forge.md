@@ -98,19 +98,27 @@ Vérification : `forge/test_forge128.py N` forge la suite de vtx128.py dans les 
 SPU-64) et N programmes au hasard, tous dans un seul programme Rust, et compare sorties, texte et mémoire finale à Lugus
 émulé : aucun écart.
 
-| Programme | C (gcc -O2) | Rust | Lugus forgé | rapport au C | Lugus émulé | SPU-64 émulé |
+| Programme | C (gcc -O2) | Rust | Lugus forgé | rapport au C | Lugus émulé | Dunon émulé |
 |---|---|---|---|---|---|---|
-| fib(32) | 0,005 s | 0,008 s | 0,017 s | 3,4 | 1,43 s | 0,94 s |
-| crible | 0,038 s | 0,037 s | 0,160 s | 4,2 | 2,95 s | 1,76 s |
-| mandel | 0,023 s | 0,021 s | 1,27 s | 55 | 4,68 s | 3,31 s |
-| tri | 0,054 s | 0,057 s | 0,106 s | 2,0 | 1,98 s | 1,27 s |
-| adn | 0,028 s | 0,021 s | 0,020 s | **0,71** | 0,69 s | 0,35 s |
+| fib(32) | 0,004 s | 0,007 s | 0,012 s | 3,0 | 1,17 s | 0,75 s |
+| crible | 0,031 s | 0,031 s | 0,056 s | 1,8 | 2,12 s | 1,30 s |
+| mandel | 0,019 s | 0,019 s | 1,00 s | 53 | 3,76 s | 2,68 s |
+| tri | 0,045 s | 0,047 s | 0,064 s | 1,4 | 1,37 s | 0,88 s |
+| adn | 0,019 s | 0,015 s | 0,019 s | **1,0** | 0,39 s | 0,22 s |
 
-Ce qui est comparable : le crible écrit en Rust sur des cases de 128 bits prend 0,150 s (la forge est à 7 % de ce
-plancher : le mot de Lugus a 16 octets) ; Mandelbrot en C sur `__float128` (113 bits, logiciel) prend 1,10 s, Lugus
-forgé 1,27 s en flottant quaternaire de 128 bits (et 1,05 s en flottant de 64 bits, logiciel aussi). Le C en float ou
-en double calcule en matériel, avec une autre précision (et un autre résultat). Mesures : `mesures/mesurer128.py`,
-fiche `mesures/mesures-lugus.json`.
+(31 octobre, avec l'adaptation automatique ci-dessous ; avant elle : crible 4,2 fois le C, tri 2,0.)
+
+**L'adaptation automatique** : un tableau que seul son nom touche (aucun accès par `@` dans son étage, aucune
+référence, aucun service qui lit la mémoire, aucun brin posé) est rangé hors du cube, dans un tableau Rust serré, du plus
+petit type qui tient ce qu'on y écrit : des nombres écrits jusqu'à 255 dans des octets (le crible : 5 Mo au lieu de
+80), des entiers de 64 bits dans des u64 (tri, adn), le reste en u128. Un indice hors du tableau passe par le cube. À la
+fin, ou à une erreur, le tableau est recopié dans le cube : la mémoire finale reste exactement celle de Lugus émulé
+(`forge/test_forge128.py` le vérifie, avec neuf programmes écrits pour cela). S'il existe un cube sur disque pour
+l'étage du tableau, il reste dans le cube.
+
+Ce qui est comparable : Mandelbrot en C sur `__float128` (113 bits, logiciel) prend 0,88 s, Lugus forgé 1,00 s en
+flottant quaternaire de 128 bits (0,85 s en flottant de 64 bits, logiciel aussi). Le C en float ou en double calcule en
+matériel, avec une autre précision. Mesures : `mesures/mesurer128.py`, fiche `mesures/mesures-lugus.json`.
 
 ## Le labyrinthe, tout en vtx
 

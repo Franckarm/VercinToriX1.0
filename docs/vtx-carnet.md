@@ -1045,4 +1045,9 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
   restera plus lent que le matériel binaire tant qu'il n'existe pas de processeur quaternaire. Méthode retenue : une
   idée, un essai chiffré. Dans l'ordre : la forge range chaque tableau selon ce qu'on y écrit (adaptation automatique),
   les pages fixées sans vérification du brin, les flottants calculés par le matériel, les carreaux sp2, la surface.
+- **Essai 1, l'adaptation automatique** (31 octobre) : la forge range un tableau que seul son nom touche dans un tableau
+  serré, du plus petit type qui tient ce qu'on y écrit, et le recopie dans le cube à la fin (même mémoire que Lugus
+  émulé). Crible : 0,165 → 0,056 s (1,8 fois le C au lieu de 4,2) ; tri : 0,106 → 0,064 s (1,4 fois le C, plus vite que
+  le SPU-32 forgé). Limite : un tableau dont l'étage est aussi touché par `@` ou par le tas reste dans le cube. Les liaisons
+  écrites (la chimie) lèveraient cette limite : elles disent d'avance qui touche quoi.
 
