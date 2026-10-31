@@ -124,7 +124,136 @@ reaction principal() {
     = sortie(h + b)
 }
 """
+# 11. les contrats : exige (avant toute réaction), garantit (à la fin) ; rompu, la machine s'arrête en le disant
+CONTRAT = """
+reaction moyenne(a, b, n) -> m {
+    exige n != 0
+    total = a + b      -> t
+    part  = t / n      -> m
+    garantit m <= t
+}
+reaction tordue(x) -> y {
+    = x + 100          -> y
+    garantit y < 50
+}
+reaction prudente(x) -> r {
+    = si x > 10 alors x - 10 -> r
+    garantit r < 5
+}
+fonction principal() {
+    sortie(moyenne(4, 6, 2));
+    sortie(prudente(3));
+    sortie(prudente(12));
+    sortie(MODE);
+    sortie(99);
+}
+"""
+s1, t1, _ = jouer(CONTRAT.replace("MODE", "moyenne(4, 6, 0)"))
+verifier("exige rompu : la machine s'arrête et dit lequel", s1 == [5, (1 << 64) - 7, 2]
+         and t1 == "contrat rompu : moyenne exige n != 0 (ligne 3)\n", f"{s1} {t1!r}")
+s2, t2, _ = jouer(CONTRAT.replace("MODE", "tordue(1)"))
+verifier("garantit rompu : idem, après la réaction", s2 == [5, (1 << 64) - 7, 2] and "tordue garantit y < 50 (ligne 10)" in t2, f"{s2} {t2!r}")
+s3, t3, _ = jouer(CONTRAT.replace("MODE", "1"))
+verifier("une branche qui n'a pas réagi ne promet rien ; tenus, les contrats ne changent rien", s3 == [5, (1 << 64) - 7, 2, 1, 99] and t3 == "",
+         f"{s3} {t3!r}")
+for nom, src, attendu in [
+        ("exige sur autre chose qu'une entrée", "reaction f(a) -> b { = a + 1 -> b\n exige b > 0 }\nfonction principal() { sortie(f(1)); }",
+         "ne parle que des entrées"),
+        ("garantit sur une liaison absente", "reaction f(a) -> b { = a + 1 -> b\n garantit c > 0 }\nfonction principal() { sortie(f(1)); }",
+         "qu'aucun atome ne donne")]:
+    try:
+        vtx128.compiler(src)
+        verifier(f"erreur détectée : {nom}", False, "pas d'erreur")
+    except vtx128.VtxError as e:
+        verifier(f"erreur détectée : {nom}", attendu in str(e), str(e))
+
+# 12. les exemples vérifiés : rejoués à chaque compilation
+EXEMPLE = """
+reaction moyenne(a, b) -> m {
+    total  = a + b     -> t
+    moitie = t / 2     -> m
+}
+exemple moyenne(4, 6) == 5
+exemple moyenne(10, 20) == ATTENDU
+exemple moyenne(1, 1) > 0
+fonction principal() { sortie(moyenne(1, 3)); }
+"""
+verifier("des exemples justes : la compilation passe", jouer(EXEMPLE.replace("ATTENDU", "15"))[0] == [2])
+try:
+    vtx128.compiler(EXEMPLE.replace("ATTENDU", "16"))
+    verifier("un exemple faux arrête la compilation", False, "pas d'erreur")
+except vtx128.VtxError as e:
+    verifier("un exemple faux arrête la compilation, avec ce que vaut le côté gauche",
+             str(e) == "ligne 7 : l'exemple « moyenne(10, 20) == 16 » est faux : le côté gauche vaut 15", str(e))
+
+# 13. les unités physiques : suivies le long des liaisons, vérifiées à la compilation, effacées à l'exécution
+UNITES = """
+reaction chute(h: flottant m, g: flottant m/s²) -> t: flottant s {
+    = 2.0 × h            -> double
+    = double ÷ g         -> carre
+    = racine(carre)      -> t
+}
+reaction trajet() -> d {
+    = 2 km               -> aller
+    = 500 m              -> rentree
+    = 3 min              -> duree
+    = aller + rentree    -> d: m
+    = d / duree          -> vitesse: m/s
+    garantit vitesse > 0 m/s
+}
+reaction energie(masse: kg, v: m/s) -> e: J {
+    = masse × v × v      -> e
+}
+fonction principal() {
+    afficher(chute(20.0, 9.81));
+    sortie(trajet());
+    sortie(energie(2, 3));
+}
+"""
+s_, t_, _ = jouer(UNITES)
+verifier("les unités : 2 km + 500 m = 2500 m ; √(2h/g) en s ; kg·m²/s² = J", s_ == [2500, 18] and t_.startswith("2.0192751093846"),
+         f"{s_} {t_!r}")
+avant = vtx128.assembler(vtx128.compiler(UNITES.replace("garantit vitesse > 0 m/s", "")))
+sans = UNITES.replace("garantit vitesse > 0 m/s", "").replace(" m/s²", "").replace(": flottant s", ": flottant").replace("flottant m,", "flottant,") \
+    .replace("2 km", "2000").replace("500 m ", "500 ").replace("3 min", "180").replace(": m/s", "").replace("> 0 m/s", "> 0") \
+    .replace("-> d: m", "-> d").replace("masse: kg, v: m/s) -> e: J", "masse, v) -> e")
+verifier("les unités ne coûtent rien : les mêmes mots qu'écrit sans unités", vtx128.assembler(vtx128.compiler(sans)) == avant)
+for nom, (de, vers), attendu in [
+        ("des m + des s", ("= aller + rentree    -> d: m", "= aller + duree -> d"), "« + » entre des m et des s"),
+        ("une liaison déclarée dans une autre unité", ("-> vitesse: m/s", "-> vitesse: m"), "déclarée en m, et porte des m/s"),
+        ("un résultat déclaré dans une autre unité", ("-> e: J", "-> e: W"), "rend des kg·m²/s³ (déclaré), et son résultat porte des kg·m²/s²"),
+        ("un argument dans la mauvaise unité", ("sortie(trajet());", "sortie(trajet());\n}\nreaction r() -> x { = energie(2 kg, 3 s) -> x"),
+         "« energie » attend des m/s pour v, et reçoit des s"),
+        ("la racine d'une unité impaire", ("= racine(carre)", "= racine(double)"), "ne tombe pas juste"),
+        ("un entier qui ne tombe pas juste dans l'unité de base", ("= 500 m ", "= 500 g "), "écrivez-le à virgule"),
+        ("un nombre sans unité ajouté à des m", ("= 2.0 × h", "= 2.0 + h"), "des nombres sans unité et des m")]:
+    try:
+        vtx128.compiler(UNITES.replace(de, vers))
+        verifier(f"unités, erreur détectée : {nom}", False, "pas d'erreur")
+    except vtx128.VtxError as e:
+        verifier(f"unités, erreur détectée : {nom}", attendu in str(e), str(e))
+
+CHUTE = open(os.path.join(racine, "exemples128", "chute.vtx"), encoding="utf-8").read()
+s_, t_, _ = jouer(CHUTE)
+verifier("l'exemple de la chute : unités, contrats et exemples ensemble ; le message cite le source tel qu'écrit",
+         s_ == [2500] and t_.endswith("contrat rompu : chute exige h >= 0.0 (ligne 6)\n"), f"{s_} {t_!r}")
+
 lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
+if shutil.which("rustc") and os.path.exists(lugus):
+    tmp = tempfile.mkdtemp(prefix="reactions-")
+    bons = True
+    for src in [CONTRAT.replace("MODE", m) for m in ("moyenne(4, 6, 0)", "tordue(1)", "1")] + [UNITES, CHUTE]:
+        prog = os.path.join(tmp, "c.vtx")
+        open(prog, "w", encoding="utf-8").write(src)
+        mots = os.path.join(tmp, "c.mots")
+        open(mots, "w").write(",".join(map(str, vtx128.assembler(vtx128.compiler(src)))) + ";\n")
+        emule = subprocess.run([lugus, "lancer", mots], capture_output=True, text=True).stdout
+        exe = os.path.join(tmp, "c" + (".exe" if os.name == "nt" else ""))
+        subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), prog, "-o", exe], capture_output=True, text=True)
+        forge = subprocess.run([exe], capture_output=True, text=True).stdout
+        bons = bons and emule == forge and emule != ""
+    verifier("contrats et unités : Lugus (Rust) et la forge disent la même chose", bons)
+    shutil.rmtree(tmp, ignore_errors=True)
 if shutil.which("rustc") and os.path.exists(lugus):
     tmp = tempfile.mkdtemp(prefix="reactions-")
     prog = os.path.join(tmp, "parallele.vtx")

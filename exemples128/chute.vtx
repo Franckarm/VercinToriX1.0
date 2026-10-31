@@ -1,0 +1,36 @@
+// La chute d'une pierre : les unités, les contrats et les exemples vérifiés (docs/vtx-reactions.md, étape 4)
+//     python vtx128.py run exemples128/chute.vtx
+
+/// le temps de chute depuis la hauteur h : t = √(2h / g)
+reaction chute(h: flottant m, g: flottant m/s²) -> t: flottant s {
+    exige h >= 0.0
+    exige g > 0.0
+    = 2.0 × h            -> double
+    = double ÷ g         -> carre
+    = racine(carre)      -> t
+    garantit t >= 0.0
+}
+
+/// la vitesse au sol : v = g·t
+reaction impact(h: flottant m, g: flottant m/s²) -> v: flottant m/s {
+    = chute(h, g)        -> t
+    = g × t              -> v
+}
+
+/// un trajet : les kilomètres, les mètres et les minutes ramenés à l'unité de base
+reaction trajet() -> d: m {
+    = 2 km               -> aller
+    = 500 m              -> rentree
+    = aller + rentree    -> d
+}
+
+exemple trajet() == 2500
+exemple chute(0.0, 9.81) == 0.0
+exemple impact(5.0, 10.0) == 10.0
+
+fonction principal() {
+    afficher(chute(20.0, 9.81));
+    afficher(impact(20.0, 9.81));
+    sortie(trajet());
+    afficher(chute(-1.0, 9.81));
+}

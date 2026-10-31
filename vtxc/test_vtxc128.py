@@ -11,6 +11,7 @@ que vtx128.py (le langage de Lugus : flottant de 128 bits par défaut, point de 
 
     python3 vtxc/test_vtxc128.py [--complet] [--sans-point-fixe] [--seul MOT]"""
 import os
+import re
 import random
 import shutil
 import subprocess
@@ -139,7 +140,9 @@ if not seul and "--sans-point-fixe" not in sys.argv:
 if not seul:
     spu = os.path.join(racine, "vtx-rs", "target", "release", "vtx-spu" + (".exe" if os.name == "nt" else ""))
     dex = os.path.join(racine, "exemples128")
-    exs = sorted(f for f in os.listdir(dex) if f.endswith(".vtx"))
+    # les réactions (panel, mandel_reaction, chute) : vtxc128 ne les lit pas encore (étape 4 de docs/vtx-reactions.md)
+    exs = sorted(f for f in os.listdir(dex) if f.endswith(".vtx")
+                 and not re.search(r"^\s*reaction\s", open(os.path.join(dex, f), encoding="utf-8").read(), re.M))
     ecarts = []
     for f in exs:
         r = subprocess.run([spu, "essai-pas128", os.path.join(dex, f)], cwd=TMP, capture_output=True, text=True,

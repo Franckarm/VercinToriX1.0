@@ -228,7 +228,7 @@ JETON = re.compile(
     |(?P<flt>\d[\d_]*\.\d[\d_]*(?:[eE][-+]?\d+)?|\d[\d_]*[eE][-+]?\d+)|(?P<dec>\d[\d_]*)
     |(?P<car>'(?:\\.|[^'\\\n])')|(?P<str>"(?:\\.|[^"\\\n])*")
     |(?P<id>[^\W\d]\w*)
-    |(?P<op><<q|>>q|->|<<|>>|<=|>=|==|!=|&&|\|\||\.>>|\.<=|\.>=|\.<|\.>|\./|\.%|\.\.|[-+*/%&|^~<>=@\[\](){};,.!:×÷])""",
+    |(?P<op><<q|>>q|->|<<|>>|<=|>=|==|!=|&&|\|\||\.>>|\.<=|\.>=|\.<|\.>|\./|\.%|\.\.|[-+*/%&|^~<>=@\[\](){};,.!:×÷°·])""",
     re.X,
 )
 
@@ -289,8 +289,10 @@ def lexer(src, compat=None):
     """Les jetons. compat : les couleurs écrites au sens du SPU-64 (le prélude, et COMPAT_64)."""
     compat = COMPAT_64 if compat is None else compat
     src = ADN_LIT.sub(_adn_valeur, src)
-    jetons, pos, ligne = [], 0, 1
+    jetons, pos, ligne = Jetons(), 0, 1
     while pos < len(src):
+        if len(jetons.bruts) < len(jetons):
+            jetons.bruts.append(texte)
         m = JETON.match(src, pos)
         if not m:
             raise VtxError(f"ligne {ligne} : caractère inattendu {src[pos]!r}")
@@ -358,8 +360,18 @@ def lexer(src, compat=None):
             if v > MASK:
                 raise VtxError(f"ligne {ligne} : nombre trop grand pour 64 bits")
             jetons.append(("num", v, ligne))
+    if len(jetons.bruts) < len(jetons):
+        jetons.bruts.append(texte)
     jetons.append(("eof", None, ligne))
+    jetons.bruts.append("")
     return jetons
+
+
+class Jetons(list):
+    """les jetons, et le texte écrit de chacun (pour les messages : un flottant y est écrit comme dans le source)"""
+    def __init__(self):
+        super().__init__()
+        self.bruts = []
 
 
 # priorité (du plus faible au plus fort) : comme en Rust, le bit à bit lie plus fort que les comparaisons
@@ -422,6 +434,58 @@ class Fonction:
         self.rtype = rtype
 
 
+# ------------------------------------------------------------------------------------------------ les unités physiques
+# Dans une réaction, un nombre peut porter son unité (« 9.81 m/s² », « 30 °/s », « 2 km ») ; le compilateur suit les
+# unités le long des liaisons et refuse d'additionner des mètres et des secondes. La valeur est rangée dans l'unité de
+# base (2 km devient 2000, en mètres) ; à l'exécution, plus rien ne reste des unités : leur vérification ne coûte rien.
+BASES = ("kg", "m", "s", "A", "K", "mol", "cd", "°")
+UNITES = {   # symbole -> (facteur vers la base, {base: exposant})
+    "m": (1, {"m": 1}), "kg": (1, {"kg": 1}), "s": (1, {"s": 1}), "A": (1, {"A": 1}), "K": (1, {"K": 1}),
+    "mol": (1, {"mol": 1}), "cd": (1, {"cd": 1}), "°": (1, {"°": 1}),
+    "km": (1000, {"m": 1}), "cm": (0.01, {"m": 1}), "mm": (0.001, {"m": 1}), "g": (0.001, {"kg": 1}),
+    "ms": (0.001, {"s": 1}), "min": (60, {"s": 1}), "h": (3600, {"s": 1}),
+    "N": (1, {"kg": 1, "m": 1, "s": -2}), "J": (1, {"kg": 1, "m": 2, "s": -2}), "W": (1, {"kg": 1, "m": 2, "s": -3}),
+    "Pa": (1, {"kg": 1, "m": -1, "s": -2}), "Hz": (1, {"s": -1}), "C": (1, {"A": 1, "s": 1}),
+    "V": (1, {"kg": 1, "m": 2, "s": -3, "A": -1}), "Ω": (1, {"kg": 1, "m": 2, "s": -3, "A": -2}),
+}
+EXPOSANTS = {"²": 2, "³": 3}
+QUELCONQUE = None           # l'unité d'une valeur qu'on ne connaît pas (un appel de fonction ordinaire, le zéro) : tout lui va
+
+
+def unite_texte(u):
+    if u is QUELCONQUE:
+        return "?"
+    if not u:
+        return "sans unité"
+    haut = [b + ("" if u[b] == 1 else "²" if u[b] == 2 else "³" if u[b] == 3 else f"^{u[b]}") for b in BASES if u.get(b, 0) > 0]
+    bas = [b + ("" if -u[b] == 1 else "²" if -u[b] == 2 else "³" if -u[b] == 3 else f"^{-u[b]}") for b in BASES if u.get(b, 0) < 0]
+    return ("·".join(haut) or "1") + ("/" + "·".join(bas) if bas else "")
+
+
+def unite_produit(a, b, signe=1):
+    if a is QUELCONQUE or b is QUELCONQUE:
+        return QUELCONQUE
+    r = dict(a)
+    for k, v in b.items():
+        r[k] = r.get(k, 0) + signe * v
+        if r[k] == 0:
+            del r[k]
+    return r
+
+
+def symbole_unite(k, v):
+    """(symbole, exposant) si le jeton commence une unité (m, s², km, °…), sinon None"""
+    if k == "op" and v == "°":
+        return "°", 1
+    if k != "id":
+        return None
+    exp = 1
+    while v and v[-1] in EXPOSANTS:
+        exp *= EXPOSANTS[v[-1]]
+        v = v[:-1]
+    return (v, exp) if v in UNITES else None
+
+
 REACTIONS = {}          # nom -> Molecule : la dernière compilation (pour le rapport « molecule »)
 MASSE_ATOME = {"H": 1, "C": 12, "N": 14, "O": 16}
 ELEMENT_VALENCE = {1: "H", 2: "O", 3: "N", 4: "C"}
@@ -481,8 +545,11 @@ class Atome:
 class Molecule:
     """Une réaction : ses atomes, leurs liaisons, leurs vagues, sa formule."""
 
-    def __init__(self, nom, params, atomes, ligne):
+    def __init__(self, nom, params, atomes, ligne, contrats=(), resultat=None):
         self.nom, self.params, self.atomes, self.ligne = nom, params, atomes, ligne
+        self.contrats = list(contrats)
+        self.resultat = resultat
+        self.unites_entrees, self.unite_declaree, self.unites = {}, None, None
         donne = {}
         for a in atomes:
             if a.genre == "rendezvous" and len(a.sorties) != len(a.quoi):
@@ -494,6 +561,15 @@ class Molecule:
                     raise VtxError(f"ligne {a.ligne} : la liaison « {s_} » est déjà donnée (ligne {donne[s_].ligne if s_ in donne else ligne})")
                 donne[s_] = a
         self.donne = donne
+        # les contrats : exige ne parle que des entrées (il est vérifié avant toute réaction) ; garantit, de ce que la
+        # réaction donne (vérifié à la fin)
+        for c in self.contrats:
+            for v in variables_de(c[2], []):
+                if c[1] == "exige" and v not in params:
+                    raise VtxError(f"ligne {c[4]} : « exige » ne parle que des entrées de la réaction ({', '.join(params) or 'aucune'}) : "
+                                   f"« {v} » n'en est pas une")
+                if c[1] == "garantit" and v not in params and v not in donne and v != resultat:
+                    raise VtxError(f"ligne {c[4]} : « garantit » parle de « {v} », qu'aucun atome ne donne")
         for a in atomes:
             lus = variables_de(a.quoi, [])
             if a.genre == "chaque":
@@ -566,6 +642,134 @@ class Molecule:
                 lecteurs[e] = lecteurs.get(e, 0) + 1
         self.copies = {e: n for e, n in lecteurs.items() if n > 1}
 
+    CONVERSIONS = {"flottant", "flottant_64", "flottant_32", "flottant_petuar", "flottant_128", "entier", "entier_32",
+                   "entier_128", "entier_petuar", "arrondi", "plancher", "plafond", "abs", "valeur_absolue"}
+
+    def verifier_unites(self, molecules, en_cours=None):
+        """Suit les unités le long des liaisons, vague après vague ; refuse ce qui ne s'accorde pas ; puis efface les
+        unités des expressions (à l'exécution, il n'en reste rien)."""
+        if getattr(self, "unites", None) is not None:
+            return
+        en_cours = en_cours or set()
+        if self.nom in en_cours:            # une réaction qui s'appelle elle-même : son unité est celle déclarée
+            return
+        en_cours.add(self.nom)
+        env = {p: self.unites_entrees.get(p, QUELCONQUE) for p in self.params}
+
+        def des(x):
+            return "des nombres sans unité" if x == {} else f"des {unite_texte(x)}"
+
+        def accord(a, b, quoi, l):
+            if a is not QUELCONQUE and b is not QUELCONQUE and a != b:
+                raise VtxError(f"ligne {l} : « {quoi} » entre {des(a)} et {des(b)} : les unités ne s'accordent pas")
+            return b if a is QUELCONQUE else a
+
+        def u(e, l):
+            if not isinstance(e, tuple) or not e:
+                return QUELCONQUE
+            g = e[0]
+            if g in ("nombre", "fnombre", "xnombre"):
+                zero = {"nombre": 0, "fnombre": bits_quaternaire(Q64, "0.0", l), "xnombre": bits_petuar_decimal("0.0", l)}[g]
+                return QUELCONQUE if e[1] in (0, zero) else {}
+            if g == "unite":
+                return e[2]
+            if g == "var":
+                return env.get(e[1], QUELCONQUE)
+            if g == "bin":
+                op, a, b = e[1], u(e[2], l), u(e[3], l)
+                if op in ("+", "-"):
+                    return accord(a, b, op, l)
+                if op in ("*",):
+                    return unite_produit(a, b)
+                if op in ("/", "./"):
+                    return unite_produit(a, b, -1)
+                if op in ("%", ".%"):
+                    accord(a, b, "%", l)
+                    return a
+                if op in ("<", ">", "<=", ">=", "==", "!=", ".<", ".>", ".<=", ".>="):
+                    accord(a, b, op, l)
+                    return {}
+                if op in ("&&", "||"):
+                    return {}
+                return QUELCONQUE
+            if g == "appel":
+                nom, args = e[1], e[2]
+                ua = [u(x, l) for x in args]
+                if nom in molecules and nom != self.nom:
+                    m = molecules[nom]
+                    m.verifier_unites(molecules, en_cours)
+                    for p, x in zip(m.params, ua):
+                        if p in m.unites_entrees and x is not QUELCONQUE and x != m.unites_entrees[p]:
+                            raise VtxError(f"ligne {l} : « {nom} » attend des {unite_texte(m.unites_entrees[p])} pour {p}, "
+                                           f"et reçoit des {unite_texte(x)}")
+                    return m.unite_resultat
+                if nom in self.CONVERSIONS and len(ua) == 1:
+                    return ua[0]
+                if nom in ("min", "max") and len(ua) == 2:
+                    return accord(ua[0], ua[1], nom, l)
+                if nom == "racine" and len(ua) == 1 and ua[0] is not QUELCONQUE:
+                    if any(v % 2 for v in ua[0].values()):
+                        raise VtxError(f"ligne {l} : la racine de {unite_texte(ua[0])} ne tombe pas juste (un exposant impair)")
+                    return {k: v // 2 for k, v in ua[0].items()}
+                return QUELCONQUE
+            for x in e[1:]:
+                if isinstance(x, (tuple, list)):
+                    for y in (x if isinstance(x, list) else [x]):
+                        u(y, l)
+            return QUELCONQUE
+
+        for vague in self.vagues:
+            for a in vague:
+                l = a.ligne
+                if a.genre == "calcul":
+                    sorties = [u(a.quoi, l)]
+                elif a.genre == "si":
+                    cond, x, y = a.quoi
+                    u(cond, l)
+                    ux = u(x, l)
+                    sorties = [accord(ux, u(y, l), "si … sinon", l) if y is not None else ux]
+                elif a.genre == "rendezvous":
+                    sorties = [u(x, l) for x in a.quoi]
+                elif a.genre == "chaque":
+                    red, var, a_, b_, corps_ = a.quoi
+                    env[var] = {}
+                    sorties = [u(corps_, l)]
+                    del env[var]
+                elif a.genre == "pont":
+                    sorties = [u(a.quoi[0], l)]
+                else:
+                    sorties = [QUELCONQUE]
+                for s_, us in zip(a.sorties, sorties):
+                    dec = getattr(a, "unites_declarees", {}).get(s_)
+                    if dec is not None and us is not QUELCONQUE and us != dec:
+                        raise VtxError(f"ligne {l} : la liaison « {s_} » est déclarée en {unite_texte(dec)}, et porte des "
+                                       f"{unite_texte(us)}")
+                    env[s_] = dec if dec is not None else us
+        for c in self.contrats:
+            u(c[2], c[4])
+        self.unites = env
+        if self.resultat is not None:
+            r = env.get(self.resultat, QUELCONQUE)
+            if self.unite_declaree is not None and r is not QUELCONQUE and r != self.unite_declaree:
+                raise VtxError(f"ligne {self.ligne} : la réaction {self.nom} rend des {unite_texte(self.unite_declaree)} "
+                               f"(déclaré), et son résultat porte des {unite_texte(r)}")
+            self.unite_resultat = self.unite_declaree if self.unite_declaree is not None else r
+        else:
+            self.unite_resultat = QUELCONQUE
+        # à l'exécution, plus rien ne reste des unités
+
+        def effacer(e):
+            if isinstance(e, list):
+                return [effacer(x) for x in e]
+            if not isinstance(e, tuple) or not e:
+                return e
+            if e[0] == "unite":
+                return effacer(e[1])
+            return tuple(effacer(x) if isinstance(x, (tuple, list)) else x for x in e)
+        for a in self.atomes:
+            a.quoi = effacer(a.quoi)
+        self.contrats = [c[:2] + (effacer(c[2]),) + c[3:] for c in self.contrats]
+
     def elements(self):
         """(atome ou copie, élément) d'après la valence : 1 H, 2 O, 3 N, 4 C ; au-delà, une chaîne de C"""
         el = []
@@ -590,6 +794,16 @@ class Molecule:
         sinon, et ce qui en dépend) a son drapeau __ok ; les atomes qui touchent le monde ne réagissent que s'il est vrai."""
         st = []
         ok = {}                      # liaison -> nom de son drapeau, si elle peut porter faux
+
+        def verifier(c, garde=None):
+            """si la condition est fausse : le message, puis la machine s'arrête"""
+            _, _, cond, msg, l, _ = c
+            rompu = [("expr", ("appel", "afficher", [msg], l), l), ("expr", ("appel", "__rompre", [], l), l)]
+            test = ("si", cond, [], rompu, l)
+            return test if garde is None else ("si", ("bin", "!=", garde, ("nombre", 0)), [test], None, l)
+        for c in self.contrats:
+            if c[1] == "exige":
+                st.append(verifier(c))
         def appelle(e):
             """l'expression appelle-t-elle une fonction du programme (un atome lourd) ?"""
             trouve = []
@@ -676,6 +890,14 @@ class Molecule:
                 else:
                     ins = ("expr", a.quoi, l)
                     st.append(ins if garde is None else ("si", ("bin", "!=", garde, ("nombre", 0)), [ins], None, l))
+        for c in self.contrats:
+            if c[1] == "garantit":
+                # une liaison qui porte faux (la branche n'a pas réagi) ne promet rien : vérifié seulement si elle est là
+                drapeaux = sorted({ok[v] for v in variables_de(c[2], []) if v in ok})
+                garde = None
+                for d in drapeaux:
+                    garde = ("var", d, c[4]) if garde is None else ("bin", "&", garde, ("var", d, c[4]))
+                st.append(verifier(c, garde))
         if resultat is not None:
             if resultat not in self.donne and resultat not in self.params:
                 raise VtxError(f"ligne {self.ligne} : la réaction rend « {resultat} », qu'aucun atome ne donne")
@@ -697,6 +919,11 @@ class Molecule:
             t.append(f"  vague {k} : " + ", ".join(f"{a.nom_affiche()} ({el[a.nom_affiche()]})" for a in v))
         if self.copies:
             t.append("  copies : " + ", ".join(f"{e} ({el['copie de ' + e]}, lue {n} fois)" for e, n in self.copies.items()))
+        if self.contrats:
+            t.append("  contrats : " + " ; ".join(f"{c[1]} {c[5]}" for c in self.contrats))
+        connues = {k: v for k, v in (self.unites or {}).items() if v is not QUELCONQUE and v != {}}
+        if connues:
+            t.append("  unités : " + ", ".join(f"{k} en {unite_texte(v)}" for k, v in connues.items()))
         return "\n".join(t)
 
 
@@ -708,6 +935,7 @@ class Analyseur:
         self.types_champs = {}            # structure -> {champ : type}
         self.structs, self.tableaux = {}, {}
         self.ctx, self.nhyp = [], 0
+        self.exemples = []                # (expression, ligne, texte) : rejoués à chaque compilation
 
     def regard(self, k=0):
         return self.t[min(self.i + k, len(self.t) - 1)]
@@ -788,6 +1016,50 @@ class Analyseur:
         if v in self.consts:
             raise VtxError(f"ligne {l} : « {v} » est une constante : une variable ne peut pas porter son nom")
         return v
+
+    def unite_ecrite(self):
+        """m, m/s², kg·m/s², °/s : (facteur vers la base, {base: exposant}) ; après un nombre, « / » suivi d'une unité fait
+        partie de l'unité (pour diviser par une liaison qui porte un nom d'unité : « (2 m) / h »)"""
+        facteur, dims, signe = 1, {}, 1
+        while True:
+            k, v, l = self.suivant()
+            sym, exp = symbole_unite(k, v)
+            f, d = UNITES[sym]
+            facteur *= f ** (exp * signe)
+            dims = unite_produit(dims, {b: e * exp for b, e in d.items()}, signe)
+            k, v, _ = self.regard()
+            if k == "op" and v in ("/", "·") and symbole_unite(*self.regard(1)[:2]):
+                signe = -1 if v == "/" else 1
+                self.suivant()
+                continue
+            return facteur, dims
+
+    def avec_unite(self, e):
+        l = self.regard()[2]
+        i0 = self.i
+        facteur, dims = self.unite_ecrite()
+        ecrite = self.texte_jetons(i0).replace(" ", "")
+        if facteur != 1:
+            if e[0] == "nombre" and float(facteur).is_integer():
+                e = ("nombre", e[1] * int(facteur))
+            elif e[0] == "nombre":
+                raise VtxError(f"ligne {l} : {e[1]} {ecrite} n'est pas un nombre entier dans l'unité de base "
+                               f"({unite_texte(dims)}) : écrivez-le à virgule ({e[1]}.0)")
+            else:
+                ft = repr(float(facteur)) if not float(facteur).is_integer() else f"{int(facteur)}.0"
+                e = ("bin", "*", e, ("xnombre", bits_petuar_decimal(ft, l)) if e[0] == "xnombre"
+                     else ("fnombre", bits_quaternaire(Q64, ft, l)))
+        return ("unite", e, dims)
+
+    def type_et_unite(self):
+        """« : type », « : unité » ou « : type unité » ; (type ou None, unité ou None)"""
+        if not self.est_op(":"):
+            return None, None
+        if symbole_unite(*self.regard(1)[:2]):
+            self.suivant()
+            return None, self.unite_ecrite()[1]
+        t = self.type_opt()
+        return t, (self.unite_ecrite()[1] if symbole_unite(*self.regard()[:2]) else None)
 
     def type_opt(self):
         """Annotation de type facultative : « : flottant », « : long » ou « : entier »."""
@@ -901,6 +1173,15 @@ class Analyseur:
                 self.suivant()
                 fonctions.append(self.reaction(l))
                 continue
+            if k == "id" and v == "exemple":
+                # exemple moyenne(4, 6) == 5 : une preuve de bon fonctionnement, rejouée à chaque compilation
+                self.suivant()
+                i0 = self.i
+                e = self.expr()
+                self.exemples.append((e, l, self.texte_jetons(i0)))
+                if self.est_op(";"):
+                    self.suivant()
+                continue
             self.suivant()
             if not (k == "kw" and v == "fonction"):
                 raise VtxError(f"ligne {l} : « fonction » attendu")
@@ -923,6 +1204,9 @@ class Analyseur:
             # de même
             fonctions[-1].rangee = not el_parcourir(corps, lambda n: n[0] not in ("rangee_lire", "rangee_ecrire"))
         connues = {f.nom for f in fonctions}
+        molecules = {f.nom: f.molecule for f in fonctions if getattr(f, "molecule", None) is not None}
+        for m in molecules.values():
+            m.verifier_unites(molecules)
         for f in fonctions:
             if getattr(f, "molecule", None) is not None:
                 f.molecule.fonctions_connues = connues
@@ -943,24 +1227,34 @@ class Analyseur:
     def reaction(self, l):
         nom = self.identifiant()
         self.attendre("(")
-        params, ptypes = [], []
+        params, ptypes, unites = [], [], {}
         while not self.est_op(")"):
             params.append(self.nom_variable())
-            ptypes.append(self.type_opt() or "e")
+            t, u = self.type_et_unite()
+            ptypes.append(t or "e")
+            if u is not None:
+                unites[params[-1]] = u
             if self.est_op(","):
                 self.suivant()
         self.attendre(")")
-        resultat, rtype = None, "e"
+        resultat, rtype, runite = None, "e", None
         if self.est_op("->"):
             self.suivant()
             resultat = self.identifiant()
-            rtype = self.type_opt() or "e"
+            t, runite = self.type_et_unite()
+            rtype = t or "e"
         self.attendre("{")
-        atomes = []
-        while not self.est_op("}"):
-            atomes.append(self.atome())
+        atomes, contrats = [], []
+        self.dans_reaction = True
+        try:
+            while not self.est_op("}"):
+                x = self.atome(nom)
+                (contrats if isinstance(x, tuple) else atomes).append(x)
+        finally:
+            self.dans_reaction = False
         self.attendre("}")
-        mol = Molecule(nom, params, atomes, l)
+        mol = Molecule(nom, params, atomes, l, contrats, resultat)
+        mol.unites_entrees, mol.unite_declaree = unites, runite
         REACTIONS[nom] = mol
         # le corps est écrit à la fin du programme (programme()) : toutes les fonctions sont alors connues
         f = Fonction(nom, params, [], l, ptypes, rtype)
@@ -969,9 +1263,35 @@ class Analyseur:
         f.resultat = resultat
         return f
 
-    def atome(self):
-        """[nom =] ce que fait l'atome [-> liaison, …] [;]"""
+    def texte_jetons(self, i0):
+        """le texte des jetons lus depuis i0 (pour les messages : la condition d'un contrat, un exemple)"""
+        morceaux = []
+        bruts = getattr(self.t, "bruts", None)
+        for j, (k, v, _) in enumerate(self.t[i0:self.i], i0):
+            v = f'"{v}"' if k == "str" else bruts[j] if bruts is not None and j < len(bruts) else str(v)
+            colle = morceaux and (v in (")", "]", ",", ".") or morceaux[-1] in ("(", "[", "."))
+            if morceaux and v == "(" and morceaux[-1][-1:].isalnum():
+                colle = True
+            morceaux.append(v if not morceaux else (v if colle else " " + v))
+        return "".join(morceaux)
+
+    def contrat(self, genre, l, nom):
+        """exige / garantit : la condition, et le message écrit si elle est fausse"""
+        i0 = self.i
+        cond = self.expr()
+        texte = self.texte_jetons(i0)
+        if self.est_op(";"):
+            self.suivant()
+        msg = f"contrat rompu : {nom} {genre} {texte} (ligne {l})"
+        n = self.textes.setdefault(msg, len(self.textes))
+        return ("contrat", genre, cond, ("etiq", f"TEXTE{n}"), l, texte)
+
+    def atome(self, nom_reaction="?"):
+        """[nom =] ce que fait l'atome [-> liaison, …] [;] ; ou un contrat : exige / garantit condition"""
         k, v, l = self.regard()
+        if k == "id" and v in ("exige", "garantit") and self.regard(1)[:2] != ("op", "="):
+            self.suivant()
+            return self.contrat(v, l, nom_reaction)
         nom = None
         if k == "id" and self.regard(1)[:2] == ("op", "="):
             nom = v
@@ -1038,13 +1358,17 @@ class Analyseur:
             genre, quoi = "pont", (x, m)
         else:
             genre, quoi = "calcul", self.expr()
-        sorties = []
+        sorties, declarees = [], {}
         if self.est_op("->"):
             self.suivant()
-            sorties.append(self.nom_variable())
-            while self.est_op(","):
-                self.suivant()
+            while True:
                 sorties.append(self.nom_variable())
+                _t, u = self.type_et_unite()
+                if u is not None:
+                    declarees[sorties[-1]] = u
+                if not self.est_op(","):
+                    break
+                self.suivant()
         apres = []
         if self.regard()[:2] == ("id", "apres"):
             self.suivant()
@@ -1056,6 +1380,7 @@ class Analyseur:
             self.suivant()
         a_ = Atome(nom, genre, quoi, sorties, l)
         a_.apres = apres
+        a_.unites_declarees = declarees
         return a_
 
     def une_constante(self, l):
@@ -1142,7 +1467,11 @@ class Analyseur:
             elif k == "op" and v in (")", "]", "}"):
                 prof -= 1
             k_ += 1
-        self.t = t[:i] + nouveaux + t[k_ + 1:]
+        bruts = getattr(t, "bruts", None)
+        self.t = Jetons()
+        self.t.extend(t[:i] + nouveaux + t[k_ + 1:])
+        if bruts is not None:
+            self.t.bruts = bruts[:i] + [str(v) for _, v, _ in nouveaux] + bruts[k_ + 1:]
 
     def instruction(self):
         self.serie()
@@ -1724,6 +2053,9 @@ class Analyseur:
             self.suivant()
             return ("bin", "-", ("nombre", 0), self.unaire())
         e = self.primaire()
+        if getattr(self, "dans_reaction", False) and e[0] in ("nombre", "fnombre", "xnombre") \
+                and symbole_unite(*self.regard()[:2]):
+            return self.avec_unite(e)
         while self.est_op(".", "["):
             if self.est_op("["):
                 # t[i] d'un tableau dynamique (tableau(n), [a, b, c]) : la case i de son bloc de données
@@ -5636,7 +5968,7 @@ INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "flottant_petuar_signe": 1,
             "entier_128": 1, "entier_petuar": 1, "entier_128_signe": 1, "entier_petuar_signe": 1, "entier_128_de": 2,
             "entier_petuar_de": 2, "bas": 1, "haut": 1,
             "lire_car": 1, "ecrire_car": 2, "ouvrir_lecture": 1, "ouvrir_ecriture": 1, "fermer": 1, "fin_de": 1, "bruit": 0,
-            "pile": 0, "__service": 2, "sortie": 1, "entrée": 0, "min4": 2, "max4": 2, "addm4": 2, "cmp3": 1, "gdot": 2,
+            "pile": 0, "__service": 2, "__rompre": 0, "sortie": 1, "entrée": 0, "min4": 2, "max4": 2, "addm4": 2, "cmp3": 1, "gdot": 2,
             "gemv": 5, "qegal": 2, "nb_bits": 1, "mul_haut": 2, "mul_haut_signe": 2,
             "brin": 1, "marquer_adn": 2, "marquer_arn": 2, "liberer_brin": 2,
             "flottant": 1, "flottant_64": 1, "flottant_32": 1, "flottant_signe": 1, "entier": 1, "entier_32": 1,
@@ -7552,6 +7884,8 @@ class Generateur:
             elif nom == "cmp3":
                 self.expr(args[0], "e")
                 self.emettre("CMP3 R1,R1")
+            elif nom == "__rompre":
+                self.emettre("HALT")
             elif nom == "lire_car":
                 self.expr(args[0], "e")
                 self.emettre("ENTC R1,R1")
@@ -8298,10 +8632,46 @@ def sans_type_texte(x):
     return x
 
 
-def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
+EXEMPLES = True        # rejouer les exemples écrits (« exemple f(2) == 4 ») à chaque compilation
+
+
+def verifier_exemples(src, exemples, prelude, optim):
+    """Les exemples du programme, rejoués sur Lugus émulé : un programme fait des mêmes fonctions, dont le principal
+    calcule chaque exemple (vrai ou faux, puis ce que vaut le côté gauche d'une égalité, pour le message)."""
+    def principal(a, fs):
+        corps = []
+        for e, l, _t in a.exemples:
+            corps.append(("si", e, [("expr", ("appel", "sortie", [("nombre", 1)], l), l)],
+                          [("expr", ("appel", "sortie", [("nombre", 0)], l), l)], l))
+            gauche = e[2] if e[0] == "bin" and e[1] == "==" else e
+            corps.append(("expr", ("appel", "afficher", [gauche], l), l))
+        f = Fonction("principal", [], a.abaisser(corps), 1, [], "e")
+        f.rangee = False
+        return [x for x in fs if x.nom != "principal"] + [f]
+    asm = _compiler(src, prelude, optim, partition=False, remplacer=principal)
+    cpu = CPU()
+    cpu.charger(assembler(asm))
+    try:
+        cpu.executer(50_000_000)
+    except _spu128.Erreur as e:
+        raise VtxError(f"ligne {exemples[0][1]} : les exemples n'ont pas pu être rejoués : {e}") from None
+    obtenus = "".join(chr(c & 0x1FFFFF) for c in cpu.texte).split("\n")
+    for k, (e, l, texte) in enumerate(exemples):
+        bon = k < len(cpu.sortie) and cpu.sortie[k] == 1
+        if not bon:
+            vu = obtenus[k] if k < len(obtenus) else "?"
+            detail = f" : le côté gauche vaut {vu}" if e[0] == "bin" and e[1] == "==" else ""
+            raise VtxError(f"ligne {l} : l'exemple « {texte} » est faux{detail}")
+
+
+def _compiler(src, prelude=True, optim=True, partition=True, melange=None, remplacer=None):
     a = Analyseur(lexer(src))
     a.compat = COMPAT_64
     fs = a.programme()
+    if remplacer is not None:
+        fs = remplacer(a, fs)
+    elif a.exemples and EXEMPLES:
+        verifier_exemples(src, a.exemples, prelude, optim)
     if a.donnees:
         fs = injecter_donnees(fs, a.donnees)
     if prelude:
@@ -8374,7 +8744,7 @@ def ensembles_conflit(za, zb):
 class Effets:
     """Lectures et écritures (zones) de chaque fonction, appels compris (point fixe)."""
 
-    INTEGRES_EFFETS = {"sortie": ({ES}, {ES}), "entrée": ({ES}, {ES}), "bruit": ({ES}, {ES}), "pile": ({ES}, {ES}), "__service": ({ES, TOUT}, {ES, TOUT}), "gemv": ({(2, 0, 1 << 24)}, {(2, 0, 1 << 24)}),
+    INTEGRES_EFFETS = {"__rompre": ({ES, TOUT}, {ES, TOUT}), "sortie": ({ES}, {ES}), "entrée": ({ES}, {ES}), "bruit": ({ES}, {ES}), "pile": ({ES}, {ES}), "__service": ({ES, TOUT}, {ES, TOUT}), "gemv": ({(2, 0, 1 << 24)}, {(2, 0, 1 << 24)}),
                        **{n: ({ES, TOUT}, {ES}) for n in ("lire_car", "ecrire_car", "ouvrir_lecture", "ouvrir_ecriture",
                                                           "fermer", "fin_de")}}
 

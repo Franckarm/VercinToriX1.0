@@ -341,7 +341,7 @@ class Forge(V.Generateur):
     # n'écrit la mémoire, ne touche pas le monde) et rend un entier de 64 bits, la vague est partagée entre les cœurs ;
     # chaque fil a sa propre machine (pile comprise), et la réduction (associative sur les entiers) donne le même
     # résultat que la machine émulée, dans n'importe quel ordre.
-    EFFETS = {"sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture", "ouvrir_ecriture",
+    EFFETS = {"__rompre", "sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture", "ouvrir_ecriture",
               "fermer", "fin_de", "bruit", "pile", "marquer_adn", "marquer_arn", "liberer_brin", "brin", "gemv", "tableau",
               "nouveau", "nouveau_de", "ecrire", "texte", "presenter", "ecran", "pixel"}
     INTERDITS = {"lire", "ecrire", "champ_ref", "ecrire_champ", "asm", "accord", "segments", "mem", "rangee_lire",
@@ -742,6 +742,9 @@ class Forge(V.Generateur):
         e1 = lambda: self.val(a[0], "e")  # noqa: E731
         if nom == "sortie":
             return self.b([self.val(a[0])], "{{ c.m.sortie.push({0}); 0u128 }}")
+        if nom == "__rompre":
+            # un contrat rompu : comme HALT, la machine s'arrête (ce qui est en mémoire, les sorties et le texte restent)
+            return "{ (c.vider)(c); finir(c); std::process::exit(0) }"
         if nom == "entrée":
             return "c.m.entree.pop_front().unwrap_or(0)"
         if nom == "cmp3":

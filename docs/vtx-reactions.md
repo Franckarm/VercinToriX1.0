@@ -317,3 +317,35 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   d'un quart du cube, elle se fait sentir. La règle qui en découle : ouvrir un deuxième cube de molécules (fréquence
   13…) quand le premier passe le quart, comme on ajoute une étagère.
 
+- **Étape 4, la sûreté, premier temps** (vtx128.py ; l'exemple `exemples128/chute.vtx`) :
+  - **les contrats**, ce sont les conditions de la réaction :
+    - `exige` parle des entrées et est vérifié avant toute réaction ;
+    - `garantit` parle de ce que la réaction donne et est vérifié à la fin ; une liaison qui porte faux (sa branche n'a
+      pas réagi) ne promet rien.
+    - Quand un contrat est rompu, la machine écrit `contrat rompu : chute exige h >= 0.0 (ligne 6)` et s'arrête (l'intégré
+      `__rompre`, l'instruction HALT ; la forge fait de même). C'est un choix : une condition rompue est une erreur du
+      programme, pas une valeur à propager ; les erreurs de calcul (division par zéro…) resteront des liaisons
+      variables (2.8).
+  - **les exemples vérifiés** : `exemple trajet() == 2500`, écrit hors des fonctions, est rejoué à chaque compilation (sur
+    Lugus émulé). S'il est faux, la compilation s'arrête : `ligne 7 : l'exemple « moyenne(10, 20) == 16 » est faux : le
+    côté gauche vaut 15`. `vtx128.EXEMPLES = False` les saute.
+  - **les unités physiques** :
+    - `= 9.81 m/s² -> g`, `= 2 km -> d`, `h: flottant m` pour une entrée, `-> t: flottant s` pour le résultat,
+      `-> v: m/s` pour une liaison ;
+    - le compilateur les suit le long des liaisons : `+`, `-`, les comparaisons et `min`/`max` veulent la même unité ;
+      `×` et `÷` les combinent ; `racine` divise les exposants ;
+    - les unités disponibles : les sept unités de base (m, kg, s, A, K, mol, cd), le degré `°`, les unités dérivées N,
+      J, W, Pa, Hz, C, V, Ω, et km, cm, mm, g, ms, min, h ;
+    - une valeur est rangée dans l'unité de base (2 km devient 2000, en mètres) ; un entier qui ne tombe pas juste
+      (500 g = 0,5 kg) doit s'écrire à virgule ;
+    - le zéro va avec toutes les unités ; une valeur venue d'une fonction ordinaire a une unité inconnue, qui n'est
+      pas vérifiée ;
+    - après un nombre, `/` suivi d'une unité fait partie de l'unité ; pour diviser par une liaison qui porte un nom
+      d'unité, on écrit `(2 m) / h` ;
+    - à l'exécution, il ne reste rien des unités : un programme avec unités donne les mêmes mots que sans.
+  - `python vtx128.py molecule` montre aussi les contrats et l'unité de chaque liaison.
+  - Ce qui reste :
+    - une réaction qui rend une liaison portant faux rend sa valeur brute (elle devrait rendre faux) ;
+    - les unités et les contrats n'entrent pas encore dans la signature de Fischer ;
+    - vtxc128 ne connaît encore ni les réactions ni ces ajouts ;
+    - le calcul incrémental.
