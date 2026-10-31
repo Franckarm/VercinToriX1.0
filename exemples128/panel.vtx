@@ -1,0 +1,16 @@
+// machine : lugus
+// Un panel d'atomes (docs/vtx-reactions.md) : chaque ligne est un atome, chaque nom après -> une liaison (une donnée).
+// L'ordre des lignes ne compte pas : le compilateur range les atomes par vagues ; le produit et la somme réagissent
+// ensemble. « python vtx128.py molecule panel.vtx » montre les vagues et la formule.
+reaction principal() {
+    montre    = afficher(r2)
+    rangement = pont r vers @2[0]         -> r2
+    garde     = si e2 > 0 alors p2        -> r
+    rdv       = rendez-vous(p, e)         -> p2, e2
+    ecart     = s - d                     -> e
+    somme     = a + b                     -> s
+    produit   = a × b                     -> p
+    dix       = 10                        -> d
+    sept      = 7                         -> b
+    six       = 6                         -> a
+}
