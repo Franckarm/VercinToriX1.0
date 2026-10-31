@@ -902,7 +902,7 @@ pub fn installer(poser: bool) -> Result<String, String> {
                 let _ = fs::create_dir_all(f.parent().unwrap());
             }
             let vtx = dossier.join("vtx");
-            let _ = fs::write(&app, format!("[Desktop Entry]\nType=Application\nName=Atelier vtx\nComment=Écrire, lancer et voir le cube : Vercintorix\n\
+            let _ = fs::write(&app, format!("[Desktop Entry]\nType=Application\nName=Ogmios (atelier vtx)\nComment=Écrire, lancer et voir le cube : Vercintorix\n\
                 Exec=\"{}\" atelier %f\nTerminal=true\nIcon=vercintorix\nMimeType=text/x-vtx;\nCategories=Development;\n", vtx.display()));
             let _ = fs::write(&mime, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n\
                   <mime-type type=\"text/x-vtx\">\n    <comment>Programme Vercintorix</comment>\n    <sub-class-of type=\"text/plain\"/>\n\

@@ -1115,7 +1115,7 @@ impl Atelier {
                 ];
             }
             Action::Apropos => {
-                self.message = "Atelier vtx : Vercintorix, le langage du cube chromatique et de la logique à quatre valeurs".into();
+                self.message = "Ogmios, l'atelier de Vercintorix : le langage du cube chromatique et de la logique à quatre valeurs".into();
             }
         }
     }
@@ -1639,7 +1639,7 @@ pub fn atelier(fichier: Option<&str>) {
     console::brut();
     let mut sortie = std::io::stdout();
     // titre de la fenêtre, écran à part, souris (appuis et glissements, en SGR), collage encadré
-    let _ = write!(sortie, "\x1b]0;Atelier vtx\x07\x1b[?1049h\x1b[?25l\x1b[?1002h\x1b[?1006h\x1b[?2004h");
+    let _ = write!(sortie, "\x1b]0;Ogmios\x07\x1b[?1049h\x1b[?25l\x1b[?1002h\x1b[?1006h\x1b[?2004h");
     let ancien_crochet = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         console::retablir();

@@ -424,7 +424,7 @@ fn titre() {
     let nom = at.fichier.as_ref().and_then(|f| f.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or("sans titre".into());
     let modifie = unsafe { SendMessageW(at.source, EM_GETMODIFY, 0, 0) } != 0;
     unsafe {
-        SetWindowTextW(at.fen, w(&format!("{}{} — Atelier vtx · {}", nom, if modifie { " •" } else { "" },
+        SetWindowTextW(at.fen, w(&format!("{}{} — Ogmios · {}", nom, if modifie { " •" } else { "" },
                                           nom_machine(at.machine))).as_ptr());
     }
 }
@@ -623,7 +623,7 @@ fn enregistrer(sous: bool) -> bool {
 
 fn message(t: &str) {
     unsafe {
-        MessageBoxW(a().fen, w(t).as_ptr(), w("Atelier vtx").as_ptr(), MB_ICONINFORMATION);
+        MessageBoxW(a().fen, w(t).as_ptr(), w("Ogmios").as_ptr(), MB_ICONINFORMATION);
     }
 }
 
@@ -634,7 +634,7 @@ fn peut_quitter() -> bool {
         return true;
     }
     let r = unsafe {
-        MessageBoxW(at.fen, w("Le programme a été modifié. Enregistrer les modifications ?").as_ptr(), w("Atelier vtx").as_ptr(),
+        MessageBoxW(at.fen, w("Le programme a été modifié. Enregistrer les modifications ?").as_ptr(), w("Ogmios").as_ptr(),
                     MB_YESNOCANCEL | MB_ICONQUESTION)
     };
     match r {
@@ -2486,7 +2486,7 @@ fn commande(c: u16) {
                 at.vue64 = None;
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
-            C_APROPOS => message("Atelier vtx\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nLes machines portent des noms gaulois : Senos l'ancien (SPU-32), Dunon la forteresse (SPU-64), Lugus la lumière (SPU-128), bâti sur Dunon comme Lugdunum.\n\nMachine Dunon (SPU-64, par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine Lugus (SPU-128) : mots de 128 bits, points de matière (trois couleurs de 32 bits et la matière), flottants de 128 bits, compilés par vtxc128 ; le cube les montre aussi en points de 32 bits (la transparence en alpha). Machine Senos (SPU-32) : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine suivante (Ctrl+M) passe de l'une à l'autre ; « // machine : lugus » en tête d'un programme la choisit.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
+            C_APROPOS => message("Ogmios, l'atelier de Vercintorix (Ogmios : le dieu gaulois du langage, qui lie par la parole)\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nLes machines portent des noms gaulois : Senos l'ancien (SPU-32), Dunon la forteresse (SPU-64), Lugus la lumière (SPU-128), bâti sur Dunon comme Lugdunum.\n\nMachine Dunon (SPU-64, par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine Lugus (SPU-128) : mots de 128 bits, points de matière (trois couleurs de 32 bits et la matière), flottants de 128 bits, compilés par vtxc128 ; le cube les montre aussi en points de 32 bits (la transparence en alpha). Machine Senos (SPU-32) : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine suivante (Ctrl+M) passe de l'une à l'autre ; « // machine : lugus » en tête d'un programme la choisit.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
             _ => {}
         }
     }
@@ -2620,7 +2620,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             lpszMenuName: std::ptr::null(), lpszClassName: nom_cube.as_ptr(), hIconSm: std::ptr::null_mut(),
         };
         RegisterClassExW(&classe_cube);
-        let fen = CreateWindowExW(0, nom_fen.as_ptr(), w("Atelier vtx").as_ptr(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
+        let fen = CreateWindowExW(0, nom_fen.as_ptr(), w("Ogmios").as_ptr(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                   CW_USEDEFAULT, CW_USEDEFAULT, 1400, 860, std::ptr::null_mut(), std::ptr::null_mut(), inst,
                                   std::ptr::null_mut());
         if fen.is_null() {
