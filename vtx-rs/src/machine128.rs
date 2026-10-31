@@ -30,6 +30,12 @@ pub const COMPILATEUR128: Mode128 = Mode128 { prelude: false, optim: true, parti
 /// drapeaux.
 pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool)
                    -> Result<(Vec<u128>, Vec<u128>, Vec<u128>), String> {
+    compiler128_prov(compilateur, source, base, mode, lignes, false).map(|(m, t, d, _)| (m, t, d))
+}
+
+/// la même chose, avec la provenance au choix : chaque réaction range la trace de ses liaisons ; rend aussi code.prov
+pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool)
+                        -> Result<(Vec<u128>, Vec<u128>, Vec<u128>, String), String> {
     let dossier = std::env::temp_dir().join(format!("vtxc128-{}-{}", std::process::id(),
                                                      std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                                          .map(|d| d.as_nanos()).unwrap_or(0)));
@@ -40,11 +46,12 @@ pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128
     s.charger(compilateur);
     s.entree.extend(base.chars().map(|c| c as u128));
     s.entree.push_back(0);
-    for drapeau in [mode.prelude, mode.optim, mode.partition, lignes] {
+    for drapeau in [mode.prelude, mode.optim, mode.partition, lignes, provenance] {
         s.entree.push_back(if drapeau { 1 } else { 0 });
     }
     let r = s.executer(200_000_000_000);
     let code = std::fs::read_to_string(dossier.join("code.mots"));
+    let prov = std::fs::read_to_string(dossier.join("code.prov")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dossier);
     let messages: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
     if let Err(e) = r {
@@ -56,7 +63,7 @@ pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128
             let mots = nombres128(morceaux.next().unwrap_or(""));
             let table = nombres128(morceaux.next().unwrap_or(""));
             let dbg = nombres128(morceaux.next().unwrap_or(""));
-            Ok((mots, table, dbg))
+            Ok((mots, table, dbg, prov))
         }
         Err(_) => Err(messages),
     }

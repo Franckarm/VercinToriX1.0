@@ -8929,6 +8929,8 @@ def verifier_exemples(src, exemples, prelude, optim):
 
 
 def _compiler(src, prelude=True, optim=True, partition=True, melange=None, remplacer=None):
+    if remplacer is None:
+        PROVENANCE_PLACE[0] = PROVENANCE_DEBUT
     a = Analyseur(lexer(src))
     a.compat = COMPAT_64
     fs = a.programme()

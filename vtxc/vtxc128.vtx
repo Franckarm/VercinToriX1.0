@@ -168,11 +168,12 @@ structure Param { nom, type, suivant: Param, usages }   // usages : dans un corp
 // d'un pont, les bornes d'un pour chaque ; m : la case d'un pont ; args : les liaisons d'un rendez-vous ; cib : ce qu'il
 // touche hors de ses liaisons, quatre nombres par cible (genre, étage ou -1, adresse connue, adresse)
 structure Atome { nom, genre, quoi: Noeud, x: Noeud, y: Noeud, m: Noeud, args: Noeud, red, var, sorties: Liste,
-                  entrees: Liste, apres: Liste, avant: Liste, cib: Liste, ligne, fait, vague, suivant: Atome }
+                  entrees: Liste, apres: Liste, avant: Liste, cib: Liste, ligne, fait, vague, suivant: Atome, texte }
 // genre 1 exige, 2 garantit ; msg : le texte écrit quand il est rompu
 structure Contrat { genre, cond: Noeud, msg, ligne, suivant: Contrat }
+// traces, appels, souv, types : la provenance (les places de la trace, les atomes à souvenir, le type de chaque nom)
 structure Molecule { nom, params: Param, atomes: Atome, contrats: Contrat, resultat, ligne, vagues: Liste,
-                     ok: Liste, prem: Noeud, der: Noeud }
+                     ok: Liste, prem: Noeud, der: Noeud, traces: Liste, appels, souv: Liste, types: Liste }
 
 // garde : la fonction est générée ; suite : file des fonctions demandées pendant la génération (élagage)
 // el : 1 si la fonction peut être recopiée en ligne (retour E), 2 (une instruction), 0 sinon ; el_corps : E ou
@@ -248,6 +249,8 @@ structure Ctx {
     lugus_place: Liste, // Lugus : la place (en demi-mots) de chaque mot du code du SPU-64
     lugus_demis: Liste, // Lugus : les demi-instructions, deux par mot
     dans_reaction,      // 1 : dans le corps d'une réaction (un nombre peut y porter son unité)
+    provenance,         // 1 : chaque réaction range la trace de ses liaisons (vtx128.py pourquoi), et code.prov est écrit
+    prov_place,         // la prochaine place de la trace (@3[#2000000..])
     souv_place,         // la prochaine place libre des souvenirs (@3[#F00000..])
     erreur
 }
@@ -3378,6 +3381,7 @@ constante C_SORTIE = 3;
 constante C_MONDE = 4;
 constante SOUVENIRS_DEBUT = 16777216;     // #1000000 : le cube 1 de l'étage 3, @3[#1000000..#1FFFFFF]
 constante SOUVENIRS_FIN = 33554432;
+constante PROVENANCE_DEBUT = 33554432;   // #2000000 : le cube 2 de l'étage 3, la trace de la provenance
 
 // a + b, deux textes
 fonction joindre_textes(a, b) {
@@ -3437,9 +3441,15 @@ fonction variables_de(n: Noeud, acc: Liste) {
 }
 
 fonction lus_atome(a: Atome, acc: Liste) {
-    variables_de(a.quoi, acc);
+    // dans l'ordre de vtx128.py : pour un pour chaque, les bornes puis le corps
+    si a.genre != A_CHAQUE {
+        variables_de(a.quoi, acc);
+    }
     variables_de(a.x, acc);
     variables_de(a.y, acc);
+    si a.genre == A_CHAQUE {
+        variables_de(a.quoi, acc);
+    }
     variables_de(a.m, acc);
     soit p = a.args;
     tantque p != nul {
@@ -3993,6 +4003,10 @@ fonction souvenir(c: Ctx, m: Molecule, a: Atome) {
     }
     chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base + 1 + tmp.n, l), c: var_n(s, l), ligne: l });
     chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base, l), c: nombre(1, l), ligne: l });
+    si c.provenance {
+        chainer(reagir, plus_un(place_trace(m, s) + 1, l));
+        ajouter(m.souv, s);
+    }
     emettre_st(m, Noeud { genre: N_SI, a: cond, val: 1, deuxieme: reagir, ligne: l });
 }
 
@@ -4089,10 +4103,51 @@ fonction appelle_programme(c: Ctx, n: Noeud) {
     retour 0;
 }
 
+fonction place_trace(m: Molecule, nom) {
+    pour i dans 0..m.traces.n / 2 {
+        si egal(elem(m.traces, 2 * i), nom) {
+            retour elem(m.traces, 2 * i + 1);
+        }
+    }
+    retour 0;
+}
+
+fonction plus_un(b, l): Noeud {
+    soit cas = Noeud { genre: N_LIRE, val: 3, b: nombre(b, l), ligne: l };
+    retour Noeud { genre: N_ECRIRE, val: 3, b: nombre(b, l), c: bin("+", cas, nombre(1, l), l), ligne: l };
+}
+
+fonction ecrire_trace(b, v: Noeud, l): Noeud {
+    retour Noeud { genre: N_ECRIRE, val: 3, b: nombre(b, l), c: v, ligne: l };
+}
+
 fonction corps_molecule(c: Ctx, m: Molecule): Noeud {
     m.ok = liste();
     m.prem = nul;
     m.der = nul;
+    m.souv = liste();
+    m.traces = liste();
+    si c.provenance {
+        // trois cases par nom (la valeur, le nombre de réactions, présente ou non), une pour les appels
+        m.appels = c.prov_place;
+        c.prov_place = c.prov_place + 1;
+        soit p = m.params;
+        tantque p != nul {
+            ajouter(m.traces, p.nom);
+            ajouter(m.traces, c.prov_place);
+            c.prov_place = c.prov_place + 3;
+            p = p.suivant;
+        }
+        soit at = m.atomes;
+        tantque at != nul {
+            pour i dans 0..at.sorties.n {
+                ajouter(m.traces, elem(at.sorties, i));
+                ajouter(m.traces, c.prov_place);
+                c.prov_place = c.prov_place + 3;
+            }
+            at = at.suivant;
+        }
+    }
     soit k = m.contrats;
     tantque k != nul {
         si k.genre == 1 {
@@ -4135,6 +4190,34 @@ fonction corps_molecule(c: Ctx, m: Molecule): Noeud {
             si !contient_mot(lourds, bits(av)) {
                 atome_corps(c, m, av);
             }
+        }
+    }
+    si c.provenance {
+        soit l = m.ligne;
+        emettre_st(m, plus_un(m.appels, l));
+        soit p2 = m.params;
+        tantque p2 != nul {
+            emettre_st(m, ecrire_trace(place_trace(m, p2.nom), var_n(p2.nom, l), l));
+            emettre_st(m, ecrire_trace(place_trace(m, p2.nom) + 2, nombre(1, l), l));
+            p2 = p2.suivant;
+        }
+        soit at2 = m.atomes;
+        tantque at2 != nul {
+            pour i dans 0..at2.sorties.n {
+                soit s = elem(at2.sorties, i);
+                soit b = place_trace(m, s);
+                emettre_st(m, ecrire_trace(b, var_n(s, l), l));
+                si !dans_noms(m.souv, s) {
+                    emettre_st(m, plus_un(b + 1, l));
+                }
+                soit d = drapeau_de(m, s);
+                si d != 0 {
+                    emettre_st(m, ecrire_trace(b + 2, var_n(d, l), l));
+                } sinon {
+                    emettre_st(m, ecrire_trace(b + 2, nombre(1, l), l));
+                }
+            }
+            at2 = at2.suivant;
         }
     }
     k = m.contrats;
@@ -4276,6 +4359,35 @@ fonction alnum_py(x) {
 }
 
 fonction texte_jetons(c: Ctx, j0: Jeton, j1: Jeton) {
+    retour texte_jetons_beau(c, j0, j1, 0);
+}
+
+// le texte d'un atome (pour la provenance) : @2[0] et t[i] collés, et rendez-vous d'un seul tenant
+fonction texte_beau(c: Ctx, j0: Jeton, j1: Jeton) {
+    soit t = texte_jetons_beau(c, j0, j1, 1);
+    soit l = liste();
+    soit i = 0;
+    tantque i < longueur(t) {
+        si i + 13 <= longueur(t) && car(t, i) == 'r' && egal(sous_texte_de(t, i, 13), "rendez - vous") {
+            ajouter_texte(l, "rendez-vous");
+            i = i + 13;
+        } sinon {
+            ajouter(l, car(t, i));
+            i = i + 1;
+        }
+    }
+    retour texte_de(l, 0, l.n);
+}
+
+fonction sous_texte_de(t, d, n) {
+    soit l = liste();
+    pour i dans d..d + n {
+        ajouter(l, car(t, i));
+    }
+    retour texte_de(l, 0, n);
+}
+
+fonction texte_jetons_beau(c: Ctx, j0: Jeton, j1: Jeton, beau) {
     soit l = liste();
     soit dernier = liste();          // le dernier morceau (avec son espace)
     soit j = j0;
@@ -4296,6 +4408,11 @@ fonction texte_jetons(c: Ctx, j0: Jeton, j1: Jeton) {
             soit d = dernier.n == 1 && (elem(dernier, 0) == '(' || elem(dernier, 0) == '[' || elem(dernier, 0) == '.');
             colle = un || d;
             si v.n == 1 && elem(v, 0) == '(' && alnum_py(elem(dernier, dernier.n - 1)) {
+                colle = 1;
+            }
+            // beau : après « @ » (le morceau, sans son espace), et « [ » après une lettre ou un chiffre
+            si beau && ((elem(dernier, dernier.n - 1) == '@' && (dernier.n == 1 || (dernier.n == 2 && elem(dernier, 0) == ' ')))
+                        || (v.n == 1 && elem(v, 0) == '[' && alnum_py(elem(dernier, dernier.n - 1)))) {
                 colle = 1;
             }
         }
@@ -4496,6 +4613,7 @@ fonction un_atome(c: Ctx, m: Molecule): Atome {
     } sinon si est_op(c, "=") {
         avancer(c);
     }
+    soit j_atome = c.tok;
     si est_kw(c, "si") {
         avancer(c);
         a.genre = A_SI;
@@ -4556,6 +4674,7 @@ fonction un_atome(c: Ctx, m: Molecule): Atome {
         a.genre = A_CALCUL;
         a.quoi = expr(c, 0);
     }
+    a.texte = texte_beau(c, j_atome, c.tok);
     si est_op(c, "->") {
         avancer(c);
         des_noms(c, a.sorties);
@@ -4645,6 +4764,89 @@ fonction une_reaction(c: Ctx, l) {
     }
     c.der_fonction = f;
     noter_fonction(f);
+}
+
+// code.prov : la provenance, pour Lugus et l'atelier (vtx-rs/src/provenance.rs). Une ligne par réaction, par nom, par atome :
+//   R|nom|ligne|appels|résultat ;  N|nom|place|type (e, i, f, s, x, w, p, q, t) ;
+//   A|nom ou rien|ligne|souvenir 0/1|liaisons données (a,b)|liaisons lues (a,b)|texte
+fonction lettre_type(t) {
+    si t == T_I { retour 'i'; }
+    si t == T_F { retour 'f'; }
+    si t == T_S { retour 's'; }
+    si t == T_X { retour 'x'; }
+    si t == T_W { retour 'w'; }
+    si t == T_P { retour 'p'; }
+    si t == T_LOG { retour 'q'; }
+    si t == T_T { retour 't'; }
+    retour 'e';
+}
+
+fonction ecrire_noms(s, l: Liste) {
+    pour i dans 0..l.n {
+        si i > 0 {
+            ecrire_car(s, ',');
+        }
+        ecrire_texte(s, elem(l, i));
+    }
+}
+
+fonction ecrire_provenance(c: Ctx) {
+    soit s = ouvrir_ecriture("code.prov");
+    soit f = c.fonctions;
+    tantque f != nul {
+        si f.mol != nul && !f.prelude {
+            soit m = f.mol;
+            ecrire_texte(s, "R|");
+            ecrire_texte(s, m.nom);
+            ecrire_car(s, '|');
+            ecrire_nombre(s, m.ligne);
+            ecrire_car(s, '|');
+            ecrire_nombre(s, m.appels);
+            ecrire_car(s, '|');
+            si m.resultat != 0 {
+                ecrire_texte(s, m.resultat);
+            }
+            ecrire_car(s, 10);
+            pour i dans 0..m.traces.n / 2 {
+                ecrire_texte(s, "N|");
+                ecrire_texte(s, elem(m.traces, 2 * i));
+                ecrire_car(s, '|');
+                ecrire_nombre(s, elem(m.traces, 2 * i + 1));
+                ecrire_car(s, '|');
+                soit t = 0;
+                si m.types != nul && i < m.types.n {
+                    t = elem(m.types, i);
+                }
+                ecrire_car(s, lettre_type(t));
+                ecrire_car(s, 10);
+            }
+            soit a = m.atomes;
+            tantque a != nul {
+                ecrire_texte(s, "A|");
+                si a.nom != 0 {
+                    ecrire_texte(s, a.nom);
+                }
+                ecrire_car(s, '|');
+                ecrire_nombre(s, a.ligne);
+                ecrire_car(s, '|');
+                soit sv = 0;
+                si a.sorties.n > 0 && dans_noms(m.souv, elem(a.sorties, 0)) {
+                    sv = 1;
+                }
+                ecrire_nombre(s, sv);
+                ecrire_car(s, '|');
+                ecrire_noms(s, a.sorties);
+                ecrire_car(s, '|');
+                ecrire_noms(s, a.entrees);
+                ecrire_car(s, '|');
+                ecrire_texte(s, a.texte);
+                ecrire_car(s, 10);
+                a = a.suivant;
+            }
+        }
+        f = f.suivant;
+    }
+    fermer(s);
 }
 
 // à la fin du programme (toutes les fonctions connues) : le corps de chaque réaction
@@ -4933,6 +5135,7 @@ fonction programme(c: Ctx) {
     }
     si !c.en_prelude && c.erreur == 0 {
         c.souv_place = SOUVENIRS_DEBUT;
+        c.prov_place = PROVENANCE_DEBUT;
         corps_des_reactions(c);
     }
 }
@@ -8485,6 +8688,19 @@ fonction fonction_code(c: Ctx, f: Fonction) {
     c.boucles = nul;
     soit o = placer(c, f.params, f.ligne);
     soit nl = locales(c, f.corps, 0);
+    si c.provenance && f.mol != nul {
+        // les types des noms de la réaction (pour écrire leurs valeurs) : code.prov
+        soit mt = f.mol;
+        mt.types = liste();
+        pour i dans 0..mt.traces.n / 2 {
+            soit vt = var_ou_nul(c, elem(mt.traces, 2 * i));
+            si vt != nul {
+                ajouter(mt.types, vt.type);
+            } sinon {
+                ajouter(mt.types, 0);
+            }
+        }
+    }
     soit ng = choisir_registres(c, f);
     si c.optim && c.lignes_dbg != 1 && appelle_pile(f.corps) {
         ng = 4;
@@ -10341,6 +10557,7 @@ fonction principal() {
     c.optim = entrée();                    // 1 : optimiser, comme vtx.py par défaut
     c.partition = entrée();                // 1 : partition des tâches en accords
     c.lignes_dbg = entrée();               // 1 : table des lignes pour le pas à pas (absente : 0)
+    c.provenance = entrée() == 1;          // 1 : la provenance (absente : 0)
     c.dbg = liste();
     c.marques = liste();
     constantes_predefinies(c);
@@ -10402,6 +10619,9 @@ fonction principal() {
     si c.erreur != 0 {
         ecrire_texte(1, "vtxc : compilation arrêtée\n");
         retour;
+    }
+    si c.provenance {
+        ecrire_provenance(c);
     }
     soit s = ouvrir_ecriture("code.mots");
     soit hd = c.lugus_demis;

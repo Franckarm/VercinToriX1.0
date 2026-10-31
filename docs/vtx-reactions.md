@@ -426,7 +426,7 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - Les valeurs sont celles de la dernière réaction complète : un contrat rompu arrête la machine avant la trace.
   - Ce qui reste :
     - la provenance d'une réaction à l'autre (descendre dans la réaction appelée) ;
-    - la ranger dans l'ADN du programme, pour que Lugus et Ogmios répondent sans Python ;
+    - ~~la ranger dans l'ADN du programme, pour que Lugus et Ogmios répondent sans Python~~ : fait, voir plus bas ;
     - la fiabilité de l'ADN par son code chimique : le deuxième temps, ci-dessous.
 - **Étape 5, deuxième temps : la fiabilité de l'ADN** (`chimie/adn.py`, `chimie/rs.py` ; choix de l'utilisateur : les
   trois témoins par molécule).
@@ -479,4 +479,17 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     - la lecture de l'ADN dans vtxc128 (en vtx), pour Ogmios écrit en vtx ;
     - la provenance rangée dans l'ADN ;
     - la patrouille : relire l'ADN pendant que la machine attend.
+- **La provenance sans Python** (Lugus et Ogmios) :
+  - vtxc128 sait compiler avec la trace : c'est un sixième drapeau d'entrée. Il donne les mêmes mots que vtx128.py avec
+    `PROVENANCE`, vérifié sur les exemples et sur des réactions au hasard (`vtxc/test_reactions_vtxc128.py`). La place
+    de la trace repart du début à chaque compilation, dans les deux compilateurs.
+  - Il écrit `code.prov`, lu par `vtx-rs/src/provenance.rs`. Le fichier donne, pour chaque réaction, la place de chaque
+    nom dans la trace et son type, et pour chaque atome son nom, sa ligne, ses liaisons, son texte et s'il a un souvenir.
+  - `lugus pourquoi PROG.vtx [liaison | réaction.liaison] [ENTRÉES…]` écrit le même arbre que `vtx128.py pourquoi`, au
+    caractère près (`tests/test_provenance.py`), sauf les unités : vtxc128 ne les suit pas encore.
+  - Dans Ogmios, « Exécuter › Pourquoi ? » (Ctrl+P) prend le nom sous le curseur. Le programme est compilé avec la
+    provenance et lancé sur Lugus, puis l'arbre s'écrit dans le journal. Sans nom, ou sur un nom qui n'est pas une
+    liaison, il montre ce que rendent les réactions.
+  - `lugus PROG.adn` : l'épissage retire les témoins, et c'est l'ARN, les mots seuls, qui est lancé. Le chemin Cube → Hex →
+    ADN → ARN est donc complet dans Lugus.
 

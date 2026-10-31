@@ -15,6 +15,8 @@ use super::spu128::Spu128;
 use super::pas128::{image128, panneau128, presenter128};
 use super::machine128::{compiler128, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
 use super::adn;
+use super::provenance;
+use super::machine128::compiler128_prov;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
@@ -233,6 +235,7 @@ const WM_UNDO: u32 = 0x0304;
 const WM_APP_FINI: u32 = 0x8001;
 // la première image d'un programme : la vue du cube prend le clavier (demandé par message, pas pendant la peinture)
 const WM_APP_CLAVIER: u32 = 0x8003;
+const WM_APP_POURQUOI: u32 = 0x8009;
 const WM_TIMER: u32 = 0x0113;
 const EM_GETSEL: u32 = 0x00B0;
 const EM_SETSEL: u32 = 0x00B1;
@@ -300,6 +303,7 @@ const C_LUGUS: u16 = 1210;
 const C_M32: u16 = 1211;
 const C_M64: u16 = 1212;
 const C_LANCER_ADN: u16 = 1213;
+const C_POURQUOI: u16 = 1214;
 const C_ASSOCIER: u16 = 1402;
 const C_PURGER: u16 = 1205;
 const C_ETAGE: u16 = 1300; // + 0..3
@@ -405,6 +409,7 @@ struct Fini {
     image: Option<(usize, usize, Vec<u32>)>,
 }
 static FINI: Mutex<Option<Fini>> = Mutex::new(None);
+static POURQUOI: Mutex<Option<String>> = Mutex::new(None);
 
 // ------------------------------------------------------------------------------------------------ texte des contrôles
 fn lire_texte(h: H) -> String {
@@ -655,6 +660,78 @@ const MODELE: &str = "fonction principal() {\n    afficher(\"Bonjour, Vercintori
 // ------------------------------------------------------------------------------------------------ lancer
 fn lancer() {
     lancer_avec(None);
+}
+
+/// « Pourquoi ? » (Ctrl+P) : le nom sous le curseur (une liaison d'une réaction), ou rien ; le programme est compilé avec
+/// la provenance et lancé sur Lugus, puis l'arbre de sa valeur s'écrit dans le journal (comme « lugus pourquoi »)
+fn pourquoi_atelier() {
+    let at = a();
+    if at.en_cours {
+        etat("un programme tourne déjà");
+        return;
+    }
+    let texte = lire_texte(at.source);
+    let mut debut = 0u32;
+    unsafe {
+        SendMessageW(at.source, EM_GETSEL, &mut debut as *mut u32 as usize, 0);
+    }
+    let u: Vec<u16> = texte.encode_utf16().collect();
+    let lettre = |c: u16| char::from_u32(c as u32).map_or(false, |ch| ch.is_alphanumeric() || ch == '_');
+    let p = (debut as usize).min(u.len());
+    let mut d = p;
+    while d > 0 && lettre(u[d - 1]) {
+        d -= 1;
+    }
+    let mut f = p;
+    while f < u.len() && lettre(u[f]) {
+        f += 1;
+    }
+    let mot = String::from_utf16_lossy(&u[d..f]);
+    let source = texte.replace("\r\n", "\n");
+    let base = at.fichier.as_ref().map(|f| dossier_de(&f.to_string_lossy())).unwrap_or_else(|| std::env::temp_dir().to_string_lossy().into_owned());
+    let entrees: Vec<u128> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u128>().ok()).collect();
+    at.en_cours = true;
+    ecrire_texte(at.journal, &format!("pourquoi {} ? compilation avec la provenance et exécution sur Lugus…\n",
+                                      if mot.is_empty() { "(tout)".to_string() } else { mot.clone() }));
+    montrer_onglet(0);
+    etat("la provenance : compilation et exécution… (Maj+F5 l'arrête)");
+    ARRET.store(false, Ordering::Relaxed);
+    let fen = at.fen as usize;
+    std::thread::spawn(move || {
+        let r = match compiler128_prov(&nombres128(VTXC128), &source, &base, COMPLET128, false, true) {
+            Err(e) => e,
+            Ok((mots, _, _, prov)) => {
+                let mut s = Spu128::nouveau();
+                s.dossier = Some(PathBuf::from(&base));
+                s.charger(&mots);
+                s.entree.extend(entrees);
+                s.arret = Some(&ARRET);
+                let fin = s.executer(u64::MAX / 4);
+                let reactions = provenance::lire(&prov);
+                let mut t = String::new();
+                if reactions.is_empty() {
+                    t.push_str("ce programme n'a pas de réaction : la provenance suit les liaisons des réactions\n");
+                } else {
+                    let m = provenance::cases(&reactions, |a| s.lire((3u128 << 62) | a as u128));
+                    let lire = |a: u64| *m.get(&a).unwrap_or(&0);
+                    let quoi = if mot.is_empty() || !reactions.iter().any(|r| r.noms.iter().any(|n| n.0 == mot)) { None } else { Some(mot.as_str()) };
+                    if quoi.is_none() && !mot.is_empty() {
+                        t.push_str(&format!("« {} » n'est pas une liaison d'une réaction : voici ce que rendent les réactions\n", mot));
+                    }
+                    t.push_str(provenance::pourquoi(&reactions, quoi, &lire).trim_start_matches('\n'));
+                    t.push('\n');
+                }
+                if let Err(e) = fin {
+                    t.push_str(&format!("(l'exécution s'est arrêtée : {})\n", e));
+                }
+                t
+            }
+        };
+        *POURQUOI.lock().unwrap() = Some(r);
+        unsafe {
+            PostMessageW(fen as H, WM_APP_POURQUOI, 0, 0);
+        }
+    });
 }
 
 /// lancer un ADN rangé (PROG.adn) : vérifié, réparé s'il le faut, puis lancé sur Lugus
@@ -2388,6 +2465,7 @@ fn menus(fen: H) {
         ajouter(executer, "&Lancer\tF5", C_LANCER);
         ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
         ajouter(executer, "Lancer un &ADN rangé (vérifié, réparé)…", C_LANCER_ADN);
+        ajouter(executer, "&Pourquoi ? La provenance du nom sous le curseur (Lugus)\tCtrl+P", C_POURQUOI);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
         ajouter(executer, "", 0);
         ajouter(executer, "Machine &suivante (Dunon → Lugus → Senos)\tCtrl+M", C_MACHINE64);
@@ -2486,6 +2564,11 @@ fn commande(c: u16) {
             C_LANCER_ADN => {
                 if at.pas.is_none() {
                     lancer_adn();
+                }
+            }
+            C_POURQUOI => {
+                if at.pas.is_none() {
+                    pourquoi_atelier();
                 }
             }
             C_MACHINE64 | C_M32 | C_M64 | C_LUGUS => {
@@ -2619,6 +2702,16 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
             fini();
             0
         }
+        WM_APP_POURQUOI => {
+            let at = a();
+            at.en_cours = false;
+            if let Some(t) = POURQUOI.lock().unwrap().take() {
+                ecrire_texte(at.journal, &t);
+            }
+            montrer_onglet(0);
+            etat("la provenance : chaque liaison remontée jusqu'aux constantes et aux entrées");
+            0
+        }
         WM_APP_CLAVIER => {
             if a().en_cours {
                 SetFocus(a().cube);
@@ -2730,6 +2823,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'M' as u16, cmd: C_MACHINE64 },
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'G' as u16, cmd: C_GIF },
             Accel { fVirt: FVIRTKEY, key: 0x74, cmd: C_LANCER }, // F5
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: 0x50, cmd: C_POURQUOI }, // Ctrl+P
             Accel { fVirt: FVIRTKEY | 4, key: 0x74, cmd: C_ARRETER }, // Maj+F5
             Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6
             Accel { fVirt: FVIRTKEY, key: 0x76, cmd: C_PAS },    // F7

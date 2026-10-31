@@ -60,5 +60,16 @@ avec = vtx128.assembler(vtx128.compiler(panel))
 vtx128.PROVENANCE = False
 verifier("sans la provenance, les mêmes mots ; avec, la trace en plus", vtx128.assembler(vtx128.compiler(panel)) == avant
          and len(avec) > len(avant))
+# Lugus en Rust (vtxc128 avec la trace, puis vtx-rs/src/provenance.rs) : le même arbre que vtx128.py, sans les unités
+lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
+if os.path.exists(lugus):
+    import re
+    for f in ("panel.vtx", "scene_incrementale.vtx", "chute.vtx"):
+        rs = subprocess.run([lugus, "pourquoi", ex(f)], capture_output=True, text=True, encoding="utf-8").stdout.strip()
+        py = pourquoi(ex(f)).strip()
+        # vtxc128 ne suit pas encore les unités : elles sont retirées de la version de Python pour comparer
+        py = re.sub(r" (= [^ ]+) [^ ←]+(   ←)", r" \1\2", py)
+        verifier(f"lugus pourquoi {f} : le même arbre que vtx128.py", rs == py, "\n".join(
+            f"{a!r} / {b!r}" for a, b in zip(py.splitlines(), rs.splitlines()) if a != b)[:600])
 print("provenance : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)

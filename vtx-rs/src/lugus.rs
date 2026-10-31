@@ -6,7 +6,8 @@
 //   lugus renouveler vtxc128.vtx    vtxc128 se recompile lui-même ; point fixe exigé avant d'écrire vtxc128.mots
 //   lugus ranger PROG.vtx [PROG.adn]        compile et range l'ADN : les mots et leurs trois témoins
 //   lugus transcrire PROG.adn [PROG.mots]   vérifie et répare l'ADN, retire les témoins : les mots (l'ARN)
-//   lugus PROG.adn [ENTRÉES…]       vérifie et répare l'ADN, puis le lance
+//   lugus PROG.adn [ENTRÉES…]       vérifie et répare l'ADN ; l'épissage retire les témoins : l'ARN (les mots seuls) est lancé
+//   lugus pourquoi PROG.vtx [LIAISON | RÉACTION.LIAISON] [ENTRÉES…]   la provenance : d'où vient chaque valeur
 #[allow(dead_code)]
 mod qflot128;
 #[allow(dead_code)]
@@ -19,7 +20,9 @@ mod miroir;
 mod machine128;
 #[allow(dead_code)]
 mod adn;
-use machine128::{compiler128, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, VTXC128};
+#[allow(dead_code)]
+mod provenance;
+use machine128::{compiler128, compiler128_prov, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, VTXC128};
 use spu128::Spu128;
 
 fn compiler_ou_sortir(compilateur: &[u128], fichier: &str, mode: machine128::Mode128) -> Vec<u128> {
@@ -141,6 +144,39 @@ fn main() {
         let p = adn::place_des_temoins(&mots, &mols);
         println!("{} mots, {} molécules, témoins {} mots ({:.1} %) -> {}", mots.len(), mols.len(), p,
                  100.0 * p as f64 / mots.len() as f64, sortie);
+    } else if args.len() >= 3 && args[1] == "pourquoi" {
+        let source = std::fs::read_to_string(&args[2]).unwrap_or_else(|e| {
+            eprintln!("lecture de {} impossible : {}", args[2], e);
+            std::process::exit(1)
+        });
+        let (mots, _, _, prov) = match compiler128_prov(&nombres128(VTXC128), &source, &dossier_de128(&args[2]), COMPLET128, false, true) {
+            Ok(r) => r,
+            Err(e) => {
+                eprint!("{}", e);
+                std::process::exit(1);
+            }
+        };
+        let quoi = args.get(3).filter(|x| x.parse::<i128>().is_err()).cloned();
+        let entrees = &args[if quoi.is_some() { 4 } else { 3 }.min(args.len())..];
+        let mut spu = Spu128::nouveau();
+        spu.dossier = std::path::Path::new(&args[2]).parent().map(|p| p.to_path_buf());
+        spu.charger(&mots);
+        spu.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
+        let r = spu.executer(u64::MAX);
+        if !spu.sortie.is_empty() {
+            println!("sorties : {}", spu.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "));
+        }
+        let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
+        if !t.is_empty() {
+            println!("texte : {}", t.trim_end_matches('\n').replace('\n', " / "));
+        }
+        if let Err(e) = r {
+            eprintln!("erreur : {}", e);
+        }
+        let reactions = provenance::lire(&prov);
+        let memoire = provenance::cases(&reactions, |a| spu.lire((3u128 << 62) | a as u128));
+        let lire = |a: u64| *memoire.get(&a).unwrap_or(&0);
+        println!("{}", provenance::pourquoi(&reactions, quoi.as_deref(), &lire));
     } else if args.len() >= 3 && args[1] == "transcrire" {
         match adn::transcrire(&args[2], true) {
             Ok((mots, _)) => {

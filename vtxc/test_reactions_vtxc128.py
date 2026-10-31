@@ -113,5 +113,26 @@ for k in range(N):
         ecarts.append((graine + k, d))
 verifier(f"{N} réactions au hasard (graine {graine}) : {N - len(ecarts)}/{N} identiques sous les trois réglages", not ecarts,
          str(ecarts[:3]))
+# 4. avec la provenance (la trace de chaque liaison) : les mêmes mots que vtx128.py
+def avec_trace(src):
+    vtx128.PROVENANCE = True
+    try:
+        a = ref(src, True, True, True)
+    finally:
+        vtx128.PROVENANCE = False
+    open(os.path.join(D, "source.vtx"), "w", encoding="utf-8").write(src)
+    cm = os.path.join(D, "code.mots")
+    if os.path.exists(cm):
+        os.remove(cm)
+    subprocess.run([EXE, "lancer", os.path.join(D, "c.mots"), "0", "1", "1", "1", "0", "1"], capture_output=True, cwd=D)
+    b = [int(x) for x in open(cm).read().strip().split(";")[0].split(",") if x] if os.path.exists(cm) else None
+    return a == b or (isinstance(a, str) and b is None)
+
+
+progs = [open(os.path.join(dex, f), encoding="utf-8").read() for f in sorted(os.listdir(dex))
+         if f.endswith(".vtx") and "reaction " in open(os.path.join(dex, f), encoding="utf-8").read()]
+progs += [R(random.Random(graine + 1000 + k)).programme() for k in range(max(4, N // 3))]
+bons = sum(avec_trace(p) for p in progs)
+verifier(f"avec la provenance : {bons}/{len(progs)} programmes, les mêmes mots", bons == len(progs))
 print("réactions dans vtxc128 : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)
