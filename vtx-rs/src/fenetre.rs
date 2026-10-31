@@ -2580,7 +2580,12 @@ fn commande(c: u16) {
                 };
                 choisir_machine(m);
                 let m = a().machine;
-                etat(&format!("machine {} : F5 et le pas à pas compilent avec {}", nom_machine(m), compilateur_de(m)));
+                if m == 128 {
+                    etat(&format!("machine {} : F5 et le pas à pas compilent avec {} ; réactions, ADN, Pourquoi ? (Ctrl+P)", nom_machine(m), compilateur_de(m)));
+                } else {
+                    // Lugus est la machine de vtx ; Senos et Dunon gardent le langage d'avant (la référence, la compatibilité)
+                    etat(&format!("machine {} : F5 et le pas à pas compilent avec {} ; les réactions, l'ADN et la provenance sont sur Lugus", nom_machine(m), compilateur_de(m)));
+                }
             }
             C_PURGER => {
                 effacer_resultats();

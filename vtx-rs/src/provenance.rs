@@ -19,6 +19,7 @@ pub struct ReactionP {
     pub appels: u64,
     pub resultat: String,
     pub noms: Vec<(String, u64, char)>,
+    pub unites: Vec<String>,          // l'unité de chaque nom (vide : aucune), dans l'ordre de noms
     pub atomes: Vec<AtomeP>,
 }
 
@@ -33,10 +34,12 @@ pub fn lire(texte: &str) -> Vec<ReactionP> {
         let c: Vec<&str> = l.splitn(7, '|').collect();
         match c[0] {
             "R" if c.len() >= 5 => r.push(ReactionP { nom: c[1].into(), ligne: c[2].parse().unwrap_or(0), appels: c[3].parse().unwrap_or(0),
-                                                      resultat: c[4].into(), noms: vec![], atomes: vec![] }),
+                                                      resultat: c[4].into(), noms: vec![], unites: vec![], atomes: vec![] }),
             "N" if c.len() >= 4 && !r.is_empty() => {
                 let t = c[3].chars().next().unwrap_or('e');
-                r.last_mut().unwrap().noms.push((c[1].into(), c[2].parse().unwrap_or(0), t));
+                let der = r.last_mut().unwrap();
+                der.noms.push((c[1].into(), c[2].parse().unwrap_or(0), t));
+                der.unites.push(c.get(4).map(|u| u.to_string()).unwrap_or_default());
             }
             "A" if c.len() >= 7 && !r.is_empty() => r.last_mut().unwrap().atomes.push(AtomeP {
                 nom: c[1].into(), ligne: c[2].parse().unwrap_or(0), souvenir: c[3] == "1", sorties: liste(c[4]),
@@ -135,10 +138,15 @@ fn element(a: &AtomeP) -> String {
 
 fn arbre(r: &ReactionP, liaison: &str, lire: &dyn Fn(u64) -> u128, prefixe: &str, vus: &mut HashSet<String>, out: &mut Vec<String>) {
     let place = |n: &str| r.noms.iter().find(|x| x.0 == n).map(|x| (x.1, x.2));
+    // la valeur et son unité (comme vtx128.py : rien quand elle n'en a pas)
+    let avec_unite = |v: String, n: &str| match r.noms.iter().position(|x| x.0 == n).map(|i| &r.unites[i]) {
+        Some(u) if !u.is_empty() => format!("{} {}", v, u),
+        _ => v,
+    };
     let est_param = !r.atomes.iter().any(|a| a.sorties.iter().any(|s| s == liaison));
     if est_param {
         let vu = match place(liaison) {
-            Some((b, t)) if lire(b + 2) != 0 => format!(" = {}", valeur(lire(b), t)),
+            Some((b, t)) if lire(b + 2) != 0 => format!(" = {}", avec_unite(valeur(lire(b), t), liaison)),
             _ => String::new(),
         };
         out.push(format!("{}{}{}   ← une entrée de la réaction {}", prefixe, liaison, vu, r.nom));
@@ -152,7 +160,7 @@ fn arbre(r: &ReactionP, liaison: &str, lire: &dyn Fn(u64) -> u128, prefixe: &str
     } else if la == 0 {
         format!("porte faux (sa branche n'a pas réagi ; la valeur calculée : {})", valeur(val, t))
     } else {
-        format!("= {}", valeur(val, t))
+        format!("= {}", avec_unite(valeur(val, t), liaison))
     };
     let appels = lire(r.appels);
     let fois = if a.souvenir {

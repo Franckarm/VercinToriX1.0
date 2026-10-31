@@ -85,6 +85,7 @@ CAS = {
     "contrats": "reaction moyenne(a, b, n) -> m {\n    exige n != 0\n    total = a + b      -> t\n    part  = t / n      -> m\n    garantit m <= t\n}\nreaction prudente(x) -> r {\n    = si x > 10 alors x - 10 -> r\n    garantit r < 5\n}\nexemple moyenne(4, 6, 2) == 5\nfonction principal() { sortie(moyenne(4, 6, 2)); sortie(prudente(3)); sortie(moyenne(4, 6, 0)); }\n",
     "unités": "reaction chute(h: flottant m, g: flottant m/s²) -> t: flottant s {\n    = 2.0 × h            -> double\n    = double ÷ g         -> carre\n    = racine(carre)      -> t\n}\nreaction trajet() -> d {\n    = 2 km               -> aller\n    = 500 m              -> rentree\n    = 3 min              -> duree\n    = aller + rentree    -> d: m\n    = d / duree          -> vitesse: m/s\n    garantit vitesse > 0 m/s\n}\nreaction energie(masse: kg, v: m/s) -> e: J {\n    = masse × v × v      -> e\n}\nfonction principal() { afficher(chute(20.0, 9.81)); sortie(trajet()); sortie(energie(2, 3)); }\n",
     "souvenirs et mémoire": "fonction lourd(n) { soit s = 0; pour i dans 0..n { s = s + (i * 7 + n) % 11; } retour s; }\nfonction moyenne(x: flottant, k): flottant { soit a = x; pour i dans 0..k { a = (a + 1.0) * 0.5; } retour a; }\nfonction lit(i) { soit s = 0; pour j dans 0..2 { s = s + @2[i]; } retour s; }\nreaction r(a, b, x: flottant) -> s {\n    = lourd(a)              -> u\n    = lourd(u % 30 + b)     -> v\n    = moyenne(x, a % 5)     -> m\n    = lit(a % 4)            -> w\n    = u + v + entier(m * 100.0) + w -> s\n}\nfonction principal() { soit t = 0; pour k dans 0..10 { @2[k % 4] = k; t = t + r(entrée(), entrée(), flottant(entrée()) * 0.25); } sortie(t); }\n",
+    "unités à facteur sur des flottants": "reaction f() -> d { = 2.0 km -> a\n = 5.0 mm -> b\n = 1.5 min -> t\n = (a + b) / t -> d: m/s }\nfonction principal() { afficher(f()); }",
     "rendez-vous gardé": "reaction g(x) -> r {\n    = si x > 2 alors x × 2 -> d\n    = rendez-vous(d, x) -> d2, x2\n    = pont d2 vers @2[1] -> d3\n    = d3 + x2 -> r\n    = afficher(d3)\n}\nfonction principal() { sortie(g(5)); sortie(g(1)); }\n",
 }
 for nom, src in CAS.items():
@@ -97,6 +98,11 @@ ERREURS = {
     "apres un inconnu": "reaction principal() { = 1 -> a apres zut\n }",
     "exige sur une liaison": "reaction f(a) -> b { = a + 1 -> b\n exige b > 0 }\nfonction principal() { sortie(f(1)); }",
     "un résultat absent": "reaction f(a) -> z { = a + 1 -> b }\nfonction principal() { sortie(f(1)); }",
+    "des m + des s": "reaction f() -> d { = 2 m -> a\n = 3 s -> b\n = a + b -> d }\nfonction principal() { sortie(f()); }",
+    "une liaison déclarée dans une autre unité": "reaction f() -> v { = 2 m -> a\n = 3 s -> b\n = a / b -> v: m }\nfonction principal() { sortie(f()); }",
+    "un argument dans la mauvaise unité": "reaction g(x: m) -> y { = x + 1 m -> y }\nreaction f() -> z { = g(3 s) -> z }\nfonction principal() { sortie(f()); }",
+    "la racine d'une unité impaire": "reaction f(x: flottant m) -> y { = racine(x) -> y }\nfonction principal() { afficher(f(4.0)); }",
+    "un facteur sans écriture décimale (km/h)": "reaction f() -> v { = 2.0 km/h -> v }\nfonction principal() { afficher(f()); }",
 }
 for nom, src in ERREURS.items():
     b, sortie = vtxc(src, True, True, False)

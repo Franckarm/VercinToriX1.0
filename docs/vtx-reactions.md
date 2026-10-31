@@ -513,4 +513,16 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     toujours 10 fois moins que sans souvenirs.
   - vtxc128 range les souvenirs de la même façon : les mêmes mots. `lugus pourquoi` le montre aussi : « souvenir :
     réagi 5 fois sur 60 appels ».
+- **Le ménage (point 4 de la route droite)** :
+  - **Les unités dans vtxc128.** Elles sont vérifiées comme dans vtx128.py, avec les mêmes messages ; chaque unité tient
+    dans un nombre (huit exposants de quatre bits). Les flottants à facteur sont acceptés (`2.0 km`, `5.0 mm`). La
+    provenance de Lugus et d'Ogmios écrit les unités (`t = 2.0193 s`), et `lugus pourquoi` donne le même arbre que
+    vtx128.py, unités comprises.
+  - **Le facteur d'une unité est une fraction exacte**, dans les deux compilateurs (il était un flottant dans vtx128.py).
+    Un facteur sans écriture décimale finie, comme km/h (5/18), est refusé sur un flottant plutôt qu'arrondi en silence.
+  - **Les rôles des machines**, écrits dans `LISEZMOI.md` : Lugus est la machine de vtx. Senos et Dunon restent la
+    référence et la compatibilité ; ils recevront les réactions plus tard, pour la rétrocompatibilité. L'atelier le dit
+    quand on change de machine.
+  - **Le nom Gobatix** n'apparaît plus dans le prélude de Lugus (c'est « la toile ») ; le code qui ne servait plus dans
+    vtxc128 est retiré.
 

@@ -1309,12 +1309,12 @@ class Analyseur:
     def unite_ecrite(self):
         """m, m/s², kg·m/s², °/s : (facteur vers la base, {base: exposant}) ; après un nombre, « / » suivi d'une unité fait
         partie de l'unité (pour diviser par une liaison qui porte un nom d'unité : « (2 m) / h »)"""
-        facteur, dims, signe = 1, {}, 1
+        facteur, dims, signe = Fraction(1), {}, 1
         while True:
             k, v, l = self.suivant()
             sym, exp = symbole_unite(k, v)
             f, d = UNITES[sym]
-            facteur *= f ** (exp * signe)
+            facteur *= Fraction(f).limit_denominator(1000) ** (exp * signe)     # exact : 0.001 est 1/1000
             dims = unite_produit(dims, {b: e * exp for b, e in d.items()}, signe)
             k, v, _ = self.regard()
             if k == "op" and v in ("/", "·") and symbole_unite(*self.regard(1)[:2]):
@@ -1329,13 +1329,22 @@ class Analyseur:
         facteur, dims = self.unite_ecrite()
         ecrite = self.texte_jetons(i0).replace(" ", "")
         if facteur != 1:
-            if e[0] == "nombre" and float(facteur).is_integer():
-                e = ("nombre", e[1] * int(facteur))
+            if e[0] == "nombre" and facteur.denominator == 1:
+                e = ("nombre", e[1] * facteur.numerator)
             elif e[0] == "nombre":
                 raise VtxError(f"ligne {l} : {e[1]} {ecrite} n'est pas un nombre entier dans l'unité de base "
                                f"({unite_texte(dims)}) : écrivez-le à virgule ({e[1]}.0)")
             else:
-                ft = repr(float(facteur)) if not float(facteur).is_integer() else f"{int(facteur)}.0"
+                # le facteur, écrit en décimal exact (n × 10^-k) ; un facteur qui n'a pas d'écriture décimale finie
+                # (km/h : 5/18) est refusé plutôt qu'arrondi en silence
+                k, n_ = 0, facteur
+                while n_.denominator != 1 and k < 40:
+                    n_ *= 10
+                    k += 1
+                if n_.denominator != 1:
+                    raise VtxError(f"ligne {l} : {ecrite} : ce facteur ({facteur}) n'a pas d'écriture décimale : écrivez la "
+                                   f"valeur dans l'unité de base ({unite_texte(dims)})")
+                ft = f"{n_.numerator}e-{k}" if k else f"{n_.numerator}.0"
                 e = ("bin", "*", e, ("xnombre", bits_petuar_decimal(ft, l)) if e[0] == "xnombre"
                      else ("fnombre", bits_quaternaire(Q64, ft, l)))
         return ("unite", e, dims)
@@ -4823,7 +4832,7 @@ fonction somme(t) {
     retour s;
 }
 fonction presenter() {
-    // Gobatix : montre l'image préparée par ecran(l, h) ; rend 0 tant que tout va bien (la machine sans fenêtre rend toujours 0),
+    // la toile : montre l'image préparée par ecran(l, h) ; rend 0 tant que tout va bien (la machine sans fenêtre rend toujours 0),
     // 1 quand la fenêtre a été fermée, 18446744073709551615 si le programme n'a pas préparé d'image
     retour __service(12, 0);
 }
@@ -4850,7 +4859,7 @@ fonction parler(t) {
         fermer(c);
     }
 }
-// ---- Gobatix : l'image (étage 1), un point profond #RRRRGGGGBBBBAAAA par pixel
+// ---- la toile : l'image (étage 1), un point profond #RRRRGGGGBBBBAAAA par pixel
 fonction ecran(l, h) {
     @3[14680058] = l;
     @3[14680059] = h;
@@ -4974,7 +4983,7 @@ fonction triangle(x0, y0, c0, x1, y1, c1, x2, y2, c2) {
         y = y + 1;
     }
 }
-// ---- l'interactif (une fenêtre : Gobatix ou l'atelier ; sans fenêtre, souris, touche et molette rendent 0)
+// ---- l'interactif (une fenêtre : la toile ou l'atelier ; sans fenêtre, souris, touche et molette rendent 0)
 fonction cadence(ms) {
     // presenter() attend au moins ms millisecondes depuis l'image précédente (16 par défaut : 60 images par seconde ; 0 : sans
     // attendre) ; c'est aussi la durée de chaque image d'une animation GIF ; rend l'ancienne cadence

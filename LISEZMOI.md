@@ -4,33 +4,42 @@
 
 Tous droits réservés : voir `AUTEUR.md`.
 
-Langage, compilateur, assembleur et émulateur du SPU à cube chromatique.
+Langage, compilateurs, machines et atelier du SPU à cube chromatique.
 
-## Ce que la 0.5 réunit
+## Les machines : Lugus est la machine de vtx
 
-- **Le SPU-64** : mots de 64 bits, points profonds `#RRRRGGGGBBBBAAAA`, adresses longues (étage, cube, `#RRGGBB`), brin
-  ADN et ARN de chaque mot, flottant quaternaire de 64 bits par défaut (32 et 128 au choix). Machines Python et Rust
-  identiques (`spu64/`, `docs/specification-spu64.md`).
-- **vtx64.py** (le compilateur de référence du SPU-64) et **vtxc64** (le compilateur écrit en vtx, qui se compile lui-même
-  au point fixe), qui donnent toujours les mêmes mots (`docs/vtx64-langage.md`).
-- **vtx64.exe sans Python** : `vtx64 programme.vtx` compile avec vtxc64 embarqué et exécute ; l'**atelier** travaille par
-  défaut sur la SPU-64 (Ctrl+M : SPU-32).
-- **Les optimisations** : variables en registres, épissage (dont la règle échange, comme l'auto-épissage des introns),
-  expansion en ligne des petites fonctions, tables de noms dans les cubes.
-- **La toile interactive** (le service d'image de la machine, autrefois appelé Gobatix ; le nom Gobatix est réservé au futur logiciel de modélisation et d'animation) : la souris, le clavier, la molette, l'horloge et la cadence des images pour les programmes
-  qui dessinent, sur les deux machines ; l'atelier montre l'animation pendant qu'elle tourne et l'enregistre en GIF
-  (Ctrl+G), écrit par différence d'une image à l'autre ; l'anti-cube des couleurs pour les curseurs et les objets
-  animés (`exemples/toile/peindre.vtx`).
-- **Le miroir et l'opposé** : les cubes sur disque écrits avec leur anti-cube (`etat_disque()` : vrai, faux réparé,
-  variable, inconnu), le cube des noms dans vtxc64 (chaque nom haché une fois), les appels en série
-  `ajouter(l): 1, 2, 3;`.
-- Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là ; il reçoit les mêmes fonctions de la toile.
-- **La forge (0.5i)** : un programme vtx devient un exécutable natif, par Rust : `python forge/forge.py programme.vtx`.
-  Chaque fonction vtx devient une fonction Rust, avec la mémoire, les cubes et la toile de la machine ; mêmes sorties
-  que le SPU émulé (3 267 programmes vérifiés), de 0,4 à 2 fois le temps du C, de 20 à 90 fois plus vite que
-  l'émulation (`docs/vtx-forge.md`).
-- **Le labyrinthe tout en vtx** : `jeu3/labyrinthe.vtx`, le jeu sans la page web (`vtx toile jeu3/labyrinthe.vtx`,
-  ou forgé en `labyrinthe.exe`) ; l'image vit dans un cube à elle.
+| Machine | Mot | Rôle | Compilateurs |
+|---|---|---|---|
+| **Lugus** (SPU-128) | 128 bits, le point de matière | **la machine de vtx** : tout ce qui est nouveau y vient d'abord (les réactions, l'ADN protégé, la provenance) | `vtx128.py`, `vtxc128` (écrit en vtx, embarqué dans `lugus`) |
+| **Dunon** (SPU-64) | 64 bits, le point profond | la référence et la compatibilité : son langage tourne aussi sur Lugus (le mode compatible) | `vtx64.py`, `vtxc64` |
+| **Senos** (SPU-32) | 32 bits | la référence d'origine | `vtx.py`, `vtxc` |
+
+Senos et Dunon gardent le langage d'avant les réactions ; ils y viendront pour la rétrocompatibilité. Chaque machine a
+deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuvent être forgés en code natif.
+
+## Ce que la 0.5 réunit sur Lugus
+
+- **Les réactions** (`docs/vtx-reactions.md`) : chaque ligne est un atome, chaque `->` une liaison. Les atomes sont
+  rangés par vagues, donc l'ordre des lignes ne compte pas ; les atomes d'une même vague réagissent ensemble, sur
+  plusieurs cœurs une fois forgés.
+  - **La sûreté** : les contrats (`exige`, `garantit`), les exemples vérifiés à chaque compilation (`exemple f(2) ==
+    4`), les unités physiques vérifiées par le compilateur (`= 9.81 m/s² -> g`), qui ne coûtent rien à l'exécution.
+  - **Le calcul incrémental** : chaque atome lourd garde ses souvenirs dans une colonne de seize places, rangée comme
+    Fischer. Rappelé avec des entrées déjà vues, il ne réagit pas (10 fois moins d'instructions sur une scène
+    d'animation).
+  - **La provenance** : `lugus pourquoi PROG.vtx [liaison]`, ou Ctrl+P dans l'atelier, remonte une valeur jusqu'à ses
+    constantes et à ses entrées.
+- **Le chemin Cube → Hex → ADN → ARN** :
+  - l'ADN, c'est le programme rangé avec ses trois témoins (signature, ombre, neutrons) : `lugus ranger PROG.vtx` ;
+  - `lugus PROG.adn` le vérifie, le répare si besoin, puis l'épissage retire les témoins et l'ARN (les mots seuls) est
+    lancé ;
+  - mesuré : 6 % de place, réparé jusqu'à huit mots abîmés de suite, jamais réparé de travers.
+- **L'atelier Ogmios** (`atelier.exe`) sur les trois machines (Ctrl+M) : édition, F5, pas à pas, vue du cube, la toile.
+  Sur Lugus, F5 range aussi l'ADN, et Ctrl+P donne la provenance.
+- **La forge** : un programme devient un exécutable natif, par Rust (`python forge/forge128.py PROG.vtx`), avec les
+  mêmes sorties que la machine émulée.
+- **La toile** : le service d'image de la machine (la souris, le clavier, l'horloge, les GIF). Le nom Gobatix est
+  réservé au futur logiciel de modélisation et d'animation (`docs/gobatix-vision.md`).
 
 L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/vtx-0-5-autonomie.md`.
 
@@ -45,9 +54,22 @@ gardés à part et passés avant chaque livraison.
 
 ## Premiers pas
 
-Ouvrez un terminal dans ce dossier, puis :
+Avec Lugus (`vtx-rs/target/release/lugus`, construit par `cargo build --release` dans `vtx-rs`), sans Python :
 
 ```
+lugus exemples128/panel.vtx                         # une réaction : 42
+lugus pourquoi exemples128/panel.vtx r2             # d'où vient ce 42
+lugus ranger exemples128/chute.vtx                  # l'ADN : chute.adn
+lugus exemples128/chute.adn                         # vérifié, réparé si besoin, lancé
+```
+
+Avec Python, les compilateurs de référence et les outils :
+
+```
+python3 vtx128.py run exemples128/chute.vtx           # Lugus émulé
+python3 vtx128.py molecule exemples128/panel.vtx      # la molécule : vagues, formule, souvenirs, place selon Fischer
+python3 chimie/adn.py essai                           # les avaries de l'ADN, mesurées
+# Senos (SPU-32), la référence d'origine :
 python3 vtx.py test                                   # les tests intégrés du langage
 python3 vtx.py run exemples/chariot.vtx 0xE03020FA 14 1
 python3 vtx.py deboguer debogueur/demo.vtx            # tapez « aide » ; « q » pour quitter
