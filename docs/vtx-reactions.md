@@ -427,5 +427,44 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - Ce qui reste :
     - la provenance d'une réaction à l'autre (descendre dans la réaction appelée) ;
     - la ranger dans l'ADN du programme, pour que Lugus et Ogmios répondent sans Python ;
-    - la fiabilité de l'ADN par son code chimique (deuxième temps).
+    - la fiabilité de l'ADN par son code chimique : le deuxième temps, ci-dessous.
+- **Étape 5, deuxième temps : la fiabilité de l'ADN** (`chimie/adn.py`, `chimie/rs.py` ; choix de l'utilisateur : les
+  trois témoins par molécule).
+  - **L'ADN d'un programme**, ce sont ses mots compilés, rangés pour durer (`python chimie/adn.py ranger PROG.vtx` écrit
+    `PROG.adn`). Il est découpé en molécules : chaque fonction ou réaction, la tête, les textes et les données.
+  - **Les trois témoins**, indépendants, se recoupent :
+    1. **la signature** de chaque molécule (64 bits). Elle voit tout changement et confirme chaque réparation ;
+    2. **l'ombre**. L'ADN est lu en colonnes entrelacées : la colonne k prend un mot sur C, et une rafale de mots
+       voisins se répartit donc entre les colonnes. Chaque colonne a quatre mots d'ombre, un code de Reed-Solomon sur
+       les seize octets de chaque mot. Elle répare deux mots abîmés n'importe où dans la colonne, ou quatre si l'on sait
+       lesquels ;
+    3. **les neutrons** : 8 bits de contrôle par mot, aux frontières seulement (O : les molécules dont le code écrit en
+       mémoire ou sort quelque chose). Ils disent quels mots sont abîmés, et l'ombre en répare alors deux fois plus.
+  - **La triangulation.** Une réparation n'est gardée que si deux témoins l'appuient : la signature, ou bien les neutrons
+    avec l'ombre. Si la signature seule contredit les deux autres, c'est elle qui est refaite. Au-delà, la molécule est
+    gardée telle qu'elle a été lue, pour la preuve.
+  - **L'état de la lecture**, en logique de Belnap : vrai (intact), faux (réparé, ou un témoin refait), variable (vu, non
+    réparé).
+  - **La transcription** (`python chimie/adn.py transcrire PROG.adn`) vérifie et répare, puis l'épissage retire les
+    témoins. L'ARN, ce sont les mots seuls, exactement ceux du programme d'origine. Un ADN réparé est réécrit.
+  - **Mesuré** sur de vraies avaries (`python chimie/adn.py essai`, `tests/test_adn.py`) :
+
+    | Programme | Mots | Témoins | Réparé |
+    |---|---|---|---|
+    | chute.vtx | 1 929 | 5,6 % | 100 % : un bit, un mot, un mot effacé, deux mots échangés, deux mots d'une molécule, des rafales de quatre et de huit mots, un témoin abîmé, un mot et sa signature |
+    | bonjour128.vtx | 1 907 | 5,8 % | la même chose, 100 % |
+    | vtxc128 lui-même | 169 983 | 2,6 % | 100 % : un mot, une rafale de huit, seize mots au hasard, un mot et sa signature |
+    | panel.vtx (une seule colonne) | 89 | 13,5 % | 100 % pour un ou deux mots ; les rafales seulement en partie |
+
+    - Au-delà de ce que l'ombre peut réparer (trois mots dans une même colonne, seize mots au hasard dans un petit
+      programme), l'avarie est **vue**.
+    - Erreurs muettes, c'est-à-dire réparées de travers ou passées sans être vues : **0** dans tous les essais.
+  - **Les comparaisons** :
+    - le miroir inversé double la place (100 %) ;
+    - l'ombre des cubes sur disque (3,5 %) répare un mot par colonne.
+  - **Ce qui reste** :
+    - les isotopes (`lourd`), pour des neutrons sur une molécule choisie ;
+    - la lecture de l'ADN par Lugus et Ogmios, en Rust puis en vtx ;
+    - la provenance rangée dans l'ADN ;
+    - la patrouille : relire l'ADN pendant que la machine attend.
 

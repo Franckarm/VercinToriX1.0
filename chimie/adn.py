@@ -1,0 +1,370 @@
+#!/usr/bin/env python3
+"""La fiabilité de l'ADN par son code chimique (docs/vtx-reactions.md, étape 5, deuxième temps).
+
+L'ADN d'un programme, ce sont ses mots compilés, rangés pour durer. Il est découpé en molécules : chaque fonction (ou
+réaction), la tête du programme, ses textes et ses données. Trois témoins indépendants se recoupent (la triangulation) :
+
+  1. la signature de chaque molécule : l'empreinte de ses mots (64 bits). Elle voit tout changement, sans dire où, et
+     confirme chaque réparation : un mot réparé de travers ne passe pas ;
+  2. l'ombre : l'ADN est lu en colonnes d'au plus 251 mots, entrelacées (la colonne k prend un mot sur C, à partir du
+     k-ième : une rafale de mots voisins se répartit entre les colonnes), chacune avec quatre mots d'ombre (un code de
+     Reed-Solomon sur les seize octets de chaque mot). Elle répare deux mots abîmés n'importe où dans la colonne, ou
+     quatre si l'on sait lesquels ;
+  3. les neutrons : le contrôle de chaque mot (8 bits), là où les erreurs entrent : les molécules qui touchent le monde
+     (O : leur code écrit en mémoire ou sort quelque chose). Ils disent quels mots sont abîmés ; l'ombre en répare alors
+     deux fois plus.
+
+Le contrôle est donc là où il compte : rien en plus sur les constantes (les textes, les données), le plus aux
+frontières. À la lecture, chaque molécule a un état de Belnap : vrai (intacte), faux (réparée, ou un témoin abîmé
+refait), variable (abîmée au-delà de ses témoins : gardée telle quelle, pour la preuve).
+
+À la transcription (ADN -> ARN), l'épissage retire les témoins : l'ARN, ce sont les mots seuls, vérifiés.
+
+    python3 chimie/adn.py ranger PROG.vtx [PROG.adn]      l'ADN : les mots et les témoins
+    python3 chimie/adn.py transcrire PROG.adn [PROG.mots]  vérifie, répare, épisse : les mots
+    python3 chimie/adn.py essai [PROG.vtx…]                les avaries mesurées (détection, réparation, place)"""
+import hashlib
+import os
+import random
+import sys
+
+ici = os.path.dirname(os.path.abspath(__file__))
+racine = os.path.dirname(ici)
+sys.path.insert(0, racine)
+sys.path.insert(0, ici)
+import rs  # noqa: E402
+
+INCONNU, FAUX, VRAI, VARIABLE = 0, 1, 2, 3
+NOM_ETAT = {INCONNU: "inconnu", FAUX: "faux (réparé)", VRAI: "vrai", VARIABLE: "variable"}
+COLONNE = 251               # les mots d'une colonne ; avec ses quatre mots d'ombre, 255 : la longueur d'un code sur GF(256)
+OMBRE = 4
+
+
+def pire(a, b):
+    rang = {VRAI: 0, INCONNU: 1, FAUX: 2, VARIABLE: 3}
+    return a if rang[a] >= rang[b] else b
+
+
+# ---------------------------------------------------------------------------------------------------- les témoins
+def signature(mots):
+    h = hashlib.blake2b(digest_size=8)
+    for w in mots:
+        h.update(w.to_bytes(16, "little"))
+    return int.from_bytes(h.digest(), "little")
+
+
+def crc8(w):
+    """les neutrons d'un mot : un CRC de 8 bits (polynôme 0x07) sur ses seize octets"""
+    c = 0
+    for octet in w.to_bytes(16, "little"):
+        c ^= octet
+        for _ in range(8):
+            c = ((c << 1) ^ 0x07) & 0xFF if c & 0x80 else (c << 1) & 0xFF
+    return c
+
+
+def voies(mots):
+    """les seize voies d'octets d'une suite de mots (l'octet fort d'abord)"""
+    return [[(w >> (8 * (15 - k))) & 0xFF for w in mots] for k in range(16)]
+
+
+def mots_de(v):
+    n = len(v[0])
+    return [sum(v[k][i] << (8 * (15 - k)) for k in range(16)) for i in range(n)]
+
+
+def ombre_colonne(mots):
+    return mots_de([rs.coder(v, OMBRE) for v in voies(mots)])
+
+
+def nb_colonnes(n):
+    return max(1, (n + COLONNE - 1) // COLONNE)
+
+
+def places_colonne(n, k):
+    """les places des mots de la colonne k : un sur C, à partir de k"""
+    return range(k, n, nb_colonnes(n))
+
+
+class Molecule:
+    def __init__(self, nom, debut, fin, frontiere):
+        self.nom, self.debut, self.fin, self.frontiere = nom, debut, fin, frontiere
+
+    def __repr__(self):
+        return f"{self.nom}[{self.debut}:{self.fin}]{' O' if self.frontiere else ''}"
+
+
+def temoins(mots, molecules):
+    """{signatures, ombres (une liste de quatre mots par colonne), neutrons (place -> 8 bits, aux frontières)}"""
+    neutrons = {}
+    for m in molecules:
+        if m.frontiere:
+            for i in range(m.debut, m.fin):
+                neutrons[i] = crc8(mots[i])
+    return {"signatures": [signature(mots[m.debut:m.fin]) for m in molecules],
+            "ombres": [ombre_colonne([mots[i] for i in places_colonne(len(mots), k)]) for k in range(nb_colonnes(len(mots)))],
+            "neutrons": neutrons}
+
+
+def copie_temoins(t):
+    return {"signatures": list(t["signatures"]), "ombres": [list(o) for o in t["ombres"]], "neutrons": dict(t["neutrons"])}
+
+
+def place_des_temoins(mots, molecules):
+    """en mots : les signatures (deux par mot), l'ombre (quatre par colonne), les neutrons (seize par mot)"""
+    colonnes = nb_colonnes(len(mots))
+    o = sum(m.fin - m.debut for m in molecules if m.frontiere)
+    return (len(molecules) + 1) // 2 + OMBRE * colonnes + (o + 15) // 16
+
+
+# ---------------------------------------------------------------------------------------------------- la lecture
+def lire_colonne(mots, k, t):
+    """répare la colonne k en place ; rend (état, places réparées, places désignées par les neutrons)"""
+    places = list(places_colonne(len(mots), k))
+    data = [mots[i] for i in places]
+    om = t["ombres"][k]
+    effaces = [j for j, i in enumerate(places) if i in t["neutrons"] and crc8(data[j]) != t["neutrons"][i]]
+    if ombre_colonne(data) == om:
+        return (FAUX if effaces else VRAI), [], [places[j] for j in effaces]
+    if len(effaces) > OMBRE:
+        return VARIABLE, [], [places[j] for j in effaces]
+    cw = voies(data + om)
+    reparees = []
+    for v in range(16):
+        out = rs.decoder(cw[v], OMBRE, effaces)
+        if out is None:
+            return VARIABLE, [], [places[j] for j in effaces]
+        cw[v] = out
+    neuf = mots_de(cw)
+    reparees = [places[j] for j in range(len(data)) if neuf[j] != data[j]]
+    for j, i in enumerate(places):
+        mots[i] = neuf[j]
+    t["ombres"][k] = neuf[len(data):]
+    return FAUX, reparees, [places[j] for j in effaces]
+
+
+def lire(mots, molecules, t):
+    """vérifie et répare l'ADN en place ; rend (état le pire, [(molécule, état, quoi)])"""
+    avant = list(mots)
+    col_etat, par_neutrons, col_reparees = {}, set(), {}
+    nc = nb_colonnes(len(mots))
+    for k in range(nc):
+        e, reparees, effaces = lire_colonne(mots, k, t)
+        col_etat[k] = e
+        col_reparees[k] = reparees
+        par_neutrons |= set(effaces)
+    etat = FAUX if any(e == FAUX for e in col_etat.values()) else VRAI      # au moins un témoin refait
+    rapport = []
+    for j, m in enumerate(molecules):
+        cols = {i % nc for i in range(m.debut, m.fin)}
+        changes = [i for i in range(m.debut, m.fin) if mots[i] != avant[i]]
+        sig_ok = signature(mots[m.debut:m.fin]) == t["signatures"][j]
+        abimee = any(col_etat[c] == VARIABLE for c in cols)
+        if sig_ok and not changes and not abimee:
+            e, quoi = VRAI, ""
+        elif sig_ok:
+            e, quoi = FAUX, f"{len(changes)} mot(s) réparé(s)" if changes else "ombre ou neutrons refaits"
+        elif abimee:
+            e, quoi = VARIABLE, "abîmée au-delà de son ombre"
+        elif not changes:
+            # l'ombre et les neutrons s'accordent avec les mots : c'est la signature qui est abîmée (deux contre un)
+            e, quoi = FAUX, "signature refaite"
+            t["signatures"][j] = signature(mots[m.debut:m.fin])
+        elif (m.frontiere and all(i in par_neutrons and crc8(mots[i]) == t["neutrons"].get(i) for i in changes)) or \
+                all(len(col_reparees[i % nc]) == 1 for i in changes):
+            # deux témoins contre un : les mots réparés sont ceux que les neutrons désignaient, et ils les reconnaissent ;
+            # ou l'ombre n'a eu qu'un mot à réparer dans chaque colonne (la moitié de ce qu'elle peut : une fausse
+            # réparation demanderait trois mots abîmés dans la colonne). La signature, seule contre eux, est refaite.
+            e, quoi = FAUX, f"{len(changes)} mot(s) réparé(s), signature refaite"
+            t["signatures"][j] = signature(mots[m.debut:m.fin])
+        else:
+            # la réparation n'est pas confirmée : la molécule est gardée telle qu'elle a été lue
+            for i in changes:
+                mots[i] = avant[i]
+            e, quoi = VARIABLE, "réparation non confirmée par la signature"
+        etat = pire(etat, e)
+        rapport.append((m, e, quoi))
+    if etat != VARIABLE:
+        t["neutrons"] = {i: crc8(mots[i]) for i in t["neutrons"]}
+    return etat, rapport
+
+
+# ---------------------------------------------------------------------------------------------------- le découpage
+ECRIT_OU_SORT = {"ST", "STQ", "STX", "OUT", "SORC", "SYS", "MARQUE", "GEMV", "BRIN"}   # pas STF : le cadre
+
+
+def molecules_du_programme(src, dossier=None):
+    """(les mots, les molécules) : une par fonction (de son étiquette à la suivante), la tête, les textes et données.
+    Une molécule est une frontière (O) si son code écrit en mémoire ou sort quelque chose."""
+    import vtx128
+    vtx128.COMPAT_64 = False
+    asm = vtx128.compiler(src, dossier=dossier)
+    mots, etiq = vtx128.assembler(asm, True)
+    n = len(mots)
+    debuts = sorted({(v // 2, k) for k, v in etiq.items() if k.startswith("F_") and not k.endswith("_FIN")})
+    donnees = [v for k, v in etiq.items() if k.startswith(("TEXTE", "DONNEES")) and v < n]
+    fin_code = min(donnees) if donnees else n
+    coupes = [(0, "tête")] + [(d, k[2:].lower()) for d, k in debuts if 0 < d < fin_code] + [(fin_code, "textes et données")]
+    noms_ops = vtx128._spu128.NOMS
+    molecules = []
+    for (a, nom), (b, _) in zip(coupes, coupes[1:] + [(n, "")]):
+        if b <= a:
+            continue
+        frontiere = nom != "textes et données" and any(
+            noms_ops.get(h >> 48, "") in ECRIT_OU_SORT for w in mots[a:b] for h in (w >> 64, w & ((1 << 64) - 1)))
+        molecules.append(Molecule(nom, a, b, frontiere))
+    return mots, molecules
+
+
+# ---------------------------------------------------------------------------------------------------- les avaries
+def avarie(genre, mots, t, molecules, g):
+    n = len(mots)
+    if genre == "un bit":
+        mots[g.randrange(n)] ^= 1 << g.randrange(128)
+    elif genre == "un mot":
+        mots[g.randrange(n)] = g.getrandbits(128)
+    elif genre == "un mot effacé":
+        mots[g.randrange(n)] = 0
+    elif genre == "deux mots échangés":
+        i = g.randrange(n - 1)
+        mots[i], mots[i + 1] = mots[i + 1], mots[i]
+    elif genre == "deux mots d'une molécule":
+        m = g.choice([m for m in molecules if m.fin - m.debut >= 2])
+        for i in g.sample(range(m.debut, m.fin), 2):
+            mots[i] ^= g.getrandbits(128) | 1
+    elif genre == "une rafale de quatre mots":
+        i = g.randrange(n - 4)
+        for k in range(4):
+            mots[i + k] = g.getrandbits(128)
+    elif genre == "une rafale de huit mots":
+        i = g.randrange(n - 8)
+        for k in range(8):
+            mots[i + k] = g.getrandbits(128)
+    elif genre == "trois mots d'une colonne":
+        nc = nb_colonnes(n)
+        k = g.randrange(nc)
+        for i in g.sample(list(places_colonne(n, k)), 3):
+            mots[i] ^= g.getrandbits(128) | 1
+    elif genre == "seize mots au hasard":
+        for i in g.sample(range(n), 16):
+            mots[i] ^= g.getrandbits(128) | 1
+    elif genre == "un témoin":
+        quoi = g.choice(["signature", "ombre", "neutrons"] if t["neutrons"] else ["signature", "ombre"])
+        if quoi == "signature":
+            t["signatures"][g.randrange(len(t["signatures"]))] ^= 1 << g.randrange(64)
+        elif quoi == "ombre":
+            o = t["ombres"][g.randrange(len(t["ombres"]))]
+            o[g.randrange(OMBRE)] ^= 1 << g.randrange(128)
+        else:
+            i = g.choice(list(t["neutrons"]))
+            t["neutrons"][i] ^= 1 << g.randrange(8)
+    elif genre == "un mot et sa signature":
+        j = g.randrange(len(molecules))
+        m = molecules[j]
+        mots[g.randrange(m.debut, m.fin)] ^= g.getrandbits(128) | 1
+        t["signatures"][j] ^= 1 << g.randrange(64)
+    else:
+        raise ValueError(genre)
+
+
+GENRES = ["un bit", "un mot", "un mot effacé", "deux mots échangés", "deux mots d'une molécule", "une rafale de quatre mots",
+          "une rafale de huit mots", "trois mots d'une colonne", "seize mots au hasard", "un témoin", "un mot et sa signature"]
+
+
+def essai(fichiers, n=200, graine=1, ecrire=print, genres=None):
+    g = random.Random(graine)
+    resultats = {}
+    for f in fichiers:
+        src = open(f, encoding="utf-8").read()
+        mots, molecules = molecules_du_programme(src, os.path.dirname(os.path.abspath(f)))
+        t0 = temoins(mots, molecules)
+        place = place_des_temoins(mots, molecules)
+        o = sum(m.fin - m.debut for m in molecules if m.frontiere)
+        ecrire(f"\n{os.path.basename(f)} : {len(mots)} mots, {len(molecules)} molécules ({100 * o / len(mots):.0f} % des mots "
+               f"dans des frontières O) ; témoins : {place} mots, {100 * place / len(mots):.1f} % de l'ADN")
+        for genre in genres or GENRES:
+            c = {"réparé": 0, "vu": 0, "intact": 0, "muet": 0}
+            for _ in range(n):
+                abime, t = list(mots), copie_temoins(t0)
+                avarie(genre, abime, t, molecules, g)
+                touche = abime != mots
+                etat, _ = lire(abime, molecules, t)
+                if etat in (VRAI, FAUX) and abime != mots:
+                    c["muet"] += 1             # une erreur passée sans être vue : ne doit jamais arriver
+                elif etat == VARIABLE:
+                    c["vu"] += 1
+                elif touche or etat == FAUX:
+                    c["réparé"] += 1
+                else:
+                    c["intact"] += 1
+            resultats[(os.path.basename(f), genre)] = c
+            ecrire(f"  {genre:28s} réparé {100 * c['réparé'] / n:5.1f} %   vu, non réparé {100 * c['vu'] / n:5.1f} %"
+                   f"   sans effet {100 * c['intact'] / n:5.1f} %   erreur muette {c['muet']}")
+    return resultats
+
+
+# ---------------------------------------------------------------------------------------------------- le fichier ADN
+def ecrire_adn(chemin, mots, molecules, t):
+    with open(chemin, "w", encoding="utf-8") as f:
+        f.write("VTXADN02\n")
+        f.write(",".join(map(str, mots)) + "\n")
+        f.write("\t".join(f"{m.nom}|{m.debut}|{m.fin}|{int(m.frontiere)}|{s}" for m, s in zip(molecules, t["signatures"])) + "\n")
+        f.write(";".join(",".join(map(str, o)) for o in t["ombres"]) + "\n")
+        f.write(",".join(f"{i}:{v}" for i, v in sorted(t["neutrons"].items())) + "\n")
+
+
+def lire_adn(chemin):
+    l = open(chemin, encoding="utf-8").read().split("\n")
+    if l[0] != "VTXADN02":
+        raise ValueError("ce n'est pas un ADN de vtx")
+    mots = [int(x) for x in l[1].split(",") if x]
+    molecules, sigs = [], []
+    for x in l[2].split("\t"):
+        nom, a, b, fr, s = x.split("|")
+        molecules.append(Molecule(nom, int(a), int(b), fr == "1"))
+        sigs.append(int(s))
+    ombres = [[int(v) for v in o.split(",")] for o in l[3].split(";") if o]
+    neutrons = {int(a): int(b) for a, b in (x.split(":") for x in l[4].split(",") if x)}
+    return mots, molecules, {"signatures": sigs, "ombres": ombres, "neutrons": neutrons}
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        return
+    cmd = sys.argv[1]
+    if cmd == "ranger":
+        src = sys.argv[2]
+        mots, molecules = molecules_du_programme(open(src, encoding="utf-8").read(), os.path.dirname(os.path.abspath(src)))
+        t = temoins(mots, molecules)
+        sortie = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(src)[0] + ".adn"
+        ecrire_adn(sortie, mots, molecules, t)
+        p = place_des_temoins(mots, molecules)
+        print(f"{len(mots)} mots, {len(molecules)} molécules, témoins {p} mots ({100 * p / len(mots):.1f} %) -> {sortie}")
+    elif cmd == "transcrire":
+        mots, molecules, t = lire_adn(sys.argv[2])
+        etat, rapport = lire(mots, molecules, t)
+        for m, e, quoi in rapport:
+            if e != VRAI:
+                print(f"  {m.nom} : {NOM_ETAT[e]}, {quoi}")
+        print(f"l'ADN : {NOM_ETAT[etat]}")
+        if etat == VARIABLE:
+            print("rien n'est transcrit : l'ADN est gardé tel qu'il a été lu, pour la preuve")
+            sys.exit(1)
+        sortie = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(sys.argv[2])[0] + ".mots"
+        with open(sortie, "w") as f:
+            f.write(",".join(map(str, mots)) + ";\n")
+        print(f"l'ARN (les mots seuls, les témoins retirés à l'épissage) -> {sortie}")
+        if etat == FAUX:
+            ecrire_adn(sys.argv[2], mots, molecules, t)          # l'ADN réparé est réécrit
+            print("l'ADN réparé est réécrit")
+    elif cmd == "essai":
+        fichiers = sys.argv[2:] or [os.path.join(racine, "exemples128", f) for f in
+                                    ("panel.vtx", "chute.vtx", "scene_incrementale.vtx", "bonjour128.vtx")]
+        essai(fichiers)
+    else:
+        print(__doc__)
+
+
+if __name__ == "__main__":
+    main()
