@@ -17,6 +17,7 @@ import adn  # noqa: E402
 import rs  # noqa: E402
 
 echecs = []
+ENV = dict(os.environ, PYTHONIOENCODING="utf-8")     # sous Windows aussi, les accents passent entre les programmes
 
 
 def verifier(nom, ok, detail=""):
@@ -61,15 +62,18 @@ verifier("au-delà de l'ombre (trois mots d'une colonne, seize au hasard) : vu o
 d = tempfile.mkdtemp(prefix="adn-")
 f_adn = os.path.join(d, "chute.adn")
 py = [sys.executable, os.path.join(racine, "chimie", "adn.py")]
-subprocess.run(py + ["ranger", os.path.join(dex, "chute.vtx"), f_adn], capture_output=True, text=True, check=True)
+subprocess.run(py + ["ranger", os.path.join(dex, "chute.vtx"), f_adn], capture_output=True, text=True, encoding="utf-8",
+               check=True, env=ENV)
 mots, molecules, t = adn.lire_adn(f_adn)
 abime = list(mots)
 for i in (100, 101, 102, 900):
     abime[i] ^= 0xDEADBEEF << (i % 60)
 adn.ecrire_adn(f_adn, abime, molecules, t)
-s = subprocess.run(py + ["transcrire", f_adn, os.path.join(d, "chute.mots")], capture_output=True, text=True)
+s = subprocess.run(py + ["transcrire", f_adn, os.path.join(d, "chute.mots")], capture_output=True, text=True,
+                   encoding="utf-8", env=ENV)
 arn = [int(x) for x in open(os.path.join(d, "chute.mots")).read().split(";")[0].split(",")] if s.returncode == 0 else []
-s2 = subprocess.run(py + ["transcrire", f_adn, os.path.join(d, "chute2.mots")], capture_output=True, text=True)
+s2 = subprocess.run(py + ["transcrire", f_adn, os.path.join(d, "chute2.mots")], capture_output=True, text=True,
+                    encoding="utf-8", env=ENV)
 verifier("ranger, abîmer quatre mots, transcrire : l'ARN est le programme d'origine, l'ADN réparé réécrit",
          arn == mots and "faux (réparé)" in s.stdout and "l'ADN : vrai" in s2.stdout, s.stdout + s.stderr)
 # 4. Lugus en Rust : le même ADN que Python, et la même lecture de chaque avarie (l'état, les mots, l'ADN réécrit)
@@ -77,9 +81,10 @@ lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if
 if os.path.exists(lugus):
     f_rs = os.path.join(d, "chute-rs.adn")
     f_py = os.path.join(d, "chute-py.adn")
-    subprocess.run([lugus, "ranger", os.path.join(dex, "chute.vtx"), f_rs], capture_output=True, text=True)
-    subprocess.run(py + ["ranger", os.path.join(dex, "chute.vtx"), f_py], capture_output=True, text=True)
-    verifier("Lugus range le même ADN que Python, octet pour octet", open(f_rs).read() == open(f_py).read())
+    subprocess.run([lugus, "ranger", os.path.join(dex, "chute.vtx"), f_rs], capture_output=True, text=True, encoding="utf-8")
+    subprocess.run(py + ["ranger", os.path.join(dex, "chute.vtx"), f_py], capture_output=True, text=True, encoding="utf-8",
+                   env=ENV)
+    verifier("Lugus range le même ADN que Python, octet pour octet", open(f_rs, "rb").read() == open(f_py, "rb").read())
     mots0, molecules, t0 = adn.lire_adn(f_py)
     g = random.Random(23)
     ecarts, n = [], 0

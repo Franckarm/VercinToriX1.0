@@ -336,7 +336,7 @@ def essai(fichiers, n=200, graine=1, ecrire=print, genres=None):
 
 # ---------------------------------------------------------------------------------------------------- le fichier ADN
 def ecrire_adn(chemin, mots, molecules, t):
-    with open(chemin, "w", encoding="utf-8") as f:
+    with open(chemin, "w", encoding="utf-8", newline="\n") as f:     # \n partout : Lugus (Rust) lit le même fichier
         f.write("VTXADN02\n")
         f.write(",".join(map(str, mots)) + "\n")
         f.write("\t".join(f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{s}" for m, s in zip(molecules, t["signatures"])) + "\n")
@@ -383,7 +383,7 @@ def main():
             print("rien n'est transcrit : l'ADN est gardé tel qu'il a été lu, pour la preuve")
             sys.exit(1)
         sortie = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(sys.argv[2])[0] + ".mots"
-        with open(sortie, "w") as f:
+        with open(sortie, "w", newline="\n") as f:
             f.write(",".join(map(str, mots)) + ";\n")
         print(f"l'ARN (les mots seuls, les témoins retirés à l'épissage) -> {sortie}")
         if etat == FAUX:

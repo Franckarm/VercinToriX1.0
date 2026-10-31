@@ -516,7 +516,8 @@ pub fn ecrire_adn(chemin: &str, mots: &[u128], mols: &[Molecule], t: &Temoins) -
 
 pub fn lire_adn(chemin: &str) -> Result<(Vec<u128>, Vec<Molecule>, Temoins), String> {
     let texte = std::fs::read_to_string(chemin).map_err(|e| format!("{} : {}", chemin, e))?;
-    let l: Vec<&str> = texte.split('\n').collect();
+    // les fins de ligne de Windows (\r\n) sont acceptées : un ADN recopié ou écrit sous Windows reste lisible
+    let l: Vec<&str> = texte.split('\n').map(|x| x.trim_end_matches('\r')).collect();
     if l.len() < 5 || l[0] != "VTXADN02" {
         return Err(format!("{} : ce n'est pas un ADN de vtx", chemin));
     }
