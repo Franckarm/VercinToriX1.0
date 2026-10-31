@@ -347,7 +347,7 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - Ce qui reste :
     - une réaction qui rend une liaison portant faux rend sa valeur brute (elle devrait rendre faux) ;
     - les unités et les contrats n'entrent pas encore dans la signature de Fischer ;
-    - vtxc128 ne connaît encore ni les réactions ni ces ajouts.
+    - vtxc128 ne connaissait ni les réactions ni ces ajouts : fait au troisième temps, plus bas.
 - **Étape 4, deuxième temps : le calcul incrémental, les souvenirs** (vtx128.py ; l'exemple
   `exemples128/scene_incrementale.vtx`) :
   - **Le principe.** Un atome lourd garde le souvenir de sa dernière réaction : ses entrées et ce qu'il a donné. Quand la
@@ -361,7 +361,8 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
       son souvenir.
     - L'atome est hors de `principal`, qui ne réagit qu'une fois.
     - Ses entrées et son résultat sont rangés en un mot : entier, entier_32, entier_petuar, les flottants, le point.
-  - **Où** : dans l'étage 3, `@3[#F00000..#FFFFFF]`. Chaque souvenir prend sa validité, une case par entrée et une pour le
+  - **Où** : dans le cube 1 de l'étage 3, `@3[#1000000..#1FFFFFF]` (le cube 0 garde le tas, les copies et le journal des
+    hypothèses, qui commence à #F00000 : la première place choisie le heurtait, vu en portant les réactions dans vtxc128). Chaque souvenir prend sa validité, une case par entrée et une pour le
     résultat. Les flottants sont comparés bit à bit : -0 n'est pas +0.
   - **Les vagues sur plusieurs cœurs (étape 2).** Hors de principal, un atome lourd qui peut garder un souvenir le garde
     plutôt que d'aller sur un autre cœur : rappelé, il ne coûte plus rien. Dans principal, rien ne change.
@@ -376,3 +377,30 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - `python vtx128.py molecule` montre les souvenirs et leur place.
   - Ce qui reste : un souvenir ne garde que la dernière réaction (une table de plusieurs souvenirs, rangée selon Fischer,
     servirait les entrées qui alternent) ; le souvenir et les cœurs ne se combinent pas encore.
+- **Étape 4, troisième temps : les réactions dans vtxc128**, le compilateur écrit en vtx (`vtxc/vtxc128.vtx`, la section
+  « les réactions », environ 1 300 lignes de vtx) :
+  - **Ce qu'il lit**, comme vtx128.py :
+    - les atomes de chaque genre : calcul, si … alors [sinon], rendez-vous, pont, pour chaque ;
+    - les noms, `apres`, l'ordre des effets ;
+    - les vagues et les drapeaux des branches qui ne réagissent pas ;
+    - les atomes lourds d'une même vague ;
+    - les contrats ;
+    - les unités, ramenées à l'unité de base ;
+    - les souvenirs : est_pure et est_lourde sont refaits en vtx ;
+    - ×, ÷, `->`, ° et ·.
+  - **Le même résultat** : vtxc128 donne exactement les mêmes mots que vtx128.py (`vtxc/test_reactions_vtxc128.py`). C'est
+    vérifié sous trois réglages (prélude, optimisations, partition) :
+    - sur les exemples de Lugus en réactions ;
+    - sur les programmes des tests des réactions ;
+    - sur des réactions tirées au hasard (`vtxc/hasard_reactions.py` : chaque genre d'atome, les lignes mélangées).
+  - **Deux corrections trouvées en route** :
+    - les souvenirs heurtaient le journal des hypothèses (`@3[#F00000..]`) ; ils vont dans le cube 1 de l'étage 3 ;
+    - vtx128.py comptait deux fois les variables d'une vague ou d'un « pour chaque » pour choisir ses registres (il
+      lisait aussi ce que le bloc dit de lui-même, pour la forge) ; il ne compte plus que les instructions.
+  - **Ce que vtxc128 ne fait pas encore** :
+    - il ne vérifie pas les unités : il les lit et les ramène à la base, mais ne refuse pas des mètres plus des
+      secondes ;
+    - il ne rejoue pas les exemples : il les lit seulement ;
+    - un flottant avec une unité à facteur (`2.0 km`) lui est refusé.
+  - **Pour Lugus et Ogmios** : vtxc128 est embarqué dans lugus ; les réactions se compilent donc sans Python, dans
+    l'atelier comme en ligne de commande.

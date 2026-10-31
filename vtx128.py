@@ -488,10 +488,11 @@ def symbole_unite(k, v):
 
 # ------------------------------------------------------------------------------------------------ les souvenirs
 # Le calcul incrémental : un atome lourd (l'appel d'une fonction pure du programme) garde le souvenir de sa dernière
-# réaction, ses entrées et ce qu'il a donné, dans l'étage 3 (@3[#F00000..#FFFFFF]). Quand la réaction est rappelée avec
+# réaction, ses entrées et ce qu'il a donné, dans le cube 1 de l'étage 3 (@3[#1000000..#1FFFFFF] : le cube 0 garde le tas,
+# les copies et le journal des hypothèses, qui commence à #F00000). Quand la réaction est rappelée avec
 # les mêmes entrées pour lui, il ne réagit pas : il redonne son souvenir ; et ce qui en dépend voit les mêmes entrées.
 SOUVENIRS = os.environ.get("VTX_SOUVENIRS", "1") != "0"     # VTX_SOUVENIRS=0 : sans (pour mesurer)
-SOUVENIRS_DEBUT, SOUVENIRS_FIN = 0xF00000, 0x1000000
+SOUVENIRS_DEBUT, SOUVENIRS_FIN = 0x1000000, 0x2000000
 TYPES_SOUVENIR = {"e", "i", "f", "s", "x", "w", "p"}
 EFFETS_PURS = {"__rompre", "sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture",
                "ouvrir_ecriture", "fermer", "fin_de", "bruit", "pile", "marquer_adn", "marquer_arn", "liberer_brin", "brin",
@@ -6324,6 +6325,10 @@ def compter_usages(x, d, sc):
     if g == "tantque":
         compter_usages(x[1], d + 1, sc)
         compter_usages(x[2], d + 1, sc)
+        return
+    if g == "bloc":
+        # les instructions du bloc, pas ce qu'il dit de lui-même (une vague, un « pour chaque » : pour la forge)
+        compter_usages(x[1], d, sc)
         return
     if g == "pour":
         sc[x[1]] = sc.get(x[1], 0) + poids_boucle(d) + 3 * poids_boucle(d + 1)

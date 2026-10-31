@@ -153,7 +153,7 @@ fonction texte_de(l: Liste, debut, fin) {
 
 // --------------------------------------------------------------------------------------------- structures du compilateur
 // Jeton : genre 1 identifiant, 2 mot-clé, 3 nombre, 4 opérateur, 5 texte, 6 fin
-structure Jeton { genre, val, texte, ligne, suivant: Jeton }
+structure Jeton { genre, val, texte, ligne, suivant: Jeton, debut, fin }   // debut, fin : sa place dans le source
 
 // Noeud de l'arbre : genre (voir les constantes plus bas), op (texte), val, nom (texte), enfants a, b, c,
 // liste chaînée d'instructions ou d'arguments (premier), suivant dans une liste, ligne
@@ -164,12 +164,22 @@ structure Noeud { genre, op, val, nom, a: Noeud, b: Noeud, c: Noeud, premier: No
 structure Champ { nom, type, suivant: Champ }
 structure Struct { nom, champs: Champ, nb, suivant: Struct }
 structure Param { nom, type, suivant: Param, usages }   // usages : dans un corps recopiable
+// quoi : le calcul (ou la condition d'un si, le corps d'un pour chaque) ; x, y : les deux branches d'un si, la valeur
+// d'un pont, les bornes d'un pour chaque ; m : la case d'un pont ; args : les liaisons d'un rendez-vous ; cib : ce qu'il
+// touche hors de ses liaisons, quatre nombres par cible (genre, étage ou -1, adresse connue, adresse)
+structure Atome { nom, genre, quoi: Noeud, x: Noeud, y: Noeud, m: Noeud, args: Noeud, red, var, sorties: Liste,
+                  entrees: Liste, apres: Liste, avant: Liste, cib: Liste, ligne, fait, vague, suivant: Atome }
+// genre 1 exige, 2 garantit ; msg : le texte écrit quand il est rompu
+structure Contrat { genre, cond: Noeud, msg, ligne, suivant: Contrat }
+structure Molecule { nom, params: Param, atomes: Atome, contrats: Contrat, resultat, ligne, vagues: Liste,
+                     ok: Liste, prem: Noeud, der: Noeud }
+
 // garde : la fonction est générée ; suite : file des fonctions demandées pendant la génération (élagage)
 // el : 1 si la fonction peut être recopiée en ligne (retour E), 2 (une instruction), 0 sinon ; el_corps : E ou
 // l'instruction ; el_sans : son corps n'écrit rien (sans appel d'une fonction qui ne soit pas pure) ; el_pure : 1
 // fonction pure qui lit la mémoire, 2 pure qui ne fait que calculer ; el_actif : en cours de recopie
 structure Fonction { nom, params: Param, nb, rtype, corps: Noeud, etiq, ligne, garde, suivant: Fonction, suite: Fonction,
-                     er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif }
+                     er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif, mol: Molecule }   // mol : la molécule d'une réaction
 structure Constante { nom, val, type, haut, suivant: Constante }
 // sorte : 0 tableau d'entiers, 1 de quits, 2 de logiques (32 par mot), 3 de structures (st : son numéro)
 structure Tableau { nom, etage, base, taille, sorte, st, suivant: Tableau }
@@ -237,6 +247,8 @@ structure Ctx {
     lex_compat,         // 1 : lire au sens du SPU-64 (le prélude) : 1.5 et #RRGGBB comme au SPU-64
     lugus_place: Liste, // Lugus : la place (en demi-mots) de chaque mot du code du SPU-64
     lugus_demis: Liste, // Lugus : les demi-instructions, deux par mot
+    dans_reaction,      // 1 : dans le corps d'une réaction (un nombre peut y porter son unité)
+    souv_place,         // la prochaine place libre des souvenirs (@3[#F00000..])
     erreur
 }
 
@@ -561,7 +573,7 @@ fonction ranger_noms(k, noms) {
 // les mots-clés et les intégrés, rangés une fois au départ
 fonction tables_glacees() {
     ranger_noms(K_MOTS, "fonction soit si sinon tantque retour constante pour dans donnees arrêter continuer hypothèse annuler valider selon");
-    ranger_noms(K_INTEGRES, "__service addm4 arrondi bas bits brin bruit cmp3 comme_flottant comme_flottant_32 comme_flottant_petuar de_ieee128 de_ieee64 ecrire_car entier entier_128 entier_128_de entier_128_signe entier_32 entier_petuar entier_petuar_de entier_petuar_signe entrée fermer fin_de flottant flottant_128 flottant_32 flottant_64 flottant_petuar flottant_signe gdot gemv haut liberer_brin lire_car marquer_adn marquer_arn max4 min4 mul_haut mul_haut_signe nb_bits ouvrir_ecriture ouvrir_lecture pile qegal racine sortie vers_ieee128 vers_ieee64 point point32 matiere comme_point melanger antipoint avec_etat avec_reflet avec_lumiere avec_transparence avec_profondeur avec_rugosite flottant_petuar_signe __mot128");
+    ranger_noms(K_INTEGRES, "__service addm4 arrondi bas bits brin bruit cmp3 comme_flottant comme_flottant_32 comme_flottant_petuar de_ieee128 de_ieee64 ecrire_car entier entier_128 entier_128_de entier_128_signe entier_32 entier_petuar entier_petuar_de entier_petuar_signe entrée __rompre fermer fin_de flottant flottant_128 flottant_32 flottant_64 flottant_petuar flottant_signe gdot gemv haut liberer_brin lire_car marquer_adn marquer_arn max4 min4 mul_haut mul_haut_signe nb_bits ouvrir_ecriture ouvrir_lecture pile qegal racine sortie vers_ieee128 vers_ieee64 point point32 matiere comme_point melanger antipoint avec_etat avec_reflet avec_lumiere avec_transparence avec_profondeur avec_rugosite flottant_petuar_signe __mot128");
 }
 
 fonction est_mot_cle(t) {
@@ -980,7 +992,9 @@ fonction bits_q(c: Ctx, n: Liste, k, p, ebits, biais) {
 
 // --------------------------------------------------------------------------------------------- analyse lexicale
 fonction lettre(x) {
-    retour (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || x == '_' || x >= 128;
+    // × ÷ ° · sont des opérateurs (comme pour vtx128.py)
+    retour (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || x == '_' || (x >= 128 && x != 215 && x != 247 && x != 176
+                                                                            && x != 183);
 }
 
 fonction chiffre(x) {
@@ -1033,12 +1047,13 @@ fonction operateur(c: Ctx, i) {
     }
     si (x == '<' && y == '<') || (x == '>' && y == '>') || (x == '<' && y == '=') || (x == '>' && y == '=')
         || (x == '=' && y == '=') || (x == '!' && y == '=') || (x == '&' && y == '&') || (x == '|' && y == '|')
-        || (x == '.' && (y == '<' || y == '>' || y == '/' || y == '%' || y == '.')) {
+        || (x == '.' && (y == '<' || y == '>' || y == '/' || y == '%' || y == '.')) || (x == '-' && y == '>') {
         retour 2;
     }
     si x == '-' || x == '+' || x == '*' || x == '/' || x == '%' || x == '&' || x == '|' || x == '^' || x == '~'
         || x == '<' || x == '>' || x == '=' || x == '@' || x == '[' || x == ']' || x == '(' || x == ')' || x == '{'
-        || x == '}' || x == ';' || x == ',' || x == '.' || x == '!' || x == ':' {
+        || x == '}' || x == ';' || x == ',' || x == '.' || x == '!' || x == ':' || x == 215 || x == 247 || x == 176
+        || x == 183 {
         retour 1;
     }
     retour 0;
@@ -1254,6 +1269,8 @@ fonction lexer(c: Ctx) {
     soit dernier: Jeton = nul;
     tantque i < s.n && c.erreur == 0 {
         soit x = elem(s, i);
+        soit d0 = i;
+        soit avant = dernier;
         si x == ' ' || x == 9 || x == 13 {
             i = i + 1;
         } sinon si x == 10 {
@@ -1384,8 +1401,18 @@ fonction lexer(c: Ctx) {
             si n == 0 {
                 erreur(c, ligne, "caractère inattendu");
             }
-            dernier = nouveau_jeton(c, dernier, 4, 0, nom_sous(s.mem - 1, i, n), ligne);
+            si x == 215 {
+                dernier = nouveau_jeton(c, dernier, 4, 0, "*", ligne);          // ×
+            } sinon si x == 247 {
+                dernier = nouveau_jeton(c, dernier, 4, 0, "/", ligne);          // ÷
+            } sinon {
+                dernier = nouveau_jeton(c, dernier, 4, 0, nom_sous(s.mem - 1, i, n), ligne);
+            }
             i = i + n;
+        }
+        si dernier != avant && dernier != nul {
+            dernier.debut = d0;
+            dernier.fin = i;
         }
     }
     dernier = nouveau_jeton(c, dernier, 6, 0, 0, ligne);
@@ -1648,6 +1675,10 @@ fonction unaire(c: Ctx): Noeud {
         retour bin("-", nombre(0, l), unaire(c), l);
     }
     soit e = primaire(c);
+    si c.dans_reaction && (e.genre == N_NOMBRE || e.genre == N_FNOMBRE || e.genre == N_XNOMBRE)
+            && symbole_unite(c, c.tok) != 0 {
+        retour avec_unite(c, e);
+    }
     tantque c.erreur == 0 && (est_op(c, ".") || est_op(c, "[")) {
         si est_op(c, "[") {
             // t[i] d'un tableau dynamique : la case i de son bloc de données
@@ -3329,6 +3360,1305 @@ fonction bloc_hypothese(c: Ctx, n, corps: Noeud, l): Noeud {
     retour Noeud { genre: N_POUR, nom: nom_cache("__hk", n), a: nombre(0, l), b: nombre(1, l), val: 1, premier: entree, ligne: l };
 }
 
+// --------------------------------------------------------------------------------------------- les réactions
+// Comme vtx128.py (docs/vtx-reactions.md) : un bloc où chaque ligne est un atome (le code) qui donne des liaisons (les
+// données) ; l'ordre des lignes ne compte pas, les atomes sont rangés par vagues d'après les liaisons. La réaction est
+// traduite en une fonction ordinaire, ses atomes dans l'ordre des vagues, exactement comme vtx128.py : les mêmes mots.
+// Les contrats (exige, garantit), les unités physiques (lues, ramenées à l'unité de base ; vtxc128 ne les vérifie pas
+// encore), les souvenirs des atomes lourds (le calcul incrémental) ; les exemples sont lus, pas rejoués (vtx128.py le
+// fait).
+constante A_CALCUL = 1;
+constante A_SI = 2;
+constante A_RDV = 3;
+constante A_PONT = 4;
+constante A_CHAQUE = 5;
+constante C_CUBE = 1;
+constante C_ECRAN = 2;
+constante C_SORTIE = 3;
+constante C_MONDE = 4;
+constante SOUVENIRS_DEBUT = 16777216;     // #1000000 : le cube 1 de l'étage 3, @3[#1000000..#1FFFFFF]
+constante SOUVENIRS_FIN = 33554432;
+
+// a + b, deux textes
+fonction joindre_textes(a, b) {
+    soit l = liste();
+    ajouter_texte(l, a);
+    ajouter_texte(l, b);
+    retour texte_de(l, 0, l.n);
+}
+
+fonction dans_noms(l: Liste, nom) {
+    si l == nul {
+        retour 0;
+    }
+    pour i dans 0..l.n {
+        si egal(elem(l, i), nom) {
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
+// a avant b dans l'ordre des caractères (comme le tri des textes de Python)
+fonction texte_avant(a, b) {
+    soit n = longueur(a);
+    si longueur(b) < n {
+        n = longueur(b);
+    }
+    pour i dans 0..n {
+        si car(a, i) != car(b, i) {
+            retour car(a, i) < car(b, i);
+        }
+    }
+    retour longueur(a) < longueur(b);
+}
+
+// les noms lus par une expression (N_VAR), dans l'ordre
+fonction variables_de(n: Noeud, acc: Liste) {
+    si n == nul {
+        retour;
+    }
+    si n.genre == N_VAR {
+        ajouter(acc, n.nom);
+    }
+    variables_de(n.a, acc);
+    variables_de(n.b, acc);
+    variables_de(n.c, acc);
+    soit p = n.premier;
+    tantque p != nul {
+        variables_de(p, acc);
+        p = p.suivant;
+    }
+    p = n.deuxieme;
+    tantque p != nul {
+        variables_de(p, acc);
+        p = p.suivant;
+    }
+}
+
+fonction lus_atome(a: Atome, acc: Liste) {
+    variables_de(a.quoi, acc);
+    variables_de(a.x, acc);
+    variables_de(a.y, acc);
+    variables_de(a.m, acc);
+    soit p = a.args;
+    tantque p != nul {
+        variables_de(p, acc);
+        p = p.suivant;
+    }
+}
+
+fonction est_param(m: Molecule, nom) {
+    soit p = m.params;
+    tantque p != nul {
+        si egal(p.nom, nom) {
+            retour 1;
+        }
+        p = p.suivant;
+    }
+    retour 0;
+}
+
+// l'atome qui donne la liaison (nul : aucun)
+fonction donneur(m: Molecule, nom): Atome {
+    soit a = m.atomes;
+    tantque a != nul {
+        si dans_noms(a.sorties, nom) {
+            retour a;
+        }
+        a = a.suivant;
+    }
+    retour nul;
+}
+
+// ---- les cibles : ce qu'un atome touche hors de ses liaisons (une case du cube, l'écran, la sortie, le monde)
+fonction cible_ajouter(l: Liste, genre, etg, connue, adr) {
+    ajouter(l, genre);
+    ajouter(l, etg);
+    ajouter(l, connue);
+    ajouter(l, adr);
+}
+
+fonction cible_lecture(n: Noeud, l: Liste) {
+    si n == nul {
+        retour;
+    }
+    si n.genre == N_LIRE {
+        soit etg = 0 - 1;
+        si n.a == nul && n.val <= 3 {
+            etg = n.val;
+        }
+        soit connue = etg != 0 - 1 && n.b != nul && n.b.genre == N_NOMBRE;
+        soit adr = 0;
+        si connue {
+            adr = n.b.val;
+        }
+        cible_ajouter(l, C_CUBE, etg, connue, adr);
+    }
+    cible_lecture(n.a, l);
+    cible_lecture(n.b, l);
+    cible_lecture(n.c, l);
+    soit p = n.premier;
+    tantque p != nul {
+        cible_lecture(p, l);
+        p = p.suivant;
+    }
+    p = n.deuxieme;
+    tantque p != nul {
+        cible_lecture(p, l);
+        p = p.suivant;
+    }
+}
+
+fonction cibles_atome(a: Atome) {
+    soit l = liste();
+    si a.genre == A_PONT {
+        cible_lecture(a.x, l);
+        soit m = a.m;
+        soit etg = 0 - 1;
+        si m.a == nul && m.val <= 3 {
+            etg = m.val;
+        }
+        soit connue = etg != 0 - 1 && m.b.genre == N_NOMBRE;
+        soit adr = 0;
+        si connue {
+            adr = m.b.val;
+        }
+        cible_ajouter(l, C_CUBE, etg, connue, adr);
+    } sinon {
+        cible_lecture(a.quoi, l);
+        cible_lecture(a.x, l);
+        cible_lecture(a.y, l);
+        soit p = a.args;
+        tantque p != nul {
+            cible_lecture(p, l);
+            p = p.suivant;
+        }
+        si a.genre == A_CALCUL && a.sorties.n == 0 && a.quoi.genre == N_APPEL {
+            soit n = a.quoi.nom;
+            si egal(n, "afficher") || egal(n, "ecrire") || egal(n, "texte") || egal(n, "ecrire_car") {
+                cible_ajouter(l, C_ECRAN, 0 - 1, 0, 0);
+            } sinon si egal(n, "sortie") {
+                cible_ajouter(l, C_SORTIE, 0 - 1, 0, 0);
+            } sinon {
+                cible_ajouter(l, C_MONDE, 0 - 1, 0, 0);
+            }
+        }
+    }
+    a.cib = l;
+}
+
+fonction heurte(x: Liste, i, y: Liste, j) {
+    soit gx = elem(x, i);
+    soit gy = elem(y, j);
+    si gx == C_MONDE || gy == C_MONDE {
+        retour 1;
+    }
+    si gx != gy {
+        retour 0;
+    }
+    si gx != C_CUBE {
+        retour 1;
+    }
+    soit ex = elem(x, i + 1);
+    soit ey = elem(y, j + 1);
+    si ex == 0 - 1 || ey == 0 - 1 {
+        retour 1;
+    }
+    retour ex == ey && (!elem(x, i + 2) || !elem(y, j + 2) || elem(x, i + 3) == elem(y, j + 3));
+}
+
+// a attend-il b (directement ou de proche en proche, par les ordres et les liaisons) ?
+fonction attend(m: Molecule, a: Atome, b: Atome, vus: Liste) {
+    pour i dans 0..vus.n {
+        si elem(vus, i) == bits(a) {
+            retour 0;
+        }
+    }
+    ajouter(vus, bits(a));
+    pour i dans 0..a.avant.n {
+        soit p: Atome = elem(a.avant, i);
+        si p == b || attend(m, p, b, vus) {
+            retour 1;
+        }
+    }
+    pour i dans 0..a.entrees.n {
+        soit p2 = donneur(m, elem(a.entrees, i));
+        si p2 != nul {
+            si p2 == b || attend(m, p2, b, vus) {
+                retour 1;
+            }
+        }
+    }
+    retour 0;
+}
+
+// ---- la molécule : les liaisons, l'ordre des effets, les vagues
+fonction former_molecule(c: Ctx, m: Molecule) {
+    soit a = m.atomes;
+    tantque a != nul && c.erreur == 0 {
+        si a.genre == A_RDV && a.sorties.n != nb_args(a.args) {
+            erreur(c, a.ligne, "un rendez-vous de n liaisons en donne autant");
+        }
+        si a.genre != A_RDV && a.sorties.n > 1 {
+            erreur(c, a.ligne, "seul un rendez-vous donne plusieurs liaisons");
+        }
+        pour i dans 0..a.sorties.n {
+            soit s = elem(a.sorties, i);
+            soit d = donneur(m, s);
+            si (d != nul && d != a) || est_param(m, s) || dans_noms_avant(a.sorties, i, s) {
+                erreur_nom(c, a.ligne, "la liaison est déjà donnée :", s);
+            }
+        }
+        a = a.suivant;
+    }
+    a = m.atomes;
+    tantque a != nul && c.erreur == 0 {
+        soit lus = liste();
+        lus_atome(a, lus);
+        si a.genre == A_CHAQUE && (donneur(m, a.var) != nul || est_param(m, a.var)) {
+            erreur(c, a.ligne, "la variable de « pour chaque » porte le nom d'une liaison");
+        }
+        a.entrees = liste();
+        pour i dans 0..lus.n {
+            soit v = elem(lus, i);
+            si !(a.genre == A_CHAQUE && egal(v, a.var)) && (donneur(m, v) != nul || est_param(m, v))
+                    && !dans_noms(a.entrees, v) {
+                ajouter(a.entrees, v);
+            }
+        }
+        a.avant = liste();
+        cibles_atome(a);
+        a = a.suivant;
+    }
+    si c.erreur != 0 {
+        retour;
+    }
+    // apres nom : l'ordre écrit
+    a = m.atomes;
+    tantque a != nul && c.erreur == 0 {
+        pour i dans 0..a.apres.n {
+            soit n = elem(a.apres, i);
+            soit b = m.atomes;
+            soit trouve: Atome = nul;
+            tantque b != nul {
+                si b.nom != 0 && egal(b.nom, n) {
+                    trouve = b;
+                }
+                b = b.suivant;
+            }
+            si trouve == nul {
+                erreur_nom(c, a.ligne, "« apres » : aucun atome ne s'appelle", n);
+            } sinon {
+                ajouter(a.avant, bits(trouve));
+            }
+        }
+        a = a.suivant;
+    }
+    si c.erreur != 0 {
+        retour;
+    }
+    // deux atomes qui touchent la même chose : le second attend le premier, dans l'ordre des lignes (un tri stable),
+    // sauf si l'ordre écrit ou les liaisons disent le contraire
+    soit effets = liste();
+    a = m.atomes;
+    tantque a != nul {
+        si a.cib.n > 0 {
+            soit k = effets.n;
+            ajouter(effets, bits(a));
+            tantque k > 0 && elem_atome(effets, k - 1).ligne > a.ligne {
+                poser(effets, k, elem(effets, k - 1));
+                poser(effets, k - 1, bits(a));
+                k = k - 1;
+            }
+        }
+        a = a.suivant;
+    }
+    pour i dans 0..effets.n {
+        soit ai = elem_atome(effets, i);
+        pour j dans 0..i {
+            soit bj = elem_atome(effets, j);
+            soit conflit = 0;
+            soit x = 0;
+            tantque x < ai.cib.n && !conflit {
+                soit y = 0;
+                tantque y < bj.cib.n && !conflit {
+                    conflit = heurte(ai.cib, x, bj.cib, y);
+                    y = y + 4;
+                }
+                x = x + 4;
+            }
+            si conflit && !contient_mot(ai.avant, bits(bj)) && !attend(m, bj, ai, liste()) {
+                ajouter(ai.avant, bits(bj));
+            }
+        }
+    }
+    // les vagues : un atome réagit quand toutes ses liaisons d'entrée sont arrivées (et ceux qu'il attend)
+    m.vagues = liste();
+    soit faits = liste();
+    soit p = m.params;
+    tantque p != nul {
+        ajouter(faits, p.nom);
+        p = p.suivant;
+    }
+    soit restants = 0;
+    a = m.atomes;
+    tantque a != nul {
+        restants = restants + 1;
+        a = a.suivant;
+    }
+    soit numero = 0;
+    tantque restants > 0 && c.erreur == 0 {
+        soit prets = liste();
+        a = m.atomes;
+        tantque a != nul {
+            si !a.fait {
+                soit pret = 1;
+                pour i dans 0..a.entrees.n {
+                    si !dans_noms(faits, elem(a.entrees, i)) {
+                        pret = 0;
+                    }
+                }
+                pour i dans 0..a.avant.n {
+                    si !elem_atome(a.avant, i).fait {
+                        pret = 0;
+                    }
+                }
+                si pret {
+                    ajouter(prets, bits(a));
+                }
+            }
+            a = a.suivant;
+        }
+        si prets.n == 0 {
+            soit bloque = m.atomes;
+            tantque bloque.fait {
+                bloque = bloque.suivant;
+            }
+            erreur(c, bloque.ligne, "une liaison revient sur elle-même (un cycle) : une réaction n'a pas de cycle sans « cycle » écrit");
+            retour;
+        }
+        numero = numero + 1;
+        pour i dans 0..prets.n {
+            soit q = elem_atome(prets, i);
+            q.fait = 1;
+            q.vague = numero;
+            pour ks dans 0..q.sorties.n {
+                ajouter(faits, elem(q.sorties, ks));
+            }
+        }
+        ajouter(m.vagues, bits(prets));
+        restants = restants - prets.n;
+    }
+}
+
+fonction dans_noms_avant(l: Liste, n, nom) {
+    pour i dans 0..n {
+        si egal(elem(l, i), nom) {
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
+fonction contient_mot(l: Liste, x) {
+    pour i dans 0..l.n {
+        si elem(l, i) == x {
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
+fonction elem_atome(l: Liste, i): Atome {
+    soit a: Atome = elem(l, i);
+    retour a;
+}
+
+// ---- les souvenirs (le calcul incrémental), comme est_pure et est_lourde de vtx128.py
+fonction noeud_impur(g) {
+    retour g == N_LIRE || g == N_ECRIRE || g == N_CHAMP || g == N_ECRIRE_CHAMP || g == N_ACCORD || g == N_INFO
+        || g == N_RLIRE || g == N_RECRIRE || g == N_ETIQ || g == N_CONSTRUIRE || g == N_NOUVEAU || g == N_DONNEES
+        || g == N_ANNULER || g == N_VALIDER;
+}
+
+fonction effet_nomme(nom) {
+    retour egal(nom, "__rompre") || egal(nom, "sortie") || egal(nom, "afficher") || egal(nom, "entrée")
+        || egal(nom, "lire_car") || egal(nom, "ecrire_car") || egal(nom, "__service") || egal(nom, "ouvrir_lecture")
+        || egal(nom, "ouvrir_ecriture") || egal(nom, "fermer") || egal(nom, "fin_de") || egal(nom, "bruit")
+        || egal(nom, "pile") || egal(nom, "marquer_adn") || egal(nom, "marquer_arn") || egal(nom, "liberer_brin")
+        || egal(nom, "brin") || egal(nom, "gemv") || egal(nom, "tableau") || egal(nom, "nouveau")
+        || egal(nom, "nouveau_de") || egal(nom, "ecrire") || egal(nom, "texte") || egal(nom, "presenter")
+        || egal(nom, "ecran") || egal(nom, "pixel");
+}
+
+// une fonction du programme (pas du prélude)
+fonction fonction_programme(c: Ctx, nom): Fonction {
+    soit f = fonction_de(c, nom);
+    si f != nul && !f.prelude {
+        retour f;
+    }
+    retour nul;
+}
+
+fonction pur_noeud(c: Ctx, n: Noeud, vus: Liste) {
+    tantque n != nul {
+        si noeud_impur(n.genre) {
+            retour 0;
+        }
+        si n.genre == N_APPEL {
+            si effet_nomme(n.nom) || (!est_integre(n.nom) && op_logique(n.nom) == 0 && !est_pure(c, n.nom, vus)) {
+                retour 0;
+            }
+        }
+        si !pur_noeud(c, n.a, vus) || !pur_noeud(c, n.b, vus) || !pur_noeud(c, n.c, vus)
+                || !pur_noeud(c, n.premier, vus) || !pur_noeud(c, n.deuxieme, vus) {
+            retour 0;
+        }
+        n = n.suivant;
+    }
+    retour 1;
+}
+
+// une fonction du programme qui ne lit ni n'écrit la mémoire et ne touche pas le monde (ni ce qu'elle appelle)
+fonction est_pure(c: Ctx, nom, vus: Liste) {
+    si dans_noms(vus, nom) {
+        retour 1;
+    }
+    ajouter(vus, nom);
+    soit f = fonction_programme(c, nom);
+    si f == nul {
+        retour 0;
+    }
+    si f.mol != nul {
+        soit m: Molecule = f.mol;
+        soit a = m.atomes;
+        tantque a != nul {
+            si a.genre == A_PONT {
+                retour 0;
+            }
+            a = a.suivant;
+        }
+        a = m.atomes;
+        tantque a != nul {
+            si !pur_noeud(c, a.quoi, vus) || !pur_noeud(c, a.x, vus) || !pur_noeud(c, a.y, vus)
+                    || !pur_noeud(c, a.args, vus) {
+                retour 0;
+            }
+            a = a.suivant;
+        }
+        retour 1;
+    }
+    retour pur_noeud(c, f.corps, vus);
+}
+
+fonction lourd_noeud(c: Ctx, n: Noeud, chemin: Liste) {
+    tantque n != nul {
+        si n.genre == N_POUR || n.genre == N_TANTQUE || n.genre == N_INFO {
+            retour 1;
+        }
+        si n.genre == N_APPEL && fonction_programme(c, n.nom) != nul && est_lourde(c, n.nom, chemin) {
+            retour 1;
+        }
+        si lourd_noeud(c, n.a, chemin) || lourd_noeud(c, n.b, chemin) || lourd_noeud(c, n.c, chemin)
+                || lourd_noeud(c, n.premier, chemin) || lourd_noeud(c, n.deuxieme, chemin) {
+            retour 1;
+        }
+        n = n.suivant;
+    }
+    retour 0;
+}
+
+// une fonction qui fait une boucle, ou s'appelle elle-même, ou appelle une fonction lourde
+fonction est_lourde(c: Ctx, nom, chemin: Liste) {
+    si dans_noms(chemin, nom) {
+        retour 1;
+    }
+    soit f = fonction_programme(c, nom);
+    si f == nul {
+        retour 0;
+    }
+    soit ch = liste();
+    pour i dans 0..chemin.n {
+        ajouter(ch, elem(chemin, i));
+    }
+    ajouter(ch, nom);
+    si f.mol != nul {
+        soit m: Molecule = f.mol;
+        soit a = m.atomes;
+        tantque a != nul {
+            si a.genre == A_CHAQUE || lourd_noeud(c, a.quoi, ch) || lourd_noeud(c, a.x, ch) || lourd_noeud(c, a.y, ch)
+                    || lourd_noeud(c, a.m, ch) || lourd_noeud(c, a.args, ch) {
+                retour 1;
+            }
+            a = a.suivant;
+        }
+        retour 0;
+    }
+    retour lourd_noeud(c, f.corps, ch);
+}
+
+fonction type_souvenir(t) {
+    retour t == 0 || t == T_I || t == T_F || t == T_S || t == T_X || t == T_W || t == T_P;
+}
+
+fonction souvenir_possible(c: Ctx, m: Molecule, a: Atome) {
+    soit q = a.quoi;
+    si q.genre != N_APPEL {
+        retour 0;
+    }
+    soit f = fonction_programme(c, q.nom);
+    si f == nul {
+        retour 0;
+    }
+    si egal(m.nom, "principal") || !est_lourde(c, f.nom, liste()) {
+        retour 0;
+    }
+    si egal(f.nom, m.nom) || nb_args(q.premier) != f.nb || !type_souvenir(f.rtype) {
+        retour 0;
+    }
+    soit p = f.params;
+    tantque p != nul {
+        si !type_souvenir(p.type) {
+            retour 0;
+        }
+        p = p.suivant;
+    }
+    si c.souv_place + f.nb + 2 > SOUVENIRS_FIN {
+        retour 0;
+    }
+    retour est_pure(c, f.nom, liste());
+}
+
+fonction case_souvenir(k, l): Noeud {
+    retour Noeud { genre: N_LIRE, val: 3, b: nombre(k, l), ligne: l };
+}
+
+fonction relu(t, k, l): Noeud {
+    soit n = case_souvenir(k, l);
+    si t == T_I { retour appel1("entier_32", n, l); }
+    si t == T_F { retour appel1("comme_flottant", n, l); }
+    si t == T_S { retour appel1("comme_flottant_32", n, l); }
+    si t == T_X { retour appel1("comme_flottant_petuar", n, l); }
+    si t == T_P { retour appel1("comme_point", n, l); }
+    retour n;
+}
+
+fonction souvenir_egal(t, x: Noeud, y: Noeud, l): Noeud {
+    si t == T_F || t == T_S || t == T_X || t == T_P {
+        retour bin("==", appel1("bits", x, l), appel1("bits", y, l), l);
+    }
+    retour bin("==", x, y, l);
+}
+
+fonction soit_type(nom, a: Noeud, l, t): Noeud {
+    soit s = Noeud { genre: N_SOIT, nom: nom, a: a, val: t, ligne: l };
+    si t == 0 {
+        s.expl = 1;
+    }
+    retour s;
+}
+
+fonction souvenir(c: Ctx, m: Molecule, a: Atome) {
+    soit q = a.quoi;
+    soit f = fonction_programme(c, q.nom);
+    soit l = a.ligne;
+    soit s = elem(a.sorties, 0);
+    soit base = c.souv_place;
+    c.souv_place = c.souv_place + f.nb + 2;
+    soit cond = bin("!=", case_souvenir(base, l), nombre(0, l), l);
+    soit tmp = liste();
+    soit arg = q.premier;
+    soit p = f.params;
+    soit i = 0;
+    tantque arg != nul {
+        soit suite = arg.suivant;
+        arg.suivant = nul;
+        soit v = nom_cache(joindre_textes(nom_cache("__souv", base), "_"), i);
+        ajouter(tmp, v);
+        emettre_st(m, soit_type(v, arg, l, p.type));
+        cond = bin("&&", cond, souvenir_egal(p.type, var_n(v, l), relu(p.type, base + 1 + i, l), l), l);
+        arg = suite;
+        p = p.suivant;
+        i = i + 1;
+    }
+    emettre_st(m, soit_type(s, relu(f.rtype, base + 1 + tmp.n, l), l, f.rtype));
+    soit args: Noeud = nul;
+    pour k dans 0..tmp.n {
+        args = chainer(args, var_n(elem(tmp, k), l));
+    }
+    soit reagir = Noeud { genre: N_AFFECTER, nom: s, a: Noeud { genre: N_APPEL, nom: q.nom, premier: args, ligne: q.ligne }, ligne: l };
+    pour k dans 0..tmp.n {
+        chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base + 1 + k, l), c: var_n(elem(tmp, k), l), ligne: l });
+    }
+    chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base + 1 + tmp.n, l), c: var_n(s, l), ligne: l });
+    chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base, l), c: nombre(1, l), ligne: l });
+    emettre_st(m, Noeud { genre: N_SI, a: cond, val: 1, deuxieme: reagir, ligne: l });
+}
+
+// ---- le corps : la fonction ordinaire, les atomes dans l'ordre des vagues
+fonction emettre_st(m: Molecule, s: Noeud) {
+    si m.prem == nul {
+        m.prem = s;
+    } sinon {
+        m.der.suivant = s;
+    }
+    m.der = s;
+    tantque m.der.suivant != nul {
+        m.der = m.der.suivant;
+    }
+}
+
+// le drapeau d'une liaison qui peut porter faux (0 : aucun)
+fonction drapeau_de(m: Molecule, nom) {
+    pour i dans 0..m.ok.n / 2 {
+        si egal(elem(m.ok, 2 * i), nom) {
+            retour elem(m.ok, 2 * i + 1);
+        }
+    }
+    retour 0;
+}
+
+fonction poser_drapeau(m: Molecule, nom, d) {
+    ajouter(m.ok, nom);
+    ajouter(m.ok, d);
+}
+
+fonction nouveau_drapeau(m: Molecule, s, garde: Noeud, l) {
+    soit d = joindre_textes(s, "__ok");
+    emettre_st(m, Noeud { genre: N_SOIT, nom: d, a: garde, ligne: l });
+    retour d;
+}
+
+// les drapeaux des liaisons lues, triés (sans doublon)
+fonction drapeaux_de(m: Molecule, noms: Liste): Liste {
+    soit d = liste();
+    pour i dans 0..noms.n {
+        soit x = drapeau_de(m, elem(noms, i));
+        si x != 0 && !dans_noms(d, x) {
+            soit k = d.n;
+            ajouter(d, x);
+            tantque k > 0 && texte_avant(x, elem(d, k - 1)) {
+                poser(d, k, elem(d, k - 1));
+                poser(d, k - 1, x);
+                k = k - 1;
+            }
+        }
+    }
+    retour d;
+}
+
+fonction garde_de(d: Liste, l): Noeud {
+    si d.n == 0 {
+        retour nul;
+    }
+    soit g = var_n(elem(d, 0), l);
+    pour i dans 1..d.n {
+        g = bin("&", g, var_n(elem(d, i), l), l);
+    }
+    retour g;
+}
+
+fonction sous_garde(garde: Noeud, s: Noeud, l): Noeud {
+    si garde == nul {
+        retour s;
+    }
+    retour Noeud { genre: N_SI, a: bin("!=", garde, nombre(0, l), l), premier: s, ligne: l };
+}
+
+fonction verifier_contrat(k: Contrat, garde: Noeud): Noeud {
+    soit l = k.ligne;
+    soit rompu = Noeud { genre: N_EXPR, a: appel1("afficher", Noeud { genre: N_ETIQ, nom: k.msg, ligne: l }, l), ligne: l };
+    rompu.suivant = Noeud { genre: N_EXPR, a: Noeud { genre: N_APPEL, nom: "__rompre", ligne: l }, ligne: l };
+    soit test = Noeud { genre: N_SI, a: k.cond, val: 1, deuxieme: rompu, ligne: l };
+    retour sous_garde(garde, test, l);
+}
+
+// l'expression appelle-t-elle une fonction du programme (un atome lourd) ?
+fonction appelle_programme(c: Ctx, n: Noeud) {
+    tantque n != nul {
+        si n.genre == N_APPEL && fonction_programme(c, n.nom) != nul {
+            retour 1;
+        }
+        si appelle_programme(c, n.a) || appelle_programme(c, n.b) || appelle_programme(c, n.c)
+                || appelle_programme(c, n.premier) || appelle_programme(c, n.deuxieme) {
+            retour 1;
+        }
+        n = n.suivant;
+    }
+    retour 0;
+}
+
+fonction corps_molecule(c: Ctx, m: Molecule): Noeud {
+    m.ok = liste();
+    m.prem = nul;
+    m.der = nul;
+    soit k = m.contrats;
+    tantque k != nul {
+        si k.genre == 1 {
+            emettre_st(m, verifier_contrat(k, nul));
+        }
+        k = k.suivant;
+    }
+    pour iv dans 0..m.vagues.n {
+        soit vague: Liste = elem(m.vagues, iv);
+        // les atomes lourds d'une même vague : ensemble (sur plusieurs cœurs, dans la forge) ; hors de principal, ceux
+        // qui peuvent garder un souvenir le gardent plutôt
+        soit lourds = liste();
+        pour i dans 0..vague.n {
+            soit a = elem_atome(vague, i);
+            si a.genre == A_CALCUL && a.sorties.n == 1 && drapeaux_de(m, a.entrees).n == 0 && appelle_programme(c, a.quoi) {
+                ajouter(lourds, bits(a));
+            }
+        }
+        si lourds.n >= 2 {
+            soit gardes = liste();
+            pour i dans 0..lourds.n {
+                si !souvenir_possible(c, m, elem_atome(lourds, i)) {
+                    ajouter(gardes, elem(lourds, i));
+                }
+            }
+            lourds = gardes;
+        }
+        si lourds.n < 2 {
+            lourds = liste();
+        } sinon {
+            soit pb: Noeud = nul;
+            pour i dans 0..lourds.n {
+                soit al = elem_atome(lourds, i);
+                pb = chainer(pb, Noeud { genre: N_SOIT, nom: elem(al.sorties, 0), a: al.quoi, ligne: al.ligne });
+            }
+            emettre_st(m, Noeud { genre: N_BLOC, premier: pb, ligne: elem_atome(lourds, 0).ligne });
+        }
+        pour i dans 0..vague.n {
+            soit av = elem_atome(vague, i);
+            si !contient_mot(lourds, bits(av)) {
+                atome_corps(c, m, av);
+            }
+        }
+    }
+    k = m.contrats;
+    tantque k != nul {
+        si k.genre == 2 {
+            soit lus = liste();
+            variables_de(k.cond, lus);
+            emettre_st(m, verifier_contrat(k, garde_de(drapeaux_de(m, lus), k.ligne)));
+        }
+        k = k.suivant;
+    }
+    si m.resultat != 0 {
+        si donneur(m, m.resultat) == nul && !est_param(m, m.resultat) {
+            erreur_nom(c, m.ligne, "la réaction rend une liaison qu'aucun atome ne donne :", m.resultat);
+        }
+        emettre_st(m, Noeud { genre: N_RETOUR, a: var_n(m.resultat, m.ligne), ligne: m.ligne });
+    }
+    retour m.prem;
+}
+
+fonction atome_corps(c: Ctx, m: Molecule, a: Atome) {
+    soit l = a.ligne;
+    soit drapeaux = drapeaux_de(m, a.entrees);
+    soit garde = garde_de(drapeaux, l);
+    soit s = 0;
+    si a.sorties.n > 0 {
+        s = elem(a.sorties, 0);
+    }
+    si a.genre == A_SI {
+        si a.y != nul {
+            si s != 0 {
+                emettre_st(m, Noeud { genre: N_SOIT, nom: s, a: a.y, ligne: l });
+                emettre_st(m, Noeud { genre: N_SI, a: a.quoi, premier: Noeud { genre: N_AFFECTER, nom: s, a: a.x, ligne: l }, ligne: l });
+            }
+        } sinon {
+            soit d = "si__ok";
+            si s != 0 {
+                d = joindre_textes(s, "__ok");
+            }
+            soit cnd = bin("!=", a.quoi, nombre(0, l), l);
+            si garde != nul {
+                cnd = bin("&", garde, cnd, l);
+            }
+            emettre_st(m, Noeud { genre: N_SOIT, nom: d, a: cnd, ligne: l });
+            si s != 0 {
+                emettre_st(m, Noeud { genre: N_SOIT, nom: s, a: a.x, ligne: l });
+                poser_drapeau(m, s, d);
+            }
+        }
+        si s != 0 && a.y != nul && garde != nul {
+            si drapeaux.n == 1 {
+                poser_drapeau(m, s, elem(drapeaux, 0));
+            } sinon {
+                poser_drapeau(m, s, nouveau_drapeau(m, s, garde, l));
+            }
+        }
+        retour;
+    }
+    si a.genre == A_RDV {
+        soit x = a.args;
+        soit ir = 0;
+        tantque x != nul {
+            soit suite = x.suivant;
+            x.suivant = nul;
+            soit si_ = elem(a.sorties, ir);
+            emettre_st(m, Noeud { genre: N_SOIT, nom: si_, a: x, ligne: l });
+            si garde != nul {
+                poser_drapeau(m, si_, nouveau_drapeau(m, si_, copier(garde), l));
+            }
+            x = suite;
+            ir = ir + 1;
+        }
+        retour;
+    }
+    si a.genre == A_CHAQUE {
+        soit sc = s;
+        si sc == 0 {
+            sc = nom_cache("__chaque", l);
+        }
+        soit init = 0;
+        si egal(a.red, "min") {
+            init = 18446744073709551615;
+        }
+        soit tour: Noeud = nul;
+        si egal(a.red, "somme") {
+            tour = Noeud { genre: N_AFFECTER, nom: sc, a: bin("+", var_n(sc, l), a.quoi, l), ligne: l };
+        } sinon {
+            soit op = ">";
+            si egal(a.red, "min") {
+                op = "<";
+            }
+            soit tmp = joindre_textes(sc, "__x");
+            tour = Noeud { genre: N_SOIT, nom: tmp, a: a.quoi, ligne: l };
+            tour.suivant = Noeud { genre: N_SI, a: bin(op, var_n(tmp, l), var_n(sc, l), l),
+                                   premier: Noeud { genre: N_AFFECTER, nom: sc, a: var_n(tmp, l), ligne: l }, ligne: l };
+        }
+        soit init_n = Noeud { genre: N_SOIT, nom: sc, a: nombre(init, l), ligne: l };
+        init_n.suivant = Noeud { genre: N_POUR, nom: a.var, a: a.x, b: a.y, val: 1, premier: tour, ligne: l };
+        emettre_st(m, Noeud { genre: N_BLOC, premier: init_n, ligne: l });
+        si garde != nul && a.sorties.n > 0 {
+            poser_drapeau(m, sc, nouveau_drapeau(m, sc, garde, l));
+        }
+        retour;
+    }
+    si a.genre == A_PONT {
+        soit ecr = Noeud { genre: N_ECRIRE, val: a.m.val, a: a.m.a, b: a.m.b, c: a.x, ligne: l };
+        si garde != nul {
+            ecr = sous_garde(copier(garde), ecr, l);
+        }
+        emettre_st(m, ecr);
+        pour i dans 0..a.sorties.n {
+            soit sp = elem(a.sorties, i);
+            emettre_st(m, Noeud { genre: N_SOIT, nom: sp, a: copier(a.x), ligne: l });
+            si garde != nul {
+                poser_drapeau(m, sp, nouveau_drapeau(m, sp, copier(garde), l));
+            }
+        }
+        retour;
+    }
+    // un calcul
+    si s != 0 && garde == nul && souvenir_possible(c, m, a) {
+        souvenir(c, m, a);
+        retour;
+    }
+    si s != 0 {
+        emettre_st(m, Noeud { genre: N_SOIT, nom: s, a: a.quoi, ligne: l });
+        si garde != nul {
+            poser_drapeau(m, s, nouveau_drapeau(m, s, garde, l));
+        }
+    } sinon {
+        emettre_st(m, sous_garde(garde, Noeud { genre: N_EXPR, a: a.quoi, ligne: l }, l));
+    }
+}
+
+// ---- la lecture d'une réaction
+// le texte des jetons de j0 jusqu'à j1 (exclu), tel qu'écrit (comme texte_jetons de vtx128.py)
+fonction alnum_py(x) {
+    retour (x >= 'a' && x <= 'z') || (x >= 'A' && x <= 'Z') || (x >= '0' && x <= '9') || x >= 128;
+}
+
+fonction texte_jetons(c: Ctx, j0: Jeton, j1: Jeton) {
+    soit l = liste();
+    soit dernier = liste();          // le dernier morceau (avec son espace)
+    soit j = j0;
+    tantque j != nul && j != j1 {
+        soit v = liste();
+        si j.genre == 5 {
+            ajouter(v, '"');
+            ajouter_texte(v, j.texte);
+            ajouter(v, '"');
+        } sinon {
+            pour i dans j.debut..j.fin {
+                ajouter(v, elem(c.src, i));
+            }
+        }
+        soit colle = 0;
+        si l.n > 0 {
+            soit un = v.n == 1 && (elem(v, 0) == ')' || elem(v, 0) == ']' || elem(v, 0) == ',' || elem(v, 0) == '.');
+            soit d = dernier.n == 1 && (elem(dernier, 0) == '(' || elem(dernier, 0) == '[' || elem(dernier, 0) == '.');
+            colle = un || d;
+            si v.n == 1 && elem(v, 0) == '(' && alnum_py(elem(dernier, dernier.n - 1)) {
+                colle = 1;
+            }
+        }
+        dernier = liste();
+        si l.n > 0 && !colle {
+            ajouter(dernier, ' ');
+        }
+        pour i dans 0..v.n {
+            ajouter(dernier, elem(v, i));
+        }
+        pour i dans 0..dernier.n {
+            ajouter(l, elem(dernier, i));
+        }
+        j = j.suivant;
+    }
+    retour texte_de(l, 0, l.n);
+}
+
+// ---- les unités : lues après un nombre, ramenées à l'unité de base (2 km : 2000) ; pas encore vérifiées ici
+// le facteur d'un symbole vers l'unité de base, en fraction : num / den (0 : ce n'est pas une unité)
+fonction unite_num(t) {
+    si egal(t, "km") { retour 1000; }
+    si egal(t, "min") { retour 60; }
+    si egal(t, "h") { retour 3600; }
+    si egal(t, "m") || egal(t, "kg") || egal(t, "s") || egal(t, "A") || egal(t, "K") || egal(t, "mol") || egal(t, "cd")
+        || egal(t, "N") || egal(t, "J") || egal(t, "W") || egal(t, "Pa") || egal(t, "Hz") || egal(t, "C") || egal(t, "V")
+        || egal(t, "Ω") || egal(t, "°") || egal(t, "cm") || egal(t, "mm") || egal(t, "g") || egal(t, "ms") {
+        retour 1;
+    }
+    retour 0;
+}
+
+fonction unite_den(t) {
+    si egal(t, "cm") { retour 100; }
+    si egal(t, "mm") || egal(t, "g") || egal(t, "ms") { retour 1000; }
+    retour 1;
+}
+
+// le symbole d'un jeton sans ses exposants (² ³), et l'exposant dans c.lex_val ; 0 si ce n'est pas une unité
+fonction symbole_unite(c: Ctx, j: Jeton) {
+    si j.genre == 4 && egal(j.texte, "°") {
+        c.lex_val = 1;
+        retour j.texte;
+    }
+    si j.genre != 1 {
+        retour 0;
+    }
+    soit t = j.texte;
+    soit n = longueur(t);
+    soit e = 1;
+    tantque n > 0 && (car(t, n - 1) == 178 || car(t, n - 1) == 179) {
+        e = e * (car(t, n - 1) - 176);
+        n = n - 1;
+    }
+    soit l = liste();
+    pour i dans 0..n {
+        ajouter(l, car(t, i));
+    }
+    soit s = texte_de(l, 0, n);
+    si unite_num(s) == 0 {
+        retour 0;
+    }
+    c.lex_val = e;
+    retour s;
+}
+
+// lit une unité ; rend le facteur entier vers la base, ou 0 s'il n'est pas entier
+fonction unite_ecrite(c: Ctx) {
+    soit num = 1;
+    soit den = 1;
+    soit signe = 1;
+    soit encore = 1;
+    tantque encore && c.erreur == 0 {
+        soit s = symbole_unite(c, c.tok);
+        soit e = c.lex_val;
+        avancer(c);
+        pour k dans 0..e {
+            si signe == 1 {
+                num = num * unite_num(s);
+                den = den * unite_den(s);
+            } sinon {
+                num = num * unite_den(s);
+                den = den * unite_num(s);
+            }
+        }
+        encore = 0;
+        si (est_op(c, "/") || est_op(c, "·")) && c.tok.suivant != nul && symbole_unite(c, c.tok.suivant) != 0 {
+            signe = 1;
+            si est_op(c, "/") {
+                signe = 0 - 1;
+            }
+            avancer(c);
+            encore = 1;
+        }
+    }
+    si num % den != 0 {
+        retour 0;
+    }
+    retour num / den;
+}
+
+fonction avec_unite(c: Ctx, e: Noeud): Noeud {
+    soit l = c.tok.ligne;
+    soit f = unite_ecrite(c);
+    si f == 1 {
+        retour e;
+    }
+    si e.genre == N_NOMBRE && f != 0 {
+        retour nombre(e.val * f, e.ligne);
+    }
+    si e.genre == N_NOMBRE {
+        erreur(c, l, "ce nombre n'est pas entier dans l'unité de base : écrivez-le à virgule");
+    } sinon {
+        erreur(c, l, "un flottant avec une unité à facteur (km, g, min…) : pas encore dans vtxc128");
+    }
+    retour e;
+}
+
+// « : type », « : unité » ou « : type unité » : rend le type (l'unité est lue et laissée)
+fonction type_et_unite(c: Ctx) {
+    si !est_op(c, ":") {
+        retour 0;
+    }
+    si c.tok.suivant != nul && symbole_unite(c, c.tok.suivant) != 0 {
+        avancer(c);
+        unite_ecrite(c);
+        retour 0;
+    }
+    soit t = type_opt(c);
+    si symbole_unite(c, c.tok) != 0 {
+        unite_ecrite(c);
+    }
+    retour t;
+}
+
+fonction un_contrat(c: Ctx, genre, l, nom): Contrat {
+    soit j0 = c.tok;
+    soit cond = expr(c, 0);
+    soit texte = texte_jetons(c, j0, c.tok);
+    si est_op(c, ";") {
+        avancer(c);
+    }
+    soit g = "exige";
+    si genre == 2 {
+        g = "garantit";
+    }
+    soit msg = liste();
+    ajouter_texte(msg, "contrat rompu : ");
+    ajouter_texte(msg, nom);
+    ajouter(msg, ' ');
+    ajouter_texte(msg, g);
+    ajouter(msg, ' ');
+    ajouter_texte(msg, texte);
+    ajouter_texte(msg, " (ligne ");
+    ajouter_texte(msg, nom_cache("", l));
+    ajouter(msg, ')');
+    soit t = texte_de(msg, 0, msg.n);
+    etiquette_texte(c, t);
+    retour Contrat { genre: genre, cond: cond, msg: t, ligne: l };
+}
+
+fonction des_noms(c: Ctx, l: Liste) {
+    ajouter(l, nom_variable(c));
+    type_et_unite(c);
+    tantque est_op(c, ",") && c.erreur == 0 {
+        avancer(c);
+        ajouter(l, nom_variable(c));
+        type_et_unite(c);
+    }
+}
+
+// [nom =] ce que fait l'atome [-> liaison, …] [apres nom, …] [;] ; un contrat est rangé dans la molécule
+fonction un_atome(c: Ctx, m: Molecule): Atome {
+    soit l = c.tok.ligne;
+    si c.tok.genre == 1 && (egal(c.tok.texte, "exige") || egal(c.tok.texte, "garantit"))
+            && !(c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "=")) {
+        soit genre = 1;
+        si egal(c.tok.texte, "garantit") {
+            genre = 2;
+        }
+        avancer(c);
+        soit k = un_contrat(c, genre, l, m.nom);
+        si m.contrats == nul {
+            m.contrats = k;
+        } sinon {
+            soit d = m.contrats;
+            tantque d.suivant != nul {
+                d = d.suivant;
+            }
+            d.suivant = k;
+        }
+        retour nul;
+    }
+    soit a = Atome { ligne: l, sorties: liste(), apres: liste() };
+    si c.tok.genre == 1 && c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "=") {
+        a.nom = avancer(c).texte;
+        avancer(c);
+    } sinon si est_op(c, "=") {
+        avancer(c);
+    }
+    si est_kw(c, "si") {
+        avancer(c);
+        a.genre = A_SI;
+        a.quoi = expr(c, 0);
+        si !est_id(c, "alors") {
+            erreur(c, l, "« alors » attendu dans « si … alors … »");
+        }
+        avancer(c);
+        a.x = expr(c, 0);
+        si est_kw(c, "sinon") {
+            avancer(c);
+            a.y = expr(c, 0);
+        }
+    } sinon si (est_id(c, "rendez") && c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "-")
+                && c.tok.suivant.suivant.genre == 1 && egal(c.tok.suivant.suivant.texte, "vous")) || est_id(c, "rendezvous") {
+        si est_id(c, "rendez") {
+            avancer(c);
+            avancer(c);
+        }
+        avancer(c);
+        attendre(c, "(");
+        a.genre = A_RDV;
+        a.args = arguments(c);
+    } sinon si ((est_id(c, "somme") || est_id(c, "min") || est_id(c, "max")) && c.tok.suivant.genre == 2
+                && egal(c.tok.suivant.texte, "pour")) || est_kw(c, "pour") {
+        si c.tok.genre == 1 {
+            a.red = avancer(c).texte;
+        }
+        avancer(c);
+        si !est_id(c, "chaque") {
+            erreur(c, l, "« pour chaque » attendu");
+        }
+        avancer(c);
+        a.var = nom_variable(c);
+        si !est_kw(c, "dans") {
+            erreur(c, l, "« dans » attendu dans « pour chaque … dans a..b »");
+        }
+        avancer(c);
+        a.x = expr(c, 0);
+        attendre(c, "..");
+        a.y = expr(c, 0);
+        attendre(c, ":");
+        a.quoi = expr(c, 0);
+        si a.red == 0 {
+            erreur(c, l, "« pour chaque » sans réduction (somme, min, max) donnera un tableau : pas encore");
+        }
+        a.genre = A_CHAQUE;
+    } sinon si est_id(c, "pont") {
+        avancer(c);
+        a.genre = A_PONT;
+        a.x = expr(c, 0);
+        si !est_id(c, "vers") {
+            erreur(c, l, "« vers » attendu dans « pont … vers @étage[adresse] »");
+        }
+        avancer(c);
+        a.m = acces(c);
+    } sinon {
+        a.genre = A_CALCUL;
+        a.quoi = expr(c, 0);
+    }
+    si est_op(c, "->") {
+        avancer(c);
+        des_noms(c, a.sorties);
+    }
+    si est_id(c, "apres") {
+        avancer(c);
+        ajouter(a.apres, identifiant(c));
+        tantque est_op(c, ",") && c.erreur == 0 {
+            avancer(c);
+            ajouter(a.apres, identifiant(c));
+        }
+    }
+    si est_op(c, ";") {
+        avancer(c);
+    }
+    retour a;
+}
+
+fonction une_reaction(c: Ctx, l) {
+    soit f = Fonction { nom: identifiant(c), ligne: l };
+    attendre(c, "(");
+    soit dp: Param = nul;
+    tantque c.erreur == 0 && !est_op(c, ")") {
+        soit p = Param { nom: nom_variable(c) };
+        p.type = type_et_unite(c);
+        si dp == nul {
+            f.params = p;
+        } sinon {
+            dp.suivant = p;
+        }
+        dp = p;
+        f.nb = f.nb + 1;
+        si est_op(c, ",") {
+            avancer(c);
+        }
+    }
+    attendre(c, ")");
+    soit m = Molecule { nom: f.nom, params: f.params, ligne: l };
+    si est_op(c, "->") {
+        avancer(c);
+        m.resultat = identifiant(c);
+        f.rtype = type_et_unite(c);
+    }
+    f.etiq = nouvelle_etiquette(c);
+    attendre(c, "{");
+    soit dernier: Atome = nul;
+    c.dans_reaction = 1;
+    tantque c.erreur == 0 && !est_op(c, "}") && c.tok.genre != 6 {
+        soit a = un_atome(c, m);
+        si a != nul {
+            si dernier == nul {
+                m.atomes = a;
+            } sinon {
+                dernier.suivant = a;
+            }
+            dernier = a;
+        }
+    }
+    c.dans_reaction = 0;
+    attendre(c, "}");
+    si c.erreur == 0 {
+        former_molecule(c, m);
+        soit k = m.contrats;
+        tantque k != nul && c.erreur == 0 {
+            soit lus = liste();
+            variables_de(k.cond, lus);
+            pour i dans 0..lus.n {
+                soit v = elem(lus, i);
+                si k.genre == 1 && !est_param(m, v) {
+                    erreur_nom(c, k.ligne, "« exige » ne parle que des entrées de la réaction :", v);
+                }
+                si k.genre == 2 && !est_param(m, v) && donneur(m, v) == nul && !(m.resultat != 0 && egal(v, m.resultat)) {
+                    erreur_nom(c, k.ligne, "« garantit » parle d'une liaison qu'aucun atome ne donne :", v);
+                }
+            }
+            k = k.suivant;
+        }
+    }
+    f.mol = m;
+    si fonction_de(c, f.nom) != nul {
+        erreur_nom(c, l, "fonction déjà définie :", f.nom);
+    }
+    si c.der_fonction == nul {
+        c.fonctions = f;
+    } sinon {
+        c.der_fonction.suivant = f;
+    }
+    c.der_fonction = f;
+    noter_fonction(f);
+}
+
+// à la fin du programme (toutes les fonctions connues) : le corps de chaque réaction
+fonction corps_des_reactions(c: Ctx) {
+    soit f = c.fonctions;
+    tantque f != nul && c.erreur == 0 {
+        si f.mol != nul {
+            soit m: Molecule = f.mol;
+            f.corps = corps_molecule(c, m);
+        }
+        f = f.suivant;
+    }
+}
+
 // --------------------------------------------------------------------------------------------- déclarations
 fonction valeur_constante(c: Ctx, e: Noeud) {
     si e.genre == N_NOMBRE || e.genre == N_FNOMBRE || e.genre == N_SNOMBRE || e.genre == N_INOMBRE {
@@ -3546,6 +4876,16 @@ fonction programme(c: Ctx) {
         } sinon si est_id(c, "tableau") {
             avancer(c);
             un_tableau(c);
+        } sinon si est_id(c, "reaction") {
+            avancer(c);
+            une_reaction(c, l);
+        } sinon si est_id(c, "exemple") {
+            // exemple f(2) == 4 : lu ; vtx128.py le rejoue à chaque compilation (vtxc128 pas encore)
+            avancer(c);
+            expr(c, 0);
+            si est_op(c, ";") {
+                avancer(c);
+            }
         } sinon si est_kw(c, "fonction") {
             avancer(c);
             soit f = Fonction { nom: identifiant(c), ligne: l };
@@ -3590,6 +4930,10 @@ fonction programme(c: Ctx) {
         } sinon {
             erreur(c, l, "déclaration attendue");
         }
+    }
+    si !c.en_prelude && c.erreur == 0 {
+        c.souv_place = SOUVENIRS_DEBUT;
+        corps_des_reactions(c);
     }
 }
 
@@ -3975,7 +5319,7 @@ fonction arite_integre_lent(nom) {
         }
         retour 1;
     }
-    si egal(nom, "bruit") || egal(nom, "pile") || egal(nom, "entrée") {
+    si egal(nom, "bruit") || egal(nom, "pile") || egal(nom, "entrée") || egal(nom, "__rompre") {
         retour 0;
     }
     si egal(nom, "ecrire_car") || egal(nom, "__service") || egal(nom, "min4") || egal(nom, "max4")
@@ -5459,6 +6803,8 @@ fonction appel(c: Ctx, e: Noeud) {
             mov(c, 2, 1);
             ldis(c, 1, code);
             rrr(c, 83, 1, 1, 2);
+        } sinon si egal(nom, "__rompre") {
+            emettre(c, ins(63, 0, 0, 0, 0));           // un contrat rompu : HALT
         } sinon si egal(nom, "bruit") {
             ldis(c, 1, 5);
             rrr(c, 83, 1, 1, 0);
@@ -7282,7 +8628,7 @@ fonction effets_appel(c: Ctx, nom, r: Liste, w: Liste) {
         es(w);
         retour;
     }
-    si egal(nom, "__service") {
+    si egal(nom, "__service") || egal(nom, "__rompre") {
         es(r);
         tout(r);
         es(w);
