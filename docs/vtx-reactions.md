@@ -404,3 +404,28 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     - un flottant avec une unité à facteur (`2.0 km`) lui est refusé.
   - **Pour Lugus et Ogmios** : vtxc128 est embarqué dans lugus ; les réactions se compilent donc sans Python, dans
     l'atelier comme en ligne de commande.
+- **Étape 5, premier temps : la provenance** (`python vtx128.py pourquoi PROG.vtx [réaction.liaison] [ENTRÉES…]`) :
+  - « Pourquoi cette valeur vaut 42 ? » : le programme est compilé avec la provenance et lancé. Chaque réaction range,
+    avant de rendre, la dernière valeur de chacune de ses liaisons et de ses entrées dans le cube 2 de l'étage 3, avec le
+    nombre de réactions et la présence (0 quand sa branche n'a pas réagi).
+  - Puis la commande remonte les atomes, de liaison en liaison, jusqu'aux constantes et aux entrées. Chaque ligne donne
+    la valeur avec son unité, l'atome qui l'a donnée (son nom, ce qu'il fait, sa ligne, son élément) et le nombre de
+    réactions. Pour un atome à souvenir, elle dit combien de fois il a vraiment réagi : 6 fois sur 60 appels pour le décor
+    de la scène.
+  - Exemple, le panel :
+
+    ```
+    r2 = 42   ← rangement : pont r vers @2[0]   (ligne 7, O)
+        r = 42   ← garde : si e2 > 0 alors p2   (ligne 8, N)
+            e2 = 3   ← rdv : rendez-vous(p, e)   (ligne 9, C)
+                p = 42   ← produit : a × b   (ligne 12, N)
+                    a = 6   ← six : 6   (ligne 15, H)
+    ```
+
+  - Sans la provenance, une réaction garde exactement ses mots (vtxc128 n'a rien à suivre).
+  - Les valeurs sont celles de la dernière réaction complète : un contrat rompu arrête la machine avant la trace.
+  - Ce qui reste :
+    - la provenance d'une réaction à l'autre (descendre dans la réaction appelée) ;
+    - la ranger dans l'ADN du programme, pour que Lugus et Ogmios répondent sans Python ;
+    - la fiabilité de l'ADN par son code chimique (deuxième temps).
+

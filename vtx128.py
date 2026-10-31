@@ -571,6 +571,79 @@ def est_lourde(nom, fonctions, vus=None):
     return trouve[0]
 
 
+# ------------------------------------------------------------------------------------------------ la provenance
+# « pourquoi cette valeur vaut 42 ? » : compilé avec PROVENANCE, chaque réaction range, avant de rendre, la dernière valeur
+# de chacune de ses liaisons dans le cube 2 de l'étage 3 (trois cases : la valeur, le nombre de réactions, 1 si elle est
+# là ou 0 si sa branche n'a pas réagi) ; « vtx128.py pourquoi » remonte ensuite les atomes jusqu'aux constantes.
+PROVENANCE = False
+PROVENANCE_DEBUT = 0x2000000
+PROVENANCE_PLACE = [PROVENANCE_DEBUT]
+
+
+def valeur_affichee(v, t):
+    """une valeur rangée (un mot) écrite selon son type"""
+    v &= (1 << 128) - 1
+    if t == "x":
+        et, fr = petuar_valeur(v)
+        return {0: "inconnu", 3: "variable"}.get(et, "?") if fr is None else f"{float(fr):.15g}"
+    if t == "f":
+        from qflot import Q64 as _Q64
+        try:
+            return f"{float(_Q64.valeur(v & ((1 << 64) - 1))):.15g}"
+        except (TypeError, ValueError, OverflowError):
+            return f"#{v:016X}"
+    if t == "q":
+        return ["inconnu", "faux", "vrai", "variable"][v & 3]
+    if t == "p":
+        return f"#{v:032X}"
+    v64 = v & ((1 << 64) - 1) if t in ("e", "i", None) else v
+    if t in ("e", None) and v64 >> 63:
+        return f"{v64} ({v64 - (1 << 64)})"
+    return str(v64)
+
+
+def pourquoi(mol, liaison, memoire, prefixe="", vus=None, sortie=None):
+    """l'arbre de provenance d'une liaison : l'atome qui la donne, ses entrées, jusqu'aux constantes et aux entrées de la
+    réaction"""
+    sortie = sortie if sortie is not None else []
+    vus = vus if vus is not None else set()
+    types = getattr(mol, "vtypes", {})
+    unites = getattr(mol, "unites", None) or {}
+
+    def avec_unite(v, nom):
+        u = unites.get(nom)
+        return v if not u else f"{v} {unite_texte(u)}"
+    if liaison in mol.params:
+        b = mol.traces[liaison]
+        vu = f" = {avec_unite(valeur_affichee(memoire(b), types.get(liaison)), liaison)}" if memoire(b + 2) else ""
+        sortie.append(f"{prefixe}{liaison}{vu}   ← une entrée de la réaction {mol.nom}")
+        return sortie
+    a = mol.donne[liaison]
+    base = mol.traces[liaison]
+    val, nb, la = memoire(base), memoire(base + 1), memoire(base + 2)
+    el = dict(mol.elements()).get(a.nom_affiche(), "?")
+    if nb == 0:
+        quoi = "jamais calculée"
+    elif la == 0:
+        quoi = f"porte faux (sa branche n'a pas réagi ; la valeur calculée : {valeur_affichee(val, types.get(liaison))})"
+    else:
+        quoi = f"= {avec_unite(valeur_affichee(val, types.get(liaison)), liaison)}"
+    appels = memoire(mol.trace_appels)
+    if liaison in getattr(mol, "au_souvenir", ()):
+        fois = f", souvenir : réagi {nb} fois sur {appels} appels"
+    else:
+        fois = "" if nb <= 1 else f", réagi {nb} fois"
+    nom = f"{a.nom} : " if a.nom else ""
+    sortie.append(f"{prefixe}{liaison} {quoi}   ← {nom}{a.texte}   (ligne {a.ligne}, {el}{fois})")
+    if liaison in vus:
+        sortie[-1] += "   [vu plus haut]"
+        return sortie
+    vus.add(liaison)
+    for e in a.entrees:
+        pourquoi(mol, e, memoire, prefixe + "    ", vus, sortie)
+    return sortie
+
+
 REACTIONS = {}          # nom -> Molecule : la dernière compilation (pour le rapport « molecule »)
 MASSE_ATOME = {"H": 1, "C": 12, "N": 14, "O": 16}
 ELEMENT_VALENCE = {1: "H", 2: "O", 3: "N", 4: "C"}
@@ -879,6 +952,15 @@ class Molecule:
         sinon, et ce qui en dépend) a son drapeau __ok ; les atomes qui touchent le monde ne réagissent que s'il est vrai."""
         st = []
         ok = {}                      # liaison -> nom de son drapeau, si elle peut porter faux
+        if PROVENANCE:
+            # trois cases par liaison (la valeur, le nombre de réactions, présente ou non), une pour les appels
+            self.traces = {}
+            self.trace_appels = PROVENANCE_PLACE[0]
+            PROVENANCE_PLACE[0] += 1
+            for nom_ in list(self.params) + [s_ for a in self.atomes for s_ in a.sorties]:
+                self.traces[nom_] = PROVENANCE_PLACE[0]
+                PROVENANCE_PLACE[0] += 3
+        self.au_souvenir = set()
 
         def verifier(c, garde=None):
             """si la condition est fausse : le message, puis la machine s'arrête"""
@@ -981,6 +1063,22 @@ class Molecule:
                 else:
                     ins = ("expr", a.quoi, l)
                     st.append(ins if garde is None else ("si", ("bin", "!=", garde, ("nombre", 0)), [ins], None, l))
+        if PROVENANCE:
+            # la provenance : la dernière valeur de chaque liaison, le nombre de réactions (un atome à souvenir le compte
+            # lui-même, quand il réagit vraiment), et si elle porte faux
+            l = self.ligne
+            plus_un = lambda b: ("ecrire", 3, ("nombre", b), ("bin", "+", ("lire", 3, ("nombre", b)), ("nombre", 1)), l)  # noqa: E731
+            st.append(plus_un(self.trace_appels))
+            for p_ in self.params:
+                st.append(("ecrire", 3, ("nombre", self.traces[p_]), ("var", p_, l), l))
+                st.append(("ecrire", 3, ("nombre", self.traces[p_] + 2), ("nombre", 1), l))
+            for a in self.atomes:
+                for s_ in a.sorties:
+                    base = self.traces[s_]
+                    st.append(("ecrire", 3, ("nombre", base), ("var", s_, l), l))
+                    if s_ not in self.au_souvenir:
+                        st.append(plus_un(base + 1))
+                    st.append(("ecrire", 3, ("nombre", base + 2), ("var", ok[s_], l) if s_ in ok else ("nombre", 1), l))
         for c in self.contrats:
             if c[1] == "garantit":
                 # une liaison qui porte faux (la branche n'a pas réagi) ne promet rien : vérifié seulement si elle est là
@@ -1042,6 +1140,10 @@ class Molecule:
         reagir += [("ecrire", 3, ("nombre", base + 1 + i), ("var", v, l), l) for i, v in enumerate(tmp)]
         reagir += [("ecrire", 3, ("nombre", base + 1 + len(tmp)), ("var", s_, l), l),
                    ("ecrire", 3, ("nombre", base), ("nombre", 1), l)]
+        if PROVENANCE:
+            t = self.traces[s_] + 1
+            reagir.append(("ecrire", 3, ("nombre", t), ("bin", "+", ("lire", 3, ("nombre", t)), ("nombre", 1)), l))
+            self.au_souvenir.add(s_)
         st.append(("si", cond, [], reagir, l))
         return st
 
@@ -1410,14 +1512,18 @@ class Analyseur:
         f.resultat = resultat
         return f
 
-    def texte_jetons(self, i0):
-        """le texte des jetons lus depuis i0 (pour les messages : la condition d'un contrat, un exemple)"""
+    def texte_jetons(self, i0, beau=False):
+        """le texte des jetons lus depuis i0 (pour les messages : la condition d'un contrat, un exemple). beau : aussi
+        @2[0] et t[i] collés (le texte d'un atome, pour la provenance ; les messages des contrats gardent l'ancienne
+        règle, que vtxc128 suit)"""
         morceaux = []
         bruts = getattr(self.t, "bruts", None)
         for j, (k, v, _) in enumerate(self.t[i0:self.i], i0):
             v = f'"{v}"' if k == "str" else bruts[j] if bruts is not None and j < len(bruts) else str(v)
             colle = morceaux and (v in (")", "]", ",", ".") or morceaux[-1] in ("(", "[", "."))
             if morceaux and v == "(" and morceaux[-1][-1:].isalnum():
+                colle = True
+            if beau and morceaux and (morceaux[-1].strip() == "@" or (v == "[" and morceaux[-1][-1:].isalnum())):
                 colle = True
             morceaux.append(v if not morceaux else (v if colle else " " + v))
         return "".join(morceaux)
@@ -1435,6 +1541,7 @@ class Analyseur:
 
     def atome(self, nom_reaction="?"):
         """[nom =] ce que fait l'atome [-> liaison, …] [;] ; ou un contrat : exige / garantit condition"""
+        i_atome = self.i
         k, v, l = self.regard()
         if k == "id" and v in ("exige", "garantit") and self.regard(1)[:2] != ("op", "="):
             self.suivant()
@@ -1446,6 +1553,7 @@ class Analyseur:
             self.suivant()
         elif self.est_op("="):
             self.suivant()
+        i_atome = self.i                  # le texte de l'atome : ce qu'il fait, sans son nom ni ses liaisons
         k, v, _ = self.regard()
         if k == "kw" and v == "si":
             self.suivant()
@@ -1505,6 +1613,7 @@ class Analyseur:
             genre, quoi = "pont", (x, m)
         else:
             genre, quoi = "calcul", self.expr()
+        texte = self.texte_jetons(i_atome, True).replace("rendez - vous", "rendez-vous")
         sorties, declarees = [], {}
         if self.est_op("->"):
             self.suivant()
@@ -1526,6 +1635,7 @@ class Analyseur:
         if self.est_op(";"):
             self.suivant()
         a_ = Atome(nom, genre, quoi, sorties, l)
+        a_.texte = texte
         a_.apres = apres
         a_.unites_declarees = declarees
         return a_
@@ -7203,10 +7313,13 @@ class Generateur:
                 self.locales(s[2], acc)
 
     def fonction(self, f):
+        if getattr(f, "molecule", None) is not None:
+            f.molecule.vtypes = self.vtypes = {}
         debut = len(self.sortie)
         self._corps_vus = set()
         self.f, self.vars = f, {}
-        self.vtypes, self.vhaut = {}, {}
+        self.vtypes = f.molecule.vtypes if getattr(f, "molecule", None) is not None else {}
+        self.vhaut = {}
         self.boucles = []
         o = 2
         for p, t in reversed(list(zip(f.params, f.ptypes))):
@@ -8822,7 +8935,15 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None, rempl
     if remplacer is not None:
         fs = remplacer(a, fs)
     elif a.exemples and EXEMPLES:
-        verifier_exemples(src, a.exemples, prelude, optim)
+        global PROVENANCE
+        garde = (PROVENANCE, PROVENANCE_PLACE[0], dict(REACTIONS))
+        PROVENANCE = False
+        try:
+            verifier_exemples(src, a.exemples, prelude, optim)
+        finally:
+            PROVENANCE, PROVENANCE_PLACE[0] = garde[0], garde[1]
+            REACTIONS.clear()
+            REACTIONS.update(garde[2])
     if a.donnees:
         fs = injecter_donnees(fs, a.donnees)
     if prelude:
@@ -9581,6 +9702,34 @@ def main():
                       f"étage {fischer.ETAGE}, cube {fischer.FREQUENCE}, case #{fischer.adresse(rang) & 0xFFFFFF:06X}")
             if not REACTIONS:
                 print("aucune réaction dans ce programme")
+        elif cmd == "pourquoi":
+            # vtx128.py pourquoi PROG.vtx [liaison | réaction.liaison] [ENTRÉES…]
+            global PROVENANCE
+            PROVENANCE = True
+            PROVENANCE_PLACE[0] = PROVENANCE_DEBUT
+            REACTIONS.clear()
+            quoi = sys.argv[3] if len(sys.argv) > 3 and not re.match(r"^-?\d", sys.argv[3]) else None
+            entrees = [int(x, 0) for x in sys.argv[4 if quoi else 3:]]
+            cpu, _, _ = executer(src, entrees, dossier=dossier, max_pas=2_000_000_000)
+            if cpu.sortie:
+                print("sorties : " + ", ".join(str(v) for v in cpu.sortie))
+            if cpu.texte:
+                print("texte : " + "".join(chr(c & 0x1FFFFF) for c in cpu.texte).rstrip("\n").replace("\n", " / "))
+            lire = lambda a: cpu.lire((3 << 62) | a)  # noqa: E731
+            for m in REACTIONS.values():
+                if not getattr(m, "traces", None):
+                    continue
+                cibles = list(m.traces) if quoi is None else [q.split(".")[-1] for q in [quoi]
+                                                               if "." not in q or q.split(".")[0] == m.nom]
+                if quoi is None:
+                    # sans question : ce que rend la réaction, ou ce que ses atomes de bout de chaîne ont lu
+                    bouts = [e for a in m.atomes if not a.sorties for e in a.entrees]
+                    cibles = [m.resultat] if m.resultat in m.traces else list(dict.fromkeys(bouts))
+                cibles = [c for c in cibles if c in m.traces or c in m.params]
+                if cibles:
+                    print(f"\nréaction {m.nom} :")
+                    for c in cibles:
+                        print("\n".join(pourquoi(m, c, lire, "  ")))
         elif cmd == "partition":
             _a, carte, _l = compiler_complet(src, dossier=dossier, nom=os.path.basename(sys.argv[2]))
             print(partition_texte(DERNIERE_PARTITION["accords"], DERNIERE_PARTITION["notes"], carte)
