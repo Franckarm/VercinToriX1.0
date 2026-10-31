@@ -38,14 +38,15 @@ suit sert cette règle : lier, ranger serré, contrôler peu mais au bon endroit
 
 ## 3. Les quatre atomes du cube
 
-Un atome est l'unité du programme lié : une case de la surface (section 8) et ce qu'elle porte. **Il occupe autant
+Un atome est l'unité du programme lié : une case de la surface (section 8), ce qui agit ; les données sont ses liaisons
+(section 4 et décision 1 de la section 11). **Il occupe autant
 d'hex que son nombre de masse** : ses protons (l'identité, ce qu'il est) et ses neutrons (le contrôle, ce qui le
 stabilise). Ses électrons de valence font les liaisons, rangées à part (section 4).
 
 | Atome | Protons : identité | Neutrons : contrôle | Taille | Liaisons | Doublets libres | Rôle |
 |---|---|---|---|---|---|---|
 | H-1 | 1 hex | 0 | 1 hex | 1 | 0 | constante, afficher, fin d'une chaîne |
-| C-12 | 6 hex (un `#RRGGBB`) | 6 hex | 12 hex | 4 | 0 | calcul, donnée |
+| C-12 | 6 hex (un `#RRGGBB`) | 6 hex | 12 hex | 4 | 0 | calcul : ce qui transforme |
 | N-14 | 7 hex | 7 hex | 14 hex | 3 | 1 | condition, attente (le doublet est la voie en réserve) |
 | O-16 | 8 hex (32 bits : une voie entière, une adresse) | 8 hex | 16 hex | 2 | 2 | pont : importer, passage entre cubes ou fichiers |
 
@@ -62,7 +63,8 @@ compilation), le plus aux frontières (O, là où les erreurs entrent).
 
 ## 4. Les liaisons
 
-- Une liaison est une paire d'électrons **partagée** : elle n'appartient à aucun des deux atomes. Elle est rangée une
+- Une liaison est une paire d'électrons **partagée** : la donnée qui passe d'un atome à l'autre. Elle n'appartient à aucun
+  des deux atomes. Elle est rangée une
   seule fois, entre eux : les deux atomes et son type.
 - **Simple** : une valeur passe. **Double** : deux valeurs à la fois. **Triple** : trois. Les voies de Lugus portent
   directement les liaisons multiples.
@@ -189,11 +191,24 @@ Chaque essai a sa mesure avant et après, comme le crible.
 
 ## 11. Décisions (30 octobre, soir)
 
-1. **Une liaison désigne une adresse du cube.** Pour garder la densité : les deux liaisons de la chaîne (en haut et en
-   bas de la croix de Fischer) sont **implicites** : l'atome précédent et le suivant dans la colonne, sans rien ranger.
-   Seuls les bras horizontaux et les branches rangent une adresse.
+1. **La liaison est la donnée** (rectification de l'utilisateur, 31 octobre). Les atomes sont le code : les cases, ce
+   qui agit. Les liaisons sont les valeurs qui passent d'une case à l'autre, comme la paire d'électrons partagée entre
+   deux atomes. Elles vivent dans le cube, rangées en points de matière : chaque liaison a donc son adresse du cube, et
+   la suite du programme peut la relire. Liaison simple : une valeur ; double : deux ; triple : trois (les voies de
+   Lugus). Les deux liaisons de la chaîne (en haut et en bas de la croix de Fischer) sont rangées l'une après l'autre
+   dans la colonne : elles se lisent à la suite, sans adresse à ranger.
+
+   | | Chimie | Vercintorix |
+   |---|---|---|
+   | atome | ce qui agit | une case : le code |
+   | liaison | la paire d'électrons partagée | la valeur qui passe : la donnée, dans le cube |
+   | molécule | des atomes liés | une fonction : des cases et leurs données |
+   | le support | | le cube |
+   | l'indexation | Fischer | l'ordre de lecture des colonnes couleur et matière |
+
 2. **Le cube est le support, Fischer est l'indexation.** La croix de Fischer s'intègre aux colonnes couleur et matière :
-   le cube dit *où*, Fischer dit *dans quel ordre on lit*, les atomes disent *ce qui y est*.
+   le cube dit *où*, Fischer dit *dans quel ordre on lit*, les liaisons (les données) disent *ce qui y est*, les atomes
+   *ce qu'on en fait*.
 3. **La syntaxe est la surface (Blueprint)** : on programme en posant des cases et en tirant des liaisons. Elle s'enregistre
    en texte (les cases, leurs valeurs, leurs liaisons), lisible et comparable : c'est le Hex. Une case peut garder des
    lignes de vtx classique, pour que rien de l'existant ne se perde.
@@ -213,14 +228,14 @@ Chaque essai a sa mesure avant et après, comme le crible.
 | la mémoire | physique | conservation | une valeur appartient à une seule molécule à la fois : pas de copie cachée, pas de fuite |
 | la fiabilité | physique | triangulation, projections | trois témoins indépendants localisent et réparent |
 
-## Question ouverte : l'épissage existant
+## L'épissage : là où il est le plus utile, s'il l'est (31 octobre)
 
-L'épissage des instructions (sections 27 et 38 de vtx-0-5-autonomie.md) se fait à la compilation, entre le Hex et l'ADN.
-Deux possibilités :
-- **le déplacer à la transcription** : l'ADN garde le code tel qu'écrit, l'ARN est épissé ; la machine émulée transcrit
-  aussi l'ADN en ARN au chargement (un temps de chargement en plus, mesurable), et la forge transcrit de même ;
-- **le garder à la compilation sous un autre nom** (la maturation, par exemple), et réserver « épissage » à la
-  transcription des atomes.
+La mesure décide, pas le principe :
+- **l'épissage des instructions** (sections 27 et 38 de vtx-0-5-autonomie.md) reste où il est : il est mesuré utile
+  (de 9 à 20 % d'instructions exécutées en moins) ; il épisse le code, pas les données ;
+- **l'épissage des atomes à la transcription** (ADN → ARN : les neutrons vérifiés, les sources, les tables de l'atelier)
+  n'est fait que si un essai montre qu'il rend du temps. Essai 5 de la section 10 : le même programme en ARN *rapide* et
+  en ARN *sûr*, mesurés ; s'il n'y a pas d'écart, pas d'épissage.
 
 ## 12. Ordre de travail
 
