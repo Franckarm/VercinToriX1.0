@@ -51,7 +51,7 @@ Gen = espace["Gen"]
 
 # ------------------------------------------------------------------ les programmes
 cas = []          # (nom, source, entrées, dossier)
-EXCLUS = {"vtxc", "debogueur", "jeu2", "jeu3", "gobatix", "scor", "exemples64", "mesures"}
+EXCLUS = {"vtxc", "debogueur", "jeu2", "jeu3", "toile", "scor", "exemples64", "mesures"}
 for d, _, fichiers in os.walk(racine):
     rel = os.path.relpath(d, racine)
     if rel.startswith("vtx-rs") or any(p in EXCLUS for p in rel.split(os.sep)):

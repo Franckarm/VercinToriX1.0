@@ -52,7 +52,7 @@ if shutil.which("cargo"):
     etapes.append(("vtxc : le compilateur écrit en vtx se compile lui-même", [sys.executable, os.path.join("vtxc", "test_vtxc.py")]))
     etapes.append(("cubes sur disque en miroir inversé (anti-cube, état de Belnap, réparation ; quatre machines)", [sys.executable, os.path.join("tests", "test_miroir.py")]))
     etapes.append(("appels en série « f(a): x, y; » (quatre compilateurs, mêmes mots)", [sys.executable, os.path.join("tests", "test_serie.py")]))
-    etapes.append(("Gobatix interactif : souris, touches, cadence, anti-couleur, GIF (32 et 64 bits)", [sys.executable, os.path.join("tests", "test_gobatix.py")]))
+    etapes.append(("la toile interactif : souris, touches, cadence, anti-couleur, GIF (32 et 64 bits)", [sys.executable, os.path.join("tests", "test_toile.py")]))
     etapes.append(("SPU-64 : les deux machines identiques (programmes aléatoires, flottants quaternaires, brin, cubes sur disque)",
                    [sys.executable, os.path.join("spu64", "test_spu64.py"), "3000" if COMPLET else "1000"]))
     etapes.append(("SPU-64 : corpus de conformité", [sys.executable, os.path.join("spu64", "verifier_corpus64.py")]))

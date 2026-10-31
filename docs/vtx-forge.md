@@ -33,7 +33,7 @@ Le programme forgé emporte la machine (`forge/noyau_forge.rs`), faite des fichi
 
 L'image du programme compilé par vtx.py est chargée telle quelle dans l'étage 0 : les textes et les données sont aux
 mêmes adresses que sur le SPU. Un programme forgé se lance comme `vtx programme.vtx` (les entrées sur la ligne de
-commande), et un programme Gobatix comme `vtx gobatix programme.vtx` : la première image ouvre la fenêtre, ou
+commande), et un programme Gobatix comme `vtx toile programme.vtx` : la première image ouvre la fenêtre, ou
 `--gif FICHIER`, `--images DOSSIER`, `--max N`, `--pas K`, `--scenario FICHIER`.
 
 ## Deux points délicats
@@ -128,7 +128,7 @@ montrée vit **dans un cube à elle** : l'étage 1 porte la carte, les textures 
 présenter, l'étage 1 s'accorde sur le cube 12, la vue et le tableau de bord y sont peints, puis l'étage revient au
 cube du jeu. Deux cubes, un seul étage : rien n'est déplacé.
 
-`vtx gobatix jeu3/labyrinthe.vtx` le joue sur la machine émulée ; `python forge/forge.py jeu3/labyrinthe.vtx` en
+`vtx toile jeu3/labyrinthe.vtx` le joue sur la machine émulée ; `python forge/forge.py jeu3/labyrinthe.vtx` en
 fait un exécutable seul.
 
 ## L'horloge des images

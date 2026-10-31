@@ -378,7 +378,7 @@ class CPU:
         self.dossier = dossier         # None : ni fichiers ni cubes sur disque (corpus, tests)
         self.pages_vues = set()        # (étage, page) déjà cherchées sur disque
         self.pas = 0
-        self.presenter = None          # rappel du service 12 (la fenêtre de Gobatix), ou None
+        self.presenter = None          # rappel du service 12 (la fenêtre de la toile), ou None
 
     def charger(self, mots):
         for i, w in enumerate(mots):

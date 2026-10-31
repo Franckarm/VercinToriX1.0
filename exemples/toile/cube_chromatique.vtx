@@ -1,10 +1,10 @@
-// Gobatix : le cube chromatique qui tourne.
+// La toile : le cube chromatique qui tourne.
 // Le cube de Vercintorix est le cube des couleurs #RRGGBB : un axe par voie (rouge, vert, bleu), 256 niveaux par axe.
 // Ses huit sommets sont #000000 (noir), #FF0000, #00FF00, #0000FF, #FFFF00, #FF00FF, #00FFFF et #FFFFFF (blanc) ;
 // chaque face montre le fondu réel de ses couleurs (triangle, ombrage de Gouraud). Le quadrillage coupe chaque axe en
 // quatre, aux quits du poids fort : 0x40, 0x80, 0xC0 (en base 4 : 1000, 2000, 3000). La diagonale des gris va du noir au
 // blanc, avec ses cinq points #000000, #404040, #808080, #C0C0C0, #FFFFFF.
-// Lancer : vtx gobatix cube_chromatique.vtx (fenêtre) ; vtx gobatix cube_chromatique.vtx --images DOSSIER (images PNG)
+// Lancer : vtx toile cube_chromatique.vtx (fenêtre) ; vtx toile cube_chromatique.vtx --images DOSSIER (images PNG)
 fonction principal() {
     soit l = 480;
     soit h = 360;

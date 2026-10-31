@@ -700,7 +700,7 @@ fn lancer() {
     at.dessin = false;
     super::hote::remettre();
     super::hote::FENETRE.store(true, Ordering::Relaxed);
-    super::gobatix::installer(Some(Box::new(VueAtelier { cube: at.cube as usize })));
+    super::toile::installer(Some(Box::new(VueAtelier { cube: at.cube as usize })));
     ANNONCEE.store(false, Ordering::Relaxed);
     PEINTURE.store(false, Ordering::Relaxed);
     unsafe {
@@ -824,7 +824,7 @@ fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     }));
     s.arret = Some(&ARRET);
     s.parler = Some(super::parler_hote);
-    s.presenter = Some(Box::new(super::gobatix::presenter64));
+    s.presenter = Some(Box::new(super::toile::presenter64));
     ATTENTE_NS.store(0, Ordering::Relaxed);
     let t1 = std::time::Instant::now();
     let r = s.executer(u64::MAX / 4);
@@ -857,7 +857,7 @@ fn executer64(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
             texte.push_str(&resume);
         }
     }
-    let image = super::gobatix::image64(&s);
+    let image = super::toile::image64(&s);
     let mut vue = Vue64::depuis(&s);
     let mem = vue.memoire();
     Fini { texte, resume, mem: Some(mem), ligne_erreur: None, vue64: Some(vue), image }
@@ -948,7 +948,7 @@ fn fini() {
         Some(f) => f,
         None => return,
     };
-    super::gobatix::installer(None);
+    super::toile::installer(None);
     super::hote::FENETRE.store(false, Ordering::Relaxed);
     super::hote::tout_relacher();
     unsafe {
@@ -958,7 +958,7 @@ fn fini() {
         }
     }
     // une animation en cours d'enregistrement est écrite à la fin du programme
-    if super::gobatix::ENREGISTRER.load(Ordering::Relaxed) {
+    if super::toile::ENREGISTRER.load(Ordering::Relaxed) {
         basculer_enregistrement();
     }
     if let Some(img) = f.image.clone() {
@@ -1724,7 +1724,7 @@ fn avancer(mode: Avance) {
                     at.vue64 = None;
                 }
                 Moteur::M64(s) => {
-                    *IMAGE.lock().unwrap() = super::gobatix::image64(&s);
+                    *IMAGE.lock().unwrap() = super::toile::image64(&s);
                     at.dessin = IMAGE.lock().unwrap().is_some();
                     let mut vue = Vue64::depuis(&s);
                     at.mem = Some(vue.memoire());
@@ -1789,11 +1789,11 @@ static PLACE: Mutex<(i32, i32, i32, i32)> = Mutex::new((0, 0, 0, 0));
 static ANNONCEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PEINTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// La sortie de Gobatix dans l'atelier : chaque image présentée remplace la précédente dans la vue du cube.
+/// La sortie de la toile dans l'atelier : chaque image présentée remplace la précédente dans la vue du cube.
 struct VueAtelier {
     cube: usize,
 }
-impl super::gobatix::Sortie for VueAtelier {
+impl super::toile::Sortie for VueAtelier {
     fn montrer(&mut self, l: usize, h: usize, px: &[u32]) -> bool {
         {
             let mut im = IMAGE.lock().unwrap();
@@ -1927,14 +1927,14 @@ fn chemin_libre(ext: &str) -> PathBuf {
 /// écrire le GIF à côté du programme.
 fn basculer_enregistrement() {
     let at = a();
-    let marche = !super::gobatix::ENREGISTRER.load(Ordering::Relaxed);
+    let marche = !super::toile::ENREGISTRER.load(Ordering::Relaxed);
     if marche {
-        *super::gobatix::ENREGISTREMENT.lock().unwrap() = None;
-        super::gobatix::ENREGISTRER.store(true, Ordering::Relaxed);
+        *super::toile::ENREGISTREMENT.lock().unwrap() = None;
+        super::toile::ENREGISTRER.store(true, Ordering::Relaxed);
         etat("enregistrement : chaque image que montre presenter() s'ajoute à l'animation · F5 pour lancer · Ctrl+G pour finir");
     } else {
-        super::gobatix::ENREGISTRER.store(false, Ordering::Relaxed);
-        let g = super::gobatix::ENREGISTREMENT.lock().unwrap().take();
+        super::toile::ENREGISTRER.store(false, Ordering::Relaxed);
+        let g = super::toile::ENREGISTREMENT.lock().unwrap().take();
         match g {
             None => etat("aucune image enregistrée : le programme doit dessiner (ecran) et appeler presenter()"),
             Some(g) => {

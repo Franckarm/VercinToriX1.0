@@ -1,7 +1,7 @@
-// Les sorties de Gobatix : ce que devient une image présentée par un programme (presenter()). La fenêtre (Windows),
+// Les sorties de la toile : ce que devient une image présentée par un programme (presenter()). La fenêtre (Windows),
 // les images PNG, l'animation GIF, l'atelier (qui installe sa propre sortie) ; l'enregistrement de l'atelier.
 // Ce fichier ne dépend que de gif.rs et hote.rs : la forge (forge/forge.py) le recopie dans chaque programme forgé,
-// qui ouvre ainsi la même fenêtre que « vtx gobatix ».
+// qui ouvre ainsi la même fenêtre que « vtx toile ».
 use super::gif::Gif;
 use super::hote;
 use std::sync::Mutex;
@@ -371,7 +371,7 @@ mod fen {
     impl Fenetre {
         pub fn new(prog: &str) -> Self {
             let nom = std::path::Path::new(prog).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-            Fenetre { titre: format!("Gobatix — {}", nom), hwnd: None, dernier: Instant::now() }
+            Fenetre { titre: format!("La toile — {}", nom), hwnd: None, dernier: Instant::now() }
         }
         /// Crée la fenêtre (et son fil) à la première image : sa taille suit celle de l'image, agrandie jusqu'à 4 fois.
         fn ouvrir(&mut self, l: usize, h: usize) {
@@ -380,7 +380,7 @@ mod fen {
             std::thread::spawn(move || unsafe {
                 SetProcessDPIAware();
                 let inst = GetModuleHandleW(std::ptr::null());
-                let nom = w("VtxGobatix");
+                let nom = w("VtxToile");
                 let classe = WndClassEx {
                     cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0x3, lpfnWndProc: proc_fenetre, cbClsExtra: 0,
                     cbWndExtra: 0, hInstance: inst, hIcon: std::ptr::null_mut(),

@@ -1,5 +1,5 @@
 // Noyau des programmes forgés (forge/forge.py) : la machine autour du programme vtx. La mémoire est celle de la
-// machine émulée (memoire.rs, avec les cubes et leurs fichiers miroirs : miroir.rs), Gobatix aussi (la fenêtre, les
+// machine émulée (memoire.rs, avec les cubes et leurs fichiers miroirs : miroir.rs), la toile aussi (la fenêtre, les
 // images, l'animation GIF, la souris et le clavier : sortie.rs, gif.rs, hote.rs) ; ces fichiers de vtx-rs sont
 // recopiés ici tels quels, à la place de la ligne @MODULES@. Suivent les entrées, les sorties, les fichiers et les
 // services du SPU (SYS), puis le programme lui-même : une fonction Rust par fonction vtx.
@@ -325,9 +325,9 @@ struct Ctx {
     sp: u32,
 }
 
-/// Lance le programme comme « vtx PROG.vtx » (ou « vtx gobatix PROG.vtx » s'il présente des images) : les nombres de
+/// Lance le programme comme « vtx PROG.vtx » (ou « vtx toile PROG.vtx » s'il présente des images) : les nombres de
 /// la ligne de commande sont ses entrées ; --gif FICHIER, --images DOSSIER, --max N, --pas K, --scenario FICHIER
-/// comme pour Gobatix.
+/// comme pour la toile.
 fn lancer_programme(principal: fn(&mut Ctx) -> u32) {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (mut images, mut gif, mut max, mut pas, mut scenario) = (None, None, usize::MAX, 1usize, None);

@@ -7,7 +7,7 @@ range les variables dans les registres de la machine hôte, déroule et vectoris
 machine elle-même (forge/noyau_forge.rs, qui reprend memoire.rs, miroir.rs, gif.rs, hote.rs et sortie.rs de vtx-rs) :
 la mémoire du SPU (les quatre étages, les cubes et leurs fichiers miroirs ; l'image du programme compilé par vtx.py
 est chargée telle quelle, les textes et les données sont aux mêmes adresses), les entrées, les sorties, les fichiers,
-les services, et Gobatix (la fenêtre sous Windows, les animations GIF, les images, la souris, le clavier, les
+les services, et la toile (la fenêtre sous Windows, les animations GIF, les images, la souris, le clavier, les
 scénarios). Chaque opération garde le sens qu'elle a sur le SPU (entiers de 32 bits sans signe, division par zéro,
 flottants au NaN unique, longs signés…) : le programme forgé rend les mêmes sorties que la machine émulée.
 
@@ -21,7 +21,7 @@ machine : le NaN unique du SPU n'est imposé que là où les bits se voient.
 
 Utilisation : python3 forge/forge.py PROG.vtx [-o EXE] [--rs FICHIER.rs] [--natif]
   --natif : optimise pour le processeur de cette machine (l'exécutable ne tourne alors pas forcément ailleurs)
-L'exécutable prend les entrées du programme sur sa ligne de commande, et les options de Gobatix : --gif FICHIER,
+L'exécutable prend les entrées du programme sur sa ligne de commande, et les options de la toile : --gif FICHIER,
 --images DOSSIER, --max N, --pas K, --scenario FICHIER.
 """
 import os

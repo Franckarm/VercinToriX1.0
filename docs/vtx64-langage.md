@@ -276,7 +276,7 @@ la même façon.
 ## 12. Gobatix interactif : la souris, le clavier, l'animation, l'anti-cube
 
 Les mêmes fonctions sur le SPU-32 et le SPU-64 (services 16 à 21 de la machine, `vtx-rs/src/hote.rs`), au prélude des
-deux compilateurs de chaque machine, avec les mêmes mots (`tests/test_gobatix.py`) :
+deux compilateurs de chaque machine, avec les mêmes mots (`tests/test_toile.py`) :
 
 | Fonction | Rend | Service |
 |---|---|---|
@@ -294,7 +294,7 @@ cadence est gardée sans effet ; l'horloge marche partout.
 vue du cube de l'atelier, des PNG, un GIF. La sortie ne montre que des images finies ; le programme dessine la
 suivante dans l'étage 1 sans être vu. Jusqu'ici l'atelier ne montrait l'image qu'à la fin du programme : il la montre
 maintenant à chaque `presenter()`, sur les deux machines (le SPU-64 n'avait aucune sortie d'image : `presenter64`,
-`vtx gobatix64`). Un point profond est vu par l'octet fort de chaque voie.
+`vtx toile64`). Un point profond est vu par l'octet fort de chaque voie.
 
 **L'anti-cube des couleurs.** `anti_couleur(c)` = 255 − c par voie (65 535 − c en 64 bits), l'alpha gardé : c'est le
 « ou exclusif » de la couleur avec #FFFFFF00, la symétrie du cube par son centre gris. Involutive, elle donne les

@@ -251,3 +251,43 @@ La mesure décide, pas le principe :
    texte vtx s'écrire).
 3. Les essais mesurés de la section 10.
 4. L'atelier, puis la chaîne Cube → Hex → ADN → ARN.
+
+## 13. Proposition : les liaisons écrites (31 octobre, à valider)
+
+Le texte d'une surface, et ce qu'on écrit à la main. Une **réaction** est un bloc où chaque ligne est un atome :
+son élément, son nom, ce qu'il fait, et la liaison qu'il donne (`->`). **L'ordre des lignes ne compte pas** : le
+compilateur range les atomes par vagues, d'après les liaisons. Tout ce qui n'est pas lié réagit dans la même vague.
+
+```
+// un panel d'atomes : quatre H, quatre C, un N, un O
+reaction principal() {
+    H six       = 6                         -> a
+    H sept      = 7                         -> b
+    H dix       = 10                        -> d
+    C produit   = a × b                     -> p
+    C somme     = a + b                     -> s
+    C ecart     = s - d                     -> e
+    C rdv       = rendez-vous(p, e)         -> p2, e2
+    N garde     = si e2 > 0 alors p2        -> r
+    O rangement = pont r vers @2[0]         -> r2
+    H montre    = afficher(r2)
+}
+```
+
+Les vagues qu'en tire le compilateur : 1. six, sept, dix ; 2. produit et somme (ensemble) ; 3. ecart ; 4. le
+rendez-vous ; 5. garde ; 6. le pont vers le cube 2 ; 7. afficher (42).
+
+- **Les liaisons sont les données** : `a`, `p`, `r2`… chacune a sa place dans le cube, rangée selon Fischer (la chaîne
+  principale à la suite dans une colonne couleur-matière, les branches dans les cases voisines).
+- **La valence est vérifiée** : un H donne ou reçoit une liaison, un O deux, un N trois, un C quatre. Une ligne qui en
+  demande plus est refusée, avec la valence dans le message.
+- **Une liaison lue par plusieurs atomes** (`a` est lue par produit et somme) : le compilateur ajoute lui-même l'atome
+  de copie (un C), comme sur la paillasse.
+- **Belnap** : une liaison est inconnue tant qu'elle n'est pas arrivée ; `si` donne faux quand le test échoue, et la suite
+  de la branche ne réagit pas ; une contradiction (÷ 0) donne variable.
+- **Le reste de vtx** reste tel quel : une réaction est une fonction, appelée comme les autres, et une fonction ordinaire
+  peut contenir une réaction.
+
+Questions à valider : l'élément écrit en tête de ligne (H, C, N, O), ou déduit par le compilateur ; le mot `reaction` ;
+la copie implicite d'une liaison lue plusieurs fois.
+

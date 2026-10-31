@@ -1,4 +1,4 @@
-// Gobatix : peindre à la souris, avec un objet animé par-dessus.
+// La toile : peindre à la souris, avec un objet animé par-dessus.
 //
 // Bouton gauche : peindre. Bouton droit : effacer. Molette, ou + et - : la taille du pinceau.
 // 1 à 6, ou un clic sur la palette en haut : la couleur. E : tout effacer. Flèches : pousser le carré. Échap : finir.
@@ -7,8 +7,8 @@
 // gris) juste avant presenter(), puis enlevés juste après par un second anti : anti(anti(c)) = c. La peinture dessous
 // revient intacte, sans avoir gardé le fond nulle part.
 //
-// Lancer : dans l'atelier (F5, la vue du cube montre l'image, la souris et le clavier y vont), ou vtx gobatix peindre.vtx.
-// Sur le SPU-64 le même programme marche (atelier en 64 bits, ou vtx gobatix64 peindre.vtx).
+// Lancer : dans l'atelier (F5, la vue du cube montre l'image, la souris et le clavier y vont), ou vtx toile peindre.vtx.
+// Sur le SPU-64 le même programme marche (atelier en 64 bits, ou vtx toile64 peindre.vtx).
 
 fonction couleur(k) {
     si k == 0 { retour rgb(255, 255, 255); }

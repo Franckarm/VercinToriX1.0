@@ -17,19 +17,19 @@ Langage, compilateur, assembleur et émulateur du SPU à cube chromatique.
   défaut sur la SPU-64 (Ctrl+M : SPU-32).
 - **Les optimisations** : variables en registres, épissage (dont la règle échange, comme l'auto-épissage des introns),
   expansion en ligne des petites fonctions, tables de noms dans les cubes.
-- **Gobatix interactif** : la souris, le clavier, la molette, l'horloge et la cadence des images pour les programmes
+- **La toile interactive** (le service d'image de la machine, autrefois appelé Gobatix ; le nom Gobatix est réservé au futur logiciel de modélisation et d'animation) : la souris, le clavier, la molette, l'horloge et la cadence des images pour les programmes
   qui dessinent, sur les deux machines ; l'atelier montre l'animation pendant qu'elle tourne et l'enregistre en GIF
   (Ctrl+G), écrit par différence d'une image à l'autre ; l'anti-cube des couleurs pour les curseurs et les objets
-  animés (`exemples/gobatix/peindre.vtx`).
+  animés (`exemples/toile/peindre.vtx`).
 - **Le miroir et l'opposé** : les cubes sur disque écrits avec leur anti-cube (`etat_disque()` : vrai, faux réparé,
   variable, inconnu), le cube des noms dans vtxc64 (chaque nom haché une fois), les appels en série
   `ajouter(l): 1, 2, 3;`.
-- Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là ; il reçoit les mêmes fonctions de Gobatix.
+- Le SPU-32 (vtx.py, vtxc, `vtx.exe`) reste là ; il reçoit les mêmes fonctions de la toile.
 - **La forge (0.5i)** : un programme vtx devient un exécutable natif, par Rust : `python forge/forge.py programme.vtx`.
-  Chaque fonction vtx devient une fonction Rust, avec la mémoire, les cubes et Gobatix de la machine ; mêmes sorties
+  Chaque fonction vtx devient une fonction Rust, avec la mémoire, les cubes et la toile de la machine ; mêmes sorties
   que le SPU émulé (3 267 programmes vérifiés), de 0,4 à 2 fois le temps du C, de 20 à 90 fois plus vite que
   l'émulation (`docs/vtx-forge.md`).
-- **Le labyrinthe tout en vtx** : `jeu3/labyrinthe.vtx`, le jeu sans la page web (`vtx gobatix jeu3/labyrinthe.vtx`,
+- **Le labyrinthe tout en vtx** : `jeu3/labyrinthe.vtx`, le jeu sans la page web (`vtx toile jeu3/labyrinthe.vtx`,
   ou forgé en `labyrinthe.exe`) ; l'image vit dans un cube à elle.
 
 L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/vtx-0-5-autonomie.md`.
@@ -81,7 +81,7 @@ Sous Windows, remplacez `python3` par `py` ou `python`.
 | `machines/` | émulateurs JavaScript (`vm_rapide.js` interprète, `vm_traduite.js` traduction en JavaScript, environ 3,5 fois plus rapide), utilisés par le jeu dans le navigateur ; `conformite.js` les vérifie. La machine Java a été retirée : Rust la remplace |
 | `bibliotheque/` | `cube.vtx` (voies du mot RGBA, gris, distance, mélange, centrage), `adn.vtx` (couche ADN et ARN), `fixe.vtx` (64 bits et virgule fixe 16.16), avec leurs tests |
 | `exemples/` | chariot d'usine, appariement spectral, mémoire associative, canal caché T/U, lancer de rayons, démonstration |
-| `jeu3/`, `jeu2/` | le jeu « Labyrinthe du cube » en vtx ; `jeu3/labyrinthe.vtx` : le jeu complet en Gobatix |
+| `jeu3/`, `jeu2/` | le jeu « Labyrinthe du cube » en vtx ; `jeu3/labyrinthe.vtx` : le jeu complet sur la toile |
 | `forge/` | la forge : vtx en code natif par Rust (`forge.py`, `noyau_forge.rs`), et son test contre la machine émulée |
 | `debogueur/` | programme de démonstration du débogueur et son test |
 | `partition/` | démonstrations de la partition des tâches (sans segments, en segments, avec tableaux cumulés) et leur test |

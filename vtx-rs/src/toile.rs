@@ -1,4 +1,4 @@
-// Gobatix : le service graphique de la machine, sur le SPU-32 et le SPU-64.
+// La toile : le service graphique de la machine, sur le SPU-32 et le SPU-64.
 //
 // Un programme vtx dessine dans l'image de l'étage 1 (ecran, pixel, trait, rectangle, disque : le prélude) puis appelle
 // presenter() : la machine copie l'image vers une sortie, la montre, et rend 0 pour continuer, 1 si l'utilisateur a
@@ -10,8 +10,8 @@
 //   - les images PNG (toutes les machines), une par appel, pour vérifier une animation sans écran ;
 //   - une animation GIF (toutes les machines), écrite par différence d'une image à l'autre (gif.rs) ;
 //   - l'atelier, qui montre les images dans sa vue du cube et peut les enregistrer en GIF.
-// vtx gobatix PROG.vtx                                    la fenêtre (Windows), SPU-32
-// vtx gobatix64 PROG.vtx                                  la même chose sur le SPU-64
+// vtx toile PROG.vtx                                    la fenêtre (Windows), SPU-32
+// vtx toile64 PROG.vtx                                  la même chose sur le SPU-64
 // … --images DOSSIER [--max N] [--pas K]                  les images image-0001.png… (une sur K, au plus N appels)
 // … --gif FICHIER.gif [--max N] [--pas K]                 une animation GIF
 // … --scenario FICHIER                                   des gestes (souris, touches) rejoués image par image (hote.rs)
@@ -64,10 +64,10 @@ pub fn presenter64(s: &Spu64) -> u64 {
 }
 
 
-/// vtx gobatix PROG.vtx [--images DOSSIER | --gif FICHIER] [--max N] [--pas K] ; m64 : sur le SPU-64.
+/// vtx toile PROG.vtx [--images DOSSIER | --gif FICHIER] [--max N] [--pas K] ; m64 : sur le SPU-64.
 pub fn lancer(args: &[String], m64: bool) {
     use super::{compiler_avec, dossier_de, executer_dans, nombres, COMPLET, VTXC};
-    let usage = if m64 { "vtx gobatix64" } else { "vtx gobatix" };
+    let usage = if m64 { "vtx toile64" } else { "vtx toile" };
     if args.is_empty() {
         eprintln!("utilisation : {} PROG.vtx [--images DOSSIER | --gif FICHIER.gif] [--max N] [--pas K] [--scenario FICHIER]", usage);
         std::process::exit(2);

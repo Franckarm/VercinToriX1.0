@@ -23,7 +23,7 @@ mod traduction;
 mod atelier;
 mod arbre;
 mod cube;
-mod gobatix;
+mod toile;
 mod sortie;
 #[allow(dead_code)]
 mod hote;
@@ -400,8 +400,8 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
                     // 11 : écrire sur disque le cube de fréquence f d'un étage (argument f × 4 + étage) ; un cube rangé
                     // quitte alors la mémoire, et accorder(étage, f) le retrouve dans son fichier
                     11 => mem.ranger_cube(rb & 3, rb >> 2, dossier),
-                    // 12 : présenter l'image du programme (Gobatix) ; rend 1 si la fenêtre a été fermée
-                    12 => gobatix::presenter(mem),
+                    // 12 : présenter l'image du programme (la toile) ; rend 1 si la fenêtre a été fermée
+                    12 => toile::presenter(mem),
                     // 16 à 21 : la souris, les touches, l'horloge, la cadence (hote.rs)
                     16..=21 | 23 => hote::service(ra as u64, rb as u64, 0xFFFF_FFFF).unwrap_or(0) as u32,
                     // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé, miroir.rs)
@@ -1053,8 +1053,8 @@ fn main() {
         Some("image") => cube::image(&args[2..]),
         Some("dessin") => cube::dessin(&args[2..]),
         Some("cubes") => print!("{}", texte_cubes(None, std::path::Path::new(args.get(2).map(|s| s.as_str()).unwrap_or(".")))),
-        Some("gobatix") => gobatix::lancer(&args[2..], false),
-        Some("gobatix64") => gobatix::lancer(&args[2..], true),
+        Some("toile") | Some("gobatix") => toile::lancer(&args[2..], false),
+        Some("toile64") | Some("gobatix64") => toile::lancer(&args[2..], true),
         Some("quits") => cube::image_quits(&args[2..]),
         Some("icone") if args.len() > 2 => {
             let f = &args[2];

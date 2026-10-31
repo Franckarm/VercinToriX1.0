@@ -1,6 +1,6 @@
-// Gobatix, premier pas : un cube qui tourne.
+// La toile, premier pas : un cube qui tourne.
 // ecran(l, h) prépare l'image (étage 1) ; trait y dessine ; presenter() la montre (fenêtre, ou fichiers avec --images)
-// et rend 0 tant que la fenêtre est ouverte. Lancer : vtx gobatix cube_tournant.vtx, ou F5 dans l'atelier.
+// et rend 0 tant que la fenêtre est ouverte. Lancer : vtx toile cube_tournant.vtx, ou F5 dans l'atelier.
 // Le calcul est en flottants 32 bits, la rotation autour de deux axes, la projection en perspective.
 // À la souris : bouton gauche enfoncé, le cube suit la main ; relâché, il continue de lui-même. Molette : plus ou
 // moins près. Espace : pause.

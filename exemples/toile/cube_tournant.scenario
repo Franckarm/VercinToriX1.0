@@ -1,4 +1,4 @@
-# Le cube tourné à la main : vtx gobatix cube_tournant.vtx --scenario cube_tournant.scenario --gif cube.gif --max 150
+# Le cube tourné à la main : vtx toile cube_tournant.vtx --scenario cube_tournant.scenario --gif cube.gif --max 150
 30 souris 200 150 1
 31 souris 210 150 1
 32 souris 222 152 1

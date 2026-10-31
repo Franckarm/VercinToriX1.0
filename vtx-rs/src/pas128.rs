@@ -20,7 +20,7 @@ pub fn vers_point32_128(v: u128) -> u32 {
 /// Le même point vu en 0x00RRGGBB, pour l'image d'un programme qui dessine.
 pub fn point128(v: u128) -> u32 {
     if v >> 64 == 0 {
-        return super::gobatix::point64(v as u64);
+        return super::toile::point64(v as u64);
     }
     (((v >> 120) & 0xFF) << 16 | ((v >> 88) & 0xFF) << 8 | ((v >> 56) & 0xFF)) as u32
 }
@@ -126,10 +126,10 @@ pub fn image128(s: &Spu128) -> Option<(usize, usize, Vec<u32>)> {
     Some((l, h, px))
 }
 
-/// Le service 12 de Lugus (presenter) : l'image vers la sortie de Gobatix.
+/// Le service 12 de Lugus (presenter) : l'image vers la sortie de la toile.
 pub fn presenter128(s: &Spu128) -> u128 {
     match image128(s) {
-        Some((l, h, px)) => if super::gobatix::montrer(l, h, &px) { 0 } else { 1 },
+        Some((l, h, px)) => if super::toile::montrer(l, h, &px) { 0 } else { 1 },
         None => u64::MAX as u128,
     }
 }

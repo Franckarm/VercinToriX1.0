@@ -3,7 +3,7 @@ importer "rendu3.vtx";
 importer "donnees_monde.vtx";
 
 // Le labyrinthe du cube, tout en vtx : la boucle du jeu, le clavier, la souris, le temps et l'affichage sont dans le
-// programme ; la page web n'est plus nécessaire. vtx gobatix labyrinthe.vtx ouvre la fenêtre (Windows) ; la forge en
+// programme ; la page web n'est plus nécessaire. vtx toile labyrinthe.vtx ouvre la fenêtre (Windows) ; la forge en
 // fait un exécutable seul (python3 forge/forge.py labyrinthe.vtx).
 //   Z / W / ↑ avancer · S / ↓ reculer · Q / A pas à gauche · D pas à droite · ← → tourner · souris (bouton gauche
 //   tenu) : tourner · Entrée : jouer · P : pause · Échap : quitter

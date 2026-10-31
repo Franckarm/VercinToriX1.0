@@ -1,4 +1,4 @@
-# Un scénario pour peindre.vtx : vtx gobatix peindre.vtx --scenario peindre.scenario --gif peindre.gif --max 200
+# Un scénario pour peindre.vtx : vtx toile peindre.vtx --scenario peindre.scenario --gif peindre.gif --max 200
 # image geste valeurs (voir vtx-rs/src/hote.rs)
 1 souris 170 110 1
 2 souris 170 111 1

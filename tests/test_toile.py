@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Gobatix interactif : souris, touches, cadence, anti-couleur, animations GIF, sur le SPU-32 et le SPU-64.
+"""la toile interactif : souris, touches, cadence, anti-couleur, animations GIF, sur le SPU-32 et le SPU-64.
 
  1. Les deux compilateurs de chaque machine donnent les mêmes mots pour les programmes qui utilisent les nouvelles
     fonctions (vtx.py = vtxc embarqué, vtx64.py = vtxc64 embarqué ; prélude, optimisations, partition).
@@ -24,7 +24,7 @@ import vtx64  # noqa: E402
 
 cargo = shutil.which("cargo")
 if not cargo:
-    print("cargo absent : Gobatix n'est pas vérifié (il tourne sur la machine Rust)")
+    print("cargo absent : la toile n'est pas vérifié (il tourne sur la machine Rust)")
     sys.exit(0)
 rs = os.path.join(racine, "vtx-rs")
 cible = os.environ.get("CARGO_TARGET_DIR") or os.path.join(rs, "target")
@@ -32,8 +32,8 @@ subprocess.run([cargo, "build", "--release", "-q"], cwd=rs, check=True)
 ext = ".exe" if os.name == "nt" else ""
 VTX = os.path.join(cible, "release", "vtx" + ext)
 VTX64 = os.path.join(cible, "release", "vtx64" + ext)
-TMP = tempfile.mkdtemp(prefix="gobatix-")
-GOB = os.path.join(racine, "exemples", "gobatix")
+TMP = tempfile.mkdtemp(prefix="toile-")
+GOB = os.path.join(racine, "exemples", "toile")
 echecs = []
 
 
@@ -115,8 +115,8 @@ verifier("2. sans fenêtre : souris, touche, molette, appuyee à 0, cadence gard
 # 3. le GIF
 gif = os.path.join(TMP, "cube.gif")
 pngs = os.path.join(TMP, "png")
-subprocess.run([VTX, "gobatix", os.path.join(GOB, "cube_tournant.vtx"), "--gif", gif, "--max", "60"], capture_output=True, check=True)
-subprocess.run([VTX, "gobatix", os.path.join(GOB, "cube_tournant.vtx"), "--images", pngs, "--max", "60"], capture_output=True, check=True)
+subprocess.run([VTX, "toile", os.path.join(GOB, "cube_tournant.vtx"), "--gif", gif, "--max", "60"], capture_output=True, check=True)
+subprocess.run([VTX, "toile", os.path.join(GOB, "cube_tournant.vtx"), "--images", pngs, "--max", "60"], capture_output=True, check=True)
 try:
     import numpy as np
     from PIL import Image
@@ -151,9 +151,9 @@ else:
 # 4. le scénario
 g32, g64 = os.path.join(TMP, "p32.gif"), os.path.join(TMP, "p64.gif")
 sc = os.path.join(GOB, "peindre.scenario")
-subprocess.run([VTX, "gobatix", os.path.join(GOB, "peindre.vtx"), "--scenario", sc, "--gif", g32, "--max", "200"],
+subprocess.run([VTX, "toile", os.path.join(GOB, "peindre.vtx"), "--scenario", sc, "--gif", g32, "--max", "200"],
                capture_output=True, check=True)
-subprocess.run([VTX, "gobatix64", os.path.join(GOB, "peindre.vtx"), "--scenario", sc, "--gif", g64, "--max", "200"],
+subprocess.run([VTX, "toile64", os.path.join(GOB, "peindre.vtx"), "--scenario", sc, "--gif", g64, "--max", "200"],
                capture_output=True, check=True)
 meme = open(g32, "rb").read() == open(g64, "rb").read()
 detail = ""
@@ -174,5 +174,5 @@ verifier("4. scénario de gestes rejoué (peindre.vtx) : même GIF sur le SPU-32
 
 shutil.rmtree(TMP, ignore_errors=True)
 print()
-print("Gobatix : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
+print("La toile : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)

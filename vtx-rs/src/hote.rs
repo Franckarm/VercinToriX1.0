@@ -1,5 +1,5 @@
 // Ce que la machine hôte donne à un programme interactif, pareil sur le SPU-32 et le SPU-64 (services 16 à 21) :
-// la souris dans l'image, les touches, l'horloge, la cadence des images. Une fenêtre (Gobatix ou l'atelier) écrit ici
+// la souris dans l'image, les touches, l'horloge, la cadence des images. Une fenêtre (la toile ou l'atelier) écrit ici
 // ce qu'elle voit ; sans fenêtre, tout vaut 0 (pas de souris, pas de touche), sauf l'horloge.
 //
 //   16 souris()      x (bits 0-11) | y (12-23) | boutons (24-26 : gauche 1, droit 2, milieu 4) | dans l'image (27)
@@ -23,7 +23,7 @@ pub static MOLETTE: AtomicI32 = AtomicI32::new(0);
 pub static TOUCHES: Mutex<VecDeque<u32>> = Mutex::new(VecDeque::new());
 // les touches enfoncées : un bit par code de touche Windows (0 à 255)
 static ENFONCEES: [AtomicU32; 8] = [const { AtomicU32::new(0) }; 8];
-// 16 ms : 60 images par seconde au plus, comme la fenêtre de Gobatix
+// 16 ms : 60 images par seconde au plus, comme la fenêtre de la toile
 pub static CADENCE_MS: AtomicU32 = AtomicU32::new(16);
 static DEBUT: Mutex<Option<Instant>> = Mutex::new(None);
 static DERNIERE: Mutex<Option<Instant>> = Mutex::new(None);
@@ -202,7 +202,7 @@ pub fn clavier_windows(message: u32, wp: usize) {
     }
 }
 
-// ---- le scénario : des gestes écrits d'avance, rejoués image par image (vtx gobatix … --scenario FICHIER), pour montrer
+// ---- le scénario : des gestes écrits d'avance, rejoués image par image (vtx toile … --scenario FICHIER), pour montrer
 // ou vérifier un programme interactif sans écran. Une ligne par geste, « IMAGE geste valeurs », appliqué après la
 // présentation de l'image IMAGE (0 : avant la première) :
 //   12 souris X Y BOUTONS        la souris (dans l'image ; boutons : gauche 1, droit 2, milieu 4)
