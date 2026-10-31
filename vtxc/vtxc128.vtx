@@ -3381,6 +3381,8 @@ constante C_SORTIE = 3;
 constante C_MONDE = 4;
 constante SOUVENIRS_DEBUT = 16777216;     // #1000000 : le cube 1 de l'étage 3, @3[#1000000..#1FFFFFF]
 constante SOUVENIRS_FIN = 33554432;
+constante SOUVENIR_BITS = 4;            // la colonne des souvenirs d'un atome : seize places
+constante SOUVENIR_PLACES = 16;
 constante PROVENANCE_DEBUT = 33554432;   // #2000000 : le cube 2 de l'étage 3, la trace de la provenance
 
 // a + b, deux textes
@@ -3934,7 +3936,7 @@ fonction souvenir_possible(c: Ctx, m: Molecule, a: Atome) {
         }
         p = p.suivant;
     }
-    si c.souv_place + f.nb + 2 > SOUVENIRS_FIN {
+    si c.souv_place + SOUVENIR_PLACES * (f.nb + 2) > SOUVENIRS_FIN {
         retour 0;
     }
     retour est_pure(c, f.nom, liste());
@@ -3969,45 +3971,108 @@ fonction soit_type(nom, a: Noeud, l, t): Noeud {
     retour s;
 }
 
+// la colonne des souvenirs d'un atome (seize places, comme vtx128.py) : l'empreinte des entrées choisit deux places
+// (quatre bits, puis les quatre suivants ; le miroir si elles tombent au même endroit)
+fonction case_place(place, k, l): Noeud {
+    retour Noeud { genre: N_LIRE, val: 3, b: bin("+", var_n(place, l), nombre(k, l), l), ligne: l };
+}
+
+fonction relu_place(t, place, k, l): Noeud {
+    soit n = case_place(place, k, l);
+    si t == T_I { retour appel1("entier_32", n, l); }
+    si t == T_F { retour appel1("comme_flottant", n, l); }
+    si t == T_S { retour appel1("comme_flottant_32", n, l); }
+    si t == T_X { retour appel1("comme_flottant_petuar", n, l); }
+    si t == T_P { retour appel1("comme_point", n, l); }
+    retour n;
+}
+
+fonction empreinte(t, v, l): Noeud {
+    si t == T_I { retour appel1("entier", var_n(v, l), l); }
+    si t == T_F || t == T_S { retour appel1("bits", var_n(v, l), l); }
+    si t == T_X || t == T_P {
+        retour bin("^", appel1("bas", appel1("bits", var_n(v, l), l), l), appel1("haut", appel1("bits", var_n(v, l), l), l), l);
+    }
+    si t == T_W {
+        retour bin("^", appel1("bas", var_n(v, l), l), appel1("haut", var_n(v, l), l), l);
+    }
+    retour var_n(v, l);
+}
+
+fonction garde_ces_entrees(place, tmp: Liste, f: Fonction, l): Noeud {
+    soit c = bin("!=", case_place(place, 0, l), nombre(0, l), l);
+    soit p = f.params;
+    pour i dans 0..tmp.n {
+        c = bin("&&", c, souvenir_egal(p.type, var_n(elem(tmp, i), l), relu_place(p.type, place, 1 + i, l), l), l);
+        p = p.suivant;
+    }
+    retour c;
+}
+
 fonction souvenir(c: Ctx, m: Molecule, a: Atome) {
     soit q = a.quoi;
     soit f = fonction_programme(c, q.nom);
     soit l = a.ligne;
     soit s = elem(a.sorties, 0);
     soit base = c.souv_place;
-    c.souv_place = c.souv_place + f.nb + 2;
-    soit cond = bin("!=", case_souvenir(base, l), nombre(0, l), l);
+    soit large = f.nb + 2;
+    c.souv_place = c.souv_place + SOUVENIR_PLACES * large;
+    soit pre = joindre_textes(nom_cache("__souv", base), "_");
+    soit nom_p = joindre_textes(pre, "p");
+    soit nom_q = joindre_textes(pre, "q");
+    soit nom_t = joindre_textes(pre, "t");
+    soit nom_m = joindre_textes(pre, "m");
+    soit nom_r = joindre_textes(pre, "r");
+    soit nom_r2 = joindre_textes(pre, "r2");
     soit tmp = liste();
     soit arg = q.premier;
     soit p = f.params;
     soit i = 0;
+    soit h = nombre(0xCBF29CE484222325, l);
     tantque arg != nul {
         soit suite = arg.suivant;
         arg.suivant = nul;
-        soit v = nom_cache(joindre_textes(nom_cache("__souv", base), "_"), i);
+        soit v = nom_cache(pre, i);
         ajouter(tmp, v);
         emettre_st(m, soit_type(v, arg, l, p.type));
-        cond = bin("&&", cond, souvenir_egal(p.type, var_n(v, l), relu(p.type, base + 1 + i, l), l), l);
+        h = bin("*", bin("^", h, empreinte(p.type, v, l), l), nombre(0x100000001B3, l), l);
         arg = suite;
         p = p.suivant;
         i = i + 1;
     }
-    emettre_st(m, soit_type(s, relu(f.rtype, base + 1 + tmp.n, l), l, f.rtype));
+    emettre_st(m, soit_type(nom_m, bin("*", h, nombre(0x9E3779B97F4A7C15, l), l), l, 0));
+    emettre_st(m, soit_type(nom_r, bin(">>", var_n(nom_m, l), nombre(64 - SOUVENIR_BITS, l), l), l, 0));
+    emettre_st(m, soit_type(nom_r2, bin("&", bin(">>", var_n(nom_m, l), nombre(64 - 2 * SOUVENIR_BITS, l), l),
+                                         nombre(SOUVENIR_PLACES - 1, l), l), l, 0));
+    emettre_st(m, Noeud { genre: N_SI, a: bin("==", var_n(nom_r2, l), var_n(nom_r, l), l),
+                          premier: Noeud { genre: N_AFFECTER, nom: nom_r2,
+                                           a: bin("^", var_n(nom_r, l), nombre(SOUVENIR_PLACES - 1, l), l), ligne: l }, ligne: l });
+    emettre_st(m, soit_type(nom_p, bin("+", nombre(base, l), bin("*", var_n(nom_r, l), nombre(large, l), l), l), l, 0));
+    emettre_st(m, soit_type(nom_q, bin("+", nombre(base, l), bin("*", var_n(nom_r2, l), nombre(large, l), l), l), l, 0));
+    emettre_st(m, soit_type(s, relu_place(f.rtype, nom_p, 1 + tmp.n, l), l, f.rtype));
+    emettre_st(m, soit_type(nom_t, var_n(nom_p, l), l, 0));
     soit args: Noeud = nul;
     pour k dans 0..tmp.n {
         args = chainer(args, var_n(elem(tmp, k), l));
     }
     soit reagir = Noeud { genre: N_AFFECTER, nom: s, a: Noeud { genre: N_APPEL, nom: q.nom, premier: args, ligne: q.ligne }, ligne: l };
+    chainer(reagir, Noeud { genre: N_SI, a: bin("&&", bin("!=", case_place(nom_p, 0, l), nombre(0, l), l),
+                                                  bin("==", case_place(nom_q, 0, l), nombre(0, l), l), l),
+                            premier: Noeud { genre: N_AFFECTER, nom: nom_t, a: var_n(nom_q, l), ligne: l }, ligne: l });
     pour k dans 0..tmp.n {
-        chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base + 1 + k, l), c: var_n(elem(tmp, k), l), ligne: l });
+        chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: bin("+", var_n(nom_t, l), nombre(1 + k, l), l),
+                                c: var_n(elem(tmp, k), l), ligne: l });
     }
-    chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base + 1 + tmp.n, l), c: var_n(s, l), ligne: l });
-    chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: nombre(base, l), c: nombre(1, l), ligne: l });
+    chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: bin("+", var_n(nom_t, l), nombre(1 + tmp.n, l), l), c: var_n(s, l), ligne: l });
+    chainer(reagir, Noeud { genre: N_ECRIRE, val: 3, b: bin("+", var_n(nom_t, l), nombre(0, l), l), c: nombre(1, l), ligne: l });
     si c.provenance {
         chainer(reagir, plus_un(place_trace(m, s) + 1, l));
         ajouter(m.souv, s);
     }
-    emettre_st(m, Noeud { genre: N_SI, a: cond, val: 1, deuxieme: reagir, ligne: l });
+    soit second = Noeud { genre: N_SI, a: garde_ces_entrees(nom_q, tmp, f, l),
+                          premier: Noeud { genre: N_AFFECTER, nom: s, a: relu_place(f.rtype, nom_q, 1 + tmp.n, l), ligne: l },
+                          val: 1, deuxieme: reagir, ligne: l };
+    emettre_st(m, Noeud { genre: N_SI, a: garde_ces_entrees(nom_p, tmp, f, l), val: 1, deuxieme: second, ligne: l });
 }
 
 // ---- le corps : la fonction ordinaire, les atomes dans l'ordre des vagues

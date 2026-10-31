@@ -1,0 +1,22 @@
+// Les souvenirs rangés comme Fischer (docs/vtx-reactions.md, étape 5, point 3) : chaque atome lourd a une colonne de
+// seize places ; l'empreinte de ses entrées choisit deux places (la seconde, une pièce indépendante de la première, ou
+// le miroir). Ici le décor alterne entre cinq valeurs : le calcul lourd ne réagit que cinq fois sur soixante appels.
+//     python vtx128.py pourquoi exemples128/alternance.vtx image.fond
+//     lugus pourquoi exemples128/alternance.vtx image.fond
+
+fonction lourd(n) {
+    soit s = 0;
+    pour i dans 0..n { s = s + (i * i) % 7; }
+    retour s;
+}
+
+reaction image(decor) -> r {
+    = lourd(decor)       -> fond
+    = fond + 1           -> r
+}
+
+fonction principal() {
+    soit total = 0;
+    pour k dans 0..60 { total = total + image(20000 + (k % 5) * 1000); }
+    sortie(total);
+}

@@ -493,6 +493,8 @@ def symbole_unite(k, v):
 # les mêmes entrées pour lui, il ne réagit pas : il redonne son souvenir ; et ce qui en dépend voit les mêmes entrées.
 SOUVENIRS = os.environ.get("VTX_SOUVENIRS", "1") != "0"     # VTX_SOUVENIRS=0 : sans (pour mesurer)
 SOUVENIRS_DEBUT, SOUVENIRS_FIN = 0x1000000, 0x2000000
+SOUVENIR_BITS = 4
+SOUVENIR_PLACES = 1 << SOUVENIR_BITS     # la colonne des souvenirs d'un atome : seize places
 TYPES_SOUVENIR = {"e", "i", "f", "s", "x", "w", "p"}
 EFFETS_PURS = {"__rompre", "sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture",
                "ouvrir_ecriture", "fermer", "fin_de", "bruit", "pile", "marquer_adn", "marquer_arn", "liberer_brin", "brin",
@@ -1104,47 +1106,88 @@ class Molecule:
         if f.nom == self.nom or len(q[2]) != len(f.params) or f.rtype not in TYPES_SOUVENIR \
                 or any(t not in TYPES_SOUVENIR for t in f.ptypes):
             return False
-        if self.souvenir_place + len(f.params) + 2 > SOUVENIRS_FIN:
+        if self.souvenir_place + SOUVENIR_PLACES * (len(f.params) + 2) > SOUVENIRS_FIN:
             return False
         return est_pure(f.nom, self.fonctions)
 
     def souvenir(self, a):
-        """les entrées converties comme pour l'appel ; si elles sont celles du souvenir, le résultat est relu ; sinon
-        l'atome réagit, et le souvenir est récrit (sa validité en dernier)"""
+        """La colonne des souvenirs de l'atome (comme Fischer : la colonne est l'atome, l'empreinte des entrées choisit la
+        place, et la place miroir sert de second choix, comme la pièce du puzzle qui essaie l'autre sens). Les entrées
+        sont converties comme pour l'appel ; si l'une des deux places garde ces entrées, le résultat est relu ; sinon
+        l'atome réagit, et son souvenir est rangé à la première place libre des deux (ou à la première, qu'il remplace)."""
         _, nom, args, lc = a.quoi
         f = self.fonctions[nom]
         l, s_ = a.ligne, a.sorties[0]
+        n = len(args)
+        large = n + 2                                 # une place : la validité, les entrées, le résultat
         base = self.souvenir_place
-        self.souvenir_place += len(args) + 2
+        self.souvenir_place += SOUVENIR_PLACES * large
         self.souvenirs = getattr(self, "souvenirs", []) + [(a.nom_affiche(), base)]
-        case = lambda k: ("lire", 3, ("nombre", base + k))  # noqa: E731
+        nom_p, nom_q, nom_t = f"__souv{base}_p", f"__souv{base}_q", f"__souv{base}_t"
 
-        def relu(t, k):
+        def case(place, k):
+            return ("lire", 3, ("bin", "+", ("var", place, l), ("nombre", k)))
+
+        def relu(t, place, k):
             lecture = {"i": "entier_32", "f": "comme_flottant", "s": "comme_flottant_32", "x": "comme_flottant_petuar",
                        "p": "comme_point"}
-            return ("appel", lecture[t], [case(k)], l) if t in lecture else case(k)
+            return ("appel", lecture[t], [case(place, k)], l) if t in lecture else case(place, k)
 
         def egal(t, x, y):
             if t in ("f", "s", "x", "p"):      # les bits : -0 n'est pas +0, et NaN redonne son souvenir
                 return ("bin", "==", ("appel", "bits", [x], l), ("appel", "bits", [y], l))
             return ("bin", "==", x, y)
-        st, cond = [], ("bin", "!=", case(0), ("nombre", 0))
-        tmp = []
+
+        def empreinte(t, x):
+            """64 bits de l'entrée, pour l'empreinte"""
+            if t == "i":
+                return ("appel", "entier", [x], l)
+            if t in ("f", "s"):
+                return ("appel", "bits", [x], l)
+            if t in ("x", "p"):
+                b = ("appel", "bits", [x], l)
+                return ("bin", "^", ("appel", "bas", [b], l), ("appel", "haut", [b], l))
+            if t == "w":
+                return ("bin", "^", ("appel", "bas", [x], l), ("appel", "haut", [x], l))
+            return x
+        st, tmp = [], []
+        h = ("nombre", 0xCBF29CE484222325)
         for i, (x, t) in enumerate(zip(args, f.ptypes)):
             v = f"__souv{base}_{i}"
             tmp.append(v)
             st.append(("soit", v, x, l, t))
-            cond = ("bin", "&&", cond, egal(t, ("var", v, l), relu(t, 1 + i)))
-        st.append(("soit", s_, relu(f.rtype, 1 + len(args)), l, f.rtype))
-        reagir = [("affecter", s_, ("appel", nom, [("var", v, l) for v in tmp], lc), l)]
-        reagir += [("ecrire", 3, ("nombre", base + 1 + i), ("var", v, l), l) for i, v in enumerate(tmp)]
-        reagir += [("ecrire", 3, ("nombre", base + 1 + len(tmp)), ("var", s_, l), l),
-                   ("ecrire", 3, ("nombre", base), ("nombre", 1), l)]
+            h = ("bin", "*", ("bin", "^", h, empreinte(t, ("var", v, l))), ("nombre", 0x100000001B3))
+        # les deux places : l'empreinte mélangée (le nombre d'or) ; la première, ses quatre bits forts ; la seconde, les
+        # quatre suivants (une seconde pièce, indépendante de la première) ; si elles tombent au même endroit, le miroir
+        nom_m, nom_r, nom_r2 = f"__souv{base}_m", f"__souv{base}_r", f"__souv{base}_r2"
+        st.append(("soit", nom_m, ("bin", "*", h, ("nombre", 0x9E3779B97F4A7C15)), l, "e"))
+        st.append(("soit", nom_r, ("bin", ">>", ("var", nom_m, l), ("nombre", 64 - SOUVENIR_BITS)), l, "e"))
+        st.append(("soit", nom_r2, ("bin", "&", ("bin", ">>", ("var", nom_m, l), ("nombre", 64 - 2 * SOUVENIR_BITS)),
+                                    ("nombre", SOUVENIR_PLACES - 1)), l, "e"))
+        st.append(("si", ("bin", "==", ("var", nom_r2, l), ("var", nom_r, l)),
+                   [("affecter", nom_r2, ("bin", "^", ("var", nom_r, l), ("nombre", SOUVENIR_PLACES - 1)), l)], None, l))
+        st.append(("soit", nom_p, ("bin", "+", ("nombre", base), ("bin", "*", ("var", nom_r, l), ("nombre", large))), l, "e"))
+        st.append(("soit", nom_q, ("bin", "+", ("nombre", base), ("bin", "*", ("var", nom_r2, l), ("nombre", large))), l, "e"))
+
+        def garde_ces_entrees(place):
+            c = ("bin", "!=", case(place, 0), ("nombre", 0))
+            for i, (v, t) in enumerate(zip(tmp, f.ptypes)):
+                c = ("bin", "&&", c, egal(t, ("var", v, l), relu(t, place, 1 + i)))
+            return c
+        st.append(("soit", s_, relu(f.rtype, nom_p, 1 + n), l, f.rtype))
+        st.append(("soit", nom_t, ("var", nom_p, l), l, "e"))
+        reagir = [("affecter", s_, ("appel", nom, [("var", v, l) for v in tmp], lc), l),
+                  ("si", ("bin", "&&", ("bin", "!=", case(nom_p, 0), ("nombre", 0)), ("bin", "==", case(nom_q, 0), ("nombre", 0))),
+                   [("affecter", nom_t, ("var", nom_q, l), l)], None, l)]
+        ecrire = lambda k, val: ("ecrire", 3, ("bin", "+", ("var", nom_t, l), ("nombre", k)), val, l)  # noqa: E731
+        reagir += [ecrire(1 + i, ("var", v, l)) for i, v in enumerate(tmp)]
+        reagir += [ecrire(1 + n, ("var", s_, l)), ecrire(0, ("nombre", 1))]
         if PROVENANCE:
             t = self.traces[s_] + 1
             reagir.append(("ecrire", 3, ("nombre", t), ("bin", "+", ("lire", 3, ("nombre", t)), ("nombre", 1)), l))
             self.au_souvenir.add(s_)
-        st.append(("si", cond, [], reagir, l))
+        st.append(("si", garde_ces_entrees(nom_p), [],
+                   [("si", garde_ces_entrees(nom_q), [("affecter", s_, relu(f.rtype, nom_q, 1 + n), l)], reagir, l)], l))
         return st
 
     @staticmethod
@@ -1163,7 +1206,8 @@ class Molecule:
         if self.copies:
             t.append("  copies : " + ", ".join(f"{e} ({el['copie de ' + e]}, lue {n} fois)" for e, n in self.copies.items()))
         if getattr(self, "souvenirs", None):
-            t.append("  souvenirs (calcul incrémental) : " + ", ".join(f"{n} en @3[#{b:06X}]" for n, b in self.souvenirs))
+            t.append(f"  souvenirs (calcul incrémental, {SOUVENIR_PLACES} places chacun) : "
+                     + ", ".join(f"{n} en @3[#{b:06X}]" for n, b in self.souvenirs))
         if self.contrats:
             t.append("  contrats : " + " ; ".join(f"{c[1]} {c[5]}" for c in self.contrats))
         connues = {k: v for k, v in (self.unites or {}).items() if v is not QUELCONQUE and v != {}}

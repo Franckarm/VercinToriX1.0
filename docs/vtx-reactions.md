@@ -375,8 +375,8 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
 
     Le résultat est le même. La forge et Lugus en Rust rendent les mêmes sorties que l'émulateur.
   - `python vtx128.py molecule` montre les souvenirs et leur place.
-  - Ce qui reste : un souvenir ne garde que la dernière réaction (une table de plusieurs souvenirs, rangée selon Fischer,
-    servirait les entrées qui alternent) ; le souvenir et les cœurs ne se combinent pas encore.
+  - Ce qui reste : ~~un souvenir ne garde que la dernière réaction~~ (fait plus bas : seize places, rangées comme
+    Fischer) ; le souvenir et les cœurs ne se combinent pas encore.
 - **Étape 4, troisième temps : les réactions dans vtxc128**, le compilateur écrit en vtx (`vtxc/vtxc128.vtx`, la section
   « les réactions », environ 1 300 lignes de vtx) :
   - **Ce qu'il lit**, comme vtx128.py :
@@ -492,4 +492,25 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     liaison, il montre ce que rendent les réactions.
   - `lugus PROG.adn` : l'épissage retire les témoins, et c'est l'ARN, les mots seuls, qui est lancé. Le chemin Cube → Hex →
     ADN → ARN est donc complet dans Lugus.
+- **Les souvenirs rangés comme Fischer** (le point 3 de la route droite : Fischer prend sa fonction). Chaque atome lourd
+  a maintenant une **colonne de seize places** :
+  - la colonne, c'est l'atome ; la place, c'est l'empreinte de ses entrées (FNV, puis mélangée par le nombre d'or) ;
+  - **deux choix**, comme la pièce du puzzle qui essaie l'autre sens. La première place, ce sont les quatre bits forts du
+    mélange ; la seconde, les quatre suivants, une seconde pièce indépendante de la première, ou le miroir quand les
+    deux tombent au même endroit ;
+  - quand ni l'une ni l'autre ne garde ces entrées, l'atome réagit. Son souvenir est rangé à la première place libre
+    des deux, sinon il remplace celui de la première.
+  - Un premier essai prenait le miroir de la première place comme seconde place : trois valeurs se disputaient alors deux
+    places et se chassaient l'une l'autre (41 calculs sur 60). La seconde pièce indépendante règle ce cas.
+  - **Mesuré** (`exemples128/alternance.vtx`, le décor qui alterne entre k valeurs, 60 appels ; calculs du lourd) :
+
+    | k valeurs | 2 | 3 | 5 | 8 | 12 | 16 | 20 |
+    |---|---|---|---|---|---|---|---|
+    | une seule place (avant) | 60 | 60 | 60 | 60 | 60 | 60 | 60 |
+    | seize places, deux choix | 2 | 3 | 5 | 10 | 14 | 23 | 35 |
+
+    Le coût, là où une seule place suffisait (la scène) : 3,6 % d'instructions de plus (195 135 au lieu de 186 915),
+    toujours 10 fois moins que sans souvenirs.
+  - vtxc128 range les souvenirs de la même façon : les mêmes mots. `lugus pourquoi` le montre aussi : « souvenir :
+    réagi 5 fois sur 60 appels ».
 

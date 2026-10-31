@@ -296,11 +296,22 @@ vtx128.compiler(src_h)
 verifier("30 rappels aux entrées tirées au hasard (souvent les mêmes) : mêmes sorties avec et sans souvenirs ; la "
          "fonction qui lit la mémoire n'a pas de souvenir", memes and len(vtx128.REACTIONS["r"].souvenirs) == 3)
 
+# 15. les souvenirs rangés comme Fischer : seize places par atome, deux choix ; des entrées qui alternent sont retrouvées
+ALTERNANCE = open(os.path.join(racine, "exemples128", "alternance.vtx"), encoding="utf-8").read()
+vtx128.PROVENANCE = True
+cpu_a, _, _ = vtx128.executer(ALTERNANCE, max_pas=10 ** 9)
+vtx128.PROVENANCE = False
+mol_a = vtx128.REACTIONS["image"]
+reagi = cpu_a.lire((3 << 62) | (mol_a.traces["fond"] + 1))
+sans_a = pas_de(ALTERNANCE, False)
+verifier(f"cinq décors qui alternent : le calcul lourd réagit {reagi} fois sur 60 appels (une seule place : 60)",
+         reagi == 5 and cpu_a.sortie == sans_a[0], f"{reagi} {cpu_a.sortie} {sans_a[0]}")
+
 lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
 if shutil.which("rustc") and os.path.exists(lugus):
     tmp = tempfile.mkdtemp(prefix="reactions-")
     bons = True
-    for src in [CONTRAT.replace("MODE", m) for m in ("moyenne(4, 6, 0)", "tordue(1)", "1")] + [UNITES, CHUTE, SCENE]:
+    for src in [CONTRAT.replace("MODE", m) for m in ("moyenne(4, 6, 0)", "tordue(1)", "1")] + [UNITES, CHUTE, SCENE, ALTERNANCE]:
         prog = os.path.join(tmp, "c.vtx")
         open(prog, "w", encoding="utf-8").write(src)
         mots = os.path.join(tmp, "c.mots")
