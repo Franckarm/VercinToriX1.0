@@ -26,6 +26,7 @@ def construire(b):
     c["Rust (rustc -O)"] = [f"./{b}.rust"]
     subprocess.run(["go", "build", "-o", f"{b}.go.exe", f"go/{b}.go"], cwd=S, check=True)
     c["Go"] = [f"./{b}.go.exe"]
+    subprocess.run(["javac", "-d", "java", f"java/{JAVA[b]}.java"], cwd=S, check=True)
     c["Java"] = ["java", "-cp", "java", JAVA[b]]
     c["JavaScript (Node)"] = ["node", f"{b}.js"]
     c["Python 3"] = ["python3", f"{b}.py"]

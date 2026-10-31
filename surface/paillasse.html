@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>La paillasse de Vercintorix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&family=Alegreya:wght@600&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* la paillasse : une table de laboratoire en ardoise claire ; les atomes aux couleurs de la chimie (CPK) ; l'or des torques gaulois pour l'action */
+  --banc: #e9ecee;
+  --panneau: #f7f8f9;
+  --encre: #1d252c;
+  --doux: #5b6670;
+  --trait: #c9d0d6;
+  --or: #9a6b12;
+  --or-fond: #f3e6c9;
+  --h: #ffffff; --h-trait: #8a949c;
+  --c: #2f3438; --c-texte: #f2f4f5;
+  --n: #2f5bd8; --o: #d23a2a;
+  --inconnu: #9aa3ab; --faux: #6c7ea8; --vrai: #2f8a4f; --variable: #c2287a;
+  --affiche: "Alegreya", Georgia, serif;
+  --texte: "IBM Plex Sans", system-ui, sans-serif;
+  --code: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --banc: #161b20; --panneau: #1e252b; --encre: #e6eaee; --doux: #9aa6b0; --trait: #34404a;
+    --or: #e0b04c; --or-fond: #3a2f17;
+    --h: #f4f6f7; --h-trait: #9aa3ab; --c: #0b0e10; --c-texte: #e6eaee; --n: #6e8ff0; --o: #ec6a5a;
+    --inconnu: #6f7a84; --faux: #8aa0d0; --vrai: #5cc283; --variable: #ec5aa6;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --banc: #161b20; --panneau: #1e252b; --encre: #e6eaee; --doux: #9aa6b0; --trait: #34404a;
+  --or: #e0b04c; --or-fond: #3a2f17;
+  --h: #f4f6f7; --h-trait: #9aa3ab; --c: #0b0e10; --c-texte: #e6eaee; --n: #6e8ff0; --o: #ec6a5a;
+  --inconnu: #6f7a84; --faux: #8aa0d0; --vrai: #5cc283; --variable: #ec5aa6;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--banc); color: var(--encre); font: 15px/1.45 var(--texte); }
+.cadre { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px; padding: 12px 16px 10px; border-bottom: 1px solid var(--trait); background: var(--panneau); }
+header h1 { font: 600 22px/1.1 var(--affiche); margin: 0; text-wrap: balance; }
+header p { margin: 0; color: var(--doux); font-size: 13px; max-width: 70ch; }
+.corps { display: grid; grid-template-columns: 190px 1fr 340px; min-height: 0; }
+@media (max-width: 980px) { .corps { grid-template-columns: 1fr; grid-template-rows: auto 60vh auto; } }
+aside, .droite { background: var(--panneau); padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 0; overflow: auto; }
+aside { border-right: 1px solid var(--trait); }
+.droite { border-left: 1px solid var(--trait); }
+h2 { font: 600 12px/1.2 var(--texte); text-transform: uppercase; letter-spacing: .08em; color: var(--doux); margin: 6px 0 0; }
+.palette { display: grid; gap: 6px; }
+.palette button { display: flex; align-items: center; gap: 8px; text-align: left; font: 500 13px var(--texte); color: var(--encre); background: var(--banc); border: 1px solid var(--trait); border-radius: 8px; padding: 6px 8px; cursor: pointer; }
+.palette button:hover { border-color: var(--or); }
+.palette small { color: var(--doux); font-weight: 400; display: block; font-size: 11px; }
+.pastille { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 13px var(--code); }
+.el-H { background: var(--h); color: #222; border: 1.5px solid var(--h-trait); }
+.el-C { background: var(--c); color: var(--c-texte); }
+.el-N { background: var(--n); color: #fff; }
+.el-O { background: var(--o); color: #fff; }
+.commandes { display: flex; flex-wrap: wrap; gap: 6px; }
+.commandes button { font: 600 13px var(--texte); border-radius: 8px; padding: 7px 10px; cursor: pointer; border: 1px solid var(--trait); background: var(--banc); color: var(--encre); }
+.commandes button.principal { background: var(--or); border-color: var(--or); color: #fff; }
+button:focus-visible, .atome:focus-visible { outline: 2px solid var(--or); outline-offset: 2px; }
+.etat { font-size: 13px; color: var(--doux); min-height: 2.6em; }
+.etat b { color: var(--encre); font-variant-numeric: tabular-nums; }
+.legende { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; font-size: 12px; color: var(--doux); align-items: center; }
+.trait-l { width: 26px; height: 0; border-top: 3px solid; }
+.paillasse { position: relative; overflow: auto; background-image: radial-gradient(var(--trait) 1px, transparent 1px); background-size: 22px 22px; min-height: 0; touch-action: none; }
+.plan { position: relative; width: 960px; height: 640px; }
+svg.liens { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+svg.liens path { fill: none; stroke-width: 3; cursor: pointer; }
+svg.liens path.choisi { stroke-width: 5; }
+svg.liens text { font: 600 12px var(--code); paint-order: stroke; stroke: var(--banc); stroke-width: 4px; }
+.atome { position: absolute; width: 132px; border-radius: 12px; background: var(--panneau); border: 1.5px solid var(--trait); box-shadow: 0 1px 2px rgba(0,0,0,.08); user-select: none; cursor: grab; }
+.atome.choisi { border-color: var(--or); box-shadow: 0 0 0 3px var(--or-fond); }
+.atome.vague { animation: reagit .5s ease-out; }
+@keyframes reagit { from { box-shadow: 0 0 0 10px var(--or-fond); } to { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .atome.vague { animation: none; } }
+.atome .tete { display: flex; align-items: center; gap: 7px; padding: 6px 8px 4px; }
+.atome .nom { font: 600 13px var(--texte); white-space: nowrap; }
+.atome .detail { font: 400 12px var(--code); color: var(--doux); padding: 0 8px 7px; min-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.atome .detail b { color: var(--encre); }
+.atome .num { margin-left: auto; font: 600 11px var(--code); color: var(--or); white-space: nowrap; }
+.port { position: absolute; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--panneau); background: var(--doux); cursor: crosshair; }
+.port.entree { left: -8px; }
+.port.sortie { right: -8px; }
+.port.libre { background: transparent; border: 2px dashed var(--doux); cursor: default; }
+.port:hover:not(.libre) { background: var(--or); }
+.textes { display: grid; gap: 6px; }
+pre { margin: 0; font: 12px/1.5 var(--code); background: var(--banc); border: 1px solid var(--trait); border-radius: 8px; padding: 8px; overflow: auto; max-height: 260px; white-space: pre; }
+.signature { font: 600 14px var(--code); }
+.signature span { color: var(--doux); font-weight: 400; }
+.editeur { display: none; gap: 6px; align-items: center; flex-wrap: wrap; font-size: 13px; }
+.editeur.ouvert { display: flex; }
+.editeur input, .editeur select { font: 13px var(--code); padding: 4px 6px; border: 1px solid var(--trait); border-radius: 6px; background: var(--banc); color: var(--encre); width: 7em; }
+.aide { font-size: 12px; color: var(--doux); margin: 0; }
+</style>
+</head>
+<body>
+<div class="cadre">
+  <header>
+    <h1>La paillasse de Vercintorix</h1>
+    <p>Maquette de la surface : des atomes (les cases, le code) reliés par des liaisons (les données). Une case réagit dès que toutes ses liaisons d'entrée sont connues ; toutes les cases prêtes réagissent dans la même vague.</p>
+  </header>
+  <div class="corps">
+    <aside>
+      <h2>Poser un atome</h2>
+      <div class="palette" id="palette"></div>
+      <h2>Belnap sur les liaisons</h2>
+      <div class="legende">
+        <span class="trait-l" style="border-color: var(--inconnu); border-top-style: dashed"></span><span>inconnu : pas encore arrivée</span>
+        <span class="trait-l" style="border-color: var(--vrai)"></span><span>vrai : une valeur</span>
+        <span class="trait-l" style="border-color: var(--faux)"></span><span>faux : une branche non prise</span>
+        <span class="trait-l" style="border-color: var(--variable)"></span><span>variable : contradiction (÷ 0…)</span>
+      </div>
+      <p class="aide">Glisser un atome pour le déplacer ; tirer d'un point de sortie (à droite) vers un point d'entrée (à gauche) pour lier. Chaque point est une liaison : la valence de l'atome fixe leur nombre. Double-clic pour régler un atome ; Suppr efface ce qui est choisi.</p>
+    </aside>
+    <div class="paillasse" id="paillasse">
+      <div class="plan" id="plan">
+        <svg class="liens" id="liens"></svg>
+      </div>
+    </div>
+    <div class="droite">
+      <div class="commandes">
+        <button class="principal" id="b-vague" type="button">Une vague</button>
+        <button id="b-tout" type="button">Jusqu'au bout</button>
+        <button id="b-zero" type="button">Recommencer</button>
+      </div>
+      <div class="etat" id="etat"></div>
+      <div class="editeur" id="editeur">
+        <label for="e-val">Valeur</label><input id="e-val" type="text">
+        <label for="e-op">Opération</label><select id="e-op"><option>+</option><option>−</option><option>×</option><option>÷</option><option>min</option><option>max</option></select>
+        <button id="e-ok" type="button">Appliquer</button>
+      </div>
+      <h2>La molécule</h2>
+      <div class="signature" id="signature"></div>
+      <h2>Le Hex : ce qui s'enregistre</h2>
+      <div class="textes">
+        <pre id="hex"></pre>
+        <div class="commandes"><button id="b-copier" type="button">Copier le Hex</button></div>
+      </div>
+      <h2>Le même programme en vtx</h2>
+      <pre id="vtx"></pre>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  "use strict";
+  // ---- les sortes d'atomes : l'élément, la valence (le nombre de liaisons) et les points d'entrée et de sortie
+  const SORTES = {
+    constante: { el: "H", nom: "constante", court: "", aide: "donne une valeur", entrees: [], sorties: ["v"] },
+    afficher: { el: "H", nom: "afficher", court: "", aide: "montre ce qui arrive", entrees: ["v"], sorties: [] },
+    pont: { el: "O", nom: "pont", court: "→ autre cube", aide: "passe d'un cube à l'autre", entrees: ["v"], sorties: ["v"], libres: 2 },
+    si: { el: "N", nom: "si", court: "test ≠ 0 ?", aide: "laisse passer si le test est vrai", entrees: ["test", "v"], sorties: ["v"], libres: 1 },
+    calcul: { el: "C", nom: "calcul", court: "", aide: "deux entrées, deux sorties", entrees: ["a", "b"], sorties: ["r", "r"] },
+    copie: { el: "C", nom: "copie", court: "1 → 3", aide: "une entrée, trois sorties", entrees: ["v"], sorties: ["v", "v", "v"] },
+    rendezvous: { el: "C", nom: "rendez-vous", court: "a et b, ensemble", aide: "attend les deux, les relâche ensemble", entrees: ["a", "b"], sorties: ["a", "b"] },
+  };
+  const MASSE = { H: 1, C: 12, N: 14, O: 16 };
+  const ETATS = ["inconnu", "faux", "vrai", "variable"];
+  const COULEUR = ["var(--inconnu)", "var(--faux)", "var(--vrai)", "var(--variable)"];
+
+  let atomes = [], liens = [], prochain = 1, choisi = null, vague = 0;
+  const plan = document.getElementById("plan"), svg = document.getElementById("liens");
+
+  function nouveau(sorte, x, y, reglages) {
+    const a = Object.assign({ id: prochain++, sorte, x, y, val: 6, op: "×", fait: 0, vu: null }, reglages || {});
+    atomes.push(a);
+    return a;
+  }
+  function lier(a, sa, b, eb) { liens.push({ id: "L" + prochain++, de: a.id, ps: sa, vers: b.id, pe: eb, s: 0, v: null }); }
+  const atome = (id) => atomes.find((a) => a.id === id);
+  const nomAtome = (a) => SORTES[a.sorte].el + a.id;
+
+  // ---- l'exemple de départ : (6 × 7) et (6 + 7) réagissent dans la même vague, se retrouvent au rendez-vous, puis un test
+  function exemple() {
+    atomes = []; liens = []; prochain = 1;
+    const c6 = nouveau("constante", 16, 60, { val: 6 });
+    const c7 = nouveau("constante", 16, 300, { val: 7 });
+    const k6 = nouveau("copie", 170, 50);
+    const k7 = nouveau("copie", 170, 290);
+    const mul = nouveau("calcul", 330, 60, { op: "×" });
+    const add = nouveau("calcul", 330, 260, { op: "+" });
+    const rdv = nouveau("rendezvous", 490, 160);
+    const test = nouveau("calcul", 560, 330, { op: "−" });
+    const si = nouveau("si", 650, 60);
+    const aff = nouveau("afficher", 810, 70);
+    const aff2 = nouveau("afficher", 760, 450);
+    lier(c6, 0, k6, 0); lier(c7, 0, k7, 0);
+    lier(k6, 0, mul, 0); lier(k7, 0, mul, 1); lier(k6, 1, add, 0); lier(k7, 1, add, 1);
+    lier(mul, 0, rdv, 0); lier(add, 0, rdv, 1);
+    lier(rdv, 1, test, 0); lier(k6, 2, test, 1);
+    lier(test, 0, si, 0); lier(rdv, 0, si, 1);
+    lier(si, 0, aff, 0); lier(test, 1, aff2, 0);
+  }
+
+  // ---- une vague : toutes les cases dont les liaisons d'entrée sont connues réagissent ensemble
+  function entreesDe(a) { return SORTES[a.sorte].entrees.map((_, k) => liens.find((l) => l.vers === a.id && l.pe === k)); }
+  function sortiesDe(a) { return SORTES[a.sorte].sorties.map((_, k) => liens.find((l) => l.de === a.id && l.ps === k)); }
+  function pret(a) { return !a.fait && entreesDe(a).every((l) => l && l.s !== 0); }
+  function calculer(op, x, y) {
+    switch (op) {
+      case "+": return [2, x + y];
+      case "−": return [2, x - y];
+      case "×": return [2, x * y];
+      case "÷": return y === 0 ? [3, null] : [2, Math.trunc(x / y)];
+      case "min": return [2, Math.min(x, y)];
+      case "max": return [2, Math.max(x, y)];
+    }
+    return [3, null];
+  }
+  function reagir(a) {
+    const e = entreesDe(a), S = SORTES[a.sorte];
+    let sortie;
+    const pire = e.reduce((m, l) => (l.s === 3 ? 3 : l.s === 1 && m !== 3 ? 1 : m), 2);
+    if (a.sorte === "constante") sortie = [2, Number(a.val)];
+    else if (a.sorte === "afficher") { a.vu = [e[0].s, e[0].v]; }
+    else if (a.sorte === "si") {
+      const t = e[0], v = e[1];
+      if (t.s === 3 || v.s === 3) sortie = [3, null];
+      else if (t.s === 1 || t.v === 0 || v.s === 1) sortie = [1, null];
+      else sortie = [2, v.v];
+    } else if (a.sorte === "calcul") sortie = pire !== 2 ? [pire, null] : calculer(a.op, e[0].v, e[1].v);
+    const sl = sortiesDe(a);
+    S.sorties.forEach((_, k) => {
+      const l = sl[k];
+      if (!l) return;
+      let r = sortie;
+      if (a.sorte === "copie" || a.sorte === "pont") r = [e[0].s, e[0].v];
+      if (a.sorte === "rendezvous") r = [e[k].s, e[k].v];
+      l.s = r[0]; l.v = r[1];
+    });
+    a.fait = vague;
+  }
+  function uneVague() {
+    const prets = atomes.filter(pret);
+    if (!prets.length) return 0;
+    vague++;
+    prets.forEach(reagir);
+    dessiner(prets.map((a) => a.id));
+    return prets.length;
+  }
+  function recommencer() {
+    vague = 0;
+    atomes.forEach((a) => { a.fait = 0; a.vu = null; });
+    liens.forEach((l) => { l.s = 0; l.v = null; });
+    dessiner();
+  }
+
+  // ---- le dessin
+  const LARG = 132;
+  function hauteur(a) { const S = SORTES[a.sorte]; return 52 + 18 * Math.max(0, Math.max(S.entrees.length, S.sorties.length) - 1); }
+  function posPort(a, cote, k) {
+    const S = SORTES[a.sorte], n = cote === "e" ? S.entrees.length : S.sorties.length;
+    const h = hauteur(a);
+    return { x: a.x + (cote === "e" ? 0 : LARG), y: a.y + (h * (k + 1)) / (n + 1) };
+  }
+  function dessiner(reagis) {
+    plan.querySelectorAll(".atome").forEach((n) => n.remove());
+    for (const a of atomes) {
+      const S = SORTES[a.sorte], d = document.createElement("div");
+      d.className = "atome" + (choisi === a.id ? " choisi" : "") + (reagis && reagis.includes(a.id) ? " vague" : "");
+      d.style.left = a.x + "px"; d.style.top = a.y + "px"; d.style.height = hauteur(a) + "px";
+      d.tabIndex = 0; d.dataset.id = a.id;
+      const tete = document.createElement("div"); tete.className = "tete";
+      const p = document.createElement("span"); p.className = "pastille el-" + S.el; p.textContent = S.el; tete.appendChild(p);
+      const nm = document.createElement("span"); nm.className = "nom"; nm.textContent = S.nom; tete.appendChild(nm);
+      const num = document.createElement("span"); num.className = "num"; num.textContent = a.fait ? "v" + a.fait : nomAtome(a); num.title = a.fait ? "a réagi à la vague " + a.fait : "pas encore réagi"; tete.appendChild(num);
+      d.appendChild(tete);
+      const det = document.createElement("div"); det.className = "detail";
+      if (a.sorte === "constante") det.textContent = "= " + a.val;
+      else if (a.sorte === "calcul") det.textContent = "a " + a.op + " b";
+      else if (a.sorte === "afficher") {
+        if (a.vu) { const b = document.createElement("b"); b.textContent = a.vu[0] === 2 ? String(a.vu[1]) : ETATS[a.vu[0]]; det.textContent = "» "; det.appendChild(b); }
+        else det.textContent = "…";
+      } else det.textContent = S.court;
+      d.appendChild(det);
+      S.entrees.forEach((_, k) => d.appendChild(port(a, "e", k)));
+      S.sorties.forEach((_, k) => d.appendChild(port(a, "s", k)));
+      for (let k = 0; k < (S.libres || 0); k++) {
+        const pl = document.createElement("span"); pl.className = "port libre"; pl.title = "doublet libre : une place en réserve";
+        pl.style.left = (LARG / 2 - 14 + 18 * k) + "px"; pl.style.bottom = "-8px"; d.appendChild(pl);
+      }
+      plan.appendChild(d);
+    }
+    dessinerLiens();
+    texte();
+  }
+  function port(a, cote, k) {
+    const s = document.createElement("span"), p = posPort(a, cote, k);
+    s.className = "port " + (cote === "e" ? "entree" : "sortie");
+    s.style.top = (p.y - a.y - 7) + "px";
+    s.dataset.id = a.id; s.dataset.cote = cote; s.dataset.k = k;
+    s.title = (cote === "e" ? "entrée " : "sortie ") + (cote === "e" ? SORTES[a.sorte].entrees[k] : SORTES[a.sorte].sorties[k]);
+    return s;
+  }
+  function courbe(p, q) { const dx = Math.max(40, Math.abs(q.x - p.x) / 2); return `M${p.x},${p.y} C${p.x + dx},${p.y} ${q.x - dx},${q.y} ${q.x},${q.y}`; }
+  function dessinerLiens(brouillon) {
+    svg.innerHTML = "";
+    const ns = "http://www.w3.org/2000/svg";
+    for (const l of liens) {
+      const a = atome(l.de), b = atome(l.vers);
+      if (!a || !b) continue;
+      const p = posPort(a, "s", l.ps), q = posPort(b, "e", l.pe);
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", courbe(p, q));
+      path.setAttribute("stroke", COULEUR[l.s]);
+      if (l.s === 0) path.setAttribute("stroke-dasharray", "6 5");
+      if (choisi === l.id) path.setAttribute("class", "choisi");
+      path.dataset.lien = l.id;
+      svg.appendChild(path);
+      if (l.s !== 0) {
+        const t = document.createElementNS(ns, "text");
+        t.setAttribute("x", (p.x + q.x) / 2); t.setAttribute("y", (p.y + q.y) / 2 - 6); t.setAttribute("text-anchor", "middle");
+        t.setAttribute("fill", COULEUR[l.s]);
+        t.textContent = l.s === 2 ? String(l.v) : ETATS[l.s];
+        svg.appendChild(t);
+      }
+    }
+    if (brouillon) {
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", courbe(brouillon.p, brouillon.q));
+      path.setAttribute("stroke", "var(--or)"); path.setAttribute("stroke-dasharray", "3 4");
+      svg.appendChild(path);
+    }
+  }
+
+  // ---- la molécule écrite : sa formule, sa masse (sa taille en hex), le Hex qui s'enregistre, et le vtx équivalent
+  function texte() {
+    const n = { C: 0, H: 0, N: 0, O: 0 };
+    atomes.forEach((a) => n[SORTES[a.sorte].el]++);
+    const indice = (k) => (k > 1 ? String(k).replace(/\d/g, (c) => "₀₁₂₃₄₅₆₇₈₉"[c]) : "");
+    const formule = ["C", "H", "N", "O"].filter((e) => n[e]).map((e) => e + indice(n[e])).join("") || "—";
+    const masse = atomes.reduce((s, a) => s + MASSE[SORTES[a.sorte].el], 0);
+    const sig = document.getElementById("signature");
+    sig.textContent = formule + " ";
+    const m = document.createElement("span"); m.textContent = "· masse " + masse + " hex · " + atomes.length + " atomes, " + liens.length + " liaisons"; sig.appendChild(m);
+    const h = ["paillasse 1 · " + formule + " · masse " + masse + " hex"];
+    for (const a of atomes) {
+      let r = "atome " + nomAtome(a) + " " + a.sorte;
+      if (a.sorte === "constante") r += " " + a.val;
+      if (a.sorte === "calcul") r += " " + a.op;
+      h.push(r);
+    }
+    for (const l of liens) h.push("liaison " + nomAtome(atome(l.de)) + "." + l.ps + " -> " + nomAtome(atome(l.vers)) + "." + l.pe);
+    document.getElementById("hex").textContent = h.join("\n");
+    document.getElementById("vtx").textContent = enVtx();
+  }
+  // les atomes rangés par vagues (l'ordre où ils peuvent réagir), chaque liaison devient une variable
+  function enVtx() {
+    const nomLien = (l) => (l ? l.id.toLowerCase() : "inconnu");
+    const fait = new Set(), lignes = ["fonction principal() {"];
+    let k = 0, reste = atomes.slice();
+    while (reste.length) {
+      const prets = reste.filter((a) => entreesDe(a).every((l) => l && fait.has(l.de)));
+      if (!prets.length) { lignes.push("    // " + reste.map(nomAtome).join(", ") + " : une liaison d'entrée manque"); break; }
+      k++;
+      lignes.push("    // vague " + k + (prets.length > 1 ? " : " + prets.length + " atomes ensemble" : ""));
+      for (const a of prets) {
+        const e = entreesDe(a).map(nomLien), s = sortiesDe(a);
+        const op = { "+": "+", "−": "-", "×": "*", "÷": "/" }[a.op];
+        if (a.sorte === "constante") s.forEach((l) => l && lignes.push(`    soit ${nomLien(l)} = ${a.val};`));
+        else if (a.sorte === "afficher") lignes.push(`    afficher(${e[0]});`);
+        else if (a.sorte === "calcul") {
+          const x = op ? `${e[0]} ${op} ${e[1]}` : `${a.op}(${e[0]}, ${e[1]})`;
+          s.forEach((l) => l && lignes.push(`    soit ${nomLien(l)} = ${x};`));
+        } else if (a.sorte === "si") s.forEach((l) => l && lignes.push(`    soit ${nomLien(l)} = si ${e[0]} != 0 { ${e[1]} } sinon { faux };`));
+        else if (a.sorte === "rendezvous") s.forEach((l, j) => l && lignes.push(`    soit ${nomLien(l)} = ${e[j]};   // relâchées ensemble`));
+        else s.forEach((l) => l && lignes.push(`    soit ${nomLien(l)} = ${e[0]};`));
+        fait.add(a.id);
+      }
+      reste = reste.filter((a) => !fait.has(a.id));
+    }
+    lignes.push("}");
+    return lignes.join("\n");
+  }
+
+  function etat(t) { document.getElementById("etat").innerHTML = t; }
+
+  // ---- la palette
+  const pal = document.getElementById("palette");
+  for (const [cle, S] of Object.entries(SORTES)) {
+    const b = document.createElement("button"); b.type = "button";
+    const p = document.createElement("span"); p.className = "pastille el-" + S.el; p.textContent = S.el;
+    const t = document.createElement("span"); t.textContent = S.nom;
+    const sm = document.createElement("small"); sm.textContent = S.aide + " · valence " + (S.entrees.length + S.sorties.length);
+    t.appendChild(sm); b.appendChild(p); b.appendChild(t);
+    b.addEventListener("click", () => {
+      const zone = document.getElementById("paillasse");
+      const a = nouveau(cle, zone.scrollLeft + 60 + Math.random() * 120, zone.scrollTop + 40 + Math.random() * 120);
+      choisi = a.id; recommencer();
+      etat("Atome posé : <b>" + nomAtome(a) + "</b>. Tirez ses liaisons.");
+    });
+    pal.appendChild(b);
+  }
+
+  // ---- la souris : déplacer un atome, tirer une liaison, choisir
+  let geste = null;
+  function point(ev) { const r = plan.getBoundingClientRect(); return { x: ev.clientX - r.left, y: ev.clientY - r.top }; }
+  plan.addEventListener("pointerdown", (ev) => {
+    const pt = ev.target.closest(".port");
+    if (pt && !pt.classList.contains("libre")) {
+      const a = atome(Number(pt.dataset.id));
+      if (pt.dataset.cote === "s") geste = { genre: "lien", a, k: Number(pt.dataset.k), p: posPort(a, "s", Number(pt.dataset.k)) };
+      plan.setPointerCapture(ev.pointerId); ev.preventDefault(); return;
+    }
+    const n = ev.target.closest(".atome");
+    if (n) {
+      const a = atome(Number(n.dataset.id)), p = point(ev);
+      choisi = a.id; geste = { genre: "deplacer", a, dx: p.x - a.x, dy: p.y - a.y };
+      plan.setPointerCapture(ev.pointerId); dessiner(); return;
+    }
+    const lp = ev.target.closest("path");
+    if (lp && lp.dataset.lien) { choisi = lp.dataset.lien; dessiner(); etat("Liaison choisie : Suppr pour l'effacer."); return; }
+    choisi = null; dessiner();
+  });
+  plan.addEventListener("pointermove", (ev) => {
+    if (!geste) return;
+    const p = point(ev);
+    if (geste.genre === "deplacer") {
+      geste.a.x = Math.max(0, Math.min(960 - LARG, p.x - geste.dx)); geste.a.y = Math.max(0, Math.min(580, p.y - geste.dy));
+      const n = plan.querySelector(`.atome[data-id="${geste.a.id}"]`);
+      if (n) { n.style.left = geste.a.x + "px"; n.style.top = geste.a.y + "px"; }
+      dessinerLiens();
+    } else dessinerLiens({ p: geste.p, q: p });
+  });
+  plan.addEventListener("pointerup", (ev) => {
+    if (geste && geste.genre === "lien") {
+      const cible = document.elementFromPoint(ev.clientX, ev.clientY);
+      const pt = cible && cible.closest(".port.entree");
+      if (pt) {
+        const b = atome(Number(pt.dataset.id)), k = Number(pt.dataset.k);
+        if (b.id === geste.a.id) etat("Un atome ne se lie pas à lui-même.");
+        else if (liens.some((l) => l.vers === b.id && l.pe === k)) etat("Cette entrée a déjà sa liaison : chaque point porte une seule liaison (la valence).");
+        else if (liens.some((l) => l.de === geste.a.id && l.ps === geste.k)) etat("Cette sortie a déjà sa liaison : prenez un autre point, ou un atome de copie.");
+        else { lier(geste.a, geste.k, b, k); recommencer(); etat("Liaison posée."); }
+      }
+      dessinerLiens();
+    }
+    geste = null;
+  });
+  plan.addEventListener("dblclick", (ev) => {
+    const n = ev.target.closest(".atome"); if (!n) return;
+    const a = atome(Number(n.dataset.id)); choisi = a.id;
+    const ed = document.getElementById("editeur");
+    ed.classList.toggle("ouvert", a.sorte === "constante" || a.sorte === "calcul");
+    document.getElementById("e-val").value = a.val; document.getElementById("e-op").value = a.op;
+    document.getElementById("e-val").disabled = a.sorte !== "constante"; document.getElementById("e-op").disabled = a.sorte !== "calcul";
+    dessiner();
+  });
+  document.getElementById("e-ok").addEventListener("click", () => {
+    const a = atome(choisi); if (!a) return;
+    if (a.sorte === "constante") { const v = Number(document.getElementById("e-val").value); if (Number.isFinite(v)) a.val = Math.trunc(v); }
+    if (a.sorte === "calcul") a.op = document.getElementById("e-op").value;
+    recommencer(); etat("Atome " + nomAtome(a) + " réglé.");
+  });
+  document.addEventListener("keydown", (ev) => {
+    if ((ev.key === "Delete" || ev.key === "Backspace") && choisi !== null && !/INPUT|SELECT/.test(document.activeElement.tagName)) {
+      if (typeof choisi === "string") liens = liens.filter((l) => l.id !== choisi);
+      else { atomes = atomes.filter((a) => a.id !== choisi); liens = liens.filter((l) => l.de !== choisi && l.vers !== choisi); }
+      choisi = null; recommencer(); etat("Effacé.");
+    }
+  });
+
+  // ---- les commandes
+  document.getElementById("b-vague").addEventListener("click", () => {
+    const n = uneVague();
+    if (n) etat(`Vague <b>${vague}</b> : <b>${n}</b> atome${n > 1 ? "s ont" : " a"} réagi ensemble.`);
+    else etat(vague ? "Plus rien ne peut réagir : la molécule a fini (ou attend une liaison)." : "Rien n'est prêt : une entrée attend sa liaison.");
+  });
+  document.getElementById("b-tout").addEventListener("click", () => {
+    while (uneVague()) { /* vague après vague */ }
+    const total = atomes.filter((a) => a.fait).length;
+    etat(`Fini en <b>${vague}</b> vagues pour <b>${total}</b> réactions : en moyenne ${(total / Math.max(1, vague)).toFixed(1).replace(".", ",")} atomes ensemble par vague.`);
+  });
+  document.getElementById("b-zero").addEventListener("click", () => { recommencer(); etat("Toutes les liaisons repartent inconnues."); });
+  document.getElementById("b-copier").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(document.getElementById("hex").textContent); etat("Hex copié."); }
+    catch (e) { etat("La copie a été refusée par le navigateur : sélectionnez le texte du Hex."); }
+  });
+
+  exemple();
+  recommencer();
+  etat("Un exemple est posé : <b>Une vague</b> le fait réagir pas à pas. À la vague 3, le produit et la somme réagissent ensemble.");
+})();
+</script>
+</body>
+</html>

@@ -1050,4 +1050,12 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
   émulé). Crible : 0,165 → 0,056 s (1,8 fois le C au lieu de 4,2) ; tri : 0,106 → 0,064 s (1,4 fois le C, plus vite que
   le SPU-32 forgé). Limite : un tableau dont l'étage est aussi touché par `@` ou par le tas reste dans le cube. Les liaisons
   écrites (la chimie) lèveraient cette limite : elles disent d'avance qui touche quoi.
+- **Essai 2, les gaz nobles** : aucun gain mesurable (la vérification du brin ne coûte déjà qu'aux pages qui en portent
+  un) ; rien à changer.
+- **Essai 3, les flottants de 32 et 64 bits par le matériel** : mêmes bits que le calcul logiciel ; Mandelbrot en 64 bits
+  −12 % seulement (la conversion et l'arrondi sur la grille à chaque opération). Un défaut (l'infini pris pour un zéro)
+  vu par la suite de vtx128, corrigé ; le banc d'essai des flottants refait (l'ancien fabriquait des nombres mal formés).
+- **La paillasse** : la maquette de la surface (atomes, liaisons, vagues, Belnap, le Hex et le vtx équivalent).
+- **Bilan** : `docs/vtx-bilan-lugus.md` (ajouts, retraits, mesures de Fibonacci à l'ADN dans onze façons de faire tourner
+  les cinq programmes) ; `verifier.py` : tout est conforme.
 
