@@ -233,3 +233,37 @@ raison de chaque chose. Ce sont des propositions : à trier ensemble.
 4. Fischer : les liaisons rangées dans le cube.
 5. Puis les répétitions (2.4), les erreurs (2.8), les exemples et contrats, la provenance ; vtxc128 ; la paillasse dans
    Ogmios.
+
+## 6. Décisions du 31 octobre (fin de matinée)
+
+| Proposition | Décision |
+|---|---|
+| exemples vérifiés | gardés (dans l'esprit de ce qui est fait : tout vérifier) |
+| contrats (`exige`, `garantit`) | **ajoutés** |
+| unités physiques dans les types | **ajoutées** |
+| calcul incrémental | **oui, évidemment** |
+| signature d'une molécule comme identité | **oui, appuyée sur l'organisation de Fischer** : la place d'une molécule dans le cube et sa signature disent la même chose |
+| le programme comme donnée | d'accord |
+| la forge écrite en vtx (Gobannos) | à faire |
+| la forge vers la carte graphique | à faire |
+| Ogmios écrit en vtx | à faire **avant** les deux précédentes |
+| modules désignés par leur empreinte | oui, par l'ADN et l'ARN : un module est un ADN signé, chaque usage une transcription |
+
+**Les ponts : parallèles, avec des conditions quand c'est nécessaire** (idée de l'utilisateur). Les ponts réagissent en
+même temps par défaut ; le compilateur ajoute lui-même une condition d'ordre quand deux ponts touchent la même chose
+(le même fichier, la même case du cube, la toile), et le programmeur peut en écrire une (`apres pont1`). Deux ponts vers
+des fichiers différents partent ensemble ; deux écritures dans le même fichier passent l'une après l'autre.
+
+**La provenance et la fiabilité de l'ADN** : la provenance (d'où vient chaque valeur) est rangée dans l'ADN, avec la
+signature et le contrôle (les neutrons) de chaque molécule. Le chantier qui suit les réactions : la fiabilité de l'ADN
+par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
+
+### L'ordre de travail qui en découle
+
+1. Les réactions dans vtx128 : l'exemple du panel, compilé et exécuté sur Lugus, émulé et forgé.
+2. Les vagues sur plusieurs cœurs ; les ponts parallèles avec leurs conditions ; mesurés.
+3. Fischer : les liaisons et les molécules rangées dans le cube, la signature comme identité.
+4. Les contrats, les unités, les exemples vérifiés ; le calcul incrémental.
+5. La fiabilité de l'ADN par son code chimique, avec la provenance.
+6. Ogmios écrit en vtx ; puis Gobannos (la forge en vtx) ; puis la forge vers la carte graphique.
+
