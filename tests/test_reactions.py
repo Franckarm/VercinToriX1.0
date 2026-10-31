@@ -92,7 +92,57 @@ for nom, src, attendu in [
     except vtx128.VtxError as e:
         verifier(nom, attendu in str(e), str(e))
 
-# 8. la forge de Lugus : mêmes sorties
+# 8. les ponts : ensemble, sauf ceux qui touchent la même chose (dans l'ordre des lignes) ; « apres » écrit
+src = """reaction principal() {
+    = afficher("b")   apres premier
+    premier = afficher("a")
+    = 1   -> x
+    = 2   -> y
+    = pont x vers @2[5]  -> x2
+    = pont y vers @2[5]  -> y2
+    = pont y vers @2[6]
+    = sortie(@2[5])
+}
+"""
+so, texte, _ = jouer(src)
+verifier("deux ponts sur la même case gardent l'ordre des lignes ; « apres » écrit ; la lecture vient après", so == [2] and texte == "a\nb\n",
+         f"{so} {texte!r}")
+
+# 9. somme pour chaque, et deux atomes lourds dans la même vague : forgés sur plusieurs cœurs, mêmes sorties que Lugus
+# émulé
+PARALLELE = """fonction carre_mod(i) { soit k = 0; soit x = i; tantque k < 20 { x = (x * x + 7) % 1000003; k = k + 1; } retour x; }
+fonction tranche(a, b) { soit s = 0; pour i dans a..b { s = s + carre_mod(i); } retour s; }
+reaction principal() {
+    total = somme pour chaque i dans 0..50000 : carre_mod(i)   -> t
+    petit = min pour chaque i dans 1..3000 : carre_mod(i)      -> m
+    grand = max pour chaque i dans 1..3000 : carre_mod(i)      -> g
+    haut  = tranche(0, 20000)                                 -> h
+    bas   = tranche(20000, 40000)                             -> b
+    = sortie(t)
+    = sortie(m)
+    = sortie(g)
+    = sortie(h + b)
+}
+"""
+lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
+if shutil.which("rustc") and os.path.exists(lugus):
+    tmp = tempfile.mkdtemp(prefix="reactions-")
+    prog = os.path.join(tmp, "parallele.vtx")
+    open(prog, "w", encoding="utf-8").write(PARALLELE)
+    mots = os.path.join(tmp, "p.mots")
+    open(mots, "w").write(",".join(map(str, vtx128.assembler(vtx128.compiler(PARALLELE)))) + ";\n")
+    emule = subprocess.run([lugus, "lancer", mots], capture_output=True, text=True).stdout.strip()
+    exe = os.path.join(tmp, "p" + (".exe" if os.name == "nt" else ""))
+    rs = os.path.join(tmp, "p.rs")
+    subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), prog, "-o", exe, "--rs", rs],
+                   capture_output=True, text=True)
+    forge = subprocess.run([exe], capture_output=True, text=True).stdout.strip()
+    code = open(rs, encoding="utf-8").read() if os.path.exists(rs) else ""
+    verifier("somme / min / max pour chaque, et la vague de deux atomes lourds : forgés sur plusieurs cœurs, mêmes sorties",
+             emule == forge and emule != "" and code.count("thread::scope") >= 4, f"émulé {emule!r} ; forgé {forge!r}")
+    shutil.rmtree(tmp, ignore_errors=True)
+
+# 10. la forge de Lugus : mêmes sorties
 if shutil.which("rustc"):
     tmp = tempfile.mkdtemp(prefix="reactions-")
     exe = os.path.join(tmp, "panel" + (".exe" if os.name == "nt" else ""))

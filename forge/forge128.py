@@ -307,8 +307,14 @@ class Forge(V.Generateur):
                     dst = (adr & ~(3 << 62) & M64) | (et << 62)
                     self.ligne(f"for k in 0..{len(vals)}u128 {{ let v = c.lire({src}u128 + k); c.ecrire({dst}u128 + k, v); }}")
         elif g == "bloc":
-            for x in s[1]:
-                self.instr(x)
+            if len(s) > 2 and isinstance(s[2], tuple) and s[2][0] == "chaque" and self.parallele_possible(s[2]):
+                self.chaque_parallele(s)
+            elif len(s) > 2 and isinstance(s[2], tuple) and s[2][0] == "vague" and all(
+                    self.typ(e) == "e" and self.pur(e, set()) for _, e in s[2][1]):
+                self.vague_parallele(s[2][1])
+            else:
+                for x in s[1]:
+                    self.instr(x)
         elif g == "segments":
             pre, _ = V.deplier_segments(s)
             for x in pre:
@@ -329,6 +335,91 @@ class Forge(V.Generateur):
                 self.ligne(f"return {self.val(s[1], self.f.rtype)};")
         else:
             self.ligne(f"let _ = {self.val(s[1])};")
+
+    # ------------------------------------------------------------ les vagues sur plusieurs cœurs
+    # « somme (min, max) pour chaque i dans a..b : f(i) -> s » : quand chaque atome de la vague est pur (il ne lit ni
+    # n'écrit la mémoire, ne touche pas le monde) et rend un entier de 64 bits, la vague est partagée entre les cœurs ;
+    # chaque fil a sa propre machine (pile comprise), et la réduction (associative sur les entiers) donne le même
+    # résultat que la machine émulée, dans n'importe quel ordre.
+    EFFETS = {"sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture", "ouvrir_ecriture",
+              "fermer", "fin_de", "bruit", "pile", "marquer_adn", "marquer_arn", "liberer_brin", "brin", "gemv", "tableau",
+              "nouveau", "nouveau_de", "ecrire", "texte", "presenter", "ecran", "pixel"}
+    INTERDITS = {"lire", "ecrire", "champ_ref", "ecrire_champ", "asm", "accord", "segments", "mem", "rangee_lire",
+                 "rangee_ecrire", "hyp"}
+
+    def pur(self, n, vus):
+        """Ni mémoire (hors de la pile), ni effet, ni appel impur, dans n et dans les fonctions qu'il appelle."""
+        if isinstance(n, list):
+            return all(self.pur(x, vus) for x in n)
+        if not isinstance(n, tuple) or not n:
+            return True
+        if isinstance(n[0], str):
+            if n[0] in self.INTERDITS:
+                return False
+            if n[0] == "appel" and len(n) > 2 and isinstance(n[1], str):
+                nom = n[1]
+                if nom in self.EFFETS:
+                    return False
+                f = self.fonctions.get(nom) or (self.reserve.get(nom) if hasattr(self, "reserve") else None)
+                if f is not None and nom not in vus:
+                    vus.add(nom)
+                    if not self.pur(f.corps, vus):
+                        return False
+            return all(self.pur(x, vus) for x in n[1:])
+        return all(self.pur(x, vus) for x in n)
+
+    def parallele_possible(self, meta):
+        _, red, var, a_, b_, corps_, s_ = meta
+        return self.typ(corps_) == "e" and self.pur(corps_, set()) and self.pur(a_, set()) and self.pur(b_, set())
+
+    def vague_parallele(self, items):
+        """Les atomes lourds d'une même vague : chacun sur son cœur (le dernier sur le fil principal)."""
+        noms = [f"v_{ident(n)}" for n, _ in items]
+        exprs = [self.val(e, "e") for _, e in items]
+        self.ligne("{")
+        self.niveau += 1
+        self.ligne("let r = std::thread::scope(|sc| {")
+        for k, x in enumerate(exprs[:-1]):
+            self.ligne(f"    let h{k} = sc.spawn(move || {{ let mut c_fils = ctx_fils(); let c = &mut c_fils; ({x}) as u128 }});")
+        self.ligne(f"    let dernier: u128 = ({exprs[-1]}) as u128;")
+        self.ligne("    (" + ", ".join(f"h{k}.join().unwrap()" for k in range(len(exprs) - 1)) + ", dernier)")
+        self.ligne("});")
+        for k, n in enumerate(noms):
+            self.ligne(f"{n} = r.{k};")
+        self.niveau -= 1
+        self.ligne("}")
+
+    def chaque_parallele(self, s):
+        _, red, var, a_, b_, corps_, s_ = s[2]
+        init = {"somme": "0u64", "min": "u64::MAX", "max": "0u64"}[red]
+        op = {"somme": "acc.wrapping_add(x)", "min": "acc.min(x)", "max": "acc.max(x)"}[red]
+        pli = {"somme": "parts.iter().fold(0u64, |a, &b| a.wrapping_add(b))", "min": "parts.iter().fold(u64::MAX, |a, &b| a.min(b))",
+               "max": "parts.iter().fold(0u64, |a, &b| a.max(b))"}[red]
+        va, vb = self.val(a_, "e"), self.val(b_, "e")
+        self.ligne(f"let a0 = ({va}) as u64; let b0 = ({vb}) as u64;")
+        self.ligne("let nt = std::thread::available_parallelism().map(|n| n.get() as u64).unwrap_or(1).min(64);")
+        self.ligne("if b0.saturating_sub(a0) < 2048 || nt <= 1 {")
+        self.niveau += 1
+        for x in s[1]:
+            self.instr(x)
+        self.niveau -= 1
+        self.ligne("} else {")
+        self.niveau += 1
+        self.ligne("let morceau = (b0 - a0 + nt - 1) / nt;")
+        corps_rs = self.val(corps_, "e")
+        vv = f"v_{ident(var)}"
+        self.ligne("let parts: Vec<u64> = std::thread::scope(|sc| {")
+        self.ligne("    let fils: Vec<_> = (0..nt).map(|k| sc.spawn(move || {")
+        self.ligne("        let mut c_fils = ctx_fils(); let c = &mut c_fils;")
+        self.ligne(f"        let mut acc: u64 = {init}; let lo = a0.saturating_add(k * morceau); let hi = lo.saturating_add(morceau).min(b0);")
+        self.ligne(f"        let mut i = lo; while i < hi {{ let {vv}: u128 = i as u128; let x: u64 = ({corps_rs}) as u64; acc = {op}; i += 1; }}")
+        self.ligne("        acc")
+        self.ligne("    })).collect();")
+        self.ligne("    fils.into_iter().map(|h| h.join().unwrap()).collect()")
+        self.ligne("});")
+        self.ligne(f"v_{ident(s_)} = ({pli}) as u128;")
+        self.niveau -= 1
+        self.ligne("}")
 
     # ------------------------------------------------------------ adresses
     def adresse(self, et, adr):
@@ -1004,6 +1095,10 @@ def programme_rust(src, dossier=None, nom="programme"):
          f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n"]
     s += [x.replace(MARQUE, "") for x in fonctions]
     s.append(code_zones(fo.plan or {}))
+    # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
+    s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
+             "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 16], pl: [std::ptr::null_mut(); 16], ce: [u128::MAX; 16],\n"
+             "          pe: [std::ptr::null_mut(); 16], vider: |_c| {} }\n}")
     s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees);\n}\n")
     return "\n".join(s), mots

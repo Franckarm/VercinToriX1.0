@@ -445,10 +445,34 @@ class Atome:
         self.nom, self.genre, self.quoi, self.sorties, self.ligne = nom, genre, quoi, sorties, ligne
         self.entrees = []
         self.vague = 0
+        self.apres = []           # les atomes (par leur nom) qui doivent avoir réagi avant celui-ci
+        self.avant = []           # les mêmes, et ceux que le compilateur ajoute (deux ponts sur la même chose)
 
-    def effet(self):
-        """un atome qui touche le monde : un pont, ou un appel (afficher, une fonction) sans liaison donnée"""
-        return self.genre == "pont" or (self.genre == "calcul" and not self.sorties and self.quoi[0] == "appel")
+    def cibles(self):
+        """ce que touche un atome hors de ses liaisons : [(genre, étage, adresse)] ; vide pour un atome pur. Une
+        lecture du cube (@2[5]) compte : elle doit venir après le pont qui écrit la même case."""
+        c = []
+        lectures = []
+
+        def voir(n):
+            if isinstance(n, tuple) and n and n[0] in ("mem", "lire") and len(n) > 2:
+                lectures.append(n)
+            if isinstance(n, (tuple, list)):
+                for x in (n[1:] if isinstance(n, tuple) and n and isinstance(n[0], str) else n):
+                    voir(x)
+        voir(self.quoi if self.genre != "pont" else self.quoi[0])
+        for m in lectures:
+            et = m[1] if isinstance(m[1], int) else None
+            c.append(("cube", et, m[2][1] if isinstance(m[2], tuple) and m[2][0] == "nombre" and et is not None else None))
+        if self.genre == "pont":
+            m = self.quoi[1]
+            et = m[1] if isinstance(m[1], int) else None
+            c.append(("cube", et, m[2][1] if m[2][0] == "nombre" and et is not None else None))
+        elif self.genre == "calcul" and not self.sorties and self.quoi[0] == "appel":
+            n = self.quoi[1]
+            c.append(("ecran", None, None) if n in ("afficher", "ecrire", "texte", "ecrire_car")
+                     else ("sortie", None, None) if n == "sortie" else ("monde", None, None))
+        return c
 
     def nom_affiche(self):
         return self.nom or f"ligne {self.ligne}"
@@ -472,24 +496,66 @@ class Molecule:
         self.donne = donne
         for a in atomes:
             lus = variables_de(a.quoi, [])
+            if a.genre == "chaque":
+                if a.quoi[1] in donne or a.quoi[1] in params:
+                    raise VtxError(f"ligne {a.ligne} : la variable de « pour chaque » ({a.quoi[1]}) porte le nom d'une liaison")
+                lus = [v for v in lus if v != a.quoi[1]]
             a.entrees = []
             for v in lus:
                 if v in donne or v in params:
                     if v not in a.entrees:
                         a.entrees.append(v)
-        # les vagues : un atome réagit quand toutes ses liaisons d'entrée sont arrivées
+        # l'ordre des ponts : ils réagissent ensemble, sauf deux atomes qui touchent la même chose (la même case du cube,
+        # l'écran, la sortie) : le second attend le premier (dans l'ordre des lignes) ; et ce que le programme écrit
+        # (« apres nom »)
+        noms = {a.nom: a for a in atomes if a.nom}
+        for a in atomes:
+            for n in a.apres:
+                if n not in noms:
+                    raise VtxError(f"ligne {a.ligne} : « apres {n} » : aucun atome ne s'appelle {n}")
+                a.avant.append(noms[n])
+        def attend(a, b, vus=None):
+            """a attend-il b (directement ou de proche en proche, par les ordres et les liaisons) ?"""
+            vus = vus if vus is not None else set()
+            if id(a) in vus:
+                return False
+            vus.add(id(a))
+            prec = list(a.avant) + [donne[e] for e in a.entrees if e in donne]
+            return any(p is b or attend(p, b, vus) for p in prec)
+
+        def heurte(ca, cb):
+            if ca[0] == "monde" or cb[0] == "monde":
+                return True
+            if ca[0] != cb[0]:
+                return False
+            if ca[0] != "cube":
+                return True
+            if ca[1] is None or cb[1] is None:
+                return True
+            return ca[1] == cb[1] and (ca[2] is None or cb[2] is None or ca[2] == cb[2])
+
+        effets = [a for a in sorted(atomes, key=lambda x: x.ligne) if a.cibles()]
+        for i, a in enumerate(effets):
+            for b in effets[:i]:
+                conflit = any(heurte(x, y) for x in a.cibles() for y in b.cibles())
+                # dans l'ordre des lignes, sauf si l'ordre écrit (apres) ou les liaisons disent le contraire
+                if conflit and b not in a.avant and not attend(b, a):
+                    a.avant.append(b)
+        # les vagues : un atome réagit quand toutes ses liaisons d'entrée sont arrivées (et ceux qu'il attend)
         restants, faits, vague = list(atomes), set(params), 0
+        reagis = set()
         self.vagues = []
         while restants:
-            prets = [a for a in restants if all(e in faits for e in a.entrees)]
+            prets = [a for a in restants if all(e in faits for e in a.entrees) and all(id(b) in reagis for b in a.avant)]
             if not prets:
                 bloque = restants[0]
-                manque = [e for e in bloque.entrees if e not in faits]
+                manque = [e for e in bloque.entrees if e not in faits] or [b.nom_affiche() for b in bloque.avant]
                 raise VtxError(f"ligne {bloque.ligne} : la liaison « {manque[0]} » revient sur elle-même (un cycle) : une "
                                f"réaction n'a pas de cycle sans « cycle » écrit")
             vague += 1
             for a in prets:
                 a.vague = vague
+                reagis.add(id(a))
             self.vagues.append(prets)
             faits |= {s_ for a in prets for s_ in a.sorties}
             restants = [a for a in restants if a not in prets]
@@ -524,7 +590,28 @@ class Molecule:
         sinon, et ce qui en dépend) a son drapeau __ok ; les atomes qui touchent le monde ne réagissent que s'il est vrai."""
         st = []
         ok = {}                      # liaison -> nom de son drapeau, si elle peut porter faux
+        def appelle(e):
+            """l'expression appelle-t-elle une fonction du programme (un atome lourd) ?"""
+            trouve = []
+
+            def voir(n):
+                if isinstance(n, tuple) and n and n[0] == "appel" and isinstance(n[1], str) and n[1] in self.fonctions_connues:
+                    trouve.append(n)
+                if isinstance(n, (tuple, list)):
+                    for x in (n[1:] if isinstance(n, tuple) and n and isinstance(n[0], str) else n):
+                        voir(x)
+            voir(e)
+            return bool(trouve)
+
         for vague in self.vagues:
+            # les atomes lourds d'une même vague (des calculs qui appellent une fonction du programme) : marqués pour que
+            # la forge les fasse réagir sur plusieurs cœurs
+            lourds = [a for a in vague if a.genre == "calcul" and len(a.sorties) == 1 and not any(e in ok for e in a.entrees)
+                      and appelle(a.quoi)]
+            if len(lourds) >= 2:
+                st.append(("bloc", [("soit", a.sorties[0], a.quoi, a.ligne, None) for a in lourds],
+                           ("vague", [(a.sorties[0], a.quoi) for a in lourds])))
+                vague = [a for a in vague if a not in lourds]
             for a in vague:
                 l = a.ligne
                 drapeaux = sorted({ok[e] for e in a.entrees if e in ok})
@@ -555,6 +642,22 @@ class Molecule:
                         st.append(("soit", s_, x, l, None))
                         if garde is not None:
                             ok[s_] = self._drapeau(st, s_, garde, l)
+                    continue
+                if a.genre == "chaque":
+                    red, var, a_, b_, corps_ = a.quoi
+                    s_ = a.sorties[0] if a.sorties else f"__chaque{l}"
+                    init = {"somme": 0, "min": (1 << 64) - 1, "max": 0}[red]
+                    tmp = f"{s_}__x"
+                    if red == "somme":
+                        tour = [("affecter", s_, ("bin", "+", ("var", s_, l), corps_), l)]
+                    else:
+                        cmp_ = "<" if red == "min" else ">"
+                        tour = [("soit", tmp, corps_, l, None),
+                                ("si", ("bin", cmp_, ("var", tmp, l), ("var", s_, l)), [("affecter", s_, ("var", tmp, l), l)], None, l)]
+                    st.append(("bloc", [("soit", s_, ("nombre", init), l, None), ("pour", var, a_, b_, tour, l, 1)],
+                               ("chaque", red, var, a_, b_, corps_, s_)))
+                    if garde is not None and a.sorties:
+                        ok[s_] = self._drapeau(st, s_, garde, l)
                     continue
                 if a.genre == "pont":
                     x, m = a.quoi
@@ -819,6 +922,11 @@ class Analyseur:
             # une telle fonction n'est pas recopiée en ligne (voir ENLIGNE), pour que les deux compilateurs en décident
             # de même
             fonctions[-1].rangee = not el_parcourir(corps, lambda n: n[0] not in ("rangee_lire", "rangee_ecrire"))
+        connues = {f.nom for f in fonctions}
+        for f in fonctions:
+            if getattr(f, "molecule", None) is not None:
+                f.molecule.fonctions_connues = connues
+                f.corps = self.abaisser(f.molecule.corps(f.resultat))
         if getattr(self, "cumul_utilise", False):
             for nom, (et, base, taille, struct) in self.tableaux.items():
                 n_mots = self.mots_tableau(taille, struct)
@@ -854,10 +962,11 @@ class Analyseur:
         self.attendre("}")
         mol = Molecule(nom, params, atomes, l)
         REACTIONS[nom] = mol
-        corps = mol.corps(resultat)
-        f = Fonction(nom, params, self.abaisser(corps), l, ptypes, rtype)
+        # le corps est écrit à la fin du programme (programme()) : toutes les fonctions sont alors connues
+        f = Fonction(nom, params, [], l, ptypes, rtype)
         f.rangee = False
         f.molecule = mol
+        f.resultat = resultat
         return f
 
     def atome(self):
@@ -897,6 +1006,28 @@ class Analyseur:
                     self.suivant()
             self.attendre(")")
             genre, quoi = "rendezvous", args
+        elif (k == "id" and v in ("somme", "min", "max") and self.regard(1)[:2] == ("kw", "pour")) or (k == "kw" and v == "pour"):
+            # somme pour chaque i dans a..b : expression -> s : une vague de b - a atomes, réduite en une liaison
+            reduction = None
+            if k == "id":
+                reduction = v
+                self.suivant()
+            self.suivant()
+            if self.regard()[:2] != ("id", "chaque"):
+                raise VtxError(f"ligne {l} : « pour chaque » attendu")
+            self.suivant()
+            var = self.nom_variable()
+            if self.regard()[:2] != ("kw", "dans"):
+                raise VtxError(f"ligne {l} : « dans » attendu dans « pour chaque … dans a..b »")
+            self.suivant()
+            a_ = self.expr()
+            self.attendre("..")
+            b_ = self.expr()
+            self.attendre(":")
+            corps_ = self.expr()
+            if reduction is None:
+                raise VtxError(f"ligne {l} : « pour chaque » sans réduction (somme, min, max) donnera un tableau : pas encore")
+            genre, quoi = "chaque", (reduction, var, a_, b_, corps_)
         elif k == "id" and v == "pont":
             self.suivant()
             x = self.expr()
@@ -914,9 +1045,18 @@ class Analyseur:
             while self.est_op(","):
                 self.suivant()
                 sorties.append(self.nom_variable())
+        apres = []
+        if self.regard()[:2] == ("id", "apres"):
+            self.suivant()
+            apres.append(self.identifiant())
+            while self.est_op(","):
+                self.suivant()
+                apres.append(self.identifiant())
         if self.est_op(";"):
             self.suivant()
-        return Atome(nom, genre, quoi, sorties, l)
+        a_ = Atome(nom, genre, quoi, sorties, l)
+        a_.apres = apres
+        return a_
 
     def une_constante(self, l):
         nom = self.identifiant()

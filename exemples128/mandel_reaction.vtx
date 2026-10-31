@@ -1,0 +1,22 @@
+// machine : lugus
+// Mandelbrot en réaction : une vague de 120 000 pixels, réduite en une somme
+fonction iterations(p) {
+    soit px = p % 400;
+    soit py = p / 400;
+    soit cr = flottant(px) * 0.0075 - 2.1;
+    soit ci = flottant(py) * 0.008 - 1.2;
+    soit x = 0.0;
+    soit y = 0.0;
+    soit k = 0;
+    tantque k < 200 && x * x + y * y <= 4.0 {
+        soit t = x * x - y * y + cr;
+        y = 2.0 * x * y + ci;
+        x = t;
+        k = k + 1;
+    }
+    retour k;
+}
+reaction principal() {
+    total = somme pour chaque p dans 0..120000 : iterations(p)   -> t
+    = sortie(t)
+}
