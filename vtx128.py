@@ -486,6 +486,90 @@ def symbole_unite(k, v):
     return (v, exp) if v in UNITES else None
 
 
+# ------------------------------------------------------------------------------------------------ les souvenirs
+# Le calcul incrémental : un atome lourd (l'appel d'une fonction pure du programme) garde le souvenir de sa dernière
+# réaction, ses entrées et ce qu'il a donné, dans l'étage 3 (@3[#F00000..#FFFFFF]). Quand la réaction est rappelée avec
+# les mêmes entrées pour lui, il ne réagit pas : il redonne son souvenir ; et ce qui en dépend voit les mêmes entrées.
+SOUVENIRS = os.environ.get("VTX_SOUVENIRS", "1") != "0"     # VTX_SOUVENIRS=0 : sans (pour mesurer)
+SOUVENIRS_DEBUT, SOUVENIRS_FIN = 0xF00000, 0x1000000
+TYPES_SOUVENIR = {"e", "i", "f", "s", "x", "w", "p"}
+EFFETS_PURS = {"__rompre", "sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture",
+               "ouvrir_ecriture", "fermer", "fin_de", "bruit", "pile", "marquer_adn", "marquer_arn", "liberer_brin", "brin",
+               "gemv", "tableau", "nouveau", "nouveau_de", "ecrire", "texte", "presenter", "ecran", "pixel"}
+NOEUDS_IMPURS = {"lire", "ecrire", "mem", "champ_ref", "ecrire_champ", "asm", "accord", "segments", "rangee_lire",
+                 "rangee_ecrire", "hyp", "etiq"}
+
+
+def est_pure(nom, fonctions, vus=None):
+    """une fonction du programme qui ne lit ni n'écrit la mémoire et ne touche pas le monde (ni ce qu'elle appelle) :
+    pour les mêmes entrées, elle donne toujours la même chose"""
+    vus = vus if vus is not None else set()
+    if nom in vus:
+        return True
+    vus.add(nom)
+    f = fonctions.get(nom)
+    if f is None:
+        return False
+    m = getattr(f, "molecule", None)
+    corps = [(a.quoi if a.genre != "pont" else None) for a in m.atomes] if m is not None else f.corps
+    if m is not None and any(a.genre == "pont" for a in m.atomes):
+        return False
+    ok = [True]
+
+    def voir(n):
+        if not ok[0]:
+            return
+        if isinstance(n, list):
+            for x in n:
+                voir(x)
+            return
+        if not isinstance(n, tuple) or not n:
+            return
+        if isinstance(n[0], str):
+            if n[0] in NOEUDS_IMPURS:
+                ok[0] = False
+                return
+            if n[0] == "appel" and len(n) > 2 and isinstance(n[1], str):
+                if n[1] in EFFETS_PURS or (n[1] not in INTEGRES and n[1] not in OPS_LOGIQUES
+                                           and not est_pure(n[1], fonctions, vus)):
+                    ok[0] = False
+                    return
+        for x in n[1:] if isinstance(n[0], str) else n:
+            if isinstance(x, (tuple, list)):
+                voir(x)
+    voir(corps)
+    return ok[0]
+
+
+def est_lourde(nom, fonctions, vus=None):
+    """une fonction qui fait une boucle (pour, tantque), ou qui s'appelle elle-même, ou qui appelle une fonction lourde"""
+    vus = vus if vus is not None else set()
+    if nom in vus:
+        return True                       # la récursion
+    vus = vus | {nom}
+    f = fonctions.get(nom)
+    if f is None:
+        return False
+    m = getattr(f, "molecule", None)
+    corps = [a.quoi for a in m.atomes] + [("chaque",) for a in m.atomes if a.genre == "chaque"] if m is not None else f.corps
+    trouve = [False]
+
+    def voir(n):
+        if trouve[0] or not isinstance(n, (tuple, list)) or not n:
+            return
+        if isinstance(n, tuple) and isinstance(n[0], str):
+            if n[0] in ("pour", "tantque", "segments", "chaque"):
+                trouve[0] = True
+                return
+            if n[0] == "appel" and isinstance(n[1], str) and n[1] in fonctions and est_lourde(n[1], fonctions, vus):
+                trouve[0] = True
+                return
+        for x in (n[1:] if isinstance(n, tuple) and isinstance(n[0], str) else n):
+            voir(x)
+    voir(corps)
+    return trouve[0]
+
+
 REACTIONS = {}          # nom -> Molecule : la dernière compilation (pour le rapport « molecule »)
 MASSE_ATOME = {"H": 1, "C": 12, "N": 14, "O": 16}
 ELEMENT_VALENCE = {1: "H", 2: "O", 3: "N", 4: "C"}
@@ -819,9 +903,12 @@ class Molecule:
 
         for vague in self.vagues:
             # les atomes lourds d'une même vague (des calculs qui appellent une fonction du programme) : marqués pour que
-            # la forge les fasse réagir sur plusieurs cœurs
+            # la forge les fasse réagir sur plusieurs cœurs ; hors de principal (qui ne réagit qu'une fois), ceux qui peuvent
+            # garder un souvenir le gardent plutôt : rappelés avec les mêmes entrées, ils ne coûtent plus rien
             lourds = [a for a in vague if a.genre == "calcul" and len(a.sorties) == 1 and not any(e in ok for e in a.entrees)
                       and appelle(a.quoi)]
+            if len(lourds) >= 2:
+                lourds = [a for a in lourds if not self.souvenir_possible(a)]
             if len(lourds) >= 2:
                 st.append(("bloc", [("soit", a.sorties[0], a.quoi, a.ligne, None) for a in lourds],
                            ("vague", [(a.sorties[0], a.quoi) for a in lourds])))
@@ -883,6 +970,9 @@ class Molecule:
                             ok[s_] = self._drapeau(st, s_, garde, l)
                     continue
                 # un calcul
+                if a.sorties and garde is None and self.souvenir_possible(a):
+                    st.extend(self.souvenir(a))
+                    continue
                 if a.sorties:
                     st.append(("soit", a.sorties[0], a.quoi, l, None))
                     if garde is not None:
@@ -904,6 +994,56 @@ class Molecule:
             st.append(("retour", ("var", resultat, self.ligne), self.ligne))
         return st
 
+    def souvenir_possible(self, a):
+        """un atome lourd : l'appel d'une fonction pure du programme, aux entrées et au résultat d'un type rangé en un mot"""
+        q = a.quoi
+        if not SOUVENIRS or q[0] != "appel" or not isinstance(q[1], str) or q[1] not in getattr(self, "fonctions", {}):
+            return False
+        f = self.fonctions[q[1]]
+        if self.nom == "principal" or not est_lourde(f.nom, self.fonctions):
+            return False                  # principal ne réagit qu'une fois ; une fonction sans boucle coûte moins que son souvenir
+        if f.nom == self.nom or len(q[2]) != len(f.params) or f.rtype not in TYPES_SOUVENIR \
+                or any(t not in TYPES_SOUVENIR for t in f.ptypes):
+            return False
+        if self.souvenir_place + len(f.params) + 2 > SOUVENIRS_FIN:
+            return False
+        return est_pure(f.nom, self.fonctions)
+
+    def souvenir(self, a):
+        """les entrées converties comme pour l'appel ; si elles sont celles du souvenir, le résultat est relu ; sinon
+        l'atome réagit, et le souvenir est récrit (sa validité en dernier)"""
+        _, nom, args, lc = a.quoi
+        f = self.fonctions[nom]
+        l, s_ = a.ligne, a.sorties[0]
+        base = self.souvenir_place
+        self.souvenir_place += len(args) + 2
+        self.souvenirs = getattr(self, "souvenirs", []) + [(a.nom_affiche(), base)]
+        case = lambda k: ("lire", 3, ("nombre", base + k))  # noqa: E731
+
+        def relu(t, k):
+            lecture = {"i": "entier_32", "f": "comme_flottant", "s": "comme_flottant_32", "x": "comme_flottant_petuar",
+                       "p": "comme_point"}
+            return ("appel", lecture[t], [case(k)], l) if t in lecture else case(k)
+
+        def egal(t, x, y):
+            if t in ("f", "s", "x", "p"):      # les bits : -0 n'est pas +0, et NaN redonne son souvenir
+                return ("bin", "==", ("appel", "bits", [x], l), ("appel", "bits", [y], l))
+            return ("bin", "==", x, y)
+        st, cond = [], ("bin", "!=", case(0), ("nombre", 0))
+        tmp = []
+        for i, (x, t) in enumerate(zip(args, f.ptypes)):
+            v = f"__souv{base}_{i}"
+            tmp.append(v)
+            st.append(("soit", v, x, l, t))
+            cond = ("bin", "&&", cond, egal(t, ("var", v, l), relu(t, 1 + i)))
+        st.append(("soit", s_, relu(f.rtype, 1 + len(args)), l, f.rtype))
+        reagir = [("affecter", s_, ("appel", nom, [("var", v, l) for v in tmp], lc), l)]
+        reagir += [("ecrire", 3, ("nombre", base + 1 + i), ("var", v, l), l) for i, v in enumerate(tmp)]
+        reagir += [("ecrire", 3, ("nombre", base + 1 + len(tmp)), ("var", s_, l), l),
+                   ("ecrire", 3, ("nombre", base), ("nombre", 1), l)]
+        st.append(("si", cond, [], reagir, l))
+        return st
+
     @staticmethod
     def _drapeau(st, s_, garde, l):
         d = f"{s_}__ok"
@@ -919,6 +1059,8 @@ class Molecule:
             t.append(f"  vague {k} : " + ", ".join(f"{a.nom_affiche()} ({el[a.nom_affiche()]})" for a in v))
         if self.copies:
             t.append("  copies : " + ", ".join(f"{e} ({el['copie de ' + e]}, lue {n} fois)" for e, n in self.copies.items()))
+        if getattr(self, "souvenirs", None):
+            t.append("  souvenirs (calcul incrémental) : " + ", ".join(f"{n} en @3[#{b:06X}]" for n, b in self.souvenirs))
         if self.contrats:
             t.append("  contrats : " + " ; ".join(f"{c[1]} {c[5]}" for c in self.contrats))
         connues = {k: v for k, v in (self.unites or {}).items() if v is not QUELCONQUE and v != {}}
@@ -1207,10 +1349,14 @@ class Analyseur:
         molecules = {f.nom: f.molecule for f in fonctions if getattr(f, "molecule", None) is not None}
         for m in molecules.values():
             m.verifier_unites(molecules)
+        par_nom = {f.nom: f for f in fonctions}
         for f in fonctions:
             if getattr(f, "molecule", None) is not None:
                 f.molecule.fonctions_connues = connues
+                f.molecule.fonctions = par_nom
+                f.molecule.souvenir_place = getattr(self, "souvenir_place", SOUVENIRS_DEBUT)
                 f.corps = self.abaisser(f.molecule.corps(f.resultat))
+                self.souvenir_place = f.molecule.souvenir_place
         if getattr(self, "cumul_utilise", False):
             for nom, (et, base, taille, struct) in self.tableaux.items():
                 n_mots = self.mots_tableau(taille, struct)

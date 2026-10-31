@@ -1,0 +1,33 @@
+// Le calcul incrémental (docs/vtx-reactions.md, étape 4) : une scène rappelée 60 fois ; le décor change toutes les dix
+// images, la lumière toutes les vingt. Chaque atome lourd (l'appel d'une fonction pure qui boucle) garde le souvenir de
+// sa dernière réaction : rappelé avec les mêmes entrées, il redonne ce souvenir sans réagir.
+//     python vtx128.py molecule exemples128/scene_incrementale.vtx      les souvenirs de la scène
+//     python vtx128.py run exemples128/scene_incrementale.vtx           avec : ~187 000 instructions ; sans
+//                                                                        (VTX_SOUVENIRS=0) : ~1 920 000 ; même résultat
+fonction lourd(n) {
+    soit s = 0;
+    pour i dans 0..n { s = s + (i * i) % 7; }
+    retour s;
+}
+fonction ombre(x: flottant, k): flottant {
+    soit a = x;
+    pour i dans 0..k { a = a * 0.5 + 1.0; }
+    retour a;
+}
+fonction leger(t) { retour t * 3; }
+reaction scene(t, decor, lumiere: flottant) -> r {
+    = lourd(decor)          -> fond
+    = lourd(fond % 50 + 100) -> relief
+    = ombre(lumiere, 200)   -> o
+    = leger(t)              -> mouvement
+    = fond + relief + mouvement + entier(o) -> r
+}
+fonction principal() {
+    soit total = 0;
+    pour k dans 0..60 {
+        soit decor = 3000 + (k / 10) * 7;
+        soit lum = flottant(k / 20);
+        total = total + scene(k, decor, lum);
+    }
+    sortie(total);
+}

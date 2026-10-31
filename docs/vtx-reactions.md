@@ -347,5 +347,32 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - Ce qui reste :
     - une réaction qui rend une liaison portant faux rend sa valeur brute (elle devrait rendre faux) ;
     - les unités et les contrats n'entrent pas encore dans la signature de Fischer ;
-    - vtxc128 ne connaît encore ni les réactions ni ces ajouts ;
-    - le calcul incrémental.
+    - vtxc128 ne connaît encore ni les réactions ni ces ajouts.
+- **Étape 4, deuxième temps : le calcul incrémental, les souvenirs** (vtx128.py ; l'exemple
+  `exemples128/scene_incrementale.vtx`) :
+  - **Le principe.** Un atome lourd garde le souvenir de sa dernière réaction : ses entrées et ce qu'il a donné. Quand la
+    réaction est rappelée et que ses entrées sont les mêmes, il ne réagit pas : il redonne son souvenir. Ce qui dépend de
+    lui voit alors les mêmes entrées, et redonne aussi le sien : seuls les atomes dont une entrée a changé réagissent de
+    nouveau.
+  - **Qui a un souvenir** : rien n'est à écrire, le compilateur choisit seul.
+    - L'atome appelle une fonction du programme qui est **pure** : elle ne lit ni n'écrit la mémoire, ne touche pas le
+      monde, et n'appelle que des fonctions pures. Pour les mêmes entrées, elle donne toujours la même chose.
+    - La fonction est **lourde** : elle fait une boucle, ou s'appelle elle-même. Une fonction sans boucle coûte moins que
+      son souvenir.
+    - L'atome est hors de `principal`, qui ne réagit qu'une fois.
+    - Ses entrées et son résultat sont rangés en un mot : entier, entier_32, entier_petuar, les flottants, le point.
+  - **Où** : dans l'étage 3, `@3[#F00000..#FFFFFF]`. Chaque souvenir prend sa validité, une case par entrée et une pour le
+    résultat. Les flottants sont comparés bit à bit : -0 n'est pas +0.
+  - **Les vagues sur plusieurs cœurs (étape 2).** Hors de principal, un atome lourd qui peut garder un souvenir le garde
+    plutôt que d'aller sur un autre cœur : rappelé, il ne coûte plus rien. Dans principal, rien ne change.
+  - **La mesure** : la scène rappelée 60 fois, avec un décor qui change toutes les dix images et une lumière toutes les vingt.
+
+    | | Sans souvenirs (`VTX_SOUVENIRS=0`) | Avec |
+    |---|---|---|
+    | Lugus émulé | 1 919 875 instructions | 186 915 (10 fois moins) |
+    | forgé (3000 images) | 0,89 s | 0,093 s |
+
+    Le résultat est le même. La forge et Lugus en Rust rendent les mêmes sorties que l'émulateur.
+  - `python vtx128.py molecule` montre les souvenirs et leur place.
+  - Ce qui reste : un souvenir ne garde que la dernière réaction (une table de plusieurs souvenirs, rangée selon Fischer,
+    servirait les entrées qui alternent) ; le souvenir et les cœurs ne se combinent pas encore.

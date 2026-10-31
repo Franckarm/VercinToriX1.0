@@ -238,11 +238,69 @@ s_, t_, _ = jouer(CHUTE)
 verifier("l'exemple de la chute : unités, contrats et exemples ensemble ; le message cite le source tel qu'écrit",
          s_ == [2500] and t_.endswith("contrat rompu : chute exige h >= 0.0 (ligne 6)\n"), f"{s_} {t_!r}")
 
+# 14. le calcul incrémental : les souvenirs des atomes lourds
+SCENE = open(os.path.join(racine, "exemples128", "scene_incrementale.vtx"), encoding="utf-8").read()
+
+
+def pas_de(src, souvenirs):
+    vtx128.SOUVENIRS = souvenirs
+    try:
+        cpu, _, _ = vtx128.executer(src, max_pas=10 ** 9)
+    finally:
+        vtx128.SOUVENIRS = True
+    return cpu.sortie, cpu.pas
+
+
+avec, sans = pas_de(SCENE, True), pas_de(SCENE, False)
+verifier(f"la scène rappelée 60 fois : même résultat, {sans[1]} instructions sans souvenirs, {avec[1]} avec (10 fois moins)",
+         avec[0] == sans[0] == [382460] and avec[1] * 8 < sans[1], f"{avec} {sans}")
+vtx128.REACTIONS.clear()
+vtx128.compiler(SCENE)
+sc = vtx128.REACTIONS["scene"]
+verifier("les trois atomes lourds ont un souvenir, pas l'atome léger (leger : pas de boucle)",
+         len(sc.souvenirs) == 3 and "souvenirs" in sc.rapport(), sc.rapport())
+HASARD = """
+fonction lourd(n) { soit s = 0; pour i dans 0..n { s = s + (i * 7 + n) % 11; } retour s; }
+fonction moyenne(x: flottant, k): flottant { soit a = x; pour i dans 0..k { a = (a + 1.0) * 0.5; } retour a; }
+fonction lit(i) { soit s = 0; pour j dans 0..2 { s = s + @2[i]; } retour s; }
+reaction r(a, b, x: flottant) -> s {
+    = lourd(a)              -> u
+    = lourd(u % 30 + b)     -> v
+    = moyenne(x, a % 5)     -> m
+    = lit(a % 4)            -> w
+    = u + v + entier(m * 100.0) + w -> s
+}
+fonction principal() {
+    soit t = 0;
+    pour k dans 0..ENTREES {
+        @2[k % 4] = k;
+        t = t + r(entree(), entree(), flottant(entree()) * 0.25);
+    }
+    sortie(t);
+}
+"""
+import random as _r
+g = _r.Random(7)
+entrees = [g.choice([3, 5, 40, 41]) for _ in range(90)]
+src_h = HASARD.replace("ENTREES", str(len(entrees) // 3)).replace("entree()", "entrée()")
+vtx128.REACTIONS.clear()
+memes = True
+for souv in (True, False):
+    vtx128.SOUVENIRS = souv
+    cpu, _, _ = vtx128.executer(src_h, entrees, max_pas=10 ** 9)
+    memes = memes and (souv or cpu.sortie == premier)
+    premier = cpu.sortie
+vtx128.SOUVENIRS = True
+vtx128.REACTIONS.clear()
+vtx128.compiler(src_h)
+verifier("30 rappels aux entrées tirées au hasard (souvent les mêmes) : mêmes sorties avec et sans souvenirs ; la "
+         "fonction qui lit la mémoire n'a pas de souvenir", memes and len(vtx128.REACTIONS["r"].souvenirs) == 3)
+
 lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
 if shutil.which("rustc") and os.path.exists(lugus):
     tmp = tempfile.mkdtemp(prefix="reactions-")
     bons = True
-    for src in [CONTRAT.replace("MODE", m) for m in ("moyenne(4, 6, 0)", "tordue(1)", "1")] + [UNITES, CHUTE]:
+    for src in [CONTRAT.replace("MODE", m) for m in ("moyenne(4, 6, 0)", "tordue(1)", "1")] + [UNITES, CHUTE, SCENE]:
         prog = os.path.join(tmp, "c.vtx")
         open(prog, "w", encoding="utf-8").write(src)
         mots = os.path.join(tmp, "c.mots")
@@ -252,7 +310,7 @@ if shutil.which("rustc") and os.path.exists(lugus):
         subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), prog, "-o", exe], capture_output=True, text=True)
         forge = subprocess.run([exe], capture_output=True, text=True).stdout
         bons = bons and emule == forge and emule != ""
-    verifier("contrats et unités : Lugus (Rust) et la forge disent la même chose", bons)
+    verifier("contrats, unités et souvenirs : Lugus (Rust) et la forge disent la même chose", bons)
     shutil.rmtree(tmp, ignore_errors=True)
 if shutil.which("rustc") and os.path.exists(lugus):
     tmp = tempfile.mkdtemp(prefix="reactions-")

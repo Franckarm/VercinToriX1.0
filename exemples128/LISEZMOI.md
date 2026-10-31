@@ -13,6 +13,7 @@ s'y ouvrent de toute façon).
 | `degrade128.vtx` | une image de points de matière, la transparence qui descend de gauche à droite |
 | `panel.vtx` | une réaction : un panel d'atomes rangés par vagues, l'élément déduit de la valence (`python vtx128.py molecule`) |
 | `mandel_reaction.vtx` | Mandelbrot en réaction : les atomes lourds d'une même vague forgés sur plusieurs cœurs |
+| `scene_incrementale.vtx` | le calcul incrémental : une scène rappelée 60 fois, seuls les atomes dont une entrée a changé réagissent (10 fois moins d'instructions) ; `python vtx128.py run` |
 | `chute.vtx` | une réaction avec unités physiques (m, m/s², s), contrats (`exige`, `garantit`) et exemples vérifiés à la compilation ; `python vtx128.py run` (vtxc128 ne connaît pas encore les réactions) |
 
     lugus exemples128/bonjour128.vtx                 compile (vtxc128 embarqué) et lance, sans Python
