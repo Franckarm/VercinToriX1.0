@@ -71,6 +71,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_vtx128_differentiel.py"), "300" if COMPLET else "60"]))
     etapes.append(("les réactions (atomes, liaisons, vagues) dans vtx128 : l'ordre des lignes sans effet, la forge de Lugus",
                    [sys.executable, os.path.join("tests", "test_reactions.py")]))
+    etapes.append(("Fischer : le fil de Hilbert, la signature des molécules, le cube des molécules",
+                   [sys.executable, os.path.join("tests", "test_fischer.py")]))
     etapes.append(("vtxc128 : le compilateur écrit en vtx pour Lugus (point fixe, mêmes mots que vtx128.py)",
                    [sys.executable, os.path.join("vtxc", "test_vtxc128.py")] + (["--complet"] if COMPLET else [])))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",

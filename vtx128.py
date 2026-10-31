@@ -9048,7 +9048,18 @@ def main():
         elif cmd == "molecule":
             REACTIONS.clear()
             compiler(src, dossier=dossier)
-            print("\n".join(m.rapport() for m in REACTIONS.values()) or "aucune réaction dans ce programme")
+            sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "chimie"))
+            import fischer
+            for m in REACTIONS.values():
+                print(m.rapport())
+                sig = fischer.signature(m)
+                _, masse = m.formule()
+                cols = fischer.colonnes_de(masse, True, sig)
+                rang = cols[0] * fischer.COLONNE + sig % fischer.COLONNE
+                print(f"  signature #{sig:016X} ; sa place selon Fischer : colonne {cols[0]} (miroir {cols[1]}), "
+                      f"étage {fischer.ETAGE}, cube {fischer.FREQUENCE}, case #{fischer.adresse(rang) & 0xFFFFFF:06X}")
+            if not REACTIONS:
+                print("aucune réaction dans ce programme")
         elif cmd == "partition":
             _a, carte, _l = compiler_complet(src, dossier=dossier, nom=os.path.basename(sys.argv[2]))
             print(partition_texte(DERNIERE_PARTITION["accords"], DERNIERE_PARTITION["notes"], carte)

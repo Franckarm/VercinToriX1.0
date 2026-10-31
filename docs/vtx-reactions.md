@@ -287,4 +287,33 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     vague : 1,08 → 0,58 s. Sur un PC à 8 cœurs, le gain attendu est plus grand (à mesurer chez l'utilisateur).
   - Limites : la machine émulée joue les vagues l'une après l'autre (mêmes sorties) ; vtxc128 ne connaît pas encore les
     réactions (étape 4) ; « pour chaque » sans réduction (qui donnera un tableau) n'est pas encore là.
+- **Étape 3, Fischer** (`chimie/fischer.py`) :
+  - **le cube des molécules** : l'étage 0 (avec le code : c'est l'ADN), le cube de fréquence 12 (la masse du carbone) ; ses
+    256³ cases parcourues par le fil de Hilbert (une case ne mène qu'à sa voisine), coupé en 4096 colonnes ;
+  - **la signature** : l'empreinte de ce qu'est la molécule (ses atomes vague après vague, la forme de leurs expressions et
+    leurs valeurs écrites, d'où vient chaque liaison), sans les noms ni l'ordre des lignes ;
+  - **la place** : la formule (la masse) choisit la colonne, la signature la place dans la colonne ; la molécule occupe une
+    suite de cases (une tête, puis un atome par case, la chaîne à la suite) ; si la place est prise, elle avance le long du
+    fil, comme une brique qui cherche son trou ;
+  - **le puzzle** (idée de l'utilisateur) : une pièce qui ne rentre pas essaie l'autre sens, la colonne miroir (celle de
+    l'anti-cube) ; on prend la moins pleine des deux ;
+  - **la répartition** : les colonnes partagées selon la fréquence des masses (comme on égalise un histogramme), l'ordre
+    gardé ; sans elle, les masses courantes saturent quelques colonnes pendant que le reste du cube reste vide.
+  - `python vtx128.py molecule PROG.vtx` donne la signature et la place de chaque réaction.
+
+  La saturation, mesurée (`python chimie/fischer.py essai N` ; molécules de 3 à 40 atomes ; cases regardées en moyenne) :
+
+  | Molécules | Part du cube occupée | Ranger | Retrouver |
+  |---|---|---|---|
+  | 5 000 | 0,7 % | 1,1 | 1,5 |
+  | 60 000 | 8 % | 3,0 | 5,8 |
+  | 200 000 | 27 % | 32 | 62 |
+  | 400 000 | 54 % | 507 | 866 |
+  | 40 000, une colonne par masse, sans miroir ni répartition | 5 % | 188 | 217 |
+
+  La formule de la saturation : pour un rangement « le long du fil » (le sondage linéaire de Knuth), il faut regarder en
+  moyenne ½ (1 + 1/(1 − α)²) places pour ranger et ½ (1 + 1/(1 − α)) pour retrouver, α étant la part occupée ; avec des
+  briques de plusieurs cases, les trous trop courts comptent comme pleins, et la saturation vient plus tôt : au-delà
+  d'un quart du cube, elle se fait sentir. La règle qui en découle : ouvrir un deuxième cube de molécules (fréquence
+  13…) quand le premier passe le quart, comme on ajoute une étagère.
 
