@@ -228,7 +228,12 @@ Chaque essai a sa mesure avant et après, comme le crible.
 | la mémoire | physique | conservation | une valeur appartient à une seule molécule à la fois : pas de copie cachée, pas de fuite |
 | la fiabilité | physique | triangulation, projections | trois témoins indépendants localisent et réparent |
 
-## L'épissage : là où il est le plus utile, s'il l'est (31 octobre)
+## L'épissage, en deux temps (31 octobre, confirmé par l'utilisateur)
+
+1. **À la lecture du Hex** (la compilation, Hex → ADN) : l'épissage du code, qui existe et est mesuré.
+2. **De l'ADN à l'ARN** (la transcription) : l'épissage des atomes, conçu, fait seulement si un essai montre un gain.
+
+### Détail
 
 La mesure décide, pas le principe :
 - **l'épissage des instructions** (sections 27 et 38 de vtx-0-5-autonomie.md) reste où il est : il est mesuré utile
@@ -240,7 +245,9 @@ La mesure décide, pas le principe :
 ## 12. Ordre de travail
 
 1. Valider ce document.
-2. La maquette web de la surface (poser des cases, tirer des liaisons, voir les vagues et les attentes en Belnap, voir le
+2. Les liaisons écrites dans le langage, avec un exemple qui réunit tout un panel d'atomes (H, C, N, O, plusieurs de
+   chaque), compilé, exécuté et mesuré.
+3. La maquette web de la surface (faite : la paillasse, `surface/paillasse.html`) (poser des cases, tirer des liaisons, voir les vagues et les attentes en Belnap, voir le
    texte vtx s'écrire).
 3. Les essais mesurés de la section 10.
 4. L'atelier, puis la chaîne Cube → Hex → ADN → ARN.

@@ -4,7 +4,7 @@
   "titre": "Fibonacci récursif (appels)",
   "langage": "C (gcc -O2)",
   "famille": "compilé",
-  "secondes": 0.0036,
+  "secondes": 0.004,
   "resultat": "2178309",
   "meme_resultat": true
  },
@@ -13,7 +13,7 @@
   "titre": "Fibonacci récursif (appels)",
   "langage": "Rust (rustc -O)",
   "famille": "compilé",
-  "secondes": 0.0068,
+  "secondes": 0.0071,
   "resultat": "2178309",
   "meme_resultat": true
  },
@@ -22,7 +22,7 @@
   "titre": "Fibonacci récursif (appels)",
   "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0119,
+  "secondes": 0.0121,
   "resultat": "2178309",
   "meme_resultat": true
  },
@@ -31,7 +31,7 @@
   "titre": "Fibonacci récursif (appels)",
   "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0075,
+  "secondes": 0.0097,
   "resultat": "2178309",
   "meme_resultat": true
  },
@@ -40,7 +40,7 @@
   "titre": "Fibonacci récursif (appels)",
   "langage": "vtx, Lugus émulé (lugus)",
   "famille": "vtx",
-  "secondes": 1.1714,
+  "secondes": 1.2351,
   "resultat": "2178309",
   "meme_resultat": true
  },
@@ -49,7 +49,7 @@
   "titre": "Fibonacci récursif (appels)",
   "langage": "vtx, SPU-64 émulé (vtx64)",
   "famille": "vtx",
-  "secondes": 0.7493,
+  "secondes": 0.7777,
   "resultat": "2178309",
   "meme_resultat": true
  },
@@ -57,6 +57,15 @@
   "programme": "crible",
   "titre": "Crible d'Ératosthène (mémoire)",
   "langage": "C (gcc -O2)",
+  "famille": "compilé",
+  "secondes": 0.0352,
+  "resultat": "348513",
+  "meme_resultat": true
+ },
+ {
+  "programme": "crible",
+  "titre": "Crible d'Ératosthène (mémoire)",
+  "langage": "Rust (rustc -O)",
   "famille": "compilé",
   "secondes": 0.0312,
   "resultat": "348513",
@@ -65,18 +74,9 @@
  {
   "programme": "crible",
   "titre": "Crible d'Ératosthène (mémoire)",
-  "langage": "Rust (rustc -O)",
-  "famille": "compilé",
-  "secondes": 0.0308,
-  "resultat": "348513",
-  "meme_resultat": true
- },
- {
-  "programme": "crible",
-  "titre": "Crible d'Ératosthène (mémoire)",
   "langage": "Rust, cases de 128 bits (u128)",
   "famille": "compilé",
-  "secondes": 0.0751,
+  "secondes": 0.0896,
   "resultat": "348513",
   "meme_resultat": true
  },
@@ -85,7 +85,7 @@
   "titre": "Crible d'Ératosthène (mémoire)",
   "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.056,
+  "secondes": 0.0612,
   "resultat": "348513",
   "meme_resultat": true
  },
@@ -94,7 +94,7 @@
   "titre": "Crible d'Ératosthène (mémoire)",
   "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0439,
+  "secondes": 0.0542,
   "resultat": "348513",
   "meme_resultat": true
  },
@@ -103,7 +103,7 @@
   "titre": "Crible d'Ératosthène (mémoire)",
   "langage": "vtx, Lugus émulé (lugus)",
   "famille": "vtx",
-  "secondes": 2.1195,
+  "secondes": 2.2328,
   "resultat": "348513",
   "meme_resultat": true
  },
@@ -112,7 +112,7 @@
   "titre": "Crible d'Ératosthène (mémoire)",
   "langage": "vtx, SPU-64 émulé (vtx64)",
   "famille": "vtx",
-  "secondes": 1.2994,
+  "secondes": 1.4615,
   "resultat": "348513",
   "meme_resultat": true
  },
@@ -121,7 +121,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "C (gcc -O2)",
   "famille": "compilé",
-  "secondes": 0.0187,
+  "secondes": 0.0175,
   "resultat": "5648809",
   "meme_resultat": false
  },
@@ -130,7 +130,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "Rust (rustc -O)",
   "famille": "compilé",
-  "secondes": 0.0191,
+  "secondes": 0.0182,
   "resultat": "5648809",
   "meme_resultat": false
  },
@@ -139,7 +139,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "C, en double (64 bits, matériel)",
   "famille": "compilé",
-  "secondes": 0.0191,
+  "secondes": 0.018,
   "resultat": "5648015",
   "meme_resultat": false
  },
@@ -148,7 +148,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "C, en __float128 (113 bits, logiciel)",
   "famille": "compilé",
-  "secondes": 0.8801,
+  "secondes": 0.8425,
   "resultat": "5648060",
   "meme_resultat": false
  },
@@ -157,7 +157,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
   "famille": "vtx",
-  "secondes": 1.0022,
+  "secondes": 1.0956,
   "resultat": "5648170",
   "meme_resultat": true
  },
@@ -166,7 +166,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "vtx, forgé pour Lugus, en flottant de 64 bits (1.5D)",
   "famille": "vtx",
-  "secondes": 0.8521,
+  "secondes": 0.7473,
   "resultat": "5648170",
   "meme_resultat": true
  },
@@ -175,7 +175,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0186,
+  "secondes": 0.0211,
   "resultat": "5648809",
   "meme_resultat": false
  },
@@ -184,7 +184,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "vtx, Lugus émulé (lugus)",
   "famille": "vtx",
-  "secondes": 3.7589,
+  "secondes": 3.8968,
   "resultat": "5648170",
   "meme_resultat": true
  },
@@ -193,7 +193,7 @@
   "titre": "Mandelbrot (flottants)",
   "langage": "vtx, SPU-64 émulé (vtx64)",
   "famille": "vtx",
-  "secondes": 2.683,
+  "secondes": 2.7248,
   "resultat": "5648170",
   "meme_resultat": true
  },
@@ -202,7 +202,7 @@
   "titre": "Tri rapide (mémoire, comparaisons)",
   "langage": "C (gcc -O2)",
   "famille": "compilé",
-  "secondes": 0.0447,
+  "secondes": 0.0463,
   "resultat": "2664010383",
   "meme_resultat": true
  },
@@ -211,7 +211,7 @@
   "titre": "Tri rapide (mémoire, comparaisons)",
   "langage": "Rust (rustc -O)",
   "famille": "compilé",
-  "secondes": 0.0466,
+  "secondes": 0.0462,
   "resultat": "2664010383",
   "meme_resultat": true
  },
@@ -220,7 +220,7 @@
   "titre": "Tri rapide (mémoire, comparaisons)",
   "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0644,
+  "secondes": 0.0686,
   "resultat": "2664010383",
   "meme_resultat": true
  },
@@ -229,7 +229,7 @@
   "titre": "Tri rapide (mémoire, comparaisons)",
   "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0659,
+  "secondes": 0.0647,
   "resultat": "2664010383",
   "meme_resultat": true
  },
@@ -238,7 +238,7 @@
   "titre": "Tri rapide (mémoire, comparaisons)",
   "langage": "vtx, Lugus émulé (lugus)",
   "famille": "vtx",
-  "secondes": 1.37,
+  "secondes": 1.4548,
   "resultat": "2664010383",
   "meme_resultat": true
  },
@@ -247,7 +247,7 @@
   "titre": "Tri rapide (mémoire, comparaisons)",
   "langage": "vtx, SPU-64 émulé (vtx64)",
   "famille": "vtx",
-  "secondes": 0.8748,
+  "secondes": 0.8898,
   "resultat": "2664010383",
   "meme_resultat": true
  },
@@ -256,7 +256,7 @@
   "titre": "Deux brins d'ADN comparés base par base",
   "langage": "C (gcc -O2)",
   "famille": "compilé",
-  "secondes": 0.0191,
+  "secondes": 0.0184,
   "resultat": "8391588",
   "meme_resultat": true
  },
@@ -265,7 +265,7 @@
   "titre": "Deux brins d'ADN comparés base par base",
   "langage": "Rust (rustc -O)",
   "famille": "compilé",
-  "secondes": 0.0153,
+  "secondes": 0.0139,
   "resultat": "8391588",
   "meme_resultat": true
  },
@@ -274,7 +274,7 @@
   "titre": "Deux brins d'ADN comparés base par base",
   "langage": "vtx, forgé pour Lugus (forge128 → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0193,
+  "secondes": 0.0187,
   "resultat": "8391588",
   "meme_resultat": true
  },
@@ -283,7 +283,7 @@
   "titre": "Deux brins d'ADN comparés base par base",
   "langage": "vtx, forgé pour le SPU-32 (forge → Rust → natif)",
   "famille": "vtx",
-  "secondes": 0.0084,
+  "secondes": 0.0087,
   "resultat": "8391588",
   "meme_resultat": true
  },
@@ -292,7 +292,7 @@
   "titre": "Deux brins d'ADN comparés base par base",
   "langage": "vtx, Lugus émulé (lugus)",
   "famille": "vtx",
-  "secondes": 0.3931,
+  "secondes": 0.3873,
   "resultat": "8391588",
   "meme_resultat": true
  },
@@ -301,7 +301,7 @@
   "titre": "Deux brins d'ADN comparés base par base",
   "langage": "vtx, SPU-64 émulé (vtx64)",
   "famille": "vtx",
-  "secondes": 0.2179,
+  "secondes": 0.2259,
   "resultat": "8391588",
   "meme_resultat": true
  }
