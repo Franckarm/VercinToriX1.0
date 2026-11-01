@@ -20,13 +20,19 @@ class R:
         params = [] if principal else ["a", "b"]
         dispo = list(params) or []
         lignes, noms_atomes = [], []
+        gardees = set()   # les liaisons qui peuvent porter faux (un si sans sinon, et ce qui en dépend)
         k = 0
         if not dispo:
             for v in ("a", "b"):
                 lignes.append(f"= {g.randrange(1, 40)} -> {v}")
                 dispo.append(v)
         for i in range(n_atomes):
-            pris = lambda: g.choice(dispo)  # noqa: E731
+            lues = []
+
+            def pris():
+                x = g.choice(dispo)
+                lues.append(x)
+                return x
             s = f"l{k}"
             genre = g.choice(["bin", "bin", "lourd", "leger", "lit", "si", "sinon", "rdv", "pont", "effet", "chaque",
                               "flou", "unite"])
@@ -69,9 +75,11 @@ class R:
                 lignes.append(f"{pref}{red} pour chaque i dans 0..{g.randrange(2, 9)} : i * {pris()} -> {s}{apres}")
                 dispo.append(s)
             elif genre == "unite":
-                # une liaison avec unité ne se mêle pas aux autres (vtxc128 ne vérifie pas encore les unités)
+                # une liaison avec unité ne se mêle pas aux autres liaisons, sans unité
                 lignes.append(f"{pref}{g.randrange(1, 9)} {g.choice(['km', 'm', 'min', 'h', 's', 'm/s', 'kg·m/s²'])} -> {s}{apres}")
                 lignes.append(f"= sortie({s})")
+            if genre == "si" or any(x in gardees for x in lues):
+                gardees.update(x for x in dispo[len(dispo) - 2:] if x.startswith(s))
             if nom_at:
                 noms_atomes.append(nom_at)
             k += 1
@@ -81,7 +89,9 @@ class R:
             lignes.append(f"garantit {g.choice(dispo)} >= 0")
         lignes.append(f"= sortie({g.choice(dispo)})")
         g.shuffle(lignes)
-        res = "" if principal else f" -> {g.choice(dispo)}"
+        # le résultat : une liaison toujours là (une réaction qui rend une liaison pouvant porter faux doit la rendre
+        # dans un type qui sait le dire, une logique ou un flottant ; ici tout est entier)
+        res = "" if principal else f" -> {g.choice([x for x in dispo if x not in gardees])}"
         tete = f"reaction {nom}({', '.join(params)}){res} {{"
         return tete + "\n" + "\n".join("    " + l for l in lignes) + "\n}\n"
 

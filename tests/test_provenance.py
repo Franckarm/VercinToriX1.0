@@ -42,16 +42,16 @@ verifier("la chute : les valeurs avec leurs unités (t en s, g en m/s², 2 km = 
 t = pourquoi(ex("scene_incrementale.vtx"), "scene.fond")
 verifier("la scène : le souvenir du décor a réagi 6 fois sur 60 appels", "souvenir : réagi 6 fois sur 60 appels" in t, t)
 src = os.path.join(racine, "tests", "_provenance_si.vtx")
-open(src, "w", encoding="utf-8").write("""reaction garde(x) -> r {
-    = x × 3                  -> t
-    = si t > 10 alors t - 10 -> r
+open(src, "w", encoding="utf-8").write("""reaction garde(x: flottant) -> r: flottant {
+    = x × 3.0                      -> t
+    = si t > 10.0 alors t - 10.0   -> r
 }
-fonction principal() { sortie(garde(2)); }
+fonction principal() { afficher(garde(2.0)); }
 """)
 t = pourquoi(src)
 os.remove(src)
 verifier("une branche qui n'a pas réagi : « porte faux », avec la valeur calculée",
-         "r porte faux (sa branche n'a pas réagi" in t and "t = 6   ← x × 3" in t, t)
+         "r porte faux (sa branche n'a pas réagi" in t and "t = 6   ← x × 3.0" in t, t)
 vtx128.COMPAT_64 = False
 panel = open(ex("panel.vtx"), encoding="utf-8").read()
 avant = vtx128.assembler(vtx128.compiler(panel))

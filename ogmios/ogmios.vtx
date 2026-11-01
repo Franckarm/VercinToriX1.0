@@ -1,0 +1,657 @@
+// machine : lugus
+// Ogmios écrit en vtx (premier temps) : l'atelier dans le langage lui-même, comme vtxc128. Ogmios, le dieu gaulois de
+// l'éloquence, tire les hommes par des chaînes d'or attachées à sa langue : ici, l'éditeur tient le texte du programme.
+//
+//     vtx toile128 ogmios/ogmios.vtx --fichier PROG.vtx
+//
+// Ce qu'il sait faire : ouvrir un programme, le montrer en couleurs (les mots du langage, les types, les nombres, les
+// textes, les commentaires, les liaisons ->), l'éditer (caractères, Entrée avec le retrait de la ligne, Retour arrière,
+// Suppr, Tab, les flèches, Début, Fin, les pages, la souris, la molette), l'enregistrer (Ctrl+S, les fins de ligne du
+// fichier gardées), le lancer (F5 : enregistré, puis compilé par vtxc128 et exécuté sur une machine fille, un Lugus neuf ;
+// son compte rendu vient en bas) ; Ctrl+Q ferme.
+//
+// La mémoire (étage 2) : l'état, le texte (un caractère par mot), le début de chaque ligne, le compte rendu, la police.
+
+constante L = 480;              // l'image : 80 colonnes de 6 points, 30 lignes de 10
+constante H = 300;
+constante CL = 6;               // une case de caractère
+constante HL = 10;
+constante MARGE = 5;            // la gouttière des numéros de ligne (en colonnes)
+constante NCOL = 75;            // les colonnes de texte visibles
+constante NRAP = 7;             // les lignes du compte rendu, quand il y en a un
+
+constante E_N = 0;              // l'état : le nombre de caractères
+constante E_CUR = 1;            // la place du curseur
+constante E_HAUT = 2;           // la première ligne montrée
+constante E_NL = 3;             // le nombre de lignes
+constante E_COLV = 4;           // la colonne voulue (pour monter et descendre)
+constante E_MODIF = 5;          // 1 : modifié depuis l'enregistrement
+constante E_CRLF = 6;           // 1 : le fichier avait des fins de ligne \r\n (gardées à l'enregistrement)
+constante E_NRAP = 7;           // la longueur du compte rendu
+constante E_BOUTONS = 8;        // les boutons de la souris à l'image d'avant
+constante E_NOM = 9;            // le nom du fichier (un texte)
+constante E_MSG = 10;           // le message de la barre (un texte, 0 : aucun)
+constante E_GAUCHE = 11;        // la première colonne montrée
+constante TXT = 1024;           // @2[TXT…] : le texte
+constante MAXTXT = 1000000;
+constante LIG = 2000000;        // @2[LIG…] : le début de chaque ligne
+constante RAP = 3000000;        // @2[RAP…] : le compte rendu de F5
+constante POL = 3900000;        // @2[POL…] : la police (deux mots par glyphe)
+constante MOTS = 3950000;       // @2[MOTS…] : les mots du langage (des textes), puis les types
+
+// les couleurs
+constante FOND = #1B1E24;       // la nuit
+constante ENCRE = #D8D4C8;      // le lin
+constante MOT = #E0A040;        // le bronze : les mots du langage
+constante GENRE = #70B0A0;      // le vert-de-gris : les types
+constante NOMBRE = #C890E8;     // la myrtille
+constante CHAINE = #98C878;     // l'herbe
+constante NOTE = #707A88;       // la brume : les commentaires
+constante BRAISE = #FF7040;     // les liaisons ->
+constante GOUTTE = #4A505C;     // les numéros de ligne
+constante BARRE = #2A3040;      // la barre d'état
+constante OR = #FFD060;         // le curseur
+
+// ---------------------------------------------------------------------------------------------- l'état
+fonction etat(k) { retour @2[k]; }
+fonction poser(k, v) { @2[k] = v; }
+fonction c_(i) { retour @2[TXT + i]; }
+
+// ---------------------------------------------------------------------------------------------- la police
+fonction preparer_police() {
+    pour k dans 0..116 {
+        @2[POL + 2 * k] = __glyphe_a(k);
+        @2[POL + 2 * k + 1] = __glyphe_b(k);
+    }
+}
+
+// un caractère dans la case (x, y) de l'image (en points)
+fonction lettre(x, y, ch, couleur: point) {
+    soit k = __glyphe(ch);
+    si k >= 116 {
+        k = 31;                 // « ? »
+    }
+    soit ga = @2[POL + 2 * k];
+    soit gb = @2[POL + 2 * k + 1];
+    pour col dans 0..5 {
+        soit v = gb;
+        si col < 4 {
+            v = (ga >> (7 * col)) & 127;
+        }
+        si v != 0 {
+            pour lig dans 0..7 {
+                si ((v >> lig) & 1) == 1 {
+                    @1[(y + lig + 1) * L + x + col] = couleur;
+                }
+            }
+        }
+    }
+}
+
+// un texte (le langage) à la case de colonne cx, de ligne cy
+fonction ecrire_a(cx, cy, t, couleur: point) {
+    pour i dans 0..longueur(t) {
+        si cx + i < 80 {
+            lettre((cx + i) * CL, cy * HL, car(t, i), couleur);
+        }
+    }
+}
+
+fonction fond(x, y, l, h, couleur: point) {
+    pour j dans y..y + h {
+        soit b = j * L;
+        pour i dans x..x + l {
+            @1[b + i] = couleur;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------- les mots du langage
+fonction mot(k, t) { @2[MOTS + k] = t; }
+
+fonction poser_mots() {
+    // les mots du langage (0..37), puis les types (40..)
+    mot(0, "fonction"); mot(1, "soit"); mot(2, "si"); mot(3, "sinon"); mot(4, "tantque"); mot(5, "pour");
+    mot(6, "dans"); mot(7, "retour"); mot(8, "constante"); mot(9, "tableau"); mot(10, "reaction"); mot(11, "exige");
+    mot(12, "garantit"); mot(13, "exemple"); mot(14, "alors"); mot(15, "selon"); mot(16, "arrêter"); mot(17, "continuer");
+    mot(18, "hypothèse"); mot(19, "annuler"); mot(20, "valider"); mot(21, "vrai"); mot(22, "faux"); mot(23, "inconnu");
+    mot(24, "variable"); mot(25, "importer"); mot(26, "structure"); mot(27, "nouveau"); mot(28, "apres"); mot(29, "somme");
+    mot(30, "chaque"); mot(31, "pont"); mot(32, "vers"); mot(33, "donnees"); mot(34, "rendez"); mot(35, "vous");
+    mot(36, "min"); mot(37, "max");
+    mot(40, "entier"); mot(41, "flottant"); mot(42, "logique"); mot(43, "texte"); mot(44, "point"); mot(45, "entier_32");
+    mot(46, "flottant_32"); mot(47, "entier_64"); mot(48, "flottant_64"); mot(49, "entier_128"); mot(50, "flottant_128");
+    mot(51, "petuar"); mot(52, "entier_petuar"); mot(53, "flottant_petuar"); mot(54, "long"); mot(55, "point_de_matiere");
+}
+
+// les caractères a..a+n du texte sont-ils le mot t ?
+fonction pareil(a, n, t) {
+    si n != longueur(t) {
+        retour 0;
+    }
+    pour i dans 0..n {
+        si c_(a + i) != car(t, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// 1 : un mot du langage, 2 : un type, 0 : un nom
+fonction sorte_du_mot(a, n) {
+    pour k dans 0..38 {
+        si pareil(a, n, @2[MOTS + k]) {
+            retour 1;
+        }
+    }
+    pour k dans 40..56 {
+        si pareil(a, n, @2[MOTS + k]) {
+            retour 2;
+        }
+    }
+    retour 0;
+}
+
+fonction lettre_de_nom(ch) {
+    retour (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch >= 192;
+}
+
+fonction chiffre(ch) { retour ch >= '0' && ch <= '9'; }
+
+// ---------------------------------------------------------------------------------------------- les lignes
+fonction indexer() {
+    soit n = etat(E_N);
+    soit nl = 1;
+    @2[LIG] = 0;
+    pour i dans 0..n {
+        si c_(i) == 10 {
+            @2[LIG + nl] = i + 1;
+            nl = nl + 1;
+        }
+    }
+    poser(E_NL, nl);
+}
+
+fonction debut_ligne(k) { retour @2[LIG + k]; }
+
+fonction fin_ligne(k) {
+    si k + 1 < etat(E_NL) {
+        retour @2[LIG + k + 1] - 1;
+    }
+    retour etat(E_N);
+}
+
+fonction ligne_de(p) {
+    soit k = 0;
+    tantque k + 1 < etat(E_NL) && @2[LIG + k + 1] <= p {
+        k = k + 1;
+    }
+    retour k;
+}
+
+fonction lignes_visibles() {
+    si etat(E_NRAP) > 0 {
+        retour 29 - NRAP - 1;
+    }
+    retour 29;
+}
+
+// le curseur reste à l'écran
+fonction suivre() {
+    soit k = ligne_de(etat(E_CUR));
+    si k < etat(E_HAUT) {
+        poser(E_HAUT, k);
+    }
+    soit nv = lignes_visibles();
+    si k >= etat(E_HAUT) + nv {
+        poser(E_HAUT, k + 1 - nv);
+    }
+    soit col = etat(E_CUR) - debut_ligne(k);
+    si col < etat(E_GAUCHE) {
+        poser(E_GAUCHE, col);
+    }
+    si col >= etat(E_GAUCHE) + NCOL {
+        poser(E_GAUCHE, col + 1 - NCOL);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------- l'édition
+fonction inserer(ch) {
+    soit n = etat(E_N);
+    si n >= MAXTXT {
+        retour;
+    }
+    soit p = etat(E_CUR);
+    soit i = n;
+    tantque i > p {
+        @2[TXT + i] = @2[TXT + i - 1];
+        i = i - 1;
+    }
+    @2[TXT + p] = ch;
+    poser(E_N, n + 1);
+    poser(E_CUR, p + 1);
+    poser(E_MODIF, 1);
+}
+
+fonction effacer(p) {
+    soit n = etat(E_N);
+    si p >= n {
+        retour;
+    }
+    pour i dans p..n - 1 {
+        @2[TXT + i] = @2[TXT + i + 1];
+    }
+    poser(E_N, n - 1);
+    poser(E_MODIF, 1);
+}
+
+// la colonne voulue, sur la ligne k
+fonction aller_colonne(k, colv) {
+    soit d = debut_ligne(k);
+    soit f = fin_ligne(k);
+    soit p = d + colv;
+    si p > f {
+        p = f;
+    }
+    poser(E_CUR, p);
+}
+
+fonction colonne() {
+    retour etat(E_CUR) - debut_ligne(ligne_de(etat(E_CUR)));
+}
+
+// une touche : 1 si quelque chose a changé, 2 pour fermer
+fonction traiter(k) {
+    soit cur = etat(E_CUR);
+    soit l = ligne_de(cur);
+    soit garder_colv = 0;
+    si k == 17 {                                   // Ctrl+Q
+        retour 2;
+    } sinon si k == 19 {                           // Ctrl+S
+        enregistrer();
+    } sinon si k == 65652 {                        // F5
+        lancer();
+    } sinon si k == 8 {                            // retour arrière
+        si cur > 0 {
+            poser(E_CUR, cur - 1);
+            effacer(cur - 1);
+        }
+    } sinon si k == 65582 {                        // Suppr
+        effacer(cur);
+    } sinon si k == 13 {                           // Entrée : la nouvelle ligne garde le retrait de celle-ci
+        soit d = debut_ligne(l);
+        soit r = 0;
+        tantque d + r < cur && c_(d + r) == ' ' {
+            r = r + 1;
+        }
+        inserer(10);
+        pour i dans 0..r {
+            inserer(' ');
+        }
+    } sinon si k == 9 {                            // Tab : quatre espaces
+        pour i dans 0..4 {
+            inserer(' ');
+        }
+    } sinon si k == 65573 {                        // ←
+        si cur > 0 {
+            poser(E_CUR, cur - 1);
+        }
+    } sinon si k == 65575 {                        // →
+        si cur < etat(E_N) {
+            poser(E_CUR, cur + 1);
+        }
+    } sinon si k == 65574 {                        // ↑
+        garder_colv = 1;
+        si l > 0 {
+            aller_colonne(l - 1, etat(E_COLV));
+        }
+    } sinon si k == 65576 {                        // ↓
+        garder_colv = 1;
+        si l + 1 < etat(E_NL) {
+            aller_colonne(l + 1, etat(E_COLV));
+        }
+    } sinon si k == 65572 {                        // Début
+        poser(E_CUR, debut_ligne(l));
+    } sinon si k == 65571 {                        // Fin
+        poser(E_CUR, fin_ligne(l));
+    } sinon si k == 65569 {                        // page précédente
+        garder_colv = 1;
+        soit nv = lignes_visibles();
+        soit cible = 0;
+        si l > nv {
+            cible = l - nv;
+        }
+        aller_colonne(cible, etat(E_COLV));
+    } sinon si k == 65570 {                        // page suivante
+        garder_colv = 1;
+        soit bas = l + lignes_visibles();
+        si bas >= etat(E_NL) {
+            bas = etat(E_NL) - 1;
+        }
+        aller_colonne(bas, etat(E_COLV));
+    } sinon si k >= 32 && k < 65536 {              // un caractère
+        inserer(k);
+    } sinon {
+        retour 0;
+    }
+    indexer();
+    si garder_colv == 0 {
+        poser(E_COLV, colonne());
+    }
+    suivre();
+    retour 1;
+}
+
+// un clic : le curseur va où il est tombé ; la molette fait défiler
+fonction souris_et_molette() {
+    soit change = 0;
+    soit m = molette();
+    si m != 0 {
+        soit h = etat(E_HAUT);
+        si m .< 0 {
+            h = h + 3;
+            si h >= etat(E_NL) {
+                h = etat(E_NL) - 1;
+            }
+        } sinon si h > 3 {
+            h = h - 3;
+        } sinon {
+            h = 0;
+        }
+        poser(E_HAUT, h);
+        change = 1;
+    }
+    soit s = souris();
+    soit b = souris_boutons(s);
+    si (b & 1) == 1 && (etat(E_BOUTONS) & 1) == 0 && souris_dedans(s) == 1 {
+        soit ly = souris_y(s) / HL;
+        soit cx = souris_x(s) / CL;
+        si ly < lignes_visibles() && cx >= MARGE {
+            soit k = etat(E_HAUT) + ly;
+            si k >= etat(E_NL) {
+                k = etat(E_NL) - 1;
+            }
+            aller_colonne(k, cx - MARGE + etat(E_GAUCHE));
+            poser(E_COLV, colonne());
+            change = 1;
+        }
+    }
+    poser(E_BOUTONS, b);
+    retour change;
+}
+
+// ---------------------------------------------------------------------------------------------- les fichiers
+// le chemin du fichier, un caractère par entrée, terminé par 0 (gardé un moment à la place du compte rendu)
+fonction lire_nom(): texte {
+    soit n = 0;
+    soit x = entrée();
+    tantque x != 0 && x != 18446744073709551615 && n < 4096 {
+        @2[RAP + n] = x;
+        n = n + 1;
+        x = entrée();
+    }
+    soit t = texte_neuf(n);
+    pour i dans 0..n {
+        changer_car(t, i, @2[RAP + i]);
+    }
+    retour t;
+}
+
+fonction charger() {
+    soit n = 0;
+    soit crlf = 0;
+    soit canal = ouvrir_lecture(etat(E_NOM));
+    si canal != 18446744073709551615 {
+        soit ch = lire_car(canal);
+        tantque ch != 18446744073709551615 && n < MAXTXT {
+            si ch == 13 {
+                crlf = 1;
+            } sinon {
+                @2[TXT + n] = ch;
+                n = n + 1;
+            }
+            ch = lire_car(canal);
+        }
+        fermer(canal);
+        poser(E_MSG, "ouvert");
+    } sinon {
+        poser(E_MSG, "nouveau fichier");
+    }
+    poser(E_N, n);
+    poser(E_CRLF, crlf);
+    poser(E_CUR, 0);
+    indexer();
+}
+
+fonction enregistrer() {
+    soit canal = ouvrir_ecriture(etat(E_NOM));
+    si canal == 18446744073709551615 {
+        poser(E_MSG, "enregistrement impossible");
+        retour;
+    }
+    pour i dans 0..etat(E_N) {
+        soit ch = c_(i);
+        si ch == 10 && etat(E_CRLF) == 1 {
+            ecrire_car(canal, 13);
+        }
+        ecrire_car(canal, ch);
+    }
+    fermer(canal);
+    poser(E_MODIF, 0);
+    poser(E_MSG, "enregistré");
+}
+
+// F5 : enregistrer, puis la machine fille (le service 24 de Lugus) compile le programme avec vtxc128 et le lance ; son
+// compte rendu se lit comme un fichier
+fonction lancer() {
+    enregistrer();
+    soit canal = __service(24, etat(E_NOM));
+    soit n = 0;
+    si canal != 18446744073709551615 {
+        soit ch = lire_car(canal);
+        tantque ch != 18446744073709551615 && n < 800000 {
+            @2[RAP + n] = ch;
+            ecrire_car(1, ch);              // aussi dans la console
+            n = n + 1;
+            ch = lire_car(canal);
+        }
+        fermer(canal);
+    }
+    poser(E_NRAP, n);
+    poser(E_MSG, "lancé (F5)");
+}
+
+// ---------------------------------------------------------------------------------------------- le dessin
+// une ligne du programme, en couleurs, à la ligne d'écran ly
+fonction dessiner_ligne(k, ly) {
+    soit d = debut_ligne(k);
+    soit f = fin_ligne(k);
+    soit g = etat(E_GAUCHE);
+    soit y = ly * HL;
+    // le numéro, aligné à droite
+    soit num = k + 1;
+    soit cx = MARGE - 2;
+    tantque num > 0 && cx .>= 0 {
+        lettre(cx * CL, y, '0' + num % 10, GOUTTE);
+        num = num / 10;
+        cx = cx - 1;
+    }
+    soit i = d;
+    soit dans_texte = 0;
+    tantque i < f {
+        soit ch = c_(i);
+        soit n = 1;
+        soit couleur = ENCRE;
+        si ch == '/' && i + 1 < f && c_(i + 1) == '/' {
+            n = f - i;
+            couleur = NOTE;
+        } sinon si ch == '"' {
+            n = 1;
+            tantque i + n < f && c_(i + n) != '"' {
+                n = n + 1;
+            }
+            si i + n < f {
+                n = n + 1;
+            }
+            couleur = CHAINE;
+        } sinon si ch == '-' && i + 1 < f && c_(i + 1) == '>' {
+            n = 2;
+            couleur = BRAISE;
+        } sinon si ch == '#' {
+            tantque i + n < f && lettre_de_nom(c_(i + n)) {
+                n = n + 1;
+            }
+            couleur = NOMBRE;
+        } sinon si chiffre(ch) {
+            tantque i + n < f && (lettre_de_nom(c_(i + n)) || c_(i + n) == '.') {
+                n = n + 1;
+            }
+            couleur = NOMBRE;
+        } sinon si lettre_de_nom(ch) {
+            tantque i + n < f && lettre_de_nom(c_(i + n)) {
+                n = n + 1;
+            }
+            soit s = sorte_du_mot(i, n);
+            si s == 1 {
+                couleur = MOT;
+            } sinon si s == 2 {
+                couleur = GENRE;
+            }
+        }
+        pour j dans i..i + n {
+            soit col = j - d;
+            si col >= g && col < g + NCOL {
+                lettre((MARGE + col - g) * CL, y, c_(j), couleur);
+            }
+        }
+        i = i + n;
+    }
+}
+
+fonction dessiner_nombre(cx, cy, v, couleur: point) {
+    soit t = texte(v);
+    ecrire_a(cx, cy, t, couleur);
+    retour cx + longueur(t);
+}
+
+fonction dessiner() {
+    fond(0, 0, L, H, FOND);
+    soit nv = lignes_visibles();
+    soit h = etat(E_HAUT);
+    pour ly dans 0..nv {
+        si h + ly < etat(E_NL) {
+            dessiner_ligne(h + ly, ly);
+        }
+    }
+    // le curseur : un trait d'or
+    soit cur = etat(E_CUR);
+    soit k = ligne_de(cur);
+    soit col = cur - debut_ligne(k);
+    si k >= h && k < h + nv && col >= etat(E_GAUCHE) {
+        fond((MARGE + col - etat(E_GAUCHE)) * CL, (k - h) * HL, 1, HL, OR);
+    }
+    // le compte rendu de F5
+    si etat(E_NRAP) > 0 {
+        soit y0 = (nv + 1) * HL;
+        fond(0, y0 - HL / 2, L, 1, GOUTTE);
+        // ses dernières lignes
+        soit n = etat(E_NRAP);
+        soit fin = n;
+        si fin > 0 && @2[RAP + fin - 1] == 10 {
+            fin = fin - 1;
+        }
+        soit debut = fin;
+        soit vues = 0;
+        tantque debut > 0 && vues < NRAP {
+            debut = debut - 1;
+            si @2[RAP + debut] == 10 {
+                vues = vues + 1;
+            }
+        }
+        si vues == NRAP {
+            debut = debut + 1;
+        }
+        soit lr = 0;
+        soit cx = 1;
+        pour i dans debut..fin {
+            soit ch = @2[RAP + i];
+            si ch == 10 {
+                lr = lr + 1;
+                cx = 1;
+            } sinon {
+                si cx < 80 && lr < NRAP {
+                    lettre(cx * CL, y0 + lr * HL, ch, ENCRE);
+                }
+                cx = cx + 1;
+            }
+        }
+    }
+    // la barre d'état
+    fond(0, 29 * HL, L, HL, BARRE);
+    ecrire_a(1, 29, "Ogmios", MOT);
+    soit nom = etat(E_NOM);
+    // le nom, sans son dossier
+    soit p = 0;
+    pour i dans 0..longueur(nom) {
+        si car(nom, i) == '/' || car(nom, i) == 92 {
+            p = i + 1;
+        }
+    }
+    soit x = 8;
+    pour i dans p..longueur(nom) {
+        si x < 40 {
+            lettre(x * CL, 29 * HL, car(nom, i), ENCRE);
+        }
+        x = x + 1;
+    }
+    si etat(E_MODIF) == 1 {
+        lettre(x * CL, 29 * HL, '*', BRAISE);
+    }
+    x = 42;
+    x = dessiner_nombre(x, 29, k + 1, ENCRE);
+    lettre(x * CL, 29 * HL, ':', GOUTTE);
+    dessiner_nombre(x + 1, 29, col + 1, ENCRE);
+    si etat(E_MSG) != 0 {
+        ecrire_a(52, 29, etat(E_MSG), NOTE);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------- l'atelier
+fonction principal() {
+    ecran(L, H);
+    preparer_police();
+    poser_mots();
+    @2[E_MODIF] = 0;
+    @2[E_NRAP] = 0;
+    @2[E_HAUT] = 0;
+    @2[E_GAUCHE] = 0;
+    @2[E_BOUTONS] = 0;
+    @2[E_COLV] = 0;
+    soit nom = lire_nom();
+    si longueur(nom) == 0 {
+        nom = "sans_nom.vtx";
+    }
+    poser(E_NOM, nom);
+    charger();
+    dessiner();
+    soit fini = 0;
+    tantque fini == 0 {
+        si presenter() != 0 {
+            fini = 1;
+        } sinon {
+            soit change = souris_et_molette();
+            soit k = touche();
+            tantque k != 0 && fini == 0 {
+                soit r = traiter(k);
+                si r == 2 {
+                    fini = 1;
+                } sinon si r == 1 {
+                    change = 1;
+                }
+                k = touche();
+            }
+            si change && fini == 0 {
+                dessiner();
+            }
+        }
+    }
+}

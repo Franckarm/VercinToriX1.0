@@ -1053,6 +1053,7 @@ fn jouer128(mots: &[u128], base: &str, entrees: &[u64], comment: &str, note_adn:
     s.arret = Some(&ARRET);
     s.parler = Some(super::parler_hote);
     s.presenter = Some(Box::new(presenter128));
+    s.machine_fille = Some(super::machine128::machine_fille);
     ATTENTE_NS.store(0, Ordering::Relaxed);
     let t1 = std::time::Instant::now();
     let r = s.executer(u64::MAX / 4);

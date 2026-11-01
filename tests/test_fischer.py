@@ -73,6 +73,29 @@ verifier("même molécule, autres noms et autre ordre des lignes : même signatu
 verifier("une autre molécule (les opérations échangées) : une autre signature", sig(A) != sig(C))
 verifier("une valeur écrite changée : une autre molécule, une autre signature", sig(A) != sig(D))
 
+# les contrats et les unités font partie de ce qu'est la molécule
+def sig_r(src, nom="f"):
+    vtx128.REACTIONS.clear()
+    vtx128.compiler(src + "\nfonction principal() { sortie(0); }")
+    return fischer.signature(vtx128.REACTIONS[nom])
+
+
+E = "reaction f(a, b) -> m {\n    = a + b -> s\n    = s / 2 -> m\n}"
+E_EXIGE = "reaction f(a, b) -> m {\n    exige b != 0\n    = a + b -> s\n    = s / 2 -> m\n}"
+E_EXIGE2 = "reaction f(x, y) -> r {\n    = y / 2 -> r\n    exige y != 0\n    = x + y -> y\n}".replace("= y / 2 -> r", "= t / 2 -> r").replace("= x + y -> y", "= x + y -> t")
+E_GARANTIT = "reaction f(a, b) -> m {\n    = a + b -> s\n    = s / 2 -> m\n    garantit m <= s\n}"
+verifier("un contrat ajouté : une autre signature", len({sig_r(E), sig_r(E_EXIGE), sig_r(E_GARANTIT)}) == 3)
+verifier("le même contrat, autres noms et autre ordre des lignes : la même signature", sig_r(E_EXIGE) == sig_r(E_EXIGE2))
+U = "reaction f(d: m, t: s) -> v {\n    = d / t -> v\n}"
+U2 = "reaction f(d: m, t: m) -> v {\n    = d / t -> v\n}"
+U0 = "reaction f(d, t) -> v {\n    = d / t -> v\n}"
+U_KM = "reaction f() -> d {\n    = 2 km -> d\n}"
+U_M = "reaction f() -> x {\n    = 2000 m -> x\n}"
+U_S = "reaction f() -> x {\n    = 2000 s -> x\n}"
+verifier("des mètres par seconde, des mètres par mètre, sans unité : trois signatures", len({sig_r(U), sig_r(U2), sig_r(U0)}) == 3)
+verifier("2 km et 2000 m sont la même molécule ; 2000 s une autre", sig_r(U_KM) == sig_r(U_M) != sig_r(U_S))
+verifier("sans contrat ni unité, la signature ne change pas (les places déjà rangées restent)", sig(A) == 0xF9D4FE53E55DC934, f"#{sig(A):016X}")
+
 # 3. le cube des molécules : rangées puis retrouvées
 res = fischer.essai(5000)
 verifier(f"5000 molécules rangées et toutes retrouvées à leur place (ranger : {res['ranger_moyen']} cases regardées en "

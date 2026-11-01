@@ -33,9 +33,26 @@ pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128
     compiler128_prov(compilateur, source, base, mode, lignes, false).map(|(m, t, d, _)| (m, t, d))
 }
 
-/// la même chose, avec la provenance au choix : chaque réaction range la trace de ses liaisons ; rend aussi code.prov
+/// la même chose, avec la provenance au choix : chaque réaction range la trace de ses liaisons ; rend aussi code.prov.
+/// Les exemples du programme (« exemple f(2) == 4 ») sont rejoués à chaque compilation, comme vtx128.py : vtxc128 écrit
+/// code.ex, compile le programme des exemples (le même principal que vtx128.py), Lugus le fait tourner ; un exemple faux
+/// arrête la compilation.
 pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool)
                         -> Result<(Vec<u128>, Vec<u128>, Vec<u128>, String), String> {
+    let (code, prov, ex) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
+    if !ex.trim().is_empty() {
+        rejouer_exemples(compilateur, source, base, mode, &ex)?;
+    }
+    let mut morceaux = code.split(';');
+    let mots = nombres128(morceaux.next().unwrap_or(""));
+    let table = nombres128(morceaux.next().unwrap_or(""));
+    let dbg = nombres128(morceaux.next().unwrap_or(""));
+    Ok((mots, table, dbg, prov))
+}
+
+/// une passe de vtxc128 dans un dossier de travail : (code.mots, code.prov, code.ex), ou les messages d'erreur
+fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool,
+                  exemples: bool) -> Result<(String, String, String), String> {
     let dossier = std::env::temp_dir().join(format!("vtxc128-{}-{}", std::process::id(),
                                                      std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                                          .map(|d| d.as_nanos()).unwrap_or(0)));
@@ -46,31 +63,85 @@ pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mo
     s.charger(compilateur);
     s.entree.extend(base.chars().map(|c| c as u128));
     s.entree.push_back(0);
-    for drapeau in [mode.prelude, mode.optim, mode.partition, lignes, provenance] {
+    for drapeau in [mode.prelude, mode.optim, mode.partition, lignes, provenance, exemples] {
         s.entree.push_back(if drapeau { 1 } else { 0 });
     }
     let r = s.executer(200_000_000_000);
     let code = std::fs::read_to_string(dossier.join("code.mots"));
     let prov = std::fs::read_to_string(dossier.join("code.prov")).unwrap_or_default();
+    let ex = std::fs::read_to_string(dossier.join("code.ex")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dossier);
     let messages: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
     if let Err(e) = r {
         return Err(format!("{}{}\n", messages, e));
     }
     match code {
-        Ok(t) => {
-            let mut morceaux = t.split(';');
-            let mots = nombres128(morceaux.next().unwrap_or(""));
-            let table = nombres128(morceaux.next().unwrap_or(""));
-            let dbg = nombres128(morceaux.next().unwrap_or(""));
-            Ok((mots, table, dbg, prov))
-        }
+        Ok(t) => Ok((t, prov, ex)),
         Err(_) => Err(messages),
     }
+}
+
+/// les exemples rejoués (comme verifier_exemples de vtx128.py) : chaque exemple sort 1 (vrai) ou 0, puis le programme
+/// affiche ce que vaut le côté gauche d'une égalité
+fn rejouer_exemples(compilateur: &[u128], source: &str, base: &str, mode: Mode128, ex: &str) -> Result<(), String> {
+    let lus: Vec<(&str, bool, &str)> = ex.lines().filter_map(|l| {
+        let c: Vec<&str> = l.trim_end_matches('\r').splitn(3, '|').collect();
+        if c.len() == 3 { Some((c[0], c[1] == "1", c[2])) } else { None }
+    }).collect();
+    if lus.is_empty() {
+        return Ok(());
+    }
+    let mode_ex = Mode128 { prelude: mode.prelude, optim: mode.optim, partition: false };
+    let (code, _, _) = passer_vtxc128(compilateur, source, base, mode_ex, false, false, true)?;
+    let mut m = Spu128::nouveau();
+    m.charger(&nombres128(code.split(';').next().unwrap_or("")));
+    if let Err(e) = m.executer(50_000_000) {
+        return Err(format!("erreur ligne {} : les exemples n'ont pas pu être rejoués : {}\nvtxc : compilation arrêtée\n", lus[0].0, e));
+    }
+    let obtenus: String = m.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
+    let obtenus: Vec<&str> = obtenus.split('\n').collect();
+    for (k, (ligne, egalite, texte)) in lus.iter().enumerate() {
+        if m.sortie.get(k) != Some(&1) {
+            let detail = if *egalite { format!(" : le côté gauche vaut {}", obtenus.get(k).unwrap_or(&"?")) } else { String::new() };
+            return Err(format!("erreur ligne {} : l'exemple « {} » est faux{}\nvtxc : compilation arrêtée\n", ligne, texte, detail));
+        }
+    }
+    Ok(())
 }
 
 /// Le dossier absolu d'un fichier (les fichiers importés sont cherchés à partir de lui).
 pub fn dossier_de128(fichier: &str) -> String {
     let chemin = std::env::current_dir().unwrap_or_default().join(fichier);
     chemin.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// La machine fille (le service 24 de Lugus) : un programme vtx compilé par vtxc128 (ses exemples rejoués) puis lancé
+/// sur un Lugus neuf, à côté de celui qui le demande. Rend le compte rendu, en texte : ce que le programme a écrit, ses
+/// sorties, puis le nombre de mots et d'instructions, ou l'erreur. C'est ainsi qu'Ogmios, écrit en vtx, lance F5.
+pub fn machine_fille(chemin: &std::path::Path, max_pas: u64) -> String {
+    let source = match std::fs::read_to_string(chemin) {
+        Ok(t) => t,
+        Err(e) => return format!("lecture de {} impossible : {}\n", chemin.display(), e),
+    };
+    let base = chemin.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+    let mots = match compiler128(&nombres128(VTXC128), &source, &base, COMPLET128, false) {
+        Ok((m, _, _)) => m,
+        Err(e) => return e,
+    };
+    let mut s = Spu128::nouveau();
+    s.dossier = Some(std::path::PathBuf::from(&base));
+    s.charger(&mots);
+    let r = s.executer(max_pas);
+    let mut t: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
+    if !t.is_empty() && !t.ends_with('\n') {
+        t.push('\n');
+    }
+    if !s.sortie.is_empty() {
+        t += &format!("sorties : {}\n", s.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(", "));
+    }
+    t += &format!("{} mots, {} instructions\n", mots.len(), s.pas);
+    if let Err(e) = r {
+        t += &format!("erreur : {}\n", e);
+    }
+    t
 }

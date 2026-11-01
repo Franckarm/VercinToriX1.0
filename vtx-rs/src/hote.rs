@@ -194,7 +194,8 @@ pub fn clavier_windows(message: u32, wp: usize) {
         }
         0x101 | 0x105 => poser_enfoncee(vk, false),
         0x102 => {
-            if vk >= 32 || matches!(vk, 8 | 9 | 13 | 27) {
+            // les caractères, et les touches Ctrl+lettre (1 à 26 : Ctrl+S donne 19), Échap
+            if vk >= 32 || (1..=27).contains(&vk) {
                 ajouter_touche(vk);
             }
         }

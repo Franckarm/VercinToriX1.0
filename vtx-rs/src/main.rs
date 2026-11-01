@@ -1057,8 +1057,9 @@ fn main() {
         Some("image") => cube::image(&args[2..]),
         Some("dessin") => cube::dessin(&args[2..]),
         Some("cubes") => print!("{}", texte_cubes(None, std::path::Path::new(args.get(2).map(|s| s.as_str()).unwrap_or(".")))),
-        Some("toile") | Some("gobatix") => toile::lancer(&args[2..], false),
-        Some("toile64") | Some("gobatix64") => toile::lancer(&args[2..], true),
+        Some("toile") | Some("gobatix") => toile::lancer(&args[2..], 32),
+        Some("toile64") | Some("gobatix64") => toile::lancer(&args[2..], 64),
+        Some("toile128") => toile::lancer(&args[2..], 128),
         Some("quits") => cube::image_quits(&args[2..]),
         Some("icone") if args.len() > 2 => {
             let f = &args[2];

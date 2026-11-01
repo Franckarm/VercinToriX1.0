@@ -102,39 +102,53 @@ def adresse(rang):
 # ---------------------------------------------------------------- la signature et la place
 def signature(molecule):
     """L'empreinte de ce qu'est une molécule : ses atomes vague après vague (élément, genre, la forme de leur
-    expression avec ses valeurs écrites) et, pour chacun, les atomes qui lui donnent ses liaisons d'entrée ; sans aucun
-    nom, et sans l'ordre des lignes (dans une vague, les atomes sont rangés par leur propre description). Limite : deux
-    atomes identiques dans une même vague (deux fois la constante 6) peuvent s'échanger selon l'ordre des lignes."""
+    expression avec ses valeurs écrites) et, pour chacun, les atomes qui lui donnent ses liaisons d'entrée ; puis ses
+    contrats et ses unités (une molécule qui promet autre chose, ou qui compte en secondes plutôt qu'en mètres, n'est pas
+    la même) ; sans aucun nom, et sans l'ordre des lignes (dans une vague, les atomes sont rangés par leur propre
+    description). Limite : deux atomes identiques dans une même vague (deux fois la constante 6) peuvent s'échanger selon
+    l'ordre des lignes."""
     el = dict(molecule.elements())
     rang, forme = {}, []
+    sources = {}                               # liaison -> sa source, sans nom (s<rang>.<sortie> ou p<place>)
+
+    def source(nom):
+        if nom in sources:
+            return sources[nom]
+        if nom in molecule.params:
+            return f"p{molecule.params.index(nom)}"
+        return "v"                             # une variable locale (celle de « pour chaque »)
+
+    def forme_de(e):
+        """la forme d'une expression : les liaisons remplacées par leur source, les nombres par k"""
+        if isinstance(e, tuple) and e and isinstance(e[0], str):
+            if e[0] == "var":
+                return source(e[1])
+            if e[0] in ("nombre", "pqf", "flt", "str"):
+                return f"k{e[1]!r}"                # une valeur écrite fait partie de ce qu'est la molécule
+            return e[0] + "(" + ",".join(forme_de(x) for x in e[1:] if not isinstance(x, int) or e[0] == "mem") + ")"
+        if isinstance(e, (tuple, list)):
+            return "[" + ",".join(forme_de(x) for x in e) + "]"
+        return str(e) if isinstance(e, str) else ""
     for vague in molecule.vagues:
         decrits = []
         for a in vague:
-            def source(nom):
-                if nom in molecule.donne:
-                    p = molecule.donne[nom]
-                    k = p.sorties.index(nom)
-                    return f"s{rang[id(p)]}.{k}"
-                if nom in molecule.params:
-                    return f"p{molecule.params.index(nom)}"
-                return "v"                         # une variable locale (celle de « pour chaque »)
-
-            def forme_de(e):
-                """la forme d'une expression : les liaisons remplacées par leur source, les nombres par k"""
-                if isinstance(e, tuple) and e and isinstance(e[0], str):
-                    if e[0] == "var":
-                        return source(e[1])
-                    if e[0] in ("nombre", "pqf", "flt", "str"):
-                        return f"k{e[1]!r}"            # une valeur écrite fait partie de ce qu'est la molécule
-                    return e[0] + "(" + ",".join(forme_de(x) for x in e[1:] if not isinstance(x, int) or e[0] == "mem") + ")"
-                if isinstance(e, (tuple, list)):
-                    return "[" + ",".join(forme_de(x) for x in e) + "]"
-                return str(e) if isinstance(e, str) else ""
             decrits.append((f"{el[a.nom_affiche()]}:{a.genre}:{forme_de(a.quoi)}:{len(a.sorties)}", a))
         decrits.sort(key=lambda x: x[0])
         for d, a in decrits:
             rang[id(a)] = len(forme)
+            for k, s_ in enumerate(a.sorties):
+                sources[s_] = f"s{rang[id(a)]}.{k}"
             forme.append(d)
+    # les contrats : ce que la molécule exige et promet (dans l'ordre de leur description, pas des lignes)
+    forme += sorted(f"{c[1]}:{forme_de(c[2])}" for c in molecule.contrats)
+    # les unités : celles des entrées, de chaque liaison et du résultat ; l'unité inconnue (QUELCONQUE) ne compte pas
+    unites = dict(getattr(molecule, "unites", None) or {})
+    unites.update(getattr(molecule, "unites_entrees", {}) or {})
+    dims = lambda u: ".".join(f"{b}{u[b]}" for b in sorted(u) if u[b])  # noqa: E731
+    marques = sorted(f"u:{source(n)}:{dims(u)}" for n, u in unites.items() if u and (n in sources or n in molecule.params))
+    if getattr(molecule, "unite_declaree", None):
+        marques.append(f"u:r:{dims(molecule.unite_declaree)}")
+    forme += marques
     return int.from_bytes(hashlib.sha256("|".join(forme).encode()).digest()[:8], "big")
 
 

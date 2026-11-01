@@ -257,6 +257,8 @@ structure Ctx {
     provenance,         // 1 : chaque réaction range la trace de ses liaisons (vtx128.py pourquoi), et code.prov est écrit
     prov_place,         // la prochaine place de la trace (@3[#2000000..])
     souv_place,         // la prochaine place libre des souvenirs (@3[#F00000..])
+    exemples: Liste,    // les exemples écrits : l'expression, sa ligne, son texte (trois par exemple)
+    mode_exemples,      // 1 : le principal est remplacé par le calcul des exemples (Lugus les rejoue)
     erreur
 }
 
@@ -3372,9 +3374,9 @@ fonction bloc_hypothese(c: Ctx, n, corps: Noeud, l): Noeud {
 // Comme vtx128.py (docs/vtx-reactions.md) : un bloc où chaque ligne est un atome (le code) qui donne des liaisons (les
 // données) ; l'ordre des lignes ne compte pas, les atomes sont rangés par vagues d'après les liaisons. La réaction est
 // traduite en une fonction ordinaire, ses atomes dans l'ordre des vagues, exactement comme vtx128.py : les mêmes mots.
-// Les contrats (exige, garantit), les unités physiques (lues, ramenées à l'unité de base ; vtxc128 ne les vérifie pas
-// encore), les souvenirs des atomes lourds (le calcul incrémental) ; les exemples sont lus, pas rejoués (vtx128.py le
-// fait).
+// Les contrats (exige, garantit), les unités physiques (vérifiées, ramenées à l'unité de base), les souvenirs des
+// atomes lourds (le calcul incrémental) ; les exemples : écrits dans code.ex, et leur programme compilé à part (le
+// sixième drapeau), que Lugus rejoue.
 constante A_CALCUL = 1;
 constante A_SI = 2;
 constante A_RDV = 3;
@@ -4179,7 +4181,7 @@ fonction ecrire_trace(b, v: Noeud, l): Noeud {
     retour Noeud { genre: N_ECRIRE, val: 3, b: nombre(b, l), c: v, ligne: l };
 }
 
-fonction corps_molecule(c: Ctx, m: Molecule): Noeud {
+fonction corps_molecule(c: Ctx, m: Molecule, rtype): Noeud {
     m.ok = liste();
     m.prem = nul;
     m.der = nul;
@@ -4291,7 +4293,30 @@ fonction corps_molecule(c: Ctx, m: Molecule): Noeud {
         si donneur(m, m.resultat) == nul && !est_param(m, m.resultat) {
             erreur_nom(c, m.ligne, "la réaction rend une liaison qu'aucun atome ne donne :", m.resultat);
         }
-        emettre_st(m, Noeud { genre: N_RETOUR, a: var_n(m.resultat, m.ligne), ligne: m.ligne });
+        soit lr = m.ligne;
+        soit dr = drapeau_de(m, m.resultat);
+        si dr != 0 {
+            // le résultat peut porter faux (sa branche n'a pas réagi) : la réaction le dit avec son type, une logique rend
+            // faux, un flottant rend inconnu (la valeur n'est jamais arrivée) ; un entier ne sait pas le dire
+            soit absent: Noeud = nul;
+            si rtype == T_LOG {
+                absent = Noeud { genre: N_QNOMBRE, val: 1, ligne: lr };
+            } sinon si rtype == T_F {
+                absent = Noeud { genre: N_FNOMBRE, val: 0, ligne: lr };
+            } sinon si rtype == T_S {
+                absent = Noeud { genre: N_SNOMBRE, val: 0, ligne: lr };
+            } sinon si rtype == T_X {
+                absent = Noeud { genre: N_XNOMBRE, val: 0, nom: 0, ligne: lr };
+            }
+            si absent == nul {
+                erreur_nom(c, lr, "la réaction rend une liaison qui peut porter faux (sa branche peut ne pas réagir), et son type ne sait pas le dire : écrivez un sinon, ou rendez une logique (faux) ou un flottant (inconnu) :", m.resultat);
+                retour m.prem;
+            }
+            emettre_st(m, sous_garde(var_n(dr, lr), Noeud { genre: N_RETOUR, a: var_n(m.resultat, lr), ligne: lr }, lr));
+            emettre_st(m, Noeud { genre: N_RETOUR, a: absent, ligne: lr });
+        } sinon {
+            emettre_st(m, Noeud { genre: N_RETOUR, a: var_n(m.resultat, lr), ligne: lr });
+        }
     }
     retour m.prem;
 }
@@ -5086,6 +5111,71 @@ fonction ecrire_provenance(c: Ctx) {
     fermer(s);
 }
 
+// ---- les exemples (comme verifier_exemples de vtx128.py) : un programme fait des mêmes fonctions, dont le principal
+// calcule chaque exemple (sortie 1 ou 0, puis il affiche ce que vaut le côté gauche d'une égalité, pour le message)
+fonction principal_des_exemples(c: Ctx) {
+    soit premier: Noeud = nul;
+    pour k dans 0..c.exemples.n / 3 {
+        soit e: Noeud = elem(c.exemples, 3 * k);
+        soit l = elem(c.exemples, 3 * k + 1);
+        soit test = Noeud { genre: N_SI, a: copier(e), val: 1, ligne: l,
+                            premier: Noeud { genre: N_EXPR, a: appel1("sortie", nombre(1, l), l), ligne: l },
+                            deuxieme: Noeud { genre: N_EXPR, a: appel1("sortie", nombre(0, l), l), ligne: l } };
+        soit gauche = e;
+        si e.genre == N_BIN && egal(e.op, "==") {
+            gauche = e.a;
+        }
+        premier = chainer(premier, test);
+        premier = chainer(premier, Noeud { genre: N_EXPR, a: appel1("afficher", copier(gauche), l), ligne: l });
+    }
+    // l'ancien principal sort de la liste, le nouveau vient à la fin
+    soit prec: Fonction = nul;
+    soit f = c.fonctions;
+    tantque f != nul {
+        si egal(f.nom, "principal") {
+            si prec == nul {
+                c.fonctions = f.suivant;
+            } sinon {
+                prec.suivant = f.suivant;
+            }
+            si c.der_fonction == f {
+                c.der_fonction = prec;
+            }
+        } sinon {
+            prec = f;
+        }
+        f = f.suivant;
+    }
+    soit p = Fonction { nom: "principal", ligne: 1, etiq: nouvelle_etiquette(c), corps: premier };
+    si c.der_fonction == nul {
+        c.fonctions = p;
+    } sinon {
+        c.der_fonction.suivant = p;
+    }
+    p.suivant = nul;
+    c.der_fonction = p;
+    noter_fonction(p);
+}
+
+// code.ex : une ligne par exemple, « ligne|1 si c'est une égalité|texte » (Lugus rejoue les exemples avec ce qu'il lit ici)
+fonction ecrire_exemples(c: Ctx) {
+    soit s = ouvrir_ecriture("code.ex");
+    pour k dans 0..c.exemples.n / 3 {
+        soit e: Noeud = elem(c.exemples, 3 * k);
+        ecrire_nombre(s, elem(c.exemples, 3 * k + 1));
+        ecrire_car(s, '|');
+        si e.genre == N_BIN && egal(e.op, "==") {
+            ecrire_car(s, '1');
+        } sinon {
+            ecrire_car(s, '0');
+        }
+        ecrire_car(s, '|');
+        ecrire_texte(s, elem(c.exemples, 3 * k + 2));
+        ecrire_car(s, 10);
+    }
+    fermer(s);
+}
+
 // ---- la vérification des unités (comme verifier_unites de vtx128.py) : suivies le long des liaisons, vague après
 // vague ; ce qui ne s'accorde pas est refusé ; puis les unités sont effacées des expressions
 fonction u_lire(env: Liste, nom) {
@@ -5432,7 +5522,7 @@ fonction corps_des_reactions(c: Ctx) {
     tantque f != nul && c.erreur == 0 {
         si f.mol != nul {
             soit m: Molecule = f.mol;
-            f.corps = corps_molecule(c, m);
+            f.corps = corps_molecule(c, m, f.rtype);
         }
         f = f.suivant;
     }
@@ -5659,9 +5749,15 @@ fonction programme(c: Ctx) {
             avancer(c);
             une_reaction(c, l);
         } sinon si est_id(c, "exemple") {
-            // exemple f(2) == 4 : lu ; vtx128.py le rejoue à chaque compilation (vtxc128 pas encore)
+            // exemple f(2) == 4 : une preuve de bon fonctionnement, rejouée à chaque compilation (par Lugus : code.ex)
             avancer(c);
-            expr(c, 0);
+            soit j0 = c.tok;
+            soit ex = expr(c, 0);
+            si !c.en_prelude {
+                ajouter(c.exemples, bits(ex));
+                ajouter(c.exemples, l);
+                ajouter(c.exemples, texte_jetons(c, j0, c.tok));
+            }
             si est_op(c, ";") {
                 avancer(c);
             }
@@ -11117,7 +11213,7 @@ fonction constantes_predefinies(c: Ctx) {
 fonction principal() {
     tables_glacees();
     soit c = Ctx { src: liste(), code: liste(), etiq: liste(), fix_pos: liste(), fix_etiq: liste(), fix_genre: liste(),
-                   vus: liste(), segs: liste(), pile: liste(), tab_w: liste() };
+                   vus: liste(), segs: liste(), pile: liste(), tab_w: liste(), exemples: liste() };
     // entrées : le dossier du programme, un caractère par entrée, terminé par 0 (les fichiers importés y sont cherchés)
     soit d = liste();
     soit x = entrée();
@@ -11135,12 +11231,16 @@ fonction principal() {
     c.partition = entrée();                // 1 : partition des tâches en accords
     c.lignes_dbg = entrée();               // 1 : table des lignes pour le pas à pas (absente : 0)
     c.provenance = entrée() == 1;          // 1 : la provenance (absente : 0)
+    c.mode_exemples = entrée() == 1;       // 1 : compiler le calcul des exemples à la place du principal (absent : 0)
     c.dbg = liste();
     c.marques = liste();
     constantes_predefinies(c);
     lexer(c);
     c.tok = c.jetons;
     programme(c);
+    si c.mode_exemples && c.erreur == 0 {
+        principal_des_exemples(c);
+    }
     c.segs_prog = c.segs;
     si c.cumul_utilise {
         soit tz = c.tableaux;
@@ -11199,6 +11299,9 @@ fonction principal() {
     }
     si c.provenance {
         ecrire_provenance(c);
+    }
+    si c.exemples.n > 0 && !c.mode_exemples {
+        ecrire_exemples(c);
     }
     soit s = ouvrir_ecriture("code.mots");
     soit hd = c.lugus_demis;

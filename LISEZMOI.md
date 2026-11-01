@@ -23,7 +23,9 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
   rangés par vagues, donc l'ordre des lignes ne compte pas ; les atomes d'une même vague réagissent ensemble, sur
   plusieurs cœurs une fois forgés.
   - **La sûreté** : les contrats (`exige`, `garantit`), les exemples vérifiés à chaque compilation (`exemple f(2) ==
-    4`), les unités physiques vérifiées par le compilateur (`= 9.81 m/s² -> g`), qui ne coûtent rien à l'exécution.
+    4`, rejoués aussi par Lugus sans Python), les unités physiques vérifiées par le compilateur (`= 9.81 m/s² -> g`),
+    qui ne coûtent rien à l'exécution ; une liaison qui peut porter faux se rend en logique (faux) ou en flottant
+    (inconnu).
   - **Le calcul incrémental** : chaque atome lourd garde ses souvenirs dans une colonne de seize places, rangée comme
     Fischer. Rappelé avec des entrées déjà vues, il ne réagit pas (10 fois moins d'instructions sur une scène
     d'animation).
@@ -36,6 +38,9 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
   - mesuré : 6 % de place, réparé jusqu'à huit mots abîmés de suite, jamais réparé de travers.
 - **L'atelier Ogmios** (`atelier.exe`) sur les trois machines (Ctrl+M) : édition, F5, pas à pas, vue du cube, la toile.
   Sur Lugus, F5 range aussi l'ADN, et Ctrl+P donne la provenance.
+- **Ogmios écrit en vtx** (`ogmios/ogmios.vtx`, premier temps) : l'atelier dans le langage, qui tourne sur Lugus.
+  `vtx toile128 ogmios/ogmios.vtx --fichier PROG.vtx` : édition en couleurs, Ctrl+S, F5 (le programme compilé par vtxc128
+  et lancé sur une machine fille), Ctrl+Q.
 - **La forge** : un programme devient un exécutable natif, par Rust (`python forge/forge128.py PROG.vtx`), avec les
   mêmes sorties que la machine émulée.
 - **La toile** : le service d'image de la machine (la souris, le clavier, l'horloge, les GIF). Le nom Gobatix est
@@ -61,6 +66,7 @@ lugus exemples128/panel.vtx                         # une réaction : 42
 lugus pourquoi exemples128/panel.vtx r2             # d'où vient ce 42
 lugus ranger exemples128/chute.vtx                  # l'ADN : chute.adn
 lugus exemples128/chute.adn                         # vérifié, réparé si besoin, lancé
+vtx toile128 ogmios/ogmios.vtx --fichier exemples128/chute.vtx   # Ogmios écrit en vtx (F5, Ctrl+S, Ctrl+Q)
 ```
 
 Avec Python, les compilateurs de référence et les outils :

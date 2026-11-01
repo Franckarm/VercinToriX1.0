@@ -41,6 +41,8 @@ pub struct Spu128 {
     pages_vues: std::collections::HashSet<(usize, u128)>,
     pub pas: u64,
     pub presenter: Option<Box<dyn FnMut(&Spu128) -> u128>>,
+    /// le service 24, la machine fille (posée par celui qui lance : machine128::machine_fille ; la forge n'en a pas)
+    pub machine_fille: Option<fn(&std::path::Path, u64) -> String>,
     // la console branchée ailleurs (l'atelier, un terminal) : ce que le programme écrit et lit sur le canal 1 passe
     // par elles au lieu du texte gardé ; arret : Maj+F5 de l'atelier ; parler : la voix (le canal « voix: »)
     pub console_ecrire: Option<Box<dyn FnMut(u128)>>,
@@ -101,6 +103,7 @@ impl Spu128 {
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
             presenter: None,
+            machine_fille: None,
             console_ecrire: None,
             console_lire: None,
             arret: None,
@@ -442,6 +445,22 @@ impl Spu128 {
             13 => Ok(self.jeter_cube(arg)),
             16..=21 | 23 => Ok(crate::hote::service(code as u64, arg as u64, u64::MAX).unwrap_or(0) as u128),
             22 => Ok(crate::miroir::prendre_etat() as u128),
+            24 => {
+                // la machine fille : le programme vtx nommé (un texte) compilé et lancé sur un Lugus neuf ; son compte
+                // rendu se lit comme un fichier (le canal rendu, lire_car)
+                let d = match &self.dossier {
+                    Some(d) => d.clone(),
+                    None => return Ok(u128::MAX),
+                };
+                let chemin = d.join(self.texte_memoire(arg));
+                let rapport = match self.machine_fille {
+                    Some(f) => f(&chemin, 2_000_000_000),
+                    None => return Ok(u128::MAX),
+                };
+                let canal = self.fichiers.keys().copied().chain(std::iter::once(1)).max().unwrap() + 1;
+                self.fichiers.insert(canal, (true, rapport.chars().map(|c| c as u128).collect(), 0, String::new()));
+                Ok(canal)
+            }
             12 => {
                 if let Some(mut f) = self.presenter.take() {
                     let r = f(self);

@@ -12,6 +12,8 @@
 //   - l'atelier, qui montre les images dans sa vue du cube et peut les enregistrer en GIF.
 // vtx toile PROG.vtx                                    la fenêtre (Windows), SPU-32
 // vtx toile64 PROG.vtx                                  la même chose sur le SPU-64
+// vtx toile128 PROG.vtx [--fichier F]                     la même chose sur Lugus ; --fichier : le chemin de F, lu par
+//                                                       entrée() (Ogmios écrit en vtx : ogmios/ogmios.vtx)
 // … --images DOSSIER [--max N] [--pas K]                  les images image-0001.png… (une sur K, au plus N appels)
 // … --gif FICHIER.gif [--max N] [--pas K]                 une animation GIF
 // … --scenario FICHIER                                   des gestes (souris, touches) rejoués image par image (hote.rs)
@@ -65,14 +67,17 @@ pub fn presenter64(s: &Spu64) -> u64 {
 
 
 /// vtx toile PROG.vtx [--images DOSSIER | --gif FICHIER] [--max N] [--pas K] ; m64 : sur le SPU-64.
-pub fn lancer(args: &[String], m64: bool) {
+pub fn lancer(args: &[String], machine: u32) {
     use super::{compiler_avec, dossier_de, executer_dans, nombres, COMPLET, VTXC};
-    let usage = if m64 { "vtx toile64" } else { "vtx toile" };
+    let m64 = machine == 64;
+    let usage = match machine { 64 => "vtx toile64", 128 => "vtx toile128", _ => "vtx toile" };
     if args.is_empty() {
-        eprintln!("utilisation : {} PROG.vtx [--images DOSSIER | --gif FICHIER.gif] [--max N] [--pas K] [--scenario FICHIER]", usage);
+        eprintln!("utilisation : {} PROG.vtx [--images DOSSIER | --gif FICHIER.gif] [--max N] [--pas K] [--scenario FICHIER]{}", usage,
+                  if machine == 128 { " [--fichier FICHIER]" } else { "" });
         std::process::exit(2);
     }
     let (mut images, mut gif, mut max, mut pas, mut scenario) = (None, None, usize::MAX, 1usize, None);
+    let mut fichier: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         let v = args.get(i + 1);
@@ -82,6 +87,8 @@ pub fn lancer(args: &[String], m64: bool) {
             "--max" => max = v.and_then(|x| x.parse().ok()).unwrap_or(usize::MAX),
             "--pas" => pas = v.and_then(|x| x.parse().ok()).unwrap_or(1).max(1),
             "--scenario" => scenario = v.cloned(),
+            // Lugus : un fichier donné au programme, son chemin entier lu par entrée() (un caractère par entrée, puis 0)
+            "--fichier" if machine == 128 => fichier = v.cloned(),
             autre => {
                 eprintln!("option inconnue : {}", autre);
                 std::process::exit(2);
@@ -120,7 +127,33 @@ pub fn lancer(args: &[String], m64: bool) {
         }
     }
     installer(Some(sortie));
-    let r: Result<(), String> = if m64 {
+    let r: Result<(), String> = if machine == 128 {
+        use super::machine128::{compiler128, dossier_de128, nombres128, COMPLET128, VTXC128};
+        let mots = match compiler128(&nombres128(VTXC128), &source, &dossier_de128(&args[0]), COMPLET128, false) {
+            Ok((m, _, _)) => m,
+            Err(e) => {
+                eprint!("{}", e);
+                std::process::exit(1)
+            }
+        };
+        let mut s = super::spu128::Spu128::nouveau();
+        s.dossier = Some(std::path::PathBuf::from(dossier_de128(&args[0])));
+        s.charger(&mots);
+        if let Some(f) = fichier {
+            let absolu = std::env::current_dir().unwrap_or_default().join(&f);
+            s.entree.extend(absolu.to_string_lossy().chars().map(|c| c as u128));
+            s.entree.push_back(0);
+        }
+        s.presenter = Some(Box::new(super::pas128::presenter128));
+        s.machine_fille = Some(super::machine128::machine_fille);
+        let r = s.executer(u64::MAX);
+        if !s.sortie.is_empty() {
+            println!("{}", s.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
+        }
+        let t: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
+        print!("{}", t);
+        r
+    } else if m64 {
         use super::machine64::{compiler64, nombres64, COMPLET64, VTXC64};
         let mots = match compiler64(&nombres64(VTXC64), &source, &base, COMPLET64, false) {
             Ok((m, _, _)) => m,

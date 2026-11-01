@@ -345,8 +345,8 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     - à l'exécution, il ne reste rien des unités : un programme avec unités donne les mêmes mots que sans.
   - `python vtx128.py molecule` montre aussi les contrats et l'unité de chaque liaison.
   - Ce qui reste :
-    - une réaction qui rend une liaison portant faux rend sa valeur brute (elle devrait rendre faux) ;
-    - les unités et les contrats n'entrent pas encore dans la signature de Fischer ;
+    - ~~une réaction qui rend une liaison portant faux rend sa valeur brute~~ : réglé, voir « les trois restes » plus bas ;
+    - ~~les unités et les contrats n'entrent pas encore dans la signature de Fischer~~ : réglé, idem ;
     - vtxc128 ne connaissait ni les réactions ni ces ajouts : fait au troisième temps, plus bas.
 - **Étape 4, deuxième temps : le calcul incrémental, les souvenirs** (vtx128.py ; l'exemple
   `exemples128/scene_incrementale.vtx`) :
@@ -400,7 +400,7 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - **Ce que vtxc128 ne fait pas encore** :
     - il ne vérifie pas les unités : il les lit et les ramène à la base, mais ne refuse pas des mètres plus des
       secondes ;
-    - il ne rejoue pas les exemples : il les lit seulement ;
+    - ~~il ne rejoue pas les exemples : il les lit seulement~~ : Lugus les rejoue, voir « les trois restes » ;
     - un flottant avec une unité à facteur (`2.0 km`) lui est refusé.
   - **Pour Lugus et Ogmios** : vtxc128 est embarqué dans lugus ; les réactions se compilent donc sans Python, dans
     l'atelier comme en ligne de commande.
@@ -525,4 +525,54 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     quand on change de machine.
   - **Le nom Gobatix** n'apparaît plus dans le prélude de Lugus (c'est « la toile ») ; le code qui ne servait plus dans
     vtxc128 est retiré.
+  - **Les trois restes** (1er novembre) :
+    - **Une réaction dont le résultat porte faux** (sa branche n'a pas réagi) le dit avec son type : une logique rend
+      faux, un flottant rend inconnu (la valeur n'est jamais arrivée, comme en 2.8). Un entier n'a aucune valeur libre
+      pour le dire : le compilateur le refuse et demande un sinon (« un entier ne sait pas le dire : écrivez un sinon, ou
+      rendez une logique (faux) ou un flottant (inconnu) »). Avant, la valeur calculée sortait comme si de rien n'était.
+      Les deux compilateurs, les mêmes mots ; le générateur de réactions au hasard ne rend plus que des liaisons
+      toujours là.
+    - **La signature de Fischer** compte les contrats (exige, garantit, sans les noms ni l'ordre des lignes) et les
+      unités (des entrées, des liaisons, du résultat). Une molécule qui promet autre chose, ou qui compte en secondes au
+      lieu de mètres, n'est plus la même. `2 km` et `2000 m` restent la même molécule. Sans contrat ni unité, la
+      signature ne change pas : les places déjà rangées restent (vérifié sur une valeur gardée).
+    - **Les exemples rejoués par Lugus**, sans Python. vtxc128 écrit `code.ex` (la ligne, l'égalité, le texte de chaque
+      exemple) ; avec un sixième drapeau, il compile le programme des exemples, mot pour mot comme vtx128.py (le
+      principal remplacé par le calcul de chaque exemple). Lugus le fait tourner sur une machine neuve ; un exemple faux
+      arrête la compilation avec le message de vtx128.py : `erreur ligne 6 : l'exemple « moyenne(10, 20) == 16 » est
+      faux : le côté gauche vaut 15`. C'est fait dans la compilation elle-même : `lugus PROG.vtx`, `lugus ranger`, F5
+      dans l'atelier et Ogmios en vtx en profitent.
+
+- **Étape 6, premier temps : Ogmios écrit en vtx** (`ogmios/ogmios.vtx`, environ 650 lignes) :
+
+  ```
+  vtx toile128 ogmios/ogmios.vtx --fichier exemples128/chute.vtx
+  ```
+
+  - **L'atelier tourne sur Lugus**, comme n'importe quel programme : il dessine dans la toile (480 × 300 points,
+    80 colonnes, 30 lignes, la police 5 × 7 du prélude ; la fenêtre l'agrandit) et lit le clavier et la souris.
+  - **Ce qu'il sait faire** :
+    - montrer le programme en couleurs (les mots du langage en bronze, les types en vert-de-gris, les nombres et les
+      points, les textes, les commentaires, les liaisons `->` en braise), avec les numéros de ligne ;
+    - éditer : les caractères (accents compris), Entrée qui garde le retrait, Retour arrière, Suppr, Tab, les flèches,
+      Début, Fin, les pages, le clic de la souris, la molette ;
+    - Ctrl+S enregistre, en gardant les fins de ligne du fichier (\r\n sous Windows) ; Ctrl+Q ferme ;
+    - **F5** enregistre, puis une **machine fille** compile le programme avec vtxc128 (les exemples rejoués) et le
+      lance sur un Lugus neuf. Son compte rendu (ce qu'il écrit, ses sorties, le nombre d'instructions, ou l'erreur)
+      vient en bas de l'écran, et aussi dans la console.
+  - **Ce que la machine a reçu pour lui** :
+    - `vtx toile128` : la toile de Lugus (fenêtre, images PNG, GIF, scénario de gestes), comme `vtx toile64` ;
+      `--fichier` donne un chemin au programme par ses entrées ;
+    - le service 24, la machine fille : un programme vtx nommé, compilé et lancé à côté. Son compte rendu se lit comme
+      un fichier (`lire_car`). C'est l'équivalent d'un processus : Ogmios reste un programme vtx, le compilateur aussi
+      (vtxc128) ; la machine hôte ne fait que prêter un Lugus neuf ;
+    - Ctrl+lettre arrive au programme (Ctrl+S donne 19).
+  - **Vérifié** (`tests/test_ogmios.py`) : les deux compilateurs donnent les mêmes mots pour Ogmios (2 998) ; une édition
+    rejouée par scénario (flèches, Fin, « été », Entrée, retour arrière, Début, Tab, Suppr, un clic) puis Ctrl+S donne
+    exactement le fichier attendu, en \r\n ; F5 donne « bonjour » et 15 ; un exemple faux y est dit.
+  - **Mesuré** : une touche (l'écran redessiné en entier) coûte 27 ms sur Lugus émulé ; F5 complet, 2,9 s (la
+    compilation d'Ogmios, puis celle du programme et de ses exemples).
+  - **Ce qui manque** (les temps suivants) : la sélection, copier et coller, annuler ; chercher ; plusieurs fichiers ;
+    le pas à pas, la vue du cube, la provenance (Ctrl+P) et l'ADN dans Ogmios en vtx ; ne redessiner que ce qui
+    change ; prévenir avant de fermer un fichier modifié.
 

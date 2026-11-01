@@ -136,25 +136,25 @@ reaction tordue(x) -> y {
     = x + 100          -> y
     garantit y < 50
 }
-reaction prudente(x) -> r {
-    = si x > 10 alors x - 10 -> r
-    garantit r < 5
+reaction prudente(x: flottant) -> r: flottant {
+    = si x > 10.0 alors x - 10.0 -> r
+    garantit r < 5.0
 }
 fonction principal() {
     sortie(moyenne(4, 6, 2));
-    sortie(prudente(3));
-    sortie(prudente(12));
+    sortie(entier(prudente(12.0)));
+    sortie(prudente(3.0));
     sortie(MODE);
     sortie(99);
 }
 """
 s1, t1, _ = jouer(CONTRAT.replace("MODE", "moyenne(4, 6, 0)"))
-verifier("exige rompu : la machine s'arrête et dit lequel", s1 == [5, (1 << 64) - 7, 2]
+verifier("exige rompu : la machine s'arrête et dit lequel", s1 == [5, 2, 0]
          and t1 == "contrat rompu : moyenne exige n != 0 (ligne 3)\n", f"{s1} {t1!r}")
 s2, t2, _ = jouer(CONTRAT.replace("MODE", "tordue(1)"))
-verifier("garantit rompu : idem, après la réaction", s2 == [5, (1 << 64) - 7, 2] and "tordue garantit y < 50 (ligne 10)" in t2, f"{s2} {t2!r}")
+verifier("garantit rompu : idem, après la réaction", s2 == [5, 2, 0] and "tordue garantit y < 50 (ligne 10)" in t2, f"{s2} {t2!r}")
 s3, t3, _ = jouer(CONTRAT.replace("MODE", "1"))
-verifier("une branche qui n'a pas réagi ne promet rien ; tenus, les contrats ne changent rien", s3 == [5, (1 << 64) - 7, 2, 1, 99] and t3 == "",
+verifier("une branche qui n'a pas réagi ne promet rien ; tenus, les contrats ne changent rien", s3 == [5, 2, 0, 1, 99] and t3 == "",
          f"{s3} {t3!r}")
 for nom, src, attendu in [
         ("exige sur autre chose qu'une entrée", "reaction f(a) -> b { = a + 1 -> b\n exige b > 0 }\nfonction principal() { sortie(f(1)); }",
@@ -166,6 +166,26 @@ for nom, src, attendu in [
         verifier(f"erreur détectée : {nom}", False, "pas d'erreur")
     except vtx128.VtxError as e:
         verifier(f"erreur détectée : {nom}", attendu in str(e), str(e))
+
+# une réaction qui rend une liaison portant faux le dit avec son type : une logique rend faux, un flottant inconnu (la
+# valeur n'est jamais arrivée) ; un entier ne sait pas le dire, le compilateur demande un sinon
+FAUX = """
+reaction garde(x: flottant) -> r: flottant {
+    = si x > 0.0 alors x × 2.0 -> r
+}
+reaction test(x) -> v: logique {
+    = logique(x > 3) -> c
+    = si x > 0 alors c -> v
+}
+fonction principal() { afficher(garde(2.0)); afficher(garde(-1.0)); afficher(test(5)); afficher(test(1)); afficher(test(0)); }
+"""
+_, t4, _ = jouer(FAUX)
+verifier("un résultat qui porte faux : faux pour une logique, inconnu pour un flottant", t4.split() == ["4.0", "inconnu", "vrai", "faux", "faux"], repr(t4))
+try:
+    vtx128.compiler("reaction g(x) -> r { = si x > 0 alors x -> r }\nfonction principal() { sortie(g(2)); }")
+    verifier("un entier rendu qui peut porter faux est refusé", False, "pas d'erreur")
+except vtx128.VtxError as e:
+    verifier("un entier rendu qui peut porter faux est refusé", "écrivez un sinon" in str(e), str(e))
 
 # 12. les exemples vérifiés : rejoués à chaque compilation
 EXEMPLE = """

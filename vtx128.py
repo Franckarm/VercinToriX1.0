@@ -949,7 +949,7 @@ class Molecule:
         f = "".join(e + indice(compte[e]) for e in "CHNO" if compte[e])
         return f, sum(MASSE_ATOME[e] * k for e, k in compte.items())
 
-    def corps(self, resultat):
+    def corps(self, resultat, rtype="e"):
         """La fonction ordinaire : les atomes dans l'ordre des vagues. Une liaison qui peut porter « faux » (un si sans
         sinon, et ce qui en dépend) a son drapeau __ok ; les atomes qui touchent le monde ne réagissent que s'il est vrai."""
         st = []
@@ -1092,7 +1092,20 @@ class Molecule:
         if resultat is not None:
             if resultat not in self.donne and resultat not in self.params:
                 raise VtxError(f"ligne {self.ligne} : la réaction rend « {resultat} », qu'aucun atome ne donne")
-            st.append(("retour", ("var", resultat, self.ligne), self.ligne))
+            l = self.ligne
+            if resultat in ok:
+                # le résultat peut porter faux (sa branche n'a pas réagi) : la réaction le dit avec son type, une logique
+                # rend faux, un flottant rend inconnu (la valeur n'est jamais arrivée, 2.8) ; un entier ne sait pas le dire
+                absent = {"q": ("qnombre", 1), "f": ("fnombre", 0), "s": ("snombre", 0), "x": ("xnombre", 0)}.get(rtype)
+                if absent is None:
+                    raise VtxError(f"ligne {l} : la réaction rend « {resultat} », qui peut porter faux (sa branche peut ne "
+                                   f"pas réagir) ; un {NOM_TYPE[rtype]} ne sait pas le dire : écrivez un sinon, ou rendez "
+                                   f"une logique (faux) ou un flottant (inconnu)")
+                st.append(("si", ("bin", "!=", ("var", ok[resultat], l), ("nombre", 0)),
+                           [("retour", ("var", resultat, l), l)], None, l))
+                st.append(("retour", absent, l))
+            else:
+                st.append(("retour", ("var", resultat, l), l))
         return st
 
     def souvenir_possible(self, a):
@@ -1511,7 +1524,7 @@ class Analyseur:
                 f.molecule.fonctions_connues = connues
                 f.molecule.fonctions = par_nom
                 f.molecule.souvenir_place = getattr(self, "souvenir_place", SOUVENIRS_DEBUT)
-                f.corps = self.abaisser(f.molecule.corps(f.resultat))
+                f.corps = self.abaisser(f.molecule.corps(f.resultat, f.rtype))
                 self.souvenir_place = f.molecule.souvenir_place
         if getattr(self, "cumul_utilise", False):
             for nom, (et, base, taille, struct) in self.tableaux.items():
@@ -8952,9 +8965,9 @@ def sans_type_texte(x):
 EXEMPLES = True        # rejouer les exemples écrits (« exemple f(2) == 4 ») à chaque compilation
 
 
-def verifier_exemples(src, exemples, prelude, optim):
-    """Les exemples du programme, rejoués sur Lugus émulé : un programme fait des mêmes fonctions, dont le principal
-    calcule chaque exemple (vrai ou faux, puis ce que vaut le côté gauche d'une égalité, pour le message)."""
+def programme_des_exemples(src, prelude, optim):
+    """Le programme qui rejoue les exemples : les mêmes fonctions, dont le principal calcule chaque exemple (sortie 1 ou
+    0, puis il affiche ce que vaut le côté gauche d'une égalité, pour le message). vtxc128 donne les mêmes mots."""
     def principal(a, fs):
         corps = []
         for e, l, _t in a.exemples:
@@ -8965,7 +8978,13 @@ def verifier_exemples(src, exemples, prelude, optim):
         f = Fonction("principal", [], a.abaisser(corps), 1, [], "e")
         f.rangee = False
         return [x for x in fs if x.nom != "principal"] + [f]
-    asm = _compiler(src, prelude, optim, partition=False, remplacer=principal)
+    return _compiler(src, prelude, optim, partition=False, remplacer=principal)
+
+
+def verifier_exemples(src, exemples, prelude, optim):
+    """Les exemples du programme, rejoués sur Lugus émulé (le programme des exemples) ; le premier faux arrête la
+    compilation."""
+    asm = programme_des_exemples(src, prelude, optim)
     cpu = CPU()
     cpu.charger(assembler(asm))
     try:
