@@ -75,6 +75,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_provenance.py")]))
     etapes.append(("la fiabilité de l'ADN : signature, ombre, neutrons (avaries réparées, jamais de travers)",
                    [sys.executable, os.path.join("tests", "test_adn.py")]))
+    etapes.append(("la paillasse d'Ogmios : lue comme le compilateur, gestes rejoués (lier, délier, ajouter, retirer), valeurs",
+                   [sys.executable, os.path.join("tests", "test_paillasse.py")]))
     etapes.append(("Ogmios écrit en vtx : l'atelier sur Lugus (édition rejouée, Ctrl+S, F5 sur une machine fille)",
                    [sys.executable, os.path.join("tests", "test_ogmios.py")]))
     etapes.append(("Fischer : le fil de Hilbert, la signature des molécules, le cube des molécules",

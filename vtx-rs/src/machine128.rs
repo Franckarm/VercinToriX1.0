@@ -145,3 +145,37 @@ pub fn machine_fille(chemin: &std::path::Path, max_pas: u64) -> String {
     }
     t
 }
+
+/// Les valeurs des liaisons, pour la paillasse : le programme compilé avec la provenance et lancé ; pour chaque
+/// (réaction, liaison) sa dernière valeur écrite (avec son unité) et son état de Belnap : 2 vrai (arrivée), 1 faux (sa
+/// branche n'a pas réagi), 0 inconnu (jamais calculée).
+pub fn valeurs_liaisons(source: &str, base: &str, entrees: &[u128])
+                        -> Result<std::collections::HashMap<(String, String), (String, u8)>, String> {
+    use crate::provenance;
+    let (mots, _, _, prov) = compiler128_prov(&nombres128(VTXC128), source, base, COMPLET128, false, true)?;
+    let mut s = Spu128::nouveau();
+    s.dossier = Some(std::path::PathBuf::from(base));
+    s.charger(&mots);
+    s.entree.extend(entrees.iter().copied());
+    let fin = s.executer(2_000_000_000);
+    let reactions = provenance::lire(&prov);
+    let m = provenance::cases(&reactions, |a| s.lire((3u128 << 62) | a as u128));
+    let lire = |a: u64| *m.get(&a).unwrap_or(&0);
+    let mut vals = std::collections::HashMap::new();
+    for r in &reactions {
+        for (i, (nom, b, t)) in r.noms.iter().enumerate() {
+            let (v, nb, la) = (lire(*b), lire(b + 1), lire(b + 2));
+            let u = r.unites.get(i).cloned().unwrap_or_default();
+            let texte = if u.is_empty() { provenance::valeur(v, *t) } else { format!("{} {}", provenance::valeur(v, *t), u) };
+            let est_param = !r.atomes.iter().any(|a| a.sorties.iter().any(|s| s == nom));
+            let etat = if est_param { if la != 0 { 2 } else { 0 } } else if nb == 0 { 0 } else if la == 0 { 1 } else { 2 };
+            vals.insert((r.nom.clone(), nom.clone()), (texte, etat));
+        }
+    }
+    if let Err(e) = fin {
+        if vals.is_empty() {
+            return Err(e);
+        }
+    }
+    Ok(vals)
+}

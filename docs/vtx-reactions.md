@@ -576,3 +576,36 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     le pas à pas, la vue du cube, la provenance (Ctrl+P) et l'ADN dans Ogmios en vtx ; ne redessiner que ce qui
     change ; prévenir avant de fermer un fichier modifié.
 
+- **La paillasse au centre d'Ogmios** (1er novembre, décision de l'utilisateur : Ogmios, c'est `atelier.exe`, un programme
+  fiable et facile ; la version écrite en vtx passe au second plan ; la paillasse vient au centre, dans les deux sens
+  avec le texte) :
+  - **La fenêtre** : le texte à gauche, la paillasse au centre (la plus grande), le cube à droite ; en bas, les onglets
+    Sortie, Terminal, Pas à pas et Arbre (l'arbre des liaisons) et, plus petite à droite, la fenêtre des explications.
+    Un programme neuf s'ouvre sur Lugus, avec une réaction.
+  - **Ce qu'elle montre** : la réaction du curseur (un onglet par réaction) ; chaque atome est une case avec son élément
+    (H blanc, O rouge, N bleu, C gris, d'après la valence), son nom, ce qu'il fait, ses entrées à gauche et ses sorties à
+    droite ; les liaisons sont des courbes d'une sortie vers les entrées qui la lisent ; les cases sont rangées en
+    vagues, de gauche à droite ; les entrées de la réaction à gauche, ce qu'elle rend à droite ; les contrats et les
+    erreurs en bas.
+  - **Dans les deux sens** :
+    - le texte change : la paillasse est relue (sans compiler, d'après les lignes de la réaction ; ce qui n'est pas encore
+      juste reste visible : une entrée libre `_`, un cycle) ; le curseur dans le texte choisit la réaction et l'atome de
+      sa ligne ;
+    - sur la paillasse : tirer une sortie sur une case remplit son entrée libre `_` (ou remplace l'entrée visée) ; tirer
+      une entrée vers le vide la rend libre ; double clic dans le vide : `= _ -> l1` s'écrit dans la réaction ; Suppr
+      retire l'atome choisi ; glisser une case la déplace (sa place est gardée dans `PROG.paillasse`) ; un clic sur une
+      case montre sa ligne dans le texte. Chaque geste réécrit seulement la ligne touchée : Ctrl+Z dans le texte le
+      défait.
+    - **Ctrl+P** (Faire réagir) : le programme est compilé avec la provenance et lancé ; chaque liaison porte alors sa
+      valeur et son état de Belnap (vert : arrivée, rouge : sa branche n'a pas réagi, gris pointillé : jamais calculée).
+      Depuis la paillasse, Ctrl+P remonte la liaison de l'atome choisi.
+  - **La fenêtre des explications** dit ce qu'est l'atome choisi (élément, valence, ce qu'il lit et donne, sa vague, ce
+    que fait son genre, sa valeur), ou, sans choix, comment se servir de la paillasse ; puis ce qu'il faut corriger.
+  - **Fiable** : le module (`vtx-rs/src/paillasse.rs`) ne dépend pas de Windows ; il dessine dans une image et rend les
+    textes, que l'atelier écrit avec sa police. `vtx paillasse PROG.vtx [--png F] [--gestes F] [--valeurs] [--ecrire]`
+    fait la même chose sans écran ; `tests/test_paillasse.py` vérifie que la paillasse lit les réactions comme le
+    compilateur (les exemples de Lugus et 30 réactions au hasard : mêmes vagues, mêmes entrées, mêmes sorties, l'ordre
+    des ponts et des effets compris), rejoue les gestes à la souris et lance le texte réécrit (r(3) = 12).
+  - **Ce qui manque** : le zoom ; plusieurs atomes choisis à la fois ; renommer une liaison depuis la paillasse ; les
+    valeurs pendant le pas à pas.
+

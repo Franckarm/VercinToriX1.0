@@ -58,6 +58,12 @@ struct Msg {
 }
 #[repr(C)]
 #[derive(Default)]
+struct Taille {
+    cx: i32,
+    cy: i32,
+}
+#[repr(C)]
+#[derive(Default)]
 struct Rect {
     left: i32,
     top: i32,
@@ -175,6 +181,7 @@ extern "system" {
 }
 #[link(name = "gdi32")]
 extern "system" {
+    fn GetTextExtentPoint32W(dc: H, t: *const u16, n: i32, taille: *mut Taille) -> i32;
     fn CreateFontW(h: i32, l: i32, esc: i32, orient: i32, graisse: i32, italique: u32, souligne: u32, barre: u32,
                    jeu: u32, precision: u32, decoupe: u32, qualite: u32, famille: u32, nom: *const u16) -> H;
     fn StretchDIBits(dc: H, xd: i32, yd: i32, ld: i32, hd: i32, xs: i32, ys: i32, ls: i32, hs: i32, bits: *const c_void,
@@ -316,6 +323,7 @@ const C_ONGLET_PAS: u16 = 1315;
 const C_APROPOS: u16 = 1401;
 const C_GIF: u16 = 1316;
 const C_PNG: u16 = 1317;
+const C_ONGLET_ARBRE: u16 = 1318;
 
 const FOND: u32 = 0x001E1E1E; // COLORREF : 0x00BBGGRR
 const TEXTE: u32 = 0x00D4D4D4;
@@ -355,7 +363,7 @@ struct Atelier {
     term_entree: H,
     // comme VS Code : l'onglet « Sortie » (le compte rendu de chaque exécution) et l'onglet « Terminal » (interactif)
     journal: H,
-    onglets: [H; 3],
+    onglets: [H; 4],
     // le pas à pas, dans la fenêtre même : la machine arrêtée entre deux lignes, les points d'arrêt, le panneau
     pas: Option<Pas>,
     points: HashSet<usize>,
@@ -383,6 +391,11 @@ struct Atelier {
     quart: u32,
     decal: (i32, i32),
     glisse: Option<(i32, i32)>,
+    // la paillasse (au centre) : la surface des réactions, dans les deux sens avec le texte ; et la fenêtre des
+    // explications (en bas à droite)
+    paillasse: H,
+    explications: H,
+    pail: super::paillasse::Paillasse,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -410,6 +423,9 @@ struct Fini {
 }
 static FINI: Mutex<Option<Fini>> = Mutex::new(None);
 static POURQUOI: Mutex<Option<String>> = Mutex::new(None);
+// les valeurs des liaisons après Ctrl+P, pour la paillasse : (réaction, liaison) -> (valeur écrite, état de Belnap)
+type ValeursP = std::collections::HashMap<(String, String), (String, u8)>;
+static VALEURS_P: Mutex<Option<ValeursP>> = Mutex::new(None);
 
 // ------------------------------------------------------------------------------------------------ texte des contrôles
 fn lire_texte(h: H) -> String {
@@ -564,6 +580,12 @@ fn charger(chemin: &Path) {
     }
     at.fichier = Some(chemin.to_path_buf());
     effacer_resultats();
+    // les places des cases choisies à la main (PROG.paillasse), puis la paillasse relue
+    at.pail = super::paillasse::Paillasse::nouvelle();
+    if let Ok(t) = std::fs::read_to_string(chemin.with_extension("paillasse")) {
+        at.pail.lire_positions(&t);
+    }
+    relire_paillasse();
     // la machine : celle que le fichier nomme dans ses premières lignes (« // machine : spu-32 », « spu-64 » ou
     // « lugus ») ; sinon les exemples de la machine 32 bits (dossier « exemples ») s'ouvrent sur elle, ceux de Lugus
     // (dossier « exemples128 ») sur Lugus, tout le reste sur la SPU-64. Ctrl+M change toujours de machine.
@@ -618,6 +640,9 @@ fn enregistrer(sous: bool) -> bool {
     }
     match std::fs::write(&f, t) {
         Ok(_) => {
+            if !at.pail.positions.is_empty() {
+                let _ = std::fs::write(f.with_extension("paillasse"), at.pail.positions_texte());
+            }
             unsafe {
                 SendMessageW(at.source, EM_SETMODIFY, 0, 0);
             }
@@ -655,7 +680,8 @@ fn peut_quitter() -> bool {
     }
 }
 
-const MODELE: &str = "fonction principal() {\n    afficher(\"Bonjour, Vercintorix !\");\n}\n";
+// un programme neuf : sur Lugus (la machine de vtx), une réaction, que la paillasse montre tout de suite
+const MODELE: &str = "// machine : lugus\nreaction principal() {\n    = \"Bonjour, Vercintorix !\"    -> message\n    = afficher(message)\n}\n";
 
 // ------------------------------------------------------------------------------------------------ lancer
 fn lancer() {
@@ -686,7 +712,13 @@ fn pourquoi_atelier() {
     while f < u.len() && lettre(u[f]) {
         f += 1;
     }
-    let mot = String::from_utf16_lossy(&u[d..f]);
+    let mut mot = String::from_utf16_lossy(&u[d..f]);
+    // depuis la paillasse : la liaison que donne l'atome choisi
+    if unsafe { GetFocus() } == at.paillasse {
+        if let Some(s) = at.pail.choisi.and_then(|k| at.pail.reaction().and_then(|r| r.atomes.get(k)).and_then(|a| a.sorties.first().cloned())) {
+            mot = s;
+        }
+    }
     let source = texte.replace("\r\n", "\n");
     let base = at.fichier.as_ref().map(|f| dossier_de(&f.to_string_lossy())).unwrap_or_else(|| std::env::temp_dir().to_string_lossy().into_owned());
     let entrees: Vec<u128> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u128>().ok()).collect();
@@ -714,6 +746,19 @@ fn pourquoi_atelier() {
                 } else {
                     let m = provenance::cases(&reactions, |a| s.lire((3u128 << 62) | a as u128));
                     let lire = |a: u64| *m.get(&a).unwrap_or(&0);
+                    // pour la paillasse : la dernière valeur de chaque liaison et son état (arrivée, porte faux, jamais calculée)
+                    let mut vals = ValeursP::new();
+                    for r in &reactions {
+                        for (i, (nom, b, t)) in r.noms.iter().enumerate() {
+                            let (v, nb, la) = (lire(*b), lire(b + 1), lire(b + 2));
+                            let u = r.unites.get(i).cloned().unwrap_or_default();
+                            let texte = if u.is_empty() { provenance::valeur(v, *t) } else { format!("{} {}", provenance::valeur(v, *t), u) };
+                            let est_param = !r.atomes.iter().any(|a| a.sorties.iter().any(|s| s == nom));
+                            let etat = if est_param { if la != 0 { 2 } else { 0 } } else if nb == 0 { 0 } else if la == 0 { 1 } else { 2 };
+                            vals.insert((r.nom.clone(), nom.clone()), (texte, etat));
+                        }
+                    }
+                    *VALEURS_P.lock().unwrap() = Some(vals);
                     let quoi = if mot.is_empty() || !reactions.iter().any(|r| r.noms.iter().any(|n| n.0 == mot)) { None } else { Some(mot.as_str()) };
                     if quoi.is_none() && !mot.is_empty() {
                         t.push_str(&format!("« {} » n'est pas une liaison d'une réaction : voici ce que rendent les réactions\n", mot));
@@ -1280,7 +1325,7 @@ fn vider_sortie_programme() {
     ajouter_texte(at.sortie, &t);
 }
 
-/// Montre l'onglet « Sortie » (0), « Terminal » (1) ou « Pas à pas » (2).
+/// Montre l'onglet « Sortie » (0), « Terminal » (1), « Pas à pas » (2) ou « Arbre » (3, l'arbre des liaisons).
 fn montrer_onglet(i: usize) {
     let at = a();
     at.onglet = i;
@@ -1289,10 +1334,12 @@ fn montrer_onglet(i: usize) {
         ShowWindow(at.sortie, if i == 1 { 5 } else { 0 });
         ShowWindow(at.term_entree, if i == 1 { 5 } else { 0 });
         ShowWindow(at.pas_texte, if i == 2 { 5 } else { 0 });
+        ShowWindow(at.arbre, if i == 3 { 5 } else { 0 });
         // l'onglet actif est écrit entre crochets
         SetWindowTextW(at.onglets[0], w(if i == 0 { "[ Sortie ]" } else { "Sortie" }).as_ptr());
         SetWindowTextW(at.onglets[1], w(if i == 1 { "[ Terminal ]" } else { "Terminal" }).as_ptr());
         SetWindowTextW(at.onglets[2], w(if i == 2 { "[ Pas à pas ]" } else { "Pas à pas" }).as_ptr());
+        SetWindowTextW(at.onglets[3], w(if i == 3 { "[ Arbre ]" } else { "Arbre" }).as_ptr());
         if i == 1 {
             SetFocus(at.term_entree);
         }
@@ -2285,7 +2332,194 @@ unsafe extern "system" fn proc_source(h: H, m: u32, wp: usize, lp: isize) -> isi
             return 0;
         }
     }
-    CallWindowProcW(ancien, h, m, wp, lp)
+    let r = CallWindowProcW(ancien, h, m, wp, lp);
+    if m == WM_KEYUP || m == WM_LBUTTONUP {
+        // le curseur du texte : la paillasse montre la réaction et l'atome de sa ligne
+        let n = SendMessageW(h, EM_LINEFROMCHAR, usize::MAX, 0) as usize;
+        if a().pail.choisir_ligne(n) {
+            InvalidateRect(a().paillasse, std::ptr::null(), 0);
+            maj_explications();
+        }
+    }
+    r
+}
+
+// ------------------------------------------------------------------------------------------------ la paillasse
+/// le texte a changé : la paillasse le relit (les valeurs d'une exécution précédente ne valent plus)
+fn relire_paillasse() {
+    let at = a();
+    if at.paillasse.is_null() {
+        return;
+    }
+    let t = lire_texte(at.source).replace("\r\n", "\n");
+    at.pail.valeurs.clear();
+    at.pail.lire(&t);
+    unsafe {
+        InvalidateRect(at.paillasse, std::ptr::null(), 0);
+    }
+    maj_explications();
+}
+
+fn maj_explications() {
+    let at = a();
+    if !at.explications.is_null() {
+        ecrire_texte(at.explications, &at.pail.explication());
+    }
+}
+
+/// la ligne n du texte, choisie (sélectionnée) et montrée dans l'éditeur
+fn choisir_ligne_texte(n: usize, choisir: bool) {
+    let at = a();
+    unsafe {
+        let d = SendMessageW(at.source, EM_LINEINDEX, n, 0);
+        if d < 0 {
+            return;
+        }
+        let f = if choisir {
+            let suivante = SendMessageW(at.source, EM_LINEINDEX, n + 1, 0);
+            if suivante > d { suivante - 2 } else { GetWindowTextLengthW(at.source) as isize }
+        } else {
+            d
+        };
+        SendMessageW(at.source, EM_SETSEL, d as usize, f.max(d));
+        SendMessageW(at.source, EM_SCROLLCARET, 0, 0);
+    }
+}
+
+/// un geste de la paillasse a réécrit le texte : seul le morceau qui change est remplacé dans l'éditeur (Ctrl+Z le
+/// défait), puis la ligne touchée est montrée
+fn remplacer_texte(nouveau: &str, ligne: usize) {
+    let at = a();
+    let ancien: Vec<u16> = lire_texte(at.source).encode_utf16().collect();
+    let neuf: Vec<u16> = nouveau.replace("\r\n", "\n").replace('\n', "\r\n").encode_utf16().collect();
+    let mut d = 0;
+    while d < ancien.len() && d < neuf.len() && ancien[d] == neuf[d] {
+        d += 1;
+    }
+    let mut fa = ancien.len();
+    let mut fn_ = neuf.len();
+    while fa > d && fn_ > d && ancien[fa - 1] == neuf[fn_ - 1] {
+        fa -= 1;
+        fn_ -= 1;
+    }
+    let mut morceau: Vec<u16> = neuf[d..fn_].to_vec();
+    morceau.push(0);
+    unsafe {
+        SendMessageW(at.source, EM_SETSEL, d, fa as isize);
+        SendMessageW(at.source, EM_REPLACESEL, 1, morceau.as_ptr() as isize);
+    }
+    titre();
+    choisir_ligne_texte(ligne, true);
+}
+
+fn reponse_paillasse(r: super::paillasse::Reponse) {
+    use super::paillasse::Reponse;
+    let at = a();
+    match r {
+        Reponse::Texte { source, ligne } => {
+            remplacer_texte(&source, ligne);
+            etat("paillasse : le texte est réécrit (Ctrl+Z dans le texte le défait)");
+        }
+        Reponse::Aller(l) => choisir_ligne_texte(l, true),
+        Reponse::Message(m) => etat(&format!("paillasse : {}", m)),
+        Reponse::Rien => return,
+        Reponse::Redessiner => {}
+    }
+    unsafe {
+        InvalidateRect(at.paillasse, std::ptr::null(), 0);
+    }
+    maj_explications();
+}
+
+fn couleur_bgr(c: u32) -> u32 {
+    ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF)
+}
+
+unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    use super::paillasse::Souris;
+    let at = a();
+    let (x, y) = ((lp & 0xFFFF) as i16 as i32, ((lp >> 16) & 0xFFFF) as i16 as i32);
+    let texte = || lire_texte(a().source).replace("\r\n", "\n");
+    match m {
+        WM_ERASEBKGND => 1,
+        WM_PAINT => {
+            let mut ps: PaintStruct = std::mem::zeroed();
+            let dc = BeginPaint(h, &mut ps);
+            let mut r = Rect::default();
+            GetClientRect(h, &mut r);
+            let (l, ht) = ((r.right - r.left).max(1), (r.bottom - r.top).max(1));
+            let mdc = CreateCompatibleDC(dc);
+            let bmp = CreateCompatibleBitmap(dc, l, ht);
+            let ancien_bmp = SelectObject(mdc, bmp);
+            let ancienne_police = SelectObject(mdc, at.police);
+            let mut t = Taille::default();
+            let mm = w("M");
+            GetTextExtentPoint32W(mdc, mm.as_ptr(), 1, &mut t);
+            at.pail.car_l = t.cx.max(4);
+            at.pail.car_h = t.cy.max(8);
+            at.pail.echelle = at.echelle;
+            let (im, textes) = at.pail.dessiner(l as usize, ht as usize);
+            let info = BitmapInfo {
+                bmiHeader: BitmapInfoHeader { biSize: std::mem::size_of::<BitmapInfoHeader>() as u32, biWidth: l,
+                    biHeight: -ht, biPlanes: 1, biBitCount: 32, biCompression: 0, biSizeImage: 0,
+                    biXPelsPerMeter: 0, biYPelsPerMeter: 0, biClrUsed: 0, biClrImportant: 0 },
+                bmiColors: [0],
+            };
+            StretchDIBits(mdc, 0, 0, l, ht, 0, 0, l, ht, im.px.as_ptr() as *const c_void, &info, 0, SRCCOPY);
+            SetBkMode(mdc, 1);
+            for tx in &textes {
+                SetTextColor(mdc, couleur_bgr(tx.couleur));
+                let s = w(&tx.texte);
+                TextOutW(mdc, tx.x, tx.y, s.as_ptr(), s.len() as i32 - 1);
+            }
+            BitBlt(dc, 0, 0, l, ht, mdc, 0, 0, SRCCOPY);
+            SelectObject(mdc, ancienne_police);
+            SelectObject(mdc, ancien_bmp);
+            DeleteObject(bmp);
+            DeleteDC(mdc);
+            EndPaint(h, &ps);
+            0
+        }
+        WM_LBUTTONDOWN => {
+            SetFocus(h);
+            SetCapture(h);
+            let r = at.pail.souris(Souris::Bas, x, y, &texte());
+            reponse_paillasse(r);
+            0
+        }
+        WM_MOUSEMOVE => {
+            if GetCapture() == h {
+                let r = at.pail.souris(Souris::Bouge, x, y, &texte());
+                reponse_paillasse(r);
+            }
+            0
+        }
+        WM_LBUTTONUP => {
+            if GetCapture() == h {
+                ReleaseCapture();
+            }
+            let r = at.pail.souris(Souris::Haut, x, y, &texte());
+            reponse_paillasse(r);
+            0
+        }
+        WM_LBUTTONDBLCLK => {
+            let r = at.pail.souris(Souris::Double, x, y, &texte());
+            reponse_paillasse(r);
+            0
+        }
+        WM_KEYDOWN => {
+            let r = at.pail.touche(wp as u32, &texte());
+            reponse_paillasse(r);
+            0
+        }
+        WM_MOUSEWHEEL => {
+            let cran = ((wp >> 16) & 0xFFFF) as i16 as i32 / 120;
+            at.pail.decal.1 += cran * (60.0 * at.echelle) as i32;
+            InvalidateRect(h, std::ptr::null(), 0);
+            0
+        }
+        _ => DefWindowProcW(h, m, wp, lp),
+    }
 }
 
 // ------------------------------------------------------------------------------------------------ la fenêtre
@@ -2311,7 +2545,13 @@ fn creer_controles(fen: H) {
         at.pas_texte = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
             WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
             0, 0, 10, 10, fen, 19 as H, at.inst, std::ptr::null_mut());
-        for (i, (t, c)) in [("Sortie", C_ONGLET_SORTIE), ("Terminal", C_ONGLET_TERMINAL), ("Pas à pas", C_ONGLET_PAS)].iter().enumerate() {
+        at.paillasse = CreateWindowExW(WS_EX_CLIENTEDGE, w("VtxPaillasse").as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE,
+            0, 0, 10, 10, fen, 20 as H, at.inst, std::ptr::null_mut());
+        at.explications = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
+            WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,
+            0, 0, 10, 10, fen, 21 as H, at.inst, std::ptr::null_mut());
+        for (i, (t, c)) in [("Sortie", C_ONGLET_SORTIE), ("Terminal", C_ONGLET_TERMINAL), ("Pas à pas", C_ONGLET_PAS),
+                            ("Arbre", C_ONGLET_ARBRE)].iter().enumerate() {
             at.onglets[i] = CreateWindowExW(0, bouton.as_ptr(), w(t).as_ptr(), WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0, 0, 10, 10, fen,
                                             *c as usize as H, at.inst, std::ptr::null_mut());
         }
@@ -2345,6 +2585,7 @@ fn creer_controles(fen: H) {
         for h in [at.source, at.sortie, at.entrees, at.term_entree, at.journal, at.pas_texte] {
             SendMessageW(h, WM_SETFONT, at.police as usize, 1);
         }
+        SendMessageW(at.explications, WM_SETFONT, at.police_ui as usize, 1);
         ecrire_texte(at.pas_texte, "pas à pas : F7 avance d'une ligne (la machine s'arrête au début de chaque ligne du programme),
             F8 aussi mais sans entrer dans les fonctions, F5 continue jusqu'au prochain point d'arrêt (F9 en pose un
             sur la ligne du curseur), Échap arrête. Ici : les registres et le cadre de la fonction, en décimal,
@@ -2410,30 +2651,34 @@ fn disposer(fen: H) {
         MoveWindow(at.boutons[10].0, x, marge, px(140.0), barre - 2 * marge, 1);
         x += px(140.0) + marge;
         MoveWindow(at.boutons[11].0, x, marge, px(200.0), barre - 2 * marge, 1);
-        // l'éditeur à gauche, le cube et la sortie à droite
-        let gauche = (l as f32 * 0.5) as i32;
+        // en haut : le texte à gauche, la paillasse au centre (la plus grande), le cube à droite ; en bas : les onglets
+        // (Sortie, Terminal, Pas à pas, Arbre) et, plus petite à droite, la fenêtre des explications
         let haut_util = h - barre - bas;
+        let hb = (haut_util as f32 * 0.30) as i32;
+        let hh = haut_util - hb - marge;
+        let gauche = (l as f32 * 0.27) as i32;
+        let droite = (l as f32 * 0.74) as i32;
         let gouttiere = px(44.0);
-        MoveWindow(at.lignes, 0, barre, gouttiere, haut_util, 1);
-        MoveWindow(at.source, gouttiere, barre, gauche - gouttiere, haut_util, 1);
-        let hc = (haut_util as f32 * 0.6) as i32;
-        MoveWindow(at.cube, gauche + marge, barre, l - gauche - marge, hc, 1);
-        // sous le cube : le terminal (et sa ligne) à gauche, l'arbre des liaisons à droite
-        let yb = barre + hc + marge;
-        let hb = haut_util - hc - marge;
-        let lt = (l - gauche - marge) * 5 / 11;
+        MoveWindow(at.lignes, 0, barre, gouttiere, hh, 1);
+        MoveWindow(at.source, gouttiere, barre, gauche - gouttiere, hh, 1);
+        MoveWindow(at.paillasse, gauche + marge, barre, droite - gauche - 2 * marge, hh, 1);
+        MoveWindow(at.cube, droite, barre, l - droite, hh, 1);
+        let yb = barre + hh + marge;
+        let lt = droite - marge;
         let hligne = px(26.0);
         let honglet = px(26.0);
-        MoveWindow(at.onglets[0], gauche + marge, yb, px(90.0), honglet, 1);
-        MoveWindow(at.onglets[1], gauche + marge + px(92.0), yb, px(90.0), honglet, 1);
-        MoveWindow(at.onglets[2], gauche + marge + px(184.0), yb, px(100.0), honglet, 1);
+        for (i, lo) in [90.0, 90.0, 100.0, 80.0].iter().enumerate() {
+            let xo: f32 = [0.0, 92.0, 184.0, 286.0][i];
+            MoveWindow(at.onglets[i], marge + px(xo), yb, px(*lo), honglet, 1);
+        }
         let yt = yb + honglet + px(2.0);
         let ht = hb - honglet - px(2.0);
-        MoveWindow(at.journal, gauche + marge, yt, lt, ht, 1);
-        MoveWindow(at.pas_texte, gauche + marge, yt, lt, ht, 1);
-        MoveWindow(at.sortie, gauche + marge, yt, lt, ht - hligne, 1);
-        MoveWindow(at.term_entree, gauche + marge, yt + ht - hligne, lt, hligne, 1);
-        MoveWindow(at.arbre, gauche + marge + lt + marge, yb, l - gauche - marge - lt - marge, hb, 1);
+        MoveWindow(at.journal, marge, yt, lt - marge, ht, 1);
+        MoveWindow(at.pas_texte, marge, yt, lt - marge, ht, 1);
+        MoveWindow(at.sortie, marge, yt, lt - marge, ht - hligne, 1);
+        MoveWindow(at.term_entree, marge, yt + ht - hligne, lt - marge, hligne, 1);
+        MoveWindow(at.arbre, marge, yt, lt - marge, ht, 1);
+        MoveWindow(at.explications, droite, yb, l - droite, hb, 1);
         MoveWindow(at.etat, 0, h - bas, l, bas, 1);
     }
 }
@@ -2519,6 +2764,9 @@ fn commande(c: u16) {
                     ecrire_texte(at.source, MODELE);
                     SendMessageW(at.source, EM_SETMODIFY, 0, 0);
                     effacer_resultats();
+                    at.pail = super::paillasse::Paillasse::nouvelle();
+                    relire_paillasse();
+                    choisir_machine(128);
                     titre();
                 }
             }
@@ -2595,6 +2843,7 @@ fn commande(c: u16) {
             C_ONGLET_SORTIE => montrer_onglet(0),
             C_ONGLET_TERMINAL => montrer_onglet(1),
             C_ONGLET_PAS => montrer_onglet(2),
+            C_ONGLET_ARBRE => montrer_onglet(3),
             C_ARRETER if at.pas.is_some() => arreter_pas("pas à pas arrêté : retour à l'édition"),
             C_ARRETER => {
                 if at.en_cours {
@@ -2683,12 +2932,13 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
             if lp as H == a().source {
                 if notif == EN_CHANGE {
                     titre();
+                    relire_paillasse();
                     arreter_pas("le texte a changé : pas à pas arrêté");
                 }
                 return 0;
             }
             if lp as H == a().entrees || lp as H == a().sortie || lp as H == a().term_entree || lp as H == a().journal
-                || lp as H == a().pas_texte {
+                || lp as H == a().pas_texte || lp as H == a().explications {
                 return 0;
             }
             commande(id);
@@ -2697,7 +2947,8 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
         WM_CTLCOLOREDIT | WM_CTLCOLORSTATIC => {
             // l'éditeur et la sortie en sombre ; le reste garde les couleurs de Windows
             let at = a();
-            if lp as H == at.source || lp as H == at.sortie || lp as H == at.term_entree || lp as H == at.journal || lp as H == at.pas_texte {
+            if lp as H == at.source || lp as H == at.sortie || lp as H == at.term_entree || lp as H == at.journal || lp as H == at.pas_texte
+                || lp as H == at.explications {
                 SetTextColor(wp as H, TEXTE);
                 SetBkColor(wp as H, FOND);
                 return at.pinceau as isize;
@@ -2713,6 +2964,11 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
             at.en_cours = false;
             if let Some(t) = POURQUOI.lock().unwrap().take() {
                 ecrire_texte(at.journal, &t);
+            }
+            if let Some(v) = VALEURS_P.lock().unwrap().take() {
+                at.pail.valeurs = v;
+                InvalidateRect(at.paillasse, std::ptr::null(), 0);
+                maj_explications();
             }
             montrer_onglet(0);
             etat("la provenance : chaque liaison remontée jusqu'aux constantes et aux entrées");
@@ -2756,12 +3012,13 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             cube: std::ptr::null_mut(), etat: std::ptr::null_mut(), boutons: Vec::new(), etiquettes: Vec::new(),
             police: std::ptr::null_mut(), police_ui: std::ptr::null_mut(), pinceau: std::ptr::null_mut(), echelle: 1.0,
             fichier: None, mem: None, etage: 1, iso: true, vue_quits: false, largeur: 64, base: 0, zoom: 1.0, en_cours: false, ancien_proc_source: 0,
-            term_entree: std::ptr::null_mut(), journal: std::ptr::null_mut(), onglets: [std::ptr::null_mut(); 3], onglet: 1,
+            term_entree: std::ptr::null_mut(), journal: std::ptr::null_mut(), onglets: [std::ptr::null_mut(); 4], onglet: 1,
             pas: None, points: HashSet::new(), pas_texte: std::ptr::null_mut(),
             ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),
             ouverts: HashSet::new(), defile: 0, choisi: None, lignes: std::ptr::null_mut(), vue_lignes: (-1, -1), ligne_erreur: None,
             dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(), machine: 64, vue64: None,
             quart: 0, decal: (0, 0), glisse: None,
+            paillasse: std::ptr::null_mut(), explications: std::ptr::null_mut(), pail: super::paillasse::Paillasse::nouvelle(),
         });
         ATELIER = Box::into_raw(boite);
         let curseur = LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16);
@@ -2801,6 +3058,13 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             lpszMenuName: std::ptr::null(), lpszClassName: nom_cube.as_ptr(), hIconSm: std::ptr::null_mut(),
         };
         RegisterClassExW(&classe_cube);
+        let nom_paillasse = w("VtxPaillasse");
+        let classe_paillasse = WndClassEx {
+            cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0xB, lpfnWndProc: proc_paillasse, cbClsExtra: 0, cbWndExtra: 0,
+            hInstance: inst, hIcon: std::ptr::null_mut(), hCursor: curseur, hbrBackground: std::ptr::null_mut(),
+            lpszMenuName: std::ptr::null(), lpszClassName: nom_paillasse.as_ptr(), hIconSm: std::ptr::null_mut(),
+        };
+        RegisterClassExW(&classe_paillasse);
         let fen = CreateWindowExW(0, nom_fen.as_ptr(), w("Ogmios").as_ptr(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,
                                   CW_USEDEFAULT, CW_USEDEFAULT, 1400, 860, std::ptr::null_mut(), std::ptr::null_mut(), inst,
                                   std::ptr::null_mut());
@@ -2812,6 +3076,8 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             None => {
                 ecrire_texte(a().source, MODELE);
                 SendMessageW(a().source, EM_SETMODIFY, 0, 0);
+                relire_paillasse();
+                choisir_machine(128);
                 titre();
                 etat("F5 lance le programme · Fichier › Ouvrir pour un exemple · le cube montre la mémoire après l'exécution");
             }

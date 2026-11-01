@@ -50,6 +50,8 @@ mod pas128;
 mod adn;
 #[allow(dead_code)]
 mod provenance;
+#[allow(dead_code)]
+mod paillasse;
 #[cfg(any(windows, feature = "verif_fenetre"))]
 mod fenetre;
 
@@ -1060,6 +1062,7 @@ fn main() {
         Some("toile") | Some("gobatix") => toile::lancer(&args[2..], 32),
         Some("toile64") | Some("gobatix64") => toile::lancer(&args[2..], 64),
         Some("toile128") => toile::lancer(&args[2..], 128),
+        Some("paillasse") => paillasse::commande(&args[2..]),
         Some("quits") => cube::image_quits(&args[2..]),
         Some("icone") if args.len() > 2 => {
             let f = &args[2];

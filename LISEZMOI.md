@@ -36,8 +36,10 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
   - `lugus PROG.adn` le vérifie, le répare si besoin, puis l'épissage retire les témoins et l'ARN (les mots seuls) est
     lancé ;
   - mesuré : 6 % de place, réparé jusqu'à huit mots abîmés de suite, jamais réparé de travers.
-- **L'atelier Ogmios** (`atelier.exe`) sur les trois machines (Ctrl+M) : édition, F5, pas à pas, vue du cube, la toile.
-  Sur Lugus, F5 range aussi l'ADN, et Ctrl+P donne la provenance.
+- **L'atelier Ogmios** (`atelier.exe`) : le texte à gauche, **la paillasse au centre** (les réactions dessinées en
+  atomes et liaisons, rangées en vagues, dans les deux sens avec le texte : tirer une liaison, ajouter ou retirer un
+  atome réécrit la ligne), le cube à droite ; en bas, Sortie, Terminal, Pas à pas, Arbre et la fenêtre des explications.
+  Sur Lugus, F5 range aussi l'ADN, et Ctrl+P fait réagir : chaque liaison montre sa valeur. Les trois machines (Ctrl+M).
 - **Ogmios écrit en vtx** (`ogmios/ogmios.vtx`, premier temps) : l'atelier dans le langage, qui tourne sur Lugus.
   `vtx toile128 ogmios/ogmios.vtx --fichier PROG.vtx` : édition en couleurs, Ctrl+S, F5 (le programme compilé par vtxc128
   et lancé sur une machine fille), Ctrl+Q.
@@ -66,6 +68,7 @@ lugus exemples128/panel.vtx                         # une réaction : 42
 lugus pourquoi exemples128/panel.vtx r2             # d'où vient ce 42
 lugus ranger exemples128/chute.vtx                  # l'ADN : chute.adn
 lugus exemples128/chute.adn                         # vérifié, réparé si besoin, lancé
+vtx paillasse exemples128/chute.vtx --valeurs --png chute.png   # la paillasse sans écran, avec les valeurs
 vtx toile128 ogmios/ogmios.vtx --fichier exemples128/chute.vtx   # Ogmios écrit en vtx (F5, Ctrl+S, Ctrl+Q)
 ```
 
