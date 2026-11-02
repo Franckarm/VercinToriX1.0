@@ -4,6 +4,8 @@ use crate::spu128::Spu128;
 
 /// vtxc128 compilé (optimisé, sans prélude) : ses mots de 128 bits, en décimal séparés par des virgules.
 pub const VTXC128: &str = include_str!("../vtxc128.mots");
+/// le lecteur d'ADN écrit en vtx (chimie/adn.vtx), compilé par vtxc128 : `lugus compiler ../chimie/adn.vtx lecteur_adn.mots`
+pub const LECTEUR_ADN: &str = include_str!("../lecteur_adn.mots");
 
 pub fn nombres128(s: &str) -> Vec<u128> {
     s.split(|c: char| c == ',' || c.is_whitespace()).filter(|x| !x.is_empty()).map(|x| x.parse::<u128>().unwrap_or(0)).collect()

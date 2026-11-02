@@ -75,8 +75,10 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_provenance.py")]))
     etapes.append(("la fiabilité de l'ADN : signature, ombre, neutrons (avaries réparées, jamais de travers)",
                    [sys.executable, os.path.join("tests", "test_adn.py")]))
-    etapes.append(("l'ADN vivant : patrouille, isotopes relus à l'entrée et à la sortie, apoptose, ARN (coiffe, queue)",
+    etapes.append(("l'ADN vivant : patrouille, isotopes relus à l'entrée et à la sortie, apoptose, ARN (coiffe), la patrouille éteinte par défaut",
                    [sys.executable, os.path.join("tests", "test_patrouille.py")]))
+    etapes.append(("le lecteur d'ADN écrit en vtx (chimie/adn.vtx, lugus relire) : lit comme Python, avarie pour avarie",
+                   [sys.executable, os.path.join("tests", "test_adn_vtx.py")]))
     etapes.append(("la paillasse d'Ogmios : lue comme le compilateur, gestes rejoués (lier, délier, ajouter, retirer), valeurs",
                    [sys.executable, os.path.join("tests", "test_paillasse.py")]))
     etapes.append(("Ogmios écrit en vtx : l'atelier sur Lugus (édition rejouée, Ctrl+S, F5 sur une machine fille)",

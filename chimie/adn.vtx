@@ -1,0 +1,1221 @@
+// machine : lugus
+// Le lecteur d'ADN écrit en vtx : la même lecture que chimie/adn.py et vtx-rs/src/adn.rs (docs/vtx-reactions.md,
+// section 9), dans le langage lui-même, pour l'Ogmios écrit en vtx et pour que l'ADN ne dépende ni de Python ni de Rust.
+// Il lit un ADN (version 3), vérifie chaque molécule par ses trois témoins (la signature, l'ombre de Reed-Solomon des
+// colonnes entrelacées, les neutrons), répare ce qui peut l'être et confirme chaque réparation par la triangulation ;
+// les introns qu'il ne connaît pas sont gardés tels quels. Le compte rendu est celui de Lugus, ligne pour ligne.
+//
+//     lugus relire PROG.adn [RELU.adn]
+//
+// Les entrées : le chemin de l'ADN, puis celui de l'ADN relu (un caractère par entrée, chacun terminé par 0 ; sans
+// chemin, « code.adn », et rien n'est écrit). La sortie : l'état de l'ADN (2 vrai, 1 faux : réparé, 3 variable : abîmé
+// au-delà de ses témoins, 0 : illisible). Un ADN variable n'est pas réécrit : il est gardé tel qu'il a été lu.
+//
+// La mémoire (étage 2) : les mots (deux moitiés de 64 bits), les témoins, GF(256), les brouillons du décodage.
+
+constante MH = 0;                // les mots : les 64 bits hauts
+constante MB = 1000000;          // les 64 bits bas
+constante AH = 2000000;          // les mots tels qu'ils ont été lus
+constante AB = 3000000;
+constante NEU = 4000000;         // les neutrons de chaque place (256 : aucun)
+constante PARN = 5000000;        // 1 : la place est désignée par ses neutrons
+constante MOL = 6000000;         // les molécules, huit cases : début, fin, frontière, isotope, signature, état, quoi, changés
+constante OMB = 7000000;         // les ombres : quatre mots par colonne (haut, bas)
+constante COLE = 7100000;        // l'état de chaque colonne
+constante COLR = 7110000;        // le nombre de mots réparés dans chaque colonne
+constante EXPO = 7120000;        // GF(256) : les puissances (512)
+constante LOGA = 7121000;        // les logarithmes (256)
+constante CRC = 7122000;         // la table du CRC-8 (256)
+constante LGEN = 7123000;        // les logarithmes des coefficients du générateur (r = 4)
+constante DH = 7124000;          // la colonne lue : hauts, bas, places (251 au plus)
+constante DB = 7124300;
+constante DP = 7124600;
+constante OC = 7124900;          // l'ombre recalculée d'une colonne (quatre mots)
+constante TRAV = 7124920;        // le travail du codage d'une voie (255 octets)
+constante VOIE = 7125200;        // les seize voies d'une colonne (une longueur, puis 255 octets chacune)
+constante EFF = 7130000;         // les effacements d'une colonne (une longueur, puis les rangs)
+constante CHIF = 7130500;        // les chiffres d'un nombre écrit
+constante NOM = 7130600;         // le nom d'une section lue
+constante CHEMIN = 7130700;      // un chemin (un texte)
+constante G = 7131000;           // l'état du lecteur
+constante BROUILLON = 7200000;   // les polynômes du décodage (repris à chaque voie)
+constante INTR = 8000000;        // les introns inconnus, recopiés tels quels
+constante MAXMOTS = 1000000;
+constante MAXINTR = 7900000;
+constante FIN = 4611686018427387904;     // la fin du fichier
+constante ETAGE2 = 9223372036854775808;  // l'adresse longue de l'étage 2
+
+// l'état du lecteur : G + …
+constante G_CANAL = 0;
+constante G_CAR = 1;
+constante G_N = 2;
+constante G_NM = 3;
+constante G_NC = 4;
+constante G_NO = 5;
+constante G_NI = 6;
+constante G_BR = 7;
+constante G_ERR = 8;
+constante G_HAUT = 9;
+constante G_COPIE = 10;
+constante G_OMB4 = 11;
+
+constante COLONNE = 251;
+constante OMBRE = 4;
+constante E_INCONNU = 0;
+constante E_FAUX = 1;
+constante E_VRAI = 2;
+constante E_VARIABLE = 3;
+
+// --------------------------------------------------------------------------------------------- textes et nombres
+fonction ecrire_t(c, t) {
+    pour i dans 0..longueur(t) {
+        ecrire_car(c, car(t, i));
+    }
+}
+
+fonction ecrire_u64(c, x0) {
+    soit x = x0;
+    si x == 0 {
+        ecrire_car(c, 48);
+        retour;
+    }
+    soit n = 0;
+    tantque x != 0 {
+        @2[CHIF + n] = x % 10;
+        x = x / 10;
+        n = n + 1;
+    }
+    tantque n > 0 {
+        n = n - 1;
+        ecrire_car(c, 48 + @2[CHIF + n]);
+    }
+}
+
+// un mot de 128 bits en décimal : h les 64 bits hauts, b les bas (quatre morceaux de 32 bits, divisés par 10 tour à tour)
+fonction ecrire_u128(c, h, b) {
+    si h == 0 {
+        ecrire_u64(c, b);
+        retour;
+    }
+    soit l3 = h >> 32;
+    soit l2 = h & 4294967295;
+    soit l1 = b >> 32;
+    soit l0 = b & 4294967295;
+    soit n = 0;
+    tantque l3 != 0 || l2 != 0 || l1 != 0 || l0 != 0 {
+        soit r = l3 % 10;
+        l3 = l3 / 10;
+        soit x = (r << 32) | l2;
+        l2 = x / 10;
+        r = x % 10;
+        x = (r << 32) | l1;
+        l1 = x / 10;
+        r = x % 10;
+        x = (r << 32) | l0;
+        l0 = x / 10;
+        @2[CHIF + n] = x % 10;
+        n = n + 1;
+    }
+    tantque n > 0 {
+        n = n - 1;
+        ecrire_car(c, 48 + @2[CHIF + n]);
+    }
+}
+
+fonction refuser(t) {
+    si @2[G + G_ERR] == 0 {
+        ecrire_t(1, "ADN : ");
+        ecrire_t(1, t);
+        ecrire_car(1, 10);
+    }
+    @2[G + G_ERR] = 1;
+}
+
+// --------------------------------------------------------------------------------------------- la lecture du fichier
+// le caractère courant est consommé : recopié dans les introns s'il le faut, puis le suivant est lu (\r est sauté)
+fonction avancer() {
+    si @2[G + G_COPIE] == 1 {
+        soit ni = @2[G + G_NI];
+        si ni < MAXINTR - INTR {
+            @2[INTR + ni] = @2[G + G_CAR];
+            @2[G + G_NI] = ni + 1;
+        }
+    }
+    soit f = @2[G + G_CANAL];
+    soit c = 13;
+    tantque c == 13 {
+        si fin_de(f) != 0 {
+            @2[G + G_CAR] = FIN;
+            retour;
+        }
+        c = lire_car(f);
+    }
+    @2[G + G_CAR] = c;
+}
+
+fonction car_courant() {
+    retour @2[G + G_CAR];
+}
+
+fonction attendre(ch) {
+    si car_courant() != ch {
+        refuser("le fichier ne suit pas la forme d'un ADN (version 3)");
+        retour;
+    }
+    avancer();
+}
+
+// un nombre décimal de 128 bits au plus : rend ses 64 bits bas, les hauts dans G_HAUT
+fonction lire_nombre() {
+    soit h = 0;
+    soit l = 0;
+    si car_courant() < 48 || car_courant() > 57 {
+        refuser("un nombre est attendu");
+    }
+    tantque car_courant() >= 48 && car_courant() <= 57 {
+        soit d = car_courant() - 48;
+        soit nh = h * 10 + mul_haut(l, 10);
+        soit nl = l * 10;
+        soit l2 = nl + d;
+        si l2 < nl {
+            nh = nh + 1;
+        }
+        h = nh;
+        l = l2;
+        avancer();
+    }
+    @2[G + G_HAUT] = h;
+    retour l;
+}
+
+fonction nom_est(t) {
+    si @2[NOM] != longueur(t) {
+        retour 0;
+    }
+    pour i dans 0..longueur(t) {
+        si @2[NOM + 1 + i] != car(t, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+fonction lire_mots() {
+    soit n = 0;
+    tantque car_courant() != 10 && car_courant() != FIN && @2[G + G_ERR] == 0 {
+        si n >= MAXMOTS {
+            refuser("trop de mots pour ce lecteur (un million au plus)");
+            retour;
+        }
+        soit l = lire_nombre();
+        @2[MH + n] = @2[G + G_HAUT];
+        @2[MB + n] = l;
+        n = n + 1;
+        si car_courant() == ',' {
+            avancer();
+        }
+    }
+    @2[G + G_N] = n;
+    attendre(10);
+}
+
+fonction lire_molecules(nl) {
+    pour j dans 0..nl {
+        tantque car_courant() != '|' && car_courant() != FIN {
+            avancer();
+        }
+        attendre('|');
+        soit base = MOL + 8 * j;
+        @2[base] = lire_nombre();
+        attendre('|');
+        @2[base + 1] = lire_nombre();
+        attendre('|');
+        @2[base + 2] = lire_nombre();
+        attendre('|');
+        @2[base + 4] = lire_nombre();
+        attendre('|');
+        @2[base + 3] = lire_nombre();
+        attendre(10);
+        si @2[G + G_ERR] != 0 {
+            retour;
+        }
+    }
+    @2[G + G_NM] = nl;
+}
+
+fonction lire_ombres(nl) {
+    pour k dans 0..nl {
+        soit z = 0;
+        tantque car_courant() != 10 && car_courant() != FIN && @2[G + G_ERR] == 0 {
+            soit l = lire_nombre();
+            si z < OMBRE {
+                @2[OMB + 8 * k + 2 * z] = @2[G + G_HAUT];
+                @2[OMB + 8 * k + 2 * z + 1] = l;
+            }
+            z = z + 1;
+            si car_courant() == ',' {
+                avancer();
+            }
+        }
+        si z != OMBRE {
+            @2[G + G_OMB4] = 1;
+        }
+        attendre(10);
+    }
+    @2[G + G_NO] = nl;
+}
+
+fonction lire_neutrons(nl) {
+    pour i dans 0..MAXMOTS {
+        @2[NEU + i] = 256;
+    }
+    pour k dans 0..nl {
+        tantque car_courant() != 10 && car_courant() != FIN && @2[G + G_ERR] == 0 {
+            soit p = lire_nombre();
+            attendre(':');
+            soit v = lire_nombre();
+            si p < MAXMOTS {
+                @2[NEU + p] = v & 255;
+            }
+            si car_courant() == ',' {
+                avancer();
+            }
+        }
+        attendre(10);
+    }
+}
+
+// une section inconnue (un intron : les isotopes, le texte, l'épigénome…) : recopiée telle quelle, sans être analysée
+fonction recopier_intron(nl) {
+    soit vues = 0;
+    tantque vues < nl && car_courant() != FIN {
+        si car_courant() == 10 {
+            vues = vues + 1;
+        }
+        avancer();
+    }
+    attendre('A');
+    attendre('G');
+    attendre(10);
+}
+
+fonction lire_adn(chemin) {
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        refuser("le fichier ne s'ouvre pas");
+        retour;
+    }
+    @2[G + G_CANAL] = f;
+    @2[G + G_COPIE] = 0;
+    avancer();
+    soit tete = "VTXADN03";
+    pour i dans 0..longueur(tete) {
+        si car_courant() != car(tete, i) {
+            refuser("ce n'est pas un ADN de vtx (version 3)");
+            fermer(f);
+            retour;
+        }
+        avancer();
+    }
+    attendre(10);
+    soit vus = 0;
+    tantque car_courant() != FIN && car_courant() != 10 && @2[G + G_ERR] == 0 {
+        // « GU nom N » : l'en-tête est recopié, puis repris si la section est connue
+        soit marque = @2[G + G_NI];
+        @2[G + G_COPIE] = 1;
+        attendre('G');
+        attendre('U');
+        attendre(' ');
+        soit ln = 0;
+        tantque car_courant() != ' ' && car_courant() != 10 && car_courant() != FIN {
+            si ln < 90 {
+                @2[NOM + 1 + ln] = car_courant();
+                ln = ln + 1;
+            }
+            avancer();
+        }
+        @2[NOM] = ln;
+        attendre(' ');
+        soit nl = lire_nombre();
+        attendre(10);
+        si nom_est("mots") == 1 {
+            @2[G + G_COPIE] = 0;
+            @2[G + G_NI] = marque;
+            si nl != 1 {
+                refuser("la section des mots a une ligne");
+            }
+            lire_mots();
+            vus = vus | 1;
+        } sinon si nom_est("molecules") == 1 {
+            @2[G + G_COPIE] = 0;
+            @2[G + G_NI] = marque;
+            lire_molecules(nl);
+            vus = vus | 2;
+        } sinon si nom_est("ombres") == 1 {
+            @2[G + G_COPIE] = 0;
+            @2[G + G_NI] = marque;
+            lire_ombres(nl);
+            vus = vus | 4;
+        } sinon si nom_est("neutrons") == 1 {
+            @2[G + G_COPIE] = 0;
+            @2[G + G_NI] = marque;
+            lire_neutrons(nl);
+            vus = vus | 8;
+        } sinon {
+            recopier_intron(nl);
+        }
+        si @2[G + G_COPIE] == 0 {
+            attendre('A');
+            attendre('G');
+            attendre(10);
+        }
+        @2[G + G_COPIE] = 0;
+        si @2[G + G_ERR] == 0 && @2[G + G_NI] >= MAXINTR - INTR {
+            refuser("les introns sont trop longs pour ce lecteur");
+        }
+        si car_courant() != FIN && car_courant() != 10 && car_courant() != 'G' && @2[G + G_ERR] == 0 {
+            refuser("borne d'intron attendue (GU)");
+        }
+    }
+    fermer(f);
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    si vus != 15 {
+        refuser("une section manque");
+        retour;
+    }
+    // un ADN dont les tables ne collent pas aux mots (tronqué, mal recopié) n'est pas lu
+    soit n = @2[G + G_N];
+    @2[G + G_NC] = nb_colonnes(n);
+    soit faux_temoins = @2[G + G_NO] != @2[G + G_NC] || @2[G + G_OMB4] != 0;
+    pour j dans 0..@2[G + G_NM] {
+        si @2[MOL + 8 * j + 1] > n || @2[MOL + 8 * j] >= @2[MOL + 8 * j + 1] {
+            faux_temoins = 1;
+        }
+    }
+    si faux_temoins {
+        refuser("les témoins ne correspondent pas aux mots");
+    }
+}
+
+// --------------------------------------------------------------------------------------------- les témoins
+fonction brasser(z0) {
+    soit z = z0 + 11400714819323198485;
+    z = (z ^ (z >> 30)) * 13787848793156543929;
+    z = (z ^ (z >> 27)) * 10723151780598845931;
+    retour z ^ (z >> 31);
+}
+
+// l'empreinte des mots [a, b) : 64 bits, chaque moitié de mot mêlée à son tour, la basse d'abord
+fonction signature(a, b) {
+    soit h = brasser(6215904648730267136 ^ (b - a));
+    pour i dans a..b {
+        h = brasser(h ^ @2[MB + i]);
+        h = brasser(h ^ @2[MH + i]);
+    }
+    retour h;
+}
+
+// les neutrons d'un mot : un CRC de 8 bits (polynôme 0x07) sur ses seize octets, le plus faible d'abord
+fonction crc8(h, b) {
+    soit c = 0;
+    pour k dans 0..8 {
+        c = @2[CRC + (c ^ ((b >> (8 * k)) & 255))];
+    }
+    pour k2 dans 0..8 {
+        c = @2[CRC + (c ^ ((h >> (8 * k2)) & 255))];
+    }
+    retour c;
+}
+
+fonction nb_colonnes(n) {
+    soit c = (n + COLONNE - 1) / COLONNE;
+    si c < 1 {
+        retour 1;
+    }
+    retour c;
+}
+
+// l'octet de la voie k d'un mot (la voie 0 : l'octet le plus fort)
+fonction octet(h, b, k) {
+    si k < 8 {
+        retour (h >> (8 * (7 - k))) & 255;
+    }
+    retour (b >> (8 * (15 - k))) & 255;
+}
+
+// --------------------------------------------------------------------------------------------- Reed-Solomon, GF(256)
+fonction preparer() {
+    soit x = 1;
+    pour i dans 0..255 {
+        @2[EXPO + i] = x;
+        @2[LOGA + x] = i;
+        x = x << 1;
+        si (x & 256) != 0 {
+            x = x ^ 285;
+        }
+    }
+    pour j dans 255..512 {
+        @2[EXPO + j] = @2[EXPO + j - 255];
+    }
+    pour k dans 0..256 {
+        soit c = k;
+        pour t dans 0..8 {
+            si (c & 128) != 0 {
+                c = ((c << 1) ^ 7) & 255;
+            } sinon {
+                c = (c << 1) & 255;
+            }
+        }
+        @2[CRC + k] = c;
+    }
+    // le générateur : le produit des (x + 2^i), i < 4 ; ses coefficients ne sont jamais nuls
+    brouillon_repris();
+    soit g = brouillon(1);
+    @2[g + 1] = 1;
+    pour i2 dans 0..OMBRE {
+        soit f = brouillon(2);
+        @2[f + 1] = 1;
+        @2[f + 2] = @2[EXPO + i2];
+        g = p_mul(g, f);
+    }
+    pour j2 dans 1..OMBRE + 1 {
+        @2[LGEN + j2] = @2[LOGA + @2[g + 1 + j2]];
+    }
+}
+
+fonction gmul(a, b) {
+    si a == 0 || b == 0 {
+        retour 0;
+    }
+    retour @2[EXPO + @2[LOGA + a] + @2[LOGA + b]];
+}
+
+fonction gdiv(a, b) {
+    si a == 0 {
+        retour 0;
+    }
+    retour @2[EXPO + (@2[LOGA + a] + 255 - @2[LOGA + b]) % 255];
+}
+
+fonction gpw(a, n) {
+    si a == 0 {
+        retour 0;
+    }
+    retour @2[EXPO + (@2[LOGA + a] * n) % 255];
+}
+
+fonction ginv(a) {
+    retour @2[EXPO + 255 - @2[LOGA + a]];
+}
+
+// les polynômes et les listes : une longueur, puis les coefficients (le plus fort d'abord), pris dans le brouillon
+fonction brouillon_repris() {
+    @2[G + G_BR] = BROUILLON;
+}
+
+fonction brouillon(n) {
+    soit p = @2[G + G_BR];
+    @2[G + G_BR] = p + n + 1;
+    @2[p] = n;
+    pour i dans 0..n {
+        @2[p + 1 + i] = 0;
+    }
+    retour p;
+}
+
+fonction p_copie(p) {
+    soit r = brouillon(@2[p]);
+    pour i dans 0..@2[p] {
+        @2[r + 1 + i] = @2[p + 1 + i];
+    }
+    retour r;
+}
+
+fonction p_renverse(p) {
+    soit n = @2[p];
+    soit r = brouillon(n);
+    pour i dans 0..n {
+        @2[r + 1 + i] = @2[p + n - i];
+    }
+    retour r;
+}
+
+fonction p_mul(p, q) {
+    soit lp = @2[p];
+    soit lq = @2[q];
+    soit r = brouillon(lp + lq - 1);
+    pour j dans 0..lq {
+        soit b = @2[q + 1 + j];
+        pour i dans 0..lp {
+            @2[r + 1 + i + j] = @2[r + 1 + i + j] ^ gmul(@2[p + 1 + i], b);
+        }
+    }
+    retour r;
+}
+
+fonction p_add(p, q) {
+    soit lp = @2[p];
+    soit lq = @2[q];
+    soit n = lp;
+    si lq > n {
+        n = lq;
+    }
+    soit r = brouillon(n);
+    pour i dans 0..lp {
+        @2[r + 1 + n - lp + i] = @2[p + 1 + i];
+    }
+    pour j dans 0..lq {
+        @2[r + 1 + j + n - lq] = @2[r + 1 + j + n - lq] ^ @2[q + 1 + j];
+    }
+    retour r;
+}
+
+fonction p_scale(p, x) {
+    soit r = brouillon(@2[p]);
+    pour i dans 0..@2[p] {
+        @2[r + 1 + i] = gmul(@2[p + 1 + i], x);
+    }
+    retour r;
+}
+
+fonction p_eval(p, x) {
+    soit y = @2[p + 1];
+    pour i dans 1..@2[p] {
+        y = gmul(y, x) ^ @2[p + 1 + i];
+    }
+    retour y;
+}
+
+fonction dans_liste(l, x) {
+    pour i dans 0..@2[l] {
+        si @2[l + 1 + i] == x {
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
+fonction syndromes(cw, r) {
+    soit s = brouillon(r + 1);
+    pour i dans 0..r {
+        @2[s + 2 + i] = p_eval(cw, @2[EXPO + i]);
+    }
+    retour s;
+}
+
+fonction tous_nuls(p) {
+    pour i dans 0..@2[p] {
+        si @2[p + 1 + i] != 0 {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+fonction localisateur_effacements(pos) {
+    soit e = brouillon(1);
+    @2[e + 1] = 1;
+    pour i dans 0..@2[pos] {
+        soit a = brouillon(2);         // [1] + [2^p, 0] : (2^p, 1)
+        @2[a + 1] = @2[EXPO + @2[pos + 1 + i]];
+        @2[a + 2] = 1;
+        e = p_mul(e, a);
+    }
+    retour e;
+}
+
+// le reste de la division (ses d derniers coefficients, d = len(diviseur) - 1)
+fonction divmod_reste(dd, dv) {
+    soit out = p_copie(dd);
+    soit ld = @2[dd];
+    soit lv = @2[dv];
+    soit d = lv - 1;
+    si ld >= d {
+        pour i dans 0..ld - d {
+            soit c = @2[out + 1 + i];
+            si c != 0 {
+                pour j dans 1..lv {
+                    si @2[dv + 1 + j] != 0 {
+                        @2[out + 1 + i + j] = @2[out + 1 + i + j] ^ gmul(@2[dv + 1 + j], c);
+                    }
+                }
+            }
+        }
+    }
+    soit r = brouillon(d);
+    pour k dans 0..d {
+        @2[r + 1 + k] = @2[out + 1 + ld - d + k];
+    }
+    retour r;
+}
+
+fonction corriger_valeurs(cw, synd, pos_err) {
+    soit n = @2[cw];
+    soit ne = @2[pos_err];
+    soit coef = brouillon(ne);
+    pour i dans 0..ne {
+        @2[coef + 1 + i] = n - 1 - @2[pos_err + 1 + i];
+    }
+    soit loc = localisateur_effacements(coef);
+    soit synd_inv = p_renverse(synd);
+    soit dv = brouillon(@2[loc] + 1);
+    @2[dv + 1] = 1;
+    soit om = divmod_reste(p_mul(synd_inv, loc), dv);      // omega renversé deux fois : le reste lui-même
+    soit xs = brouillon(ne);
+    pour i2 dans 0..ne {
+        @2[xs + 1 + i2] = @2[EXPO + @2[coef + 1 + i2]];
+    }
+    soit e = brouillon(n);
+    pour i3 dans 0..ne {
+        soit xi = @2[xs + 1 + i3];
+        soit xi_inv = ginv(xi);
+        soit prime = 1;
+        pour j dans 0..ne {
+            si j != i3 {
+                prime = gmul(prime, 1 ^ gmul(xi_inv, @2[xs + 1 + j]));
+            }
+        }
+        si prime == 0 {
+            retour 0;
+        }
+        soit y = gmul(gpw(xi, 1), p_eval(om, xi_inv));
+        @2[e + 1 + @2[pos_err + 1 + i3]] = gdiv(y, prime);
+    }
+    soit out = brouillon(n);
+    pour k dans 0..n {
+        @2[out + 1 + k] = @2[cw + 1 + k] ^ @2[e + 1 + k];
+    }
+    retour out;
+}
+
+fonction trouver_localisateur(synd, r, nb_eff) {
+    soit err = brouillon(1);
+    @2[err + 1] = 1;
+    soit old = brouillon(1);
+    @2[old + 1] = 1;
+    soit decal = @2[synd] - r;
+    soit tours = 0;
+    si r > nb_eff {
+        tours = r - nb_eff;
+    }
+    pour i dans 0..tours {
+        soit k = i + decal;
+        soit delta = @2[synd + 1 + k];
+        soit le = @2[err];
+        pour j dans 1..le {
+            delta = delta ^ gmul(@2[err + 1 + le - 1 - j], @2[synd + 1 + k - j]);
+        }
+        soit o2 = brouillon(@2[old] + 1);
+        pour z dans 0..@2[old] {
+            @2[o2 + 1 + z] = @2[old + 1 + z];
+        }
+        old = o2;
+        si delta != 0 {
+            si @2[old] > @2[err] {
+                soit neuf = p_scale(old, delta);
+                old = p_scale(err, ginv(delta));
+                err = neuf;
+            }
+            err = p_add(err, p_scale(old, delta));
+        }
+    }
+    soit debut = 0;
+    tantque debut < @2[err] && @2[err + 1 + debut] == 0 {
+        debut = debut + 1;
+    }
+    si debut == @2[err] {
+        retour 0;
+    }
+    soit res = brouillon(@2[err] - debut);
+    pour i2 dans 0..@2[res] {
+        @2[res + 1 + i2] = @2[err + 1 + debut + i2];
+    }
+    soit errs = @2[res] - 1;
+    si 2 * errs > r + nb_eff {
+        retour 0;
+    }
+    retour res;
+}
+
+fonction trouver_erreurs(err_loc, n) {
+    soit errs = @2[err_loc] - 1;
+    soit pos = brouillon(n);
+    soit np = 0;
+    pour i dans 0..n {
+        si p_eval(err_loc, gpw(2, i)) == 0 {
+            @2[pos + 1 + np] = n - 1 - i;
+            np = np + 1;
+        }
+    }
+    @2[pos] = np;
+    si np != errs {
+        retour 0;
+    }
+    retour pos;
+}
+
+fonction forney_syndromes(synd, pos, n) {
+    soit lf = @2[synd] - 1;
+    soit fs = brouillon(lf);
+    pour i dans 0..lf {
+        @2[fs + 1 + i] = @2[synd + 2 + i];
+    }
+    pour k dans 0..@2[pos] {
+        soit x = @2[EXPO + n - 1 - @2[pos + 1 + k]];
+        pour j dans 0..lf - 1 {
+            @2[fs + 1 + j] = gmul(@2[fs + 1 + j], x) ^ @2[fs + 2 + j];
+        }
+    }
+    retour fs;
+}
+
+// le mot de code corrigé (2 erreurs + effacements <= r), ou 0 : au-delà de la capacité
+fonction decoder(cw0, r, eff) {
+    brouillon_repris();
+    soit cw = p_copie(cw0);
+    soit n = @2[cw];
+    soit ne = @2[eff];
+    si ne > r {
+        retour 0;
+    }
+    pour i dans 0..ne {
+        @2[cw + 1 + @2[eff + 1 + i]] = 0;
+    }
+    soit synd = syndromes(cw, r);
+    si tous_nuls(synd) == 1 {
+        retour cw;
+    }
+    soit fsynd = forney_syndromes(synd, eff, n);
+    soit err_loc = trouver_localisateur(fsynd, r, ne);
+    si err_loc == 0 {
+        retour 0;
+    }
+    soit pos = trouver_erreurs(p_renverse(err_loc), n);
+    si pos == 0 {
+        retour 0;
+    }
+    soit toutes = brouillon(ne + @2[pos]);
+    soit nt = 0;
+    pour i2 dans 0..ne {
+        @2[toutes + 1 + nt] = @2[eff + 1 + i2];
+        nt = nt + 1;
+    }
+    pour i3 dans 0..@2[pos] {
+        si dans_liste(eff, @2[pos + 1 + i3]) == 0 {
+            @2[toutes + 1 + nt] = @2[pos + 1 + i3];
+            nt = nt + 1;
+        }
+    }
+    @2[toutes] = nt;
+    soit out = corriger_valeurs(cw, synd, toutes);
+    si out == 0 {
+        retour 0;
+    }
+    si tous_nuls(syndromes(out, r)) == 0 {
+        retour 0;
+    }
+    retour out;
+}
+
+// les quatre octets d'ombre d'une voie de n octets (TRAV, suivis de quatre zéros : la division par le générateur)
+fonction coder_voie(n) {
+    pour z dans 0..OMBRE {
+        @2[TRAV + n + z] = 0;
+    }
+    soit g1 = @2[LGEN + 1];
+    soit g2 = @2[LGEN + 2];
+    soit g3 = @2[LGEN + 3];
+    soit g4 = @2[LGEN + 4];
+    pour i dans 0..n {
+        soit c = @2[TRAV + i];
+        si c != 0 {
+            soit lc = @2[LOGA + c];
+            @2[TRAV + i + 1] = @2[TRAV + i + 1] ^ @2[EXPO + lc + g1];
+            @2[TRAV + i + 2] = @2[TRAV + i + 2] ^ @2[EXPO + lc + g2];
+            @2[TRAV + i + 3] = @2[TRAV + i + 3] ^ @2[EXPO + lc + g3];
+            @2[TRAV + i + 4] = @2[TRAV + i + 4] ^ @2[EXPO + lc + g4];
+        }
+    }
+}
+
+// l'ombre des m mots de la colonne lue (DH, DB) : quatre mots dans OC
+fonction ombre_colonne(m) {
+    pour z dans 0..2 * OMBRE {
+        @2[OC + z] = 0;
+    }
+    pour k dans 0..16 {
+        pour j dans 0..m {
+            @2[TRAV + j] = octet(@2[DH + j], @2[DB + j], k);
+        }
+        coder_voie(m);
+        pour z2 dans 0..OMBRE {
+            soit o = @2[TRAV + m + z2];
+            si k < 8 {
+                @2[OC + 2 * z2] = @2[OC + 2 * z2] | (o << (8 * (7 - k)));
+            } sinon {
+                @2[OC + 2 * z2 + 1] = @2[OC + 2 * z2 + 1] | (o << (8 * (15 - k)));
+            }
+        }
+    }
+}
+
+// --------------------------------------------------------------------------------------------- la lecture
+// répare la colonne k en place ; rend son état (le nombre de mots réparés dans COLR, les places désignées dans PARN)
+fonction lire_colonne(k) {
+    soit n = @2[G + G_N];
+    soit nc = @2[G + G_NC];
+    soit m = 0;
+    soit i = k;
+    tantque i < n {
+        @2[DP + m] = i;
+        @2[DH + m] = @2[MH + i];
+        @2[DB + m] = @2[MB + i];
+        m = m + 1;
+        i = i + nc;
+    }
+    soit ne = 0;
+    pour j dans 0..m {
+        soit p = @2[DP + j];
+        soit v = @2[NEU + p];
+        si v != 256 && crc8(@2[DH + j], @2[DB + j]) != v {
+            @2[EFF + 1 + ne] = j;
+            ne = ne + 1;
+            @2[PARN + p] = 1;
+        }
+    }
+    @2[EFF] = ne;
+    @2[COLR + k] = 0;
+    ombre_colonne(m);
+    soit pareille = 1;
+    pour z dans 0..2 * OMBRE {
+        si @2[OC + z] != @2[OMB + 8 * k + z] {
+            pareille = 0;
+        }
+    }
+    si pareille == 1 {
+        si ne == 0 {
+            retour E_VRAI;
+        }
+        retour E_FAUX;
+    }
+    si ne > OMBRE {
+        retour E_VARIABLE;
+    }
+    pour v2 dans 0..16 {
+        soit base = VOIE + 256 * v2;
+        @2[base] = m + OMBRE;
+        pour j2 dans 0..m {
+            @2[base + 1 + j2] = octet(@2[DH + j2], @2[DB + j2], v2);
+        }
+        pour z2 dans 0..OMBRE {
+            @2[base + 1 + m + z2] = octet(@2[OMB + 8 * k + 2 * z2], @2[OMB + 8 * k + 2 * z2 + 1], v2);
+        }
+        soit out = decoder(base, OMBRE, EFF);
+        si out == 0 {
+            retour E_VARIABLE;
+        }
+        pour j3 dans 0..m + OMBRE {
+            @2[base + 1 + j3] = @2[out + 1 + j3];
+        }
+    }
+    soit rep = 0;
+    pour j4 dans 0..m + OMBRE {
+        soit h = 0;
+        soit b = 0;
+        pour v3 dans 0..16 {
+            soit o = @2[VOIE + 256 * v3 + 1 + j4];
+            si v3 < 8 {
+                h = h | (o << (8 * (7 - v3)));
+            } sinon {
+                b = b | (o << (8 * (15 - v3)));
+            }
+        }
+        si j4 < m {
+            si h != @2[DH + j4] || b != @2[DB + j4] {
+                rep = rep + 1;
+            }
+            @2[MH + @2[DP + j4]] = h;
+            @2[MB + @2[DP + j4]] = b;
+        } sinon {
+            @2[OMB + 8 * k + 2 * (j4 - m)] = h;
+            @2[OMB + 8 * k + 2 * (j4 - m) + 1] = b;
+        }
+    }
+    @2[COLR + k] = rep;
+    retour E_FAUX;
+}
+
+fonction rang(e) {
+    si e == E_VRAI {
+        retour 0;
+    }
+    si e == E_INCONNU {
+        retour 1;
+    }
+    si e == E_FAUX {
+        retour 2;
+    }
+    retour 3;
+}
+
+fonction pire(a, b) {
+    si rang(a) >= rang(b) {
+        retour a;
+    }
+    retour b;
+}
+
+fonction change(i) {
+    retour @2[MH + i] != @2[AH + i] || @2[MB + i] != @2[AB + i];
+}
+
+// vérifie et répare l'ADN en place ; rend l'état le pire (chaque molécule a le sien, et ce qui a été fait)
+fonction lire() {
+    soit n = @2[G + G_N];
+    soit nc = @2[G + G_NC];
+    pour i dans 0..n {
+        @2[AH + i] = @2[MH + i];
+        @2[AB + i] = @2[MB + i];
+        @2[PARN + i] = 0;
+    }
+    soit etat = E_VRAI;
+    pour k dans 0..nc {
+        soit e = lire_colonne(k);
+        @2[COLE + k] = e;
+        si e == E_FAUX {
+            etat = E_FAUX;
+        }
+    }
+    pour j dans 0..@2[G + G_NM] {
+        soit base = MOL + 8 * j;
+        soit d = @2[base];
+        soit f = @2[base + 1];
+        soit neutronee = @2[base + 2] == 1 || @2[base + 3] == 1;
+        soit abimee = 0;
+        soit haut = f;
+        si d + nc < haut {
+            haut = d + nc;
+        }
+        pour i2 dans d..haut {
+            si @2[COLE + i2 % nc] == E_VARIABLE {
+                abimee = 1;
+            }
+        }
+        soit nch = 0;
+        pour i3 dans d..f {
+            si change(i3) {
+                nch = nch + 1;
+            }
+        }
+        soit sig_ok = signature(d, f) == @2[base + 4];
+        soit e2 = E_VRAI;
+        soit quoi = 0;
+        si sig_ok && nch == 0 && abimee == 0 {
+            e2 = E_VRAI;
+        } sinon si sig_ok {
+            e2 = E_FAUX;
+            si nch == 0 {
+                quoi = 1;
+            } sinon {
+                quoi = 2;
+            }
+        } sinon si abimee == 1 {
+            e2 = E_VARIABLE;
+            quoi = 3;
+        } sinon si nch == 0 {
+            // l'ombre et les neutrons s'accordent avec les mots : c'est la signature qui est abîmée (deux contre un)
+            @2[base + 4] = signature(d, f);
+            e2 = E_FAUX;
+            quoi = 4;
+        } sinon {
+            // deux témoins contre un : les neutrons désignaient les mots réparés et les reconnaissent, ou l'ombre n'a
+            // eu qu'un mot à réparer dans chaque colonne ; la signature, seule contre eux, est refaite
+            soit par_neutrons = neutronee;
+            soit un_par_colonne = 1;
+            pour i4 dans d..f {
+                si change(i4) {
+                    si @2[PARN + i4] != 1 || @2[NEU + i4] != crc8(@2[MH + i4], @2[MB + i4]) {
+                        par_neutrons = 0;
+                    }
+                    si @2[COLR + i4 % nc] != 1 {
+                        un_par_colonne = 0;
+                    }
+                }
+            }
+            si par_neutrons || un_par_colonne == 1 {
+                @2[base + 4] = signature(d, f);
+                e2 = E_FAUX;
+                quoi = 5;
+            } sinon {
+                // la réparation n'est pas confirmée : la molécule est gardée telle qu'elle a été lue
+                pour i5 dans d..f {
+                    @2[MH + i5] = @2[AH + i5];
+                    @2[MB + i5] = @2[AB + i5];
+                }
+                e2 = E_VARIABLE;
+                quoi = 6;
+            }
+        }
+        @2[base + 5] = e2;
+        @2[base + 6] = quoi;
+        @2[base + 7] = nch;
+        etat = pire(etat, e2);
+    }
+    si etat != E_VARIABLE {
+        pour i6 dans 0..n {
+            si @2[NEU + i6] != 256 {
+                @2[NEU + i6] = crc8(@2[MH + i6], @2[MB + i6]);
+            }
+        }
+    }
+    retour etat;
+}
+
+fonction ecrire_etat(c, e) {
+    si e == E_VRAI {
+        ecrire_t(c, "vrai");
+    } sinon si e == E_FAUX {
+        ecrire_t(c, "faux (réparé)");
+    } sinon si e == E_VARIABLE {
+        ecrire_t(c, "variable");
+    } sinon {
+        ecrire_t(c, "inconnu");
+    }
+}
+
+// le compte rendu, comme celui de Lugus : chaque molécule qui n'est pas vraie, puis l'état de l'ADN
+fonction rendre_compte(etat) {
+    pour j dans 0..@2[G + G_NM] {
+        soit base = MOL + 8 * j;
+        soit e = @2[base + 5];
+        si e != E_VRAI {
+            ecrire_t(1, "  m");
+            ecrire_u64(1, @2[base]);
+            ecrire_t(1, " : ");
+            ecrire_etat(1, e);
+            ecrire_t(1, ", ");
+            soit q = @2[base + 6];
+            si q == 1 {
+                ecrire_t(1, "ombre ou neutrons refaits");
+            } sinon si q == 2 {
+                ecrire_u64(1, @2[base + 7]);
+                ecrire_t(1, " mot(s) réparé(s)");
+            } sinon si q == 3 {
+                ecrire_t(1, "abîmée au-delà de son ombre");
+            } sinon si q == 4 {
+                ecrire_t(1, "signature refaite");
+            } sinon si q == 5 {
+                ecrire_u64(1, @2[base + 7]);
+                ecrire_t(1, " mot(s) réparé(s), signature refaite");
+            } sinon {
+                ecrire_t(1, "réparation non confirmée par la signature");
+            }
+            ecrire_car(1, 10);
+        }
+    }
+    ecrire_t(1, "l'ADN : ");
+    ecrire_etat(1, etat);
+    ecrire_car(1, 10);
+}
+
+// l'ADN relu, écrit comme chimie/adn.py l'écrit (octet pour octet)
+fonction ecrire_adn(chemin) {
+    soit c = ouvrir_ecriture(chemin);
+    ecrire_t(c, "VTXADN03\nGU mots 1\n");
+    soit n = @2[G + G_N];
+    pour i dans 0..n {
+        si i > 0 {
+            ecrire_car(c, ',');
+        }
+        ecrire_u128(c, @2[MH + i], @2[MB + i]);
+    }
+    ecrire_t(c, "\nAG\nGU molecules ");
+    ecrire_u64(c, @2[G + G_NM]);
+    ecrire_car(c, 10);
+    pour j dans 0..@2[G + G_NM] {
+        soit base = MOL + 8 * j;
+        ecrire_car(c, 'm');
+        ecrire_u64(c, @2[base]);
+        ecrire_car(c, '|');
+        ecrire_u64(c, @2[base]);
+        ecrire_car(c, '|');
+        ecrire_u64(c, @2[base + 1]);
+        ecrire_car(c, '|');
+        ecrire_u64(c, @2[base + 2]);
+        ecrire_car(c, '|');
+        ecrire_u64(c, @2[base + 4]);
+        ecrire_car(c, '|');
+        ecrire_u64(c, @2[base + 3]);
+        ecrire_car(c, 10);
+    }
+    ecrire_t(c, "AG\nGU ombres ");
+    ecrire_u64(c, @2[G + G_NO]);
+    ecrire_car(c, 10);
+    pour k dans 0..@2[G + G_NO] {
+        pour z dans 0..OMBRE {
+            si z > 0 {
+                ecrire_car(c, ',');
+            }
+            ecrire_u128(c, @2[OMB + 8 * k + 2 * z], @2[OMB + 8 * k + 2 * z + 1]);
+        }
+        ecrire_car(c, 10);
+    }
+    ecrire_t(c, "AG\nGU neutrons 1\n");
+    soit premier = 1;
+    pour i2 dans 0..n {
+        si @2[NEU + i2] != 256 {
+            si premier == 0 {
+                ecrire_car(c, ',');
+            }
+            premier = 0;
+            ecrire_u64(c, i2);
+            ecrire_car(c, ':');
+            ecrire_u64(c, @2[NEU + i2]);
+        }
+    }
+    ecrire_t(c, "\nAG\n");
+    pour i3 dans 0..@2[G + G_NI] {
+        ecrire_car(c, @2[INTR + i3]);
+    }
+    fermer(c);
+}
+
+// un chemin lu dans les entrées (un caractère par entrée, terminé par 0) : un texte de l'étage 2, ou 0 s'il est vide
+fonction lire_chemin(place) {
+    soit n = 0;
+    soit x = entrée();
+    tantque x != 0 {
+        @2[place + 1 + n] = x;
+        n = n + 1;
+        x = entrée();
+    }
+    @2[place] = n;
+    si n == 0 {
+        retour 0;
+    }
+    retour ETAGE2 + place;
+}
+
+fonction principal() {
+    preparer();
+    soit entree = lire_chemin(CHEMIN);
+    soit relu = lire_chemin(CHEMIN + 2000);
+    si entree == 0 {
+        entree = "code.adn";
+    }
+    lire_adn(entree);
+    si @2[G + G_ERR] != 0 {
+        sortie(E_INCONNU);
+        retour;
+    }
+    soit etat = lire();
+    rendre_compte(etat);
+    si etat == E_VARIABLE {
+        ecrire_t(1, "rien n'est relu : l'ADN est gardé tel qu'il a été lu, pour la preuve\n");
+    } sinon si relu != 0 {
+        ecrire_adn(relu);
+    }
+    sortie(etat);
+}

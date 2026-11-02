@@ -39,10 +39,11 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
     lancé ;
   - mesuré : 6 % de place, réparé jusqu'à huit mots abîmés de suite, jamais réparé de travers ;
   - **l'ADN vivant** : il garde aussi le texte (recompilé, il doit redonner les mots), les isotopes lourds
-    (`-> a lourd`) et l'épigénome (`lugus apprendre` : les souvenirs appris, repris au lancement suivant) ; pendant
-    l'exécution, la patrouille relit le code et le répare ; un isotope lourd abîmé pendant qu'il sert arrête la machine
-    (l'apoptose) ; `lugus transcrire PROG.adn PROG.arn --isoforme rapide|sur|memoire` tire plusieurs ARN d'un même ADN,
-    avec une coiffe vérifiée et une queue qui s'use (docs/vtx-reactions.md, section 9).
+    (`-> a lourd`) et l'épigénome (`lugus apprendre` : les souvenirs appris, repris au lancement suivant) ; sur demande
+    (`--veille`) ou pour les isotopes lourds, la patrouille relit le code pendant l'exécution et le répare ; un isotope
+    lourd abîmé pendant qu'il sert arrête la machine (l'apoptose) ; `lugus transcrire PROG.adn PROG.arn --isoforme
+    rapide|sur|memoire` tire plusieurs ARN d'un même ADN, avec une coiffe vérifiée ; `lugus relire PROG.adn` fait la
+    même lecture avec le lecteur écrit en vtx (`chimie/adn.vtx`) (docs/vtx-reactions.md, section 9).
 - **L'atelier Ogmios** (`atelier.exe`) : le texte à gauche, **la paillasse au centre** (les réactions dessinées en
   atomes et liaisons, rangées en vagues, dans les deux sens avec le texte : tirer une liaison, ajouter ou retirer un
   atome réécrit la ligne), le cube à droite ; en bas, Sortie, Terminal, Pas à pas, Arbre et la fenêtre des explications.

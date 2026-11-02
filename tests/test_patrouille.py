@@ -3,8 +3,8 @@
 fait tourner un ADN, la patrouille relit le code contre ses témoins et le répare ; un isotope lourd (« -> a lourd »)
 est relu à chaque entrée et à chaque sortie : abîmé entre deux appels, il est réparé avant de servir ; abîmé pendant
 qu'il sert, la machine s'arrête (l'apoptose) plutôt que de rendre un résultat qui n'est pas sûr. Un ARN porte une
-coiffe (vérifiée) et une queue (usée, il est refait depuis l'ADN). Les avaries sont posées pendant l'exécution
-(LUGUS_AVARIE=PAS:MOT:BIT).
+coiffe (vérifiée). La patrouille est éteinte par défaut : elle veille avec --veille, ou quand le programme a des
+isotopes lourds. Les avaries sont posées pendant l'exécution (LUGUS_AVARIE=PAS:MOT:BIT).
 
     python3 tests/test_patrouille.py"""
 import os
@@ -106,18 +106,19 @@ verifier("neuf mots voisins abîmés (au-delà de l'ombre) : l'apoptose, aucun r
 
 # 6. l'ARN sûr (les témoins gardés) : la patrouille veille aussi
 f_sur = os.path.join(d, "pat.arn")
-subprocess.run([lugus, "transcrire", f_adn, f_sur, "--isoforme", "sur", "--queue", "2"], capture_output=True, text=True,
+subprocess.run([lugus, "transcrire", f_adn, f_sur, "--isoforme", "sur"], capture_output=True, text=True,
                encoding="utf-8")
 c, s, e = lancer(f_sur, f"100000:{froide.debut + 4}:70")
 verifier("l'ARN sûr : la patrouille répare comme depuis l'ADN", c == 0 and s == JUSTE and "réparé" in e, s + " / " + e)
 
-# 7. la queue : deux lancements, puis l'ARN est refait depuis l'ADN (relu)
-c, s, _ = lancer(f_sur)
-c2, s2, e2 = lancer(f_sur)
-q = adn.sections_adn(open(f_sur, encoding="utf-8").read())
-queue = dict(q)["queue"][0]
-verifier("la queue épuisée : l'ARN est refait depuis l'ADN (relu), avec une queue neuve",
-         s == s2 == JUSTE and "l'ARN était usé : refait depuis" in e2 and queue == "63", f"{e2} queue {queue}")
+# 7. un ARN ancien qui porte encore une queue (la section est sautée) : il est lancé comme les autres
+texte = open(f_sur, encoding="utf-8").read()
+ancien = texte.replace("AG\nGU mots", "AG\nGU queue 1\n7\nAG\nGU mots", 1)
+f_ancien = os.path.join(d, "ancien.arn")
+open(f_ancien, "w", encoding="utf-8", newline="\n").write(ancien)
+c, s, e = lancer(f_ancien)
+verifier("un ARN ancien avec sa queue : la section est sautée, il est lancé, le fichier n'est pas réécrit",
+         c == 0 and s == JUSTE and "GU queue" in ancien and open(f_ancien, encoding="utf-8").read() == ancien, s + " / " + e)
 
 # 8. la coiffe : un ARN dont les mots ne sont plus les siens n'est pas lancé
 texte = open(f_sur, encoding="utf-8").read()
@@ -143,6 +144,28 @@ n_mem = int(next((l.split()[0] for l in e.splitlines() if "instructions en" in l
 n_rap = int(next((l.split()[0] for l in e2.splitlines() if "instructions en" in l), "0"))
 verifier(f"l'ARN mémoire reprend l'épigénome : {n_rap} -> {n_mem} instructions, le même résultat",
          s == s2 == "2640024" and 0 < n_mem * 20 < n_rap and "souvenirs repris" in e, f"{s} {s2} {e}")
+
+# 10. sans isotope lourd, la patrouille est éteinte par défaut : --veille (ou LUGUS_PATROUILLE=1) l'arme
+SANS = PROG.replace("-> a lourd", "-> a")
+f_v = os.path.join(d, "sans.vtx")
+open(f_v, "w", encoding="utf-8", newline="\n").write(SANS)
+f_sans = os.path.join(d, "sans.adn")
+subprocess.run([lugus, "ranger", f_v, f_sans], capture_output=True)
+_, mols2, _ = adn.lire_adn(f_sans)
+froide2 = next(m for m in mols2 if m.debut == froide.debut)
+av = f"100000:{froide2.debut + 4}:70"
+c, s, e = lancer(f_sans, av)
+r = subprocess.run([lugus, f_sans, "--veille"], capture_output=True, text=True, encoding="utf-8",
+                   env=dict(os.environ, LUGUS_AVARIE=av))
+c3, s3, e3 = lancer(f_sans, av, LUGUS_PATROUILLE="1")
+c4, s4, e4 = lancer(f_adn, f"100000:{froide.debut + 4}:70", LUGUS_PATROUILLE="0")
+verifier("sans isotope lourd : pas de patrouille par défaut (le résultat est faux), --veille ou LUGUS_PATROUILLE=1 "
+         "la rendent (réparé, juste) ; LUGUS_PATROUILLE=0 l'éteint même avec un isotope",
+         s != JUSTE and "patrouille" not in e and r.stdout.strip() == JUSTE and "réparé" in r.stderr
+         and s3 == JUSTE and s4 != JUSTE, f"{s} / {r.stdout} {r.stderr} / {s3} / {s4}")
+c, s, e = lancer(f_sans, LUGUS_TEMPS="1")
+verifier("sans avarie ni isotope : le résultat juste, la patrouille absente du rapport",
+         c == 0 and s == JUSTE and "patrouille" not in e, s + " / " + e)
 
 print("patrouille : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)

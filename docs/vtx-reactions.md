@@ -693,10 +693,10 @@ des ARN différents selon le besoin, apprend, se répare, et meurt plutôt que d
     l'épigénome ; *complet* : les deux ;
   - l'ARN porte une **coiffe**, la signature de ses mots, vérifiée avant de lancer : un ARN dont la coiffe ne reconnaît
     pas les mots est dégradé, jamais lancé ;
-  - et une **queue** : le nombre de lancements qui lui restent (64, `--queue N`). Elle raccourcit à chaque lancement ;
-    usée, l'ARN est refait depuis `PROG.adn`, qui est relu et réparé au passage. Un ARN ne vit pas toujours : l'ADN
-    est relu régulièrement, même quand on ne lance que des ARN.
-- **La patrouille et l'apoptose** (`lugus PROG.adn`, `lugus PROG.arn` sûr ; `LUGUS_PATROUILLE=0` pour s'en passer) :
+  - la **queue** des premiers ARN (un compte de lancements, usée : refaite depuis l'ADN) est retirée le soir même : la
+    coiffe, vérifiée à chaque lancement, faisait déjà son travail. Un ARN ancien qui la porte encore se lit (la
+    section est sautée).
+- **La patrouille et l'apoptose** (`lugus PROG.adn`, `lugus PROG.arn` sûr ; **éteinte par défaut**, voir plus bas) :
   - pendant l'exécution, une colonne du code est relue toutes les 65 536 instructions (une colonne des isotopes lourds,
     puis une de l'ensemble, tour à tour), et une ronde entière quand le programme présente une image (la machine attend
     l'écran). Une empreinte de 64 bits par colonne, prise au lancement, dit vite si elle a changé ; alors seulement la
@@ -713,6 +713,41 @@ des ARN différents selon le besoin, apprend, se répare, et meurt plutôt que d
   - mesuré (`tests/test_patrouille.py`, avaries posées en pleine exécution par `LUGUS_AVARIE=PAS:MOT:BIT`) : sans
     patrouille, le résultat dérive (`inconnu`, ou un autre nombre) ; avec, il reste juste, ou la machine s'arrête en le
     disant. Aucun résultat faux rendu en silence.
+- **Trois couches, pas vingt** (le même soir, après la question « est-elle utile au moins ? ») :
+  - la patrouille protège contre une seule chose : un mot du code qui s'abîme en mémoire pendant que le programme
+    tourne. Sur un PC, c'est presque impossible ; dans les essais, elle ne servait que parce que les avaries étaient
+    posées exprès. Elle a un sens pour une machine qui tourne des jours sans surveillance, pour un programme qui peut
+    écrire sur son code, et surtout pour la machine quaternaire à signal spectrométrique, où le bruit est la règle ;
+  - elle est donc **éteinte par défaut**. Elle veille avec `--veille` (ou `LUGUS_PATROUILLE=1`), ou quand le programme
+    a des isotopes lourds : écrire `lourd`, c'est dire « ce calcul doit être sûr », et l'on ne paie que là.
+    `LUGUS_PATROUILLE=0` l'éteint toujours ;
+  - mesuré : **la ronde seule ne coûte rien de visible** (mandel_reaction, 185 millions d'instructions, 2 820
+    relectures : 4,81 s contre 4,75 s, dans le bruit). Le coût est celui des relectures à l'entrée et à la sortie
+    d'une fonction lourde très appelée (les 40 % plus haut) ;
+  - ce qui reste, chacun à sa place :
+
+    | Quand | Contre quoi | Qui |
+    |---|---|---|
+    | au repos | un fichier abîmé sur le disque | les témoins : signature, ombre, neutrons (réparer) |
+    | au lancement | un autre programme, un ARN dégradé | la signature des mots, la coiffe de l'ARN (refuser) |
+    | en marche, sur demande | un mot abîmé pendant qu'il sert | la patrouille ; l'apoptose est son verdict |
+
+  - les contrats, `exige`, les unités, les erreurs en Belnap et la rétrotranscription ne sont pas des sécurités de
+    plus contre les bits abîmés : ils attrapent des fautes de raisonnement, et restent.
+- **Le lecteur d'ADN écrit en vtx** (`chimie/adn.vtx`, embarqué dans lugus : `lugus relire PROG.adn [RELU.adn]`) :
+  - la même lecture que `chimie/adn.py` et `vtx-rs/src/adn.rs`, dans le langage lui-même : les sections et leurs
+    bornes, les signatures (le mélange de splitmix64 en entiers de 64 bits), les neutrons (le CRC-8, par une table),
+    l'ombre (Reed-Solomon sur GF(256) : syndromes, Berlekamp-Massey, Chien, Forney, environ 450 lignes de vtx), la
+    triangulation, le compte rendu de Lugus ligne pour ligne ; les introns qu'il ne connaît pas (isotopes, texte,
+    épigénome) sont recopiés tels quels ; il écrit l'ADN relu comme Python l'écrit, octet pour octet ;
+  - les deux compilateurs donnent ses mêmes mots (3 259) ; `tests/test_adn_vtx.py` le compare à Python sur les
+    avaries de tous les genres : le même état, le même compte rendu, le même ADN relu ;
+  - il ne dépend ni de Python ni de Rust : un Ogmios écrit en vtx pourra le lancer sur une machine fille, comme il
+    lance vtxc128 ;
+  - mesuré : l'ADN de vtxc128 (173 166 mots) en 11 s, contre 0,16 s pour Lugus en Rust (70 fois plus lent : il lit le
+    fichier caractère par caractère et recalcule l'ombre de chaque colonne) ; un programme ordinaire en un quart de
+    seconde. Il lit la version 3 seulement, un million de mots au plus.
 - **Ce qui reste** : Ogmios lance l'ADN sans la patrouille (elle est dans `lugus`) ; la patrouille relit le code, pas
-  les données (un tableau abîmé n'est pas vu) ; vtxc128 ne lit pas encore l'ADN (pour l'Ogmios écrit en vtx).
+  les données (un tableau abîmé n'est pas vu) ; le lecteur en vtx prend tout l'étage 2 (il tourne seul, sur sa machine)
+  et la rétrotranscription reste faite par Lugus.
 

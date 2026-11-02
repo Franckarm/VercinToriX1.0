@@ -830,27 +830,24 @@ fn empreinte_colonne(places: &[usize], lire: &dyn Fn(usize) -> u128) -> u64 {
 ///   memoire : les mots et l'épigénome (les souvenirs appris) ;
 ///   complet : les deux.
 /// L'ARN porte une coiffe (la signature de ses mots, vérifiée avant de lancer : un ARN dont la coiffe ne reconnaît pas
-/// les mots est dégradé, jamais lancé) et une queue (le nombre de lancements qui lui restent : à chaque lancement elle
-/// raccourcit ; usée, l'ARN est refait depuis l'ADN, qui est relu et réparé au passage).
+/// les mots est dégradé, jamais lancé). La queue des premières versions (un compte de lancements) est retirée : la
+/// coiffe, vérifiée à chaque lancement, faisait déjà son travail ; une section « queue » d'un ARN ancien est sautée.
 pub const ISOFORMES: [&str; 4] = ["rapide", "sur", "memoire", "complet"];
-pub const QUEUE: u32 = 64;
 
 pub struct Arn {
     pub mots: Vec<u128>,
     pub isoforme: String,
-    pub queue: u32,
     pub temoins: Option<(Vec<Molecule>, Temoins)>,
     pub epigenome: Option<Vec<String>>,
 }
 
-pub fn ecrire_arn(chemin: &str, mots: &[u128], mols: &[Molecule], t: &Temoins, isoforme: &str, queue: u32)
+pub fn ecrire_arn(chemin: &str, mots: &[u128], mols: &[Molecule], t: &Temoins, isoforme: &str)
                   -> Result<(), String> {
     if !ISOFORMES.contains(&isoforme) {
         return Err(format!("isoforme inconnue « {} » (rapide, sur, memoire, complet)", isoforme));
     }
     let mut sections: Vec<(String, Vec<String>)> = vec![
         ("coiffe".into(), vec![format!("{}|{}", signature(mots), isoforme)]),
-        ("queue".into(), vec![queue.to_string()]),
         ("mots".into(), vec![mots.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",")]),
     ];
     if isoforme == "sur" || isoforme == "complet" {
@@ -884,9 +881,8 @@ pub fn lire_arn(chemin: &str) -> Result<Arn, String> {
     }
     let tout = sections_adn(&l, chemin)?;
     let sec = |n: &str| tout.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone());
-    let degrade = || format!("{} : l'ARN est dégradé (sans coiffe, sans queue ou sans mots) : retranscrivez-le depuis l'ADN", chemin);
+    let degrade = || format!("{} : l'ARN est dégradé (sans coiffe ou sans mots) : retranscrivez-le depuis l'ADN", chemin);
     let coiffe = sec("coiffe").and_then(|v| v.first().cloned()).ok_or_else(degrade)?;
-    let queue: u32 = sec("queue").and_then(|v| v.first().and_then(|x| x.parse().ok())).ok_or_else(degrade)?;
     let mots: Vec<u128> = sec("mots").and_then(|v| v.first().cloned()).ok_or_else(degrade)?
         .split(',').filter(|x| !x.is_empty()).map(|x| x.parse::<u128>().map_err(|_| degrade())).collect::<Result<_, _>>()?;
     let (sig, isoforme) = coiffe.split_once('|').ok_or_else(degrade)?;
@@ -907,17 +903,5 @@ pub fn lire_arn(chemin: &str) -> Result<Arn, String> {
         }
         _ => None,
     };
-    Ok(Arn { mots, isoforme: isoforme.to_string(), queue, temoins, epigenome: sec("epigenome") })
-}
-
-/// la queue raccourcie d'un lancement (l'ARN réécrit tel quel, sa queue moins un)
-pub fn raccourcir_queue(chemin: &str) -> Result<u32, String> {
-    let texte = std::fs::read_to_string(chemin).map_err(|e| format!("{} : {}", chemin, e))?;
-    let i = texte.find("GU queue 1\n").ok_or_else(|| format!("{} : sans queue", chemin))? + "GU queue 1\n".len();
-    let j = i + texte[i..].find('\n').ok_or_else(|| format!("{} : queue illisible", chemin))?;
-    let q: u32 = texte[i..j].trim().parse().map_err(|_| format!("{} : queue illisible", chemin))?;
-    let q2 = q.saturating_sub(1);
-    let neuf = format!("{}{}{}", &texte[..i], q2, &texte[j..]);
-    std::fs::write(chemin, neuf).map_err(|e| format!("{} : {}", chemin, e))?;
-    Ok(q2)
+    Ok(Arn { mots, isoforme: isoforme.to_string(), temoins, epigenome: sec("epigenome") })
 }

@@ -6,10 +6,14 @@
 //   lugus renouveler vtxc128.vtx    vtxc128 se recompile lui-même ; point fixe exigé avant d'écrire vtxc128.mots
 //   lugus ranger PROG.vtx [PROG.adn]        compile et range l'ADN : les mots et leurs trois témoins
 //   lugus transcrire PROG.adn [PROG.mots]   vérifie et répare l'ADN, retire les témoins : les mots (l'ARN)
-//   lugus PROG.adn [ENTRÉES…]       vérifie et répare l'ADN ; l'épissage retire les témoins : l'ARN (les mots seuls) est lancé
-//   lugus transcrire PROG.adn PROG.arn [--isoforme rapide|sur|memoire|complet] [--queue N]   l'épissage alternatif : un ARN
-//                                   avec sa coiffe et sa queue ; sur garde les témoins (la patrouille), memoire l'épigénome
-//   lugus PROG.arn [ENTRÉES…]       vérifie la coiffe, raccourcit la queue (usée : refait depuis PROG.adn), lance
+//   lugus PROG.adn [ENTRÉES…] [--veille]   vérifie et répare l'ADN ; l'épissage retire les témoins : l'ARN (les mots
+//                                   seuls) est lancé ; la patrouille veille avec --veille, ou si le programme a des isotopes
+//                                   lourds (LUGUS_PATROUILLE=0 l'éteint, =1 l'arme)
+//   lugus transcrire PROG.adn PROG.arn [--isoforme rapide|sur|memoire|complet]   l'épissage alternatif : un ARN avec sa
+//                                   coiffe ; sur garde les témoins (la patrouille), memoire l'épigénome
+//   lugus PROG.arn [ENTRÉES…] [--veille]   vérifie la coiffe, lance
+//   lugus relire PROG.adn [RELU.adn]      la même lecture, faite par le lecteur d'ADN écrit en vtx (chimie/adn.vtx,
+//                                   embarqué) : le compte rendu, puis l'ADN relu (réparé) s'il est demandé
 //   lugus apprendre PROG.adn [ENTRÉES…]   lance, puis garde les souvenirs dans l'ADN (l'épigénome) : relancé, il les reprend
 //   lugus oublier PROG.adn          retire l'épigénome
 //   lugus pourquoi PROG.adn …       la même chose, depuis le texte gardé dans l'ADN (s'il redonne ses mots)
@@ -28,7 +32,7 @@ mod machine128;
 mod adn;
 #[allow(dead_code)]
 mod provenance;
-use machine128::{compiler128, compiler128_iso, compiler128_prov, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, VTXC128};
+use machine128::{compiler128, compiler128_iso, compiler128_prov, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, LECTEUR_ADN, VTXC128};
 use spu128::Spu128;
 
 fn compiler_ou_sortir(compilateur: &[u128], fichier: &str, mode: machine128::Mode128) -> Vec<u128> {
@@ -188,7 +192,7 @@ fn armer_patrouille(spu: &mut Spu128, mots: &[u128], mols: Vec<adn::Molecule>, t
     p
 }
 
-/// lance ; avec un ADN, l'épigénome est d'abord repris, et la patrouille veille (sauf LUGUS_PATROUILLE=0) ; rend la
+/// lance ; avec un ADN, l'épigénome est d'abord repris, et la patrouille veille si elle est armée ; rend la
 /// machine (pour apprendre)
 fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::PathBuf>, t: Option<&adn::Temoins>,
               veille: Option<(Vec<adn::Molecule>, adn::Temoins)>) -> Spu128 {
@@ -199,12 +203,28 @@ fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::Path
         reprendre_epigenome(&mut spu, t, mots);
     }
     poser_avaries(&mut spu);
+    // la patrouille est éteinte par défaut : elle veille si on le demande (--veille, LUGUS_PATROUILLE=1) ou si le
+    // programme a des isotopes lourds (« -> a lourd » : c'est ainsi qu'on écrit « cette fonction doit être sûre ») ;
+    // LUGUS_PATROUILLE=0 l'éteint toujours
+    let demandee = entrees.iter().any(|a| a == "--veille");
     let patrouille = match veille {
-        Some((mols, tv)) if std::env::var("LUGUS_PATROUILLE").map_or(true, |v| v != "0") =>
-            Some(armer_patrouille(&mut spu, mots, mols, tv)),
-        _ => None,
+        Some((mols, tv)) => {
+            let reglage = std::env::var("LUGUS_PATROUILLE").ok();
+            let armee = match reglage.as_deref() {
+                Some("0") => false,
+                Some("1") => true,
+                _ => demandee || mols.iter().any(|m| m.isotope),
+            };
+            if armee { Some(armer_patrouille(&mut spu, mots, mols, tv)) } else { None }
+        }
+        None => {
+            if demandee {
+                eprintln!("--veille : sans témoins (un .vtx, ou un ARN rapide ou mémoire), la patrouille ne peut pas veiller");
+            }
+            None
+        }
     };
-    spu.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
+    spu.entree.extend(entrees.iter().filter(|a| *a != "--veille").filter_map(|x| x.parse::<u128>().ok()));
     let debut = std::time::Instant::now();
     let r = spu.executer(u64::MAX);
     let duree = debut.elapsed();
@@ -395,6 +415,29 @@ fn main() {
         } else {
             eprintln!("l'épigénome est oublié");
         }
+    } else if args.len() >= 3 && args[1] == "relire" {
+        // le lecteur d'ADN écrit en vtx : les chemins lui sont donnés en entrées (un caractère par entrée, terminés par 0)
+        let absolu = |x: &str| std::fs::canonicalize(std::path::Path::new(x).parent().filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(std::path::Path::new("."))).map(|d| d.join(std::path::Path::new(x).file_name().unwrap_or_default()))
+            .unwrap_or_else(|_| std::path::PathBuf::from(x)).to_string_lossy().into_owned();
+        let mut spu = Spu128::nouveau();
+        spu.dossier = Some(std::path::PathBuf::from("."));
+        spu.charger(&nombres128(LECTEUR_ADN));
+        for chemin in [Some(absolu(&args[2])), args.get(3).map(|x| absolu(x))] {
+            if let Some(c) = chemin {
+                spu.entree.extend(c.chars().map(|ch| ch as u128));
+            }
+            spu.entree.push_back(0);
+        }
+        let r = spu.executer(u64::MAX);
+        let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
+        eprint!("{}", t);
+        if let Err(e) = r {
+            eprintln!("erreur : {}", e);
+            std::process::exit(1);
+        }
+        let etat = spu.sortie.last().copied().unwrap_or(0) as u8;
+        std::process::exit(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "transcrire" {
         match adn::transcrire(&args[2], true) {
             Ok((mots, _, t)) => {
@@ -409,13 +452,11 @@ fn main() {
                     let iso = isoforme.unwrap_or_else(|| "rapide".into());
                     let sortie = if sortie.ends_with(".arn") { sortie } else { std::path::Path::new(&args[2]).with_extension("arn").to_string_lossy().into_owned() };
                     let mols = adn::lire_adn(&args[2]).map(|x| x.1).unwrap_or_default();
-                    let queue = args.iter().position(|a| a == "--queue").and_then(|i| args.get(i + 1))
-                        .and_then(|x| x.parse::<u32>().ok()).unwrap_or(adn::QUEUE);
-                    if let Err(e) = adn::ecrire_arn(&sortie, &mots, &mols, &t, &iso, queue) {
+                    if let Err(e) = adn::ecrire_arn(&sortie, &mots, &mols, &t, &iso) {
                         eprintln!("{}", e);
                         std::process::exit(1);
                     }
-                    println!("l'ARN, isoforme {} (coiffe, queue de {} lancements) -> {}", iso, queue, sortie);
+                    println!("l'ARN, isoforme {} (avec sa coiffe) -> {}", iso, sortie);
                 } else {
                     ecrire_mots(&sortie, &mots);
                     println!("l'ARN (les mots seuls, les témoins retirés) -> {}", sortie);
@@ -441,33 +482,11 @@ fn main() {
             }
         }
     } else if args.len() >= 2 && args[1].ends_with(".arn") {
-        // l'ARN : sa coiffe vérifiée, sa queue raccourcie ; usée, il est refait depuis l'ADN (relu et réparé)
+        // l'ARN : sa coiffe vérifiée (un ARN qui ne reconnaît pas ses mots n'est pas lancé)
         let mut arn = adn::lire_arn(&args[1]).unwrap_or_else(|e| {
             eprintln!("{}", e);
             std::process::exit(1)
         });
-        if arn.queue == 0 {
-            let f_adn = std::path::Path::new(&args[1]).with_extension("adn").to_string_lossy().into_owned();
-            if !std::path::Path::new(&f_adn).exists() {
-                eprintln!("{} : l'ARN est usé (sa queue est épuisée) et son ADN ({}) est absent : retranscrivez-le", args[1], f_adn);
-                std::process::exit(1);
-            }
-            let (mots, _, t) = adn::transcrire(&f_adn, false).unwrap_or_else(|e| {
-                eprintln!("{}", e);
-                std::process::exit(1)
-            });
-            let mols = adn::lire_adn(&f_adn).map(|x| x.1).unwrap_or_default();
-            if let Err(e) = adn::ecrire_arn(&args[1], &mots, &mols, &t, &arn.isoforme, adn::QUEUE) {
-                eprintln!("{}", e);
-                std::process::exit(1);
-            }
-            eprintln!("l'ARN était usé : refait depuis {} (relu), une queue neuve de {} lancements", f_adn, adn::QUEUE);
-            arn = adn::lire_arn(&args[1]).unwrap_or_else(|e| {
-                eprintln!("{}", e);
-                std::process::exit(1)
-            });
-        }
-        let _ = adn::raccourcir_queue(&args[1]);
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         let epi = arn.epigenome.clone().map(|e| adn::Temoins { signatures: vec![], ombres: vec![], neutrons: Default::default(),
                                                                   introns: vec![("epigenome".into(), e)] });
