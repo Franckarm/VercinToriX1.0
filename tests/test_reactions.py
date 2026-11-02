@@ -360,6 +360,49 @@ if shutil.which("rustc") and os.path.exists(lugus):
              emule == forge and emule != "" and code.count("thread::scope") >= 4, f"émulé {emule!r} ; forgé {forge!r}")
     shutil.rmtree(tmp, ignore_errors=True)
 
+# 16. les erreurs (2.8) : une division par zéro donne une liaison variable avec sa cause ; reparer, erreur() ; un effet ou
+# un résultat entier qui la reçoit arrête la machine avec son message ; un flottant, une logique rendent variable
+ERREURS_A = 'reaction moyenne(a, b, n) -> m {\n    = a + b          -> t\n    = t / n          -> m\n}\nreaction sure(a, b, n) -> m {\n    = a + b          -> t\n    = reparer t / n par 0  -> m\n}\nreaction regarde(n) -> r {\n    = 100 / n        -> q\n    = si erreur(q) alors 0 sinon q + 1   -> r\n}\nreaction fl(x: flottant) -> y: flottant {\n    = 1.0 / x        -> y\n}\nfonction principal() {\n    sortie(sure(4, 6, 0)); sortie(sure(4, 6, 2));\n    sortie(regarde(0)); sortie(regarde(5));\n    afficher(fl(0.0)); afficher(fl(4.0));\n    sortie(moyenne(4, 6, 2));\n    sortie(moyenne(4, 6, 0));\n    sortie(99);\n}\n'
+ERREURS_B = 'reaction tout(a, b, n) -> r {\n    = a / n                 -> q\n    = rendez-vous(q, b % n) -> q2, m2\n    = pont q2 vers @2[3]    -> q3\n    = afficher(b / n)\n    = reparer q3 + m2 par 7 -> r\n    garantit q >= 0\n}\nreaction lo(x) -> v: logique {\n    = logique(x / x > 0)    -> v\n}\nreaction petit(x: flottant_32) -> y: flottant_32 {\n    = 1.0S / x -> y\n}\nreaction cond(x) -> z {\n    = si x > 0 alors 10 / x sinon 0 -> z0\n    = reparer z0 par 0 -> z\n}\nfonction principal() {\n    sortie(tout(8, 5, 2)); sortie(cond(5)); sortie(cond(0));\n    afficher(lo(0)); afficher(lo(3)); afficher(petit(0.0S));\n    sortie(tout(8, 5, 0));\n}\n'
+s16, t16, _ = jouer(ERREURS_A)
+verifier("reparer et erreur() : 0, 5, 0, 21 ; un flottant rend variable ; puis l'erreur non réparée arrête la machine",
+         s16 == [0, 5, 0, 21, 5] and t16 == "variable\n0.25\nerreur non réparée dans moyenne : division par zéro, ligne 3 (t / n)\n",
+         f"{s16} {t16!r}")
+s17, t17, _ = jouer(ERREURS_B)
+verifier("le rendez-vous, le pont, le reste, la logique, le flottant de 32 bits ; l'effet arrête le premier (vague 1)",
+         s17 == [5, 2, 0] and t17 == "2\nvariable\nvrai\nvariable\nerreur non réparée dans tout : division par zéro, ligne 5 (afficher(b / n))\n",
+         f"{s17} {t17!r}")
+sans = "reaction f(a) -> b {\n    = a / 4 -> b\n}\nfonction principal() { sortie(f(8)); }\n"
+avec = sans.replace("a / 4", "a / a")
+n_sans = len(vtx128.assembler(vtx128.compiler(sans)))
+verifier("diviser par une valeur écrite non nulle ne coûte rien (aucun drapeau)", "__err" not in vtx128.compiler(sans, optim=False)
+         and "__err" in vtx128.compiler(avec, optim=False), str(n_sans))
+f16 = os.path.join(tempfile.mkdtemp(), "e.vtx")
+open(f16, "w", encoding="utf-8").write("reaction g(n) -> r: flottant {\n    = 10.0 / flottant(n) -> q\n    = q + 1.0 -> r\n}\n"
+                                       "fonction principal() { afficher(g(0)); }\n")
+r16 = subprocess.run([sys.executable, os.path.join(racine, "vtx128.py"), "pourquoi", f16], capture_output=True, text=True, encoding="utf-8")
+verifier("la provenance dit variable : l'erreur, la division par zéro, non réparée",
+         "q variable (une erreur, une division par zéro, non réparée" in r16.stdout, r16.stdout[-400:])
+
+# 17. les tableaux dans les réactions : pour chaque sans réduction (un tableau), pour chaque x dans t, garder, la somme
+# d'un tableau ; des flottants avec -> t: flottant[]
+TABLEAUX = 'reaction carres(n) -> t {\n    = pour chaque i dans 0..n : i × i -> t\n}\nreaction stats(t) -> s {\n    = somme pour chaque x dans t : x -> total\n    = max pour chaque x dans t : x -> grand\n    = garder x dans t si x % 2 == 0 -> pairs\n    = pour chaque x dans pairs : x + 1 -> plus\n    = longueur(plus) -> np\n    = total × 1000 + grand × 10 + np -> s\n}\nreaction moities(t) -> m: flottant[] {\n    = pour chaque x dans t : flottant(x) * 0.5 -> m: flottant[]\n}\nfonction principal() {\n    soit t = carres(6);\n    pour x dans t { sortie(x); }\n    sortie(stats(t));\n    soit m = moities(t);\n    pour y dans m { afficher(y); }\n}\n'
+s18, t18, _ = jouer(TABLEAUX)
+verifier("les carrés 0..6, puis 55 · 25 · 3 pairs (55253), puis les moitiés en flottants",
+         s18 == [0, 1, 4, 9, 16, 25, 55253] and t18.split() == ["0.0", "0.5", "2.0", "4.5", "8.0", "12.5"], f"{s18} {t18!r}")
+s19, t19, _ = jouer('reaction grands(m: flottant[]) -> g: flottant[] {\n    = garder y dans m si y > 2.0 -> g\n}\nfonction principal() {\n    soit m = [1.5, 2.5, 0.5, 4.0];\n    soit g = grands(m);\n    sortie(longueur(g));\n    pour y dans g { afficher(y); }\n}\n')
+verifier("garder sur des flottants : la copie garde leur genre", s19 == [2] and t19.split() == ["2.5", "4.0"], f"{s19} {t19!r}")
+try:
+    vtx128.compiler("reaction f(n) -> t {\n    = pour chaque n dans 0..3 : n -> t\n}\nfonction principal() { sortie(f(1)); }\n")
+    verifier("la variable d'un pour chaque ne porte pas le nom d'une liaison", False, "pas d'erreur")
+except vtx128.VtxError as e:
+    verifier("la variable d'un pour chaque ne porte pas le nom d'une liaison", "porte le nom d'une liaison" in str(e), str(e))
+
+# 18. plusieurs résultats (-> q, r) et selon dans les réactions
+s20, t20, _ = jouer('reaction divmod(a, b) -> q, r {\n    = reparer a / b par 0  -> q\n    = reparer a % b par 0  -> r\n}\nreaction deux(x: flottant) -> m: flottant, v: logique {\n    = x * 0.5 -> m\n    = logique(x > 1.0) -> v\n}\nreaction usage(n) -> t {\n    = divmod(n, 7) -> q, r\n    = q × 100 + r -> t\n}\nreaction nom(c) -> t {\n    = selon c { 1: 10 ; 2, 3: 20 ; autre: 99 } -> t\n}\nreaction belnap(q: logique) -> n: flottant {\n    = selon q { vrai: 1.0 ; faux: 0.0 } -> n\n}\nreaction autre_usage(x: flottant) -> s: flottant {\n    = deux(x) -> m, v\n    = si v == vrai alors m sinon 0.0 - m -> s\n}\nfonction principal() {\n    sortie(usage(45)); sortie(divmod(45, 7));\n    sortie(nom(1)); sortie(nom(3)); sortie(nom(8));\n    afficher(belnap(vrai)); afficher(belnap(faux)); afficher(belnap(inconnu));\n    afficher(autre_usage(4.0)); afficher(autre_usage(0.5));\n}\n')
+verifier("divmod(45, 7) -> 6, 3 ; selon : 10, 20, 99 ; selon logique sans autre : faux devient inconnu ; deux résultats flottant et logique",
+         s20 == [603, 6, 10, 20, 99] and t20.split() == ["1.0", "0.0", "inconnu", "2.0", "-0.25"], f"{s20} {t20!r}")
+
 # 10. la forge de Lugus : mêmes sorties
 if shutil.which("rustc"):
     tmp = tempfile.mkdtemp(prefix="reactions-")

@@ -35,7 +35,7 @@ class R:
                 return x
             s = f"l{k}"
             genre = g.choice(["bin", "bin", "lourd", "leger", "lit", "si", "sinon", "rdv", "pont", "effet", "chaque",
-                              "flou", "unite"])
+                              "flou", "unite", "div", "reparer", "erreur", "tab", "tabdans", "garder", "somdans", "selon"])
             nom_at = f"n{i}" if g.random() < 0.25 else None
             pref = f"{nom_at} = " if nom_at else "= "
             apres = ""
@@ -74,11 +74,39 @@ class R:
                 red = g.choice(["somme", "min", "max"])
                 lignes.append(f"{pref}{red} pour chaque i dans 0..{g.randrange(2, 9)} : i * {pris()} -> {s}{apres}")
                 dispo.append(s)
+            elif genre == "div":
+                # une division ou un reste par une liaison : peut-être par zéro (une erreur, qui se propage)
+                lignes.append(f"{pref}{pris()} {g.choice(['/', '%', '÷'])} ({pris()} % 3) -> {s}{apres}")
+                dispo.append(s)
+            elif genre == "reparer":
+                lignes.append(f"{pref}reparer {pris()} {g.choice(['/', '%'])} {pris()} par {g.randrange(0, 9)} -> {s}{apres}")
+                dispo.append(s)
+            elif genre == "erreur":
+                x = pris()
+                lignes.append(f"{pref}si erreur({x}) alors {g.randrange(0, 9)} sinon {x} + 1 -> {s}{apres}")
+                dispo.append(s)
+            elif genre == "tab":
+                # un tableau : une case par i (les tableaux ne sont comparés qu'en mots : leur sens importe peu ici)
+                lignes.append(f"{pref}pour chaque i dans 0..{g.randrange(1, 6)} : i * {pris()} -> {s}{apres}")
+                dispo.append(s)
+            elif genre == "tabdans":
+                lignes.append(f"{pref}pour chaque x dans {pris()} : x + {pris()} -> {s}{apres}")
+                dispo.append(s)
+            elif genre == "garder":
+                lignes.append(f"{pref}garder x dans {pris()} si x > {pris()} -> {s}{apres}")
+                dispo.append(s)
+            elif genre == "somdans":
+                lignes.append(f"{pref}{g.choice(['somme', 'min', 'max'])} pour chaque x dans {pris()} : x * 2 -> {s}{apres}")
+                dispo.append(s)
+            elif genre == "selon":
+                autre = f" ; autre: {pris()}" if g.random() < 0.6 else ""
+                lignes.append(f"{pref}selon {pris()} % 4 {{ 0: {pris()} ; 1, 2: {pris()} + 1{autre} }} -> {s}{apres}")
+                dispo.append(s)
             elif genre == "unite":
                 # une liaison avec unité ne se mêle pas aux autres liaisons, sans unité
                 lignes.append(f"{pref}{g.randrange(1, 9)} {g.choice(['km', 'm', 'min', 'h', 's', 'm/s', 'kg·m/s²'])} -> {s}{apres}")
                 lignes.append(f"= sortie({s})")
-            if genre == "si" or any(x in gardees for x in lues):
+            if genre == "si" or (genre == "selon" and "autre" not in lignes[-1]) or any(x in gardees for x in lues):
                 gardees.update(x for x in dispo[len(dispo) - 2:] if x.startswith(s))
             if nom_at:
                 noms_atomes.append(nom_at)

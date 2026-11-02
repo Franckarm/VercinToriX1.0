@@ -493,6 +493,7 @@ def symbole_unite(k, v):
 # les mêmes entrées pour lui, il ne réagit pas : il redonne son souvenir ; et ce qui en dépend voit les mêmes entrées.
 SOUVENIRS = os.environ.get("VTX_SOUVENIRS", "1") != "0"     # VTX_SOUVENIRS=0 : sans (pour mesurer)
 SOUVENIRS_DEBUT, SOUVENIRS_FIN = 0x1000000, 0x2000000
+RESULTATS_DEBUT = 0x3000000  # @3[…] : les résultats d'une réaction après le premier (-> q, r), lus par l'atome qui l'appelle
 SOUVENIR_BITS = 4
 SOUVENIR_PLACES = 1 << SOUVENIR_BITS     # la colonne des souvenirs d'un atome : seize places
 TYPES_SOUVENIR = {"e", "i", "f", "s", "x", "w", "p"}
@@ -515,8 +516,9 @@ def est_pure(nom, fonctions, vus=None):
         return False
     m = getattr(f, "molecule", None)
     corps = [(a.quoi if a.genre != "pont" else None) for a in m.atomes] if m is not None else f.corps
-    if m is not None and any(a.genre == "pont" for a in m.atomes):
-        return False
+    if m is not None and any(a.genre == "pont" or a.genre == "garder" or (a.genre == "chaque" and (a.quoi[0] is None or a.quoi[3] is None))
+                             for a in m.atomes):
+        return False                      # un pont touche le monde ; un tableau neuf ou lu passe par le tas
     ok = [True]
 
     def voir(n):
@@ -554,7 +556,7 @@ def est_lourde(nom, fonctions, vus=None):
     if f is None:
         return False
     m = getattr(f, "molecule", None)
-    corps = [a.quoi for a in m.atomes] + [("chaque",) for a in m.atomes if a.genre == "chaque"] if m is not None else f.corps
+    corps = [a.quoi for a in m.atomes] + [("chaque",) for a in m.atomes if a.genre in ("chaque", "garder")] if m is not None else f.corps
     trouve = [False]
 
     def voir(n):
@@ -628,6 +630,8 @@ def pourquoi(mol, liaison, memoire, prefixe="", vus=None, sortie=None):
         quoi = "jamais calculée"
     elif la == 0:
         quoi = f"porte faux (sa branche n'a pas réagi ; la valeur calculée : {valeur_affichee(val, types.get(liaison))})"
+    elif la == 3:
+        quoi = f"variable (une erreur, une division par zéro, non réparée ; la valeur calculée : {valeur_affichee(val, types.get(liaison))})"
     else:
         quoi = f"= {avec_unite(valeur_affichee(val, types.get(liaison)), liaison)}"
     appels = memoire(mol.trace_appels)
@@ -714,8 +718,9 @@ class Molecule:
         for a in atomes:
             if a.genre == "rendezvous" and len(a.sorties) != len(a.quoi):
                 raise VtxError(f"ligne {a.ligne} : un rendez-vous de {len(a.quoi)} liaisons en donne autant ({len(a.sorties)} écrites)")
-            if a.genre not in ("rendezvous",) and len(a.sorties) > 1:
-                raise VtxError(f"ligne {a.ligne} : seul un rendez-vous donne plusieurs liaisons")
+            if a.genre not in ("rendezvous",) and len(a.sorties) > 1 and not (a.genre == "calcul" and a.quoi[0] == "appel"):
+                raise VtxError(f"ligne {a.ligne} : seul un rendez-vous (ou l'appel d'une réaction à plusieurs résultats) donne "
+                               f"plusieurs liaisons")
             for s_ in a.sorties:
                 if s_ in donne or s_ in params:
                     raise VtxError(f"ligne {a.ligne} : la liaison « {s_} » est déjà donnée (ligne {donne[s_].ligne if s_ in donne else ligne})")
@@ -732,10 +737,12 @@ class Molecule:
                     raise VtxError(f"ligne {c[4]} : « garantit » parle de « {v} », qu'aucun atome ne donne")
         for a in atomes:
             lus = variables_de(a.quoi, [])
-            if a.genre == "chaque":
-                if a.quoi[1] in donne or a.quoi[1] in params:
-                    raise VtxError(f"ligne {a.ligne} : la variable de « pour chaque » ({a.quoi[1]}) porte le nom d'une liaison")
-                lus = [v for v in lus if v != a.quoi[1]]
+            if a.genre in ("chaque", "garder"):
+                var_ = a.quoi[1] if a.genre == "chaque" else a.quoi[0]
+                if var_ in donne or var_ in params:
+                    raise VtxError(f"ligne {a.ligne} : la variable de « {'pour chaque' if a.genre == 'chaque' else 'garder'} » ({var_}) "
+                                   f"porte le nom d'une liaison")
+                lus = [v for v in lus if v != var_]
             a.entrees = []
             for v in lus:
                 if v in donne or v in params:
@@ -882,7 +889,7 @@ class Molecule:
             for a in vague:
                 l = a.ligne
                 if a.genre == "calcul":
-                    sorties = [u(a.quoi, l)]
+                    sorties = [u(a.quoi, l)] + [QUELCONQUE] * (len(a.sorties) - 1)
                 elif a.genre == "si":
                     cond, x, y = a.quoi
                     u(cond, l)
@@ -893,10 +900,26 @@ class Molecule:
                 elif a.genre == "chaque":
                     red, var, a_, b_, corps_ = a.quoi
                     env[var] = {}
-                    sorties = [u(corps_, l)]
+                    uc = u(corps_, l)
+                    sorties = [uc if red is not None else QUELCONQUE]     # un tableau : son unité n'est pas suivie
                     del env[var]
+                elif a.genre == "garder":
+                    env[a.quoi[0]] = {}
+                    u(a.quoi[2], l)
+                    sorties = [QUELCONQUE]
+                    del env[a.quoi[0]]
                 elif a.genre == "pont":
                     sorties = [u(a.quoi[0], l)]
+                elif a.genre == "reparer":
+                    sorties = [accord(u(a.quoi[0], l), u(a.quoi[1], l), "reparer … par", l)]
+                elif a.genre == "selon":
+                    e_, cas_, autre_, _ = a.quoi
+                    u(e_, l)
+                    valeurs = [v for _, v in cas_] + ([autre_] if autre_ is not None else [])
+                    uv = u(valeurs[0], l)
+                    for v in valeurs[1:]:
+                        uv = accord(uv, u(v, l), "selon", l)
+                    sorties = [uv]
                 else:
                     sorties = [QUELCONQUE]
                 for s_, us in zip(a.sorties, sorties):
@@ -954,6 +977,9 @@ class Molecule:
         sinon, et ce qui en dépend) a son drapeau __ok ; les atomes qui touchent le monde ne réagissent que s'il est vrai."""
         st = []
         ok = {}                      # liaison -> nom de son drapeau, si elle peut porter faux
+        err = {}                     # liaison -> nom de son drapeau d'erreur (0 : aucune ; k : la cause numéro k)
+        self.causes = []             # les causes d'erreur (k = 1, 2…) : le message de chacune
+        n_err = [0]
         if PROVENANCE:
             # trois cases par liaison (la valeur, le nombre de réactions, présente ou non), une pour les appels
             self.traces = {}
@@ -986,7 +1012,123 @@ class Molecule:
             voir(e)
             return bool(trouve)
 
+        # les erreurs (2.8) : une division (ou un reste) par zéro donne une liaison variable, avec sa cause ; elle se
+        # propage le long des liaisons ; erreur(x) la regarde, « reparer x par v » la répare ; un atome qui touche le monde
+        # (un effet, un pont) ou le résultat entier d'une réaction l'arrête, avec son message
+        def non_nul(d):
+            # une valeur écrite non nulle (le zéro d'un flottant a son état : 1 << 63 pour le flottant de 64 bits)
+            return (d[0] in ("nombre", "inombre") and d[1] != 0 or d[0] == "snombre" and d[1] not in (0, 1 << 31)
+                    or d[0] == "fnombre" and d[1] not in (0, 1 << 63) or d[0] == "xnombre" and d[1] not in (0, 1 << 127))
+
+        def diviseurs(e, acc):
+            if isinstance(e, tuple) and e and isinstance(e[0], str):
+                if e[0] == "bin" and e[1] in ("/", "%") and not non_nul(e[3]):
+                    acc.append((e[1], e[3]))
+                for x in e[1:]:
+                    diviseurs(x, acc)
+            elif isinstance(e, (list, tuple)):
+                for x in e:
+                    diviseurs(x, acc)
+            return acc
+
+        def traites(e, acc):
+            """les liaisons regardées par erreur(x) : l'atome traite leur erreur"""
+            if isinstance(e, tuple) and e and isinstance(e[0], str):
+                if e[0] == "appel" and e[1] == "erreur" and len(e[2]) == 1 and e[2][0][0] == "var":
+                    acc.add(e[2][0][1])
+                for x in e[1:]:
+                    traites(x, acc)
+            elif isinstance(e, (list, tuple)):
+                for x in e:
+                    traites(x, acc)
+            return acc
+
+        def sans_erreur(e):
+            """erreur(x) devient « le drapeau de x n'est pas nul » (faux si x ne peut pas porter d'erreur)"""
+            if isinstance(e, tuple) and e and isinstance(e[0], str):
+                if e[0] == "appel" and e[1] == "erreur":
+                    if len(e[2]) != 1 or e[2][0][0] != "var":
+                        raise VtxError(f"ligne {e[3]} : erreur() regarde une liaison : erreur(x)")
+                    x = e[2][0][1]
+                    return ("bin", "!=", ("var", err[x], e[3]), ("nombre", 0)) if x in err else ("nombre", 0)
+                return tuple(sans_erreur(x) if isinstance(x, (tuple, list)) else x for x in e)
+            if isinstance(e, list):
+                return [sans_erreur(x) for x in e]
+            if isinstance(e, tuple):
+                return tuple(sans_erreur(x) if isinstance(x, (tuple, list)) else x for x in e)
+            return e
+
+        def drapeau_err(nom_, lus, divs, a, l):
+            """les instructions qui calculent le drapeau nom_ : la première erreur lue, sinon un diviseur nul"""
+            out = [("soit", nom_, ("var", lus[0], l) if lus else ("nombre", 0), l, None)]
+            for f in lus[1:]:
+                out.append(("si", ("bin", "==", ("var", nom_, l), ("nombre", 0)), [("affecter", nom_, ("var", f, l), l)], None, l))
+            for op, d in divs:
+                self.causes.append(self.texte_de(f"erreur non réparée dans {self.nom} : {'division' if op == '/' else 'reste d’une division'} "
+                                                 f"par zéro, ligne {l} ({a.texte})"))
+                k = len(self.causes)
+                out.append(("si", ("bin", "&&", ("bin", "==", ("var", nom_, l), ("nombre", 0)), ("bin", "==", d, ("nombre", 0))),
+                            [("affecter", nom_, ("nombre", k), l)], None, l))
+            return out
+
+        def rompre_si(nom_, l):
+            """si le drapeau nom_ porte une erreur : son message, puis la machine s'arrête"""
+            corps_ = [("si", ("bin", "==", ("var", nom_, l), ("nombre", k)), [("expr", ("appel", "afficher", [m], l), l)], None, l)
+                      for k, m in enumerate(self.causes, 1)]
+            corps_.append(("expr", ("appel", "__rompre", [], l), l))
+            return ("si", ("bin", "!=", ("var", nom_, l), ("nombre", 0)), corps_, None, l)
+
+        def lus_err(e, a, sauf=()):
+            vus = []
+            for v in variables_de(e, []):
+                if v in err and v not in sauf and err[v] not in vus:
+                    vus.append(err[v])
+            return vus
+
+        frontiere = {}               # atome qui touche le monde -> l'instruction qui l'arrête sur une erreur
         for vague in self.vagues:
+            for a in vague:
+                l = a.ligne
+                gardees = traites(a.quoi, set())
+                if a.genre == "reparer":
+                    x, v = a.quoi
+                    fx, dx = lus_err(x, a), diviseurs(x, [])
+                    if fx or dx:
+                        n_err[0] += 1
+                        tmp = f"__err{n_err[0]}"
+                        st.extend(drapeau_err(tmp, fx, dx, a, l))
+                        a.repare = tmp
+                    else:
+                        a.repare = None
+                    fv, dv = lus_err(v, a), diviseurs(v, [])
+                    if a.sorties and (fv or dv):
+                        st.extend(drapeau_err(f"{a.sorties[0]}__err", fv, dv, a, l))
+                        err[a.sorties[0]] = f"{a.sorties[0]}__err"
+                    a.quoi = sans_erreur(a.quoi)
+                    continue
+                if a.genre == "rendezvous":
+                    for s_, x in zip(a.sorties, a.quoi):
+                        f_, d_ = lus_err(x, a, gardees), diviseurs(x, [])
+                        if f_ or d_:
+                            st.extend(drapeau_err(f"{s_}__err", f_, d_, a, l))
+                            err[s_] = f"{s_}__err"
+                    a.quoi = sans_erreur(a.quoi)
+                    continue
+                corps_q = (a.quoi[2], a.quoi[3]) if a.genre == "chaque" else a.quoi[1] if a.genre == "garder" else a.quoi
+                f_ = lus_err(a.quoi, a, gardees)
+                d_ = diviseurs(corps_q, [])
+                touche = a.genre == "pont" or (a.genre == "calcul" and not a.sorties)
+                if f_ or d_:
+                    if touche:
+                        n_err[0] += 1
+                        tmp = f"__err{n_err[0]}"
+                        frontiere[id(a)] = drapeau_err(tmp, f_, d_, a, l) + [rompre_si(tmp, l)]
+                    elif a.sorties:
+                        st.extend(drapeau_err(f"{a.sorties[0]}__err", f_, d_, a, l))
+                        for s_ in a.sorties:
+                            err[s_] = f"{a.sorties[0]}__err"
+                a.quoi = sans_erreur(a.quoi)
+
             # les atomes lourds d'une même vague (des calculs qui appellent une fonction du programme) : marqués pour que
             # la forge les fasse réagir sur plusieurs cœurs ; hors de principal (qui ne réagit qu'une fois), ceux qui peuvent
             # garder un souvenir le gardent plutôt : rappelés avec les mêmes entrées, ils ne coûtent plus rien
@@ -1029,6 +1171,60 @@ class Molecule:
                         if garde is not None:
                             ok[s_] = self._drapeau(st, s_, garde, l)
                     continue
+                if a.genre == "garder":
+                    # une copie de t (elle garde son genre : des flottants restent des flottants), où l'on range les cases
+                    # retenues, puis sa longueur
+                    var, t_, cond = a.quoi
+                    s_ = a.sorties[0] if a.sorties else f"__garder{l}"
+                    tt, kk, cc = f"{s_}__t", f"{s_}__k", f"{s_}__c"
+                    v_ = lambda n: ("var", n, l)  # noqa: E731
+                    st.extend([("soit", tt, t_, l, None), ("soit", s_, ("appel", "copie", [v_(tt)], l), l, None),
+                               ("soit", cc, ("nombre", 0), l, None),
+                               ("pour", kk, ("nombre", 0), ("appel", "longueur", [v_(tt)], l),
+                                [("soit", var, Analyseur.element(v_(tt), v_(kk)), l, None, "chaque"),
+                                 ("si", cond, [("ecrire", 3, Analyseur.element(v_(s_), v_(cc))[2], v_(var), l),
+                                               ("affecter", cc, ("bin", "+", v_(cc), ("nombre", 1)), l)], None, l)], l, 1),
+                               ("ecrire", 3, ("bin", "&", v_(s_), ("nombre", 16777215)), v_(cc), l)])
+                    if garde is not None and a.sorties:
+                        ok[s_] = self._drapeau(st, s_, garde, l)
+                    continue
+                if a.genre == "chaque" and (a.quoi[0] is None or a.quoi[3] is None):
+                    red, var, a_, b_, corps_ = a.quoi
+                    s_ = a.sorties[0] if a.sorties else f"__chaque{l}"
+                    v_ = lambda n: ("var", n, l)  # noqa: E731
+                    # le genre du tableau neuf : écrit sur sa liaison (-> t: flottant[]), sinon des entiers
+                    ctor = "tableau_flottants" if getattr(a, "types_declares", {}).get(s_) == "F" else "tableau"
+                    if red is None and b_ is not None:
+                        # pour chaque i dans a..b : un tableau de b - a cases
+                        sa, sn = f"{s_}__a", f"{s_}__n"
+                        st.extend([("soit", sa, a_, l, None), ("soit", sn, ("nombre", 0), l, None),
+                                   ("si", ("bin", ">", b_, v_(sa)), [("affecter", sn, ("bin", "-", b_, v_(sa)), l)], None, l),
+                                   ("soit", s_, ("appel", ctor, [v_(sn)], l), l, None),
+                                   ("pour", var, v_(sa), b_,
+                                    [("ecrire", 3, Analyseur.element(v_(s_), ("bin", "-", v_(var), v_(sa)))[2], corps_, l)], l, 1)])
+                    else:
+                        tt, kk = f"{s_}__t", f"{s_}__k"
+                        lire_x = ("soit", var, Analyseur.element(v_(tt), v_(kk)), l, None, "chaque")
+                        if red is None:
+                            # pour chaque x dans t : une case par case de t
+                            corps_boucle = [lire_x, ("ecrire", 3, Analyseur.element(v_(s_), v_(kk))[2], corps_, l)]
+                            debut = [("soit", tt, a_, l, None),
+                                     ("soit", s_, ("appel", ctor, [("appel", "longueur", [v_(tt)], l)], l), l, None)]
+                        else:
+                            # somme (min, max) pour chaque x dans t : une liaison
+                            init = {"somme": 0, "min": (1 << 64) - 1, "max": 0}[red]
+                            if red == "somme":
+                                tour = [("affecter", s_, ("bin", "+", v_(s_), corps_), l)]
+                            else:
+                                tmp = f"{s_}__x"
+                                tour = [("soit", tmp, corps_, l, None),
+                                        ("si", ("bin", "<" if red == "min" else ">", v_(tmp), v_(s_)), [("affecter", s_, v_(tmp), l)], None, l)]
+                            corps_boucle = [lire_x] + tour
+                            debut = [("soit", s_, ("nombre", init), l, None), ("soit", tt, a_, l, None)]
+                        st.extend(debut + [("pour", kk, ("nombre", 0), ("appel", "longueur", [v_(tt)], l), corps_boucle, l, 1)])
+                    if garde is not None and a.sorties:
+                        ok[s_] = self._drapeau(st, s_, garde, l)
+                    continue
                 if a.genre == "chaque":
                     red, var, a_, b_, corps_ = a.quoi
                     s_ = a.sorties[0] if a.sorties else f"__chaque{l}"
@@ -1045,10 +1241,50 @@ class Molecule:
                     if garde is not None and a.sorties:
                         ok[s_] = self._drapeau(st, s_, garde, l)
                     continue
+                if a.genre == "selon":
+                    # selon c { 1: x ; vrai: y ; autre: z } : la valeur de la première branche qui convient ; sans « autre »,
+                    # quand aucune ne convient, la liaison porte faux
+                    e_, cas_, autre_, logique_ = a.quoi
+                    s_ = a.sorties[0] if a.sorties else f"__selon{l}"
+                    tmp = f"{s_}__c"
+                    st.append(("soit", tmp, e_, l, "q" if logique_ else None))
+
+                    def condition(labs):
+                        c_ = None
+                        for lab in labs:
+                            t_ = ("bin", "==", ("var", tmp, l), lab)
+                            c_ = t_ if c_ is None else ("bin", "||", c_, t_)
+                        return c_
+                    st.append(("soit", s_, autre_ if autre_ is not None else cas_[0][1], l, None))
+                    chaine = None
+                    for labs, v in reversed(cas_):
+                        chaine = [("si", condition(labs), [("affecter", s_, v, l)], chaine, l)]
+                    st.extend(chaine or [])
+                    if autre_ is None:
+                        une = condition([lab for labs, _ in cas_ for lab in labs])
+                        d = f"{s_}__ok"
+                        c_ = ("bin", "!=", une, ("nombre", 0))
+                        st.append(("soit", d, c_ if garde is None else ("bin", "&", garde, c_), l, None))
+                        ok[s_] = d
+                    elif garde is not None and a.sorties:
+                        ok[s_] = self._drapeau(st, s_, garde, l)
+                    continue
+                if a.genre == "reparer":
+                    x, v = a.quoi
+                    if a.sorties:
+                        st.append(("soit", a.sorties[0], x, l, None))
+                        if a.repare is not None:
+                            st.append(("si", ("bin", "!=", ("var", a.repare, l), ("nombre", 0)), [("affecter", a.sorties[0], v, l)], None, l))
+                        if garde is not None:
+                            ok[a.sorties[0]] = self._drapeau(st, a.sorties[0], garde, l)
+                    continue
                 if a.genre == "pont":
                     x, m = a.quoi
-                    ecr = ("ecrire", m[1], m[2], x, l)
-                    st.append(ecr if garde is None else ("si", ("bin", "!=", garde, ("nombre", 0)), [ecr], None, l))
+                    ecr = frontiere.get(id(a), []) + [("ecrire", m[1], m[2], x, l)]
+                    if garde is None:
+                        st.extend(ecr)
+                    else:
+                        st.append(("si", ("bin", "!=", garde, ("nombre", 0)), ecr, None, l))
                     for s_ in a.sorties:
                         st.append(("soit", s_, x, l, None))
                         if garde is not None:
@@ -1058,13 +1294,37 @@ class Molecule:
                 if a.sorties and garde is None and self.souvenir_possible(a):
                     st.extend(self.souvenir(a))
                     continue
-                if a.sorties:
+                if len(a.sorties) > 1:
+                    # l'appel d'une réaction à plusieurs résultats : le premier rendu, les autres lus dans @3[RESULTATS…]
+                    f_ = self.fonctions.get(a.quoi[1])
+                    n_res = len(getattr(f_, "resultats", []) or []) if f_ is not None else 0
+                    if n_res < len(a.sorties):
+                        raise VtxError(f"ligne {l} : « {a.quoi[1]} » rend {n_res or 1} résultat(s), et l'atome en attend "
+                                       f"{len(a.sorties)}")
+                    st.append(("soit", a.sorties[0], a.quoi, l, None))
+                    for i, s_ in enumerate(a.sorties[1:], 1):
+                        lu = ("lire", 3, ("nombre", RESULTATS_DEBUT + i - 1))
+                        t_ = f_.rtypes[i]
+                        if t_ in ("f", "x"):
+                            lu = ("appel", "comme_flottant" if t_ == "f" else "comme_flottant_petuar", [lu], l)
+                        elif t_ == "q":
+                            lu = ("appel", "comme_logique", [lu], l)
+                        elif t_ not in ("e", "i"):
+                            raise VtxError(f"ligne {l} : un résultat de genre {NOM_TYPE[t_]} après le premier : pas encore")
+                        st.append(("soit", s_, lu, l, None))
+                    if garde is not None:
+                        for s_ in a.sorties:
+                            ok[s_] = self._drapeau(st, s_, garde, l)
+                elif a.sorties:
                     st.append(("soit", a.sorties[0], a.quoi, l, None))
                     if garde is not None:
                         ok[a.sorties[0]] = self._drapeau(st, a.sorties[0], garde, l)
                 else:
-                    ins = ("expr", a.quoi, l)
-                    st.append(ins if garde is None else ("si", ("bin", "!=", garde, ("nombre", 0)), [ins], None, l))
+                    ins = frontiere.get(id(a), []) + [("expr", a.quoi, l)]
+                    if garde is None:
+                        st.extend(ins)
+                    else:
+                        st.append(("si", ("bin", "!=", garde, ("nombre", 0)), ins, None, l))
         if PROVENANCE:
             # la provenance : la dernière valeur de chaque liaison, le nombre de réactions (un atome à souvenir le compte
             # lui-même, quand il réagit vraiment), et si elle porte faux
@@ -1081,6 +1341,10 @@ class Molecule:
                     if s_ not in self.au_souvenir:
                         st.append(plus_un(base + 1))
                     st.append(("ecrire", 3, ("nombre", base + 2), ("var", ok[s_], l) if s_ in ok else ("nombre", 1), l))
+                    if s_ in err:
+                        # une erreur : la liaison est variable (3)
+                        st.append(("si", ("bin", "!=", ("var", err[s_], l), ("nombre", 0)),
+                                   [("ecrire", 3, ("nombre", base + 2), ("nombre", 3), l)], None, l))
         for c in self.contrats:
             if c[1] == "garantit":
                 # une liaison qui porte faux (la branche n'a pas réagi) ne promet rien : vérifié seulement si elle est là
@@ -1088,11 +1352,47 @@ class Molecule:
                 garde = None
                 for d in drapeaux:
                     garde = ("var", d, c[4]) if garde is None else ("bin", "&", garde, ("var", d, c[4]))
+                # une liaison qui porte une erreur ne promet rien non plus
+                for f in sorted({err[v] for v in variables_de(c[2], []) if v in err}):
+                    t = ("bin", "==", ("var", f, c[4]), ("nombre", 0))
+                    garde = t if garde is None else ("bin", "&", garde, t)
                 st.append(verifier(c, garde))
+        for i, r_ in enumerate(getattr(self, "resultats", [])[1:], 1):
+            # les résultats après le premier : rangés dans @3[RESULTATS…], avec la même règle que le premier (une logique
+            # rend faux, un flottant inconnu ; une erreur : variable, ou l'arrêt pour un entier)
+            l = self.ligne
+            if r_ not in self.donne and r_ not in self.params:
+                raise VtxError(f"ligne {l} : la réaction rend « {r_} », qu'aucun atome ne donne")
+            t_ = self.rtypes[i]
+            case = ("nombre", RESULTATS_DEBUT + i - 1)
+            st.append(("ecrire", 3, case, ("var", r_, l), l))
+            if r_ in ok:
+                absent = {"q": ("qnombre", 1), "f": ("fnombre", 0), "s": ("snombre", 0), "x": ("xnombre", 0)}.get(t_)
+                if absent is None:
+                    raise VtxError(f"ligne {l} : la réaction rend « {r_} », qui peut porter faux (sa branche peut ne pas réagir) ; "
+                                   f"un {NOM_TYPE[t_]} ne sait pas le dire : écrivez un sinon, ou rendez une logique (faux) ou un "
+                                   f"flottant (inconnu)")
+                st.append(("si", ("bin", "==", ("var", ok[r_], l), ("nombre", 0)), [("ecrire", 3, case, absent, l)], None, l))
+            if r_ in err:
+                variable = {"q": ("qnombre", 3), "f": ("fnombre", 3 << 62), "s": ("snombre", 3 << 30),
+                            "x": ("xnombre", 3 << 126)}.get(t_)
+                if variable is None:
+                    st.append(rompre_si(err[r_], l))
+                else:
+                    st.append(("si", ("bin", "!=", ("var", err[r_], l), ("nombre", 0)), [("ecrire", 3, case, variable, l)], None, l))
         if resultat is not None:
             if resultat not in self.donne and resultat not in self.params:
                 raise VtxError(f"ligne {self.ligne} : la réaction rend « {resultat} », qu'aucun atome ne donne")
             l = self.ligne
+            if resultat in err:
+                # le résultat porte une erreur : un flottant ou une logique rendent variable ; un entier ne sait pas le dire,
+                # la machine s'arrête avec le message
+                variable = {"q": ("qnombre", 3), "f": ("fnombre", 3 << 62), "s": ("snombre", 3 << 30),
+                            "x": ("xnombre", 3 << 126)}.get(rtype)
+                if variable is None:
+                    st.append(rompre_si(err[resultat], l))
+                else:
+                    st.append(("si", ("bin", "!=", ("var", err[resultat], l), ("nombre", 0)), [("retour", variable, l)], None, l))
             if resultat in ok:
                 # le résultat peut porter faux (sa branche n'a pas réagi) : la réaction le dit avec son type, une logique
                 # rend faux, un flottant rend inconnu (la valeur n'est jamais arrivée, 2.8) ; un entier ne sait pas le dire
@@ -1111,7 +1411,8 @@ class Molecule:
     def souvenir_possible(self, a):
         """un atome lourd : l'appel d'une fonction pure du programme, aux entrées et au résultat d'un type rangé en un mot"""
         q = a.quoi
-        if not SOUVENIRS or q[0] != "appel" or not isinstance(q[1], str) or q[1] not in getattr(self, "fonctions", {}):
+        if not SOUVENIRS or q[0] != "appel" or not isinstance(q[1], str) or q[1] not in getattr(self, "fonctions", {}) \
+                or len(a.sorties) != 1:
             return False
         f = self.fonctions[q[1]]
         if self.nom == "principal" or not est_lourde(f.nom, self.fonctions):
@@ -1524,6 +1825,7 @@ class Analyseur:
                 f.molecule.fonctions_connues = connues
                 f.molecule.fonctions = par_nom
                 f.molecule.souvenir_place = getattr(self, "souvenir_place", SOUVENIRS_DEBUT)
+                f.molecule.texte_de = lambda t: ("etiq", f"TEXTE{self.textes.setdefault(t, len(self.textes))}")
                 f.corps = self.abaisser(f.molecule.corps(f.resultat, f.rtype))
                 self.souvenir_place = f.molecule.souvenir_place
         if getattr(self, "cumul_utilise", False):
@@ -1553,11 +1855,19 @@ class Analyseur:
                 self.suivant()
         self.attendre(")")
         resultat, rtype, runite = None, "e", None
+        resultats, rtypes = [], []
         if self.est_op("->"):
             self.suivant()
             resultat = self.identifiant()
             t, runite = self.type_et_unite()
             rtype = t or "e"
+            resultats, rtypes = [resultat], [rtype]
+            while self.est_op(","):
+                # plusieurs résultats : -> q, r
+                self.suivant()
+                resultats.append(self.identifiant())
+                t2, _u2 = self.type_et_unite()
+                rtypes.append(t2 or "e")
         self.attendre("{")
         atomes, contrats = [], []
         self.dans_reaction = True
@@ -1570,12 +1880,14 @@ class Analyseur:
         self.attendre("}")
         mol = Molecule(nom, params, atomes, l, contrats, resultat)
         mol.unites_entrees, mol.unite_declaree = unites, runite
+        mol.resultats, mol.rtypes = resultats, rtypes
         REACTIONS[nom] = mol
         # le corps est écrit à la fin du programme (programme()) : toutes les fonctions sont alors connues
         f = Fonction(nom, params, [], l, ptypes, rtype)
         f.rangee = False
         f.molecule = mol
         f.resultat = resultat
+        f.resultats, f.rtypes = resultats, rtypes
         return f
 
     def texte_jetons(self, i0, beau=False):
@@ -1662,13 +1974,26 @@ class Analyseur:
                 raise VtxError(f"ligne {l} : « dans » attendu dans « pour chaque … dans a..b »")
             self.suivant()
             a_ = self.expr()
-            self.attendre("..")
-            b_ = self.expr()
+            b_ = None                         # pour chaque x dans t : chaque case du tableau t
+            if self.est_op(".."):
+                self.suivant()
+                b_ = self.expr()
             self.attendre(":")
             corps_ = self.expr()
-            if reduction is None:
-                raise VtxError(f"ligne {l} : « pour chaque » sans réduction (somme, min, max) donnera un tableau : pas encore")
+            # sans réduction : un tableau (une case par élément) ; avec : une liaison
             genre, quoi = "chaque", (reduction, var, a_, b_, corps_)
+        elif k == "id" and v == "garder":
+            # garder x dans t si condition : les cases de t qui tiennent la condition, dans l'ordre
+            self.suivant()
+            var = self.nom_variable()
+            if self.regard()[:2] != ("kw", "dans"):
+                raise VtxError(f"ligne {l} : « dans » attendu dans « garder … dans … si … »")
+            self.suivant()
+            t_ = self.expr()
+            if self.regard()[:2] != ("kw", "si"):
+                raise VtxError(f"ligne {l} : « si » attendu dans « garder … dans … si … »")
+            self.suivant()
+            genre, quoi = "garder", (var, t_, self.expr())
         elif k == "id" and v == "pont":
             self.suivant()
             x = self.expr()
@@ -1677,15 +2002,59 @@ class Analyseur:
             self.suivant()
             m = self.acces()
             genre, quoi = "pont", (x, m)
+        elif k == "kw" and v == "selon":
+            # selon c { 1: x ; 2, 3: y ; vrai: z ; autre: w } : la valeur de la première branche qui convient
+            self.suivant()
+            e_ = self.expr()
+            self.attendre("{")
+            cas_, autre_, logique_ = [], None, False
+            while not self.est_op("}"):
+                k2, v2, l2 = self.regard()
+                if k2 == "id" and v2 == "autre":
+                    self.suivant()
+                    self.attendre(":")
+                    autre_ = self.expr()
+                else:
+                    labs = []
+                    while True:
+                        lab = self.expr()
+                        if variables_de(lab, []):
+                            raise VtxError(f"ligne {l2} : une branche de « selon » est une valeur écrite (un nombre, vrai, faux…)")
+                        if lab[0] == "blit":
+                            lab = ("qnombre", lab[1])
+                        if lab[0] == "qnombre":
+                            logique_ = True
+                        labs.append(lab)
+                        if not self.est_op(","):
+                            break
+                        self.suivant()
+                    self.attendre(":")
+                    cas_.append((labs, self.expr()))
+                if self.est_op(";"):
+                    self.suivant()
+            self.attendre("}")
+            if not cas_:
+                raise VtxError(f"ligne {l} : « selon » sans branche")
+            genre, quoi = "selon", (e_, cas_, autre_, logique_)
+        elif k == "id" and v == "reparer":
+            # reparer x par v : x s'il n'a pas d'erreur, sinon v (docs/vtx-reactions.md, 2.8)
+            self.suivant()
+            x = self.expr()
+            if self.regard()[:2] != ("id", "par"):
+                raise VtxError(f"ligne {l} : « par » attendu dans « reparer … par … »")
+            self.suivant()
+            genre, quoi = "reparer", (x, self.expr())
         else:
             genre, quoi = "calcul", self.expr()
         texte = self.texte_jetons(i_atome, True).replace("rendez - vous", "rendez-vous")
-        sorties, declarees = [], {}
+        sorties, declarees, types_ = [], {}, {}
         if self.est_op("->"):
             self.suivant()
             while True:
                 sorties.append(self.nom_variable())
-                _t, u = self.type_et_unite()
+                t_decl, u = self.type_et_unite()
+                if t_decl is not None:
+                    types_[sorties[-1]] = t_decl
                 if u is not None:
                     declarees[sorties[-1]] = u
                 if not self.est_op(","):
@@ -1704,6 +2073,7 @@ class Analyseur:
         a_.texte = texte
         a_.apres = apres
         a_.unites_declarees = declarees
+        a_.types_declares = types_
         return a_
 
     def une_constante(self, l):
@@ -4762,6 +5132,15 @@ fonction tableau(n) {
     @3[p + 1] = cap;
     @3[p + 2] = __verifier(nouveau(cap)) & 16777215;
     retour h;
+}
+fonction tableau_flottants(n): flottant[] {
+    // un tableau dynamique de n flottants, 0.0 au départ (le zéro du flottant de 64 bits : son état « positif », 1 << 63)
+    soit t = tableau(n);
+    soit d = @3[(t & 16777215) + 2];
+    pour i dans 0..n {
+        @3[d + i] = 9223372036854775808;
+    }
+    retour t;
 }
 fonction __remplir(t, i, v) {
     @3[@3[(t & 16777215) + 2] + i] = v;

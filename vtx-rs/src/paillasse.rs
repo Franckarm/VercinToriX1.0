@@ -74,7 +74,7 @@ pub struct Reaction {
 }
 
 const MOTS: &[&str] = &["si", "alors", "sinon", "pour", "chaque", "dans", "somme", "min", "max", "rendez", "vous", "rendezvous",
-                        "pont", "vers", "vrai", "faux", "inconnu", "variable", "et", "ou", "non", "apres"];
+                        "pont", "vers", "vrai", "faux", "inconnu", "variable", "et", "ou", "non", "apres", "reparer", "par", "garder"];
 const UNITES: &[&str] = &["m", "kg", "s", "A", "K", "mol", "cd", "N", "J", "W", "Pa", "Hz", "C", "V", "Ω", "km", "cm", "mm", "g",
                           "ms", "min", "h"];
 
@@ -911,6 +911,7 @@ impl Paillasse {
     fn etiquette_sortie(&self, s: &str) -> String {
         match self.etat_liaison(s) {
             Some((v, 1)) => format!("{} porte faux ({})", s, v),
+            Some((_, 3)) => format!("{} : variable (erreur)", s),
             Some((_, 0)) => format!("{} : jamais calculée", s),
             Some((v, _)) => format!("{} = {}", s, v),
             None => s.to_string(),
@@ -1383,7 +1384,7 @@ impl Paillasse {
                             2 => format!("{} = {} (vrai : arrivée, à la dernière réaction)\r\n", s, v),
                             1 => format!("{} porte faux : sa branche n'a pas réagi (la valeur calculée : {})\r\n", s, v),
                             0 => format!("{} : jamais calculée (inconnu)\r\n", s),
-                            _ => format!("{} : variable\r\n", s),
+                            _ => format!("{} : variable : une erreur (une division par zéro) non réparée ; « reparer {} par … » la répare\r\n", s, s),
                         });
                     }
                 }

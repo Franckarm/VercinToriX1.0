@@ -25,7 +25,9 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
   - **La sûreté** : les contrats (`exige`, `garantit`), les exemples vérifiés à chaque compilation (`exemple f(2) ==
     4`, rejoués aussi par Lugus sans Python), les unités physiques vérifiées par le compilateur (`= 9.81 m/s² -> g`),
     qui ne coûtent rien à l'exécution ; une liaison qui peut porter faux se rend en logique (faux) ou en flottant
-    (inconnu).
+    (inconnu) ; une division par zéro donne une liaison variable avec sa cause (`erreur(x)`, `reparer x par v`).
+  - **Les tableaux** (`pour chaque` sans réduction, `pour chaque x dans t`, `garder x dans t si …`), **plusieurs
+    résultats** (`-> q, r`) et **`selon`** dans les réactions.
   - **Le calcul incrémental** : chaque atome lourd garde ses souvenirs dans une colonne de seize places, rangée comme
     Fischer. Rappelé avec des entrées déjà vues, il ne réagit pas (10 fois moins d'instructions sur une scène
     d'animation).

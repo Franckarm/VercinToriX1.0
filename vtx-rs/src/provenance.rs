@@ -159,6 +159,8 @@ fn arbre(r: &ReactionP, liaison: &str, lire: &dyn Fn(u64) -> u128, prefixe: &str
         "jamais calculée".to_string()
     } else if la == 0 {
         format!("porte faux (sa branche n'a pas réagi ; la valeur calculée : {})", valeur(val, t))
+    } else if la == 3 {
+        format!("variable (une erreur, une division par zéro, non réparée ; la valeur calculée : {})", valeur(val, t))
     } else {
         format!("= {}", avec_unite(valeur(val, t), liaison))
     };

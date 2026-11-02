@@ -1,0 +1,34 @@
+// machine : lugus
+// Des relevés de température : les tableaux, plusieurs résultats, selon, et les erreurs en Belnap (docs/vtx-reactions.md,
+// section 8). Ouvrez-le dans Ogmios : la paillasse montre chaque réaction ; Ctrl+P fait réagir.
+
+// la moyenne et l'écart entre le plus grand et le plus petit ; une liste vide donnerait une division par zéro : réparée
+reaction bilan(t) -> moyenne, ecart {
+    = somme pour chaque x dans t : x      -> total
+    = max pour chaque x dans t : x        -> haut
+    = min pour chaque x dans t : x        -> bas
+    = longueur(t)                         -> n
+    = reparer total / n par 0             -> moyenne
+    = haut - bas                          -> ecart
+}
+
+// l'avis sur un écart : selon sa taille
+reaction avis(ecart) -> note {
+    = selon ecart / 5 { 0: 1 ; 1: 2 ; autre: 3 } -> note
+}
+
+reaction releves() -> note {
+    = pour chaque j dans 0..7 : 10 + (j × 7) % 9   -> t
+    = garder x dans t si x > 11                  -> chauds
+    = longueur(chauds)                           -> n_chauds
+    = bilan(t)                                   -> moyenne, ecart
+    = avis(ecart)                                -> note
+    = afficher(moyenne)
+    = afficher(n_chauds)
+}
+exemple avis(3) == 1
+exemple avis(12) == 3
+
+fonction principal() {
+    sortie(releves());
+}

@@ -168,7 +168,7 @@ pub fn valeurs_liaisons(source: &str, base: &str, entrees: &[u128])
             let u = r.unites.get(i).cloned().unwrap_or_default();
             let texte = if u.is_empty() { provenance::valeur(v, *t) } else { format!("{} {}", provenance::valeur(v, *t), u) };
             let est_param = !r.atomes.iter().any(|a| a.sorties.iter().any(|s| s == nom));
-            let etat = if est_param { if la != 0 { 2 } else { 0 } } else if nb == 0 { 0 } else if la == 0 { 1 } else { 2 };
+            let etat = if est_param { if la != 0 { 2 } else { 0 } } else if nb == 0 { 0 } else if la == 0 { 1 } else if la == 3 { 3 } else { 2 };
             vals.insert((r.nom.clone(), nom.clone()), (texte, etat));
         }
     }

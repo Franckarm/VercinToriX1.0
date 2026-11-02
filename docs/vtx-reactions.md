@@ -609,3 +609,40 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
   - **Ce qui manque** : le zoom ; plusieurs atomes choisis à la fois ; renommer une liaison depuis la paillasse ; les
     valeurs pendant le pas à pas.
 
+## 8. Le langage avant la carte graphique (2 novembre)
+
+Décidé avec l'utilisateur : d'abord le langage (pour un Ogmios propre), puis les dettes de l'ADN et des souvenirs, puis
+la carte graphique. La comparaison signée par défaut est mise de côté (elle change le sens des programmes écrits).
+
+- **Les erreurs en Belnap** (2.8) :
+  - une division ou un reste par zéro donne une liaison *variable*, avec sa cause ; elle se propage le long des
+    liaisons (chaque liaison qui peut errer a son drapeau, comme `__ok` pour faux) ;
+  - `erreur(x)` la regarde (vrai si x porte une erreur) : l'atome qui la regarde la traite, elle ne passe pas plus loin ;
+    `= reparer a / b par 0 -> q` donne la valeur, ou la valeur de secours ;
+  - une erreur non réparée qui arrive à un atome qui touche le monde (un effet, un pont) ou au résultat entier d'une
+    réaction arrête la machine avec sa cause : `erreur non réparée dans moyenne : division par zéro, ligne 3 (t / n)` ;
+    un flottant ou une logique rendus portent *variable* (leur état de Belnap le dit) ; un contrat ne parle pas d'une
+    liaison en erreur ;
+  - diviser par une valeur écrite non nulle ne coûte rien (aucun drapeau) ; la provenance écrit « variable (une erreur,
+    une division par zéro, non réparée) » ; la paillasse colore la liaison en violet ;
+  - en route, un écart entre les deux compilateurs trouvé et corrigé : le texte d'un atome avec `÷` ou `×` (vtxc128
+    collait la parenthèse qui suit, parce qu'il prenait ces signes pour des lettres).
+- **Les tableaux dans les réactions** :
+  - `= pour chaque i dans 0..n : i × i -> t` donne un tableau (une case par élément) ;
+  - `= pour chaque x dans t : x + 1 -> t2`, `= somme pour chaque x dans t : x -> s` (min, max aussi) ;
+  - `= garder x dans t si x % 2 == 0 -> pairs` (une copie de t : des flottants restent des flottants) ;
+  - des flottants : `-> m: flottant[]` sur la liaison (le prélude a reçu `tableau_flottants(n)`) ; sans type écrit,
+    des entiers ;
+  - une réaction qui fait ou lit un tableau n'est pas pure (pas de souvenir : le tableau peut changer sous la même
+    poignée).
+- **Plusieurs résultats et `selon`** :
+  - `reaction divmod(a, b) -> q, r { … }` ; dans une autre réaction, `= divmod(n, 7) -> q, r` ; une fonction ordinaire
+    reçoit le premier. Les résultats après le premier passent par `@3[#3000000…]`, lus juste après l'appel ; chacun
+    suit la même règle que le premier (une logique rend faux, un flottant inconnu ; une erreur : variable, ou l'arrêt
+    pour un entier) ;
+  - `= selon c { 1: 10 ; 2, 3: 20 ; autre: 99 } -> t`, et sur une logique `selon q { vrai: 1.0 ; faux: 0.0 }` ; la
+    première branche qui convient ; sans `autre`, quand aucune ne convient, la liaison porte faux.
+- **Les deux compilateurs donnent les mêmes mots** pour tout cela (`vtxc/test_reactions_vtxc128.py`, le générateur de
+  réactions au hasard a reçu les divisions, `reparer`, `erreur()`, les tableaux, `garder`, `selon`) ; le compilateur
+  embarqué dans Lugus est renouvelé (point fixe).
+
