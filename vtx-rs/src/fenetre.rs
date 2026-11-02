@@ -13,7 +13,7 @@ use super::spu64::Spu64;
 use super::pas64::{panneau64, table_des_lignes, Moteur, Pas, Vue64};
 use super::spu128::Spu128;
 use super::pas128::{image128, panneau128, presenter128};
-use super::machine128::{compiler128, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
+use super::machine128::{compiler128, compiler128_iso, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
 use super::adn;
 use super::provenance;
 use super::machine128::compiler128_prov;
@@ -1011,16 +1011,17 @@ fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     let f = fichier.to_string_lossy().into_owned();
     let base = dossier_de(&f);
     let t0 = std::time::Instant::now();
-    let mots = match compiler128(&nombres128(VTXC128), source, &base, COMPLET128, false) {
-        Ok((m, _, _)) => m,
+    let (mots, isotopes) = match compiler128_iso(&nombres128(VTXC128), source, &base, COMPLET128) {
+        Ok(r) => r,
         Err(e) => {
             let (t, ligne) = situer_erreur(&e, &f);
             return Fini { texte: t.clone(), resume: t, mem: None, ligne_erreur: ligne, vue64: None, image: None };
         }
     };
     let tc = t0.elapsed().as_secs_f64();
-    // l'ADN : rangé à côté du programme (PROG.adn, ses trois témoins), puis lu comme au lancement d'un ADN
-    let (mols, mut t) = adn::ranger(&mots);
+    // l'ADN : rangé à côté du programme (PROG.adn : ses trois témoins, ses isotopes et son texte), puis lu comme au
+    // lancement d'un ADN
+    let (mols, mut t) = adn::ranger_texte(&mots, &isotopes, source);
     let mut mots = mots;
     let (etat_adn, _) = adn::lire(&mut mots, &mols, &mut t);
     let temp = fichier.starts_with(std::env::temp_dir());

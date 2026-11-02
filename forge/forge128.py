@@ -312,6 +312,9 @@ class Forge(V.Generateur):
             elif len(s) > 2 and isinstance(s[2], tuple) and s[2][0] == "vague" and all(
                     self.typ(e) == "e" and self.pur(e, set()) for _, e in s[2][1]):
                 self.vague_parallele(s[2][1])
+            elif len(s) > 2 and isinstance(s[2], tuple) and s[2][0] == "souvenirs" and self.souvenirs_paralleles(s[2][1]):
+                if s[2][2] == 0:
+                    self.vague_de_souvenirs(s[2][1])
             else:
                 for x in s[1]:
                     self.instr(x)
@@ -367,6 +370,56 @@ class Forge(V.Generateur):
                         return False
             return all(self.pur(x, vus) for x in n[1:])
         return all(self.pur(x, vus) for x in n)
+
+    def locales(self, instr, acc):
+        super().locales(instr, acc)
+        for s in instr:
+            # les souvenirs et les cœurs : le drapeau « oublié » de chaque atome (il n'est que dans la forge)
+            if s[0] == "bloc" and len(s) > 2 and isinstance(s[2], tuple) and s[2][0] == "souvenirs":
+                p = s[2][1][s[2][2]]
+                acc.append((p["oublie"], p["ligne"], "soit", ("soit", p["oublie"], ("nombre", 0), p["ligne"], "e")))
+
+    def souvenirs_paralleles(self, groupe):
+        return len(groupe) >= 2 and all(self.typ(p["appel"]) == "e" and self.pur(p["appel"], set()) for p in groupe)
+
+    def vague_de_souvenirs(self, groupe):
+        """Les souvenirs et les cœurs : chaque atome lourd de la vague regarde son souvenir ; ceux qui l'ont oublié
+        réagissent ensemble, chacun sur son cœur (un seul : sur le fil principal) ; puis chacun range le sien."""
+        for p in groupe:
+            for x in p["regarder"]:
+                self.instr(x)
+        oub = [f"v_{ident(p['oublie'])}" for p in groupe]
+        sorties = [f"v_{ident(p['sortie'])}" for p in groupe]
+        exprs = [self.val(p["appel"], "e") for p in groupe]
+        self.ligne("{")
+        self.niveau += 1
+        self.ligne("let n_oublies = " + " + ".join(f"({o} != 0) as u32" for o in oub) + ";")
+        # VTX_COEURS=1 : tout sur le fil principal (pour mesurer) ; sinon les cœurs de la machine
+        self.ligne("static COEURS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();")
+        self.ligne("let coeurs = *COEURS.get_or_init(|| std::env::var(\"VTX_COEURS\").ok().and_then(|v| v.parse().ok())"
+                   ".unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)));")
+        self.ligne("if n_oublies >= 2 && coeurs > 1 {")
+        self.niveau += 1
+        self.ligne("let r = std::thread::scope(|sc| {")
+        for k, (o, x) in enumerate(zip(oub, exprs)):
+            self.ligne(f"    let h{k} = if {o} != 0 {{ Some(sc.spawn(move || {{ let mut c_fils = ctx_fils(); let c = &mut c_fils; "
+                       f"({x}) as u128 }})) }} else {{ None }};")
+        self.ligne("    (" + ", ".join(f"h{k}.map(|h| h.join().unwrap())" for k in range(len(exprs))) + ",)")
+        self.ligne("});")
+        for k, sv in enumerate(sorties):
+            self.ligne(f"if let Some(v) = r.{k} {{ {sv} = v; }}")
+        self.niveau -= 1
+        self.ligne("} else {")
+        self.niveau += 1
+        for o, sv, x in zip(oub, sorties, exprs):
+            self.ligne(f"if {o} != 0 {{ {sv} = ({x}) as u128; }}")
+        self.niveau -= 1
+        self.ligne("}")
+        self.niveau -= 1
+        self.ligne("}")
+        for p in groupe:
+            for x in p["ranger"]:
+                self.instr(x)
 
     def parallele_possible(self, meta):
         _, red, var, a_, b_, corps_, s_ = meta

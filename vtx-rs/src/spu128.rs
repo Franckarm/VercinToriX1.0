@@ -49,6 +49,24 @@ pub struct Spu128 {
     pub console_lire: Option<Box<dyn FnMut() -> u128>>,
     pub arret: Option<&'static std::sync::atomic::AtomicBool>,
     pub parler: Option<fn(&str)>,
+    /// la patrouille de l'ADN (chimie : docs/vtx-reactions.md) : appelée toutes les 65 536 instructions (une colonne
+    /// relue), à l'entrée et à la sortie d'une molécule surveillée (un CALL vers le début d'une zone de `controles`, un
+    /// RET depuis l'intérieur : les isotopes lourds), et quand le programme présente une image (la machine attend : une
+    /// ronde entière). Une erreur arrête la machine (l'apoptose).
+    pub patrouille: Option<Box<dyn FnMut(&mut Spu128, Ronde) -> Resultat>>,
+    /// les zones surveillées, en demi-instructions : (l'entrée de la fonction, l'entrée de la suivante)
+    pub controles: Vec<(u128, u128)>,
+    /// des avaries posées pour l'essai : (au pas, mot du code, bit), triées par pas (LUGUS_AVARIE)
+    pub avaries: VecDeque<(u64, u128, u32)>,
+}
+
+/// ce qui appelle la patrouille
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Ronde {
+    Tic,
+    Entree(u128),
+    Sortie(u128),
+    Image,
 }
 
 pub type Resultat = Result<(), String>;
@@ -108,6 +126,25 @@ impl Spu128 {
             console_lire: None,
             arret: None,
             parler: None,
+            patrouille: None,
+            controles: Vec::new(),
+            avaries: VecDeque::new(),
+        }
+    }
+
+    /// le mot i du code, réparé par la patrouille (sans regarder son brin : c'est l'ADN même qu'on répare)
+    pub fn poser_code(&mut self, i: u128, w: u128) {
+        let p = self.page_mut(0, i);
+        p.mots[(i as usize) & (PAGE - 1)] = w;
+    }
+
+    fn appeler_patrouille(&mut self, r: Ronde) -> Resultat {
+        if let Some(mut f) = self.patrouille.take() {
+            let x = f(self, r);
+            self.patrouille = Some(f);
+            x
+        } else {
+            Ok(())
         }
     }
 
@@ -462,6 +499,8 @@ impl Spu128 {
                 Ok(canal)
             }
             12 => {
+                // l'image présentée : la machine attend l'écran, la patrouille fait une ronde entière
+                self.appeler_patrouille(Ronde::Image)?;
                 if let Some(mut f) = self.presenter.take() {
                     let r = f(self);
                     self.presenter = Some(f);
@@ -530,6 +569,14 @@ impl Spu128 {
                         return Err("programme arrêté".into());
                     }
                 }
+            }
+            if !self.avaries.is_empty() && self.avaries[0].0 <= self.pas {
+                let (_, i, b) = self.avaries.pop_front().unwrap();
+                let w = self.regarder(i) ^ (1u128 << (b & 127));
+                self.poser_code(i, w);
+            }
+            if self.pas & 0xFFFF == 0x8000 && self.patrouille.is_some() {
+                self.appeler_patrouille(Ronde::Tic)?;
             }
             self.pas_unique()?;
         }
@@ -777,12 +824,21 @@ impl Spu128 {
                 if op == 0x33 {
                     self.r[14] = self.r[14].wrapping_sub(1) & M120;
                     self.ecrire_mem(self.r[14], suivant)?;
+                    if !self.controles.is_empty() && self.controles.iter().any(|z| z.0 == imm) {
+                        self.appeler_patrouille(Ronde::Entree(imm))?;
+                    }
                 }
                 if saut {
                     suivant = imm;
                 }
             }
             0x34 => {
+                if !self.controles.is_empty() {
+                    let w = self.pc;
+                    if let Some(&(d, _)) = self.controles.iter().find(|z| z.0 <= w && w < z.1) {
+                        self.appeler_patrouille(Ronde::Sortie(d))?;
+                    }
+                }
                 suivant = self.lire(self.r[14]) & M120;
                 self.r[14] = (self.r[14] + 1) & M120;
             }

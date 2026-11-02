@@ -1,0 +1,19 @@
+// machine : lugus
+// L'ADN vivant (docs/vtx-reactions.md, section 9) : « -> a lourd » fait de freinage un isotope lourd. Rangé en ADN,
+// le programme tourne sous la patrouille : freinage est relu à chaque entrée et à chaque sortie ; abîmé entre deux
+// appels, il est réparé avant de servir ; abîmé pendant qu'il sert, la machine s'arrête (l'apoptose).
+//     lugus ranger exemples128/freinage.vtx
+//     lugus exemples128/freinage.adn                                   359.83… (la patrouille ne trouve rien)
+//     LUGUS_AVARIE=1000050:15:100 lugus exemples128/freinage.adn        une avarie entre deux appels : réparée
+//     LUGUS_AVARIE=1000001:20:70 lugus exemples128/freinage.adn         pendant un appel : l'apoptose
+reaction freinage(v: flottant, d: flottant) -> a: flottant {
+    = v * v / (2.0 * d)   -> a lourd
+}
+fonction bilan(s: flottant): flottant {
+    retour s / 1000.0 + 0.5;
+}
+fonction principal() {
+    soit s = 0.0;
+    pour k dans 0..40000 { s = s + freinage(flottant(k % 50), 45.0); }
+    afficher(bilan(s));
+}

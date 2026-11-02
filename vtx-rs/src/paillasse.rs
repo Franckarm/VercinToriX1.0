@@ -46,6 +46,8 @@ pub struct Atome {
     pub genre: Genre,
     pub vague: usize,
     pub element: String,
+    /// l'isotope lourd (« -> a lourd ») : la liaison est critique, la réaction garde ses neutrons dans l'ADN
+    pub lourd: bool,
 }
 
 impl Atome {
@@ -309,6 +311,7 @@ fn lire_atome(r: &mut Reaction, l: &str, numero: usize) {
         Some(ws[p].1)
     };
     let mut sorties = Vec::new();
+    let mut lourd = false;
     match fleche {
         None => {
             if let Some(p) = lire_apres(q0, gauche_fin, &mut apres) {
@@ -321,9 +324,13 @@ fn lire_atome(r: &mut Reaction, l: &str, numero: usize) {
                 fin_s = p;
             }
             for morceau in code[fl + 2..fin_s].split(',') {
-                let n = morceau.split(':').next().unwrap_or("").trim();
+                let mut mots_s = morceau.split_whitespace();
+                let n = morceau.split(':').next().unwrap_or("").split_whitespace().next().unwrap_or("");
                 if !n.is_empty() {
                     sorties.push(n.to_string());
+                }
+                if mots_s.any(|w| w == "lourd") {
+                    lourd = true;
                 }
             }
         }
@@ -346,7 +353,7 @@ fn lire_atome(r: &mut Reaction, l: &str, numero: usize) {
     };
     // les entrées sont trouvées une fois toutes les liaisons connues (relier_et_ranger) : on garde la place de quoi
     r.atomes.push(Atome { ligne: numero, nom, quoi, sorties, entrees: vec![Port { nom: String::new(), places: vec![(q0, q1)] }],
-                          apres, genre, vague: 0, element: String::new() });
+                          apres, genre, vague: 0, element: String::new(), lourd });
 }
 
 /// ce que touche un atome hors de ses liaisons (comme Atome.cibles de vtx128.py) : (genre, étage, adresse)

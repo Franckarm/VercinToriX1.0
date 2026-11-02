@@ -17,6 +17,8 @@ s'y ouvrent de toute façon).
 | `alternance.vtx` | les souvenirs rangés comme Fischer : cinq décors qui alternent, le calcul lourd ne réagit que cinq fois sur soixante (`lugus pourquoi exemples128/alternance.vtx image.fond`) |
 | `chute.vtx` | une réaction avec unités physiques (m, m/s², s), contrats (`exige`, `garantit`) et exemples vérifiés à la compilation |
 | `releves.vtx` | des tableaux dans une réaction (`pour chaque`, `garder`), deux résultats (`-> moyenne, ecart`), `selon`, une division réparée (`reparer … par`) ; s'ouvre sur la paillasse d'Ogmios |
+| `freinage.vtx` | l'ADN vivant : `-> a lourd` (un isotope lourd), relu par la patrouille à chaque entrée et sortie ; `lugus ranger`, puis `LUGUS_AVARIE=1000050:15:100 lugus exemples128/freinage.adn` (réparé) ou `LUGUS_AVARIE=1000001:20:70 …` (l'apoptose) |
+| `quatre_decors.vtx` | les souvenirs et les cœurs : quatre atomes à souvenir d'une vague ; la forge fait réagir ensemble ceux qui ont oublié (`quatre 30000000`, et `VTX_COEURS=1` pour comparer) |
 
     lugus exemples128/bonjour128.vtx                 compile (vtxc128 embarqué) et lance, sans Python
     python forge/forge128.py exemples128/bonjour128.vtx   l'exécutable natif (forgé)

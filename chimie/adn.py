@@ -101,33 +101,39 @@ def places_colonne(n, k):
 
 
 class Molecule:
-    def __init__(self, nom, debut, fin, frontiere):
-        self.nom, self.debut, self.fin, self.frontiere = nom, debut, fin, frontiere
+    def __init__(self, nom, debut, fin, frontiere, isotope=False):
+        self.nom, self.debut, self.fin, self.frontiere, self.isotope = nom, debut, fin, frontiere, isotope
+
+    @property
+    def neutronee(self):
+        """une molécule qui porte des neutrons : une frontière (O), ou un isotope lourd (« -> a lourd »)"""
+        return self.frontiere or self.isotope
 
     def __repr__(self):
-        return f"{self.nom}[{self.debut}:{self.fin}]{' O' if self.frontiere else ''}"
+        return f"{self.nom}[{self.debut}:{self.fin}]{' O' if self.frontiere else ''}{' lourde' if self.isotope else ''}"
 
 
 def temoins(mots, molecules):
     """{signatures, ombres (une liste de quatre mots par colonne), neutrons (place -> 8 bits, aux frontières)}"""
     neutrons = {}
     for m in molecules:
-        if m.frontiere:
+        if m.neutronee:
             for i in range(m.debut, m.fin):
                 neutrons[i] = crc8(mots[i])
     return {"signatures": [signature(mots[m.debut:m.fin]) for m in molecules],
             "ombres": [ombre_colonne([mots[i] for i in places_colonne(len(mots), k)]) for k in range(nb_colonnes(len(mots)))],
-            "neutrons": neutrons}
+            "neutrons": neutrons, "introns": []}
 
 
 def copie_temoins(t):
-    return {"signatures": list(t["signatures"]), "ombres": [list(o) for o in t["ombres"]], "neutrons": dict(t["neutrons"])}
+    return {"signatures": list(t["signatures"]), "ombres": [list(o) for o in t["ombres"]], "neutrons": dict(t["neutrons"]),
+            "introns": [(n, list(l)) for n, l in t.get("introns", [])]}
 
 
 def place_des_temoins(mots, molecules):
     """en mots : les signatures (deux par mot), l'ombre (quatre par colonne), les neutrons (seize par mot)"""
     colonnes = nb_colonnes(len(mots))
-    o = sum(m.fin - m.debut for m in molecules if m.frontiere)
+    o = sum(m.fin - m.debut for m in molecules if m.neutronee)
     return (len(molecules) + 1) // 2 + OMBRE * colonnes + (o + 15) // 16
 
 
@@ -184,7 +190,7 @@ def lire(mots, molecules, t):
             # l'ombre et les neutrons s'accordent avec les mots : c'est la signature qui est abîmée (deux contre un)
             e, quoi = FAUX, "signature refaite"
             t["signatures"][j] = signature(mots[m.debut:m.fin])
-        elif (m.frontiere and all(i in par_neutrons and crc8(mots[i]) == t["neutrons"].get(i) for i in changes)) or \
+        elif (m.neutronee and all(i in par_neutrons and crc8(mots[i]) == t["neutrons"].get(i) for i in changes)) or \
                 all(len(col_reparees[i % nc]) == 1 for i in changes):
             # deux témoins contre un : les mots réparés sont ceux que les neutrons désignaient, et ils les reconnaissent ;
             # ou l'ombre n'a eu qu'un mot à réparer dans chaque colonne (la moitié de ce qu'elle peut : une fausse
@@ -236,15 +242,34 @@ def decouper(mots):
 
 def molecules_du_programme(src, dossier=None):
     """(les mots, les molécules), le programme compilé comme le fait Lugus (le prélude, les optimisations)"""
+    mots, molecules, _ = molecules_et_isotopes(src, dossier)
+    return mots, molecules
+
+
+def molecules_et_isotopes(src, dossier=None):
+    """(les mots, les molécules, les isotopes [(nom, mot)]) : les réactions qui portent un atome lourd (« -> a lourd »)
+    sont des isotopes lourds ; leur molécule (celle où tombe leur premier mot) garde ses neutrons"""
     import vtx128
     vtx128.COMPAT_64 = False
+    vtx128.REACTIONS.clear()
     asm = vtx128.compiler(src, dossier=dossier)
+    lourdes = {nom for nom, m in vtx128.REACTIONS.items() if any(getattr(a, "lourdes", None) for a in m.atomes)}
     mots, etiq = vtx128.assembler(asm, True)
     molecules = decouper(mots)
     noms = {v // 2: k[2:].lower() for k, v in etiq.items() if k.startswith("F_") and not k.endswith("_FIN")}
     for m in molecules:
         m.nom = "tête" if m.debut == 0 else noms.get(m.debut, m.nom)
-    return mots, molecules
+    nom_ecrit = {x.lower(): x for x in lourdes}
+    isotopes = sorted(((nom_ecrit[n], a) for a, n in noms.items() if n in nom_ecrit), key=lambda x: x[1])
+    marquer_isotopes(molecules, isotopes)
+    return mots, molecules, isotopes
+
+
+def marquer_isotopes(molecules, isotopes):
+    for _, adr in isotopes:
+        for m in molecules:
+            if m.debut <= adr < m.fin:
+                m.isotope = True
 
 
 # ---------------------------------------------------------------------------------------------------- les avaries
@@ -336,27 +361,93 @@ def essai(fichiers, n=200, graine=1, ecrire=print, genres=None):
 
 # ---------------------------------------------------------------------------------------------------- le fichier ADN
 def ecrire_adn(chemin, mots, molecules, t):
+    """L'ADN de vtx, version 3 : des sections signalées comme des introns, « GU nom N » puis N lignes puis « AG ».
+    La lecture saute une section qu'elle ne connaît pas sans rien analyser (la même chose en Rust : vtx-rs/src/adn.rs)."""
+    sections = [("mots", [",".join(map(str, mots))]),
+                ("molecules", [f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{s}|{int(m.isotope)}"
+                               for m, s in zip(molecules, t["signatures"])]),
+                ("ombres", [",".join(map(str, o)) for o in t["ombres"]]),
+                ("neutrons", [",".join(f"{i}:{v}" for i, v in sorted(t["neutrons"].items()))])]
+    sections += t.get("introns", [])
     with open(chemin, "w", encoding="utf-8", newline="\n") as f:     # \n partout : Lugus (Rust) lit le même fichier
-        f.write("VTXADN02\n")
-        f.write(",".join(map(str, mots)) + "\n")
-        f.write("\t".join(f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{s}" for m, s in zip(molecules, t["signatures"])) + "\n")
-        f.write(";".join(",".join(map(str, o)) for o in t["ombres"]) + "\n")
-        f.write(",".join(f"{i}:{v}" for i, v in sorted(t["neutrons"].items())) + "\n")
+        f.write("VTXADN03\n")
+        for nom, lignes in sections:
+            f.write(f"GU {nom} {len(lignes)}\n")
+            for x in lignes:
+                f.write(x + "\n")
+            f.write("AG\n")
+
+
+def sections_adn(texte):
+    """[(nom, lignes)] d'un ADN version 3"""
+    l = texte.split("\n")
+    out, i = [], 1
+    while i < len(l) and l[i]:
+        tete = l[i].split(" ")
+        if len(tete) != 3 or tete[0] != "GU":
+            raise ValueError(f"ADN : borne d'intron attendue (GU), ligne {i + 1}")
+        n = int(tete[2])
+        if i + 1 + n >= len(l) or l[i + 1 + n] != "AG":
+            raise ValueError(f"ADN : la section « {tete[1]} » ne finit pas par AG")
+        out.append((tete[1], l[i + 1:i + 1 + n]))
+        i += n + 2
+    return out
+
+
+CONNUES = ("mots", "molecules", "ombres", "neutrons")
 
 
 def lire_adn(chemin):
-    l = open(chemin, encoding="utf-8").read().split("\n")
-    if l[0] != "VTXADN02":
+    texte = open(chemin, encoding="utf-8").read().replace("\r\n", "\n")
+    l = texte.split("\n")
+    if l[0] == "VTXADN02":            # l'ADN version 2 : cinq lignes, sans introns
+        sec = {"mots": [l[1]], "molecules": [x + "|0" for x in l[2].split("\t") if x], "ombres": [o for o in l[3].split(";") if o],
+               "neutrons": [l[4]]}
+        introns = []
+    elif l[0] == "VTXADN03":
+        tout = sections_adn(texte)
+        sec = dict(tout)
+        introns = [(n, x) for n, x in tout if n not in CONNUES]
+    else:
         raise ValueError("ce n'est pas un ADN de vtx")
-    mots = [int(x) for x in l[1].split(",") if x]
+    mots = [int(x) for x in sec["mots"][0].split(",") if x]
     molecules, sigs = [], []
-    for x in l[2].split("\t"):
-        nom, a, b, fr, s = x.split("|")
-        molecules.append(Molecule(nom, int(a), int(b), fr == "1"))
+    for x in sec["molecules"]:
+        nom, a, b, fr, s, iso = x.split("|")
+        molecules.append(Molecule(nom, int(a), int(b), fr == "1", iso == "1"))
         sigs.append(int(s))
-    ombres = [[int(v) for v in o.split(",")] for o in l[3].split(";") if o]
-    neutrons = {int(a): int(b) for a, b in (x.split(":") for x in l[4].split(",") if x)}
-    return mots, molecules, {"signatures": sigs, "ombres": ombres, "neutrons": neutrons}
+    ombres = [[int(v) for v in o.split(",")] for o in sec["ombres"]]
+    neutrons = {int(a): int(b) for a, b in (x.split(":") for x in sec["neutrons"][0].split(",") if x)}
+    return mots, molecules, {"signatures": sigs, "ombres": ombres, "neutrons": neutrons, "introns": introns}
+
+
+def intron(t, nom):
+    return next((x for n, x in t.get("introns", []) if n == nom), None)
+
+
+def retrotranscrire(mots, t, dossier):
+    """le texte gardé dans l'ADN, recompilé, redonne-t-il ses mots ? (VRAI, FAUX : un autre texte, INCONNU : pas de
+    texte), et le message"""
+    src = intron(t, "source")
+    if src is None:
+        return INCONNU, "l'ADN ne garde pas de texte"
+    try:
+        m2, _, _ = molecules_et_isotopes("\n".join(src), dossier)
+    except Exception as e:      # noqa: BLE001
+        return FAUX, f"le texte gardé ne compile plus : {e}"
+    if m2 == mots:
+        return VRAI, "le texte gardé redonne les mots, un pour un"
+    return FAUX, f"le texte gardé ne redonne pas ces mots ({sum(a != b for a, b in zip(m2, mots)) + abs(len(m2) - len(mots))} écart(s))"
+
+
+def ranger_texte(src, dossier):
+    """(les mots, les molécules, les témoins avec leurs introns : les isotopes, le texte)"""
+    mots, molecules, isotopes = molecules_et_isotopes(src, dossier)
+    t = temoins(mots, molecules)
+    if isotopes:
+        t["introns"].append(("isotopes", [f"{n}|{a}" for n, a in isotopes]))
+    t["introns"].append(("source", src.replace("\r\n", "\n").split("\n")))
+    return mots, molecules, t
 
 
 def main():
@@ -366,12 +457,13 @@ def main():
     cmd = sys.argv[1]
     if cmd == "ranger":
         src = sys.argv[2]
-        mots, molecules = molecules_du_programme(open(src, encoding="utf-8").read(), os.path.dirname(os.path.abspath(src)))
-        t = temoins(mots, molecules)
+        mots, molecules, t = ranger_texte(open(src, encoding="utf-8").read(), os.path.dirname(os.path.abspath(src)))
         sortie = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(src)[0] + ".adn"
         ecrire_adn(sortie, mots, molecules, t)
         p = place_des_temoins(mots, molecules)
-        print(f"{len(mots)} mots, {len(molecules)} molécules, témoins {p} mots ({100 * p / len(mots):.1f} %) -> {sortie}")
+        lourdes = [m.nom for m in molecules if m.isotope]
+        print(f"{len(mots)} mots, {len(molecules)} molécules, témoins {p} mots ({100 * p / len(mots):.1f} %)"
+              + (f", isotopes lourds : {', '.join(lourdes)}" if lourdes else "") + f" -> {sortie}")
     elif cmd == "transcrire":
         mots, molecules, t = lire_adn(sys.argv[2])
         etat, rapport = lire(mots, molecules, t)
@@ -379,6 +471,9 @@ def main():
             if e != VRAI:
                 print(f"  {m.nom} : {NOM_ETAT[e]}, {quoi}")
         print(f"l'ADN : {NOM_ETAT[etat]}")
+        if etat != VARIABLE and intron(t, "source") is not None:
+            e_t, quoi = retrotranscrire(mots, t, os.path.dirname(os.path.abspath(sys.argv[2])))
+            print(f"le texte : {NOM_ETAT[e_t].split(' ')[0]}, {quoi}")
         if etat == VARIABLE:
             print("rien n'est transcrit : l'ADN est gardé tel qu'il a été lu, pour la preuve")
             sys.exit(1)

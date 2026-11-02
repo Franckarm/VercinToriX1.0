@@ -1134,6 +1134,11 @@ class Molecule:
             # garder un souvenir le gardent plutôt : rappelés avec les mêmes entrées, ils ne coûtent plus rien
             lourds = [a for a in vague if a.genre == "calcul" and len(a.sorties) == 1 and not any(e in ok for e in a.entrees)
                       and appelle(a.quoi)]
+            # les souvenirs et les cœurs ensemble : quand plusieurs atomes lourds d'une vague gardent un souvenir, chacun
+            # regarde d'abord le sien ; la forge fait réagir sur plusieurs cœurs ceux qui l'ont oublié (la machine
+            # émulée, elle, les fait réagir l'un après l'autre : le code émis ne change pas)
+            souv_vague = [a for a in lourds if self.souvenir_possible(a)] if len(lourds) >= 2 else []
+            groupe_souv = [] if len(souv_vague) >= 2 else None
             if len(lourds) >= 2:
                 lourds = [a for a in lourds if not self.souvenir_possible(a)]
             if len(lourds) >= 2:
@@ -1292,7 +1297,12 @@ class Molecule:
                     continue
                 # un calcul
                 if a.sorties and garde is None and self.souvenir_possible(a):
-                    st.extend(self.souvenir(a))
+                    corps_s = self.souvenir(a)
+                    if groupe_souv is not None and a in souv_vague:
+                        groupe_souv.append(self.dernier_souvenir)
+                        st.append(("bloc", corps_s, ("souvenirs", groupe_souv, len(groupe_souv) - 1)))
+                    else:
+                        st.extend(corps_s)
                     continue
                 if len(a.sorties) > 1:
                     # l'appel d'une réaction à plusieurs résultats : le premier rendu, les autres lus dans @3[RESULTATS…]
@@ -1500,6 +1510,16 @@ class Molecule:
             t = self.traces[s_] + 1
             reagir.append(("ecrire", 3, ("nombre", t), ("bin", "+", ("lire", 3, ("nombre", t)), ("nombre", 1)), l))
             self.au_souvenir.add(s_)
+        # la même chose en trois temps, pour la forge (les souvenirs et les cœurs) : regarder (oublié : __souv…_h = 1),
+        # réagir (sur un cœur), ranger
+        nom_h = f"__souv{base}_h"
+        regarder = list(st) + [("soit", nom_h, ("nombre", 0), l, "e"),
+                               ("si", garde_ces_entrees(nom_p), [],
+                                [("si", garde_ces_entrees(nom_q), [("affecter", s_, relu(f.rtype, nom_q, 1 + n), l)],
+                                  [("affecter", nom_h, ("nombre", 1), l)], l)], l)]
+        ranger = [("si", ("bin", "!=", ("var", nom_h, l), ("nombre", 0)), reagir[1:], None, l)]
+        self.dernier_souvenir = {"sortie": s_, "appel": reagir[0][2], "oublie": nom_h, "regarder": regarder,
+                                 "ranger": ranger, "type": f.rtype, "ligne": l}
         st.append(("si", garde_ces_entrees(nom_p), [],
                    [("si", garde_ces_entrees(nom_q), [("affecter", s_, relu(f.rtype, nom_q, 1 + n), l)], reagir, l)], l))
         return st
@@ -1522,6 +1542,10 @@ class Molecule:
         if getattr(self, "souvenirs", None):
             t.append(f"  souvenirs (calcul incrémental, {SOUVENIR_PLACES} places chacun) : "
                      + ", ".join(f"{n} en @3[#{b:06X}]" for n, b in self.souvenirs))
+        lourdes = [x for a in self.atomes for x in getattr(a, "lourdes", [])]
+        if lourdes:
+            t.append("  isotope lourd (ses neutrons gardés dans l'ADN, relu par la patrouille à chaque entrée et sortie) : "
+                     + ", ".join(lourdes))
         if self.contrats:
             t.append("  contrats : " + " ; ".join(f"{c[1]} {c[5]}" for c in self.contrats))
         connues = {k: v for k, v in (self.unites or {}).items() if v is not QUELCONQUE and v != {}}
@@ -2047,7 +2071,7 @@ class Analyseur:
         else:
             genre, quoi = "calcul", self.expr()
         texte = self.texte_jetons(i_atome, True).replace("rendez - vous", "rendez-vous")
-        sorties, declarees, types_ = [], {}, {}
+        sorties, declarees, types_, lourdes = [], {}, {}, []
         if self.est_op("->"):
             self.suivant()
             while True:
@@ -2057,6 +2081,11 @@ class Analyseur:
                     types_[sorties[-1]] = t_decl
                 if u is not None:
                     declarees[sorties[-1]] = u
+                if self.regard()[:2] == ("id", "lourd"):
+                    # l'isotope lourd : la liaison est critique ; la molécule (la réaction) garde ses neutrons dans l'ADN,
+                    # frontière ou non (docs/vtx-reactions.md, l'ADN v3). Le code ne change pas.
+                    self.suivant()
+                    lourdes.append(sorties[-1])
                 if not self.est_op(","):
                     break
                 self.suivant()
@@ -2074,6 +2103,7 @@ class Analyseur:
         a_.apres = apres
         a_.unites_declarees = declarees
         a_.types_declares = types_
+        a_.lourdes = lourdes
         return a_
 
     def une_constante(self, l):

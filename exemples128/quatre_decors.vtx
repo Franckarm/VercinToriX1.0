@@ -1,0 +1,28 @@
+// machine : lugus
+// Les souvenirs et les cœurs (docs/vtx-reactions.md, section 9) : quatre atomes lourds d'une même vague gardent chacun
+// un souvenir. Quand le décor change, les quatre l'ont oublié : la forge les fait réagir ensemble, chacun sur son
+// cœur ; les autres images, ils redonnent leur souvenir. L'entrée règle le travail (300 par défaut) :
+//     lugus exemples128/quatre_decors.vtx                              émulé, petit travail
+//     python forge/forge128.py exemples128/quatre_decors.vtx -o quatre
+//     quatre 30000000          sur plusieurs cœurs ;  VTX_COEURS=1 quatre 30000000 : sur un seul (le même total)
+fonction lourd(n) {
+    soit s = 0;
+    pour i dans 0..n { s = s + (i * i) % 7; }
+    retour s;
+}
+reaction scene(decor) -> r {
+    = lourd(decor)          -> a
+    = lourd(decor + 1)      -> b
+    = lourd(decor + 2)      -> c
+    = lourd(decor + 3)      -> d
+    = a + b + c + d         -> r
+}
+fonction principal() {
+    soit echelle = entrée();
+    si echelle == 0 { echelle = 300; }
+    soit total = 0;
+    pour k dans 0..60 {
+        total = total + scene(echelle + (k / 10) * 7);
+    }
+    sortie(total);
+}

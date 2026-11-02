@@ -376,7 +376,7 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
     Le résultat est le même. La forge et Lugus en Rust rendent les mêmes sorties que l'émulateur.
   - `python vtx128.py molecule` montre les souvenirs et leur place.
   - Ce qui reste : ~~un souvenir ne garde que la dernière réaction~~ (fait plus bas : seize places, rangées comme
-    Fischer) ; le souvenir et les cœurs ne se combinent pas encore.
+    Fischer) ; ~~le souvenir et les cœurs ne se combinent pas encore~~ (fait, section 9).
 - **Étape 4, troisième temps : les réactions dans vtxc128**, le compilateur écrit en vtx (`vtxc/vtxc128.vtx`, la section
   « les réactions », environ 1 300 lignes de vtx) :
   - **Ce qu'il lit**, comme vtx128.py :
@@ -475,10 +475,11 @@ par son code chimique (signatures, isotopes, triangulation, miroir segmenté).
       puis le lance ;
     - `python chimie/adn.py abimer PROG.adn N` abîme N mots, pour essayer la réparation.
   - **Ce qui reste** :
-    - les isotopes (`lourd`), pour des neutrons sur une molécule choisie ;
+    - ~~les isotopes (`lourd`), pour des neutrons sur une molécule choisie~~ : fait, section 9 ;
     - la lecture de l'ADN dans vtxc128 (en vtx), pour Ogmios écrit en vtx ;
-    - la provenance rangée dans l'ADN ;
-    - la patrouille : relire l'ADN pendant que la machine attend.
+    - ~~la provenance rangée dans l'ADN~~ : l'ADN garde le texte, vérifié par la rétrotranscription ; `lugus pourquoi
+      PROG.adn` repart de lui (section 9) ;
+    - ~~la patrouille : relire l'ADN pendant que la machine attend~~ : fait, section 9.
 - **La provenance sans Python** (Lugus et Ogmios) :
   - vtxc128 sait compiler avec la trace : c'est un sixième drapeau d'entrée. Il donne les mêmes mots que vtx128.py avec
     `PROVENANCE`, vérifié sur les exemples et sur des réactions au hasard (`vtxc/test_reactions_vtxc128.py`). La place
@@ -645,4 +646,73 @@ la carte graphique. La comparaison signée par défaut est mise de côté (elle 
 - **Les deux compilateurs donnent les mêmes mots** pour tout cela (`vtxc/test_reactions_vtxc128.py`, le générateur de
   réactions au hasard a reçu les divisions, `reparer`, `erreur()`, les tableaux, `garder`, `selon`) ; le compilateur
   embarqué dans Lugus est renouvelé (point fixe).
+
+## 9. L'ADN vivant (2 novembre, soir)
+
+Les dettes de l'ADN, de l'ARN et des souvenirs, prises comme la biologie les règle : une cellule garde son ADN, en tire
+des ARN différents selon le besoin, apprend, se répare, et meurt plutôt que de se dérégler.
+
+- **L'ADN version 3 : des introns signalés** (`chimie/adn.py`, `vtx-rs/src/adn.rs`, octet pour octet) :
+  - le fichier est une suite de sections, chacune entre ses bornes : `GU nom N`, N lignes, puis `AG` (comme les bornes
+    GU…AG d'un intron). La lecture saute une section qu'elle ne connaît pas sans rien analyser, et la garde telle
+    quelle : un ADN d'une version future reste lisible. Un ADN de la version 2 se lit encore ;
+  - sections : `mots`, `molecules`, `ombres`, `neutrons`, puis les introns : `isotopes`, `source`, `epigenome`.
+- **Les isotopes lourds** : `= v * v / (2.0 * d) -> a lourd` marque une liaison critique.
+  - Le code ne change pas (les mêmes mots avec ou sans `lourd`, dans les deux compilateurs) ;
+  - la réaction qui la porte est un isotope lourd : ses mots gardent leurs neutrons dans l'ADN, même hors des
+    frontières ; vtxc128 écrit `code.iso` (la place de chaque réaction lourde), vtx128.py la tire de ses étiquettes ;
+  - à l'exécution, la patrouille la relit **à chaque entrée et à chaque sortie** (voir plus bas) ;
+  - `python vtx128.py molecule` le dit ; la paillasse lit `lourd` sans le prendre pour une liaison.
+- **Le texte gardé et la rétrotranscription** :
+  - l'ADN garde le texte du programme (l'intron `source`) ;
+  - `lugus transcrire PROG.adn` et `python chimie/adn.py transcrire PROG.adn` le recompilent : il doit redonner les
+    mots, un pour un (« le texte : vrai »). Un texte retouché ne les redonne pas (« le texte : faux ») ; les mots de l'ADN
+    restent alors seuls juges : les mots protègent le texte ;
+  - `lugus pourquoi PROG.adn [liaison]` repart du texte gardé, s'il redonne bien les mots, et écrit le même arbre que
+    depuis le `.vtx`. C'est la dette « provenance dans l'ADN », réglée sans ranger une seconde copie du code.
+- **Les souvenirs et les cœurs ensemble** (`forge/forge128.py`) :
+  - quand plusieurs atomes lourds d'une même vague gardent un souvenir, la forge fait d'abord regarder chacun le sien,
+    puis fait réagir **ensemble, chacun sur son cœur**, ceux qui l'ont oublié ; un seul oublié réagit sur le fil
+    principal ; puis chacun range son souvenir ;
+  - le code émis pour la machine émulée ne change pas (les mêmes mots ; vtxc128 n'a rien eu à apprendre) ;
+  - le même total que la machine émulée, sur un cœur (`VTX_COEURS=1`) comme sur plusieurs (`tests/test_reactions.py`).
+    Le gain se mesure sur une machine qui a des cœurs libres : le conteneur où ce travail est fait n'en a qu'un, `essai-0.5u.bat`
+    mesure les deux sur le PC.
+- **L'épigénome : ce que le programme a appris, gardé dans l'ADN** :
+  - les souvenirs sont ceux de fonctions pures : pour les mêmes entrées, toujours le même résultat. Ils restent donc
+    justes d'une exécution à l'autre ;
+  - `lugus apprendre PROG.adn [ENTRÉES…]` lance le programme, puis range ses souvenirs (`@3[#1000000..#1FFFFFF]`) dans
+    l'intron `epigenome` ; `lugus PROG.adn` les reprend avant de lancer ; `lugus oublier PROG.adn` les retire ;
+  - l'épigénome est lié à la signature des mots (un autre programme, même d'une lettre, ne le reprend pas) et porte la
+    sienne : un souvenir abîmé fait oublier tout l'épigénome, il n'est jamais lu de travers ; une avarie de l'ADN
+    réparée à la lecture le laisse en place ;
+  - mesuré sur `alternance.vtx` : **995 389 instructions, puis 5 181** une fois appris (192 fois moins), le même
+    résultat.
+- **L'épissage alternatif : un ADN, plusieurs ARN** (`lugus transcrire PROG.adn PROG.arn --isoforme …`) :
+  - *rapide* : les mots seuls ; *sur* : les mots et leurs témoins (la patrouille veille) ; *memoire* : les mots et
+    l'épigénome ; *complet* : les deux ;
+  - l'ARN porte une **coiffe**, la signature de ses mots, vérifiée avant de lancer : un ARN dont la coiffe ne reconnaît
+    pas les mots est dégradé, jamais lancé ;
+  - et une **queue** : le nombre de lancements qui lui restent (64, `--queue N`). Elle raccourcit à chaque lancement ;
+    usée, l'ARN est refait depuis `PROG.adn`, qui est relu et réparé au passage. Un ARN ne vit pas toujours : l'ADN
+    est relu régulièrement, même quand on ne lance que des ARN.
+- **La patrouille et l'apoptose** (`lugus PROG.adn`, `lugus PROG.arn` sûr ; `LUGUS_PATROUILLE=0` pour s'en passer) :
+  - pendant l'exécution, une colonne du code est relue toutes les 65 536 instructions (une colonne des isotopes lourds,
+    puis une de l'ensemble, tour à tour), et une ronde entière quand le programme présente une image (la machine attend
+    l'écran). Une empreinte de 64 bits par colonne, prise au lancement, dit vite si elle a changé ; alors seulement la
+    lecture complète (ombre, neutrons, signatures) répare, et la triangulation confirme ;
+  - une molécule ordinaire réparée par la patrouille a pu servir abîmée entre sa dernière relecture propre et sa
+    réparation : la patrouille le dit (« elle a pu servir abîmée depuis le pas … ») ;
+  - un **isotope lourd** est relu à son entrée : abîmé entre deux appels, il est réparé **avant de servir** ; il est
+    relu à sa sortie : abîmé pendant qu'il servait, son résultat n'est pas sûr, et la machine s'arrête (l'**apoptose**)
+    plutôt que de le rendre. Un isotope lourd ne rend donc jamais un résultat faux sans le dire ;
+  - au-delà des témoins (neuf mots voisins abîmés), l'apoptose aussi ;
+  - la patrouille n'ajoute aucune instruction au programme (les mêmes comptes, avec ou sans elle) ; sur une réaction
+    lourde appelée 40 000 fois, elle coûte environ 40 % du temps (deux relectures par appel) : `lourd` se réserve au
+    code critique ;
+  - mesuré (`tests/test_patrouille.py`, avaries posées en pleine exécution par `LUGUS_AVARIE=PAS:MOT:BIT`) : sans
+    patrouille, le résultat dérive (`inconnu`, ou un autre nombre) ; avec, il reste juste, ou la machine s'arrête en le
+    disant. Aucun résultat faux rendu en silence.
+- **Ce qui reste** : Ogmios lance l'ADN sans la patrouille (elle est dans `lugus`) ; la patrouille relit le code, pas
+  les données (un tableau abîmé n'est pas vu) ; vtxc128 ne lit pas encore l'ADN (pour l'Ogmios écrit en vtx).
 

@@ -411,6 +411,25 @@ if shutil.which("rustc"):
                         os.path.join(racine, "exemples128", "panel.vtx"), "-o", exe], capture_output=True, text=True)
     sortie = subprocess.run([exe], capture_output=True, text=True).stdout if r.returncode == 0 else r.stderr
     verifier("forgé pour Lugus : le même 42", sortie.strip() == "42", sortie[-300:])
+    # les souvenirs et les cœurs : quatre atomes lourds d'une vague gardent chacun un souvenir ; la forge fait réagir
+    # sur plusieurs cœurs ceux qui l'ont oublié. Le même total que la machine émulée, sur un cœur comme sur plusieurs.
+    SOUV4 = ("fonction lourd(n) {\n    soit s = 0;\n    pour i dans 0..n { s = s + (i * i) % 7; }\n    retour s;\n}\n"
+             "reaction scene(decor) -> r {\n    = lourd(decor) -> a\n    = lourd(decor + 1) -> b\n    = lourd(decor + 2) -> c\n"
+             "    = lourd(decor + 3) -> d\n    = a + b + c + d -> r\n}\nfonction principal() {\n    soit total = 0;\n"
+             "    pour k dans 0..60 { total = total + scene(300 + (k / 10) * 7); }\n    sortie(total);\n}\n")
+    s_emu, _, _ = jouer(SOUV4)
+    f_s4 = os.path.join(tmp, "souv4.vtx")
+    open(f_s4, "w", encoding="utf-8").write(SOUV4)
+    exe = os.path.join(tmp, "souv4" + (".exe" if os.name == "nt" else ""))
+    r = subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), f_s4, "-o", exe, "--rs",
+                        os.path.join(tmp, "souv4.rs")], capture_output=True, text=True)
+    rs_txt = open(os.path.join(tmp, "souv4.rs"), encoding="utf-8").read() if r.returncode == 0 else ""
+    plusieurs = subprocess.run([exe], capture_output=True, text=True).stdout.strip() if r.returncode == 0 else r.stderr
+    un = subprocess.run([exe], capture_output=True, text=True, env=dict(os.environ, VTX_COEURS="1")).stdout.strip() \
+        if r.returncode == 0 else ""
+    verifier("les souvenirs et les cœurs : la vague de quatre atomes à souvenir partagée entre les cœurs, le même total "
+             "(émulé, forgé sur un cœur, sur plusieurs)",
+             "n_oublies" in rs_txt and plusieurs == un == str(s_emu[0]), f"{s_emu} {plusieurs!r} {un!r}")
     shutil.rmtree(tmp, ignore_errors=True)
 
 print("réactions : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))

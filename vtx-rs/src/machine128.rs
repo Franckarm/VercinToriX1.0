@@ -39,7 +39,7 @@ pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128
 /// arrête la compilation.
 pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool)
                         -> Result<(Vec<u128>, Vec<u128>, Vec<u128>, String), String> {
-    let (code, prov, ex) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
+    let (code, prov, ex, _) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
     if !ex.trim().is_empty() {
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
@@ -50,9 +50,42 @@ pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mo
     Ok((mots, table, dbg, prov))
 }
 
-/// une passe de vtxc128 dans un dossier de travail : (code.mots, code.prov, code.ex), ou les messages d'erreur
+/// Compile pour l'ADN : les mots (exemples rejoués) et les isotopes lourds, (réaction, place de son premier mot), que
+/// vtxc128 écrit dans code.iso pour les réactions qui portent un atome lourd (« -> a lourd »).
+pub fn compiler128_iso(compilateur: &[u128], source: &str, base: &str, mode: Mode128)
+                       -> Result<(Vec<u128>, Vec<(String, usize)>), String> {
+    let (code, _, ex, iso) = passer_vtxc128(compilateur, source, base, mode, false, false, false)?;
+    if !ex.trim().is_empty() {
+        rejouer_exemples(compilateur, source, base, mode, &ex)?;
+    }
+    let mots = nombres128(code.split(';').next().unwrap_or(""));
+    let isotopes = iso.lines().filter_map(|l| {
+        let (n, a) = l.trim_end_matches('\r').split_once('|')?;
+        Some((n.to_string(), a.parse::<usize>().ok()?))
+    }).collect();
+    Ok((mots, isotopes))
+}
+
+/// La rétrotranscription : le texte gardé dans l'ADN (son intron « source »), recompilé par vtxc128, redonne-t-il les
+/// mots ? (état de Belnap : vrai, faux pour un autre texte, inconnu sans texte ; et le message, comme chimie/adn.py)
+pub fn retrotranscrire(t: &crate::adn::Temoins, mots: &[u128], base: &str) -> (u8, String) {
+    let src = match t.intron("source") {
+        Some(l) => l.join("\n"),
+        None => return (crate::adn::INCONNU, "l'ADN ne garde pas de texte".into()),
+    };
+    match compiler128_iso(&nombres128(VTXC128), &src, base, COMPLET128) {
+        Err(e) => (crate::adn::FAUX, format!("le texte gardé ne compile plus : {}", e.trim_end())),
+        Ok((m2, _)) if m2 == mots => (crate::adn::VRAI, "le texte gardé redonne les mots, un pour un".into()),
+        Ok((m2, _)) => {
+            let ecarts = m2.iter().zip(mots.iter()).filter(|(a, b)| a != b).count() + m2.len().abs_diff(mots.len());
+            (crate::adn::FAUX, format!("le texte gardé ne redonne pas ces mots ({} écart(s))", ecarts))
+        }
+    }
+}
+
+/// une passe de vtxc128 dans un dossier de travail : (code.mots, code.prov, code.ex, code.iso), ou les messages d'erreur
 fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool,
-                  exemples: bool) -> Result<(String, String, String), String> {
+                  exemples: bool) -> Result<(String, String, String, String), String> {
     let dossier = std::env::temp_dir().join(format!("vtxc128-{}-{}", std::process::id(),
                                                      std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                                          .map(|d| d.as_nanos()).unwrap_or(0)));
@@ -70,13 +103,14 @@ fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128,
     let code = std::fs::read_to_string(dossier.join("code.mots"));
     let prov = std::fs::read_to_string(dossier.join("code.prov")).unwrap_or_default();
     let ex = std::fs::read_to_string(dossier.join("code.ex")).unwrap_or_default();
+    let iso = std::fs::read_to_string(dossier.join("code.iso")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dossier);
     let messages: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
     if let Err(e) = r {
         return Err(format!("{}{}\n", messages, e));
     }
     match code {
-        Ok(t) => Ok((t, prov, ex)),
+        Ok(t) => Ok((t, prov, ex, iso)),
         Err(_) => Err(messages),
     }
 }
@@ -92,7 +126,7 @@ fn rejouer_exemples(compilateur: &[u128], source: &str, base: &str, mode: Mode12
         return Ok(());
     }
     let mode_ex = Mode128 { prelude: mode.prelude, optim: mode.optim, partition: false };
-    let (code, _, _) = passer_vtxc128(compilateur, source, base, mode_ex, false, false, true)?;
+    let (code, _, _, _) = passer_vtxc128(compilateur, source, base, mode_ex, false, false, true)?;
     let mut m = Spu128::nouveau();
     m.charger(&nombres128(code.split(';').next().unwrap_or("")));
     if let Err(e) = m.executer(50_000_000) {

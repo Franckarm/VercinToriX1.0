@@ -117,5 +117,129 @@ if os.path.exists(lugus):
              not ecarts, str(ecarts[:4]))
     r = subprocess.run([lugus, f_rs], capture_output=True, text=True, encoding="utf-8")
     verifier("lugus PROG.adn : vérifié, puis lancé (la chute : 2500)", r.stdout.startswith("2500"), r.stdout + r.stderr)
+
+# 5. l'ADN version 3 : des introns signalés (GU nom N … AG), les isotopes lourds, le texte et sa rétrotranscription
+ISO = """// machine : lugus
+reaction freinage(v: flottant, d: flottant) -> a: flottant {
+    = v * v / (2.0 * d)   -> a lourd
+}
+reaction somme(n) -> s {
+    = n * (n + 1) / 2 -> s
+}
+fonction principal() {
+    afficher(freinage(30.0, 45.0));
+    sortie(somme(10));
+}
+"""
+f_iso = os.path.join(d, "iso.vtx")
+open(f_iso, "w", encoding="utf-8", newline="\n").write(ISO)
+mots_i, mols_i, t_i = adn.ranger_texte(ISO, d)
+lourdes = [m for m in mols_i if m.isotope]
+sans = adn.temoins(mots_i, adn.decouper(mots_i))
+verifier("« -> a lourd » : la molécule de freinage est un isotope lourd, ses mots gardent leurs neutrons (hors frontière)",
+         len(lourdes) == 1 and not lourdes[0].frontiere and all(i in t_i["neutrons"] for i in range(lourdes[0].debut, lourdes[0].fin))
+         and not any(i in sans["neutrons"] for i in range(lourdes[0].debut, lourdes[0].fin)), str(mols_i[:4]))
+import vtx128  # noqa: E402
+vtx128.COMPAT_64 = False
+m_sans = vtx128.assembler(vtx128.compiler(ISO.replace(" lourd", "")), True)[0]
+verifier("l'isotope ne change pas le code : les mêmes mots avec ou sans « lourd »", m_sans == mots_i)
+f_iso_adn = os.path.join(d, "iso.adn")
+adn.ecrire_adn(f_iso_adn, mots_i, mols_i, t_i)
+texte = open(f_iso_adn, encoding="utf-8").read()
+noms_sec = [n for n, _ in adn.sections_adn(texte)]
+verifier("le fichier : VTXADN03, chaque section entre GU et AG (mots, molecules, ombres, neutrons, isotopes, source)",
+         texte.startswith("VTXADN03\n") and noms_sec == ["mots", "molecules", "ombres", "neutrons", "isotopes", "source"], str(noms_sec))
+# une section inconnue (d'une version future) est sautée sans être analysée, et gardée telle quelle
+t_x = adn.copie_temoins(t_i)
+t_x["introns"].insert(0, ("avenir", ["GU faux 3", "AG", "n'importe quoi"]))
+adn.ecrire_adn(f_iso_adn, mots_i, mols_i, t_x)
+m2, mol2, t2 = adn.lire_adn(f_iso_adn)
+verifier("un intron inconnu (même s'il contient « GU » et « AG ») est sauté et gardé tel quel",
+         m2 == mots_i and t2["introns"][0] == ("avenir", ["GU faux 3", "AG", "n'importe quoi"]))
+e_r, quoi_r = adn.retrotranscrire(mots_i, t_i, d)
+t_f = adn.copie_temoins(t_i)
+t_f["introns"] = [(n, [x.replace("2.0 * d", "2.5 * d") for x in l]) for n, l in t_f["introns"]]
+e_f, quoi_f = adn.retrotranscrire(mots_i, t_f, d)
+verifier("la rétrotranscription : le texte gardé redonne les mots (vrai) ; un texte retouché ne les redonne pas (faux)",
+         e_r == adn.VRAI and e_f == adn.FAUX, quoi_r + " / " + quoi_f)
+# l'ADN version 2 se lit toujours
+f_v2 = os.path.join(d, "v2.adn")
+with open(f_v2, "w", encoding="utf-8", newline="\n") as f:
+    f.write("VTXADN02\n" + ",".join(map(str, mots_i)) + "\n"
+            + "\t".join(f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{sg}" for m, sg in zip(mols_i, t_i["signatures"])) + "\n"
+            + ";".join(",".join(map(str, o)) for o in t_i["ombres"]) + "\n"
+            + ",".join(f"{i}:{v}" for i, v in sorted(sans["neutrons"].items())) + "\n")
+m3, mol3, t3 = adn.lire_adn(f_v2)
+e3, _ = adn.lire(m3, mol3, t3)
+verifier("un ADN de la version 2 se lit encore (vrai)", m3 == mots_i and e3 == adn.VRAI)
+if os.path.exists(lugus):
+    f_rs = os.path.join(d, "iso-rs.adn")
+    f_py = os.path.join(d, "iso-py.adn")
+    subprocess.run([lugus, "ranger", f_iso, f_rs], capture_output=True, text=True, encoding="utf-8")
+    subprocess.run(py + ["ranger", f_iso, f_py], capture_output=True, text=True, encoding="utf-8", env=ENV)
+    verifier("Lugus range le même ADN version 3 que Python (isotopes et texte compris), octet pour octet",
+             os.path.exists(f_rs) and open(f_rs, "rb").read() == open(f_py, "rb").read())
+    r = subprocess.run([lugus, "transcrire", f_rs, os.path.join(d, "iso.mots")], capture_output=True, text=True, encoding="utf-8")
+    verifier("lugus transcrire : « le texte : vrai » (rétrotranscription par vtxc128)",
+             "le texte : vrai" in r.stderr, r.stderr)
+    adn.ecrire_adn(f_rs, mots_i, mols_i, t_f)
+    r = subprocess.run([lugus, "transcrire", f_rs, os.path.join(d, "iso.mots")], capture_output=True, text=True, encoding="utf-8")
+    verifier("un texte retouché dans l'ADN : « le texte : faux », les mots restent ceux de l'ADN",
+             "le texte : faux" in r.stderr and "l'ADN : vrai" in r.stderr, r.stderr)
+    r = subprocess.run([lugus, "pourquoi", f_py, "s"], capture_output=True, text=True, encoding="utf-8")
+    r2 = subprocess.run([lugus, "pourquoi", f_iso, "s"], capture_output=True, text=True, encoding="utf-8")
+    verifier("lugus pourquoi PROG.adn : depuis le texte gardé, le même arbre que depuis PROG.vtx",
+             r.returncode == 0 and r.stdout == r2.stdout and "s = 55" in r.stdout, r.stdout + r.stderr)
+    r = subprocess.run([lugus, "pourquoi", f_rs, "s"], capture_output=True, text=True, encoding="utf-8")
+    verifier("lugus pourquoi refuse un ADN dont le texte ne redonne pas les mots", r.returncode != 0 and "faux" in r.stderr,
+             r.stderr)
+
+# 6. l'épigénome : les souvenirs d'une exécution gardés dans l'ADN ; relancé, le programme repart avec ce qu'il a appris
+if os.path.exists(lugus):
+    f_alt = os.path.join(d, "alternance.adn")
+    subprocess.run([lugus, "ranger", os.path.join(dex, "alternance.vtx"), f_alt], capture_output=True, text=True, encoding="utf-8")
+    env_t = dict(os.environ, LUGUS_TEMPS="1")
+
+    def lancer_adn(chemin):
+        r = subprocess.run([lugus, chemin], capture_output=True, text=True, encoding="utf-8", env=env_t)
+        n = next((int(l.split()[0]) for l in r.stderr.splitlines() if l.endswith(" s") and "instructions" in l), -1)
+        return r.stdout.strip(), n, r.stderr
+
+    s0, n0, _ = lancer_adn(f_alt)
+    r = subprocess.run([lugus, "apprendre", f_alt], capture_output=True, text=True, encoding="utf-8")
+    s1, n1, e1 = lancer_adn(f_alt)
+    verifier(f"apprendre puis relancer : le même résultat, {n0} -> {n1} instructions (les souvenirs repris)",
+             s0 == s1 == "2640024" and 0 < n1 * 20 < n0 and "souvenirs repris" in e1, f"{s0} {s1} {n0} {n1} {e1}")
+    m_a, mol_a, t_a = adn.lire_adn(f_alt)
+    epi = adn.intron(t_a, "epigenome")
+    # un souvenir abîmé : l'épigénome est oublié, jamais lu de travers
+    t_b = adn.copie_temoins(t_a)
+    t_b["introns"] = [(n, ([x for x in l[:2]] + [l[2].split(":")[0] + ":" + str(int(l[2].split(":")[1]) + 1)] + l[3:])
+                       if n == "epigenome" else l) for n, l in t_b["introns"]]
+    f_b = os.path.join(d, "alternance-b.adn")
+    adn.ecrire_adn(f_b, m_a, mol_a, t_b)
+    s2, n2, e2 = lancer_adn(f_b)
+    verifier("un souvenir abîmé dans l'épigénome : il est oublié (le même résultat, sans le raccourci)",
+             s2 == s0 and n2 == n0 and "abîmé : oublié" in e2, f"{s2} {n2} {e2}")
+    # l'épigénome d'un autre programme n'est pas repris
+    f_c = os.path.join(d, "chute-epi.adn")
+    subprocess.run([lugus, "ranger", os.path.join(dex, "chute.vtx"), f_c], capture_output=True, text=True, encoding="utf-8")
+    m_c, mol_c, t_c = adn.lire_adn(f_c)
+    t_c["introns"].append(("epigenome", epi))
+    adn.ecrire_adn(f_c, m_c, mol_c, t_c)
+    r = subprocess.run([lugus, f_c], capture_output=True, text=True, encoding="utf-8")
+    verifier("l'épigénome d'un autre programme n'est pas repris", r.stdout.startswith("2500") and "autre programme" in r.stderr,
+             r.stdout + r.stderr)
+    # l'ADN abîmé, réparé : l'épigénome reste
+    ab = list(m_a)
+    ab[5] ^= 1 << 77
+    adn.ecrire_adn(f_alt, ab, mol_a, t_a)
+    s3, n3, e3 = lancer_adn(f_alt)
+    verifier("un mot abîmé, réparé à la lecture : l'épigénome est gardé et repris", s3 == s0 and n3 == n1
+             and adn.intron(adn.lire_adn(f_alt)[2], "epigenome") == epi, f"{s3} {n3} {e3}")
+    subprocess.run([lugus, "oublier", f_alt], capture_output=True, text=True, encoding="utf-8")
+    s4, n4, _ = lancer_adn(f_alt)
+    verifier("oublier : l'épigénome retiré, le programme repart de rien", s4 == s0 and n4 == n0
+             and adn.intron(adn.lire_adn(f_alt)[2], "epigenome") is None, f"{s4} {n4}")
 print("ADN : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)

@@ -176,7 +176,7 @@ structure Contrat { genre, cond: Noeud, msg, ligne, suivant: Contrat }
 structure Molecule { nom, params: Param, atomes: Atome, contrats: Contrat, resultat, ligne, vagues: Liste,
                      ok: Liste, prem: Noeud, der: Noeud, traces: Liste, appels, souv: Liste, types: Liste,
                      u_entrees: Liste, u_decl, u_res, u_env: Liste, u_fait, u_encours, err: Liste, causes: Liste, n_err,
-                     resultats: Liste, rtypes: Liste }
+                     resultats: Liste, rtypes: Liste, isotope }   // isotope : 1 si un atome est lourd (-> a lourd)
 // les unités : u_entrees (nom, unité) des entrées déclarées ; u_decl celle du résultat (0 : aucune) ; u_res celle qu'il
 // porte ; u_env (nom, unité) de chaque nom, une fois vérifiées
 
@@ -240,6 +240,7 @@ structure Ctx {
     lex_val,
     lex_haut,
     tab_w: Liste,       // entier_128 : les mots 1 à 3 des constantes, trois par constante (le noeud et le jeton portent l'indice du premier)
+    lourd_lu,           // 1 : des_noms a lu « lourd » (l'isotope lourd d'une liaison)
     lignes_dbg,         // 1 : écrire aussi la table adresse -> ligne du programme (pas à pas de l'atelier)
     niter,              // compteur des boucles « pour x dans t » (variables cachées __itN, __ikN)
     tabtextes: Liste,   // typer_textes : les variables qui contiennent un tableau de textes
@@ -5459,6 +5460,10 @@ fonction des_noms(c: Ctx, l: Liste, decl: Liste, types: Liste) {
         ajouter(decl, elem(l, l.n - 1));
         ajouter(decl, c.u_lue);
     }
+    si est_id(c, "lourd") {
+        avancer(c);
+        c.lourd_lu = 1;
+    }
     tantque est_op(c, ",") && c.erreur == 0 {
         avancer(c);
         ajouter(l, nom_variable(c));
@@ -5470,6 +5475,10 @@ fonction des_noms(c: Ctx, l: Liste, decl: Liste, types: Liste) {
         si c.u_lue != 0 {
             ajouter(decl, elem(l, l.n - 1));
             ajouter(decl, c.u_lue);
+        }
+        si est_id(c, "lourd") {
+            avancer(c);
+            c.lourd_lu = 1;
         }
     }
 }
@@ -5645,7 +5654,11 @@ fonction un_atome(c: Ctx, m: Molecule): Atome {
     a.texte = texte_beau(c, j_atome, c.tok);
     si est_op(c, "->") {
         avancer(c);
+        c.lourd_lu = 0;
         des_noms(c, a.sorties, a.u_decl, a.t_decl);
+        si c.lourd_lu == 1 {
+            m.isotope = 1;      // l'isotope lourd : la molécule garde ses neutrons dans l'ADN (le code ne change pas)
+        }
     }
     si est_id(c, "apres") {
         avancer(c);
@@ -5769,6 +5782,28 @@ fonction ecrire_noms(s, l: Liste) {
             ecrire_car(s, ',');
         }
         ecrire_texte(s, elem(l, i));
+    }
+}
+
+// les isotopes lourds : « nom|mot » pour chaque réaction qui porte un atome lourd (la place de son premier mot dans
+// Lugus) ; l'ADN leur donne des neutrons (lugus ranger). Rien n'est écrit sans isotope.
+fonction ecrire_isotopes(c: Ctx) {
+    soit s = 0;
+    soit f = c.fonctions;
+    tantque f != nul {
+        si f.mol != nul && f.mol.isotope == 1 && f.garde {
+            si s == 0 {
+                s = ouvrir_ecriture("code.iso");
+            }
+            ecrire_texte(s, f.nom);
+            ecrire_car(s, '|');
+            ecrire_nombre(s, elem(c.lugus_place, elem(c.etiq, f.etiq)) / 2);
+            ecrire_car(s, 10);
+        }
+        f = f.suivant;
+    }
+    si s != 0 {
+        fermer(s);
     }
 }
 
@@ -12053,6 +12088,7 @@ fonction principal() {
     si c.exemples.n > 0 && !c.mode_exemples {
         ecrire_exemples(c);
     }
+    ecrire_isotopes(c);
     soit s = ouvrir_ecriture("code.mots");
     soit hd = c.lugus_demis;
     pour i dans 0..(hd.n + 1) / 2 {
