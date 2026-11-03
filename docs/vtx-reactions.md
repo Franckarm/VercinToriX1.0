@@ -774,6 +774,37 @@ des ARN différents selon le besoin, apprend, se répare, et meurt plutôt que d
       constante, et ne donne un registre qu'aux premières variables ; un regard à la lunette dans les deux
       compilateurs (les mêmes mots) en ôterait une bonne part, pour tous les programmes (à mesurer) ;
   - il lit la version 3 seulement, un million de mots au plus.
+- **Essai : des neutrons quaternaires ?** (`chimie/essai_neutrons.py`, expérimental, rien n'est changé dans l'ADN) :
+  - la question de l'utilisateur : lire par 4, en quaternaire, plutôt que deux octets à la fois ; une table qui
+    avale quatre octets aurait 4,3 milliards d'entrées, et « par tranches de 4 » (quatre tables) demande quatre
+    lectures pour quatre octets, contre deux aujourd'hui : plus lent ; la vraie question est donc le neutron lui-même ;
+  - quatre candidats de 8 bits (4 quits, la taille du format ne change pas) : le CRC-8 d'aujourd'hui ; le même,
+    les bits lus dans le sens des octets ; un **CRC sur GF(4)** (le mot vu comme 64 quits, divisé par le meilleur des
+    192 générateurs de degré 4 : x⁴ + x² + ωx + 1) ; le **pli ℤ/4** (les 64 quits sommés en 4 par `addm4`) ;
+  - ce qu'ils voient (un mot au hasard par erreur ; 20 000 tirages par genre au hasard) :
+
+    | erreur | CRC-8 | CRC-8 ordonné | CRC GF(4) | pli ℤ/4 |
+    |---|---|---|---|---|
+    | un bit, un quit, un octet remplacé | 100 % | 100 % | 100 % | 100 % |
+    | deux bits | 99,988 % | 99,988 % | **100 %** | 91,1 % |
+    | deux quits | 99,99 % | 99,98 % | **100 %** | 92,0 % |
+    | rafale de 3 à 8 bits | 99,805 % | **100 %** | **100 %** | 100 % |
+    | trois bits | **100 %** | **100 %** | 99,66 % | 98,7 % |
+    | quatre bits | 99,22 % | 99,25 % | **99,62 %** | 97,8 % |
+    | huit bits épars | 99,20 % | 99,19 % | **99,64 %** | 99,4 % |
+    | le mot remplacé | 99,63 % | 99,66 % | 99,58 % | 99,59 % |
+
+    (au hasard, l'idéal pour 8 bits est 99,61 %) ;
+  - ce qu'ils coûtent sur Lugus, par mot : le CRC-8 par la table de deux octets, 81 instructions (et 950 000 une fois
+    pour la table) ; le CRC GF(4) est linéaire sur GF(2), il se calcule par la même table, **pour le même prix** ; le
+    pli ℤ/4, 30 instructions sans table ; la valeur de `addm4` sur Lugus est celle du modèle en Python ;
+  - lecture honnête : les rafales manquées venaient de l'ordre des bits, pas du binaire (le CRC-8 ordonné les voit
+    toutes) ; ce que le quaternaire apporte en propre : toutes les erreurs de deux bits et de deux quits (le bruit
+    d'un canal quaternaire touche des quits), et une détection au niveau de l'idéal au-delà de trois bits ; ce qu'il
+    perd : le CRC-8 voit tout nombre impair de bits faux (son facteur x + 1), pas lui ; le pli ℤ/4, quatre fois moins
+    cher, laisse passer une erreur double sur onze : trop faible seul ;
+  - à décider : un ADN version 4 aux neutrons GF(4) (dans adn.py, adn.rs et le lecteur en vtx, avec la lecture de la
+    version 3 gardée), ou garder le CRC-8.
 - **Ce qui reste** : Ogmios lance l'ADN sans la patrouille (elle est dans `lugus`) ; la patrouille relit le code, pas
   les données (un tableau abîmé n'est pas vu) ; le lecteur en vtx prend tout l'étage 2 (il tourne seul, sur sa machine)
   et la rétrotranscription reste faite par Lugus.
