@@ -29,7 +29,8 @@ pub struct Spu128 {
     c: bool,
     pub arrete: bool,
     pages: [HashMap<u128, Box<Page>>; 4],
-    cache: [(u128, *mut Page); 4],
+    // seize pages en cache par étage, rangées par leur numéro (les zones d'un programme sont souvent loin l'une de l'autre)
+    cache: [[(u128, *mut Page); 16]; 4],
     cache_code: (u128, *mut Page),
     a_des_adn: bool,
     pub entree: VecDeque<u128>,
@@ -109,7 +110,7 @@ impl Spu128 {
             c: false,
             arrete: false,
             pages: [HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new()],
-            cache: [(u128::MAX, std::ptr::null_mut()); 4],
+            cache: [[(u128::MAX, std::ptr::null_mut()); 16]; 4],
             cache_code: (u128::MAX, std::ptr::null_mut()),
             a_des_adn: false,
             entree: VecDeque::new(),
@@ -168,14 +169,14 @@ impl Spu128 {
     }
 
     fn page_disque(&mut self, e: usize, i: u128) {
-        let dossier = match &self.dossier {
-            Some(d) => d.clone(),
-            None => return,
-        };
+        if self.dossier.is_none() {
+            return;
+        }
         let cle = (e, i >> 16);
         if !self.pages_vues.insert(cle) {
             return;
         }
+        let dossier = self.dossier.clone().unwrap();
         let f = i >> 24;
         let b = match crate::miroir::lire_double(&dossier.join(format!("cube128-{}-{}.cub", e, f)), ENTETE) {
             Some(b) => b,
@@ -204,7 +205,7 @@ impl Spu128 {
                         None
                     };
                     self.pages[e].insert(base >> 16, Box::new(Page { mots, brins }));
-                    self.cache[e] = (u128::MAX, std::ptr::null_mut());
+                    self.cache[e] = [(u128::MAX, std::ptr::null_mut()); 16];
                     self.cache_code = (u128::MAX, std::ptr::null_mut());
                 }
                 return;
@@ -215,15 +216,15 @@ impl Spu128 {
 
     fn page_mut(&mut self, e: usize, i: u128) -> &mut Page {
         let cle = i >> 16;
-        if self.cache[e].0 == cle {
-            return unsafe { &mut *self.cache[e].1 };
+        if self.cache[e][(cle & 15) as usize].0 == cle {
+            return unsafe { &mut *self.cache[e][(cle & 15) as usize].1 };
         }
         self.page_disque(e, i);
         let p = self.pages[e]
             .entry(cle)
             .or_insert_with(|| Box::new(Page { mots: vec![0u128; PAGE].into_boxed_slice(), brins: None }));
         let ptr: *mut Page = &mut **p;
-        self.cache[e] = (cle, ptr);
+        self.cache[e][(cle & 15) as usize] = (cle, ptr);
         unsafe { &mut *ptr }
     }
 
@@ -247,14 +248,25 @@ impl Spu128 {
     pub fn lire(&mut self, adr: u128) -> u128 {
         let (e, i) = Self::place(adr);
         let cle = i >> 16;
-        if self.cache[e].0 == cle {
-            return unsafe { (*self.cache[e].1).mots[(i as usize) & (PAGE - 1)] };
+        let k = (cle & 15) as usize;
+        if self.cache[e][k].0 == cle {
+            return unsafe { *(&(*self.cache[e][k].1).mots).get_unchecked((i as usize) & (PAGE - 1)) };
+        }
+        self.lire_lent(adr)
+    }
+
+    #[inline(never)]
+    fn lire_lent(&mut self, adr: u128) -> u128 {
+        let (e, i) = Self::place(adr);
+        let cle = i >> 16;
+        if self.cache[e][(cle & 15) as usize].0 == cle {
+            return unsafe { (*self.cache[e][(cle & 15) as usize].1).mots[(i as usize) & (PAGE - 1)] };
         }
         self.page_disque(e, i);
         match self.pages[e].get_mut(&cle) {
             Some(p) => {
                 let ptr: *mut Page = &mut **p;
-                self.cache[e] = (cle, ptr);
+                self.cache[e][(cle & 15) as usize] = (cle, ptr);
                 unsafe { (*ptr).mots[(i as usize) & (PAGE - 1)] }
             }
             None => 0,
@@ -262,8 +274,19 @@ impl Spu128 {
     }
 
     /// la demi-instruction n° p : la moitié haute du mot p / 2 si p est pair, la basse sinon
-    #[inline]
+    #[inline(always)]
     fn demi(&mut self, p: u128) -> u64 {
+        let i = (p >> 1) & M120;
+        if self.cache_code.0 == i >> 16 {
+            // le chemin court : la page du code est en cache (une page a toujours PAGE mots)
+            let w = unsafe { *(&(*self.cache_code.1).mots).get_unchecked((i as usize) & (PAGE - 1)) };
+            return if p & 1 == 0 { (w >> 64) as u64 } else { w as u64 };
+        }
+        self.demi_lent(p)
+    }
+
+    #[inline(never)]
+    fn demi_lent(&mut self, p: u128) -> u64 {
         let i = (p >> 1) & M120;
         let cle = i >> 16;
         let w = if self.cache_code.0 == cle {
@@ -315,6 +338,23 @@ impl Spu128 {
     }
 
     pub fn ecrire_mem(&mut self, adr: u128, v: u128) -> Resultat {
+        // le chemin court : la page est en cache et aucun de ses mots n'a de brin (rien d'ADN à protéger sur elle ; le
+        // code, marqué ADN au lancement, reste vérifié par le chemin lent)
+        let (e, i) = Self::place(adr);
+        let cle = i >> 16;
+        let k = (cle & 15) as usize;
+        if self.cache[e][k].0 == cle {
+            let p = self.cache[e][k].1;
+            if unsafe { (*p).brins.is_none() } {
+                unsafe { *(&mut (*p).mots).get_unchecked_mut((i as usize) & (PAGE - 1)) = v };
+                return Ok(());
+            }
+        }
+        self.ecrire_mem_lent(adr, v)
+    }
+
+    #[inline(never)]
+    fn ecrire_mem_lent(&mut self, adr: u128, v: u128) -> Resultat {
         let (e, i) = Self::place(adr);
         let a_des_adn = self.a_des_adn;
         let p = self.page_mut(e, i);
@@ -522,7 +562,7 @@ impl Spu128 {
         for p in 0..256u128 {
             self.pages_vues.insert((e, (f << 8) | p));
         }
-        self.cache[e] = (u128::MAX, std::ptr::null_mut());
+        self.cache[e] = [(u128::MAX, std::ptr::null_mut()); 16];
         (avant - self.pages[e].len()) as u128
     }
 
@@ -560,6 +600,25 @@ impl Spu128 {
     // --- exécution
     pub fn executer(&mut self, max_pas: u64) -> Resultat {
         while !self.arrete {
+            // la boucle serrée : jusqu'au prochain pas où l'un des contrôles ci-dessous peut agir (la limite, l'arrêt
+            // demandé, une avarie, la ronde de la patrouille), aucun ne peut agir ; là, l'itération entière les refait
+            let mut borne = max_pas;
+            if self.arret.is_some() {
+                borne = borne.min(self.pas.wrapping_add(0xF_FFFF) & !0xF_FFFF);
+            }
+            if let Some(a) = self.avaries.front() {
+                borne = borne.min(a.0.max(self.pas));
+            }
+            if self.patrouille.is_some() {
+                let t = (self.pas & !0xFFFF) | 0x8000;
+                borne = borne.min(if t >= self.pas { t } else { t + 0x1_0000 });
+            }
+            while self.pas < borne && !self.arrete {
+                self.pas_unique()?;
+            }
+            if self.arrete {
+                break;
+            }
             if self.pas >= max_pas {
                 return Err(format!("limite de {} instructions atteinte", max_pas));
             }
@@ -611,6 +670,13 @@ impl Spu128 {
             0x17 => (((sv as i64) >> (tv & 63)) as u64, false),
             0x18 => (si, false),
             0x19 => (h & 0xFFFF_FFFF, false),
+            0x1F => {
+                // ETG : l'étage dans les deux bits hauts (z et c ne changent pas)
+                if d != 0 {
+                    self.r[d] = ((sv & !(3u64 << 62)) | ((h & 3) << 62)) as u128;
+                }
+                return true;
+            }
             _ => return false,
         };
         if d != 0 {
@@ -621,6 +687,7 @@ impl Spu128 {
         true
     }
 
+    #[inline(always)]
     pub fn pas_unique(&mut self) -> Resultat {
         let h = self.demi(self.pc);
         let op = (h >> 48) as u16;
@@ -634,6 +701,82 @@ impl Spu128 {
             self.pas += 1;
             return Ok(());
         }
+        // le chemin court à la largeur 128 : les sauts, les accès à la mémoire et à la pile, MOV (les mêmes calculs
+        // que leurs bras du match plus bas, sans les masques des autres largeurs)
+        if wl == 0 {
+            let si = ((h & 0xFFFF_FFFF) as u32 as i32) as i128 as u128;
+            let suivant = (self.pc + 1) & M120;
+            match op {
+                0x30 => {
+                    self.pc = (h & 0xFFFF_FFFF) as u128;
+                    self.pas += 1;
+                    return Ok(());
+                }
+                0x31 | 0x32 | 0x35 | 0x36 => {
+                    let saut = match op {
+                        0x31 => self.z,
+                        0x32 => !self.z,
+                        0x35 => self.c,
+                        _ => !self.c,
+                    };
+                    self.pc = if saut { (h & 0xFFFF_FFFF) as u128 } else { suivant };
+                    self.pas += 1;
+                    return Ok(());
+                }
+                0x20 | 0x25 | 0x28 => {
+                    let v = match op {
+                        0x20 => self.lire(self.r[s].wrapping_add(si)),
+                        0x25 => self.lire(self.r[13].wrapping_add(si) & M120),
+                        _ => {
+                            let v = self.lire(self.r[14]);
+                            self.r[14] = (self.r[14] + 1) & M120;
+                            v
+                        }
+                    };
+                    self.ecrire(d, v);
+                    if op != 0x28 {
+                        self.z = v == 0;
+                        self.c = false;
+                    }
+                    self.pc = suivant;
+                    self.pas += 1;
+                    return Ok(());
+                }
+                0x21 | 0x26 | 0x27 => {
+                    match op {
+                        0x21 => self.ecrire_mem(self.r[d].wrapping_add(si), self.r[s])?,
+                        0x26 => self.ecrire_mem(self.r[13].wrapping_add(si) & M120, self.r[d])?,
+                        _ => {
+                            let v = self.r[s];
+                            self.r[14] = self.r[14].wrapping_sub(1) & M120;
+                            self.ecrire_mem(self.r[14], v)?;
+                        }
+                    }
+                    self.pc = suivant;
+                    self.pas += 1;
+                    return Ok(());
+                }
+                0x0B => {
+                    let v = self.r[s];
+                    self.ecrire(d, v);
+                    self.pc = suivant;
+                    self.pas += 1;
+                    return Ok(());
+                }
+                _ => {}
+            }
+        }
+        self.pas_general(h)
+    }
+
+    /// les autres instructions (le grand match), à part : le chemin court ne paie pas sa préparation
+    #[inline(never)]
+    fn pas_general(&mut self, h: u64) -> Resultat {
+        let op = (h >> 48) as u16;
+        let d = ((h >> 44) & 15) as usize;
+        let s = ((h >> 40) & 15) as usize;
+        let t = ((h >> 36) & 15) as usize;
+        let wl = ((h >> 32) & 15) as u32;
         let imm = (h & 0xFFFF_FFFF) as u128;
         let si = (imm as u32 as i32) as i128 as u128;
         let l: u32 = match wl {

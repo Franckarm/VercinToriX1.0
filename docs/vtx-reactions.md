@@ -740,13 +740,40 @@ des ARN différents selon le besoin, apprend, se répare, et meurt plutôt que d
     l'ombre (Reed-Solomon sur GF(256) : syndromes, Berlekamp-Massey, Chien, Forney, environ 450 lignes de vtx), la
     triangulation, le compte rendu de Lugus ligne pour ligne ; les introns qu'il ne connaît pas (isotopes, texte,
     épigénome) sont recopiés tels quels ; il écrit l'ADN relu comme Python l'écrit, octet pour octet ;
-  - les deux compilateurs donnent ses mêmes mots (3 259) ; `tests/test_adn_vtx.py` le compare à Python sur les
-    avaries de tous les genres : le même état, le même compte rendu, le même ADN relu ;
+  - les deux compilateurs donnent ses mêmes mots (3 455) ; `tests/test_adn_vtx.py` le compare à Python sur les
+    avaries de tous les genres : le même état, le même compte rendu, le même ADN relu (495 sur 495) ;
   - il ne dépend ni de Python ni de Rust : un Ogmios écrit en vtx pourra le lancer sur une machine fille, comme il
-    lance vtxc128 ;
-  - mesuré : l'ADN de vtxc128 (173 166 mots) en 11 s, contre 0,16 s pour Lugus en Rust (70 fois plus lent : il lit le
-    fichier caractère par caractère et recalcule l'ombre de chaque colonne) ; un programme ordinaire en un quart de
-    seconde. Il lit la version 3 seulement, un million de mots au plus.
+    lance vtxc128 ; la forge en fait un exécutable (`forge128.py chimie/adn.vtx`, les chemins en entrées) ;
+  - **la vitesse, mesurée** (l'ADN de vtxc128, 173 166 mots, 3,7 Mo) : 11 s au début, 2,7 s aujourd'hui en vtx sur
+    Lugus, **0,51 s forgé**, contre 0,14 s pour Lugus en Rust ; un programme ordinaire en 0,1 s. Ce qui a été fait,
+    une idée à la fois, chacune mesurée (instructions de Lugus, puis instructions de la machine hôte) :
+    - le lecteur, de 844 à 314 millions d'instructions :
+      - l'ombre n'est plus recodée voie par voie : les quatre syndromes des seize voies sont calculés huit octets à la
+        fois par moitié de mot (α fois huit octets en une fois : `((x << 1) & 0xFEFE…) ^ (((x >> 7) & 0x0101…) * 29)`) ;
+        une colonne est intacte si et seulement s'ils sont nuls (le code est systématique : une seule ombre par
+        données) ; le recodage ne sert plus qu'aux colonnes abîmées (−30 %) ;
+      - les nombres sont lus dans la boucle même, le caractère courant dans un registre, sans appel par caractère ni
+        `fin_de` (`lire_car` rend « tout à un » au bout du fichier), dans un `entier_128` (une multiplication, une
+        addition) ;
+      - ils sont écrits du chiffre fort au faible par une table des puissances de 10, un mot de 128 bits coupé en
+        morceaux de 19 chiffres par la division de l'`entier_128` (signé : ⌊x / 10^19⌋ = ⌊⌊x / 2⌋ / (5·10^18)⌋) ;
+      - le CRC-8 lit deux octets à la fois (une table de 65 536 : `CRC2[x | y << 8] = CRC[CRC[x] ^ y]`) ;
+      - une faute corrigée en passant : le second chemin était rangé en `CHEMIN + 2000`, hors de la carte, là où la
+        table est venue se mettre ; il a sa place (`CHEMIN2`), et un chemin trop long est coupé, pas débordé ;
+    - Lugus, deux fois moins d'instructions de l'hôte par instruction (callgrind : 194 → 94), pour tout programme :
+      - la demi-instruction est lue en ligne quand sa page est en cache ;
+      - seize pages en cache par étage au lieu d'une (le lecteur passe sans cesse d'une zone à l'autre) ;
+      - l'écriture sans le contrôle des brins sur une page qui n'en a pas (le code, marqué ADN au lancement, reste
+        vérifié) ;
+      - les sauts, LD, ST, LDF, STF, PUSH, POP, MOV et ETG ont leur chemin court ; le grand `match` est à part, il
+        ne fait plus payer sa préparation aux autres ;
+      - la boucle va d'un contrôle au suivant (la limite, l'arrêt, une avarie, la ronde) sans les refaire à chaque pas ;
+      - essayé et rendu : la boucle serrée avec l'ancien grand pas (plus lente), forcer l'inlining de la mémoire dans
+        le `match` (plus lent) ;
+    - ce qui reste : le compilateur met des PUSH/POP autour de chaque opération, même quand l'opérande est une
+      constante, et ne donne un registre qu'aux premières variables ; un regard à la lunette dans les deux
+      compilateurs (les mêmes mots) en ôterait une bonne part, pour tous les programmes (à mesurer) ;
+  - il lit la version 3 seulement, un million de mots au plus.
 - **Ce qui reste** : Ogmios lance l'ADN sans la patrouille (elle est dans `lugus`) ; la patrouille relit le code, pas
   les données (un tableau abîmé n'est pas vu) ; le lecteur en vtx prend tout l'étage 2 (il tourne seul, sur sa machine)
   et la rétrotranscription reste faite par Lugus.

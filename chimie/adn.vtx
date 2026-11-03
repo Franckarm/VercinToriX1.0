@@ -35,9 +35,12 @@ constante TRAV = 7124920;        // le travail du codage d'une voie (255 octets)
 constante VOIE = 7125200;        // les seize voies d'une colonne (une longueur, puis 255 octets chacune)
 constante EFF = 7130000;         // les effacements d'une colonne (une longueur, puis les rangs)
 constante CHIF = 7130500;        // les chiffres d'un nombre écrit
+constante PUIS = 7130560;        // les puissances de 10, de 1 à 10^19
 constante NOM = 7130600;         // le nom d'une section lue
-constante CHEMIN = 7130700;      // un chemin (un texte)
+constante CHEMIN = 7130700;      // le chemin de l'ADN lu (un texte, 290 caractères au plus)
 constante G = 7131000;           // l'état du lecteur
+constante CHEMIN2 = 7131100;     // le chemin de l'ADN relu (290 caractères au plus)
+constante CRC2 = 7132000;        // le CRC-8 deux octets à la fois (65 536) : CRC2[x | y << 8] = CRC[CRC[x] ^ y]
 constante BROUILLON = 7200000;   // les polynômes du décodage (repris à chaque voie)
 constante INTR = 8000000;        // les introns inconnus, recopiés tels quels
 constante MAXMOTS = 1000000;
@@ -73,53 +76,51 @@ fonction ecrire_t(c, t) {
     }
 }
 
-fonction ecrire_u64(c, x0) {
+// les n chiffres de x (x < 10^n), du plus fort au plus faible : une division par une puissance de 10 chacun
+fonction ecrire_chiffres(c, x0, n) {
     soit x = x0;
-    si x == 0 {
-        ecrire_car(c, 48);
-        retour;
-    }
-    soit n = 0;
-    tantque x != 0 {
-        @2[CHIF + n] = x % 10;
-        x = x / 10;
-        n = n + 1;
-    }
-    tantque n > 0 {
-        n = n - 1;
-        ecrire_car(c, 48 + @2[CHIF + n]);
+    soit k = n;
+    tantque k > 0 {
+        k = k - 1;
+        soit p = @2[PUIS + k];
+        soit d = x / p;
+        x = x - d * p;
+        ecrire_car(c, 48 + d);
     }
 }
 
-// un mot de 128 bits en décimal : h les 64 bits hauts, b les bas (quatre morceaux de 32 bits, divisés par 10 tour à tour)
+fonction ecrire_u64(c, x) {
+    si x < 10 {
+        ecrire_car(c, 48 + x);
+        retour;
+    }
+    soit n = 2;
+    tantque n < 20 && x >= @2[PUIS + n] {
+        n = n + 1;
+    }
+    ecrire_chiffres(c, x, n);
+}
+
+// un mot de 128 bits en décimal (h les 64 bits hauts, b les bas) : coupé en morceaux de 19 chiffres par l'entier_128 de
+// la machine ; il est signé, alors le mot est d'abord divisé par deux (⌊x / 10^19⌋ = ⌊⌊x / 2⌋ / (5·10^18)⌋)
 fonction ecrire_u128(c, h, b) {
     si h == 0 {
         ecrire_u64(c, b);
         retour;
     }
-    soit l3 = h >> 32;
-    soit l2 = h & 4294967295;
-    soit l1 = b >> 32;
-    soit l0 = b & 4294967295;
-    soit n = 0;
-    tantque l3 != 0 || l2 != 0 || l1 != 0 || l0 != 0 {
-        soit r = l3 % 10;
-        l3 = l3 / 10;
-        soit x = (r << 32) | l2;
-        l2 = x / 10;
-        r = x % 10;
-        x = (r << 32) | l1;
-        l1 = x / 10;
-        r = x % 10;
-        x = (r << 32) | l0;
-        l0 = x / 10;
-        @2[CHIF + n] = x % 10;
-        n = n + 1;
+    soit x: entier_128 = entier_128_de(h, b);
+    soit y: entier_128 = (x >> 1) & 170141183460469231731687303715884105727LL;
+    soit q: entier_128 = y / 5000000000000000000LL;
+    soit r = bas(x - q * 10000000000000000000LL);
+    soit q2: entier_128 = q / 10000000000000000000LL;
+    soit r2 = bas(q - q2 * 10000000000000000000LL);
+    si q2 != 0LL {
+        ecrire_car(c, 48 + bas(q2));
+        ecrire_chiffres(c, r2, 19);
+    } sinon {
+        ecrire_u64(c, r2);
     }
-    tantque n > 0 {
-        n = n - 1;
-        ecrire_car(c, 48 + @2[CHIF + n]);
-    }
+    ecrire_chiffres(c, r, 19);
 }
 
 fonction refuser(t) {
@@ -165,27 +166,45 @@ fonction attendre(ch) {
     avancer();
 }
 
-// un nombre décimal de 128 bits au plus : rend ses 64 bits bas, les hauts dans G_HAUT
-fonction lire_nombre() {
-    soit h = 0;
-    soit l = 0;
-    si car_courant() < 48 || car_courant() > 57 {
-        refuser("un nombre est attendu");
-    }
+// un nombre dans un en-tête recopié (les introns) : caractère par caractère, par avancer
+fonction lire_nombre_recopie() {
+    soit x: entier_128 = 0LL;
     tantque car_courant() >= 48 && car_courant() <= 57 {
-        soit d = car_courant() - 48;
-        soit nh = h * 10 + mul_haut(l, 10);
-        soit nl = l * 10;
-        soit l2 = nl + d;
-        si l2 < nl {
-            nh = nh + 1;
-        }
-        h = nh;
-        l = l2;
+        x = x * 10LL + entier_128(car_courant() - 48);
         avancer();
     }
-    @2[G + G_HAUT] = h;
-    retour l;
+    @2[G + G_HAUT] = haut(x);
+    retour bas(x);
+}
+
+// un nombre décimal de 128 bits au plus : rend ses 64 bits bas, les hauts dans G_HAUT. Le chemin court : le caractère
+// courant reste dans c, le fichier est lu ici (\r sauté, comme avancer) ; le nombre est fait dans un entier_128 (un
+// mot de Lugus : une multiplication, une addition), coupé à la fin ; c, x, f d'abord, pour qu'ils aient un registre
+fonction lire_nombre() {
+    soit c = @2[G + G_CAR];
+    soit x: entier_128 = 0LL;
+    soit f = @2[G + G_CANAL];
+    // c - 48 < 10 (sans signe) : c est un chiffre ; lire_car rend « tout à un » au bout du fichier (les deux
+    // machines) : ce n'est pas un chiffre, la boucle s'arrête
+    si c - 48 >= 10 {
+        refuser("un nombre est attendu");
+    }
+    si @2[G + G_COPIE] == 1 {
+        retour lire_nombre_recopie();
+    }
+    tantque c - 48 < 10 {
+        x = x * 10LL + entier_128(c - 48);
+        c = lire_car(f);
+        tantque c == 13 {
+            c = lire_car(f);
+        }
+    }
+    si c == 18446744073709551615 {
+        c = FIN;
+    }
+    @2[G + G_CAR] = c;
+    @2[G + G_HAUT] = haut(x);
+    retour bas(x);
 }
 
 fonction nom_est(t) {
@@ -417,16 +436,17 @@ fonction signature(a, b) {
     retour h;
 }
 
-// les neutrons d'un mot : un CRC de 8 bits (polynôme 0x07) sur ses seize octets, le plus faible d'abord
+// les neutrons d'un mot : un CRC de 8 bits (polynôme 0x07) sur ses seize octets, le plus faible d'abord ; deux octets
+// par lecture de la table CRC2
 fonction crc8(h, b) {
-    soit c = 0;
-    pour k dans 0..8 {
-        c = @2[CRC + (c ^ ((b >> (8 * k)) & 255))];
-    }
-    pour k2 dans 0..8 {
-        c = @2[CRC + (c ^ ((h >> (8 * k2)) & 255))];
-    }
-    retour c;
+    soit c = @2[CRC2 + (b & 65535)];
+    c = @2[CRC2 + (c ^ ((b >> 16) & 65535))];
+    c = @2[CRC2 + (c ^ ((b >> 32) & 65535))];
+    c = @2[CRC2 + (c ^ (b >> 48))];
+    c = @2[CRC2 + (c ^ (h & 65535))];
+    c = @2[CRC2 + (c ^ ((h >> 16) & 65535))];
+    c = @2[CRC2 + (c ^ ((h >> 32) & 65535))];
+    retour @2[CRC2 + (c ^ (h >> 48))];
 }
 
 fonction nb_colonnes(n) {
@@ -447,6 +467,11 @@ fonction octet(h, b, k) {
 
 // --------------------------------------------------------------------------------------------- Reed-Solomon, GF(256)
 fonction preparer() {
+    soit p10 = 1;
+    pour i0 dans 0..20 {
+        @2[PUIS + i0] = p10;
+        p10 = p10 * 10;
+    }
     soit x = 1;
     pour i dans 0..255 {
         @2[EXPO + i] = x;
@@ -469,6 +494,11 @@ fonction preparer() {
             }
         }
         @2[CRC + k] = c;
+    }
+    pour y dans 0..256 {
+        pour x2 dans 0..256 {
+            @2[CRC2 + (x2 | (y << 8))] = @2[CRC + (@2[CRC + x2] ^ y)];
+        }
     }
     // le générateur : le produit des (x + 2^i), i < 4 ; ses coefficients ne sont jamais nuls
     brouillon_repris();
@@ -861,6 +891,45 @@ fonction ombre_colonne(m) {
     }
 }
 
+// α fois chacun des huit octets d'une moitié de mot, en une fois (GF(256), polynôme 0x11D) : les huit voies ensemble
+fonction fois2(x) {
+    retour ((x << 1) & 18374403900871474942) ^ (((x >> 7) & 72340172838076673) * 29);
+}
+
+// la colonne lue (DH, DB) et ses quatre mots d'ombre forment-ils un mot de code ? Les quatre syndromes (en 1, α, α², α³)
+// des seize voies, calculés huit voies à la fois par moitié de mot : tous nuls si et seulement si l'ombre est celle
+// que donnerait le codage (le code est systématique : pour des données, une seule ombre)
+fonction ombre_saine(k, m) {
+    soit a0 = 0;
+    soit a1 = 0;
+    soit a2 = 0;
+    soit a3 = 0;
+    soit b0 = 0;
+    soit b1 = 0;
+    soit b2 = 0;
+    soit b3 = 0;
+    pour j dans 0..m + OMBRE {
+        soit h = 0;
+        soit l = 0;
+        si j < m {
+            h = @2[DH + j];
+            l = @2[DB + j];
+        } sinon {
+            h = @2[OMB + 8 * k + 2 * (j - m)];
+            l = @2[OMB + 8 * k + 2 * (j - m) + 1];
+        }
+        a0 = a0 ^ h;
+        a1 = fois2(a1) ^ h;
+        a2 = fois2(fois2(a2)) ^ h;
+        a3 = fois2(fois2(fois2(a3))) ^ h;
+        b0 = b0 ^ l;
+        b1 = fois2(b1) ^ l;
+        b2 = fois2(fois2(b2)) ^ l;
+        b3 = fois2(fois2(fois2(b3))) ^ l;
+    }
+    retour (a0 | a1 | a2 | a3 | b0 | b1 | b2 | b3) == 0;
+}
+
 // --------------------------------------------------------------------------------------------- la lecture
 // répare la colonne k en place ; rend son état (le nombre de mots réparés dans COLR, les places désignées dans PARN)
 fonction lire_colonne(k) {
@@ -887,11 +956,14 @@ fonction lire_colonne(k) {
     }
     @2[EFF] = ne;
     @2[COLR + k] = 0;
-    ombre_colonne(m);
     soit pareille = 1;
-    pour z dans 0..2 * OMBRE {
-        si @2[OC + z] != @2[OMB + 8 * k + z] {
-            pareille = 0;
+    si ombre_saine(k, m) == 0 {
+        // le chemin lent, rare : l'ombre recalculée voie par voie
+        ombre_colonne(m);
+        pour z dans 0..2 * OMBRE {
+            si @2[OC + z] != @2[OMB + 8 * k + z] {
+                pareille = 0;
+            }
         }
     }
     si pareille == 1 {
@@ -1187,8 +1259,10 @@ fonction lire_chemin(place) {
     soit n = 0;
     soit x = entrée();
     tantque x != 0 {
-        @2[place + 1 + n] = x;
-        n = n + 1;
+        si n < 290 {
+            @2[place + 1 + n] = x;
+            n = n + 1;
+        }
         x = entrée();
     }
     @2[place] = n;
@@ -1201,7 +1275,7 @@ fonction lire_chemin(place) {
 fonction principal() {
     preparer();
     soit entree = lire_chemin(CHEMIN);
-    soit relu = lire_chemin(CHEMIN + 2000);
+    soit relu = lire_chemin(CHEMIN2);
     si entree == 0 {
         entree = "code.adn";
     }
