@@ -854,3 +854,37 @@ paillasse améliorée.
   - balayé : chaque mot de l'isotope, trois bits, 120 pas de suite (7 560 avaries) : 3 150 fois le résultat juste,
     4 410 fois l'apoptose, **aucune fois un résultat faux** ; sans avarie, le même nombre d'instructions avec ou sans
     patrouille.
+- **La fiche comparée** (`mesures/mesurer128.py 3`, médiane de trois lancements, lancement du processus compris ;
+  `mesures/mesures-lugus-4.json`) ; Python 3 ajouté, et les instructions de Lugus :
+
+  | programme | C -O2 | Rust -O | Python 3 | vtx forgé (Lugus) | vtx sur Lugus | instructions de Lugus |
+  |---|---|---|---|---|---|---|
+  | fib (appels) | 0,005 s | 0,011 s | 0,35 s | 0,017 s | 1,09 s | 112,8 M |
+  | crible (mémoire) | 0,037 s | 0,033 s | 1,44 s | 0,063 s | 1,34 s | 158,4 M |
+  | mandel (flottants) | 0,022 s (32 b) ; 1,07 s (`__float128`) | 0,021 s | 1,69 s (64 b) | 1,24 s (128 b) ; 0,86 s (64 b) | 3,91 s | 139,4 M |
+  | tri rapide | 0,053 s | 0,052 s | 1,33 s | 0,078 s | 1,04 s | 135,0 M |
+  | ADN, deux brins | 0,026 s | 0,020 s | 7,97 s | 0,026 s | 0,38 s | 45,1 M |
+  | neutrons, CRC-8 | 0,009 s | 0,013 s | 1,95 s | 0,069 s | 0,50 s | 78,0 M |
+  | neutrons, GF(4) | 0,009 s | 0,018 s | 1,76 s | 0,050 s | 0,64 s | 80,3 M |
+
+  - forgé, vtx est au niveau du C sur l'ADN, à 1,5 à 1,7 fois sur le tri et le crible, 3 fois sur fib ; mandel en
+    128 bits forgé (1,24 s) est proche du C en `__float128` (1,07 s) ;
+  - sur Lugus (émulé), vtx bat Python sur l'ADN (21 fois), les neutrons (3 à 4 fois), le tri ; à égalité sur le
+    crible ; derrière sur fib (3 fois) et mandel (2,3 fois, mais en 128 bits contre 64) ;
+  - les temps sous 0,05 s sont surtout le lancement du processus.
+- **Le CRC quaternaire : vitesse, instructions, puissance** :
+  - Lugus n'a pas de décalage par une valeur écrite : la table du CRC GF(4) est rangée **décalée de 8 bits**
+    (`T2[x << 8 | y] = T[T[x] ^ y] << 8`), chaque pas est un OU exclusif et une lecture, comme le CRC-8 (fait aussi
+    dans le lecteur d'ADN en vtx) ; sans cela, 25 instructions de plus par mot ;
+  - en passant : l'attribution des registres se fait pour toute la fonction, pondérée par la profondeur des boucles ;
+    la construction des tables (deux boucles imbriquées de 256) prenait les registres de la boucle chaude (un million
+    de tours) ; les tables mises dans une fonction à part, 93 → 77 instructions par mot. À reprendre dans le
+    compilateur (les registres par boucle, ou pondérés par le nombre de tours quand il est connu) ;
+  - **vitesse** : égale (C, Rust, forgé, Lugus : dans le bruit de la mesure) ; **instructions** : +3 % sur Lugus
+    (80,3 M contre 78,0 M : le premier pas et le décalage final) ;
+  - **puissance** sur les avaries de l'ADN (`chimie/essai_neutrons_adn.py`, 150 par genre et par programme, quatre
+    programmes) : égale ; les deux désignent 99,3 à 100 % des mots abîmés (un mot entier changé : le hasard, une chance
+    sur 256), les mêmes réparations (rafale de quatre mots : 89,5 % contre 89,3 % ; seize mots : 2,2 % contre 2,3 %),
+    jamais de travers ; l'avantage du quaternaire est sur les petites erreurs (deux bits, deux quits : 100 % contre
+    99,99 % ; quatre bits : 99,62 % contre 99,22 %), le bruit d'un canal quaternaire, que les genres d'avaries de
+    l'ADN (des mots entiers) ne contiennent pas encore.

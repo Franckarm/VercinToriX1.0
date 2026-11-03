@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Fiche des performances de Lugus (le SPU-128) : les programmes des mesures (mesures/src), en C et en Rust pour
-référence, et en vtx de quatre façons : forgé pour Lugus (forge/forge128.py), forgé pour le SPU-32 (forge/forge.py),
+référence, Python 3, et en vtx de quatre façons : forgé pour Lugus (forge/forge128.py), forgé pour le SPU-32 (forge/forge.py),
 Lugus émulé (lugus), le SPU-64 émulé (vtx64). Pour mandel, qui calcule en flottants, aussi les autres largeurs : le C en
 double et en __float128 (logiciel, libquadmath), Lugus forgé en flottant de 64 bits (1.5D).
 
@@ -26,7 +26,9 @@ V = os.path.join(RACINE, "vtx-rs", "target", "release")
 R = int(sys.argv[1]) if len(sys.argv) > 1 else 5
 BENCH = [("fib", "Fibonacci récursif (appels)"), ("crible", "Crible d'Ératosthène (mémoire)"),
          ("mandel", "Mandelbrot (flottants)"), ("tri", "Tri rapide (mémoire, comparaisons)"),
-         ("adn", "Deux brins d'ADN comparés base par base")]
+         ("adn", "Deux brins d'ADN comparés base par base"),
+         ("neutrons8", "Neutrons de l'ADN v3 : CRC-8, un million de mots"),
+         ("neutrons4", "Neutrons de l'ADN v4 : CRC quaternaire (GF(4)), un million de mots")]
 T = tempfile.mkdtemp(prefix="mesures128-")
 X = ".exe" if os.name == "nt" else ""     # le nom des exécutables
 
@@ -55,6 +57,8 @@ def construire(b):
     o = lambda n: os.path.join(T, n + X)  # noqa: E731
     essayer("C (gcc -O2)", ["gcc", "-O2", "-o", o(b + "_gcc"), os.path.join(S, b + ".c")], c, o(b + "_gcc"))
     essayer("Rust (rustc -O)", ["rustc", "-O", "-o", o(b + "_rust"), os.path.join(S, b + ".rs")], c, o(b + "_rust"))
+    if os.path.exists(os.path.join(S, b + ".py")):
+        c["Python 3 (CPython)"] = ("ref", [sys.executable, os.path.join(S, b + ".py")])
     if b == "crible":
         # le plancher d'un mot de 128 bits : le même Rust, sur un tableau de u128 (16 octets par case, comme Lugus)
         r = open(os.path.join(S, "crible.rs")).read().replace("0u32", "0u128").replace("n: u32", "n: u128")
@@ -79,15 +83,21 @@ def construire(b):
         subprocess.run([sys.executable, os.path.join(RACINE, "forge", "forge128.py"), os.path.join(T, "mandel_d.vtx"),
                         "-o", o("mandel_d_lugus")], check=True, capture_output=True)
         c["vtx, forgé pour Lugus, en flottant de 64 bits (1.5D)"] = ("vtx", [o("mandel_d_lugus")])
-    subprocess.run([sys.executable, os.path.join(RACINE, "forge", "forge.py"), src, "-o", o(b + "_forge")],
-                   check=True, capture_output=True)
-    c["vtx, forgé pour le SPU-32 (forge → Rust → natif)"] = ("vtx", [o(b + "_forge")])
+    try:
+        subprocess.run([sys.executable, os.path.join(RACINE, "forge", "forge.py"), src, "-o", o(b + "_forge")],
+                       check=True, capture_output=True)
+        c["vtx, forgé pour le SPU-32 (forge → Rust → natif)"] = ("vtx", [o(b + "_forge")])
+    except subprocess.CalledProcessError:
+        print(f"  ({b} : pas pour le SPU-32)", flush=True)
     subprocess.run([os.path.join(V, "lugus"), "compiler", src, os.path.join(T, b + ".mots128")], check=True,
                    capture_output=True)
     c["vtx, Lugus émulé (lugus)"] = ("vtx", [os.path.join(V, "lugus"), "lancer", os.path.join(T, b + ".mots128")])
-    subprocess.run([os.path.join(V, "vtx64"), "compiler", src, os.path.join(T, b + ".mots64")], check=True,
-                   capture_output=True)
-    c["vtx, SPU-64 émulé (vtx64)"] = ("vtx", [os.path.join(V, "vtx64"), "lancer", os.path.join(T, b + ".mots64")])
+    try:
+        subprocess.run([os.path.join(V, "vtx64"), "compiler", src, os.path.join(T, b + ".mots64")], check=True,
+                       capture_output=True)
+        c["vtx, SPU-64 émulé (vtx64)"] = ("vtx", [os.path.join(V, "vtx64"), "lancer", os.path.join(T, b + ".mots64")])
+    except subprocess.CalledProcessError:
+        print(f"  ({b} : pas pour le SPU-64)", flush=True)
     return c
 
 
@@ -95,6 +105,11 @@ lignes = []
 for b, titre in BENCH:
     cmds = construire(b)
     ref = lancer(cmds["vtx, Lugus émulé (lugus)"][1])[1]
+    # les instructions de Lugus (le même programme, émulé) : ce que coûte le programme dans la machine de vtx
+    r_i = subprocess.run(cmds["vtx, Lugus émulé (lugus)"][1], cwd=T, capture_output=True, text=True,
+                         env=dict(os.environ, LUGUS_TEMPS="1"))
+    instr = next((int(l.split()[0]) for l in r_i.stderr.splitlines() if "instructions en" in l), None)
+    print(f"{b:7s} instructions de Lugus : {instr}", flush=True)
     for nom, (famille, cmd) in cmds.items():
         temps, sortie = [], ""
         for _ in range(R):
@@ -102,7 +117,8 @@ for b, titre in BENCH:
             temps.append(d)
         s = statistics.median(temps)
         lignes.append({"programme": b, "titre": titre, "langage": nom, "famille": famille, "secondes": round(s, 4),
-                       "resultat": sortie, "meme_resultat": sortie == ref})
+                       "resultat": sortie, "meme_resultat": sortie == ref,
+                       "instructions_lugus": instr})
         print(f"{b:7s} {nom:58s} {s:8.3f} s  {sortie}{'' if sortie == ref else '  (autre résultat)'}", flush=True)
 json.dump(lignes, open(os.path.join(ICI, sys.argv[2] if len(sys.argv) > 2 else "mesures-lugus.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
 shutil.rmtree(T, ignore_errors=True)

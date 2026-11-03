@@ -1,0 +1,49 @@
+// neutrons, CRC-8 (polynôme 0x07, l'ADN version 3) : un million de mots de 128 bits (xorshift64), la somme de leurs neutrons ; la table de deux octets
+constante N = 1000000;
+constante T = 0;
+constante T2 = 1000;
+// les tables, à part : leurs boucles imbriquées ne prennent pas les registres de la boucle chaude
+fonction tables() {
+    pour k dans 0..256 {
+        soit c0 = k;
+        pour j dans 0..8 {
+            si (c0 & 128) != 0 {
+                c0 = ((c0 << 1) ^ 7) & 255;
+            } sinon {
+                c0 = (c0 << 1) & 255;
+            }
+        }
+        @2[T + k] = c0;
+    }
+    pour y dans 0..256 {
+        pour x2 dans 0..256 {
+            @2[T2 + (x2 | (y << 8))] = @2[T + (@2[T + x2] ^ y)];
+        }
+    }
+}
+
+fonction principal() {
+    tables();
+    soit x = 88172645463325252;
+    soit s = 0;
+    pour i dans 0..N {
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        soit h = x;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        soit b = x;
+        soit c = @2[T2 + (b & 65535)];
+        c = @2[T2 + (c ^ ((b >> 16) & 65535))];
+        c = @2[T2 + (c ^ ((b >> 32) & 65535))];
+        c = @2[T2 + (c ^ (b >> 48))];
+        c = @2[T2 + (c ^ (h & 65535))];
+        c = @2[T2 + (c ^ ((h >> 16) & 65535))];
+        c = @2[T2 + (c ^ ((h >> 32) & 65535))];
+        c = @2[T2 + (c ^ (h >> 48))];
+        s = s + c;
+    }
+    sortie(s);
+}

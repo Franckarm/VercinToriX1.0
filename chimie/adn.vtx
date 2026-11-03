@@ -459,17 +459,18 @@ fonction crc8(h, b) {
 }
 
 // les neutrons quaternaires (version 4) : le mot lu comme 64 quits, le plus fort d'abord, divisé par
-// g(x) = x^4 + x^2 + ωx + 1 sur GF(4) (comme chimie/adn.py) ; deux octets par lecture de CRC2, l'octet fort d'abord :
-// CRC2[x << 8 | y] = T[T[x] ^ y], d'où l'indice (c << 8) ^ (les seize bits suivants)
+// g(x) = x^4 + x^2 + ωx + 1 sur GF(4) (comme chimie/adn.py) ; deux octets par lecture de CRC2, l'octet fort d'abord.
+// La table est rangée décalée de 8 bits (CRC2[x << 8 | y] = T[T[x] ^ y] << 8) : c reste décalé, chaque pas est un OU
+// exclusif et une lecture (Lugus n'a pas de décalage par une valeur écrite : deux instructions de moins par pas)
 fonction crc4(h, b) {
     soit c = @2[CRC2 + (h >> 48)];
-    c = @2[CRC2 + ((c << 8) ^ ((h >> 32) & 65535))];
-    c = @2[CRC2 + ((c << 8) ^ ((h >> 16) & 65535))];
-    c = @2[CRC2 + ((c << 8) ^ (h & 65535))];
-    c = @2[CRC2 + ((c << 8) ^ (b >> 48))];
-    c = @2[CRC2 + ((c << 8) ^ ((b >> 32) & 65535))];
-    c = @2[CRC2 + ((c << 8) ^ ((b >> 16) & 65535))];
-    retour @2[CRC2 + ((c << 8) ^ (b & 65535))];
+    c = @2[CRC2 + (c ^ ((h >> 32) & 65535))];
+    c = @2[CRC2 + (c ^ ((h >> 16) & 65535))];
+    c = @2[CRC2 + (c ^ (h & 65535))];
+    c = @2[CRC2 + (c ^ (b >> 48))];
+    c = @2[CRC2 + (c ^ ((b >> 32) & 65535))];
+    c = @2[CRC2 + (c ^ ((b >> 16) & 65535))];
+    retour @2[CRC2 + (c ^ (b & 65535))] >> 8;
 }
 
 // les neutrons d'un mot selon la version de l'ADN lu
@@ -512,7 +513,7 @@ fonction preparer_neutrons() {
         }
         pour x2 dans 0..256 {
             pour y dans 0..256 {
-                @2[CRC2 + ((x2 << 8) | y)] = @2[CRC + (@2[CRC + x2] ^ y)];
+                @2[CRC2 + ((x2 << 8) | y)] = @2[CRC + (@2[CRC + x2] ^ y)] << 8;
             }
         }
         retour;

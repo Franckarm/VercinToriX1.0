@@ -1,0 +1,58 @@
+// neutrons quaternaires (CRC sur GF(4), g = x^4 + x^2 + ωx + 1, l'ADN version 4 ; la table rangée décalée de 8) : un million de mots de 128 bits (xorshift64), la somme de leurs neutrons ; la table de deux octets
+constante N = 1000000;
+constante T = 0;
+constante T2 = 1000;
+fonction gf4_mul(a, b) {
+    si a == 0 || b == 0 {
+        retour 0;
+    }
+    soit l = (a - 1) + (b - 1);
+    si l >= 3 {
+        l = l - 3;
+    }
+    retour l + 1;
+}
+// les tables, à part : leurs boucles imbriquées ne prennent pas les registres de la boucle chaude
+fonction tables() {
+    pour k dans 0..256 {
+        soit r = 0;
+        soit q4 = 4;
+        tantque q4 > 0 {
+            q4 = q4 - 1;
+            soit t = ((k >> (2 * q4)) & 3) ^ (r >> 6);
+            r = (((r >> 4) & 3) << 6) | ((((r >> 2) & 3) ^ gf4_mul(t, 1)) << 4) | (((r & 3) ^ gf4_mul(t, 2)) << 2) | gf4_mul(t, 1);
+        }
+        @2[T + k] = r;
+    }
+    pour x2 dans 0..256 {
+        pour y dans 0..256 {
+            @2[T2 + ((x2 << 8) | y)] = @2[T + (@2[T + x2] ^ y)] << 8;    // rangée décalée : c reste décalé de 8
+        }
+    }
+}
+
+fonction principal() {
+    tables();
+    soit x = 88172645463325252;
+    soit s = 0;
+    pour i dans 0..N {
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        soit h = x;
+        x = x ^ (x << 13);
+        x = x ^ (x >> 7);
+        x = x ^ (x << 17);
+        soit b = x;
+        soit c = @2[T2 + (h >> 48)];          // c vaut le neutron décalé de 8 bits
+        c = @2[T2 + (c ^ ((h >> 32) & 65535))];
+        c = @2[T2 + (c ^ ((h >> 16) & 65535))];
+        c = @2[T2 + (c ^ (h & 65535))];
+        c = @2[T2 + (c ^ (b >> 48))];
+        c = @2[T2 + (c ^ ((b >> 32) & 65535))];
+        c = @2[T2 + (c ^ ((b >> 16) & 65535))];
+        c = @2[T2 + (c ^ (b & 65535))];
+        s = s + (c >> 8);
+    }
+    sortie(s);
+}
