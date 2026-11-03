@@ -68,6 +68,8 @@ pub enum Ronde {
     Entree(u128),
     Sortie(u128),
     Image,
+    /// avant un effet (une sortie, une écriture sur un canal) : rien d'incertain ne doit toucher le monde
+    Effet,
 }
 
 pub type Resultat = Result<(), String>;
@@ -989,12 +991,22 @@ impl Spu128 {
                 let v = self.entree.pop_front().unwrap_or(0);
                 self.ecrire(d, v);
             }
-            0x24 => self.sortie.push(sv),
+            0x24 => {
+                if !self.controles.is_empty() {
+                    self.appeler_patrouille(Ronde::Effet)?;
+                }
+                self.sortie.push(sv)
+            }
             0x51 => {
                 let v = self.lire_canal(sv);
                 self.poser(d, v, false, l);
             }
-            0x52 => self.ecrire_canal(tv, sv),
+            0x52 => {
+                if !self.controles.is_empty() {
+                    self.appeler_patrouille(Ronde::Effet)?;
+                }
+                self.ecrire_canal(tv, sv)
+            }
             0x53 => {
                 let v = self.service(sv, tv)?;
                 self.poser(d, v, false, l);

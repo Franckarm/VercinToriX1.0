@@ -171,6 +171,10 @@ fn armer_patrouille(spu: &mut Spu128, mots: &[u128], mols: Vec<adn::Molecule>, t
             match ronde {
                 spu128::Ronde::Tic => pat.tic(&lire, pas),
                 spu128::Ronde::Image => pat.ronde(&lire, pas),
+                spu128::Ronde::Effet => {
+                    pat.effet(&lire, pas)?;
+                    false
+                }
                 spu128::Ronde::Entree(d) => pat.entree(d as usize, &lire),
                 spu128::Ronde::Sortie(d) => {
                     pat.sortie(d as usize, &lire, pas)?;
@@ -186,6 +190,9 @@ fn armer_patrouille(spu: &mut Spu128, mots: &[u128], mols: Vec<adn::Molecule>, t
             for (i, w) in ecrire {
                 spu.poser_code(i as u128, w);
             }
+        }
+        if let spu128::Ronde::Entree(d) = ronde {
+            pat.entrer(d as usize);
         }
         Ok(())
     }));
@@ -287,12 +294,17 @@ fn main() {
         spu.dossier = std::path::Path::new(&args[2]).parent().map(|p| p.to_path_buf());
         spu.charger(&mots);
         spu.entree.extend(args[3..].iter().filter_map(|x| x.parse::<u128>().ok()));
+        let debut = std::time::Instant::now();
         let r = spu.executer(u64::MAX);
+        let duree = debut.elapsed();
         if !spu.sortie.is_empty() {
             println!("{}", spu.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
         }
         let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
         print!("{}", t);
+        if std::env::var("LUGUS_TEMPS").is_ok() {
+            eprintln!("{} instructions en {:.3} s", spu.pas, duree.as_secs_f64());
+        }
         if let Err(e) = r {
             eprintln!("erreur : {}", e);
             std::process::exit(1);
@@ -489,7 +501,7 @@ fn main() {
         });
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         let epi = arn.epigenome.clone().map(|e| adn::Temoins { signatures: vec![], ombres: vec![], neutrons: Default::default(),
-                                                                  introns: vec![("epigenome".into(), e)] });
+                                                                  introns: vec![("epigenome".into(), e)], version: 4 });
         jouer_avec(&arn.mots, &args[2..], dossier, epi.as_ref(), arn.temoins.take());
     } else if args.len() >= 2 && args[1].ends_with(".vtx") {
         let mots = compiler_ou_sortir(&nombres128(VTXC128), &args[1], COMPLET128);

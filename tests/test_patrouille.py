@@ -73,30 +73,51 @@ n1 = next((l.split()[0] for l in e1.splitlines() if "instructions en" in l), "?"
 verifier(f"sans avarie : le même résultat et les mêmes instructions ({n0}), avec ou sans patrouille, aucune réparation",
          c0 == c1 == 0 and s0 == s1 == JUSTE and n0 == n1 and "0 réparation(s)" in e0, e0 + e1)
 
-# 2. l'isotope lourd abîmé entre deux appels (au pas d'un CALL) : réparé à son entrée, avant de servir
-mot = lourde.debut + 12
-c, s, e = lancer(f_adn, f"1000050:{mot}:100")
-cr, sr, _ = lancer(f_rapide, f"1000050:{mot}:100")
-verifier("l'isotope abîmé entre deux appels : réparé à son entrée, le résultat juste (l'ARN rapide, sans témoins, se trompe)",
-         c == 0 and s == JUSTE and "isotope lourd, relu à son entrée : il n'a pas servi abîmé" in e and sr != JUSTE,
-         f"{s} / {sr} / {e}")
+def faussent(f_prog, places, bits, pas, n=3):
+    """des avaries qui faussent vraiment le résultat de f_prog (l'ARN rapide : sans témoins, sans patrouille) ; le
+    critère ne dit rien de la patrouille, et ne dépend pas de la place exacte du code (qui change avec le compilateur)"""
+    out = []
+    for place in places:
+        for bit in bits:
+            av = f"{pas}:{place}:{bit}"
+            if lancer(f_prog, av)[1] != JUSTE:
+                out.append(av)
+                break
+        if len(out) >= n:
+            break
+    return out
 
-# 3. l'isotope abîmé pendant qu'il sert : l'apoptose (rien n'est rendu de travers)
-for pas, bit in ((1000001, 70), (1000001, 100), (1000020, 9)):
-    c, s, e = lancer(f_adn, f"{pas}:{lourde.debut + 17}:{bit}")
-    verifier(f"l'isotope abîmé pendant qu'il sert (pas {pas}, bit {bit}) : l'apoptose, aucun résultat rendu",
-             c != 0 and "apoptose" in e and "s'est abîmée pendant qu'elle servait" in e and s == "", s + " / " + e)
+
+# 2-3. l'isotope lourd abîmé, à chaque pas d'une fenêtre (entre deux appels ou pendant qu'il sert) : la machine ne rend
+#      jamais un résultat faux ; réparé à son entrée (il n'a pas servi abîmé), ou l'apoptose (rien n'est rendu)
+mots_lourds = faussent(f_rapide, range(lourde.debut + 2, lourde.fin), (100, 70, 9), 1000000, n=2)
+issues = {"entree": 0, "apoptose": 0, "travers": []}
+for av in mots_lourds:
+    _, place, bit = av.split(":")
+    for pas in range(1000000, 1000060):
+        c, s, e = lancer(f_adn, f"{pas}:{place}:{bit}")
+        if c == 0 and s == JUSTE and "isotope lourd, relu à son entrée : il n'a pas servi abîmé" in e:
+            issues["entree"] += 1
+        elif c != 0 and s == "" and "apoptose" in e and "s'est abîmée pendant qu'elle servait" in e:
+            issues["apoptose"] += 1
+        elif s != JUSTE:
+            issues["travers"].append(f"{pas}:{place}:{bit} -> {s!r} {e[-120:]!r}")
+verifier(f"l'isotope abîmé à chaque pas d'une fenêtre ({len(mots_lourds)} avaries qui faussent l'ARN rapide, 60 pas) : "
+         f"jamais de résultat faux ; réparé à son entrée {issues['entree']} fois, l'apoptose {issues['apoptose']} fois",
+         len(mots_lourds) == 2 and not issues["travers"] and issues["entree"] > 0 and issues["apoptose"] > 0,
+         str(issues["travers"][:3]))
 
 # 4. une molécule froide (bilan, appelée à la fin) abîmée : la patrouille la répare en passant, et dit depuis quand
 #    elle a pu servir abîmée
-for k in (2, 4, 7):
-    c, s, e = lancer(f_adn, f"100000:{froide.debut + k}:70")
-    verifier(f"une molécule froide abîmée (mot {froide.debut + k}) : réparée par la patrouille, le résultat juste",
+froides = faussent(f_rapide, range(froide.debut + 1, froide.fin), (70, 40, 100, 6), 100000, n=3)
+for av in froides:
+    c, s, e = lancer(f_adn, av)
+    verifier(f"une molécule froide abîmée ({av}) : réparée par la patrouille, le résultat juste",
              c == 0 and s == JUSTE and f"m{froide.debut} faux (réparé)" in e and "a pu servir abîmée" in e, s + " / " + e)
-c, s, _ = lancer(f_rapide, f"100000:{froide.debut + 4}:70")
-c2, s2, _ = lancer(f_adn, f"100000:{froide.debut + 4}:70", LUGUS_PATROUILLE="0")
-verifier("la même avarie sans patrouille (l'ARN rapide, ou LUGUS_PATROUILLE=0) : le résultat est faux",
-         s != JUSTE and s2 != JUSTE, f"{s} {s2}")
+av_froide = froides[0] if froides else f"100000:{froide.debut + 4}:70"
+c2, s2, _ = lancer(f_adn, av_froide, LUGUS_PATROUILLE="0")
+verifier(f"trois avaries de la molécule froide qui faussent l'ARN rapide ; la même avarie sans patrouille "
+         f"(LUGUS_PATROUILLE=0) : le résultat est faux", len(froides) == 3 and s2 != JUSTE, f"{froides} {s2}")
 
 # 5. au-delà des témoins : l'apoptose
 avaries = ",".join(f"100000:{i}:{b}" for i in range(froide.debut, froide.debut + 9) for b in (3, 70))
@@ -108,7 +129,7 @@ verifier("neuf mots voisins abîmés (au-delà de l'ombre) : l'apoptose, aucun r
 f_sur = os.path.join(d, "pat.arn")
 subprocess.run([lugus, "transcrire", f_adn, f_sur, "--isoforme", "sur"], capture_output=True, text=True,
                encoding="utf-8")
-c, s, e = lancer(f_sur, f"100000:{froide.debut + 4}:70")
+c, s, e = lancer(f_sur, av_froide)
 verifier("l'ARN sûr : la patrouille répare comme depuis l'ADN", c == 0 and s == JUSTE and "réparé" in e, s + " / " + e)
 
 # 7. un ARN ancien qui porte encore une queue (la section est sautée) : il est lancé comme les autres
@@ -153,12 +174,24 @@ f_sans = os.path.join(d, "sans.adn")
 subprocess.run([lugus, "ranger", f_v, f_sans], capture_output=True)
 _, mols2, _ = adn.lire_adn(f_sans)
 froide2 = next(m for m in mols2 if m.debut == froide.debut)
-av = f"100000:{froide2.debut + 4}:70"
-c, s, e = lancer(f_sans, av)
+# une avarie qui fausse vraiment le résultat sans patrouille (cherchée dans la molécule : le code change avec le
+# compilateur, une place fixe peut tomber sur un bit sans effet)
+av, c, s, e = None, 0, JUSTE, ""
+for place in range(froide2.debut + 1, froide2.fin):
+    for bit in (70, 40, 100, 6):
+        av_k = f"100000:{place}:{bit}"
+        c, s, e = lancer(f_sans, av_k)
+        if s != JUSTE:
+            av = av_k
+            break
+    if av:
+        break
+av = av or f"100000:{froide2.debut + 4}:70"
+
 r = subprocess.run([lugus, f_sans, "--veille"], capture_output=True, text=True, encoding="utf-8",
                    env=dict(os.environ, LUGUS_AVARIE=av))
 c3, s3, e3 = lancer(f_sans, av, LUGUS_PATROUILLE="1")
-c4, s4, e4 = lancer(f_adn, f"100000:{froide.debut + 4}:70", LUGUS_PATROUILLE="0")
+c4, s4, e4 = lancer(f_adn, av_froide, LUGUS_PATROUILLE="0")
 verifier("sans isotope lourd : pas de patrouille par défaut (le résultat est faux), --veille ou LUGUS_PATROUILLE=1 "
          "la rendent (réparé, juste) ; LUGUS_PATROUILLE=0 l'éteint même avec un isotope",
          s != JUSTE and "patrouille" not in e and r.stdout.strip() == JUSTE and "réparé" in r.stderr

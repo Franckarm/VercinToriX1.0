@@ -118,7 +118,7 @@ if os.path.exists(lugus):
     r = subprocess.run([lugus, f_rs], capture_output=True, text=True, encoding="utf-8")
     verifier("lugus PROG.adn : vérifié, puis lancé (la chute : 2500)", r.stdout.startswith("2500"), r.stdout + r.stderr)
 
-# 5. l'ADN version 3 : des introns signalés (GU nom N … AG), les isotopes lourds, le texte et sa rétrotranscription
+# 5. l'ADN version 3 et 4 : des introns signalés (GU nom N … AG), les isotopes lourds, le texte et sa rétrotranscription
 ISO = """// machine : lugus
 reaction freinage(v: flottant, d: flottant) -> a: flottant {
     = v * v / (2.0 * d)   -> a lourd
@@ -147,8 +147,8 @@ f_iso_adn = os.path.join(d, "iso.adn")
 adn.ecrire_adn(f_iso_adn, mots_i, mols_i, t_i)
 texte = open(f_iso_adn, encoding="utf-8").read()
 noms_sec = [n for n, _ in adn.sections_adn(texte)]
-verifier("le fichier : VTXADN03, chaque section entre GU et AG (mots, molecules, ombres, neutrons, isotopes, source)",
-         texte.startswith("VTXADN03\n") and noms_sec == ["mots", "molecules", "ombres", "neutrons", "isotopes", "source"], str(noms_sec))
+verifier("le fichier : VTXADN04, chaque section entre GU et AG (mots, molecules, ombres, neutrons, isotopes, source)",
+         texte.startswith("VTXADN04\n") and noms_sec == ["mots", "molecules", "ombres", "neutrons", "isotopes", "source"], str(noms_sec))
 # une section inconnue (d'une version future) est sautée sans être analysée, et gardée telle quelle
 t_x = adn.copie_temoins(t_i)
 t_x["introns"].insert(0, ("avenir", ["GU faux 3", "AG", "n'importe quoi"]))
@@ -168,16 +168,40 @@ with open(f_v2, "w", encoding="utf-8", newline="\n") as f:
     f.write("VTXADN02\n" + ",".join(map(str, mots_i)) + "\n"
             + "\t".join(f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{sg}" for m, sg in zip(mols_i, t_i["signatures"])) + "\n"
             + ";".join(",".join(map(str, o)) for o in t_i["ombres"]) + "\n"
-            + ",".join(f"{i}:{v}" for i, v in sorted(sans["neutrons"].items())) + "\n")
+            + ",".join(f"{i}:{adn.crc8(m_sans[i])}" for i in sorted(sans["neutrons"])) + "\n")
 m3, mol3, t3 = adn.lire_adn(f_v2)
 e3, _ = adn.lire(m3, mol3, t3)
 verifier("un ADN de la version 2 se lit encore (vrai)", m3 == mots_i and e3 == adn.VRAI)
+# l'ADN version 3 (neutrons CRC-8) : lu vrai, réécrit en version 3 octet pour octet, ses neutrons désignent un mot abîmé
+t_v3 = adn.copie_temoins(t_i)
+t_v3["version"] = 3
+t_v3["neutrons"] = {i: adn.crc8(mots_i[i]) for i in t_i["neutrons"]}
+f_v3 = os.path.join(d, "v3.adn")
+adn.ecrire_adn(f_v3, mots_i, mols_i, t_v3)
+m4, mol4, t4 = adn.lire_adn(f_v3)
+e4, _ = adn.lire(m4, mol4, t4)
+f_v3b = os.path.join(d, "v3b.adn")
+adn.ecrire_adn(f_v3b, m4, mol4, t4)
+p_n = min(t_i["neutrons"])
+m5 = list(mots_i)
+m5[p_n] ^= 1 << 77
+e5, rap5 = adn.lire(m5, mol4, adn.copie_temoins(t4))
+verifier("un ADN de la version 3 (neutrons CRC-8) : vrai, réécrit en version 3 octet pour octet ; un mot abîmé est "
+         "désigné par ses neutrons et réparé",
+         open(f_v3, encoding="utf-8").read().startswith("VTXADN03\n") and t4["version"] == 3 and e4 == adn.VRAI
+         and open(f_v3, "rb").read() == open(f_v3b, "rb").read() and e5 == adn.FAUX and m5 == mots_i,
+         f"{e4} {e5}")
+if os.path.exists(lugus):
+    f_v3r = os.path.join(d, "v3-rs.mots")
+    r = subprocess.run([lugus, "transcrire", f_v3, f_v3r], capture_output=True, text=True, encoding="utf-8")
+    verifier("Lugus lit aussi l'ADN version 3 (neutrons CRC-8) : vrai", r.returncode == 0 and "vrai" in r.stderr + r.stdout,
+             r.stderr[-300:])
 if os.path.exists(lugus):
     f_rs = os.path.join(d, "iso-rs.adn")
     f_py = os.path.join(d, "iso-py.adn")
     subprocess.run([lugus, "ranger", f_iso, f_rs], capture_output=True, text=True, encoding="utf-8")
     subprocess.run(py + ["ranger", f_iso, f_py], capture_output=True, text=True, encoding="utf-8", env=ENV)
-    verifier("Lugus range le même ADN version 3 que Python (isotopes et texte compris), octet pour octet",
+    verifier("Lugus range le même ADN version 4 que Python (isotopes et texte compris), octet pour octet",
              os.path.exists(f_rs) and open(f_rs, "rb").read() == open(f_py, "rb").read())
     r = subprocess.run([lugus, "transcrire", f_rs, os.path.join(d, "iso.mots")], capture_output=True, text=True, encoding="utf-8")
     verifier("lugus transcrire : « le texte : vrai » (rétrotranscription par vtxc128)",

@@ -803,9 +803,54 @@ des ARN différents selon le besoin, apprend, se répare, et meurt plutôt que d
     d'un canal quaternaire touche des quits), et une détection au niveau de l'idéal au-delà de trois bits ; ce qu'il
     perd : le CRC-8 voit tout nombre impair de bits faux (son facteur x + 1), pas lui ; le pli ℤ/4, quatre fois moins
     cher, laisse passer une erreur double sur onze : trop faible seul ;
-  - à décider : un ADN version 4 aux neutrons GF(4) (dans adn.py, adn.rs et le lecteur en vtx, avec la lecture de la
-    version 3 gardée), ou garder le CRC-8.
+  - **décidé (3 novembre) : l'ADN version 4, aux neutrons quaternaires** (`VTXADN04`) :
+    - le neutron d'un mot : le reste de ses 64 quits (le plus fort d'abord) divisé par g(x) = x⁴ + x² + ωx + 1 sur
+      GF(4) ; par une table d'un octet en Python et en Rust (`crc_gf4`), de deux octets dans le lecteur en vtx
+      (`CRC2[x << 8 | y] = T[T[x] ^ y]`, construite après l'en-tête, selon la version) ;
+    - tout ADN nouveau est en version 4 ; un ADN lu garde sa version (un ADN de la version 3 est relu, réparé et
+      réécrit en version 3, octet pour octet, ses neutrons CRC-8 gardés) ; la version 2 se lit toujours ;
+    - l'ARN sûr porte ses neutrons : `VTXARN02` (quaternaires) ; `VTXARN01` (CRC-8) se lit toujours ;
+    - vérifié : Python et Lugus rangent le même ADN version 4, octet pour octet ; un ADN version 3 lu vrai, réécrit
+      à l'identique, un mot abîmé désigné et réparé ; le lecteur en vtx lit les deux versions comme Python (132 avaries,
+      dont une copie en version 3), les deux compilateurs donnent ses mêmes mots (3 638).
 - **Ce qui reste** : Ogmios lance l'ADN sans la patrouille (elle est dans `lugus`) ; la patrouille relit le code, pas
   les données (un tableau abîmé n'est pas vu) ; le lecteur en vtx prend tout l'étage 2 (il tourne seul, sur sa machine)
   et la rétrotranscription reste faite par Lugus.
 
+
+## 10. Le code produit (3 novembre)
+
+Décidé avec l'utilisateur, dans l'ordre : le code produit, les réactions incomplètes, les flux, puis Gobannos et la
+paillasse améliorée.
+
+- **Les registres des variables** : mesuré avant de changer. Les quatre variables les plus utilisées d'une fonction
+  (pondérées par la profondeur des boucles, l'`entier_128` compris) vivent déjà dans R9 à R12 ; un cinquième (R15,
+  libre) ne gagne que 0 à 1 % (lecteur d'ADN −0,1 %, chute −1 %, mandel 0). Rien n'est changé.
+- **Deux règles d'épissage de plus** (vtx128.py et vtxc128, les mêmes mots) :
+  - *garde* : `PUSH Ra ; S ; POP Ra` → `S`, quand S (des instructions simples, huit au plus) n'écrit pas Ra et ne
+    touche ni la pile ni le cadre : Ra garde sa valeur sans passer par la pile ;
+  - *const128* : `LDI Rx,a ; LDIH Rx,b ; MOV Ry,Rx` → `LDI Ry,a ; LDIH Ry,b` (Rx mort après) ; pour cela `LDIH` n'est
+    plus une barrière : il lit et écrit son registre (vtxc128 : une sorte à lui, la 13), sauf pour la règle échange,
+    qui ne saurait renommer sa lecture ;
+  - mesuré (instructions de Lugus) : mandel_reaction −22,6 % (185 → 143 millions), freinage −7 %, lecteur d'ADN
+    −3,3 % ; les autres exemples inchangés ; vtxc128 lui-même passe de 173 166 à 172 395 mots ;
+  - vérifié : la suite de vtx128.py (138 compilations), les programmes au hasard, le point fixe (M0 = M1 = M2), le
+    compilateur embarqué renouvelé, les réactions (avec la provenance).
+- **Ce qui reste du code produit** : les constantes flottantes rechargées à chaque tour de boucle ; la comparaison qui
+  fabrique une logique avant d'être testée (`FLE` puis `CMP` puis `JZ`) ; les PUSH/POP qui entourent un calcul qui
+  écrit le registre gardé (il faudrait un autre registre libre, ce que fait déjà la règle pile dans un cas).
+- **Un trou de la patrouille, trouvé et fermé** (en route) :
+  - le test de la patrouille posait ses avaries à des places et des pas réglés à la main ; avec le code plus court,
+    elles tombaient ailleurs. Réécrit sans dépendre de la disposition : une avarie est choisie parce qu'elle fausse
+    l'ARN rapide (sans témoins, critère indépendant de la patrouille), et pour l'isotope lourd on exige, à chaque pas
+    d'une fenêtre, que la machine ne rende **jamais** un résultat faux ;
+  - il a trouvé un vrai trou : un isotope relu sain à son entrée, abîmé au pas suivant pendant qu'il sert, sur une
+    instruction qui fait sortir l'exécution **sans passer par son RET** : le contrôle de sortie ne venait jamais, la
+    valeur fausse sortait (« 48 »), et l'entrée suivante réparait en disant « il n'a pas servi abîmé » ;
+  - fermé en deux temps : la patrouille compte, pour chaque isotope lourd, les entrées dont la sortie n'a pas été vue ;
+    un isotope trouvé abîmé alors qu'il sert (à une entrée, à un tic) n'est plus réparé mais arrête la machine ; et
+    une nouvelle ronde, **avant chaque effet** (`sortie`, une écriture sur un canal), relit les isotopes qui servent :
+    rien d'incertain ne touche le monde (la règle des erreurs en Belnap, section 8) ;
+  - balayé : chaque mot de l'isotope, trois bits, 120 pas de suite (7 560 avaries) : 3 150 fois le résultat juste,
+    4 410 fois l'apoptose, **aucune fois un résultat faux** ; sans avarie, le même nombre d'instructions avec ou sans
+    patrouille.

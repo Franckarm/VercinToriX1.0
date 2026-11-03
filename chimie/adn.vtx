@@ -1,7 +1,7 @@
 // machine : lugus
 // Le lecteur d'ADN écrit en vtx : la même lecture que chimie/adn.py et vtx-rs/src/adn.rs (docs/vtx-reactions.md,
 // section 9), dans le langage lui-même, pour l'Ogmios écrit en vtx et pour que l'ADN ne dépende ni de Python ni de Rust.
-// Il lit un ADN (version 3), vérifie chaque molécule par ses trois témoins (la signature, l'ombre de Reed-Solomon des
+// Il lit un ADN (versions 3 et 4), vérifie chaque molécule par ses trois témoins (la signature, l'ombre de Reed-Solomon des
 // colonnes entrelacées, les neutrons), répare ce qui peut l'être et confirme chaque réparation par la triangulation ;
 // les introns qu'il ne connaît pas sont gardés tels quels. Le compte rendu est celui de Lugus, ligne pour ligne.
 //
@@ -61,6 +61,7 @@ constante G_ERR = 8;
 constante G_HAUT = 9;
 constante G_COPIE = 10;
 constante G_OMB4 = 11;
+constante G_VERSION = 12;        // 3 : neutrons CRC-8 ; 4 : neutrons quaternaires (GF(4))
 
 constante COLONNE = 251;
 constante OMBRE = 4;
@@ -160,7 +161,7 @@ fonction car_courant() {
 
 fonction attendre(ch) {
     si car_courant() != ch {
-        refuser("le fichier ne suit pas la forme d'un ADN (version 3)");
+        refuser("le fichier ne suit pas la forme d'un ADN (version 3 ou 4)");
         retour;
     }
     avancer();
@@ -327,16 +328,24 @@ fonction lire_adn(chemin) {
     @2[G + G_CANAL] = f;
     @2[G + G_COPIE] = 0;
     avancer();
-    soit tete = "VTXADN03";
+    soit tete = "VTXADN0";
     pour i dans 0..longueur(tete) {
         si car_courant() != car(tete, i) {
-            refuser("ce n'est pas un ADN de vtx (version 3)");
+            refuser("ce n'est pas un ADN de vtx (version 3 ou 4)");
             fermer(f);
             retour;
         }
         avancer();
     }
+    si car_courant() != '3' && car_courant() != '4' {
+        refuser("ce n'est pas un ADN de vtx (version 3 ou 4)");
+        fermer(f);
+        retour;
+    }
+    @2[G + G_VERSION] = car_courant() - 48;
+    avancer();
     attendre(10);
+    preparer_neutrons();
     soit vus = 0;
     tantque car_courant() != FIN && car_courant() != 10 && @2[G + G_ERR] == 0 {
         // « GU nom N » : l'en-tête est recopié, puis repris si la section est connue
@@ -449,6 +458,72 @@ fonction crc8(h, b) {
     retour @2[CRC2 + (c ^ (h >> 48))];
 }
 
+// les neutrons quaternaires (version 4) : le mot lu comme 64 quits, le plus fort d'abord, divisé par
+// g(x) = x^4 + x^2 + ωx + 1 sur GF(4) (comme chimie/adn.py) ; deux octets par lecture de CRC2, l'octet fort d'abord :
+// CRC2[x << 8 | y] = T[T[x] ^ y], d'où l'indice (c << 8) ^ (les seize bits suivants)
+fonction crc4(h, b) {
+    soit c = @2[CRC2 + (h >> 48)];
+    c = @2[CRC2 + ((c << 8) ^ ((h >> 32) & 65535))];
+    c = @2[CRC2 + ((c << 8) ^ ((h >> 16) & 65535))];
+    c = @2[CRC2 + ((c << 8) ^ (h & 65535))];
+    c = @2[CRC2 + ((c << 8) ^ (b >> 48))];
+    c = @2[CRC2 + ((c << 8) ^ ((b >> 32) & 65535))];
+    c = @2[CRC2 + ((c << 8) ^ ((b >> 16) & 65535))];
+    retour @2[CRC2 + ((c << 8) ^ (b & 65535))];
+}
+
+// les neutrons d'un mot selon la version de l'ADN lu
+fonction neutron(h, b) {
+    si @2[G + G_VERSION] >= 4 {
+        retour crc4(h, b);
+    }
+    retour crc8(h, b);
+}
+
+// le produit dans GF(4) (0, 1, ω = 2, ω² = 3)
+fonction gf4_mul(a, b) {
+    si a == 0 || b == 0 {
+        retour 0;
+    }
+    soit l = (a - 1) + (b - 1);
+    si l >= 3 {
+        l = l - 3;
+    }
+    retour l + 1;
+}
+
+// la table de deux octets de la version lue : CRC-8 (le plus faible d'abord) ou quaternaire (le plus fort d'abord)
+fonction preparer_neutrons() {
+    si @2[G + G_VERSION] >= 4 {
+        // T : un octet (quatre quits, le fort d'abord) entré dans un reste nul ; rangé dans CRC (256 cases)
+        pour x dans 0..256 {
+            soit r = 0;
+            soit k = 4;
+            tantque k > 0 {
+                k = k - 1;
+                soit q = (x >> (2 * k)) & 3;
+                soit t = q ^ (r >> 6);
+                soit r0 = (r >> 4) & 3;
+                soit r1 = (r >> 2) & 3;
+                soit r2 = r & 3;
+                r = (r0 << 6) | ((r1 ^ gf4_mul(t, 1)) << 4) | ((r2 ^ gf4_mul(t, 2)) << 2) | gf4_mul(t, 1);
+            }
+            @2[CRC + x] = r;
+        }
+        pour x2 dans 0..256 {
+            pour y dans 0..256 {
+                @2[CRC2 + ((x2 << 8) | y)] = @2[CRC + (@2[CRC + x2] ^ y)];
+            }
+        }
+        retour;
+    }
+    pour y2 dans 0..256 {
+        pour x3 dans 0..256 {
+            @2[CRC2 + (x3 | (y2 << 8))] = @2[CRC + (@2[CRC + x3] ^ y2)];
+        }
+    }
+}
+
 fonction nb_colonnes(n) {
     soit c = (n + COLONNE - 1) / COLONNE;
     si c < 1 {
@@ -495,11 +570,7 @@ fonction preparer() {
         }
         @2[CRC + k] = c;
     }
-    pour y dans 0..256 {
-        pour x2 dans 0..256 {
-            @2[CRC2 + (x2 | (y << 8))] = @2[CRC + (@2[CRC + x2] ^ y)];
-        }
-    }
+    // la table de deux octets (CRC2) attend la version de l'ADN : preparer_neutrons, après l'en-tête
     // le générateur : le produit des (x + 2^i), i < 4 ; ses coefficients ne sont jamais nuls
     brouillon_repris();
     soit g = brouillon(1);
@@ -948,7 +1019,7 @@ fonction lire_colonne(k) {
     pour j dans 0..m {
         soit p = @2[DP + j];
         soit v = @2[NEU + p];
-        si v != 256 && crc8(@2[DH + j], @2[DB + j]) != v {
+        si v != 256 && neutron(@2[DH + j], @2[DB + j]) != v {
             @2[EFF + 1 + ne] = j;
             ne = ne + 1;
             @2[PARN + p] = 1;
@@ -1108,7 +1179,7 @@ fonction lire() {
             soit un_par_colonne = 1;
             pour i4 dans d..f {
                 si change(i4) {
-                    si @2[PARN + i4] != 1 || @2[NEU + i4] != crc8(@2[MH + i4], @2[MB + i4]) {
+                    si @2[PARN + i4] != 1 || @2[NEU + i4] != neutron(@2[MH + i4], @2[MB + i4]) {
                         par_neutrons = 0;
                     }
                     si @2[COLR + i4 % nc] != 1 {
@@ -1138,7 +1209,7 @@ fonction lire() {
     si etat != E_VARIABLE {
         pour i6 dans 0..n {
             si @2[NEU + i6] != 256 {
-                @2[NEU + i6] = crc8(@2[MH + i6], @2[MB + i6]);
+                @2[NEU + i6] = neutron(@2[MH + i6], @2[MB + i6]);
             }
         }
     }
@@ -1195,7 +1266,12 @@ fonction rendre_compte(etat) {
 // l'ADN relu, écrit comme chimie/adn.py l'écrit (octet pour octet)
 fonction ecrire_adn(chemin) {
     soit c = ouvrir_ecriture(chemin);
-    ecrire_t(c, "VTXADN03\nGU mots 1\n");
+    // la version garde ses neutrons : un ADN lu en version 3 est réécrit en version 3
+    si @2[G + G_VERSION] >= 4 {
+        ecrire_t(c, "VTXADN04\nGU mots 1\n");
+    } sinon {
+        ecrire_t(c, "VTXADN03\nGU mots 1\n");
+    }
     soit n = @2[G + G_N];
     pour i dans 0..n {
         si i > 0 {

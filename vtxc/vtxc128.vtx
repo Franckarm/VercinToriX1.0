@@ -9420,13 +9420,15 @@ fonction placer(c: Ctx, p: Param, ligne) {
 
 // --------------------------------------------------------------------------------------------- épissage
 // Le même épissage que vtx64.py (voir EPISSAGE) : les mots d'une fonction sont relus comme une suite d'opérations simples,
-// et les introns (déplacements de valeurs) retirés par cinq règles : pile, constante, relecture, copie, échange. Chaque règle
+// et les introns (déplacements de valeurs) retirés par sept règles : pile, garde, const128, constante, relecture, copie,
+// échange (comme vtx128.py). Chaque règle
 // demande qu'un registre soit mort : l'analyse de vie de R1 à R8 sur le graphe de la fonction le dit.
 
 constante RI_TOUS = 510;            // R1 à R8
 
 // la sorte d'une instruction : 1 d s t (d écrit), 2 d s (d écrit), 3 d écrit seul, 4 d lu (STF), 5 s lu (OUT, PUSH,
-// CMPI), 6 s t lus (CMP), 7 d s lus (ST), 8 d s t lus (STX, STQ), 9 saut, 10 appel, 11 retour, 12 arrêt, 0 autre
+// CMPI), 6 s t lus (CMP), 7 d s lus (ST), 8 d s t lus (STX, STQ), 9 saut, 10 appel, 11 retour, 12 arrêt, 13 d lu et
+// écrit (LDIH : il garde les 64 bits bas de son registre), 0 autre
 fonction ri_sorte_lent(op) {
     si op == 1 || op == 2 || op == 3 || op == 8 || op == 9 || op == 23 || op == 12 || op == 13 || op == 26 || op == 27
             || op == 16 || op == 17 || op == 19 || op == 20 || op == 21 || op == 22 || op == 56 || (op >= 64 && op <= 70)
@@ -9449,6 +9451,7 @@ fonction ri_sorte_lent(op) {
     si op == 51 { retour 10; }
     si op == 52 { retour 11; }
     si op == 63 { retour 12; }
+    si op == 43 { retour 13; }
     retour 0;
 }
 
@@ -9467,7 +9470,7 @@ fonction ri_t(w) { retour (w >> 36) & 15; }
 // registres écrits (masque de R1 à R8)
 fonction ri_ecr(w) {
     soit s = ri_sorte(ri_op(w));
-    si s == 1 || s == 2 || s == 3 {
+    si s == 1 || s == 2 || s == 3 || s == 13 {
         retour ri_bit(ri_d(w));
     }
     retour 0;
@@ -9485,7 +9488,7 @@ fonction ri_lus(w) {
         retour m;
     }
     si s == 2 || s == 5 { retour ri_bit(sr); }
-    si s == 4 { retour ri_bit(d); }
+    si s == 4 || s == 13 { retour ri_bit(d); }
     si s == 6 { retour ri_bit(sr) | ri_bit(t); }
     si s == 7 { retour ri_bit(d) | ri_bit(sr); }
     si s == 0 { retour RI_TOUS; }
@@ -9500,7 +9503,7 @@ fonction ri_nommes(w) {
     soit t = 1 << ri_t(w);
     si s == 1 || s == 8 { retour d | sr | t; }
     si s == 2 || s == 7 { retour d | sr; }
-    si s == 3 || s == 4 { retour d; }
+    si s == 3 || s == 4 || s == 13 { retour d; }
     si s == 5 { retour sr; }
     si s == 6 { retour sr | t; }
     retour 0;
@@ -9509,7 +9512,7 @@ fonction ri_nommes(w) {
 // les champs registres d'une instruction simple valant a deviennent b
 fonction ri_renommer(w, a, b) {
     soit s = ri_sorte(ri_op(w));
-    soit d = s == 1 || s == 2 || s == 3 || s == 4 || s == 7 || s == 8;
+    soit d = s == 1 || s == 2 || s == 3 || s == 4 || s == 7 || s == 8 || s == 13;
     soit sr = s == 1 || s == 2 || s == 5 || s == 6 || s == 7 || s == 8;
     soit t = s == 1 || s == 6 || s == 8;
     si d && ri_d(w) == a { w = (w & ~(15 << 44)) | (b << 44); }
@@ -9691,7 +9694,7 @@ fonction regle_pile(ep: Ep, i) {
     tantque j != 0 - 1 && !(ep_op(ep, j) == 11 && ep_d(ep, j) == 2 && ep_s(ep, j) == 1) {
         soit op = ep_op(ep, j);
         soit s = ri_sorte(op);
-        si s == 0 || s >= 9 || op == 39 || op == 40 {
+        si s == 0 || (s >= 9 && s <= 12) || op == 39 || op == 40 {
             retour 0;
         }
         ns = ns + 1;
@@ -9759,6 +9762,67 @@ fonction regle_pile(ep: Ep, i) {
     }
     ep_retirer(ep, i);
     ep_retirer(ep, jp);
+    retour 1;
+}
+
+// au plus huit instructions sur le site d'une règle (échange, garde), comme ECHANGE_PORTEE de vtx128.py
+constante ECHANGE_PORTEE = 8;
+
+// règle garde : PUSH Ra ; S ; POP Ra  ->  S (S n'écrit pas Ra, ne touche ni la pile ni le cadre : Ra garde sa valeur)
+fonction regle_garde(ep: Ep, i) {
+    si ep_op(ep, i) != 39 {
+        retour 0;
+    }
+    soit a = ep_s(ep, i);
+    si a < 1 || a > 8 {
+        retour 0;
+    }
+    soit j = ep_suivant(ep, i);
+    soit ns = 0;
+    tantque j != 0 - 1 && !(ep_op(ep, j) == 40 && ep_d(ep, j) == a) {
+        soit op = ep_op(ep, j);
+        soit s = ri_sorte(op);
+        si s == 0 || (s >= 9 && s <= 12) || op == 39 || op == 40 || ns >= ECHANGE_PORTEE {
+            retour 0;
+        }
+        soit w = elem(ep.w, j);
+        si (ri_ecr(w) & (1 << a)) != 0 || (ri_nommes(w) & 24576) != 0 {
+            retour 0;
+        }
+        ns = ns + 1;
+        j = ep_suivant(ep, j);
+    }
+    si j == 0 - 1 || ns == 0 {
+        retour 0;
+    }
+    ep_retirer(ep, i);
+    ep_retirer(ep, j);
+    retour 1;
+}
+
+// règle constante de 128 bits : LDI Rx,a ; LDIH Rx,b ; MOV Ry,Rx  ->  LDI Ry,a ; LDIH Ry,b (Rx mort après le MOV)
+fonction regle_const128(ep: Ep, i) {
+    si ep_op(ep, i) != 10 {
+        retour 0;
+    }
+    soit j = ep_suivant(ep, i);
+    si j == 0 - 1 || ep_op(ep, j) != 43 || ep_d(ep, j) != ep_d(ep, i) {
+        retour 0;
+    }
+    soit k = ep_suivant(ep, j);
+    si k == 0 - 1 || ep_op(ep, k) != 11 {
+        retour 0;
+    }
+    soit x = ep_d(ep, i);
+    soit y = ep_d(ep, k);
+    si ep_s(ep, k) != x || y == x || x < 1 || x > 8 || y == 0 || y == 13 || y == 14 || y == 15 || !ep_mort(ep, k, x) {
+        retour 0;
+    }
+    poser(ep.w, i, (elem(ep.w, i) & ~(15 << 44)) | (y << 44));
+    poser(ep.w, j, (elem(ep.w, j) & ~(15 << 44)) | (y << 44));
+    poser(ep.v, i, elem(ep.v, k));
+    poser(ep.v, j, elem(ep.v, k));
+    ep_retirer(ep, k);
     retour 1;
 }
 
@@ -9835,7 +9899,6 @@ fonction regle_copie(ep: Ep, i) {
 }
 
 // règle échange (voir ECHANGE_PORTEE dans vtx64.py) : MOV Ra,Rb ; … lit Ra …  ->  … lit Rb … ; le MOV s'en va
-constante ECHANGE_PORTEE = 8;
 
 fonction regle_echange(ep: Ep, i) {
     si ep_op(ep, i) != 11 {
@@ -9857,7 +9920,7 @@ fonction regle_echange(ep: Ep, i) {
         soit op = ri_op(w);
         soit s = ri_sorte(op);
         si s == 0 || s >= 9 || op == 39 {
-            retour 0;
+            retour 0;                     // (sorte 13, LDIH, comprise : sa lecture est aussi son écriture)
         }
         ajouter(ep.sites, j);
         soit ecrit = 0 - 1;
@@ -9975,8 +10038,9 @@ fonction episser(c: Ctx, debut, fdeb, edeb) {
         ep_vie(c, ep);
         soit i = 0;
         tantque i < ep.n {
-            si elem(ep.r, i) == 0 && (regle_pile(ep, i) || regle_constante(ep, i) || regle_relecture(ep, i)
-                                      || regle_copie(ep, i) || regle_echange(ep, i)) {
+            si elem(ep.r, i) == 0 && (regle_pile(ep, i) || regle_garde(ep, i) || regle_const128(ep, i)
+                                      || regle_constante(ep, i) || regle_relecture(ep, i) || regle_copie(ep, i)
+                                      || regle_echange(ep, i)) {
                 change = 1;
             } sinon {
                 i = i + 1;

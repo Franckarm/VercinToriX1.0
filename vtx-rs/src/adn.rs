@@ -316,6 +316,48 @@ pub fn crc8(w: u128) -> u8 {
     c
 }
 
+/// les neutrons quaternaires (ADN version 4) : le mot lu comme 64 quits, le plus fort d'abord, divisé par
+/// g(x) = x^4 + x^2 + ωx + 1 sur GF(4) (0, 1, ω = 2, ω² = 3 ; l'addition est le OU exclusif) ; le reste, 4 quits, est le
+/// neutron (comme chimie/adn.py). Linéaire sur GF(2) : une table par octet, l'octet fort d'abord.
+fn gf4_mul(a: u8, b: u8) -> u8 {
+    if a == 0 || b == 0 {
+        return 0;
+    }
+    let lg = |x: u8| (x - 1) as usize;      // 1 -> 0, ω (2) -> 1, ω² (3) -> 2
+    [1u8, 2, 3][(lg(a) + lg(b)) % 3]
+}
+
+const GF4_GEN: [u8; 4] = [0, 1, 2, 1];      // g3, g2, g1, g0
+
+fn table_gf4() -> &'static [u8; 256] {
+    static T: std::sync::OnceLock<[u8; 256]> = std::sync::OnceLock::new();
+    T.get_or_init(|| {
+        let mut t = [0u8; 256];
+        for x in 0..256usize {
+            let mut r = 0u8;
+            for k in (0..4).rev() {
+                let q = ((x >> (2 * k)) & 3) as u8;
+                let tq = q ^ (r >> 6);
+                let (r0, r1, r2) = ((r >> 4) & 3, (r >> 2) & 3, r & 3);
+                r = ((r0 ^ gf4_mul(tq, GF4_GEN[0])) << 6) | ((r1 ^ gf4_mul(tq, GF4_GEN[1])) << 4)
+                    | ((r2 ^ gf4_mul(tq, GF4_GEN[2])) << 2) | gf4_mul(tq, GF4_GEN[3]);
+            }
+            t[x] = r;
+        }
+        t
+    })
+}
+
+pub fn crc_gf4(w: u128) -> u8 {
+    let t = table_gf4();
+    w.to_be_bytes().iter().fold(0u8, |c, &o| t[(c ^ o) as usize])
+}
+
+/// les neutrons d'un mot selon la version de l'ADN : CRC-8 jusqu'à la 3, quaternaires à partir de la 4
+pub fn neutron(w: u128, version: u8) -> u8 {
+    if version >= 4 { crc_gf4(w) } else { crc8(w) }
+}
+
 fn voies(mots: &[u128]) -> Vec<Vec<u8>> {
     (0..16).map(|k| mots.iter().map(|&w| ((w >> (8 * (15 - k))) & 0xFF) as u8).collect()).collect()
 }
@@ -360,6 +402,8 @@ pub struct Temoins {
     pub neutrons: BTreeMap<usize, u8>,
     /// les autres sections de l'ADN (les introns : les isotopes, le texte…), dans l'ordre, gardées telles quelles
     pub introns: Vec<(String, Vec<String>)>,
+    /// la version de l'ADN (3 : neutrons CRC-8 ; 4 : neutrons quaternaires) : un ADN relu la garde
+    pub version: u8,
 }
 
 impl Temoins {
@@ -413,7 +457,7 @@ pub fn temoins(mots: &[u128], mols: &[Molecule]) -> Temoins {
     for m in mols {
         if m.neutronee() {
             for i in m.debut..m.fin {
-                neutrons.insert(i, crc8(mots[i]));
+                neutrons.insert(i, crc_gf4(mots[i]));
             }
         }
     }
@@ -426,6 +470,7 @@ pub fn temoins(mots: &[u128], mols: &[Molecule]) -> Temoins {
         }).collect(),
         neutrons,
         introns: vec![],
+        version: 4,
     }
 }
 
@@ -440,7 +485,7 @@ fn lire_colonne(mots: &mut [u128], k: usize, t: &mut Temoins) -> (u8, Vec<usize>
     let places = places_colonne(n, k);
     let data: Vec<u128> = places.iter().map(|&i| mots[i]).collect();
     let effaces: Vec<usize> = (0..places.len())
-        .filter(|&j| t.neutrons.get(&places[j]).map_or(false, |&c| crc8(data[j]) != c)).collect();
+        .filter(|&j| t.neutrons.get(&places[j]).map_or(false, |&c| neutron(data[j], t.version) != c)).collect();
     let eff_places: Vec<usize> = effaces.iter().map(|&j| places[j]).collect();
     if ombre_colonne(&data) == t.ombres[k] {
         return (if effaces.is_empty() { VRAI } else { FAUX }, vec![], eff_places);
@@ -495,7 +540,7 @@ pub fn lire(mots: &mut [u128], mols: &[Molecule], t: &mut Temoins) -> (u8, Vec<(
         } else if changes.is_empty() {
             t.signatures[j] = signature(&mots[m.debut..m.fin]);
             (FAUX, "signature refaite".into())
-        } else if (m.neutronee() && changes.iter().all(|i| par_neutrons.contains(i) && t.neutrons.get(i) == Some(&crc8(mots[*i]))))
+        } else if (m.neutronee() && changes.iter().all(|i| par_neutrons.contains(i) && t.neutrons.get(i) == Some(&neutron(mots[*i], t.version))))
             || changes.iter().all(|&i| col_reparees[i % nc].len() == 1) {
             t.signatures[j] = signature(&mots[m.debut..m.fin]);
             (FAUX, format!("{} mot(s) réparé(s), signature refaite", changes.len()))
@@ -511,7 +556,7 @@ pub fn lire(mots: &mut [u128], mols: &[Molecule], t: &mut Temoins) -> (u8, Vec<(
     if etat != VARIABLE {
         let cles: Vec<usize> = t.neutrons.keys().cloned().collect();
         for i in cles {
-            t.neutrons.insert(i, crc8(mots[i]));
+            t.neutrons.insert(i, neutron(mots[i], t.version));
         }
     }
     (etat, rapport)
@@ -529,7 +574,8 @@ pub fn ecrire_adn(chemin: &str, mots: &[u128], mols: &[Molecule], t: &Temoins) -
         ("neutrons".into(), vec![t.neutrons.iter().map(|(i, v)| format!("{}:{}", i, v)).collect::<Vec<_>>().join(",")]),
     ];
     sections.extend(t.introns.iter().cloned());
-    let mut s = String::from("VTXADN03\n");
+    // la version garde ses neutrons : un ADN lu en version 3 (CRC-8) est réécrit en version 3, octet pour octet
+    let mut s = String::from(if t.version >= 4 { "VTXADN04\n" } else { "VTXADN03\n" });
     for (nom, lignes) in &sections {
         s += &format!("GU {} {}\n", nom, lignes.len());
         for x in lignes {
@@ -541,7 +587,7 @@ pub fn ecrire_adn(chemin: &str, mots: &[u128], mols: &[Molecule], t: &Temoins) -
     std::fs::write(chemin, s)
 }
 
-/// [(nom, lignes)] d'un ADN version 3
+/// [(nom, lignes)] d'un ADN version 3 ou 4
 fn sections_adn(l: &[&str], chemin: &str) -> Result<Vec<(String, Vec<String>)>, String> {
     let mut out = Vec::new();
     let mut i = 1;
@@ -575,7 +621,7 @@ pub fn adn_depuis_texte(texte: &str, chemin: &str) -> Result<(Vec<u128>, Vec<Mol
         if l.len() >= 5 && l[0] == "VTXADN02" {
             (l[1].into(), l[2].split('\t').filter(|x| !x.is_empty()).map(|x| format!("{}|0", x)).collect(),
              l[3].split(';').filter(|x| !x.is_empty()).map(|x| x.to_string()).collect(), l[4].into(), vec![])
-        } else if !l.is_empty() && l[0] == "VTXADN03" {
+        } else if !l.is_empty() && (l[0] == "VTXADN03" || l[0] == "VTXADN04") {
             let tout = sections_adn(&l, chemin)?;
             let sec = |n: &str| tout.iter().find(|(k, _)| k == n).map(|(_, v)| v.clone());
             let manque = || format!("{} : une section manque", chemin);
@@ -609,7 +655,8 @@ pub fn adn_depuis_texte(texte: &str, chemin: &str) -> Result<(Vec<u128>, Vec<Mol
         || ombres.iter().any(|o| o.len() != OMBRE) {
         return Err(format!("{} : les témoins ne correspondent pas aux mots", chemin));
     }
-    Ok((mots, mols, Temoins { signatures: sigs, ombres, neutrons, introns }))
+    let version = if l[0] == "VTXADN04" { 4 } else { 3 };
+    Ok((mots, mols, Temoins { signatures: sigs, ombres, neutrons, introns, version }))
 }
 
 /// ranger : les mots d'un programme -> son ADN (les molécules et les témoins)
@@ -684,6 +731,9 @@ pub struct Patrouille {
     /// les fonctions surveillées (isotopes lourds), en demi-instructions : (entrée, entrée de la suivante, l'empreinte
     /// de ses mots, prise au lancement sur les mots vérifiés ; une fonction peut finir dans le premier mot de la suivante)
     zones: Vec<(usize, usize, u64)>,
+    /// pour chaque fonction surveillée : les entrées dont la sortie n'a pas encore été vue (elle sert ; une avarie qui
+    /// fait sortir l'exécution sans passer par son RET laisse ce compte au-dessus de zéro)
+    service: Vec<u32>,
     pub relues: u64,
     pub reparations: Vec<String>,
 }
@@ -709,8 +759,9 @@ impl Patrouille {
                 zones.push((a, b, signature(&mots[a / 2..=(b - 1) / 2])));
             }
         }
-        Patrouille { mols, t, n, empreintes, cols_lourdes, prochaine: 0, prochaine_lourde: 0, tics: 0, propre, zones, relues: 0,
-                     reparations: vec![] }
+        let service = vec![0; zones.len()];
+        Patrouille { mols, t, n, empreintes, cols_lourdes, prochaine: 0, prochaine_lourde: 0, tics: 0, propre, zones, service,
+                     relues: 0, reparations: vec![] }
     }
 
     /// les fonctions surveillées à l'entrée et à la sortie (les isotopes lourds), en demi-instructions
@@ -763,12 +814,38 @@ impl Patrouille {
         self.molecule_changee(debut, lire).unwrap_or(false)
     }
 
+    /// l'entrée faite (après sa relecture, et sa réparation s'il le fallait) : la fonction sert
+    pub fn entrer(&mut self, debut: usize) {
+        if let Some(k) = self.zones.iter().position(|z| z.0 == debut) {
+            self.service[k] += 1;
+        }
+    }
+
     /// la sortie d'une molécule surveillée : relue à l'entrée, elle était saine ; abîmée maintenant, c'est pendant
     /// qu'elle servait : son résultat n'est pas sûr, la machine s'arrête (l'apoptose) plutôt que de le rendre
     pub fn sortie(&mut self, debut: usize, lire: &dyn Fn(usize) -> u128, pas: u64) -> Result<(), String> {
         if self.molecule_changee(debut, lire).unwrap_or(false) {
             return Err(format!("apoptose au pas {} : la molécule m{} (un isotope lourd) s'est abîmée pendant qu'elle servait ; \
                                 son résultat n'est pas sûr, la machine s'arrête plutôt que de le rendre", pas, debut / 2));
+        }
+        if let Some(k) = self.zones.iter().position(|z| z.0 == debut) {
+            self.service[k] = self.service[k].saturating_sub(1);
+        }
+        Ok(())
+    }
+
+    /// avant un effet : chaque fonction surveillée qui sert encore (une entrée sans sortie vue) est relue ; abîmée, son
+    /// résultat a pu servir de travers : l'apoptose, avant que la valeur ne touche le monde
+    pub fn effet(&mut self, lire: &dyn Fn(usize) -> u128, pas: u64) -> Result<(), String> {
+        for k in 0..self.zones.len() {
+            if self.service[k] > 0 {
+                let d = self.zones[k].0;
+                if self.molecule_changee(d, lire).unwrap_or(false) {
+                    return Err(format!("apoptose au pas {} : la molécule m{} (un isotope lourd) s'est abîmée pendant \
+                                        qu'elle servait (vu avant un effet) ; son résultat n'est pas sûr, la machine \
+                                        s'arrête plutôt que de le rendre", pas, d / 2));
+                }
+            }
         }
         Ok(())
     }
@@ -786,6 +863,20 @@ impl Patrouille {
                                 plutôt que de lancer du code abîmé", pas, m));
         }
         let changes: Vec<(usize, u128)> = (0..self.n).filter(|&i| mots[i] != avant[i]).map(|i| (i, mots[i])).collect();
+        // un isotope lourd abîmé alors qu'il sert encore (une entrée sans sortie vue : il s'exécute, ou une avarie l'a fait
+        // sortir sans passer par son RET) : il a pu servir abîmé, son résultat n'est pas sûr
+        for (j, e, _) in &rapport {
+            let m = &self.mols[*j];
+            if *e != VRAI && m.isotope {
+                if let Some(k) = self.zones.iter().position(|z| z.0 / 2 == m.debut) {
+                    if self.service[k] > 0 {
+                        return Err(format!("apoptose au pas {} : la molécule m{} (un isotope lourd) s'est abîmée pendant \
+                                            qu'elle servait (sa sortie n'a pas été vue) ; son résultat n'est pas sûr, la machine \
+                                            s'arrête plutôt que de le rendre", pas, m.debut));
+                    }
+                }
+            }
+        }
         let nc = self.empreintes.len();
         for (j, e, quoi) in &rapport {
             if *e != VRAI {
@@ -861,7 +952,8 @@ pub fn ecrire_arn(chemin: &str, mots: &[u128], mols: &[Molecule], t: &Temoins, i
             sections.push(("epigenome".into(), e.clone()));
         }
     }
-    let mut s = String::from("VTXARN01\n");
+    // VTXARN02 : les neutrons de l'ARN sûr sont quaternaires (ADN version 4) ; VTXARN01 : CRC-8
+    let mut s = String::from(if t.version >= 4 { "VTXARN02\n" } else { "VTXARN01\n" });
     for (nom, lignes) in &sections {
         s += &format!("GU {} {}\n", nom, lignes.len());
         for x in lignes {
@@ -876,7 +968,7 @@ pub fn ecrire_arn(chemin: &str, mots: &[u128], mols: &[Molecule], t: &Temoins, i
 pub fn lire_arn(chemin: &str) -> Result<Arn, String> {
     let texte = std::fs::read_to_string(chemin).map_err(|e| format!("{} : {}", chemin, e))?.replace("\r\n", "\n");
     let l: Vec<&str> = texte.split('\n').collect();
-    if l.is_empty() || l[0] != "VTXARN01" {
+    if l.is_empty() || (l[0] != "VTXARN01" && l[0] != "VTXARN02") {
         return Err(format!("{} : ce n'est pas un ARN de vtx", chemin));
     }
     let tout = sections_adn(&l, chemin)?;
@@ -893,7 +985,7 @@ pub fn lire_arn(chemin: &str) -> Result<Arn, String> {
     let temoins = match (sec("molecules"), sec("ombres"), sec("neutrons")) {
         (Some(ml), Some(ol), Some(nl)) => {
             // les témoins de l'ARN sûr : lus comme ceux de l'ADN
-            let mut faux = String::from("VTXADN03\n");
+            let mut faux = String::from(if l[0] == "VTXARN02" { "VTXADN04\n" } else { "VTXADN03\n" });
             for (nom, lignes) in [("mots", vec![mots.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",")]),
                                   ("molecules", ml), ("ombres", ol), ("neutrons", nl)] {
                 faux += &format!("GU {} {}\n{}\nAG\n", nom, lignes.len(), lignes.join("\n"));

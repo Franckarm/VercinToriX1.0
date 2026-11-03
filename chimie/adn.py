@@ -77,6 +77,49 @@ def crc8(w):
     return c
 
 
+# les neutrons quaternaires (ADN version 4) : le mot lu comme 64 quits, le plus fort d'abord, divisé par
+# g(x) = x^4 + x^2 + ωx + 1 sur GF(4) (0, 1, ω = 2, ω² = 3 ; l'addition est le OU exclusif) ; le reste, 4 quits, est le
+# neutron (le coefficient de x^3 dans les deux bits forts). Il voit toute erreur d'un ou deux quits, de deux bits, et
+# toute rafale de 8 bits au plus (chimie/essai_neutrons.py). Linéaire sur GF(2) : une table par octet, l'octet fort d'abord.
+def _gf4_mul(a, b):
+    if a == 0 or b == 0:
+        return 0
+    lg = (None, 0, 1, 2)
+    return (1, 2, 3)[(lg[a] + lg[b]) % 3]
+
+
+GF4_GEN = (0, 1, 2, 1)       # g3, g2, g1, g0
+
+
+def _gf4_pas(r, q):
+    """un quit q entre dans le reste r (4 quits, le coefficient de x^3 en haut)"""
+    t = q ^ (r >> 6)
+    r0, r1, r2 = (r >> 4) & 3, (r >> 2) & 3, r & 3
+    return ((r0 ^ _gf4_mul(t, GF4_GEN[0])) << 6 | (r1 ^ _gf4_mul(t, GF4_GEN[1])) << 4
+            | (r2 ^ _gf4_mul(t, GF4_GEN[2])) << 2 | _gf4_mul(t, GF4_GEN[3]))
+
+
+GF4_TABLE = []
+for _x in range(256):
+    _r = 0
+    for _k in (3, 2, 1, 0):
+        _r = _gf4_pas(_r, (_x >> (2 * _k)) & 3)
+    GF4_TABLE.append(_r)
+
+
+def crc_gf4(w):
+    """les neutrons quaternaires d'un mot (8 bits : 4 quits), par la table : seize octets, le plus fort d'abord"""
+    c = 0
+    for octet in w.to_bytes(16, "big"):
+        c = GF4_TABLE[c ^ octet]
+    return c
+
+
+def neutron(w, version):
+    """les neutrons d'un mot selon la version de l'ADN : CRC-8 jusqu'à la 3, quaternaires à partir de la 4"""
+    return crc_gf4(w) if version >= 4 else crc8(w)
+
+
 def voies(mots):
     """les seize voies d'octets d'une suite de mots (l'octet fort d'abord)"""
     return [[(w >> (8 * (15 - k))) & 0xFF for w in mots] for k in range(16)]
@@ -119,15 +162,15 @@ def temoins(mots, molecules):
     for m in molecules:
         if m.neutronee:
             for i in range(m.debut, m.fin):
-                neutrons[i] = crc8(mots[i])
+                neutrons[i] = crc_gf4(mots[i])
     return {"signatures": [signature(mots[m.debut:m.fin]) for m in molecules],
             "ombres": [ombre_colonne([mots[i] for i in places_colonne(len(mots), k)]) for k in range(nb_colonnes(len(mots)))],
-            "neutrons": neutrons, "introns": []}
+            "neutrons": neutrons, "introns": [], "version": 4}
 
 
 def copie_temoins(t):
     return {"signatures": list(t["signatures"]), "ombres": [list(o) for o in t["ombres"]], "neutrons": dict(t["neutrons"]),
-            "introns": [(n, list(l)) for n, l in t.get("introns", [])]}
+            "introns": [(n, list(l)) for n, l in t.get("introns", [])], "version": t.get("version", 4)}
 
 
 def place_des_temoins(mots, molecules):
@@ -143,7 +186,7 @@ def lire_colonne(mots, k, t):
     places = list(places_colonne(len(mots), k))
     data = [mots[i] for i in places]
     om = t["ombres"][k]
-    effaces = [j for j, i in enumerate(places) if i in t["neutrons"] and crc8(data[j]) != t["neutrons"][i]]
+    effaces = [j for j, i in enumerate(places) if i in t["neutrons"] and neutron(data[j], t.get("version", 4)) != t["neutrons"][i]]
     if ombre_colonne(data) == om:
         return (FAUX if effaces else VRAI), [], [places[j] for j in effaces]
     if len(effaces) > OMBRE:
@@ -190,7 +233,7 @@ def lire(mots, molecules, t):
             # l'ombre et les neutrons s'accordent avec les mots : c'est la signature qui est abîmée (deux contre un)
             e, quoi = FAUX, "signature refaite"
             t["signatures"][j] = signature(mots[m.debut:m.fin])
-        elif (m.neutronee and all(i in par_neutrons and crc8(mots[i]) == t["neutrons"].get(i) for i in changes)) or \
+        elif (m.neutronee and all(i in par_neutrons and neutron(mots[i], t.get("version", 4)) == t["neutrons"].get(i) for i in changes)) or \
                 all(len(col_reparees[i % nc]) == 1 for i in changes):
             # deux témoins contre un : les mots réparés sont ceux que les neutrons désignaient, et ils les reconnaissent ;
             # ou l'ombre n'a eu qu'un mot à réparer dans chaque colonne (la moitié de ce qu'elle peut : une fausse
@@ -205,7 +248,7 @@ def lire(mots, molecules, t):
         etat = pire(etat, e)
         rapport.append((m, e, quoi))
     if etat != VARIABLE:
-        t["neutrons"] = {i: crc8(mots[i]) for i in t["neutrons"]}
+        t["neutrons"] = {i: neutron(mots[i], t.get("version", 4)) for i in t["neutrons"]}
     return etat, rapport
 
 
@@ -361,8 +404,8 @@ def essai(fichiers, n=200, graine=1, ecrire=print, genres=None):
 
 # ---------------------------------------------------------------------------------------------------- le fichier ADN
 def ecrire_adn(chemin, mots, molecules, t):
-    """L'ADN de vtx, version 3 : des sections signalées comme des introns, « GU nom N » puis N lignes puis « AG ».
-    La lecture saute une section qu'elle ne connaît pas sans rien analyser (la même chose en Rust : vtx-rs/src/adn.rs)."""
+    """L'ADN de vtx, versions 3 et 4 (les neutrons seuls changent) : des sections signalées comme des introns,
+    « GU nom N » puis N lignes puis « AG ». La lecture saute une section qu'elle ne connaît pas sans rien analyser (la même chose en Rust : vtx-rs/src/adn.rs)."""
     sections = [("mots", [",".join(map(str, mots))]),
                 ("molecules", [f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{s}|{int(m.isotope)}"
                                for m, s in zip(molecules, t["signatures"])]),
@@ -370,7 +413,8 @@ def ecrire_adn(chemin, mots, molecules, t):
                 ("neutrons", [",".join(f"{i}:{v}" for i, v in sorted(t["neutrons"].items()))])]
     sections += t.get("introns", [])
     with open(chemin, "w", encoding="utf-8", newline="\n") as f:     # \n partout : Lugus (Rust) lit le même fichier
-        f.write("VTXADN03\n")
+        # la version garde ses neutrons : un ADN lu en version 3 (CRC-8) est réécrit en version 3, octet pour octet
+        f.write("VTXADN04\n" if t.get("version", 4) >= 4 else "VTXADN03\n")
         for nom, lignes in sections:
             f.write(f"GU {nom} {len(lignes)}\n")
             for x in lignes:
@@ -379,7 +423,7 @@ def ecrire_adn(chemin, mots, molecules, t):
 
 
 def sections_adn(texte):
-    """[(nom, lignes)] d'un ADN version 3"""
+    """[(nom, lignes)] d'un ADN version 3 ou 4"""
     l = texte.split("\n")
     out, i = [], 1
     while i < len(l) and l[i]:
@@ -404,7 +448,7 @@ def lire_adn(chemin):
         sec = {"mots": [l[1]], "molecules": [x + "|0" for x in l[2].split("\t") if x], "ombres": [o for o in l[3].split(";") if o],
                "neutrons": [l[4]]}
         introns = []
-    elif l[0] == "VTXADN03":
+    elif l[0] in ("VTXADN03", "VTXADN04"):
         tout = sections_adn(texte)
         sec = dict(tout)
         introns = [(n, x) for n, x in tout if n not in CONNUES]
@@ -418,7 +462,9 @@ def lire_adn(chemin):
         sigs.append(int(s))
     ombres = [[int(v) for v in o.split(",")] for o in sec["ombres"]]
     neutrons = {int(a): int(b) for a, b in (x.split(":") for x in sec["neutrons"][0].split(",") if x)}
-    return mots, molecules, {"signatures": sigs, "ombres": ombres, "neutrons": neutrons, "introns": introns}
+    version = 4 if l[0] == "VTXADN04" else 3
+    return mots, molecules, {"signatures": sigs, "ombres": ombres, "neutrons": neutrons, "introns": introns,
+                             "version": version}
 
 
 def intron(t, nom):

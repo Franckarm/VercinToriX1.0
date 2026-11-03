@@ -7060,17 +7060,23 @@ def el_remplacer(x, m):
 # ------------------------------------------------------------------------------------------------ épissage
 # Après la génération d'une fonction, ses instructions sont relues comme une suite d'opérations simples (la
 # représentation intermédiaire) et « épissées », comme un ARN : on retire les introns, ces instructions qui ne servent
-# qu'à déplacer une valeur. Cinq règles, essayées dans cet ordre à chaque instruction, jusqu'à ce que rien ne change :
+# qu'à déplacer une valeur. Sept règles, essayées dans cet ordre à chaque instruction, jusqu'à ce que rien ne change :
 #   pile       PUSH R1 ; S ; MOV R2,R1 ; POP R1  ->  S (R1 y devient Rf) ; MOV R2,Rf   (la pile devient un registre libre)
+#   garde      PUSH Ra ; S ; POP Ra              ->  S        (S n'écrit pas Ra, ne touche ni la pile ni le cadre)
+#   const128   LDI Rx,a ; LDIH Rx,b ; MOV Ry,Rx  ->  LDI Ry,a ; LDIH Ry,b                (Rx mort après le MOV)
 #   constante  LDIS Rk,#c ; ADD Rd,Ra,Rk          ->  ADDI Rd,Ra,#c                    (de même SUB -> SUBI)
 #   relecture  STF Ra,#o ; LDF Rb,#o              ->  STF Ra,#o, puis MOV Rb,Ra si Rb n'est pas Ra
 #   copie      OP Rx,… ; MOV Ry,Rx                ->  OP Ry,…
 #   échange    MOV Ra,Rb ; … lit Ra …             ->  … lit Rb …                       (le MOV s'en va)
 # Chaque règle demande qu'un registre soit « mort » : sa valeur ne sera plus lue, sur aucun chemin. On le sait par
 # l'analyse de vie des registres R1 à R8 sur le graphe de la fonction (sauts compris), refaite après chaque changement :
-# un appel détruit R1 à R8, un retour lit R1 et R4, une instruction inconnue (barrière) les lit tous. vtxc fait exactement
-# la même chose sur ses mots ; les deux compilateurs produisent toujours les mêmes mots.
+# un appel détruit R1 à R8, un retour lit R1 et R4, une instruction inconnue (barrière) les lit tous ; LDIH lit et écrit
+# son registre (il en garde les 64 bits bas). vtxc fait exactement la même chose sur ses mots ; les deux compilateurs
+# produisent toujours les mêmes mots. Mesuré (3 novembre) : garde et const128 ôtent 22,6 % des instructions de
+# mandel_reaction, 7 % de freinage, 3,3 % du lecteur d'ADN.
 EPISSAGE = True
+GARDE = True
+CONST128 = True
 RI_RRR = {"ADD", "SUB", "MUL", "SHL", "SHR", "SAR", "DIV", "MOD", "DIVS", "MODS", "MIN", "MAX", "ADDM4", "AND", "OR", "XOR",
           "GDOT", "FADD", "FSUB", "FMUL", "FDIV", "FEQ", "FLT", "FLE", "FCMP", "SADD", "SSUB", "SMUL", "SDIV", "SEQ", "SLT",
           "SLE", "MULHU", "MULHS", "QEGAL", "LDX", "LDQ", "ET4", "OU4", "EXQ", "ETGX"}
@@ -7079,7 +7085,7 @@ RI_RR = {"SHL4", "SHR4", "MOV", "CMP3", "FSQRT", "ITOF", "ITOFS", "FTOI", "FROUN
 # Lugus : une opération écrite à sa largeur par le générateur (.L toute la largeur, .64, .32) se lit comme l'opération
 # de base (ADD.L comme ADD, ZEXT.64 comme ZEXT32 : même code d'opération) ; les règles qui nomment une opération
 # (constante : LDIS puis ADD ou SUB ; copie : MOV) ne visent que la forme sans largeur. VEXT, MATL, MATE, MELANGE,
-# ANTIPOINT, VINS et LDIH (qui garde les 64 bits bas de son registre) restent des barrières.
+# ANTIPOINT et VINS restent des barrières ; LDIH n'en est plus une (il lit et écrit son registre), sauf pour échange.
 RI_RR |= {"ZEXT", "SEXT", "FCONV"}
 RI_DEST = RI_RRR | RI_RR | {"LDI", "LDIS", "LDIU", "LDF"}   # le premier registre est seulement écrit
 
@@ -7114,6 +7120,8 @@ def ri_acces(op, args):
         return {r[0]}, {r[1]}
     if op in ("LDI", "LDIS", "LDIU", "LDF", "IN", "POP"):
         return {r[0]}, set()
+    if op == "LDIH" and CONST128:
+        return {r[0]}, {r[0]}
     if op in ("STF", "OUT", "PUSH", "CMPI"):
         return set(), {r[0]}
     if op in ("CMP", "ST"):
@@ -7270,6 +7278,49 @@ def epissage(lignes):
         el[i][0] = el[jp][0] = "x"            # retirées
         return True
 
+    def regle_garde(i):
+        # PUSH Ra ; S ; POP Ra -> S : S (des instructions simples) n'écrit pas Ra, ne touche ni la pile ni le cadre ;
+        # Ra garde sa valeur sans passer par la pile
+        if el[i][1] != "PUSH":
+            return False
+        a = ri_reg(el[i][2][0])
+        if a is None or not 1 <= a <= 8:
+            return False
+        s, j = [], suivant(i)
+        while j >= 0 and not (el[j][1] == "POP" and ri_reg(el[j][2][0]) == a):
+            op = el[j][1]
+            if op in RI_SAUTS or op in ("PUSH", "POP") or len(s) >= ECHANGE_PORTEE:
+                return False
+            ac = ri_acces(op, el[j][2])
+            if ac is None or a in ac[0] or ac[0] & {13, 14} or ac[1] & {13, 14}:
+                return False
+            s.append(j)
+            j = suivant(j)
+        if j < 0 or not s:
+            return False
+        el[i][0] = el[j][0] = "x"
+        return True
+
+    def regle_const128(i):
+        # LDI Rx,a ; LDIH Rx,b ; MOV Ry,Rx -> LDI Ry,a ; LDIH Ry,b (Rx mort après le MOV)
+        if not CONST128 or el[i][1] != "LDI":
+            return False
+        j = suivant(i)
+        if j < 0 or el[j][1] != "LDIH" or ri_reg(el[j][2][0]) != ri_reg(el[i][2][0]):
+            return False
+        k = suivant(j)
+        if k < 0 or el[k][1] != "MOV":
+            return False
+        x = ri_reg(el[i][2][0])
+        y, x2 = ri_reg(el[k][2][0]), ri_reg(el[k][2][1])
+        if x2 != x or y == x or x is None or not 1 <= x <= 8 or y in (0, 13, 14, 15) or not mort_apres(k, x):
+            return False
+        el[i][2] = [f"R{y}"] + el[i][2][1:]
+        el[j][2] = [f"R{y}"] + el[j][2][1:]
+        el[i][3] = el[j][3] = el[k][3]
+        el[k][0] = "x"
+        return True
+
     def regle_constante(i):
         j = suivant(i)
         if el[i][1] != "LDIS" or j < 0 or el[j][1] not in ("ADD", "SUB"):
@@ -7325,8 +7376,8 @@ def epissage(lignes):
             if j < 0 or len(sites) >= ECHANGE_PORTEE:
                 return False
             op = el[j][1]
-            if op in RI_SAUTS or op == "PUSH":
-                return False
+            if op in RI_SAUTS or op == "PUSH" or op == "LDIH":
+                return False                       # LDIH lit et écrit le même registre : sa lecture ne se renomme pas
             ac = ri_acces(op, el[j][2])
             if ac is None:
                 return False
@@ -7356,8 +7407,8 @@ def epissage(lignes):
         analyser()
         i = 0
         while i < len(el):
-            if el[i][0] == "i" and (regle_pile(i) or regle_constante(i) or regle_relecture(i) or regle_copie(i)
-                                    or regle_echange(i)):
+            if el[i][0] == "i" and (regle_pile(i) or (GARDE and regle_garde(i)) or regle_const128(i) or regle_constante(i)
+                                    or regle_relecture(i) or regle_copie(i) or regle_echange(i)):
                 change = True
                 el = [e for e in el if e[0] != "x"]
                 continue

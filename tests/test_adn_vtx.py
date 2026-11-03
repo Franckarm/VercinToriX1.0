@@ -72,7 +72,17 @@ for p in programmes:
     f = os.path.join(d, os.path.basename(p).replace(".vtx", ".adn"))
     subprocess.run([lugus, "ranger", p, f], capture_output=True)
     adns.append(f)
+# une copie en version 3 (neutrons CRC-8) : le lecteur lit et réécrit les deux versions
+m3, mols3, t3 = adn.lire_adn(adns[0])
+t3["version"] = 3
+t3["neutrons"] = {i: adn.crc8(m3[i]) for i in t3["neutrons"]}
+f_v3 = os.path.join(d, "freinage-v3.adn")
+adn.ecrire_adn(f_v3, m3, mols3, t3)
+adns.append(f_v3)
 f_relu = os.path.join(d, "relu.adn")
+c3, e3 = relire_vtx(f_v3, f_relu)
+verifier("un ADN intact en version 3 (neutrons CRC-8) : vrai, relu octet pour octet, toujours en version 3",
+         c3 == 0 and e3.strip() == "l'ADN : vrai" and open(f_relu, "rb").read() == open(f_v3, "rb").read(), e3)
 c, e = relire_vtx(adns[0], f_relu)
 verifier("un ADN intact (avec les introns isotopes et source) : vrai, relu octet pour octet",
          c == 0 and e.strip() == "l'ADN : vrai" and open(f_relu, "rb").read() == open(adns[0], "rb").read(), e)
