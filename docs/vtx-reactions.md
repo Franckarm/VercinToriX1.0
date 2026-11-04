@@ -888,3 +888,44 @@ paillasse améliorée.
     jamais de travers ; l'avantage du quaternaire est sur les petites erreurs (deux bits, deux quits : 100 % contre
     99,99 % ; quatre bits : 99,62 % contre 99,22 %), le bruit d'un canal quaternaire, que les genres d'avaries de
     l'ADN (des mots entiers) ne contiennent pas encore.
+
+## 11. Les vibrations (4 novembre)
+
+Idée de l'utilisateur : les atomes et leurs liaisons vibrent (les vibrations des réseaux d'atomes, les phonons : chaînes
+monoatomiques et diatomiques, modes acoustiques et optiques, une fréquence, un sens) ; une bibliothèque par atome ; une
+fréquence, un sens, une signature ; dans le cube, les chaînes nommées dans ce sens ; et, contre les molécules
+isospectrales, l'accroche : un atome se retrouve d'un code à l'autre, une vibration commune fait une accroche, la
+vibration totale garde l'intégrité de chaque groupe de blocs.
+
+- **Les registres en graphe de liaisons** (vtx128.py et vtxc128, les mêmes mots) :
+  - chaque variable est un atome ; elle vibre de la première à la dernière instruction de premier niveau du corps où
+    elle apparaît (var, la cible d'un soit ou d'une affectation, la variable d'un pour : les seules places où le
+    générateur touche une variable) ; une boucle de premier niveau est un seul bloc, ce qui couvre d'office ce qui passe
+    d'un tour à l'autre ; les deux compilateurs comptent ces instructions de la même façon, quelle que soit la forme de
+    leurs arbres (essayé d'abord au nœud près : même gain, mais une parité fragile) ;
+  - deux atomes qui vibrent en même temps sont liés : deux registres différents (le mode optique) ; les atomes passent
+    par fréquence décroissante (les usages pondérés par les boucles), chacun prend le premier registre libre de ses
+    voisins, ou reste dans le cadre ; quatre registres portent plus de quatre variables ;
+  - mesuré (instructions de Lugus, mêmes sorties) : −4,8 % sur la fiche et les exemples ; neutrons aux tables dans
+    principal −17 % et −25 % (le défaut d'hier : réglé par le graphe seul) ; crible −6,3 % ; relevés −8,3 % ; chute
+    −2,9 % ; lecteur d'ADN −1,9 % ; fib, mandel, tri inchangés (toutes leurs variables vivent ensemble) ;
+  - essayé et rendu : la vraie fréquence d'une boucle (son nombre de tours quand ses bornes sont écrites) : −0,0 % de
+    plus, le graphe fait déjà tout ;
+  - en route, dans vtxc128 : « pas encore vue » marquée −1, et `vfin < k` est sans signe : la période ne s'ouvrait pas
+    et deux variables vivantes partageaient un registre ; vu par un petit programme comparé dans les deux compilateurs.
+- **La signature par les vibrations, la parade** (`chimie/essai_vibrations.py`, expérimental) :
+  - la vibration locale d'un atome : ses chemins fermés de longueur 1 à n, (Aᵏ)ᵢᵢ (sa part dans chaque mode, pondérée
+    par la fréquence) ; son élément (sa masse) ; propagée trois tours le long des liaisons ; la signature : l'ensemble
+    trié des vibrations finales et leur total ; tout en entiers (les mêmes dans tous les compilateurs) ;
+  - mesuré sur tous les graphes de 1 à 7 sommets (1 252), puis 3 756 molécules aux éléments C, H, O, N : paires de
+    molécules différentes à la même signature : spectre ordinaire 64, spectre des vibrations 76, avec les masses 22 ;
+    **la parade : 0, sans et avec les éléments** ;
+  - l'intégrité : une liaison ajoutée ou retirée est vue 2 140 fois sur 2 140 ;
+  - l'accroche : deux codes qui partagent un groupe de cinq atomes ont 2,5 vibrations en commun en moyenne, 0 sans lui ;
+  - la limite, honnêtement : deux graphes fortement réguliers de mêmes paramètres (la tour 4×4 et le graphe de
+    Shrikhande, 16 sommets) vibrent exactement de la même façon, atome par atome : même signature. Ce qui les sépare :
+    les groupes de quatre atomes tous liés (8 contre 0). Suite possible : des harmoniques (les petits cycles et les
+    groupes autour de chaque atome) ; dans du code, les éléments brisent presque toujours cette symétrie ;
+  - la signature de l'ADN (splitmix sur les mots) reste la garantie ; la signature par les vibrations sert à
+    l'accroche (retrouver une partie commune, un module, une molécule déjà vue) et à l'intégrité de la structure ;
+  - à venir : la bibliothèque par atome, le sens (longitudinal, transversal) et les chaînes nommées dans le cube.

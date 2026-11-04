@@ -6926,6 +6926,61 @@ def compter_usages(x, d, sc):
             compter_usages(y, d, sc)
 
 
+# ------------------------------------------------------------------------------------------------ les vibrations
+# L'attribution des registres en graphe de liaisons (idée de l'utilisateur : les liaisons et les vibrations). Chaque
+# variable est un atome ; elle vibre de la première à la dernière instruction de premier niveau du corps où elle
+# apparaît (une boucle de premier niveau est un seul bloc : ce qui passe d'un tour à l'autre est couvert d'office ; les
+# deux compilateurs comptent ces instructions de la même façon, quelle que soit la forme de leurs arbres). Deux atomes
+# qui vibrent en même temps sont liés : il leur faut deux registres différents (le mode optique : deux voisins en
+# opposition). Les atomes passent par fréquence décroissante (les usages pondérés par les boucles) ; chacun prend le
+# premier registre qu'aucun de ses voisins n'a pris, ou reste dans le cadre. Deux variables qui ne vivent jamais
+# ensemble partagent un registre : quatre registres portent plus de quatre variables. Mesuré (4 novembre) : −4,8 % des
+# instructions sur la fiche et les exemples ; −17 et −25 % quand des boucles de préparation précèdent la boucle chaude.
+VIBRATIONS = True
+
+
+def noms_dans(x, noms, vus):
+    """les variables qui apparaissent dans x : les seules places où le générateur touche une variable par son nom
+    (var, la cible d'un soit ou d'une affectation, la variable d'un pour), comme vtxc128"""
+    if isinstance(x, list):
+        for y in x:
+            noms_dans(y, noms, vus)
+        return
+    if not isinstance(x, tuple) or not x:
+        return
+    if x[0] in ("var", "soit", "affecter", "pour") and len(x) > 1 and isinstance(x[1], str) and x[1] in noms:
+        vus.add(x[1])
+    for y in x[1:]:
+        if isinstance(y, (list, tuple)):
+            noms_dans(y, noms, vus)
+
+
+def periodes(corps, params, noms):
+    """{nom: (début, fin)} : les instructions de premier niveau du corps où chaque variable vibre (les paramètres dès
+    0) ; une boucle de premier niveau est un seul bloc, ce qui couvre d'office ce qui passe d'un tour à l'autre"""
+    per = {n: (0, 0) for n in params if n in noms}
+    for k, st in enumerate(corps, start=1):
+        vus = set()
+        noms_dans(st, noms, vus)
+        for n in vus:
+            a, b = per.get(n, (k, k))
+            per[n] = (min(a, k), max(b, k))
+    return per
+
+
+def colorier(cand, per, regs_dispo):
+    """{nom: registre} : les atomes dans l'ordre de cand (fréquence décroissante) ; chacun prend le premier registre
+    qu'aucun atome qui vibre en même temps n'a pris, ou reste dans le cadre"""
+    regs = {}
+    for n in cand:
+        a, b = per.get(n, (0, 0))
+        pris = {regs[m] for m in regs if per.get(m, (0, 0))[0] <= b and a <= per.get(m, (0, 0))[1]}
+        libre = [r for r in regs_dispo if r not in pris]
+        if libre:
+            regs[n] = libre[0]
+    return regs
+
+
 def sans_registres(x):
     """Une fonction dont les variables doivent rester dans le cadre : accords, segments, hypothèses."""
     if isinstance(x, list):
@@ -7889,9 +7944,12 @@ class Generateur:
             compter_usages(f.corps, 0, sc)
             cand = [n for n in self.vars if sc.get(n, 0) >= 16 and self.vtypes.get(n, "e") not in LARGES2 and not n.startswith("__q")]
             cand.sort(key=lambda n: (-sc[n], -self.vars[n]))
-            for k, n in enumerate(cand[:len(REGS_VARIABLES)]):
-                self.regs[n] = REGS_VARIABLES[k]
-        gardes = sorted(self.regs.values())
+            if VIBRATIONS:
+                self.regs = colorier(cand, periodes(f.corps, f.params, set(cand)), REGS_VARIABLES)
+            else:
+                for k, n in enumerate(cand[:len(REGS_VARIABLES)]):
+                    self.regs[n] = REGS_VARIABLES[k]
+        gardes = sorted(set(self.regs.values()))
         if REGISTRES and self.optim and appelle_pile(f.corps):
             gardes = list(REGS_VARIABLES)
         if o > 1 << 20 or nl + len(gardes) > 1 << 20:

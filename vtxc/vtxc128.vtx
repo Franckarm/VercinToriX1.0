@@ -191,7 +191,7 @@ structure Constante { nom, val, type, haut, suivant: Constante }
 structure Tableau { nom, etage, base, taille, sorte, st, suivant: Tableau }
 structure Texte { val, etiq, suivant: Texte }
 structure Donnee { etage, adr, vals: Liste, etiq, suivant: Donnee }
-structure Var { nom, off, type, genre, haut, reg, score, suivant: Var }
+structure Var { nom, off, type, genre, haut, reg, score, suivant: Var, vdeb, vfin }   // vdeb, vfin : sa période (les vibrations)
 structure Boucle { haut, fin, suivant: Boucle }
 structure Cumul { nom, suivant: Cumul }
 
@@ -10173,15 +10173,69 @@ fonction appelle_pile(x: Noeud) {
     retour 0;
 }
 
+// les vibrations (comme vtx128.py) : une variable vibre de la première à la dernière instruction de premier niveau du
+// corps où elle apparaît (var, la cible d'un soit ou d'une affectation, la variable d'un pour) ; les paramètres dès 0
+fonction vibrer_liste(c: Ctx, x: Noeud, k) {
+    tantque x != nul {
+        vibrer(c, x, k);
+        x = x.suivant;
+    }
+}
+
+fonction vibrer(c: Ctx, x: Noeud, k) {
+    soit g = x.genre;
+    si (g == N_VAR || g == N_SOIT || g == N_AFFECTER || g == N_POUR) && x.nom != 0 {
+        soit v = var_ou_nul(c, x.nom);
+        si v != nul {
+            si v.vfin == 0 - 1 {
+                v.vdeb = k;                      // (« pas encore vue » : -1, plus grand que tout sans signe)
+                v.vfin = k;
+            } sinon si v.vfin < k {
+                v.vfin = k;
+            }
+        }
+    }
+    vibrer_liste(c, x.a, k);
+    vibrer_liste(c, x.b, k);
+    vibrer_liste(c, x.c, k);
+    vibrer_liste(c, x.premier, k);
+    vibrer_liste(c, x.deuxieme, k);
+}
+
 fonction choisir_registres(c: Ctx, f: Fonction) {
     si !c.optim || c.lignes_dbg == 1 || sans_registres(f.corps) {
         retour 0;
     }
     compter(c, f.corps, 0);
-    soit n = 0;
-    tantque n < 4 {
+    soit v = c.vars;
+    tantque v != nul {
+        v.vdeb = 0;
+        v.vfin = 0 - 1;
+        si v.off .> 0 {
+            v.vfin = 0;
+        }
+        v = v.suivant;
+    }
+    soit k = 0;
+    soit st = f.corps;
+    tantque st != nul {
+        k = k + 1;
+        vibrer(c, st, k);
+        st = st.suivant;
+    }
+    v = c.vars;
+    tantque v != nul {
+        si v.vfin == 0 - 1 {
+            v.vfin = 0;
+        }
+        v = v.suivant;
+    }
+    // les atomes par fréquence décroissante ; chacun prend le premier registre qu'aucun atome qui vibre en même temps
+    // n'a pris (le mode optique), ou reste dans le cadre (marqué -1 le temps du choix)
+    soit nmax = 0;
+    tantque 1 {
         soit m: Var = nul;
-        soit v = c.vars;
+        v = c.vars;
         tantque v != nul {
             si v.reg == 0 && v.score >= 16 && !large(v.type) && !commence(v.nom, "__q") {
                 // à égalité, la plus haute dans le cadre (les décalages sont signés)
@@ -10192,12 +10246,40 @@ fonction choisir_registres(c: Ctx, f: Fonction) {
             v = v.suivant;
         }
         si m == nul {
-            retour n;
+            arreter;
         }
-        m.reg = 9 + n;
-        n = n + 1;
+        soit r = 9;
+        soit pris = 1;
+        tantque r <= 12 && pris {
+            pris = 0;
+            soit w = c.vars;
+            tantque w != nul {
+                si w.reg == r && w.vdeb <= m.vfin && m.vdeb <= w.vfin {
+                    pris = 1;
+                }
+                w = w.suivant;
+            }
+            si pris {
+                r = r + 1;
+            }
+        }
+        si r <= 12 {
+            m.reg = r;
+            si r - 8 > nmax {
+                nmax = r - 8;
+            }
+        } sinon {
+            m.reg = 0 - 1;
+        }
     }
-    retour n;
+    v = c.vars;
+    tantque v != nul {
+        si v.reg == 0 - 1 {
+            v.reg = 0;
+        }
+        v = v.suivant;
+    }
+    retour nmax;
 }
 
 fonction fonction_code(c: Ctx, f: Fonction) {
