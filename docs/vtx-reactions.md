@@ -929,3 +929,31 @@ vibration totale garde l'intégrité de chaque groupe de blocs.
   - la signature de l'ADN (splitmix sur les mots) reste la garantie ; la signature par les vibrations sert à
     l'accroche (retrouver une partie commune, un module, une molécule déjà vue) et à l'intégrité de la structure ;
   - à venir : la bibliothèque par atome, le sens (longitudinal, transversal) et les chaînes nommées dans le cube.
+
+## 12. Essai : l'entier de 128 bits par défaut (5 novembre)
+
+Mesuré sans rien changer au langage : les mêmes programmes de la fiche, compilés normalement, puis avec leurs
+opérations entières à toute la largeur (128 bits ; ETG reste à 64 : l'étage est dans les bits hauts d'une adresse de
+64 bits) ; forgés normalement, puis avec l'entier en `u128` (une copie de la forge, le temps de l'essai). Médiane de
+cinq lancements.
+
+| programme | Lugus 64 | Lugus 128 | écart | forgé 64 | forgé 128 | écart | sorties |
+|---|---|---|---|---|---|---|---|
+| fib | 1,01 s | 1,18 s | +17 % | 0,021 s | 0,011 s | (bruit) | mêmes |
+| crible | 1,06 s | 2,06 s | +95 % | 0,079 s | 0,070 s | −11 % | mêmes |
+| tri | 0,95 s | 1,19 s | +26 % | 0,080 s | 0,083 s | +4 % | mêmes |
+| adn | 0,36 s | 0,56 s | +56 % | 0,027 s | 0,019 s | (bruit) | mêmes |
+| mandel (flottants) | 3,74 s | 3,78 s | +1 % | 1,16 s | 1,19 s | +2 % | mêmes |
+| neutrons (xorshift) | 0,50 s | 17,2 s | ×34 | 0,04 s | 3,9 s | ×90 | **autres** |
+
+- les instructions de Lugus ne changent pas (une instruction de 128 bits reste une instruction) ;
+- **forgé, le 128 bits ne coûte presque rien** (addition, comparaison : le même prix sur le processeur hôte ; la
+  division coûterait plus, il n'y en a pas ici) ;
+- **sur Lugus, +17 à +95 %** : le chemin court de la machine (`court64`) ne sert qu'à la largeur 64 ; les opérations
+  de 128 bits passent par le grand `match` et l'arithmétique `u128` de l'hôte ; un chemin court de 128 bits le
+  réduirait (à mesurer) ;
+- **le vrai coût est le sens** : tout ce qui compte sur le débordement à 64 bits (le hasard xorshift et splitmix, les
+  hachages, le CRC, la signature de l'ADN, le lecteur d'ADN en vtx) donne d'autres nombres ; les neutrons ci-dessus
+  sortent de leur table (des valeurs plus grandes que 2⁶⁴ comme indices), d'où la lenteur et le résultat faux ;
+- à décider : garder 64 par défaut (le 128 sur demande, `entier_128`), passer à 128 (en écrivant `entier_64` partout où
+  le débordement compte, et un chemin court de 128 bits dans Lugus), ou le choix par programme.
