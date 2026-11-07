@@ -81,6 +81,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_adn_vtx.py")]))
     etapes.append(("Belenos, le fluide : la copie, le tapis roulant et les tuiles, les mêmes nombres que la référence, sur Lugus et forgés",
                    [sys.executable, os.path.join("tests", "test_fluide.py")]))
+    etapes.append(("Belenos, le tableau (belenos/auvergne.vtx) : forgé, il peint l'image et l'écrit lui-même en PNG juste",
+                   [sys.executable, os.path.join("tests", "test_tableau.py")]))
     etapes.append(("la paillasse d'Ogmios : lue comme le compilateur, gestes rejoués (lier, délier, ajouter, retirer), valeurs",
                    [sys.executable, os.path.join("tests", "test_paillasse.py")]))
     etapes.append(("Ogmios écrit en vtx : l'atelier sur Lugus (édition rejouée, Ctrl+S, F5 sur une machine fille)",

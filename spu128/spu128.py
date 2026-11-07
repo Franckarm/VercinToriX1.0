@@ -318,6 +318,8 @@ class CPU:
             self.texte.append(v)
         elif c in self.fichiers and self.fichiers[c][0] == "e":
             self.fichiers[c][1].append(v)
+        elif c in self.fichiers and self.fichiers[c][0] == "o":
+            self.fichiers[c][1].append(v & 255)
 
     def texte_memoire(self, adr):
         n = self.lire(adr)
@@ -327,8 +329,13 @@ class CPU:
         if code in (1, 2):
             if self.dossier is None:
                 return M128
-            chemin = os.path.join(self.dossier, self.texte_memoire(arg))
+            nom = self.texte_memoire(arg)
             canal = max([1] + list(self.fichiers)) + 1
+            if code == 2 and nom.startswith("octets:"):
+                # un fichier d'octets : chaque mot écrit donne un octet (ses 8 bits bas)
+                self.fichiers[canal] = ["o", bytearray(), 0, os.path.join(self.dossier, nom[7:])]
+                return canal
+            chemin = os.path.join(self.dossier, nom)
             if code == 1:
                 try:
                     with open(chemin, encoding="utf-8") as h:
@@ -340,6 +347,13 @@ class CPU:
             return canal
         if code == 3:
             f = self.fichiers.pop(arg, None)
+            if f and f[0] == "o":
+                try:
+                    with open(f[3], "wb") as h:
+                        h.write(bytes(f[1]))
+                except OSError:
+                    return M128
+                return 0
             if f and f[0] == "e":
                 try:
                     with open(f[3], "w", encoding="utf-8") as h:

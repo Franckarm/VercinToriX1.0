@@ -52,6 +52,9 @@ pub struct Spu128 {
     pub texte: Vec<u128>,
     pub texte_entree: VecDeque<u128>,
     fichiers: HashMap<u128, (bool, Vec<u128>, usize, String)>,
+    // les fichiers d'octets (ouvrir_ecriture("octets:nom")) : chaque mot écrit donne un octet (ses 8 bits bas) ; une
+    // image (PNG), un son : ce que le texte ne sait pas porter
+    octets: HashMap<u128, (std::path::PathBuf, Vec<u8>)>,
     pub dossier: Option<std::path::PathBuf>,
     pages_vues: std::collections::HashSet<(usize, u128)>,
     pub pas: u64,
@@ -135,6 +138,7 @@ impl Spu128 {
             texte: Vec::new(),
             texte_entree: VecDeque::new(),
             fichiers: HashMap::new(),
+            octets: HashMap::new(),
             dossier: None,
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
@@ -480,7 +484,14 @@ impl Spu128 {
             if !f.0 {
                 f.1.push(v);
             }
+        } else if let Some(o) = self.octets.get_mut(&c) {
+            o.1.push(v as u8);
         }
+    }
+
+    /// un canal libre (après ceux des fichiers de texte et d'octets)
+    fn canal_libre(&self) -> u128 {
+        self.fichiers.keys().chain(self.octets.keys()).copied().chain(std::iter::once(1)).max().unwrap() + 1
     }
     fn texte_memoire(&mut self, adr: u128) -> String {
         let n = self.lire(adr).min(4096);
@@ -493,8 +504,15 @@ impl Spu128 {
                     Some(d) => d.clone(),
                     None => return Ok(u128::MAX),
                 };
-                let chemin = d.join(self.texte_memoire(arg));
-                let canal = self.fichiers.keys().copied().chain(std::iter::once(1)).max().unwrap() + 1;
+                let nom = self.texte_memoire(arg);
+                let canal = self.canal_libre();
+                if code == 2 {
+                    if let Some(n) = nom.strip_prefix("octets:") {
+                        self.octets.insert(canal, (d.join(n), Vec::new()));
+                        return Ok(canal);
+                    }
+                }
+                let chemin = d.join(nom);
                 if code == 1 {
                     match std::fs::read_to_string(&chemin) {
                         Ok(t) => {
@@ -508,6 +526,9 @@ impl Spu128 {
                 Ok(canal)
             }
             3 => {
+                if let Some((chemin, o)) = self.octets.remove(&arg) {
+                    return Ok(if std::fs::write(&chemin, o).is_err() { u128::MAX } else { 0 });
+                }
                 if let Some(f) = self.fichiers.remove(&arg) {
                     if !f.0 {
                         let t: String = f.1.iter().map(|&c| char::from_u32((c & 0x1F_FFFF) as u32).unwrap_or('?')).collect();
@@ -583,7 +604,7 @@ impl Spu128 {
                     Some(f) => f(&chemin, 2_000_000_000),
                     None => return Ok(u128::MAX),
                 };
-                let canal = self.fichiers.keys().copied().chain(std::iter::once(1)).max().unwrap() + 1;
+                let canal = self.canal_libre();
                 self.fichiers.insert(canal, (true, rapport.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }

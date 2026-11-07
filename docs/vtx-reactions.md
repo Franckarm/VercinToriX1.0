@@ -1090,3 +1090,64 @@ calcule par groupes d'étages, en cycles, sans viser le 4K.
   centre à pleine finesse, un champ 32 fois plus large, pour le prix d'une image de 157 × 157.
   À essayer plus tard : l'affichage du fluide en accordéon (le centre net, les étages lointains moyennés), et un
   fluide en accordéon (des grilles emboîtées, plus fines au centre : le raffinement de maillage).
+
+## 17. Belenos peint : « Les puys au soir » (7 novembre)
+
+Demandé : une image de démonstration faite avec Belenos seul, en 2K, un paysage de l'Auvergne ; pourquoi pas le 4K.
+
+- **`belenos/auvergne.vtx`** (vtx seul : ni bibliothèque, ni carte, ni Python) :
+  - **un vrai relief** : une grille de 1024 × 1024 hauteurs (en 1/256 de case) : la plaine vallonnée, treize puys (le
+    puy de Dôme en dôme de lave, arrondi ; les cônes de scories aux flancs droits et à cratère ; le puy de la Vache
+    égueulé, son cratère ouvert vers nous), un lac de cratère, les prés qui descendent vers lui ; la lumière du soleil
+    par la normale de chaque case (une racine carrée entière, Newton) ;
+  - **le rendu par colonnes** : chaque colonne de l'image lance un rayon qui avance du plus près au plus loin et peint de
+    bas en haut ce qu'il découvre (un tampon de hauteur par colonne : rien n'est peint deux fois ; la méthode de
+    Comanche, 1992) ; la brume selon la distance ;
+  - le ciel du soir (le dégradé, la lueur et le disque du soleil, des bancs de nuages éclairés dessus, ombrés dessous :
+    des nappes de bruit en entiers), les monts Dore au loin et la neige sur leurs crêtes ;
+  - **le reflet** : un point d'eau prend la couleur du point symétrique par rapport à l'horizon (le rayon renvoyé par
+    l'eau monte autant qu'il descendait), troublée de rides, plus fort au loin ;
+  - posés dans la scène **avec leur profondeur** (chaque point de l'image garde la sienne) : des arbres (couronne en
+    touffes, éclairée du côté du soleil, quelques feuilles rousses), un buron (pierre sèche, toit de lauzes) et des
+    vaches Salers (robe acajou, cornes en lyre), du plus loin au plus près ;
+  - **le PNG écrit par le programme** : la signature, IHDR, IDAT (zlib, blocs « stockés », Adler-32), IEND, chaque
+    morceau avec son CRC-32 (une table) ; dans un **fichier d'octets** : `ouvrir_ecriture("octets:nom")` (nouveau, dans
+    `vtx-rs/src/spu128.rs` et `spu128/spu128.py` : chaque mot écrit donne un octet ; les fichiers de texte ne savaient
+    porter que des caractères).
+- **Mesuré** (2048 × 1080) : **Lugus 7,5 milliards d'instructions, 57 s ; forgé 0,6 s ; la même image, octet pour
+  octet** (`tests/test_tableau.py --lugus`). Le PNG fait 6,6 Mo (sans compression).
+- **Le 4K** : rien ne l'empêche ; `constante K = 2` (toutes les mesures de l'image en dépendent) donne 4096 × 2160,
+  forgé en 2,4 s. Ce qui se voit alors : la grille du relief (1024 × 1024) devient trop grossière de près (les
+  champs en marches) ; il faudra une grille de 2048 × 2048, ou l'accordéon (§ 16 : fine au centre, plus grossière au
+  bord) ; et le PNG sans compression fait 26 Mo : une vraie compression (deflate) est à écrire.
+- `tests/test_tableau.py` (dans `verifier.py`) : forgé, le programme écrit un PNG juste (relu par Python : les CRC, le
+  zlib, l'Adler-32), de 2048 × 1080 points, dont l'empreinte est celle qu'il a sortie ; `--lugus` : Lugus peint la même.
+
+## 18. Pour que Belenos dépasse DirectX : les propositions (7 novembre)
+
+DirectX, c'est une interface de Microsoft, ses pilotes (fournis par AMD, Nvidia, Intel) et son langage de nuanceurs
+(HLSL, compilé en DXIL). On ne le remplace pas en réécrivant les pilotes ; on le dépasse sur ce qu'il ne sait pas faire,
+en passant par la porte commune à toutes les cartes.
+
+1. **Belenos écrit du SPIR-V** (le langage intermédiaire des cartes, celui de Vulkan), directement depuis vtx, sans
+   HLSL ni GLSL : une sortie de plus du compilateur, comme la forge. SPIR-V tourne sur Vulkan partout (Windows, Linux,
+   Android), et Microsoft a annoncé (septembre 2024) que DirectX l'adopterait comme format d'échange à partir du
+   Shader Model 7 : les nuanceurs de Belenos deviendraient aussi des nuanceurs DirectX.
+2. **Les mêmes nombres partout** : DirectX ne garantit pas que deux cartes donnent la même image (les flottants
+   diffèrent au dernier bit selon le fabricant). Belenos calcule en entiers et en flottants arrondis exactement (comme
+   Lugus et la forge aujourd'hui) : la même image au bit près sur toutes les cartes, et vérifiable par son empreinte.
+   C'est la démonstration la plus forte, et DirectX ne peut pas la faire.
+3. **Les vagues, l'ombre et le tapis roulant dans le langage** : en DirectX, le programmeur pose à la main les
+   barrières, les tas de descripteurs, la mémoire partagée. vtx connaît déjà les dépendances (la partition des
+   tâches, les vibrations) : il peut déduire ces barrières, et ranger l'ombre d'une tuile dans la mémoire partagée.
+   Moins de code, moins d'erreurs.
+4. **L'ADN sur la carte** : les neutrons (le CRC quaternaire) et la patrouille appliqués à la mémoire de la carte : une
+   donnée abîmée vue et réparée. Aucune interface graphique ne le propose.
+5. **La démonstration mesurée** : le fluide et ce tableau, faits quatre fois : Lugus, forgé, Belenos sur Vulkan, et la
+   même chose écrite en HLSL pour Direct3D 12 ; on compare le temps, le nombre de lignes, et les images (au bit près
+   pour Belenos, pas pour l'autre).
+6. **Le chemin, pas à pas** : (a) le noyau du fluide en SPIR-V, validé par l'outil de Khronos ; (b) un hôte Vulkan
+   minimal en Rust pur (comme la fenêtre Win32 pure de l'atelier) ; (c) le tableau calculé sur la carte (un nuanceur de
+   calcul par colonne) et affiché ; (d) DirectX par SPIR-V quand le Shader Model 7 sera là.
+   Honnêtement : battre DirectX en vitesse brute dès le début est peu probable ; ce qui est à portée : la même image
+   partout, moins de code, l'intégrité, et la même source pour Vulkan et DirectX.

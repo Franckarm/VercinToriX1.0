@@ -1,0 +1,836 @@
+// machine : lugus
+// Belenos : « Les puys au soir », un tableau de l'Auvergne, peint en vtx seul (aucune bibliothèque, aucune carte) :
+// un vrai relief (une grille de 1024 × 1024 hauteurs : la plaine, la chaîne des Puys, un lac de cratère), regardé en
+// perspective ; chaque colonne de l'image lance un rayon qui avance du plus près au plus loin et peint de bas en haut ce
+// qu'il découvre (le tampon de hauteur de la colonne : rien n'est peint deux fois) ; le ciel d'un soir d'automne et ses
+// nuages, les monts Dore au loin (la neige sur les crêtes), le reflet dans le lac, puis un buron et des vaches Salers,
+// posés dans la scène avec leur profondeur.
+// Tout est en entiers (les mêmes nombres sur Lugus et forgé). L'image est rangée dans l'étage 2, puis écrite en PNG par
+// le programme lui-même (CRC-32, Adler-32, blocs « stockés ») dans un fichier d'octets.
+//     lugus belenos/auvergne.vtx            -> belenos/auvergne.png (2048 × 1080, le 2K du cinéma)
+
+constante K = 1;                   // 1 : le 2K (2048 × 1080) ; 2 : le 4K du cinéma (4096 × 2160)
+constante W = 2048 * K;
+constante H = 1080 * K;
+constante G = 1024;                // la grille du relief : G × G cases
+constante HAUT = 8388608;          // @2[HAUT + z·G + x] : la hauteur, en 1/256 de case
+constante LUM = 9437184;           // @2[LUM + z·G + x] : la lumière du soleil sur la case (sur 256)
+constante IMAGE = 16777216;        // @2[IMAGE + y·W + x] : la couleur 0xRRGGBB
+constante PROF = 33554432;         // @2[PROF + y·W + x] : la profondeur du point (2·z, +1 pour l'eau ; 0 : le ciel)
+constante COL = 2097152;           // la crête des monts Dore, colonne par colonne
+constante TCRC = 1048576;          // la table du CRC-32
+constante ETAT = 1048900;          // l'état de l'écriture des données de l'image
+constante PUYS = 1049000;          // les puys
+constante NPUYS = 13;
+constante RIEN = 4294967295;
+constante HORIZON = 560 * K;       // la ligne d'horizon sur l'image
+constante FOCALE = 1774 * K;       // en points (un champ de 60 degrés)
+constante CAMX = 512;              // l'œil : au-dessus de la case (512, 0)
+constante CAMH = 4600;             // sa hauteur (18 cases : sur une butte, au-dessus du lac)
+constante EAU = 512;               // le niveau du lac (2 cases)
+constante PLAINE = 768;            // la plaine (3 cases)
+constante ZMAX = 1000;
+constante SOLX = 1580 * K;         // le soleil, sur l'image
+constante SOLY = 300 * K;
+
+// cx, cz, hauteur, rayon, cratère (profondeur), décalage du cratère en x et en z (un puy égueulé : son cratère ouvert)
+donnees @2[1049000] = {
+    470, 520, 72, 100, 0, 0, 0,          // le puy de Dôme (un dôme de lave : arrondi)
+    600, 545, 40, 62, 9, 0, 0,           // le petit puy de Dôme et son nid de la Poule
+    705, 610, 46, 70, 13, 0, 0,          // le puy Pariou
+    820, 680, 56, 88, 12, 0, 0,          // le puy de Côme
+    330, 610, 36, 72, 16, 0, -22,        // le puy de la Vache, égueulé vers nous
+    395, 660, 32, 60, 10, 0, 0,          // le puy de Lassolas
+    250, 470, 30, 56, 7, 0, 0,           // le puy de Jumes
+    150, 540, 40, 72, 11, 0, 0,          // le puy de Louchadière
+    930, 780, 44, 80, 0, 0, 0,
+    560, 760, 34, 70, 8, 0, 0,
+    80, 720, 38, 80, 0, 0, 0,
+    680, 450, 22, 50, 6, 0, 0,
+    1000, 620, 30, 70, 9, 0, 0 };
+
+// ------------------------------------------------------------------ les couleurs (0xRRGGBB)
+fonction serrer(v) {
+    si v .< 0 {
+        retour 0;
+    }
+    si v .> 255 {
+        retour 255;
+    }
+    retour v;
+}
+
+fonction rgb(r, v, b) {
+    retour (serrer(r) << 16) | (serrer(v) << 8) | serrer(b);
+}
+
+fonction rouge(c) {
+    retour (c >> 16) & 255;
+}
+
+fonction vert(c) {
+    retour (c >> 8) & 255;
+}
+
+fonction bleu(c) {
+    retour c & 255;
+}
+
+// le mélange de a vers b, t sur 256
+fonction melange(a, b, t) {
+    soit ra = rouge(a);
+    soit va = vert(a);
+    soit ba = bleu(a);
+    retour rgb(ra + (((rouge(b) - ra) * t) .>> 8), va + (((vert(b) - va) * t) .>> 8), ba + (((bleu(b) - ba) * t) .>> 8));
+}
+
+// la lumière : la couleur multipliée par l sur 256
+fonction eclairer(c, l) {
+    retour rgb((rouge(c) * l) .>> 8, (vert(c) * l) .>> 8, (bleu(c) * l) .>> 8);
+}
+
+// ------------------------------------------------------------------ le bruit (des nappes de valeurs, en entiers)
+fonction hache(x, y) {
+    soit h = x * 374761393 + y * 668265263;
+    h = (h ^ (h >> 13)) * 1274126177;
+    retour (h ^ (h >> 16)) & 65535;
+}
+
+fonction lisse(f) {
+    retour (f * f * (196608 - 2 * f)) >> 32;
+}
+
+// une nappe : des valeurs au hasard aux nœuds d'une grille de pas 2^s, lissées entre eux (0 à 65535)
+fonction nappe(x, y, s) {
+    soit ix = x >> s;
+    soit iy = y >> s;
+    soit m = (1 << s) - 1;
+    soit u = lisse((x & m) << (16 - s));
+    soit v = lisse((y & m) << (16 - s));
+    soit a = hache(ix, iy);
+    soit b = hache(ix + 1, iy);
+    soit c = hache(ix, iy + 1);
+    soit d = hache(ix + 1, iy + 1);
+    soit h1 = a + (((b - a) * u) .>> 16);
+    soit h2 = c + (((d - c) * u) .>> 16);
+    retour h1 + (((h2 - h1) * v) .>> 16);
+}
+
+// n nappes de plus en plus fines, chacune moitié moins forte (0 à 65535)
+fonction nappes(x, y, s, n) {
+    soit total = 0;
+    soit poids = 0;
+    soit a = 256;
+    pour k dans 0..n {
+        total = total + nappe(x, y, s - k) * a;
+        poids = poids + a;
+        a = a / 2;
+    }
+    retour total / poids;
+}
+
+// la racine carrée entière (Newton, depuis une puissance de 2 au-dessus)
+fonction racine_entiere(n) {
+    si n == 0 {
+        retour 0;
+    }
+    soit g = 1;
+    soit t = n;
+    tantque t > 0 {
+        t = t >> 2;
+        g = g << 1;
+    }
+    soit suivant = (g + n / g) / 2;
+    tantque suivant < g {
+        g = suivant;
+        suivant = (g + n / g) / 2;
+    }
+    retour g;
+}
+
+// ------------------------------------------------------------------ le relief
+// la hauteur du puy p en (x, z), en 1/256 de case (0 : hors du puy)
+fonction forme_puy(p, x, z) {
+    soit q = PUYS + 7 * p;
+    soit dx = x - @2[q];
+    soit dz = z - @2[q + 1];
+    soit hp = @2[q + 2] * 256;
+    soit r = @2[q + 3];
+    soit d2 = dx * dx + dz * dz;
+    si d2 >= r * r {
+        retour 0;
+    }
+    soit d = racine_entiere(d2 * 65536);
+    soit r8 = r * 256;
+    soit cone = (hp * (r8 - d)) / r8;
+    soit dome = (hp * (r * r - d2)) / (r * r);
+    soit cr = @2[q + 4];
+    si cr == 0 {
+        // un dôme de lave est arrondi
+        retour (cone + 3 * dome) / 4;
+    }
+    // un cône de scories : les flancs droits, et le cratère au sommet
+    soit h = (3 * cone + dome) / 4;
+    soit rc = r / 4;
+    soit ex = x - @2[q] - @2[q + 5];
+    soit ez = z - @2[q + 1] - @2[q + 6];
+    soit e2 = ex * ex + ez * ez;
+    si e2 < rc * rc {
+        h = h - (cr * 256 * (rc * rc - e2)) / (rc * rc);
+    }
+    si h .< 0 {
+        h = 0;
+    }
+    retour h;
+}
+
+fonction hauteur_case(x, z) {
+    // la plaine, doucement vallonnée
+    soit h = PLAINE + ((nappes(x, z, 6, 3) * 512) >> 16);
+    // les prés devant, qui descendent vers la plaine
+    si z < 150 {
+        h = h + ((150 - z) * (400 + ((nappes(x, z + 3000, 6, 2) * 1200) >> 16))) / 150;
+    }
+    // le lac : une cuvette ovale
+    soit lx = ((x - 575) * 256) ./ 100;
+    soit lz = ((z - 215) * 256) ./ 58;
+    soit l2 = lx * lx + lz * lz;
+    si l2 < 65536 {
+        h = h - (3400 * (65536 - l2)) / 65536;
+    }
+    // les puys : le plus haut l'emporte
+    soit hp = 0;
+    pour p dans 0..NPUYS {
+        soit f = forme_puy(p, x, z);
+        si f > hp {
+            hp = f;
+        }
+    }
+    si hp > 0 {
+        h = h + hp + ((nappe(x * 4, z * 4, 4) * 200) >> 16);
+    }
+    retour h;
+}
+
+fonction relief() {
+    pour z dans 0..G {
+        pour x dans 0..G {
+            @2[HAUT + z * G + x] = hauteur_case(x, z);
+        }
+    }
+    // la lumière du soleil : la normale (par les voisines), vers le soleil à droite et devant
+    pour z2 dans 0..G {
+        pour x2 dans 0..G {
+            soit xa = x2 - 1;
+            si x2 == 0 {
+                xa = 0;
+            }
+            soit xb = x2 + 1;
+            si x2 == G - 1 {
+                xb = G - 1;
+            }
+            soit za = z2 - 1;
+            si z2 == 0 {
+                za = 0;
+            }
+            soit zb = z2 + 1;
+            si z2 == G - 1 {
+                zb = G - 1;
+            }
+            soit gx = @2[HAUT + z2 * G + xb] - @2[HAUT + z2 * G + xa];
+            soit gz = @2[HAUT + zb * G + x2] - @2[HAUT + za * G + x2];
+            // n = (-gx, 512, -gz) ; le soleil s = (0,78 ; 0,55 ; 0,30)
+            soit pn = (0 - gx) * 200 + 512 * 141 - gz * 77;
+            soit norme = racine_entiere(gx * gx + 262144 + gz * gz);
+            soit lam = pn ./ norme;
+            si lam .< 0 {
+                lam = 0;
+            }
+            @2[LUM + z2 * G + x2] = 92 + lam;
+        }
+    }
+}
+
+// la hauteur en un point quelconque (en 1/256 de case), entre les quatre cases voisines
+fonction hauteur(wx, wz) {
+    soit ix = wx .>> 8;
+    soit iz = wz .>> 8;
+    si ix .< 0 || iz .< 0 || ix .>= G - 1 || iz .>= G - 1 {
+        retour PLAINE;
+    }
+    soit fx = wx & 255;
+    soit fz = wz & 255;
+    soit a = HAUT + iz * G + ix;
+    soit h0 = @2[a] + (((@2[a + 1] - @2[a]) * fx) .>> 8);
+    soit h1 = @2[a + G] + (((@2[a + G + 1] - @2[a + G]) * fx) .>> 8);
+    retour h0 + (((h1 - h0) * fz) .>> 8);
+}
+
+fonction lumiere(wx, wz) {
+    soit ix = wx .>> 8;
+    soit iz = wz .>> 8;
+    si ix .< 0 || iz .< 0 || ix .>= G - 1 || iz .>= G - 1 {
+        retour 233;
+    }
+    soit fx = wx & 255;
+    soit fz = wz & 255;
+    soit a = LUM + iz * G + ix;
+    soit l0 = @2[a] + (((@2[a + 1] - @2[a]) * fx) .>> 8);
+    soit l1 = @2[a + G] + (((@2[a + G + 1] - @2[a + G]) * fx) .>> 8);
+    retour l0 + (((l1 - l0) * fz) .>> 8);
+}
+
+// la couleur du sol en (wx, wz), de hauteur h, vu de la distance z (sans la brume)
+fonction teinte(wx, wz, h, z) {
+    soit x = wx .>> 8;
+    soit zc = wz .>> 8;
+    soit dessus = h - PLAINE - ((nappes(wx, wz, 14, 3) * 512) >> 16);
+    soit c = 0;
+    si zc < 150 && dessus .> 200 {
+        // les prés devant : l'herbe d'automne, des touffes plus sombres
+        c = melange(rgb(96, 128, 54), rgb(150, 142, 70), nappes(wx >> 6, wz >> 6, 7, 3) / 256);
+    } sinon si dessus .> 900 {
+        // les puys : la bruyère et les fougères rousses en haut, l'herbe, les forêts sur le bas des flancs
+        c = melange(rgb(104, 122, 56), rgb(170, 100, 52), nappes(wx >> 6, wz >> 6, 8, 3) / 256);
+        si nappes(wx >> 7, wz >> 7, 6, 3) .> 27000 + (dessus * 3) / 2 {
+            c = melange(rgb(36, 62, 36), rgb(62, 84, 46), nappe(wx >> 5, wz >> 5, 5) / 256);
+        }
+    } sinon {
+        // la plaine : des champs (des parcelles longues), les haies entre eux
+        soit px = (x + (hache(zc >> 3, 7) & 15)) >> 4;
+        soit pz = zc >> 3;
+        soit k = hache(px, pz) & 7;
+        c = rgb(104, 132, 60);
+        si k == 1 || k == 5 {
+            c = rgb(150, 144, 74);
+        }
+        si k == 2 {
+            c = rgb(126, 98, 64);
+        }
+        si k == 3 {
+            c = rgb(86, 116, 52);
+        }
+        si k == 4 {
+            c = rgb(170, 152, 88);
+        }
+        si (zc & 7) == 0 || ((x + (hache(zc >> 3, 7) & 15)) & 15) == 0 {
+            si (hache(x, zc) & 3) != 0 {
+                c = rgb(46, 68, 40);
+            }
+        }
+        c = eclairer(c, 236 + nappe(x * 6, zc * 6, 4) / 1500);
+    }
+    retour c;
+}
+
+// ------------------------------------------------------------------ le ciel et le lointain
+fonction preparer_lointain() {
+    pour x dans 0..W {
+        soit n = nappes(x, 17, 7 + K, 3 + K);
+        soit crete = 65535 - 2 * (n - 32768);
+        si n .< 32768 {
+            crete = 65535 - 2 * (32768 - n);
+        }
+        soit sancy = 0;
+        soit ds = x - 1640 * K;
+        si ds .< 0 {
+            ds = 0 - ds;
+        }
+        si ds .< 560 * K {
+            sancy = (80 * K * (560 * 560 * K * K - ds * ds)) / (560 * 560 * K * K);
+        }
+        @2[COL + x] = HORIZON - 8 * K - ((crete * 46 * K) >> 16) - ((nappes(x, 91, 6 + K, 2 + K) * 34 * K) >> 16) - sancy;
+    }
+}
+
+fonction ciel(x, y) {
+    soit t = (y * 256) / HORIZON;
+    si t > 256 {
+        t = 256;
+    }
+    soit c = melange(rgb(50, 88, 156), rgb(244, 214, 170), (t * t) / 256);
+    // la lueur du soleil
+    soit dx = x - SOLX;
+    soit dy = y - SOLY;
+    soit d2 = dx * dx + 4 * dy * dy;
+    soit lueur = (215 * 52000 * K * K) / (52000 * K * K + d2);
+    c = melange(c, rgb(255, 222, 160), lueur);
+    si dx * dx + dy * dy < 1300 * K * K {
+        c = melange(c, rgb(255, 250, 232), 235);
+    }
+    // les nuages : des bancs allongés, plus rares vers l'horizon
+    soit n = nappes(x + 4000 * K, y * 3, 8 + K, 4 + K);
+    soit seuil = 33500 + (y * 9000) / HORIZON;
+    si n > seuil {
+        soit densite = ((n - seuil) * 256) / 7000;
+        si densite > 225 {
+            densite = 225;
+        }
+        // le dessus éclairé, le dessous dans l'ombre
+        soit dessous = nappes(x + 4000 * K, y * 3 + 30 * K, 8 + K, 4 + K);
+        soit lum = 256 + (n - dessous) ./ 40;
+        soit blanc = melange(rgb(226, 220, 226), rgb(255, 212, 166), lueur);
+        c = melange(c, eclairer(blanc, lum), densite);
+    }
+    retour c;
+}
+
+fonction lointain(x, y) {
+    soit haut = @2[COL + x];
+    si y .< haut {
+        retour RIEN;
+    }
+    soit c = rgb(94, 104, 140);
+    si haut .< HORIZON - 70 * K && y - haut < (10 + (hache((x / K) >> 2, 3) & 7)) * K {
+        c = rgb(224, 228, 240);
+    }
+    soit xa = x - 4 * K;
+    si xa .< 0 {
+        xa = 0;
+    }
+    soit xb = x + 4 * K;
+    si xb >= W {
+        xb = W - 1;
+    }
+    c = eclairer(c, 236 + ((@2[COL + xb] - @2[COL + xa]) * 3) ./ K);
+    retour melange(c, rgb(214, 196, 180), 135);
+}
+
+// ------------------------------------------------------------------ le rendu
+// une colonne : le rayon avance du plus près au plus loin ; ce qui dépasse la ligne déjà peinte est peint jusqu'à elle
+fonction colonne(sx) {
+    soit bas = H;
+    soit z = 4;
+    tantque z < ZMAX && bas > 0 {
+        soit wx = CAMX * 256 + ((sx - W / 2) * z * 256) ./ FOCALE;
+        soit wz = z * 256;
+        soit h = hauteur(wx, wz);
+        soit eau = 0;
+        si h .< EAU {
+            h = EAU;
+            eau = 1;
+        }
+        soit sy = HORIZON + ((CAMH - h) * FOCALE) ./ (z * 256);
+        si sy .< 0 {
+            sy = 0;
+        }
+        si sy .< bas {
+            soit c = rgb(40, 62, 92);
+            si eau == 0 {
+                c = eclairer(teinte(wx, wz, h, z), lumiere(wx, wz));
+            }
+            soit brume = (z * 200) / ZMAX;
+            c = melange(c, rgb(206, 194, 186), brume);
+            pour y dans sy..bas {
+                soit cp = c;
+                si z < 140 && eau == 0 {
+                    // les prés devant : des touches de pinceau couchées, des fleurs jaunes
+                    cp = eclairer(c, 226 + (nappe(sx, y * 5, 2 + K) >> 10));
+                    si (hache(sx >> K, y >> K) & 2047) < 3 {
+                        cp = rgb(226, 190, 58);
+                    }
+                }
+                @2[IMAGE + y * W + sx] = cp;
+                @2[PROF + y * W + sx] = 2 * z + eau;
+            }
+            bas = sy;
+        }
+        z = z + 1 + z / 240;
+    }
+    // au-delà : le lointain, puis le ciel
+    pour y2 dans 0..bas {
+        soit l = lointain(sx, y2);
+        si l == RIEN {
+            l = ciel(sx, y2);
+        }
+        @2[IMAGE + y2 * W + sx] = l;
+        @2[PROF + y2 * W + sx] = 2 * ZMAX + 2;
+    }
+}
+
+// le reflet : un point d'eau prend la couleur du point symétrique par rapport à l'horizon (le rayon renvoyé par l'eau
+// monte autant qu'il descendait), troublée de rides ; plus loin, l'eau reflète davantage
+fonction reflets() {
+    pour y dans HORIZON..H {
+        pour x dans 0..W {
+            soit p = @2[PROF + y * W + x];
+            si (p & 1) == 1 {
+                soit ride = (nappes(x, y * 10, 4 + K, 2) - 32768) ./ (2600 / K);
+                soit xr = x + ride;
+                si xr .< 0 {
+                    xr = 0;
+                }
+                si xr >= W {
+                    xr = W - 1;
+                }
+                soit ym = 2 * HORIZON - y;
+                si ym .< 0 {
+                    ym = 0;
+                }
+                soit vu = @2[IMAGE + ym * W + xr];
+                soit z = p / 2;
+                soit fond_eau = rgb(34, 58, 80);
+                soit c = melange(fond_eau, vu, 120 + z / 4);
+                si (hache(x >> K, y / K) & 1023) < 5 {
+                    c = melange(c, rgb(255, 236, 200), 150);
+                }
+                @2[IMAGE + y * W + x] = c;
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------ ce qui est posé dans la scène
+// le point (sx, sy) de l'image et sa profondeur ; vrai si ce qui est posé à la profondeur z est devant
+fonction devant(sx, sy, z) {
+    si sx .< 0 || sx .>= W || sy .< 0 || sy .>= H {
+        retour 0;
+    }
+    retour @2[PROF + sy * W + sx] > 2 * z;
+}
+
+fonction poser(sx, sy, c) {
+    @2[IMAGE + sy * W + sx] = c;
+}
+
+// une vache Salers (la robe acajou, les cornes en lyre) en (cx, cz) de la grille, tournée vers la droite (s = 1) ou
+// la gauche (s = -1)
+fonction vache(cx, cz, s) {
+    soit wx = cx * 256;
+    soit wz = cz * 256;
+    soit sol = hauteur(wx, wz);
+    soit z = cz;
+    soit ox = W / 2 + ((wx - CAMX * 256) * FOCALE) ./ (z * 256);
+    soit oy = HORIZON + ((CAMH - sol) * FOCALE) ./ (z * 256);
+    // l'échelle : des points par 1/100 de case (les bêtes peintes deux fois plus grandes que nature, comme le font
+    // les peintres pour qu'on les voie)
+    soit e = (FOCALE * 512) / (z * 100);
+    soit rx = (60 * e) / 256;
+    soit ry = (26 * e) / 256;
+    soit patte = (34 * e) / 256;
+    soit corps = oy - patte - ry;
+    // les boucles vont de 0 à n (sans signe) ; dx et dy en sont décalés
+    soit hy0 = ry + patte + (40 * e) / 256;
+    soit hx0 = rx + (40 * e) / 256;
+    pour ky dans 0..hy0 + patte + ry + 2 {
+        pour kx dans 0..2 * hx0 {
+            soit dy = ky - hy0;
+            soit dx = kx - hx0;
+            soit px = ox + dx;
+            soit py = corps + dy;
+            si devant(px, py, z) {
+                soit c = RIEN;
+                soit ux = (dx * 256) ./ rx;
+                soit uy = (dy * 256) ./ ry;
+                // le corps : presque un rectangle aux coins ronds (|u|⁴ + |v|⁴ < 1)
+                soit u2 = (ux * ux) >> 8;
+                soit v2 = (uy * uy) >> 8;
+                si u2 * u2 + v2 * v2 < 65536 {
+                    c = rgb(128, 48, 26);
+                    si uy .< -120 {
+                        c = rgb(166, 72, 38);
+                    }
+                    si ux * s .< -100 {
+                        c = eclairer(c, 170);
+                    }
+                }
+                // la tête, en avant du corps, et ses cornes claires
+                soit hx = ((dx * s - rx - (10 * e) / 256) * 256) ./ ((15 * e) / 256 + 1);
+                soit hy = ((dy - (2 * e) / 256) * 256) ./ ((12 * e) / 256 + 1);
+                si hx * hx + hy * hy < 65536 {
+                    c = rgb(112, 42, 22);
+                }
+                // les cornes en lyre : deux traits clairs au-dessus de la tête
+                soit cx2 = dx * s - rx - (10 * e) / 256;
+                si dy .< 0 - (9 * e) / 256 && dy .> 0 - (17 * e) / 256 {
+                    si (cx2 .> 0 - (12 * e) / 256 && cx2 .< 0 - (8 * e) / 256) || (cx2 .> (8 * e) / 256 && cx2 .< (12 * e) / 256) {
+                        c = rgb(232, 224, 200);
+                    }
+                }
+                // les pattes
+                si dy .> ry - 2 && dy .< ry + patte && ((dx .> 0 - rx + rx / 6 && dx .< 0 - rx + rx / 3) || (dx .> rx - rx / 3 && dx .< rx - rx / 6)) {
+                    c = rgb(72, 30, 20);
+                }
+                si c != RIEN {
+                    poser(px, py, c);
+                }
+            }
+        }
+    }
+}
+
+// le buron : murs de pierre sèche, toit de lauzes, en (cx, cz)
+fonction buron(cx, cz) {
+    soit wx = cx * 256;
+    soit wz = cz * 256;
+    soit sol = hauteur(wx, wz);
+    soit z = cz;
+    soit ox = W / 2 + ((wx - CAMX * 256) * FOCALE) ./ (z * 256);
+    soit oy = HORIZON + ((CAMH - sol) * FOCALE) ./ (z * 256) + 2;
+    soit e = (FOCALE * 256) / (z * 100);
+    soit demi = (130 * e) / 256;
+    soit mur = (90 * e) / 256;
+    soit toit = (70 * e) / 256;
+    pour ky dans 0..mur + toit + 1 {
+        pour kx dans 0..2 * demi + 1 {
+            soit dy = ky - mur - toit;
+            soit dx = kx - demi;
+            soit px = ox + dx;
+            soit py = oy + dy;
+            si devant(px, py, z) {
+                soit ad = dx;
+                si ad .< 0 {
+                    ad = 0 - ad;
+                }
+                soit faite = 0 - mur - toit + (ad * toit) / (demi + 1);
+                si dy .>= faite {
+                    soit c = rgb(140, 130, 116);
+                    si dy .< 0 - mur + 2 {
+                        c = rgb(80, 72, 70);
+                        si ((dy - faite) % (4 * K)) == 0 {
+                            c = rgb(54, 48, 48);
+                        }
+                    } sinon {
+                        si (hache((dx + 400 * K + ((dy + 400 * K) / (5 * K)) * 3 * K) / (6 * K), (dy + 400 * K) / (5 * K)) & 7) < 3 {
+                            c = rgb(112, 104, 94);
+                        }
+                        si ((dy + 400 * K) % (5 * K)) == 0 {
+                            c = rgb(92, 86, 78);
+                        }
+                        si ad .< demi / 7 && dy .> 0 - (mur * 2) / 3 {
+                            c = rgb(34, 28, 26);
+                        }
+                    }
+                    si dx .> 0 {
+                        c = eclairer(c, 300);
+                    } sinon {
+                        c = eclairer(c, 200);
+                    }
+                    poser(px, py, c);
+                }
+            }
+        }
+    }
+}
+
+// un arbre (un frêne, un chêne) en (cx, cz) : un tronc, une couronne de feuillage en touffes, éclairée du côté du
+// soleil ; t : sa taille en cases
+fonction arbre(cx, cz, t) {
+    soit wx = cx * 256;
+    soit wz = cz * 256;
+    soit sol = hauteur(wx, wz);
+    soit z = cz;
+    soit ox = W / 2 + ((wx - CAMX * 256) * FOCALE) ./ (z * 256);
+    soit oy = HORIZON + ((CAMH - sol) * FOCALE) ./ (z * 256);
+    soit e = (FOCALE * t) / z;
+    soit rc = (e * 45) / 100;
+    soit fut = (e * 40) / 100;
+    soit haut_arbre = fut + 2 * rc;
+    pour ky dans 0..haut_arbre + 1 {
+        pour kx dans 0..2 * rc + 1 {
+            soit dx = kx - rc;
+            soit dy = ky - haut_arbre;
+            soit px = ox + dx;
+            soit py = oy + dy;
+            si devant(px, py, z) {
+                soit c = RIEN;
+                // le tronc
+                si dy .> 0 - fut - rc / 2 && dx .> 0 - e / 30 - 1 && dx .< e / 30 + 1 {
+                    c = rgb(58, 44, 34);
+                }
+                // la couronne : un disque aux bords mangés par les touffes
+                soit cy = dy + fut + rc;
+                soit d2 = (dx * dx + cy * cy) * 256 / (rc * rc + 1);
+                soit bord = 150 + (nappe(((dx + 512 * K) * 8) / K, ((cy + 512 * K) * 8) / K + cx * 100, 6) >> 9);
+                si d2 < bord {
+                    soit f = nappe(((dx + 512 * K) * 24) / K, ((cy + 512 * K) * 24) / K + cz * 100, 5);
+                    c = melange(rgb(34, 58, 30), rgb(84, 104, 48), f / 256);
+                    si dx * 3 .> 0 - cy {
+                        c = eclairer(c, 290);
+                    } sinon {
+                        c = eclairer(c, 190);
+                    }
+                    // quelques feuilles déjà rousses
+                    si (hache(px >> K, py >> K) & 63) < 3 {
+                        c = rgb(176, 112, 44);
+                    }
+                }
+                si c != RIEN {
+                    poser(px, py, c);
+                }
+            }
+        }
+    }
+}
+
+// le cadre : les bords un peu assombris, et le grain de la toile
+fonction cadre() {
+    pour y dans 0..H {
+        pour x dans 0..W {
+            soit dx = x - W / 2;
+            soit dy = ((y - H / 2) * 19) ./ 10;
+            soit v = 256 - ((dx * dx + dy * dy) * 56) / (2200000 * K * K);
+            @2[IMAGE + y * W + x] = eclairer(@2[IMAGE + y * W + x], v + (hache(x, y) & 7) - 4);
+        }
+    }
+}
+
+// ------------------------------------------------------------------ le PNG, écrit par le programme
+fonction table_crc() {
+    pour n dans 0..256 {
+        soit c = n;
+        pour k dans 0..8 {
+            si (c & 1) == 1 {
+                c = 3988292384 ^ (c >> 1);
+            } sinon {
+                c = c >> 1;
+            }
+        }
+        @2[TCRC + n] = c;
+    }
+}
+
+// un octet, et le CRC qui le compte
+fonction oc(f, b, crc) {
+    ecrire_car(f, b);
+    retour @2[TCRC + ((crc ^ b) & 255)] ^ (crc >> 8);
+}
+
+fonction quatre(f, v) {
+    ecrire_car(f, (v >> 24) & 255);
+    ecrire_car(f, (v >> 16) & 255);
+    ecrire_car(f, (v >> 8) & 255);
+    ecrire_car(f, v & 255);
+}
+
+fonction quatre_crc(f, v, crc) {
+    soit c = oc(f, (v >> 24) & 255, crc);
+    c = oc(f, (v >> 16) & 255, c);
+    c = oc(f, (v >> 8) & 255, c);
+    retour oc(f, v & 255, c);
+}
+
+// un octet des données de l'image : le CRC du morceau, l'Adler-32 de zlib, et les blocs « stockés » de 65 535 octets
+// (l'état dans l'étage 2 : CRC, s1, s2, ce qui reste du bloc, ce qui reste en tout)
+fonction donnee(f, b) {
+    soit crc = @2[ETAT];
+    si @2[ETAT + 3] == 0 {
+        soit n = @2[ETAT + 4];
+        si n > 65535 {
+            n = 65535;
+        }
+        soit dernier = 0;
+        si n == @2[ETAT + 4] {
+            dernier = 1;
+        }
+        crc = oc(f, dernier, crc);
+        crc = oc(f, n & 255, crc);
+        crc = oc(f, n >> 8, crc);
+        crc = oc(f, (65535 - n) & 255, crc);
+        crc = oc(f, (65535 - n) >> 8, crc);
+        @2[ETAT + 3] = n;
+    }
+    @2[ETAT] = oc(f, b, crc);
+    soit s1 = (@2[ETAT + 1] + b) % 65521;
+    @2[ETAT + 1] = s1;
+    @2[ETAT + 2] = (@2[ETAT + 2] + s1) % 65521;
+    @2[ETAT + 3] = @2[ETAT + 3] - 1;
+    @2[ETAT + 4] = @2[ETAT + 4] - 1;
+}
+
+fonction ecrire_png(nom) {
+    table_crc();
+    soit f = ouvrir_ecriture(nom);
+    ecrire_car(f, 137);
+    ecrire_car(f, 80);
+    ecrire_car(f, 78);
+    ecrire_car(f, 71);
+    ecrire_car(f, 13);
+    ecrire_car(f, 10);
+    ecrire_car(f, 26);
+    ecrire_car(f, 10);
+    // IHDR : la taille, 8 bits par couleur, rouge-vert-bleu
+    quatre(f, 13);
+    soit c = 4294967295;
+    c = oc(f, 73, c);
+    c = oc(f, 72, c);
+    c = oc(f, 68, c);
+    c = oc(f, 82, c);
+    c = quatre_crc(f, W, c);
+    c = quatre_crc(f, H, c);
+    c = oc(f, 8, c);
+    c = oc(f, 2, c);
+    c = oc(f, 0, c);
+    c = oc(f, 0, c);
+    c = oc(f, 0, c);
+    quatre(f, c ^ 4294967295);
+    // IDAT : zlib (78 01), les blocs stockés, l'Adler-32
+    soit brut = H * (1 + 3 * W);
+    soit blocs = (brut + 65534) / 65535;
+    quatre(f, 2 + brut + 5 * blocs + 4);
+    soit c2 = 4294967295;
+    c2 = oc(f, 73, c2);
+    c2 = oc(f, 68, c2);
+    c2 = oc(f, 65, c2);
+    c2 = oc(f, 84, c2);
+    c2 = oc(f, 120, c2);
+    c2 = oc(f, 1, c2);
+    @2[ETAT] = c2;
+    @2[ETAT + 1] = 1;
+    @2[ETAT + 2] = 0;
+    @2[ETAT + 3] = 0;
+    @2[ETAT + 4] = brut;
+    pour y dans 0..H {
+        donnee(f, 0);
+        pour x dans 0..W {
+            soit p = @2[IMAGE + y * W + x];
+            donnee(f, (p >> 16) & 255);
+            donnee(f, (p >> 8) & 255);
+            donnee(f, p & 255);
+        }
+    }
+    soit c3 = quatre_crc(f, (@2[ETAT + 2] << 16) | @2[ETAT + 1], @2[ETAT]);
+    quatre(f, c3 ^ 4294967295);
+    // IEND
+    quatre(f, 0);
+    soit c4 = 4294967295;
+    c4 = oc(f, 73, c4);
+    c4 = oc(f, 69, c4);
+    c4 = oc(f, 78, c4);
+    c4 = oc(f, 68, c4);
+    quatre(f, c4 ^ 4294967295);
+    fermer(f);
+}
+
+fonction principal() {
+    relief();
+    preparer_lointain();
+    pour sx dans 0..W {
+        colonne(sx);
+    }
+    reflets();
+    // du plus loin au plus près : ce qui est devant recouvre ce qui est derrière
+    arbre(612, 180, 3);
+    arbre(420, 170, 2);
+    arbre(590, 150, 2);
+    arbre(448, 140, 2);
+    arbre(566, 122, 3);
+    buron(468, 118);
+    vache(470, 100, -1);
+    arbre(478, 97, 2);
+    arbre(470, 92, 3);
+    vache(548, 84, 1);
+    vache(488, 70, 1);
+    arbre(536, 66, 4);
+    vache(522, 60, -1);
+    vache(500, 52, 1);
+    cadre();
+    soit empreinte = 0;
+    pour y dans 0..H {
+        pour x dans 0..W {
+            empreinte = (empreinte ^ @2[IMAGE + y * W + x]) * 1099511628211;
+        }
+    }
+    ecrire_png("octets:auvergne.png");
+    sortie(empreinte);
+}
