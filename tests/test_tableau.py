@@ -2,7 +2,7 @@
 """Belenos, le tableau (belenos/auvergne.vtx) : le programme forgé peint l'image et l'écrit lui-même en PNG ; le fichier
 est un PNG juste (la signature, les CRC-32 de chaque morceau, le zlib et son Adler-32 relus par Python), de 2048 × 1080
 points, et ses points donnent l'empreinte que le programme a sortie. Avec --lugus : Lugus peint la même image, octet
-pour octet (environ une minute).
+pour octet (environ deux minutes).
 
     python3 tests/test_tableau.py [--lugus]"""
 import os

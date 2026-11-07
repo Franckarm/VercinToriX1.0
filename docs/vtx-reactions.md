@@ -1151,3 +1151,35 @@ en passant par la porte commune à toutes les cartes.
    calcul par colonne) et affiché ; (d) DirectX par SPIR-V quand le Shader Model 7 sera là.
    Honnêtement : battre DirectX en vitesse brute dès le début est peu probable ; ce qui est à portée : la même image
    partout, moins de code, l'intégrité, et la même source pour Vulkan et DirectX.
+
+## 19. L'accordéon du relief (7 novembre, après-midi)
+
+**Idée de l'utilisateur** : le même nombre de cases par étage, chaque étage deux fois plus étendu ; le centre net.
+**Décisions de l'utilisateur** : on suit le plan ; vtx pourrait un jour passer au-dessus de SPIR-V (réponse honnête :
+une carte n'accepte que le format de son pilote, SPIR-V, DXIL ou Metal ; la voie réaliste est que les mots de vtx
+soient le format portable et SPIR-V une traduction au chargement) ; les reflets et les ombres par l'anticube (un
+masque à quatre valeurs : inconnu, rien à calculer ; vrai, l'eau ; variable, un bord ; faux, une surface qui absorbe ;
+les ombres par la position du soleil, rangées dans l'anticube, recalculées segment par segment) : pour le moteur
+graphique, dans cet ordre : accordéon, masque des reflets, ombres, puis SPIR-V.
+
+**Réalisé dans le tableau** (`belenos/auvergne.vtx`) : trois étages de 1024 × 1024 cases, centrés sur l'œil : 1/4 de
+case sur 256 cases, 1/2 case sur 512, puis la grille d'une case sur tout le pays. Chaque étage fin garde la hauteur de
+l'étage d'une case et ajoute le détail qu'il est seul à pouvoir porter (la nappe d'une case pour l'étage 1, la demi et
+le quart de case pour l'étage 0 : les touffes de l'estive, les blocs des flancs). Chaque détail s'efface sur les
+dernières cases de son étage : aucune marche entre étages.
+
+**Mesuré, une idée à la fois** (forgé, en secondes ; Lugus 2K : environ 115 s au lieu de 57, mêmes octets) :
+
+| version | 2K | 4K | ce qu'on voit |
+|---|---|---|---|
+| avant | 0,61 | 1,98 | le premier plan lisse : un pas du rayon (1 case) peignait une bande de ~140 lignes |
+| le pas en accordéon (une ligne par pas) | 0,64 | 2,82 | presque rien : le relief d'une case est lisse, le pas seul ne suffit pas |
+| + les trois étages | 1,04 | 3,03 | du relief au premier plan, mais trop fort, et du moiré en colonnes sur le puy |
+| + le rayon ne saute pas une case de l'étage, le détail filtré | 1,03 | 3,13 | les touffes éclairées au premier plan, le puy net, aucune couture |
+
+**Ce que la mesure a appris** (honnêtement) : sur un sol vu en rasant, ce qu'une ligne d'image couvre en profondeur
+croît comme z², pas comme z : un détail d'une case n'est plus visible au-delà de ~170 cases (2K) ou ~235 (4K). La
+moitié lointaine de l'étage 1 ne porte donc que la grille d'une case : pour un sol rasant, chaque étage devrait être
+√2 fois plus profond seulement (et non deux fois). La règle « deux fois plus étendu » reste juste pour ce qui est vu de
+face (les flancs raides des puys) : le filtre actuel mesure le sol à plat, il efface donc aussi le détail des flancs.
+À faire : un filtre qui tient compte de la pente, ou des étages en √2 pour le sol.

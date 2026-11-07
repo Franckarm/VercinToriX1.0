@@ -5,6 +5,9 @@
 // qu'il découvre (le tampon de hauteur de la colonne : rien n'est peint deux fois) ; le ciel d'un soir d'automne et ses
 // nuages, les monts Dore au loin (la neige sur les crêtes), le reflet dans le lac, puis un buron et des vaches Salers,
 // posés dans la scène avec leur profondeur.
+// L'accordéon du relief : près de l'œil, deux étages plus fins (1/4 et 1/2 case, 1024 × 1024 cases chacun, chacun deux
+// fois plus étendu) portent les touffes de l'estive et les blocs des flancs ; le rayon n'y saute jamais une case, et un
+// détail plus fin que ce qu'une ligne d'image couvre s'efface (pas de moiré). Au-delà, la grille d'une case.
 // Tout est en entiers (les mêmes nombres sur Lugus et forgé). L'image est rangée dans l'étage 2, puis écrite en PNG par
 // le programme lui-même (CRC-32, Adler-32, blocs « stockés ») dans un fichier d'octets.
 //     lugus belenos/auvergne.vtx            -> belenos/auvergne.png (2048 × 1080, le 2K du cinéma)
@@ -23,6 +26,9 @@ constante ETAT = 1048900;          // l'état de l'écriture des données de l'i
 constante PUYS = 1049000;          // les puys
 constante NPUYS = 13;
 constante RIEN = 4294967295;
+// l'accordéon du relief : trois étages de G × G cases, chacun deux fois plus étendu, centrés sur l'œil
+//   étage 0 : 1/4 de case, 256 cases autour de l'œil ; étage 1 : 1/2 case, 512 ; étage 2 : la case, tout le pays
+constante FIN = 50331648;          // @2[FIN + e·2097152 + z·G + x] : hauteur de l'étage e ; + 1048576 : sa lumière
 constante HORIZON = 560 * K;       // la ligne d'horizon sur l'image
 constante FOCALE = 1774 * K;       // en points (un champ de 60 degrés)
 constante CAMX = 512;              // l'œil : au-dessus de la case (512, 0)
@@ -251,33 +257,161 @@ fonction relief() {
     }
 }
 
-// la hauteur en un point quelconque (en 1/256 de case), entre les quatre cases voisines
-fonction hauteur(wx, wz) {
-    soit ix = wx .>> 8;
-    soit iz = wz .>> 8;
-    si ix .< 0 || iz .< 0 || ix .>= G - 1 || iz .>= G - 1 {
-        retour PLAINE;
+// l'étage le plus fin qui contient (wx, wz) (en 1/256 de case) : 0, 1 ou 2
+fonction etage(wx, wz) {
+    pour e dans 0..2 {
+        soit c = 64 << e;
+        soit ix = (wx - (CAMX * 256 - 512 * c)) .>> (6 + e);
+        soit iz = wz .>> (6 + e);
+        si ix .>= 0 && iz .>= 0 && ix .< G - 1 && iz .< G - 1 {
+            retour e;
+        }
     }
-    soit fx = wx & 255;
-    soit fz = wz & 255;
-    soit a = HAUT + iz * G + ix;
+    retour 2;
+}
+
+// la valeur en (wx, wz) d'une grille de l'étage e (base : son adresse), entre les quatre cases voisines
+fonction entre4(base, wx, wz, e, dehors) {
+    soit c = 64 << e;
+    soit ox = 0;
+    si e < 2 {
+        ox = CAMX * 256 - 512 * c;
+    }
+    soit rx = wx - ox;
+    soit ix = rx .>> (6 + e);
+    soit iz = wz .>> (6 + e);
+    si ix .< 0 || iz .< 0 || ix .>= G - 1 || iz .>= G - 1 {
+        retour dehors;
+    }
+    soit fx = (rx & (c - 1)) << (2 - e);
+    soit fz = (wz & (c - 1)) << (2 - e);
+    soit a = base + iz * G + ix;
     soit h0 = @2[a] + (((@2[a + 1] - @2[a]) * fx) .>> 8);
     soit h1 = @2[a + G] + (((@2[a + G + 1] - @2[a + G]) * fx) .>> 8);
     retour h0 + (((h1 - h0) * fz) .>> 8);
 }
 
-fonction lumiere(wx, wz) {
-    soit ix = wx .>> 8;
-    soit iz = wz .>> 8;
-    si ix .< 0 || iz .< 0 || ix .>= G - 1 || iz .>= G - 1 {
-        retour 233;
+fonction adresse(e) {
+    si e == 2 {
+        retour HAUT;
     }
-    soit fx = wx & 255;
-    soit fz = wz & 255;
-    soit a = LUM + iz * G + ix;
-    soit l0 = @2[a] + (((@2[a + 1] - @2[a]) * fx) .>> 8);
-    soit l1 = @2[a + G] + (((@2[a + G + 1] - @2[a + G]) * fx) .>> 8);
-    retour l0 + (((l1 - l0) * fz) .>> 8);
+    retour FIN + e * 2097152;
+}
+
+fonction hauteur(wx, wz) {
+    soit e = etage(wx, wz);
+    retour entre4(adresse(e), wx, wz, e, PLAINE);
+}
+
+fonction lumiere(wx, wz) {
+    soit e = etage(wx, wz);
+    soit l = LUM;
+    si e < 2 {
+        l = adresse(e) + 1048576;
+    }
+    retour entre4(l, wx, wz, e, 233);
+}
+
+// le détail que seul un étage fin peut porter : d1 (la nappe d'une case) jusqu'au bord de l'étage 1, d0 (la demi et le
+// quart de case) jusqu'au bord de l'étage 0 ; chacun s'efface sur ses derniers 32 cases (puis 64) : aucune marche
+fonction effacer(wx, wz, e, marge) {
+    soit demi = 128 << e;
+    soit dx = wx - CAMX * 256;
+    si dx .< 0 {
+        dx = 0 - dx;
+    }
+    soit reste = demi * 256 - dx;
+    soit rz = 2 * demi * 256 - wz;
+    si rz .< reste {
+        reste = rz;
+    }
+    si reste .<= 0 {
+        retour 0;
+    }
+    si reste .>= marge * 256 {
+        retour 256;
+    }
+    retour reste / marge;
+}
+
+// 256 tant que la ligne couvre au plus s, puis décroît jusqu'à 0 à 4·s
+fonction filtre(ligne, s) {
+    si ligne <= s {
+        retour 256;
+    }
+    si ligne >= 4 * s {
+        retour 0;
+    }
+    retour (256 * (4 * s - ligne)) / (3 * s);
+}
+
+fonction detail(wx, wz, e) {
+    soit base = entre4(HAUT, wx, wz, 2, PLAINE);
+    soit dessus = base - PLAINE;
+    si dessus .< 0 {
+        dessus = 0;
+    }
+    si dessus .> 2400 {
+        dessus = 2400;
+    }
+    // la force : la plaine à peine bosselée, les prés devant (les touffes de l'estive), les flancs des puys (les blocs)
+    soit force = 6 + dessus / 48;
+    soit zc = wz .>> 8;
+    si zc .< 150 {
+        force = force + (150 - zc) / 10;
+    }
+    // ce qu'une ligne d'image couvre en profondeur à cette distance : un détail plus fin que lui s'efface (pas de moiré)
+    soit ligne = (wz * wz) / (2048 * FOCALE);
+    soit a1 = (effacer(wx, wz, 1, 64) * filtre(ligne, 128)) .>> 8;
+    soit h = base + ((((nappe(wx, wz, 8) - 32768) * force) .>> 15) * a1 .>> 8);
+    si e == 0 {
+        soit a0 = (effacer(wx, wz, 0, 32) * filtre(ligne, 32)) .>> 8;
+        h = h + ((((nappes(wx + 9000, wz, 7, 2) - 32768) * force) .>> 16) * a0 .>> 8);
+    }
+    retour h;
+}
+
+// les étages fins : la hauteur, puis la lumière par les voisines (comme pour l'étage 2, sur des cases plus petites)
+fonction accordeon() {
+    pour e dans 0..2 {
+        soit c = 64 << e;
+        soit ox = CAMX * 256 - 512 * c;
+        soit b = adresse(e);
+        pour z dans 0..G {
+            pour x dans 0..G {
+                @2[b + z * G + x] = detail(ox + x * c, z * c, e);
+            }
+        }
+        pour z2 dans 0..G {
+            pour x2 dans 0..G {
+                soit xa = x2 - 1;
+                si x2 == 0 {
+                    xa = 0;
+                }
+                soit xb = x2 + 1;
+                si x2 == G - 1 {
+                    xb = G - 1;
+                }
+                soit za = z2 - 1;
+                si z2 == 0 {
+                    za = 0;
+                }
+                soit zb = z2 + 1;
+                si z2 == G - 1 {
+                    zb = G - 1;
+                }
+                soit gx = @2[b + z2 * G + xb] - @2[b + z2 * G + xa];
+                soit gz = @2[b + zb * G + x2] - @2[b + za * G + x2];
+                soit pn = (0 - gx) * 200 + 2 * c * 141 - gz * 77;
+                soit norme = racine_entiere(gx * gx + 4 * c * c + gz * gz);
+                soit lam = pn ./ norme;
+                si lam .< 0 {
+                    lam = 0;
+                }
+                @2[b + 1048576 + z2 * G + x2] = 92 + lam;
+            }
+        }
+    }
 }
 
 // la couleur du sol en (wx, wz), de hauteur h, vu de la distance z (sans la brume)
@@ -400,17 +534,19 @@ fonction lointain(x, y) {
 // une colonne : le rayon avance du plus près au plus loin ; ce qui dépasse la ligne déjà peinte est peint jusqu'à elle
 fonction colonne(sx) {
     soit bas = H;
-    soit z = 4;
-    tantque z < ZMAX && bas > 0 {
-        soit wx = CAMX * 256 + ((sx - W / 2) * z * 256) ./ FOCALE;
-        soit wz = z * 256;
+    // zf : la distance en 1/256 de case ; le pas suit l'accordéon (une ligne d'image par pas, plus fin près de l'œil)
+    soit zf = 1024;
+    tantque zf < ZMAX * 256 && bas > 0 {
+        soit z = zf >> 8;
+        soit wx = CAMX * 256 + ((sx - W / 2) * zf) ./ FOCALE;
+        soit wz = zf;
         soit h = hauteur(wx, wz);
         soit eau = 0;
         si h .< EAU {
             h = EAU;
             eau = 1;
         }
-        soit sy = HORIZON + ((CAMH - h) * FOCALE) ./ (z * 256);
+        soit sy = HORIZON + ((CAMH - h) * FOCALE) ./ zf;
         si sy .< 0 {
             sy = 0;
         }
@@ -419,7 +555,7 @@ fonction colonne(sx) {
             si eau == 0 {
                 c = eclairer(teinte(wx, wz, h, z), lumiere(wx, wz));
             }
-            soit brume = (z * 200) / ZMAX;
+            soit brume = (zf * 200) / (ZMAX * 256);
             c = melange(c, rgb(206, 194, 186), brume);
             pour y dans sy..bas {
                 soit cp = c;
@@ -435,7 +571,21 @@ fonction colonne(sx) {
             }
             bas = sy;
         }
-        z = z + 1 + z / 240;
+        // le pas : zf²/(2048·FOCALE) donne environ une ligne d'image ; au moins 1/32 de case, au plus l'ancien pas
+        soit pas = (zf * zf) / (2048 * FOCALE);
+        si pas < 8 {
+            pas = 8;
+        }
+        soit loin = 256 + zf / 240;
+        // dans un étage fin, jamais plus d'une de ses cases : aucune bosse sautée
+        soit ef = etage(wx, wz);
+        si ef < 2 {
+            loin = 64 << ef;
+        }
+        si pas > loin {
+            pas = loin;
+        }
+        zf = zf + pas;
     }
     // au-delà : le lointain, puis le ciel
     pour y2 dans 0..bas {
@@ -804,6 +954,7 @@ fonction ecrire_png(nom) {
 
 fonction principal() {
     relief();
+    accordeon();
     preparer_lointain();
     pour sx dans 0..W {
         colonne(sx);
