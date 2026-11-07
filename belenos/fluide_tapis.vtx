@@ -1,0 +1,188 @@
+// Le fluide (Boltzmann sur réseau, D2Q9) : 128 × 64 cellules, bouclé, en entiers à virgule fixe (24 bits) ;
+// une couche de cisaillement (deux courants opposés, une petite perturbation) : des tourbillons doivent naître.
+// Fabriqué par belenos/fabriquer_fluide.py (la collision est la même dans les deux versions).
+constante N = 8192;
+constante MASQUE = 8191;
+constante PAS = 50;
+// B, le tapis roulant : un seul tampon ; la direction i de la cellule logique c est rangée en (c + o_i) mod N, et
+// o_i recule de son décalage à chaque pas : la propagation ne déplace aucune donnée.
+constante F = 0;
+constante ORIGINES = 200000;
+
+// le départ : la densité 1 partout, ±0,08 selon la rangée, une petite onde en triangle en y
+fonction depart(base) {
+    pour c0 dans 0..N {
+        soit x = c0 % 128;
+        soit y = c0 / 128;
+        soit rho = 16777216;
+        soit ux = 1342177;
+        si y < 16 || y >= 48 {
+            ux = 0 - 1342177;
+        }
+        soit tri = x % 64;
+        si tri >= 32 {
+            tri = 64 - tri;
+        }
+        soit uy = (tri - 16) * 5120;
+        soit usq = (ux * ux + uy * uy) .>> 24;
+        soit r36 = rho ./ 36;
+        soit eu1 = ux;
+        soit t1 = 16777216 + 3 * eu1 + ((9 * eu1 * eu1) .>> 25) - ((3 * usq) .>> 1);
+        soit g1 = (4 * r36 * t1) .>> 24;
+        soit eu2 = uy;
+        soit t2 = 16777216 + 3 * eu2 + ((9 * eu2 * eu2) .>> 25) - ((3 * usq) .>> 1);
+        soit g2 = (4 * r36 * t2) .>> 24;
+        soit eu3 = (0 - ux);
+        soit t3 = 16777216 + 3 * eu3 + ((9 * eu3 * eu3) .>> 25) - ((3 * usq) .>> 1);
+        soit g3 = (4 * r36 * t3) .>> 24;
+        soit eu4 = (0 - uy);
+        soit t4 = 16777216 + 3 * eu4 + ((9 * eu4 * eu4) .>> 25) - ((3 * usq) .>> 1);
+        soit g4 = (4 * r36 * t4) .>> 24;
+        soit eu5 = ux + uy;
+        soit t5 = 16777216 + 3 * eu5 + ((9 * eu5 * eu5) .>> 25) - ((3 * usq) .>> 1);
+        soit g5 = (1 * r36 * t5) .>> 24;
+        soit eu6 = (0 - ux) + uy;
+        soit t6 = 16777216 + 3 * eu6 + ((9 * eu6 * eu6) .>> 25) - ((3 * usq) .>> 1);
+        soit g6 = (1 * r36 * t6) .>> 24;
+        soit eu7 = (0 - ux) + (0 - uy);
+        soit t7 = 16777216 + 3 * eu7 + ((9 * eu7 * eu7) .>> 25) - ((3 * usq) .>> 1);
+        soit g7 = (1 * r36 * t7) .>> 24;
+        soit eu8 = ux + (0 - uy);
+        soit t8 = 16777216 + 3 * eu8 + ((9 * eu8 * eu8) .>> 25) - ((3 * usq) .>> 1);
+        soit g8 = (1 * r36 * t8) .>> 24;
+        soit g0 = rho - (g1 + g2 + g3 + g4 + g5 + g6 + g7 + g8);
+        @2[base + 0 + c0] = g0;
+        @2[base + 8192 + c0] = g1;
+        @2[base + 16384 + c0] = g2;
+        @2[base + 24576 + c0] = g3;
+        @2[base + 32768 + c0] = g4;
+        @2[base + 40960 + c0] = g5;
+        @2[base + 49152 + c0] = g6;
+        @2[base + 57344 + c0] = g7;
+        @2[base + 65536 + c0] = g8;
+    }
+}
+
+// le compte : la masse, et une empreinte de toutes les populations (chaque cellule logique, chaque direction)
+fonction compte(src) {
+    soit masse = 0;
+    soit empreinte = 0;
+    pour c2 dans 0..N {
+        soit f0 = @2[src + 0 + ((c2 + @2[ORIGINES + 0]) & MASQUE)];
+        soit f1 = @2[src + 8192 + ((c2 + @2[ORIGINES + 1]) & MASQUE)];
+        soit f2 = @2[src + 16384 + ((c2 + @2[ORIGINES + 2]) & MASQUE)];
+        soit f3 = @2[src + 24576 + ((c2 + @2[ORIGINES + 3]) & MASQUE)];
+        soit f4 = @2[src + 32768 + ((c2 + @2[ORIGINES + 4]) & MASQUE)];
+        soit f5 = @2[src + 40960 + ((c2 + @2[ORIGINES + 5]) & MASQUE)];
+        soit f6 = @2[src + 49152 + ((c2 + @2[ORIGINES + 6]) & MASQUE)];
+        soit f7 = @2[src + 57344 + ((c2 + @2[ORIGINES + 7]) & MASQUE)];
+        soit f8 = @2[src + 65536 + ((c2 + @2[ORIGINES + 8]) & MASQUE)];
+        masse = masse + f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8;
+        empreinte = (empreinte ^ (f0 + 3 * f1 + 5 * f2 + 7 * f3 + 11 * f4 + 13 * f5 + 17 * f6 + 19 * f7 + 23 * f8 + c2)) * 1099511628211;
+    }
+    sortie(masse);
+    sortie(empreinte);
+}
+
+fonction principal() {
+    depart(F);
+    soit o0 = 0;
+    soit o1 = 0;
+    soit o2 = 0;
+    soit o3 = 0;
+    soit o4 = 0;
+    soit o5 = 0;
+    soit o6 = 0;
+    soit o7 = 0;
+    soit o8 = 0;
+    pour t dans 0..PAS {
+        pour c dans 0..N {
+            soit a0 = F + 0 + ((c + o0) & MASQUE);
+            soit a1 = F + 8192 + ((c + o1) & MASQUE);
+            soit a2 = F + 16384 + ((c + o2) & MASQUE);
+            soit a3 = F + 24576 + ((c + o3) & MASQUE);
+            soit a4 = F + 32768 + ((c + o4) & MASQUE);
+            soit a5 = F + 40960 + ((c + o5) & MASQUE);
+            soit a6 = F + 49152 + ((c + o6) & MASQUE);
+            soit a7 = F + 57344 + ((c + o7) & MASQUE);
+            soit a8 = F + 65536 + ((c + o8) & MASQUE);
+            soit f0 = @2[a0];
+            soit f1 = @2[a1];
+            soit f2 = @2[a2];
+            soit f3 = @2[a3];
+            soit f4 = @2[a4];
+            soit f5 = @2[a5];
+            soit f6 = @2[a6];
+            soit f7 = @2[a7];
+            soit f8 = @2[a8];
+            soit rho = f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8;
+            soit jx = f1 - f3 + f5 - f6 - f7 + f8;
+            soit jy = f2 - f4 + f5 + f6 - f7 - f8;
+            soit ux = (jx << 24) ./ rho;
+            soit uy = (jy << 24) ./ rho;
+            soit usq = (ux * ux + uy * uy) .>> 24;
+            soit r36 = rho ./ 36;
+            soit eu1 = ux;
+            soit t1 = 16777216 + 3 * eu1 + ((9 * eu1 * eu1) .>> 25) - ((3 * usq) .>> 1);
+            soit q1 = (4 * r36 * t1) .>> 24;
+            soit g1 = f1 + (((q1 - f1) * 31) .>> 4);
+            soit eu2 = uy;
+            soit t2 = 16777216 + 3 * eu2 + ((9 * eu2 * eu2) .>> 25) - ((3 * usq) .>> 1);
+            soit q2 = (4 * r36 * t2) .>> 24;
+            soit g2 = f2 + (((q2 - f2) * 31) .>> 4);
+            soit eu3 = (0 - ux);
+            soit t3 = 16777216 + 3 * eu3 + ((9 * eu3 * eu3) .>> 25) - ((3 * usq) .>> 1);
+            soit q3 = (4 * r36 * t3) .>> 24;
+            soit g3 = f3 + (((q3 - f3) * 31) .>> 4);
+            soit eu4 = (0 - uy);
+            soit t4 = 16777216 + 3 * eu4 + ((9 * eu4 * eu4) .>> 25) - ((3 * usq) .>> 1);
+            soit q4 = (4 * r36 * t4) .>> 24;
+            soit g4 = f4 + (((q4 - f4) * 31) .>> 4);
+            soit eu5 = ux + uy;
+            soit t5 = 16777216 + 3 * eu5 + ((9 * eu5 * eu5) .>> 25) - ((3 * usq) .>> 1);
+            soit q5 = (1 * r36 * t5) .>> 24;
+            soit g5 = f5 + (((q5 - f5) * 31) .>> 4);
+            soit eu6 = (0 - ux) + uy;
+            soit t6 = 16777216 + 3 * eu6 + ((9 * eu6 * eu6) .>> 25) - ((3 * usq) .>> 1);
+            soit q6 = (1 * r36 * t6) .>> 24;
+            soit g6 = f6 + (((q6 - f6) * 31) .>> 4);
+            soit eu7 = (0 - ux) + (0 - uy);
+            soit t7 = 16777216 + 3 * eu7 + ((9 * eu7 * eu7) .>> 25) - ((3 * usq) .>> 1);
+            soit q7 = (1 * r36 * t7) .>> 24;
+            soit g7 = f7 + (((q7 - f7) * 31) .>> 4);
+            soit eu8 = ux + (0 - uy);
+            soit t8 = 16777216 + 3 * eu8 + ((9 * eu8 * eu8) .>> 25) - ((3 * usq) .>> 1);
+            soit q8 = (1 * r36 * t8) .>> 24;
+            soit g8 = f8 + (((q8 - f8) * 31) .>> 4);
+            soit g0 = rho - (g1 + g2 + g3 + g4 + g5 + g6 + g7 + g8);
+            @2[a0] = g0;
+            @2[a1] = g1;
+            @2[a2] = g2;
+            @2[a3] = g3;
+            @2[a4] = g4;
+            @2[a5] = g5;
+            @2[a6] = g6;
+            @2[a7] = g7;
+            @2[a8] = g8;
+        }
+        o0 = (o0 + 0) & MASQUE;
+        o1 = (o1 + 8191) & MASQUE;
+        o2 = (o2 + 8064) & MASQUE;
+        o3 = (o3 + 1) & MASQUE;
+        o4 = (o4 + 128) & MASQUE;
+        o5 = (o5 + 8063) & MASQUE;
+        o6 = (o6 + 8065) & MASQUE;
+        o7 = (o7 + 129) & MASQUE;
+        o8 = (o8 + 127) & MASQUE;
+    }
+    @2[ORIGINES + 0] = o0;
+    @2[ORIGINES + 1] = o1;
+    @2[ORIGINES + 2] = o2;
+    @2[ORIGINES + 3] = o3;
+    @2[ORIGINES + 4] = o4;
+    @2[ORIGINES + 5] = o5;
+    @2[ORIGINES + 6] = o6;
+    @2[ORIGINES + 7] = o7;
+    @2[ORIGINES + 8] = o8;
+    compte(F);
+}

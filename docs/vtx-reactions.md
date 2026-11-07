@@ -957,3 +957,37 @@ cinq lancements.
   sortent de leur table (des valeurs plus grandes que 2⁶⁴ comme indices), d'où la lenteur et le résultat faux ;
 - à décider : garder 64 par défaut (le 128 sur demande, `entier_128`), passer à 128 (en écrivant `entier_64` partout où
   le débordement compte, et un chemin court de 128 bits dans Lugus), ou le choix par programme.
+
+## 13. Belenos, premier pas : le fluide et le tapis roulant (7 novembre)
+
+Décidé avec l'utilisateur : Belenos d'abord (l'autonomie, Gobannos, n'ajoute pas de capacité) ; la démonstration est un
+fluide (la méthode de Boltzmann sur réseau) : une grille de cellules, chacune porte neuf populations qui partent vers
+ses voisines ; un pas = la collision (chaque cellule seule : une vague) puis la propagation (vers la voisine : un pont).
+
+- **Le tapis roulant** (idée de l'utilisateur : les Hex qui descendent vers l'ombre, en boucle sans fin) : au lieu de
+  déplacer les données, on déplace le repère ; chaque direction a son origine, qui recule d'un cran à chaque pas ; la
+  propagation ne déplace aucune donnée (un seul tampon). Les codes rapides des cartes graphiques font de même.
+- `belenos/fabriquer_fluide.py` fabrique les deux versions (la collision écrite une fois) : `fluide_copie.vtx` (A : les
+  populations poussées dans la voisine, deux tampons) et `fluide_tapis.vtx` (B : le tapis roulant) ; 128 × 64 cellules,
+  bouclé, en entiers à virgule fixe de 24 bits (les mêmes nombres sur Lugus, forgé, et plus tard sur la carte : les
+  flottants des cartes diffèrent au dernier bit) ; `belenos/fluide_ref.py` : la même arithmétique en Python, et une
+  image de la vorticité.
+- **Mesuré, 50 pas** (les mêmes nombres partout, la masse gardée au bit près) :
+
+  | | A, la copie | B, le tapis roulant |
+  |---|---|---|
+  | instructions de Lugus | 224,1 M | 228,4 M (+1,9 %) |
+  | sur Lugus | 1,37 s | 1,21 à 1,49 s (dans le bruit) |
+  | forgé | 33 ms | **15 à 20 ms (deux fois plus vite)** |
+  | mémoire | deux tampons | **un seul** |
+
+- **La précision, trouvée en route** : en 16 bits, les arrondis vers le bas retiraient de la quantité de mouvement à
+  chaque pas (−13 % de vitesse en 200 pas, contre 0 % pour la physique) : le fluide s'éteignait en bruit. En 24 bits :
+  0,0 %. Et la viscosité réglée (ω = 31/16, un nombre de Reynolds d'environ 240) : au bout de 2 500 pas, les deux
+  couches de cisaillement s'enroulent en tourbillons (Kelvin-Helmholtz), de sens contraires
+  (`belenos/tourbillons_2500.png`).
+- `tests/test_fluide.py` (dans `verifier.py`) : les deux versions et la référence, les mêmes nombres, sur Lugus et forgées.
+- **La suite** : l'ombre comme cache (les cellules fantômes au bord des blocs : le pas suivant préparé pendant que le
+  pas courant est projeté) et les repères brillants par étage (des Hex de valeur connue, relus à chaque tour : le
+  tapis est-il calé ?) ; le fluide affiché dans la toile, aux couleurs du cube ; puis le même programme en SPIR-V sur
+  la carte (Vulkan), comparé à Lugus.
