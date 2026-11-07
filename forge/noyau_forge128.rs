@@ -83,7 +83,14 @@ fn cylindres_voulus() -> usize {
 fn rendre(c: &mut Ctx) -> Recolte {
     let o = c.ombre.take().unwrap();
     let cles: Vec<u128> = o.copiees.iter().copied().collect();
-    Recolte { pages: c.m.rendre_pages(&cles), lues: o.lues.into_iter().collect(), danger: o.danger }
+    // seules les pages vraiment changées sont rendues ; la comparaison se fait ici, dans le fil, sur son cœur
+    let inst = unsafe { &*o.commun };
+    let zero = vec![0u128; MOTS_PAGE];
+    let pages = c.m.rendre_pages(&cles).into_iter().filter(|(k, mots)| {
+        let orig = inst.pages.get(k).map(|&(p, _)| p as *const u128).unwrap_or(zero.as_ptr());
+        mots[..] != unsafe { std::slice::from_raw_parts(orig, MOTS_PAGE) }[..]
+    }).collect();
+    Recolte { pages, lues: o.lues.into_iter().collect(), danger: o.danger }
 }
 
 /// l'adresse du premier mot d'une page, depuis sa clé
@@ -95,25 +102,14 @@ fn adresse_page(k: u128) -> u128 {
 
 /// Fond les cubes des cylindres dans le cube commun ; faux : il faut rejouer les segments l'un après l'autre
 #[allow(dead_code)]
-fn fusionner(c: &mut Ctx, inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
+fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
     if recoltes.iter().any(|r| r.danger) {
         rapport_cylindres(recoltes.len(), 0, 0, "un cylindre a touché ce qui n'est qu'au cube commun : rejoué");
         return false;
     }
-    let zero = vec![0u128; MOTS_PAGE];
-    let orig = |k: &u128| -> *const u128 { inst.pages.get(k).map(|&(p, _)| p as *const u128).unwrap_or(zero.as_ptr()) };
-    // les pages que chacun a vraiment changées
-    let mut ecrites: Vec<std::collections::HashSet<u128>> = Vec::new();
-    for r in &recoltes {
-        let mut e = std::collections::HashSet::new();
-        for (k, mots) in &r.pages {
-            let o = unsafe { std::slice::from_raw_parts(orig(k), MOTS_PAGE) };
-            if mots[..] != o[..] {
-                e.insert(*k);
-            }
-        }
-        ecrites.push(e);
-    }
+    // les pages que chacun a vraiment changées (déjà triées dans les fils, par rendre)
+    let ecrites: Vec<std::collections::HashSet<u128>> =
+        recoltes.iter().map(|r| r.pages.iter().map(|(k, _)| *k).collect()).collect();
     // un cylindre a-t-il lu une page qu'un cylindre d'avant a écrite ?
     for t in 1..recoltes.len() {
         for k in &recoltes[t].lues {
@@ -123,47 +119,79 @@ fn fusionner(c: &mut Ctx, inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
             }
         }
     }
-    // les pages écrites par plusieurs : leur état d'avant est gardé, pour voir les conflits mot à mot
-    let mut combien: std::collections::HashMap<u128, u32> = std::collections::HashMap::new();
-    for e in &ecrites {
-        for k in e {
-            *combien.entry(*k).or_insert(0) += 1;
-        }
-    }
-    let mut avant: std::collections::HashMap<u128, (Vec<u128>, Vec<bool>)> = std::collections::HashMap::new();
-    let mut variables = 0u64;
-    let mut pages = 0usize;
-    for (t, r) in recoltes.into_iter().enumerate() {
+    // chaque page du cube commun, avec ceux qui l'ont écrite, dans l'ordre des segments
+    let nr = recoltes.len();
+    let mut ordre: Vec<u128> = Vec::new();
+    let mut auteurs: std::collections::HashMap<u128, Vec<Box<[u128]>>> = std::collections::HashMap::new();
+    for r in recoltes {
         for (k, mots) in r.pages {
-            if !ecrites[t].contains(&k) {
-                continue;
-            }
-            pages += 1;
-            let (dst, _, _) = c.m.page_de(adresse_page(k));
-            let d = unsafe { std::slice::from_raw_parts_mut(dst, MOTS_PAGE) };
-            if combien[&k] == 1 {
-                for j in 0..MOTS_PAGE {
-                    if mots[j] != d[j] {
-                        d[j] = mots[j];
-                    }
-                }
-            } else {
-                let (o, deja) = avant.entry(k).or_insert_with(|| (d.to_vec(), vec![false; MOTS_PAGE]));
-                for j in 0..MOTS_PAGE {
-                    if mots[j] != o[j] {
-                        if deja[j] && d[j] != mots[j] {
-                            variables += 1;
-                        }
-                        d[j] = mots[j];
-                        deja[j] = true;
-                    }
-                }
-            }
+            auteurs.entry(k).or_insert_with(|| { ordre.push(k); Vec::new() }).push(mots);
         }
     }
+    // une page écrite par un seul cylindre : sa copie devient la page commune (rien n'est recopié)
+    struct Fonte { dst: usize, mots: Vec<Box<[u128]>> }
+    let mut fontes: Vec<Fonte> = Vec::new();
+    let mut anciennes: Vec<Box<[u128]>> = Vec::new();
+    let pages = ordre.len();
+    for k in &ordre {
+        let mut m = auteurs.remove(k).unwrap();
+        if m.len() == 1 {
+            anciennes.extend(c.m.poser_page(adresse_page(*k), m.pop().unwrap()));
+        } else {
+            let (dst, _, _) = c.m.page_de(adresse_page(*k));
+            fontes.push(Fonte { dst: dst as usize, mots: m });
+        }
+    }
+    // les pages écrites par plusieurs : fondues mot à mot, une page par fil à la fois, sur tous les cœurs
+    let nt = cylindres_voulus().min(fontes.len()).max(1);
+    let suivante = std::sync::atomic::AtomicUsize::new(0);
+    let variables: u64 = std::thread::scope(|sc| {
+        let fils: Vec<_> = (0..nt).map(|_| sc.spawn(|| {
+            let mut v = 0u64;
+            loop {
+                let n = suivante.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                if n >= fontes.len() {
+                    break;
+                }
+                let f = &fontes[n];
+                let d = unsafe { std::slice::from_raw_parts_mut(f.dst as *mut u128, MOTS_PAGE) };
+                let o = d.to_vec();
+                let mut deja = vec![false; MOTS_PAGE];
+                for mots in &f.mots {
+                    // un cylindre ne change qu'un coin de la page : les blocs de 64 mots intacts sont sautés d'un coup
+                    for b in (0..MOTS_PAGE).step_by(64) {
+                        if mots[b..b + 64] == o[b..b + 64] {
+                            continue;
+                        }
+                        for j in b..b + 64 {
+                            if mots[j] != o[j] {
+                                if deja[j] && d[j] != mots[j] {
+                                    v += 1;
+                                }
+                                d[j] = mots[j];
+                                deja[j] = true;
+                            }
+                        }
+                    }
+                }
+            }
+            v
+        })).collect();
+        fils.into_iter().map(|h| h.join().unwrap()).sum()
+    });
+    drop(fontes); drop(anciennes);
     c.oublier_pages();
-    rapport_cylindres(ecrites.len(), pages, variables, "");
+    rapport_cylindres(nr, pages, variables, "");
     true
+}
+
+#[allow(dead_code)]
+fn chrono_cylindres(t0: std::time::Instant, t1: std::time::Instant) {
+    if std::env::var("VTX_CYLINDRES").is_ok() {
+        static DEBUT: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+        let d = *DEBUT.get_or_init(|| t0);
+        eprintln!("    à {:.0} ms : en fils {:.1} ms, fusion {:.1} ms", (t0 - d).as_secs_f64() * 1e3, (t1 - t0).as_secs_f64() * 1e3, t1.elapsed().as_secs_f64() * 1e3);
+    }
 }
 
 fn rapport_cylindres(n: usize, pages: usize, variables: u64, rejoue: &str) {

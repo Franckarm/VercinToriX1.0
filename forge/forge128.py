@@ -470,6 +470,7 @@ class Forge(V.Generateur):
         self.ligne("let mut fait = false;")
         self.ligne("if cylindres_voulus() > 1 {")
         self.niveau += 1
+        self.ligne("let t0 = std::time::Instant::now();")
         self.ligne("let inst = instantane(c);")
         self.ligne(f"let nt = cylindres_voulus().min({m});")
         self.ligne("let recoltes: Vec<Recolte> = std::thread::scope(|sc| {")
@@ -499,7 +500,9 @@ class Forge(V.Generateur):
         self.ligne("fils.into_iter().map(|h| h.join().unwrap()).collect()")
         self.niveau -= 1
         self.ligne("});")
+        self.ligne("let t1 = std::time::Instant::now();")
         self.ligne("fait = fusionner(c, &inst, recoltes);")
+        self.ligne("chrono_cylindres(t0, t1);")
         self.niveau -= 1
         self.ligne("}")
         self.ligne("if !fait {")

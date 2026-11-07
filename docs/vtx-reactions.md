@@ -1262,3 +1262,35 @@ découpage coûte 6 % (2K : 1,33 → 1,42 s). Ce qui reste sur un seul cœur : l
 de la précédente), l'empreinte, les objets et surtout le PNG (le CRC et l'Adler-32 se suivent), environ 12 % du
 travail : sur 8 cœurs, on attend environ 3 à 4 fois plus vite (12 segments sur 8 cœurs : 4 en jouent deux), pas 8.
 Le .bat mesure sur 1 cœur puis sur tous.
+
+## 22. La mesure sur 24 cœurs, et les deux murs (7 novembre, soir)
+
+**Le paquet nettoyé (0.5zf)** : les sorties de test (casse-briques, feu de camp, ombre 256) et trois relevés de
+mesures que rien ne lisait sont retirés (et ignorés par git) ; `forge/test_forge.py` (la forge du SPU-32), oublié par
+le vérificateur mais toujours juste (343 programmes, 0 écart), y est rebranché ; `verifier.bat` lance la vérification
+complète à la demande. Les `.bat` d'essai ne mesurent plus que la nouveauté, dans un dossier fixe `essai-vtx\` (les
+sources remplacées, la compilation Rust gardée).
+
+**La mesure de l'utilisateur** (24 cœurs) : 2K 1,60 → 1,03 s (×1,55), 4K 4,69 → 3,23 s (×1,45) ; la même image
+octet pour octet. Bien moins que les ×3 à ×4 annoncés. Le chrono de chaque accord (`VTX_CYLINDRES=1` affiche
+maintenant, pour chacun, quand il commence, le temps dans les fils et celui de la fusion) a montré deux murs :
+
+1. **La fusion, sur un seul cœur : environ 0,38 s.** Un cylindre copie une page entière (65 536 mots de 128 bits :
+   1 Mo) dès qu'il y écrit ; la fusion comparait puis recopiait chaque page mot à mot. Maintenant : la comparaison
+   (la page a-t-elle vraiment changé ?) se fait dans le fil, sur son cœur ; une page écrite par un seul cylindre
+   **devient** la page commune (`poser_page` dans `spu128.rs` : on échange les mots, rien n'est recopié) ; seules les
+   pages écrites par plusieurs sont fondues mot à mot, une page par fil à la fois, sur tous les cœurs, en sautant
+   d'un coup les blocs de 64 mots qu'un cylindre n'a pas touchés.
+2. **La queue : environ 0,4 s.** Comptée en instructions sur Lugus (exactes, contrairement au chrono de la machine de
+   travail, trop bruité) : PNG 644 millions, sprites et cadre 471 millions, empreinte 44 millions (sur 15,68 milliards).
+   Mais en forgé le PNG coûtait bien plus que ses instructions : chaque octet écrit cherchait son canal dans deux
+   tables de hachage (clés de 128 bits). `ecrire_canal` garde maintenant le dernier canal d'octets et son tampon (oubliés
+   dès qu'un fichier s'ouvre ou se ferme).
+
+**Mesuré sur un cœur** (la machine de travail) : 2K 1,30 → 1,02 s, le même PNG octet pour octet ; la fusion ne se
+mesure pas ici (un seul cœur). **Attendu sur 24 cœurs** (calcul, pas mesure) : vers 0,5 à 0,6 s en 2K.
+
+**Ce qui reste** : la boucle de la lumière à l'ombre est toujours rejouée (lecture et écriture de la même case : la page
+du bord, partagée par deux segments, passe pour une dépendance ; environ 30 ms perdues) ; 12 segments pour 24 cœurs
+(la moitié des cœurs attend) ; les sprites et le PNG restent séquentiels (le CRC et l'Adler-32 se combinent pourtant
+par morceaux : un PNG en cylindres est possible).

@@ -55,6 +55,9 @@ pub struct Spu128 {
     // les fichiers d'octets (ouvrir_ecriture("octets:nom")) : chaque mot écrit donne un octet (ses 8 bits bas) ; une
     // image (PNG), un son : ce que le texte ne sait pas porter
     octets: HashMap<u128, (std::path::PathBuf, Vec<u8>)>,
+    // le dernier canal d'octets écrit, et son tampon (une adresse, oubliée dès qu'un fichier s'ouvre ou se ferme) : un PNG
+    // de 6 millions d'octets n'interroge plus la table à chaque octet
+    octets_vite: (u128, usize),
     pub dossier: Option<std::path::PathBuf>,
     pages_vues: std::collections::HashSet<(usize, u128)>,
     pub pas: u64,
@@ -139,6 +142,7 @@ impl Spu128 {
             texte_entree: VecDeque::new(),
             fichiers: HashMap::new(),
             octets: HashMap::new(),
+            octets_vite: (u128::MAX, 0),
             dossier: None,
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
@@ -311,6 +315,21 @@ impl Spu128 {
             let e = (k >> 120) as usize;
             self.pages[e].remove(&(k & ((1u128 << 120) - 1))).map(|p| (k, p.mots))
         }).collect()
+    }
+
+    /// Pour la forge (la fusion des cylindres) : pose les mots d'une page tels quels, sans les recopier ; rend les anciens.
+    /// (Les cylindres ne touchent jamais un cube sur disque : la page absente est simplement créée avec ces mots.)
+    pub fn poser_page(&mut self, adr: u128, mots: Box<[u128]>) -> Option<Box<[u128]>> {
+        let (e, i) = Self::place(adr);
+        let cle = i >> 16;
+        if let Some(p) = self.pages[e].get_mut(&cle) {
+            return Some(std::mem::replace(&mut p.mots, mots));
+        }
+        let mut p = Box::new(Page { mots, brins: None });
+        let ptr: *mut Page = &mut *p;
+        self.pages[e].insert(cle, p);
+        self.inscrire(e, cle, ptr);
+        None
     }
 
     /// La clé de page d'une adresse (étage et numéro de page), comme page_de.
@@ -501,6 +520,10 @@ impl Spu128 {
         }
     }
     pub fn ecrire_canal(&mut self, c: u128, v: u128) {
+        if c == self.octets_vite.0 {
+            unsafe { (*(self.octets_vite.1 as *mut Vec<u8>)).push(v as u8) };
+            return;
+        }
         if c == 0 {
             self.sortie.push(v);
         } else if c == 1 {
@@ -514,6 +537,7 @@ impl Spu128 {
             }
         } else if let Some(o) = self.octets.get_mut(&c) {
             o.1.push(v as u8);
+            self.octets_vite = (c, &mut o.1 as *mut Vec<u8> as usize);
         }
     }
 
@@ -536,6 +560,7 @@ impl Spu128 {
                 let canal = self.canal_libre();
                 if code == 2 {
                     if let Some(n) = nom.strip_prefix("octets:") {
+                        self.octets_vite = (u128::MAX, 0);
                         self.octets.insert(canal, (d.join(n), Vec::new()));
                         return Ok(canal);
                     }
@@ -554,6 +579,7 @@ impl Spu128 {
                 Ok(canal)
             }
             3 => {
+                self.octets_vite = (u128::MAX, 0);
                 if let Some((chemin, o)) = self.octets.remove(&arg) {
                     return Ok(if std::fs::write(&chemin, o).is_err() { u128::MAX } else { 0 });
                 }
