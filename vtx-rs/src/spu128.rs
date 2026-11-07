@@ -10,6 +10,17 @@ const M120: u128 = (1u128 << 120) - 1;
 const M64: u128 = 0xFFFF_FFFF_FFFF_FFFF;
 const M32: u128 = 0xFFFF_FFFF;
 const PAGE: usize = 65536;
+/// la case d'une page parmi les seize : son numéro plié par quatre bits (des pages qui se suivent gardent des cases
+/// différentes, comme avant ; des pages espacées de 16, 64 ou 256, comme les neuf directions d'un grand fluide,
+/// ne tombent plus dans la même case)
+#[inline(always)]
+fn case16(cle: u128) -> usize {
+    let k = cle as usize;
+    (k ^ (k >> 4) ^ (k >> 8)) & 15
+}
+
+/// les pages rangées dans l'annuaire, par étage : les 65 536 premières (2^32 mots)
+const ANNUAIRE: usize = 65536;
 pub const PILE: u128 = 0x7FFF_FFFF;
 const V128: u128 = 0xAAAA_AAAA_AAAA_AAAA_AAAA_AAAA_AAAA_AAAA;
 const F128: u128 = 0x5555_5555_5555_5555_5555_5555_5555_5555;
@@ -32,6 +43,9 @@ pub struct Spu128 {
     // seize pages en cache par étage, rangées par leur numéro (les zones d'un programme sont souvent loin l'une de l'autre)
     cache: [[(u128, *mut Page); 16]; 4],
     cache_code: (u128, *mut Page),
+    // l'ombre grise, derrière les seize cases : l'annuaire des pages de chaque étage, rangées par leur numéro (les
+    // ANNUAIRE premières) ; une page qui sort des seize cases s'y retrouve en une lecture, sans chercher dans la table
+    annuaire: [Vec<*mut Page>; 4],
     a_des_adn: bool,
     pub entree: VecDeque<u128>,
     pub sortie: Vec<u128>,
@@ -114,6 +128,7 @@ impl Spu128 {
             pages: [HashMap::new(), HashMap::new(), HashMap::new(), HashMap::new()],
             cache: [[(u128::MAX, std::ptr::null_mut()); 16]; 4],
             cache_code: (u128::MAX, std::ptr::null_mut()),
+            annuaire: [Vec::new(), Vec::new(), Vec::new(), Vec::new()],
             a_des_adn: false,
             entree: VecDeque::new(),
             sortie: Vec::new(),
@@ -216,17 +231,43 @@ impl Spu128 {
         }
     }
 
+    /// la page de l'annuaire (nulle si elle n'y est pas : pas encore vue, ou trop loin)
+    #[inline(always)]
+    fn dans_annuaire(&self, e: usize, cle: u128) -> *mut Page {
+        match self.annuaire[e].get(cle as usize) {
+            Some(&p) if cle < ANNUAIRE as u128 => p,
+            _ => std::ptr::null_mut(),
+        }
+    }
+
+    fn inscrire(&mut self, e: usize, cle: u128, p: *mut Page) {
+        if cle < ANNUAIRE as u128 {
+            let a = &mut self.annuaire[e];
+            if a.len() <= cle as usize {
+                a.resize(cle as usize + 1, std::ptr::null_mut());
+            }
+            a[cle as usize] = p;
+        }
+    }
+
     fn page_mut(&mut self, e: usize, i: u128) -> &mut Page {
         let cle = i >> 16;
-        if self.cache[e][(cle & 15) as usize].0 == cle {
-            return unsafe { &mut *self.cache[e][(cle & 15) as usize].1 };
+        if self.cache[e][case16(cle)].0 == cle {
+            return unsafe { &mut *self.cache[e][case16(cle)].1 };
+        }
+        // une page de l'annuaire est déjà dans la table (et sa lecture sur le disque déjà faite)
+        let a = self.dans_annuaire(e, cle);
+        if !a.is_null() {
+            self.cache[e][case16(cle)] = (cle, a);
+            return unsafe { &mut *a };
         }
         self.page_disque(e, i);
         let p = self.pages[e]
             .entry(cle)
             .or_insert_with(|| Box::new(Page { mots: vec![0u128; PAGE].into_boxed_slice(), brins: None }));
         let ptr: *mut Page = &mut **p;
-        self.cache[e][(cle & 15) as usize] = (cle, ptr);
+        self.cache[e][case16(cle)] = (cle, ptr);
+        self.inscrire(e, cle, ptr);
         unsafe { &mut *ptr }
     }
 
@@ -250,7 +291,7 @@ impl Spu128 {
     pub fn lire(&mut self, adr: u128) -> u128 {
         let (e, i) = Self::place(adr);
         let cle = i >> 16;
-        let k = (cle & 15) as usize;
+        let k = case16(cle);
         if self.cache[e][k].0 == cle {
             return unsafe { *(&(*self.cache[e][k].1).mots).get_unchecked((i as usize) & (PAGE - 1)) };
         }
@@ -261,14 +302,20 @@ impl Spu128 {
     fn lire_lent(&mut self, adr: u128) -> u128 {
         let (e, i) = Self::place(adr);
         let cle = i >> 16;
-        if self.cache[e][(cle & 15) as usize].0 == cle {
-            return unsafe { (*self.cache[e][(cle & 15) as usize].1).mots[(i as usize) & (PAGE - 1)] };
+        if self.cache[e][case16(cle)].0 == cle {
+            return unsafe { (*self.cache[e][case16(cle)].1).mots[(i as usize) & (PAGE - 1)] };
+        }
+        let a = self.dans_annuaire(e, cle);
+        if !a.is_null() {
+            self.cache[e][case16(cle)] = (cle, a);
+            return unsafe { (*a).mots[(i as usize) & (PAGE - 1)] };
         }
         self.page_disque(e, i);
         match self.pages[e].get_mut(&cle) {
             Some(p) => {
                 let ptr: *mut Page = &mut **p;
-                self.cache[e][(cle & 15) as usize] = (cle, ptr);
+                self.cache[e][case16(cle)] = (cle, ptr);
+                self.inscrire(e, cle, ptr);
                 unsafe { (*ptr).mots[(i as usize) & (PAGE - 1)] }
             }
             None => 0,
@@ -344,7 +391,7 @@ impl Spu128 {
         // code, marqué ADN au lancement, reste vérifié par le chemin lent)
         let (e, i) = Self::place(adr);
         let cle = i >> 16;
-        let k = (cle & 15) as usize;
+        let k = case16(cle);
         if self.cache[e][k].0 == cle {
             let p = self.cache[e][k].1;
             if unsafe { (*p).brins.is_none() } {
@@ -560,6 +607,7 @@ impl Spu128 {
         let f = i >> 24;
         let avant = self.pages[e].len();
         self.pages[e].retain(|k, _| (*k >> 8) != f);
+        self.annuaire[e].clear();
         self.cache_code = (u128::MAX, std::ptr::null_mut());
         for p in 0..256u128 {
             self.pages_vues.insert((e, (f << 8) | p));

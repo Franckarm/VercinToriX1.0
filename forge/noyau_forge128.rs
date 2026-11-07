@@ -28,10 +28,11 @@ struct Ctx {
     vider: fn(&mut Ctx),
 }
 
-/// la case d'une page dans le petit cache : son numéro et son étage mêlés
+/// la case d'une page dans le petit cache : son numéro et son étage mêlés, le numéro plié par quatre bits (comme case16 de spu128.rs)
 #[inline(always)]
 fn case(k: u128) -> usize {
-    ((k as usize) ^ ((k >> 120) as usize).wrapping_mul(5)) & 15
+    let n = k as usize;
+    (n ^ (n >> 4) ^ (n >> 8) ^ ((k >> 120) as usize).wrapping_mul(5)) & 15
 }
 
 impl Ctx {

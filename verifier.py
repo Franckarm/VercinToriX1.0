@@ -79,7 +79,7 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_patrouille.py")]))
     etapes.append(("le lecteur d'ADN écrit en vtx (chimie/adn.vtx, lugus relire) : lit comme Python, avarie pour avarie",
                    [sys.executable, os.path.join("tests", "test_adn_vtx.py")]))
-    etapes.append(("Belenos, le fluide : la copie et le tapis roulant, les mêmes nombres que la référence, sur Lugus et forgés",
+    etapes.append(("Belenos, le fluide : la copie, le tapis roulant et les tuiles, les mêmes nombres que la référence, sur Lugus et forgés",
                    [sys.executable, os.path.join("tests", "test_fluide.py")]))
     etapes.append(("la paillasse d'Ogmios : lue comme le compilateur, gestes rejoués (lier, délier, ajouter, retirer), valeurs",
                    [sys.executable, os.path.join("tests", "test_paillasse.py")]))

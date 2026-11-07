@@ -1,0 +1,200 @@
+// Le fluide (Boltzmann sur réseau, D2Q9) : 128 × 64 cellules, bouclé, en entiers à virgule fixe (24 bits) ;
+// une couche de cisaillement (deux courants opposés, une petite perturbation) : des tourbillons doivent naître.
+// Fabriqué par belenos/fabriquer_fluide.py (la collision est la même dans les deux versions).
+constante NX = 128;
+constante N = 8192;
+constante Y1 = 16;
+constante Y3 = 48;
+constante MASQUE = 8191;
+constante PAS = 50;
+// C, les tuiles : 4 × 4 tuiles de 32 × 16 cellules, chacune avec son ombre (la tuile et une
+// marge d'une cellule) ; les ombres côte à côte, calculées par vagues de 4 tuiles, dans le désordre.
+constante F0 = 0;
+constante F1 = 73728;
+constante OMBRES = 147456;
+constante TX = 32;
+constante TY = 16;
+constante LX = 34;
+constante LY = 18;
+constante TUX = 4;
+constante NT = 16;
+constante VAGUE = 4;
+
+// le départ : la densité 1 partout, ±0,08 selon la rangée, une petite onde en triangle en y
+fonction depart(base) {
+    pour c0 dans 0..N {
+        soit x = c0 % NX;
+        soit y = c0 / NX;
+        soit rho = 16777216;
+        soit ux = 1342177;
+        si y < Y1 || y >= Y3 {
+            ux = 0 - 1342177;
+        }
+        soit tri = x % 64;
+        si tri >= 32 {
+            tri = 64 - tri;
+        }
+        soit uy = (tri - 16) * 5120;
+        soit usq = (ux * ux + uy * uy) .>> 24;
+        soit r36 = rho ./ 36;
+        soit eu1 = ux;
+        soit t1 = 16777216 + 3 * eu1 + ((9 * eu1 * eu1) .>> 25) - ((3 * usq) .>> 1);
+        soit g1 = (4 * r36 * t1) .>> 24;
+        soit eu2 = uy;
+        soit t2 = 16777216 + 3 * eu2 + ((9 * eu2 * eu2) .>> 25) - ((3 * usq) .>> 1);
+        soit g2 = (4 * r36 * t2) .>> 24;
+        soit eu3 = (0 - ux);
+        soit t3 = 16777216 + 3 * eu3 + ((9 * eu3 * eu3) .>> 25) - ((3 * usq) .>> 1);
+        soit g3 = (4 * r36 * t3) .>> 24;
+        soit eu4 = (0 - uy);
+        soit t4 = 16777216 + 3 * eu4 + ((9 * eu4 * eu4) .>> 25) - ((3 * usq) .>> 1);
+        soit g4 = (4 * r36 * t4) .>> 24;
+        soit eu5 = ux + uy;
+        soit t5 = 16777216 + 3 * eu5 + ((9 * eu5 * eu5) .>> 25) - ((3 * usq) .>> 1);
+        soit g5 = (1 * r36 * t5) .>> 24;
+        soit eu6 = (0 - ux) + uy;
+        soit t6 = 16777216 + 3 * eu6 + ((9 * eu6 * eu6) .>> 25) - ((3 * usq) .>> 1);
+        soit g6 = (1 * r36 * t6) .>> 24;
+        soit eu7 = (0 - ux) + (0 - uy);
+        soit t7 = 16777216 + 3 * eu7 + ((9 * eu7 * eu7) .>> 25) - ((3 * usq) .>> 1);
+        soit g7 = (1 * r36 * t7) .>> 24;
+        soit eu8 = ux + (0 - uy);
+        soit t8 = 16777216 + 3 * eu8 + ((9 * eu8 * eu8) .>> 25) - ((3 * usq) .>> 1);
+        soit g8 = (1 * r36 * t8) .>> 24;
+        soit g0 = rho - (g1 + g2 + g3 + g4 + g5 + g6 + g7 + g8);
+        @2[base + 0 + c0] = g0;
+        @2[base + 8192 + c0] = g1;
+        @2[base + 16384 + c0] = g2;
+        @2[base + 24576 + c0] = g3;
+        @2[base + 32768 + c0] = g4;
+        @2[base + 40960 + c0] = g5;
+        @2[base + 49152 + c0] = g6;
+        @2[base + 57344 + c0] = g7;
+        @2[base + 65536 + c0] = g8;
+    }
+}
+
+// le compte : la masse, et une empreinte de toutes les populations (chaque cellule logique, chaque direction)
+fonction compte(src) {
+    soit masse = 0;
+    soit empreinte = 0;
+    pour c2 dans 0..N {
+        soit f0 = @2[src + 0 + c2];
+        soit f1 = @2[src + 8192 + c2];
+        soit f2 = @2[src + 16384 + c2];
+        soit f3 = @2[src + 24576 + c2];
+        soit f4 = @2[src + 32768 + c2];
+        soit f5 = @2[src + 40960 + c2];
+        soit f6 = @2[src + 49152 + c2];
+        soit f7 = @2[src + 57344 + c2];
+        soit f8 = @2[src + 65536 + c2];
+        masse = masse + f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8;
+        empreinte = (empreinte ^ (f0 + 3 * f1 + 5 * f2 + 7 * f3 + 11 * f4 + 13 * f5 + 17 * f6 + 19 * f7 + 23 * f8 + c2)) * 1099511628211;
+    }
+    sortie(masse);
+    sortie(empreinte);
+}
+
+// une tuile : la collision dans son ombre (la tuile et sa marge), puis la propagation de l'ombre vers le tampon dst
+fonction tuile(t, src, dst) {
+    soit bx = (t % TUX) * TX;
+    soit by = (t / TUX) * TY;
+    soit om = OMBRES + t * 5508;
+    pour oy dans 0..LY {
+        pour ox dans 0..LX {
+            soit c = ((by + oy - 1) * NX + bx + ox - 1 + N) & MASQUE;
+            soit f0 = @2[src + 0 + c];
+            soit f1 = @2[src + 8192 + c];
+            soit f2 = @2[src + 16384 + c];
+            soit f3 = @2[src + 24576 + c];
+            soit f4 = @2[src + 32768 + c];
+            soit f5 = @2[src + 40960 + c];
+            soit f6 = @2[src + 49152 + c];
+            soit f7 = @2[src + 57344 + c];
+            soit f8 = @2[src + 65536 + c];
+            soit rho = f0 + f1 + f2 + f3 + f4 + f5 + f6 + f7 + f8;
+            soit jx = f1 - f3 + f5 - f6 - f7 + f8;
+            soit jy = f2 - f4 + f5 + f6 - f7 - f8;
+            soit ux = (jx << 24) ./ rho;
+            soit uy = (jy << 24) ./ rho;
+            soit usq = (ux * ux + uy * uy) .>> 24;
+            soit r36 = rho ./ 36;
+            soit eu1 = ux;
+            soit t1 = 16777216 + 3 * eu1 + ((9 * eu1 * eu1) .>> 25) - ((3 * usq) .>> 1);
+            soit q1 = (4 * r36 * t1) .>> 24;
+            soit g1 = f1 + (((q1 - f1) * 31) .>> 4);
+            soit eu2 = uy;
+            soit t2 = 16777216 + 3 * eu2 + ((9 * eu2 * eu2) .>> 25) - ((3 * usq) .>> 1);
+            soit q2 = (4 * r36 * t2) .>> 24;
+            soit g2 = f2 + (((q2 - f2) * 31) .>> 4);
+            soit eu3 = (0 - ux);
+            soit t3 = 16777216 + 3 * eu3 + ((9 * eu3 * eu3) .>> 25) - ((3 * usq) .>> 1);
+            soit q3 = (4 * r36 * t3) .>> 24;
+            soit g3 = f3 + (((q3 - f3) * 31) .>> 4);
+            soit eu4 = (0 - uy);
+            soit t4 = 16777216 + 3 * eu4 + ((9 * eu4 * eu4) .>> 25) - ((3 * usq) .>> 1);
+            soit q4 = (4 * r36 * t4) .>> 24;
+            soit g4 = f4 + (((q4 - f4) * 31) .>> 4);
+            soit eu5 = ux + uy;
+            soit t5 = 16777216 + 3 * eu5 + ((9 * eu5 * eu5) .>> 25) - ((3 * usq) .>> 1);
+            soit q5 = (1 * r36 * t5) .>> 24;
+            soit g5 = f5 + (((q5 - f5) * 31) .>> 4);
+            soit eu6 = (0 - ux) + uy;
+            soit t6 = 16777216 + 3 * eu6 + ((9 * eu6 * eu6) .>> 25) - ((3 * usq) .>> 1);
+            soit q6 = (1 * r36 * t6) .>> 24;
+            soit g6 = f6 + (((q6 - f6) * 31) .>> 4);
+            soit eu7 = (0 - ux) + (0 - uy);
+            soit t7 = 16777216 + 3 * eu7 + ((9 * eu7 * eu7) .>> 25) - ((3 * usq) .>> 1);
+            soit q7 = (1 * r36 * t7) .>> 24;
+            soit g7 = f7 + (((q7 - f7) * 31) .>> 4);
+            soit eu8 = ux + (0 - uy);
+            soit t8 = 16777216 + 3 * eu8 + ((9 * eu8 * eu8) .>> 25) - ((3 * usq) .>> 1);
+            soit q8 = (1 * r36 * t8) .>> 24;
+            soit g8 = f8 + (((q8 - f8) * 31) .>> 4);
+            soit g0 = rho - (g1 + g2 + g3 + g4 + g5 + g6 + g7 + g8);
+            soit l = oy * LX + ox;
+            @2[om + 0 + l] = g0;
+            @2[om + 612 + l] = g1;
+            @2[om + 1224 + l] = g2;
+            @2[om + 1836 + l] = g3;
+            @2[om + 2448 + l] = g4;
+            @2[om + 3060 + l] = g5;
+            @2[om + 3672 + l] = g6;
+            @2[om + 4284 + l] = g7;
+            @2[om + 4896 + l] = g8;
+        }
+    }
+    pour py dans 1..LY - 1 {
+        pour px dans 1..LX - 1 {
+            soit d = (by + py - 1) * NX + bx + px - 1;
+            soit m = om + py * LX + px;
+            @2[dst + 0 + d] = @2[m + 0];
+            @2[dst + 8192 + d] = @2[m + 611];
+            @2[dst + 16384 + d] = @2[m + 1190];
+            @2[dst + 24576 + d] = @2[m + 1837];
+            @2[dst + 32768 + d] = @2[m + 2482];
+            @2[dst + 40960 + d] = @2[m + 3025];
+            @2[dst + 49152 + d] = @2[m + 3639];
+            @2[dst + 57344 + d] = @2[m + 4319];
+            @2[dst + 65536 + d] = @2[m + 4929];
+        }
+    }
+}
+
+fonction principal() {
+    depart(F0);
+    soit src = F0;
+    soit dst = F1;
+    pour t dans 0..PAS {
+        // les vagues : VAGUE tuiles à la fois ; la tuile n° (k · 9) mod NT, un ordre qui n'est pas celui de la grille
+        pour v dans 0..NT / VAGUE {
+            pour k dans 0..VAGUE {
+                tuile(((v * VAGUE + k) * 9) % NT, src, dst);
+            }
+        }
+        soit e = src;
+        src = dst;
+        dst = e;
+    }
+    compte(src);
+}

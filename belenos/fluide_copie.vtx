@@ -1,21 +1,24 @@
 // Le fluide (Boltzmann sur réseau, D2Q9) : 128 × 64 cellules, bouclé, en entiers à virgule fixe (24 bits) ;
 // une couche de cisaillement (deux courants opposés, une petite perturbation) : des tourbillons doivent naître.
 // Fabriqué par belenos/fabriquer_fluide.py (la collision est la même dans les deux versions).
+constante NX = 128;
 constante N = 8192;
+constante Y1 = 16;
+constante Y3 = 48;
 constante MASQUE = 8191;
 constante PAS = 50;
 // A, la copie : chaque cellule pousse ses populations dans la voisine (deux tampons, F0 et F1, qui alternent).
 constante F0 = 0;
-constante F1 = 100000;
+constante F1 = 73728;
 
 // le départ : la densité 1 partout, ±0,08 selon la rangée, une petite onde en triangle en y
 fonction depart(base) {
     pour c0 dans 0..N {
-        soit x = c0 % 128;
-        soit y = c0 / 128;
+        soit x = c0 % NX;
+        soit y = c0 / NX;
         soit rho = 16777216;
         soit ux = 1342177;
-        si y < 16 || y >= 48 {
+        si y < Y1 || y >= Y3 {
             ux = 0 - 1342177;
         }
         soit tri = x % 64;

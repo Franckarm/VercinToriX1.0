@@ -60,10 +60,14 @@ def decalage(i):
     return (ex + ey * NX) % N
 
 
-ENTETE = f"""// Le fluide (Boltzmann sur réseau, D2Q9) : {NX} × {NY} cellules, bouclé, en entiers à virgule fixe (24 bits) ;
+def entete():
+    return f"""// Le fluide (Boltzmann sur réseau, D2Q9) : {NX} × {NY} cellules, bouclé, en entiers à virgule fixe (24 bits) ;
 // une couche de cisaillement (deux courants opposés, une petite perturbation) : des tourbillons doivent naître.
 // Fabriqué par belenos/fabriquer_fluide.py (la collision est la même dans les deux versions).
+constante NX = {NX};
 constante N = {N};
+constante Y1 = {NY // 4};
+constante Y3 = {3 * NY // 4};
 constante MASQUE = {N - 1};
 constante PAS = {PAS};
 """
@@ -71,11 +75,11 @@ constante PAS = {PAS};
 DEPART = """// le départ : la densité 1 partout, ±0,08 selon la rangée, une petite onde en triangle en y
 fonction depart(base) {
     pour c0 dans 0..N {
-        soit x = c0 % 128;
-        soit y = c0 / 128;
+        soit x = c0 % NX;
+        soit y = c0 / NX;
         soit rho = 16777216;
         soit ux = 1342177;
-        si y < 16 || y >= 48 {
+        si y < Y1 || y >= Y3 {
             ux = 0 - 1342177;
         }
         soit tri = x % 64;
@@ -106,9 +110,9 @@ LIRE_FIN
 
 
 def copie():
-    s = ENTETE + """// A, la copie : chaque cellule pousse ses populations dans la voisine (deux tampons, F0 et F1, qui alternent).
+    s = entete() + f"""// A, la copie : chaque cellule pousse ses populations dans la voisine (deux tampons, F0 et F1, qui alternent).
 constante F0 = 0;
-constante F1 = 100000;
+constante F1 = {9 * N};
 
 """ + DEPART.replace("EQUILIBRE", equilibre(8)).replace("POSER", "\n        ".join(
         f"@2[base + {i * N} + c0] = g{i};" for i in range(9))) + FIN.replace("LIRE_FIN", "\n".join(
@@ -133,10 +137,10 @@ fonction principal() {
 
 
 def tapis():
-    s = ENTETE + """// B, le tapis roulant : un seul tampon ; la direction i de la cellule logique c est rangée en (c + o_i) mod N, et
+    s = entete() + f"""// B, le tapis roulant : un seul tampon ; la direction i de la cellule logique c est rangée en (c + o_i) mod N, et
 // o_i recule de son décalage à chaque pas : la propagation ne déplace aucune donnée.
 constante F = 0;
-constante ORIGINES = 200000;
+constante ORIGINES = {9 * N};
 
 """ + DEPART.replace("EQUILIBRE", equilibre(8)).replace("POSER", "\n        ".join(
         f"@2[base + {i * N} + c0] = g{i};" for i in range(9))) + FIN.replace("LIRE_FIN", "\n".join(
@@ -158,6 +162,84 @@ fonction principal() {
     return s
 
 
-for nom, texte in (("fluide_copie.vtx", copie()), ("fluide_tapis.vtx", tapis())):
-    open(os.path.join(ici, nom), "w", encoding="utf-8").write(texte)
-    print(nom, len(texte.splitlines()), "lignes")
+def tuiles(tx=32, ty=16, par_vague=4):
+    """C, les tuiles : la grille découpée en tuiles de tx × ty cellules ; chaque tuile a son ombre (ses cellules et une
+    marge d'une cellule prise chez les voisines, bouclée comme les autres versions : la voisine de droite de la
+    dernière cellule d'une rangée est la première de la rangée suivante), où la collision est faite ; la propagation lit l'ombre (chaque
+    cellule tire ses populations des voisines de l'ombre) et écrit le tampon d'arrivée. Les ombres sont rangées côte à
+    côte ; les tuiles sont calculées par vagues de par_vague, dans un ordre qui n'est pas celui de la grille : les
+    nombres sont les mêmes quel que soit l'ordre (chaque tuile ne lit que le tampon de départ)."""
+    lx, ly = tx + 2, ty + 2
+    lxy = lx * ly
+    nt = (NX // tx) * (NY // ty)
+    saut = next(k for k in range(nt // 2 + 1, nt) if __import__("math").gcd(k, nt) == 1)
+    s = entete() + f"""// C, les tuiles : {NX // tx} × {NY // ty} tuiles de {tx} × {ty} cellules, chacune avec son ombre (la tuile et une
+// marge d'une cellule) ; les ombres côte à côte, calculées par vagues de {par_vague} tuiles, dans le désordre.
+constante F0 = 0;
+constante F1 = {9 * N};
+constante OMBRES = {18 * N};
+constante TX = {tx};
+constante TY = {ty};
+constante LX = {lx};
+constante LY = {ly};
+constante TUX = {NX // tx};
+constante NT = {nt};
+constante VAGUE = {par_vague};
+
+""" + DEPART.replace("EQUILIBRE", equilibre(8)).replace("POSER", "\n        ".join(
+        f"@2[base + {i * N} + c0] = g{i};" for i in range(9))) + FIN.replace("LIRE_FIN", "\n".join(
+        f"        soit f{i} = @2[src + {i * N} + c2];" for i in range(9))) + f"""
+// une tuile : la collision dans son ombre (la tuile et sa marge), puis la propagation de l'ombre vers le tampon dst
+fonction tuile(t, src, dst) {{
+    soit bx = (t % TUX) * TX;
+    soit by = (t / TUX) * TY;
+    soit om = OMBRES + t * {9 * lxy};
+    pour oy dans 0..LY {{
+        pour ox dans 0..LX {{
+            soit c = ((by + oy - 1) * NX + bx + ox - 1 + N) & MASQUE;
+""" + "\n".join(f"            soit f{i} = @2[src + {i * N} + c];" for i in range(9)) + "\n" + collision(12) + "\n" + \
+        "            soit l = oy * LX + ox;\n" + "\n".join(
+        f"            @2[om + {i * lxy} + l] = g{i};" for i in range(9)) + """
+        }
+    }
+    pour py dans 1..LY - 1 {
+        pour px dans 1..LX - 1 {
+            soit d = (by + py - 1) * NX + bx + px - 1;
+            soit m = om + py * LX + px;
+""" + "\n".join(
+        f"            @2[dst + {i * N} + d] = @2[m + {i * lxy - (E[i][0] + E[i][1] * lx)}];" for i in range(9)) + f"""
+        }}
+    }}
+}}
+
+fonction principal() {{
+    depart(F0);
+    soit src = F0;
+    soit dst = F1;
+    pour t dans 0..PAS {{
+        // les vagues : VAGUE tuiles à la fois ; la tuile n° (k · {saut}) mod NT, un ordre qui n'est pas celui de la grille
+        pour v dans 0..NT / VAGUE {{
+            pour k dans 0..VAGUE {{
+                tuile(((v * VAGUE + k) * {saut}) % NT, src, dst);
+            }}
+        }}
+        soit e = src;
+        src = dst;
+        dst = e;
+    }}
+    compte(src);
+}}
+"""
+    return s
+
+
+def regler(nx, ny, pas):
+    """la taille de la grille (nx · ny une puissance de 2) et le nombre de pas"""
+    global NX, NY, PAS, N
+    NX, NY, PAS, N = nx, ny, pas, nx * ny
+
+
+if __name__ == "__main__":
+    for nom, texte in (("fluide_copie.vtx", copie()), ("fluide_tapis.vtx", tapis()), ("fluide_tuiles.vtx", tuiles())):
+        open(os.path.join(ici, nom), "w", encoding="utf-8").write(texte)
+        print(nom, len(texte.splitlines()), "lignes")

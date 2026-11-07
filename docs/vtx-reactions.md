@@ -991,3 +991,88 @@ ses voisines ; un pas = la collision (chaque cellule seule : une vague) puis la 
   pas courant est projeté) et les repères brillants par étage (des Hex de valeur connue, relus à chaque tour : le
   tapis est-il calé ?) ; le fluide affiché dans la toile, aux couleurs du cube ; puis le même programme en SPIR-V sur
   la carte (Vulkan), comparé à Lugus.
+
+## 14. L'ombre comme cache, en nuances (7 novembre)
+
+Question de l'utilisateur : faut-il plusieurs caches ? et l'ombre peut aller du plus noir au plus blanc, seulement si
+le nombre de caches l'exige.
+
+- **Oui, d'ordinaire il y en a plusieurs**, du plus proche (petit, immédiat) au plus loin (grand, lent) : dans un
+  processeur, les registres, puis L1 (48 Ko par cœur ici), L2 (2 Mo), L3 (260 Mo sur la machine d'essai), puis la
+  mémoire ; dans une carte graphique, les registres, la mémoire partagée d'un bloc (48 à 100 Ko), L2, puis la mémoire
+  de la carte. Ceux du processeur se remplissent seuls ; ceux que Vercintorix tient lui-même : les registres (les
+  vibrations, § 11) et les pages de Lugus.
+- **Mesuré d'abord** (`belenos/mesurer_ombre.py`, le fluide forgé, environ quatre millions de cellules par mesure) : le
+  temps par cellule restait le même jusqu'à 256 × 256, puis était multiplié par 35 à 512 × 512. Ce n'était pas le
+  processeur (les 144 Mo du tapis 1024 × 1024 tiennent dans son L3) mais **l'ombre de Lugus elle-même** : seize cases de
+  pages ; à 512 × 512, chaque direction occupe quatre pages, neuf directions espacées de quatre pages tombaient sur
+  quatre cases seulement et se chassaient ; chaque page manquée était cherchée dans une table hachée (une centaine de
+  nanosecondes).
+- **Trois nuances, dans `vtx-rs/src/spu128.rs`** (et la forge, `forge/noyau_forge128.rs`) :
+  - **noire** : les seize cases ; la case d'une page est son numéro plié par quatre bits, `(k ^ k>>4 ^ k>>8) & 15` : des
+    pages qui se suivent gardent des cases différentes, comme avant, et des pages espacées de 16, 64 ou 256 ne tombent
+    plus dans la même ;
+  - **grise** : l'annuaire, une table par étage rangée par le numéro de page (les 65 536 premières : 2³² mots) ; une
+    page sortie des seize cases s'y retrouve en une lecture ; vidé quand un cube est jeté ;
+  - **blanche** : la table hachée, et les fichiers du cube sur le disque (la première lecture d'une page).
+- **Mesuré, forgé, en nanosecondes par cellule et par pas** (le départ et le compte inclus : sensibles à 1024 × 1024,
+  trois pas seulement) :
+
+  | grille (pages du tapis) | tapis avant | + annuaire | + pli | copie avant | copie après |
+  |---|---|---|---|---|---|
+  | 128 × 64 (1) | 31,0 | 30,1 | 31,6 | 50,3 | 54,5 |
+  | 256 × 256 (9) | 39,6 | 35,6 | 38,0 | 47,9 | 50,0 |
+  | 512 × 512 (36) | 1 395,6 | 237,6 | **54,6** | 1 526,2 | **65,7** |
+  | 1024 × 1024 (144) | 1 816,8 | 267,1 | **82,2** | 1 974,0 | **104,1** |
+
+  Les petites grilles ne changent pas (à quelques pour cent près : le bruit de la machine d'essai) ; les grandes vont 22
+  à 25 fois plus vite. Sur Lugus (l'émulateur, où le décodage domine), 512 × 512, deux pas : la copie 3,25 → 2,79 s, le
+  tapis 3,49 → 3,13 s (−11 à −14 %). Les mêmes nombres partout.
+- **Essayé et écarté** : soixante-quatre cases au lieu de seize (512 × 512 réglé, mais 1024 × 1024 toujours 1 820 ns :
+  la grille dépasse tout nombre fixe de cases, d'où l'annuaire) ; la case par le nombre d'or (bon sur les grandes
+  grilles, mais des pages qui se suivent se chassaient : la copie 256 × 256 passait de 45 à 75 ns).
+- **La quatrième nuance n'est pas nécessaire sur le processeur** : une ombre logicielle (le fluide découpé en blocs, des
+  cellules fantômes au bord) n'apporterait plus rien ici. Elle le sera sur la carte : la mémoire partagée d'un bloc est
+  une ombre qu'on remplit à la main ; elle viendra avec SPIR-V.
+- `tests/test_fluide.py` : un grand fluide (512 × 512, 36 pages, donc par l'annuaire), les mêmes nombres sur Lugus et
+  forgé, la masse gardée.
+
+## 15. Les tuiles : une ombre par étage, côte à côte (7 novembre)
+
+Idée de l'utilisateur : le cache se fait déjà par les étages du cube ; l'ombre est un cache de diffusion. Au lieu de
+multiplier les ombres en profondeur (§ 14), les multiplier en surface : la première ombre porte les valeurs du premier
+étage de Hex, la deuxième celles du deuxième, et ainsi de suite ; les ombres collées en grille forment l'image ; on
+calcule par groupes d'étages, en cycles, sans viser le 4K.
+
+- **Cohérent, et connu sous un autre nom** : c'est le rendu par tuiles des cartes graphiques des téléphones (Apple,
+  Mali, PowerVR) : l'écran en tuiles, chaque tuile calculée en entier dans une petite mémoire rapide, écrite une fois.
+  La méthode la plus économe en énergie et en bande passante.
+- **Trois justesses** : la résolution est le nombre de tuiles fois la taille d'une tuile (64 étages de 64 × 64 points
+  = 512 × 512), et la taille d'une tuile est celle que tient la mémoire rapide (48 à 100 Ko sur une carte) ; une tuile a
+  besoin d'une marge prise chez ses voisines (le fluide passe la frontière) ; les étages de Lugus sont des espaces
+  d'adresses, l'idée vaut pour les étages de Hex du cube.
+- **Ce que l'idée ajoute** : les vagues de tuiles permettent de ne recalculer que les tuiles qui changent, et de
+  calculer finement là où l'œil regarde ; les repères brillants d'un étage serviraient aux coutures.
+- **L'essai, `belenos/fluide_tuiles.vtx`** (C, fabriqué par `fabriquer_fluide.py`) : 128 × 64 cellules en tuiles ;
+  chaque tuile a son ombre (la tuile et une marge d'une cellule, bouclée comme les autres versions), les ombres rangées
+  côte à côte ; la collision est faite dans l'ombre, puis chaque cellule tire ses populations de l'ombre vers le tampon
+  d'arrivée ; les tuiles calculées par vagues de quatre, **dans le désordre** (la tuile n° 9k mod 16) : les mêmes nombres
+  que A, B et la référence, sur Lugus et forgé (`tests/test_fluide.py`). L'ordre ne compte pas : chaque tuile ne lit que
+  le tampon de départ ; c'est ce qui permet de les donner à des cœurs ou à une carte, en parallèle.
+- **Mesuré** (`belenos/mesurer_tuiles.py` ; Lugus, 50 pas ; forgé, 488 pas) :
+
+  | version | calcul par cellule rendue | instructions de Lugus | forgé |
+  |---|---|---|---|
+  | A, la copie | 1,00 | 224,1 M | 187 ms |
+  | B, le tapis roulant | 1,00 | 228,4 M | **121 ms** |
+  | C, tuiles 8 × 8 | 1,56 | 390,6 M | 521 ms |
+  | C, tuiles 16 × 16 | 1,27 | 323,6 M | 421 ms |
+  | C, tuiles 32 × 16 | 1,20 | 307,6 M | 381 ms |
+  | C, tuiles 64 × 32 | 1,10 | 285,3 M | 357 ms |
+
+- **Lecture honnête** : sur le processeur, les tuiles coûtent plus (la marge recalculée, et chaque population passe par
+  l'ombre : écrite puis relue) ; le tapis roulant reste le plus rapide. Les instructions suivent la marge, le temps
+  forgé un peu plus. Le gain des tuiles n'est pas sur le processeur (son cache se remplit seul, § 14) : il est sur la
+  carte, où l'ombre d'une tuile tient dans la mémoire partagée d'un bloc et où les tuiles tournent ensemble, et dans
+  les tuiles qu'on ne recalcule pas. Prochaine étape : le tapis roulant à l'intérieur de chaque tuile (les deux idées
+  réunies), puis l'affichage tuile par tuile dans la toile.
