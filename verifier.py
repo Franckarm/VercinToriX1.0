@@ -97,6 +97,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",
                    [sys.executable, os.path.join("forge", "test_forge128.py"), "40" if COMPLET else "12"]))
+    etapes.append(("forge du SPU-32 : vtx -> Rust -> natif, mêmes sorties et même mémoire que le SPU émulé",
+                   [sys.executable, os.path.join("forge", "test_forge.py"), "300" if COMPLET else "60"]))
     etapes.append(("flottant_petuar : le flottant quaternaire de 128 bits (référence exacte, quatre machines, vtxc, ADN et cube)",
                    [sys.executable, os.path.join("tests", "test_petuar.py")]))
     etapes.append(("type texte et afficher (vtx.py et vtxc)", [sys.executable, os.path.join("vtxc", "test_textes.py")]))

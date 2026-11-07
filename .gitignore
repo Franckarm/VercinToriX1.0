@@ -1,1 +1,7 @@
 vtx-rs/target/
+chimie/casse-brique*.png
+__pycache__/
+*.prog
+verifier.log
+feu/feu-de-camp.png
+ombre/ombre-256.png

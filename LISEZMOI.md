@@ -65,8 +65,9 @@ L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/v
 - Facultatif : **numpy** (`pip install numpy`) pour le test des flottants et des longs ; **Node.js** pour les machines JavaScript ; **Rust** (`cargo`) pour la machine Rust : installation pas à pas dans `vtx-rs/LISEZMOI.md`.
 
 Pour commencer simplement : `COMMENCER.md` (vtx.exe et atelier.exe, sans Python). Les tests de développement
-(vérificateur, corpus de conformité, tests de chaque partie) ne sont plus dans ce paquet, pour l'alléger : ils sont
-gardés à part et passés avant chaque livraison.
+(vérificateur, corpus de conformité, tests de chaque partie) sont passés avant chaque livraison. Pour tout revérifier
+soi-même : `python3 verifier.py` (environ trois quarts d'heure), ou, sous Windows, double-cliquer `verifier.bat` (le
+compte rendu va dans `verifier.log`). Les `.bat` d'essai livrés à côté du paquet, eux, ne mesurent que la nouveauté.
 
 ## Premiers pas
 
