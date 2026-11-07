@@ -1076,3 +1076,17 @@ calcule par groupes d'étages, en cycles, sans viser le 4K.
   carte, où l'ombre d'une tuile tient dans la mémoire partagée d'un bloc et où les tuiles tournent ensemble, et dans
   les tuiles qu'on ne recalcule pas. Prochaine étape : le tapis roulant à l'intérieur de chaque tuile (les deux idées
   réunies), puis l'affichage tuile par tuile dans la toile.
+
+## 16. Décision et une autre stratégie : l'accordéon (7 novembre)
+
+- **Décidé** : on garde le tapis roulant (le plus rapide, la moitié de la mémoire) et on avance dans cette direction ;
+  les tuiles restent un outil pour la carte, pas la voie principale.
+- **L'accordéon** (idée de l'utilisateur, d'après les meurtrières des bunkers et leurs gradins qui font ricocher les
+  balles : l'ouverture s'élargit marche après marche) : une tuile pour le centre de l'image, la suivante pour la partie
+  étendue autour, la suivante plus loin encore ; le centre toujours net, chaque étage de tuile une extension de l'image.
+  Cohérent, et connu ailleurs : le rendu fovéal (net là où l'œil regarde), les clipmaps des terrains et les cascades des
+  ombres portées. Ce qui le rend propre au cube : chaque étage a **le même nombre de cases** et couvre deux fois plus
+  large (le pas de ses cases double) ; le coût est le même à chaque étage, le champ double. Six étages de 64 × 64 : un
+  centre à pleine finesse, un champ 32 fois plus large, pour le prix d'une image de 157 × 157.
+  À essayer plus tard : l'affichage du fluide en accordéon (le centre net, les étages lointains moyennés), et un
+  fluide en accordéon (des grilles emboîtées, plus fines au centre : le raffinement de maillage).
