@@ -1294,3 +1294,46 @@ mesure pas ici (un seul cœur). **Attendu sur 24 cœurs** (calcul, pas mesure) :
 du bord, partagée par deux segments, passe pour une dépendance ; environ 30 ms perdues) ; 12 segments pour 24 cœurs
 (la moitié des cœurs attend) ; les sprites et le PNG restent séquentiels (le CRC et l'Adler-32 se combinent pourtant
 par morceaux : un PNG en cylindres est possible).
+
+## 23. Le rendu différé : les reflets et les ombres à la toute fin, pour tout le monde (7 novembre, soir)
+
+**La mesure de la 0.5zg** (chez l'utilisateur, 24 cœurs) : 2K 1,35 s sur un cœur, **0,68 s** sur tous (1,03 s avant) ;
+4K 3,66 s et **1,90 s** (3,23 s avant) ; la même image partout. La fusion ne pèse plus (7 à 30 ms par boucle). Restaient :
+la boucle des reflets, déséquilibrée (130 ms : un seul segment portait presque toute l'eau), le balayage des ombres
+(31 ms sur un cœur) et la queue (sprites et PNG, environ 0,2 s).
+
+**L'idée de l'utilisateur** : l'anticube (reflets, ombres) doit venir à la toute fin de la composition de l'image, pour
+que chaque élément en profite. C'est le rendu différé des moteurs : tout ce qui est dans l'image écrit d'abord dans un
+tampon, puis une seule passe éclaire tout, sans savoir qui a peint quoi. Dans Belenos :
+
+- **le tampon** : la couleur (`IMAGE`), la distance fine en 1/256 de case (`ZF`, nouvelle), l'état de Belnap
+  (`ANTI` : le ciel inconnu, la terre et les objets faux, l'eau vraie), et pour les objets leur distance (`OBJ`) ; un
+  objet posé (`poser`) y écrit tout cela, et ses bornes : de quelle ligne à quelle ligne chaque colonne a des objets,
+  à quelles distances il y en a, et de quel x à quel x ;
+- **la passe finale** (`passe_finale`), après le dernier objet : les rives (l'eau qui touche la terre ou un objet devient
+  variable), puis pour chaque ligne les reflets et les ombres, rangés à part (`NOUV`), puis posés ;
+- **les reflets des objets**, lus dans le tampon : un point posé à la distance o, à la ligne ys, se voit dans l'eau à la
+  ligne 2·yw(o) − ys (yw(o) : la ligne de l'eau à cette distance ; exact pour une eau plate) ; l'eau doit être devant
+  lui, le plus proche l'emporte, et le vrai rayon dans le relief s'arrête sur lui (une colline devant l'objet le cache
+  encore) ;
+- **les ombres des objets**, lues dans le tampon : du point du sol, le rayon remonte vers le soleil peint par
+  demi-case ; s'il traverse un point de l'image où un objet est posé à sa distance (à 1,25 case près : l'épaisseur
+  d'un objet), le point est à l'ombre. Le rayon saute les distances où il n'y a aucun objet, et ne lit pas l'image à
+  côté des objets de cette distance (de 0,65 à 0,23 s sur un cœur, la même image) ;
+- **les bandes entrelacées** : la ligne y va à la bande y mod 12 ; l'eau, qui tient en peu de lignes, se partage entre
+  tous les cœurs ; aucune passe ne lit ce qu'elle écrit (rien n'est rejoué).
+
+**Pour le montrer** : un bosquet et un buron sur la rive d'en face du lac (à 271 cases) ; sans une ligne pour eux, ils
+ont leur reflet (à l'envers, troublé de rides, décalé : leur pied est au-dessus de l'eau). Les vaches et les arbres de
+l'estive ont leur ombre longue du soir, vers nous (le soleil est bas, à contre-jour). Lugus et forgé : la même image,
+octet pour octet.
+
+**Ce qui manque encore** : les ombres ont des bords francs (pas de pénombre pour les objets) ; un objet ne fait pas
+d'ombre sur un autre ; la passe ne voit que ce qui est dans l'image (un objet hors du cadre n'a ni reflet ni ombre).
+
+**La carte graphique (RTX 3070)** : tout Belenos tourne aujourd'hui sur le processeur. La carte a 5 888 cœurs CUDA
+(46 multiprocesseurs, qui vont par groupes de 32 au même pas) et sa propre mémoire : faite pour la passe finale et les
+colonnes (un point, un fil), pas pour le PNG. Le chemin prévu : SPIR-V par Vulkan, la forge écrivant un nuanceur de
+calcul pour une boucle en segments sans effet. Deux obstacles honnêtes : les mots de 128 bits (la carte calcule en 32
+bits : chaque opération en coûte plusieurs) ; et la machine de travail n'a pas de carte graphique : chaque pas ne se
+vérifie que sur le PC de l'utilisateur, par un .bat.

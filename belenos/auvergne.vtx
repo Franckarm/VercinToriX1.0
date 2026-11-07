@@ -3,18 +3,24 @@
 // un vrai relief (une grille de 1024 × 1024 hauteurs : la plaine, la chaîne des Puys, un lac de cratère), regardé en
 // perspective ; chaque colonne de l'image lance un rayon qui avance du plus près au plus loin et peint de bas en haut ce
 // qu'il découvre (le tampon de hauteur de la colonne : rien n'est peint deux fois) ; le ciel d'un soir d'automne et ses
-// nuages, les monts Dore au loin (la neige sur les crêtes), le reflet dans le lac, puis un buron et des vaches Salers,
+// nuages, les monts Dore au loin (la neige sur les crêtes), le lac, puis des burons, des arbres et des vaches Salers,
 // posés dans la scène avec leur profondeur.
+// Le rendu différé : tout ce qui est dans l'image (le relief, puis les objets) écrit d'abord sa couleur, sa distance et
+// son état de Belnap dans le tampon ; la passe finale (les reflets, les ombres des objets) vient à la toute fin et ne lit
+// que ce tampon : chaque élément en profite, sans qu'elle sache qui l'a peint (les arbres de la rive d'en face ont leur
+// reflet, les vaches leur ombre longue du soir).
 // L'accordéon du relief : près de l'œil, deux étages plus fins (1/4 et 1/2 case, 1024 × 1024 cases chacun, chacun deux
 // fois plus étendu) portent les touffes de l'estive et les blocs des flancs ; le rayon n'y saute jamais une case, et un
 // détail plus fin que ce qu'une ligne d'image couvre s'efface (pas de moiré). Au-delà, la grille d'une case.
 // L'anticube de l'image : un état de Belnap par point (le ciel inconnu, la terre fausse, l'eau vraie, la rive variable) ;
-// les vrais reflets (le rayon renvoyé par l'eau repart dans le paysage) ne sont calculés que là où il dit vrai ou variable.
+// les vrais reflets (le rayon renvoyé par l'eau repart dans le paysage, et s'arrête sur un objet du tampon) ne sont
+// calculés que là où il dit vrai ou variable.
 // Les ombres portées, depuis le soleil peint dans le ciel (bas, à contre-jour), rangées dans l'anticube du relief : faux
 // éclairé, vrai à l'ombre, variable la pénombre, inconnu hors de la grille.
 // Les cylindres : les grandes boucles (le relief, l'accordéon, les colonnes, les reflets) sont « en segments » ; forgé,
 // chaque segment joue sur un cœur et son propre cube, puis les cubes sont fondus. Chaque segment écrit sa part : les
-// colonnes sont rangées colonne par colonne puis remises en lignes, les reflets calculés à part puis posés.
+// colonnes sont rangées colonne par colonne puis remises en lignes ; la passe finale va en bandes entrelacées (la ligne
+// y à la bande y mod 12 : l'eau se partage entre tous les cœurs), calcule à part puis pose.
 // Tout est en entiers (les mêmes nombres sur Lugus et forgé). L'image est rangée dans l'étage 2, puis écrite en PNG par
 // le programme lui-même (CRC-32, Adler-32, blocs « stockés ») dans un fichier d'octets.
 //     lugus belenos/auvergne.vtx            -> belenos/auvergne.png (2048 × 1080, le 2K du cinéma)
@@ -46,6 +52,21 @@ constante TPROF = 76546048;        // sa profondeur
 constante TANTI = 85983232;        // son état de Belnap
 constante RIVES = 95420416;        // @2[RIVES + y·W + x] : l'état de l'eau, la rive comprise (variable)
 constante REFL = 104857600;        // @2[REFL + y·W + x] : le reflet calculé
+// le rendu différé : tout ce qui est dans l'image (le relief, puis les objets) écrit d'abord sa couleur, sa distance et
+// son état de Belnap ; la passe finale (les reflets, les ombres des objets) ne lit que ce tampon, à la toute fin : ce qui
+// sera posé demain dans la scène en profitera sans une ligne de plus
+constante TZF = 115343360;         // @2[TZF + x·H + y] : la distance du point peint par la colonne x, en 1/256 de case
+constante ZF = 125829120;          // @2[ZF + y·W + x] : la même, en lignes (0 : le ciel)
+constante OBJ = 136314880;         // @2[OBJ + y·W + x] : la distance de l'objet posé là (1/256 de case) ; 0 : aucun
+constante NOUV = 146800640;        // @2[NOUV + y·W + x] : la couleur que la passe finale y pose (+ 2^32 : posée)
+constante OCOL = 2113536;          // @2[OCOL + 2x], @2[OCOL + 2x + 1] : de quelle ligne à quelle ligne la colonne x a des objets
+constante OBOR = 2121728;          // les bornes des objets : distance la plus proche, la plus lointaine, x le plus à gauche, à droite
+constante OZB = 2125824;           // @2[OZB + z] : 1 si un objet est posé à la distance z (en cases)
+constante OSUIV = 2127872;         // @2[OSUIV + z] : la prochaine distance (>= z) où un objet peut faire de l'ombre ; RIEN : aucune
+constante OZX = 2129920;           // @2[OZX + 2z], @2[OZX + 2z + 1] : de quel x à quel x les objets posés à la distance z
+constante OZD = 2134016;           // les mêmes, élargies à deux cases de distance près (là où le rayon les cherche)
+constante BANDE = 12;              // la passe finale en bandes entrelacées (la ligne y à la bande y mod 12) : l'eau se partage
+constante POSEE = 4294967296;
 constante OMBRE = 62914560;        // @2[OMBRE + z·G + x] : l'ombre portée sur la case, de 0 (faux : éclairée) à 256 (vrai :
 //   à l'ombre), entre les deux la pénombre (variable) ; hors de la grille : inconnu, rien n'y est calculé
 constante HOMBRE = 64000000;       // @2[HOMBRE + z·G + x] : la hauteur de l'ombre au-dessus de la case
@@ -635,6 +656,7 @@ fonction colonne(sx) {
                 @2[TIMG + sx * H + y] = cp;
                 @2[TPROF + sx * H + y] = 2 * z + eau;
                 @2[TANTI + sx * H + y] = 1 + eau;
+                @2[TZF + sx * H + y] = zf;
             }
             bas = sy;
         }
@@ -662,6 +684,7 @@ fonction colonne(sx) {
         }
         @2[TIMG + sx * H + y2] = l;
         @2[TPROF + sx * H + y2] = 2 * ZMAX + 2;
+        @2[TZF + sx * H + y2] = 0;
     }
 }
 
@@ -673,6 +696,7 @@ fonction remettre() {
         pour x dans 0..W {
             @2[IMAGE + y * W + x] = @2[TIMG + x * H + y];
             @2[PROF + y * W + x] = @2[TPROF + x * H + y];
+            @2[ZF + y * W + x] = @2[TZF + x * H + y];
             soit a = @2[TANTI + x * H + y];
             @2[ANTI + y * W + x] = a;
             si a == 2 {
@@ -687,42 +711,64 @@ fonction remettre() {
     }
 }
 
-// l'anticube de l'eau : seules les lignes qui ont de l'eau, et sur elles seulement de son premier à son dernier point ;
-// un point d'eau qui touche la terre devient variable (la rive)
-fonction marquer_rives() {
-    pour y dans HORIZON..H en segments {
-        pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
-            soit etat_eau = @2[ANTI + y * W + x];
-            @2[RIVES + y * W + x] = etat_eau;
-            si etat_eau == 2 {
-                soit terre = 0;
-                si x > 0 && @2[ANTI + y * W + x - 1] == 1 {
-                    terre = 1;
-                }
-                si x + 1 < W && @2[ANTI + y * W + x + 1] == 1 {
-                    terre = 1;
-                }
-                si @2[ANTI + (y - 1) * W + x] == 1 {
-                    terre = 1;
-                }
-                si y + 1 < H && @2[ANTI + (y + 1) * W + x] == 1 {
-                    terre = 1;
-                }
-                si terre == 1 {
-                    @2[RIVES + y * W + x] = 3;
-                }
+// l'anticube de l'eau, sur une ligne : seulement de son premier à son dernier point d'eau ; un point d'eau qui touche la
+// terre (ou un objet) devient variable (la rive)
+fonction marquer_ligne(y) {
+    pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
+        soit etat_eau = @2[ANTI + y * W + x];
+        @2[RIVES + y * W + x] = etat_eau;
+        si etat_eau == 2 {
+            soit terre = 0;
+            si x > 0 && @2[ANTI + y * W + x - 1] == 1 {
+                terre = 1;
+            }
+            si x + 1 < W && @2[ANTI + y * W + x + 1] == 1 {
+                terre = 1;
+            }
+            si @2[ANTI + (y - 1) * W + x] == 1 {
+                terre = 1;
+            }
+            si y + 1 < H && @2[ANTI + (y + 1) * W + x] == 1 {
+                terre = 1;
+            }
+            si terre == 1 {
+                @2[RIVES + y * W + x] = 3;
             }
         }
     }
 }
 
+// le reflet d'un objet au point d'eau (x, y), lu dans le tampon : un point posé à la distance o, à la ligne ys, se voit
+// dans l'eau à la ligne 2·yw(o) - ys, yw(o) étant la ligne de l'eau à cette distance ; le plus proche l'emporte ; l'eau
+// doit être devant lui. Rendu : sa distance << 32 | sa couleur (0 : aucun)
+fonction reflet_objet(x, y) {
+    soit zw = @2[ZF + y * W + x];
+    soit meilleur = 0;
+    pour ys dans @2[OCOL + 2 * x]..@2[OCOL + 2 * x + 1] {
+        soit o = @2[OBJ + ys * W + x];
+        si o > zw {
+            soit yw = HORIZON + ((CAMH - EAU) * FOCALE) / o;
+            si 2 * yw - ys == y {
+                si meilleur == 0 || o < (meilleur >> 32) {
+                    meilleur = (o << 32) | @2[IMAGE + ys * W + x];
+                }
+            }
+        }
+    }
+    retour meilleur;
+}
+
 // le vrai reflet du point (x, y) : le rayon renvoyé par l'eau part du point où il la touche et repart dans le paysage
 // symétrique ; le point du relief de hauteur h à la distance z s'y voit à la ligne HORIZON + (CAMH - 2·EAU + h)·F / z
 // (symétrique de sa vraie ligne par rapport à la ligne de l'eau à cette distance, et non par rapport à l'horizon) ;
-// au-delà de tout relief : le ciel, à l'infini, où le miroir de l'écran par rapport à l'horizon est exact
-fonction reflet_vrai(x, y) {
+// un objet (obj : rendu par reflet_objet) l'arrête là où il est ; au-delà de tout : le ciel, à l'infini, où le miroir
+// de l'écran par rapport à l'horizon est exact
+fonction reflet_vrai(x, y, obj) {
     soit zf = ((CAMH - EAU) * FOCALE) / (y - HORIZON);
     tantque zf < ZMAX * 256 {
+        si obj != 0 && zf >= (obj >> 32) {
+            retour obj & 16777215;
+        }
         soit wx = CAMX * 256 + ((x - W / 2) * zf) ./ FOCALE;
         soit h = entre4(HAUT, wx, zf, 2, PLAINE);
         si h .> EAU {
@@ -734,6 +780,9 @@ fonction reflet_vrai(x, y) {
         }
         zf = zf + 256 + zf / 240;
     }
+    si obj != 0 {
+        retour obj & 16777215;
+    }
     soit ym = 2 * HORIZON - y;
     si ym .< 0 {
         ym = 0;
@@ -741,48 +790,158 @@ fonction reflet_vrai(x, y) {
     retour @2[IMAGE + ym * W + x];
 }
 
-// les reflets, seulement là où l'anticube dit vrai ou variable ; troublés de rides ; plus loin, l'eau reflète davantage
-fonction reflets() {
-    marquer_rives();
-    pour y dans HORIZON..H en segments {
-        pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
-            soit etat = @2[RIVES + y * W + x];
-            si etat >= 2 {
-                soit ride = (nappes(x, y * 10, 4 + K, 2) - 32768) ./ (2600 / K);
-                soit xr = x + ride;
-                si xr .< 0 {
-                    xr = 0;
+// l'ombre d'un objet sur le sol au point (x, y), lue dans le tampon : du point du sol, on remonte vers le soleil peint
+// (par demi-case) ; si le rayon traverse un point de l'image où un objet est posé à sa distance, le point est à l'ombre
+fonction ombre_objet(x, y) {
+    soit zf = @2[ZF + y * W + x];
+    si zf == 0 || zf > @2[OBOR + 1] || zf + 5120 < @2[OBOR] {
+        retour 0;
+    }
+    soit wx = CAMX * 256 + ((x - W / 2) * zf) ./ FOCALE;
+    soit h = CAMH - ((y - HORIZON) * zf) ./ FOCALE;
+    // le rayon part là où commence le plus proche des objets (rien avant lui ne peut faire d'ombre)
+    soit k = 1;
+    si @2[OBOR] > zf + 320 + 128 {
+        k = (@2[OBOR] - zf - 320) / 128;
+    }
+    tantque k <= 48 {
+        soit wz = zf + k * 128;
+        // aucun objet à cette distance : le rayon saute à la prochaine où il y en a un (ou s'arrête)
+        soit nb = @2[OSUIV + (wz >> 8)];
+        si nb == RIEN || nb * 256 > zf + 48 * 128 {
+            retour 0;
+        }
+        si nb > (wz >> 8) {
+            k = (nb * 256 - zf + 127) / 128;
+            continuer;
+        }
+        soit px = W / 2 + ((wx + (k * 128 * SOLDX) / SOLDZ - CAMX * 256) * FOCALE) ./ wz;
+        // à côté des objets de cette distance : rien à lire
+        si px .< @2[OZD + 2 * (wz >> 8)] || px .>= @2[OZD + 2 * (wz >> 8) + 1] {
+            k = k + 1;
+            continuer;
+        }
+        soit py = HORIZON + ((CAMH - h - (k * 128 * SOLDY) / SOLDZ) * FOCALE) ./ wz;
+        si px .>= 0 && px .< W && py .>= 0 && py .< H {
+            soit o = @2[OBJ + py * W + px];
+            si o != 0 {
+                soit d = o - wz;
+                si d .< 0 {
+                    d = 0 - d;
                 }
-                si xr >= W {
-                    xr = W - 1;
+                si d .< 320 {
+                    retour 1;
                 }
-                soit vu = reflet_vrai(xr, y);
-                soit z = @2[PROF + y * W + x] / 2;
-                soit c = melange(rgb(34, 58, 80), vu, 120 + z / 4);
-                si (hache(x >> K, y / K) & 1023) < 5 {
-                    c = melange(c, rgb(255, 236, 200), 150);
+            }
+        }
+        k = k + 1;
+    }
+    retour 0;
+}
+
+// la passe finale sur une ligne : les reflets là où l'anticube dit vrai ou variable, troublés de rides (plus loin, l'eau
+// reflète davantage) ; les ombres des objets sur la terre (faux) ; rangés à part, dans NOUV
+fonction finir_ligne(y) {
+    pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
+        soit etat = @2[RIVES + y * W + x];
+        si etat >= 2 {
+            soit ride = (nappes(x, y * 10, 4 + K, 2) - 32768) ./ (2600 / K);
+            soit xr = x + ride;
+            si xr .< 0 {
+                xr = 0;
+            }
+            si xr >= W {
+                xr = W - 1;
+            }
+            soit vu = reflet_vrai(xr, y, reflet_objet(xr, y));
+            soit z = @2[PROF + y * W + x] / 2;
+            soit c = melange(rgb(34, 58, 80), vu, 120 + z / 4);
+            si (hache(x >> K, y / K) & 1023) < 5 {
+                c = melange(c, rgb(255, 236, 200), 150);
+            }
+            si etat == 3 {
+                // la rive : l'eau et la terre voisine se mêlent à parts égales (le bord n'est plus en escalier)
+                soit voisin = @2[IMAGE + (y - 1) * W + x];
+                si x > 0 && @2[ANTI + y * W + x - 1] == 1 {
+                    voisin = @2[IMAGE + y * W + x - 1];
                 }
-                si etat == 3 {
-                    // la rive : l'eau et la terre voisine se mêlent à parts égales (le bord n'est plus en escalier)
-                    soit voisin = @2[IMAGE + (y - 1) * W + x];
-                    si x > 0 && @2[ANTI + y * W + x - 1] == 1 {
-                        voisin = @2[IMAGE + y * W + x - 1];
-                    }
-                    si x + 1 < W && @2[ANTI + y * W + x + 1] == 1 {
-                        voisin = @2[IMAGE + y * W + x + 1];
-                    }
-                    c = melange(c, voisin, 128);
+                si x + 1 < W && @2[ANTI + y * W + x + 1] == 1 {
+                    voisin = @2[IMAGE + y * W + x + 1];
                 }
-                @2[REFL + y * W + x] = c;
+                c = melange(c, voisin, 128);
+            }
+            @2[NOUV + y * W + x] = POSEE | c;
+        }
+    }
+    // les ombres des objets : du plus à gauche de leur ombre (le soleil est à droite) au plus à droite des objets
+    soit xa = 0;
+    si @2[OBOR + 2] > W / 4 {
+        xa = @2[OBOR + 2] - W / 4;
+    }
+    soit xb = @2[OBOR + 3];
+    si xb > W {
+        xb = W;
+    }
+    pour x2 dans xa..xb {
+        si @2[ANTI + y * W + x2] == 1 && @2[OBJ + y * W + x2] == 0 {
+            si ombre_objet(x2, y) == 1 {
+                @2[NOUV + y * W + x2] = POSEE | eclairer(@2[IMAGE + y * W + x2], 150);
             }
         }
     }
-    // puis posés sur l'image (calculés à part : aucun segment ne lit ce qu'un autre écrit)
-    pour y3 dans HORIZON..H en segments {
-        pour x3 dans @2[RANG + 2 * y3]..@2[RANG + 2 * y3 + 1] {
-            si @2[RIVES + y3 * W + x3] >= 2 {
-                @2[IMAGE + y3 * W + x3] = @2[REFL + y3 * W + x3];
+}
+
+// la passe finale : les rives, puis les reflets et les ombres (rangés à part), puis posés sur l'image ; chaque passe en
+// bandes entrelacées (les lignes d'eau se partagent entre tous les cœurs), et aucune ne lit ce qu'elle écrit
+fonction passe_finale() {
+    // les distances où un objet peut faire de l'ombre (à deux cases près, l'épaisseur d'un objet), et pour chaque
+    // distance la prochaine d'entre elles
+    soit suiv = RIEN;
+    pour i dans 0..ZMAX + 40 {
+        soit b = ZMAX + 39 - i;
+        soit pres = 0;
+        @2[OZD + 2 * b] = W;
+        @2[OZD + 2 * b + 1] = 0;
+        pour j dans 0..5 {
+            si b + j >= 2 && @2[OZB + b + j - 2] == 1 {
+                pres = 1;
+                si @2[OZX + 2 * (b + j - 2)] < @2[OZD + 2 * b] {
+                    @2[OZD + 2 * b] = @2[OZX + 2 * (b + j - 2)];
+                }
+                si @2[OZX + 2 * (b + j - 2) + 1] > @2[OZD + 2 * b + 1] {
+                    @2[OZD + 2 * b + 1] = @2[OZX + 2 * (b + j - 2) + 1];
+                }
             }
+        }
+        si pres == 1 {
+            suiv = b;
+        }
+        @2[OSUIV + b] = suiv;
+    }
+    pour s dans 0..BANDE en segments {
+        soit y = HORIZON + s;
+        tantque y < H {
+            marquer_ligne(y);
+            y = y + BANDE;
+        }
+    }
+    pour s2 dans 0..BANDE en segments {
+        soit y2 = HORIZON + s2;
+        tantque y2 < H {
+            finir_ligne(y2);
+            y2 = y2 + BANDE;
+        }
+    }
+    pour s3 dans 0..BANDE en segments {
+        soit y3 = HORIZON + s3;
+        tantque y3 < H {
+            pour x3 dans 0..W {
+                soit n = @2[NOUV + y3 * W + x3];
+                si n != 0 {
+                    @2[IMAGE + y3 * W + x3] = n & 16777215;
+                }
+            }
+            y3 = y3 + BANDE;
         }
     }
 }
@@ -796,8 +955,54 @@ fonction devant(sx, sy, z) {
     retour @2[PROF + sy * W + sx] > 2 * z;
 }
 
-fonction poser(sx, sy, c) {
-    @2[IMAGE + sy * W + sx] = c;
+// un point d'objet : sa couleur, sa distance et son état (faux : il absorbe) dans le tampon ; les bornes des objets
+fonction poser(sx, sy, c, z) {
+    soit q = sy * W + sx;
+    @2[IMAGE + q] = c;
+    @2[PROF + q] = 2 * z;
+    @2[ANTI + q] = 1;
+    @2[ZF + q] = z * 256;
+    @2[OBJ + q] = z * 256;
+    @2[OZB + z] = 1;
+    si sx < @2[OZX + 2 * z] {
+        @2[OZX + 2 * z] = sx;
+    }
+    si sx + 1 > @2[OZX + 2 * z + 1] {
+        @2[OZX + 2 * z + 1] = sx + 1;
+    }
+    si sy < @2[OCOL + 2 * sx] {
+        @2[OCOL + 2 * sx] = sy;
+    }
+    si sy + 1 > @2[OCOL + 2 * sx + 1] {
+        @2[OCOL + 2 * sx + 1] = sy + 1;
+    }
+    si z * 256 < @2[OBOR] {
+        @2[OBOR] = z * 256;
+    }
+    si z * 256 > @2[OBOR + 1] {
+        @2[OBOR + 1] = z * 256;
+    }
+    si sx < @2[OBOR + 2] {
+        @2[OBOR + 2] = sx;
+    }
+    si sx + 1 > @2[OBOR + 3] {
+        @2[OBOR + 3] = sx + 1;
+    }
+}
+
+fonction preparer_objets() {
+    pour x dans 0..W {
+        @2[OCOL + 2 * x] = H;
+        @2[OCOL + 2 * x + 1] = 0;
+    }
+    pour zb dans 0..ZMAX + 40 {
+        @2[OZX + 2 * zb] = W;
+        @2[OZX + 2 * zb + 1] = 0;
+    }
+    @2[OBOR] = RIEN;
+    @2[OBOR + 1] = 0;
+    @2[OBOR + 2] = W;
+    @2[OBOR + 3] = 0;
 }
 
 // une vache Salers (la robe acajou, les cornes en lyre) en (cx, cz) de la grille, tournée vers la droite (s = 1) ou
@@ -859,7 +1064,7 @@ fonction vache(cx, cz, s) {
                     c = rgb(72, 30, 20);
                 }
                 si c != RIEN {
-                    poser(px, py, c);
+                    poser(px, py, c, z);
                 }
             }
         }
@@ -913,7 +1118,7 @@ fonction buron(cx, cz) {
                     } sinon {
                         c = eclairer(c, 200);
                     }
-                    poser(px, py, c);
+                    poser(px, py, c, z);
                 }
             }
         }
@@ -963,7 +1168,7 @@ fonction arbre(cx, cz, t) {
                     }
                 }
                 si c != RIEN {
-                    poser(px, py, c);
+                    poser(px, py, c, z);
                 }
             }
         }
@@ -1118,8 +1323,13 @@ fonction principal() {
         colonne(sx);
     }
     remettre();
-    reflets();
+    preparer_objets();
     // du plus loin au plus près : ce qui est devant recouvre ce qui est derrière
+    // sur la rive d'en face du lac, un bosquet et un buron : la passe finale leur donne leur reflet
+    arbre(536, 271, 5);
+    arbre(546, 272, 4);
+    buron(566, 272);
+    arbre(612, 271, 4);
     arbre(612, 180, 3);
     arbre(420, 170, 2);
     arbre(590, 150, 2);
@@ -1134,6 +1344,8 @@ fonction principal() {
     arbre(536, 66, 4);
     vache(522, 60, -1);
     vache(500, 52, 1);
+    // tout est dans le tampon : la passe finale, pour tout le monde
+    passe_finale();
     cadre();
     soit empreinte = 0;
     pour y dans 0..H {
