@@ -1,0 +1,26 @@
+// machine : lugus
+// Les cylindres mis à l'épreuve : une boucle dont chaque case lit la précédente (à rejouer dans l'ordre), et une
+// boucle dont tous les segments écrivent les mêmes mots (des conflits : le dernier l'emporte, comme dans l'ordre)
+fonction suivant(i) {
+    si i > 0 {
+        @2[2000000 + i] = @2[2000000 + i - 1] * 3 + i;
+    }
+}
+fonction tous(i) {
+    @2[3000000] = i * 7;
+    @2[3000001 + (i & 1)] = i;
+}
+fonction principal() {
+    @2[2000000] = 1;
+    pour i dans 0..200000 en segments {
+        suivant(i);
+    }
+    pour j dans 0..100000 en segments {
+        tous(j);
+    }
+    soit e = 0;
+    pour k dans 0..200000 {
+        e = (e ^ @2[2000000 + k]) * 1099511628211;
+    }
+    sortie(e ^ (@2[3000000] * 1000003) ^ (@2[3000001] << 40) ^ (@2[3000002] << 20));
+}

@@ -1217,3 +1217,48 @@ tableau en fait environ 13 milliards par seconde, soit l'ordre d'un code natif s
 vtx mais le cœur unique : il faut 16,7 ms par image pour 60 images par seconde, et le 2K en demande 1,1 s (65 fois
 trop). Les colonnes sont indépendantes : c'est le travail exact d'une carte graphique (des milliers de cœurs), d'où
 SPIR-V dans le plan ; l'accordéon, lui, ne se recalcule que quand l'œil bouge (et par bandes, segment par segment).
+
+## 21. Les ombres depuis le soleil peint ; les cylindres : un cube par cœur (7 novembre)
+
+**Demandes de l'utilisateur** : les ombres ; « c'est trop lent : il faut plus de cœurs, plus de cubes ».
+
+**Les ombres** (`belenos/auvergne.vtx`, `ombres()`) : rangées dans l'anticube du relief, une valeur par case :
+**faux** éclairée, **vrai** à l'ombre, **variable** la pénombre (sur 1,5 case de hauteur), **inconnu** hors de la
+grille. Un seul balayage, des lignes du fond (côté soleil) vers l'œil : chaque case reçoit la hauteur de l'ombre de sa
+voisine côté soleil, abaissée de la pente du rayon ; plus haute que la case, la case est à l'ombre. Puis la lumière
+(l'étage d'une case et les étages fins) en tient compte. Première version honnêtement ratée : le soleil qui éclairait
+le relief (haut, 33 degrés) n'était pas celui peint dans le ciel (8 degrés, 17 à droite), et les ombres ne se voyaient
+pas. Le soleil est maintenant le même partout : le tableau est à contre-jour ; les faces des puys tournées vers nous
+s'assombrissent, leurs ombres viennent vers nous sur la plaine entre les puys et le lac, les sommets prennent un
+liseré de lumière, et la lumière rasante modèle les touffes du premier plan.
+
+**Les cylindres** (la forge, `forge/forge128.py` et `forge/noyau_forge128.rs` ; trois fonctions dans `spu128.rs`) :
+`pour i dans a..b en segments { … }` existait (le V6 de vtx 0.4 : 12 segments, 6 cylindres × 2 temps) ; en 128 bits,
+la forge le jouait en boucle ordinaire. Maintenant, quand le corps ne touche que le cube (ni sortie, ni fichier, ni
+tas), chaque cylindre (un fil, un cœur) joue des segments qui se suivent, sur **son propre cube** :
+- il lit les pages du cube commun sans les copier (l'instantané) ; il ne copie une page qu'au moment où il y écrit ;
+- quand tous ont fini, les cubes sont fondus dans le cube commun, mot à mot, dans l'ordre des segments ; chaque mot a
+  un état de Belnap : **inconnu** (personne n'y a touché), **vrai** (un seul l'a changé), **variable** (deux l'ont
+  changé différemment : le dernier l'emporte, comme dans l'ordre, et le conflit est compté) ;
+- si un cylindre a lu une page qu'un cylindre d'avant a écrite, ou écrit hors de la pile dans l'étage 0, ou touché un
+  cube sur disque ou une page d'ADN, tout est oublié et les segments sont rejoués l'un après l'autre.
+
+Le résultat est donc toujours celui de Lugus. La partition rangeait chaque segment dans sa propre mesure (elle ne
+prouve pas l'indépendance d'écritures à une adresse calculée) : les cylindres la vérifient en jouant.
+`VTX_COEURS=n` fixe le nombre de cylindres, `VTX_CYLINDRES=1` montre la fusion.
+
+**Vérifié** (`tests/test_cylindres.py`) : `exemples128/cylindres.vtx` et `tests/cylindres_dependants.vtx` donnent la
+sortie de Lugus sur 1, 2 et 3 cylindres ; la boucle dépendante (chaque case lit la précédente) est vue et rejouée ;
+les segments qui écrivent les mêmes mots donnent 3 mots variables, résolus comme dans l'ordre.
+
+**Le tableau en cylindres** : le relief, l'accordéon, la lumière à l'ombre, les colonnes et les reflets sont en
+segments. Pour que chaque segment écrive sa part : les colonnes écrivent l'image colonne par colonne, puis
+`remettre()` la remet en lignes ; les reflets sont calculés à part, puis posés ; la rive a sa couche à elle. Sur
+2 cylindres : 105 pages fondues pour les colonnes, aucun mot variable, rien de rejoué. Lugus et forgé : mêmes octets.
+
+**La mesure, honnêtement** : la machine de travail n'a qu'un vrai cœur (deux programmes côte à côte prennent deux
+fois plus de temps ; le Mandelbrot parallèle passe de 0,67 à 0,60 s) : le gain ne se mesure pas ici. Sur un cœur, le
+découpage coûte 6 % (2K : 1,33 → 1,42 s). Ce qui reste sur un seul cœur : le balayage des ombres (chaque ligne dépend
+de la précédente), l'empreinte, les objets et surtout le PNG (le CRC et l'Adler-32 se suivent), environ 12 % du
+travail : sur 8 cœurs, on attend environ 3 à 4 fois plus vite (12 segments sur 8 cœurs : 4 en jouent deux), pas 8.
+Le .bat mesure sur 1 cœur puis sur tous.

@@ -324,9 +324,16 @@ class Forge(V.Generateur):
                 self.instr(x)
             self.instr(("pour", s[1], ("var", f"__sa{s[7]}", s[5]), ("var", f"__sb{s[7]}", s[5]), s[4], s[5], 1))
         elif g == "accord":
-            for mesure in s[2]:
-                for st, _note, _nom in mesure:
-                    self.instr(st)
+            # les segments d'une boucle : la partition les range en mesures (une par segment quand elle ne prouve pas
+            # qu'ils sont indépendants, par exemple quand ils écrivent le cube à une adresse calculée) ; les cylindres
+            # le vérifient en jouant (fusionner), et rejouent dans l'ordre si besoin : toutes les notes, dans l'ordre
+            toutes = [st for mesure in s[2] for st, _note, _nom in mesure]
+            if self.cylindres_possibles(toutes):
+                self.notes_en_cylindres(toutes)
+            else:
+                for mesure in s[2]:
+                    for st, _note, _nom in mesure:
+                        self.instr(st)
         elif g in ("arreter", "continuer"):
             if not self.boucles:
                 raise VtxError(f"ligne {s[1]} : « {'arrêter' if g == 'arreter' else 'continuer'} » hors d'une boucle")
@@ -420,6 +427,89 @@ class Forge(V.Generateur):
         for p in groupe:
             for x in p["ranger"]:
                 self.instr(x)
+
+    # ------------------------------------------------------------ les cylindres : les segments sur plusieurs cœurs
+    SANS_CUBE = INTERDITS - {"lire", "ecrire", "mem"}
+
+    def sans_effet(self, n, vus):
+        """Comme pur, mais le cube est permis (lu et écrit) : ni monde, ni tas, ni assembleur, ni accord imbriqué."""
+        if isinstance(n, list):
+            return all(self.sans_effet(x, vus) for x in n)
+        if not isinstance(n, tuple) or not n:
+            return True
+        if isinstance(n[0], str):
+            if n[0] in self.SANS_CUBE:
+                return False
+            if n[0] == "appel" and len(n) > 2 and isinstance(n[1], str):
+                nom = n[1]
+                if nom in self.EFFETS:
+                    return False
+                f = self.fonctions.get(nom) or (self.reserve.get(nom) if hasattr(self, "reserve") else None)
+                if f is not None and nom not in vus:
+                    vus.add(nom)
+                    if not self.sans_effet(f.corps, vus):
+                        return False
+            return all(self.sans_effet(x, vus) for x in n[1:])
+        return all(self.sans_effet(x, vus) for x in n)
+
+    def cylindres_possibles(self, notes):
+        """Une mesure jouée par des cylindres : au moins deux notes, toutes des segments d'une même boucle (la même
+        variable, le même corps), et un corps qui ne touche que le cube."""
+        if len(notes) < 2 or self.plan or any(st[0] != "pour" for st in notes):
+            return False
+        if any(st[1] != notes[0][1] or st[4] != notes[0][4] for st in notes):
+            return False
+        return self.sans_effet(notes[0][4], set())
+
+    def notes_en_cylindres(self, notes):
+        """Les notes d'une mesure jouées ensemble : un cylindre par cœur, chacun des notes qui se suivent, sur son propre
+        cube ; puis la fusion (noyau : fusionner) ; si elle refuse, les notes l'une après l'autre."""
+        m = len(notes)
+        self.ligne("{")
+        self.niveau += 1
+        self.ligne("let mut fait = false;")
+        self.ligne("if cylindres_voulus() > 1 {")
+        self.niveau += 1
+        self.ligne("let inst = instantane(c);")
+        self.ligne(f"let nt = cylindres_voulus().min({m});")
+        self.ligne("let recoltes: Vec<Recolte> = std::thread::scope(|sc| {")
+        self.niveau += 1
+        self.ligne("let inst = &inst;")
+        self.ligne("let fils: Vec<_> = (0..nt).map(|t| sc.spawn(move || {")
+        self.niveau += 1
+        self.ligne("let mut c_fils = ctx_cylindre(inst); let c = &mut c_fils;")
+        self.ligne(f"for q in (t * {m} / nt)..((t + 1) * {m} / nt) {{")
+        self.niveau += 1
+        self.ligne("match q {")
+        self.niveau += 1
+        for k, st in enumerate(notes):
+            self.ligne(f"{k} => {{")
+            self.niveau += 1
+            self.instr(st)
+            self.niveau -= 1
+            self.ligne("}")
+        self.ligne("_ => {}")
+        self.niveau -= 1
+        self.ligne("}")
+        self.niveau -= 1
+        self.ligne("}")
+        self.ligne("rendre(c)")
+        self.niveau -= 1
+        self.ligne("})).collect();")
+        self.ligne("fils.into_iter().map(|h| h.join().unwrap()).collect()")
+        self.niveau -= 1
+        self.ligne("});")
+        self.ligne("fait = fusionner(c, &inst, recoltes);")
+        self.niveau -= 1
+        self.ligne("}")
+        self.ligne("if !fait {")
+        self.niveau += 1
+        for st in notes:
+            self.instr(st)
+        self.niveau -= 1
+        self.ligne("}")
+        self.niveau -= 1
+        self.ligne("}")
 
     def parallele_possible(self, meta):
         _, red, var, a_, b_, corps_, s_ = meta
@@ -1154,7 +1244,11 @@ def programme_rust(src, dossier=None, nom="programme"):
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
     s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
              "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 16], pl: [std::ptr::null_mut(); 16], ce: [u128::MAX; 16],\n"
-             "          pe: [std::ptr::null_mut(); 16], vider: |_c| {} }\n}")
+             "          pe: [std::ptr::null_mut(); 16], vider: |_c| {}, ombre: None }\n}")
+    # la machine d'un cylindre : celle d'un fil, qui lit le cube commun et n'écrit que dans le sien
+    s.append("#[allow(dead_code)]\nfn ctx_cylindre(inst: &Instantane) -> Ctx {\n    let mut c = ctx_fils();\n"
+             "    c.ombre = Some(Box::new(Cylindre { commun: inst as *const Instantane, copiees: Default::default(), "
+             "lues: Default::default(), danger: false }));\n    c\n}")
     s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees);\n}\n")
     return "\n".join(s), mots

@@ -285,6 +285,34 @@ impl Spu128 {
         (p.mots.as_mut_ptr(), ((e as u128) << 120) | (i >> 16), brins)
     }
 
+    /// Pour la forge (les cylindres) : les pages présentes des étages 1 à 3 : (clé comme page_de, premier mot, a des
+    /// brins). Un cylindre les lit sans les copier ; il ne copie une page que s'il y écrit.
+    pub fn instantane(&mut self) -> Vec<(u128, *mut u128, bool)> {
+        let mut v = Vec::new();
+        for e in 1..4 {
+            for (cle, p) in self.pages[e].iter_mut() {
+                v.push((((e as u128) << 120) | *cle, p.mots.as_mut_ptr(), p.brins.is_some()));
+            }
+        }
+        v
+    }
+
+    /// Pour la forge : des cubes de cette machine sont-ils sur le disque (des pages qu'un cylindre ne verrait pas) ?
+    pub fn a_des_cubes_sur_disque(&self) -> bool {
+        self.dossier.as_ref().map(|d| std::fs::read_dir(d).map(|l| l.flatten().any(|f| f.file_name().to_string_lossy()
+            .starts_with("cube128-"))).unwrap_or(false)).unwrap_or(false)
+    }
+
+    /// Pour la forge : rend les mots des pages de ces clés (la machine d'un cylindre, qui ne sert plus ensuite).
+    pub fn rendre_pages(&mut self, cles: &[u128]) -> Vec<(u128, Box<[u128]>)> {
+        self.cache = [[(u128::MAX, std::ptr::null_mut()); 16]; 4];
+        self.annuaire = Default::default();
+        cles.iter().filter_map(|&k| {
+            let e = (k >> 120) as usize;
+            self.pages[e].remove(&(k & ((1u128 << 120) - 1))).map(|p| (k, p.mots))
+        }).collect()
+    }
+
     /// La clé de page d'une adresse (étage et numéro de page), comme page_de.
     #[inline(always)]
     pub fn cle_page(adr: u128) -> (u128, usize) {

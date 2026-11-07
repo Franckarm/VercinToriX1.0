@@ -1,0 +1,21 @@
+// machine : lugus
+// Les cylindres : « en segments », forgé, chaque segment sur un cœur et son propre cube, puis les cubes fondus
+//     python forge/forge128.py exemples128/cylindres.vtx    puis    VTX_CYLINDRES=1 ./cylindres(.lugus)
+constante N = 4096;
+fonction peindre(i) {
+    soit v = i * 7 + 3;
+    pour k dans 0..50 {
+        v = (v * 1103515245 + 12345) & 1048575;
+    }
+    @2[1000000 + i] = v;
+}
+fonction principal() {
+    pour i dans 0..N en segments {
+        peindre(i);
+    }
+    soit e = 0;
+    pour j dans 0..N {
+        e = (e ^ @2[1000000 + j]) * 1099511628211;
+    }
+    sortie(e);
+}

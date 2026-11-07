@@ -10,6 +10,11 @@
 // détail plus fin que ce qu'une ligne d'image couvre s'efface (pas de moiré). Au-delà, la grille d'une case.
 // L'anticube de l'image : un état de Belnap par point (le ciel inconnu, la terre fausse, l'eau vraie, la rive variable) ;
 // les vrais reflets (le rayon renvoyé par l'eau repart dans le paysage) ne sont calculés que là où il dit vrai ou variable.
+// Les ombres portées, depuis le soleil peint dans le ciel (bas, à contre-jour), rangées dans l'anticube du relief : faux
+// éclairé, vrai à l'ombre, variable la pénombre, inconnu hors de la grille.
+// Les cylindres : les grandes boucles (le relief, l'accordéon, les colonnes, les reflets) sont « en segments » ; forgé,
+// chaque segment joue sur un cœur et son propre cube, puis les cubes sont fondus. Chaque segment écrit sa part : les
+// colonnes sont rangées colonne par colonne puis remises en lignes, les reflets calculés à part puis posés.
 // Tout est en entiers (les mêmes nombres sur Lugus et forgé). L'image est rangée dans l'étage 2, puis écrite en PNG par
 // le programme lui-même (CRC-32, Adler-32, blocs « stockés ») dans un fichier d'octets.
 //     lugus belenos/auvergne.vtx            -> belenos/auvergne.png (2048 × 1080, le 2K du cinéma)
@@ -34,7 +39,24 @@ constante ANTI = 58720256;         // @2[ANTI + y·W + x] : l'anticube de l'imag
 //   inconnu (0) : le ciel et le lointain, rien à renvoyer ; faux (1) : la terre, qui absorbe ;
 //   vrai (2) : l'eau, qui renvoie ; variable (3) : la rive, à la fois terre et eau (les deux se mêlent)
 constante RANG = 2097152 + 8192;   // @2[RANG + 2y], @2[RANG + 2y + 1] : de quel x à quel x la ligne y a de l'eau
-constante FIN = 50331648;          // @2[FIN + e·2097152 + z·G + x] : hauteur de l'étage e ; + 1048576 : sa lumière
+constante FIN = 50331648;
+// les cylindres : chaque segment écrit sa propre part du cube ; les colonnes sont d'abord rangées colonne par colonne
+constante TIMG = 67108864;         // @2[TIMG + x·H + y] : la couleur peinte par la colonne x
+constante TPROF = 76546048;        // sa profondeur
+constante TANTI = 85983232;        // son état de Belnap
+constante RIVES = 95420416;        // @2[RIVES + y·W + x] : l'état de l'eau, la rive comprise (variable)
+constante REFL = 104857600;        // @2[REFL + y·W + x] : le reflet calculé
+constante OMBRE = 62914560;        // @2[OMBRE + z·G + x] : l'ombre portée sur la case, de 0 (faux : éclairée) à 256 (vrai :
+//   à l'ombre), entre les deux la pénombre (variable) ; hors de la grille : inconnu, rien n'y est calculé
+constante HOMBRE = 64000000;       // @2[HOMBRE + z·G + x] : la hauteur de l'ombre au-dessus de la case
+// le soleil, là où il est peint dans le ciel (SOLX, SOLY) : 17 degrés à droite, 8 degrés au-dessus de l'horizon ;
+// sa direction (sur 256) : vers la droite, vers le haut, vers le fond (le tableau est à contre-jour)
+constante SOLDX = 74;
+constante SOLDY = 37;
+constante SOLDZ = 242;
+constante DESCENTE = 39;           // par case vers le soleil (de z + 1 en z), le rayon descend de 39/256 de case
+constante DERIVE = 78;             // et se décale de 78/256 de case vers la droite
+constante PENOMBRE = 384;          // la pénombre : l'ombre gagne sur 1,5 case de hauteur          // @2[FIN + e·2097152 + z·G + x] : hauteur de l'étage e ; + 1048576 : sa lumière
 constante HORIZON = 560 * K;       // la ligne d'horizon sur l'image
 constante FOCALE = 1774 * K;       // en points (un champ de 60 degrés)
 constante CAMX = 512;              // l'œil : au-dessus de la case (512, 0)
@@ -225,13 +247,13 @@ fonction hauteur_case(x, z) {
 }
 
 fonction relief() {
-    pour z dans 0..G {
+    pour z dans 0..G en segments {
         pour x dans 0..G {
             @2[HAUT + z * G + x] = hauteur_case(x, z);
         }
     }
     // la lumière du soleil : la normale (par les voisines), vers le soleil à droite et devant
-    pour z2 dans 0..G {
+    pour z2 dans 0..G en segments {
         pour x2 dans 0..G {
             soit xa = x2 - 1;
             si x2 == 0 {
@@ -252,13 +274,13 @@ fonction relief() {
             soit gx = @2[HAUT + z2 * G + xb] - @2[HAUT + z2 * G + xa];
             soit gz = @2[HAUT + zb * G + x2] - @2[HAUT + za * G + x2];
             // n = (-gx, 512, -gz) ; le soleil s = (0,78 ; 0,55 ; 0,30)
-            soit pn = (0 - gx) * 200 + 512 * 141 - gz * 77;
+            soit pn = (0 - gx) * SOLDX + 512 * SOLDY - gz * SOLDZ;
             soit norme = racine_entiere(gx * gx + 262144 + gz * gz);
             soit lam = pn ./ norme;
             si lam .< 0 {
                 lam = 0;
             }
-            @2[LUM + z2 * G + x2] = 92 + lam;
+            @2[LUM + z2 * G + x2] = 104 + 2 * lam;
         }
     }
 }
@@ -361,10 +383,10 @@ fonction detail(wx, wz, e) {
         dessus = 2400;
     }
     // la force : la plaine à peine bosselée, les prés devant (les touffes de l'estive), les flancs des puys (les blocs)
-    soit force = 6 + dessus / 48;
+    soit force = 5 + dessus / 56;
     soit zc = wz .>> 8;
     si zc .< 150 {
-        force = force + (150 - zc) / 10;
+        force = force + (150 - zc) / 16;
     }
     // ce qu'une ligne d'image couvre en profondeur à cette distance : un détail plus fin que lui s'efface (pas de moiré)
     soit ligne = (wz * wz) / (2048 * FOCALE);
@@ -377,18 +399,55 @@ fonction detail(wx, wz, e) {
     retour h;
 }
 
+// les ombres portées : une case est à l'ombre si le rayon qui va vers le soleil passe sous l'ombre de sa voisine de ce
+// côté, en (x + 0,305 ; z + 1) ; un seul balayage, des lignes du fond (côté soleil) vers l'œil ; puis la lumière de
+// l'étage d'une case en tient compte
+fonction ombres() {
+    pour k dans 0..G {
+        soit z = G - 1 - k;
+        pour x dans 0..G {
+            soit h = @2[HAUT + z * G + x];
+            soit hs = h;
+            soit s = 0;
+            si z < G - 1 {
+                soit x1 = x + 1;
+                si x1 >= G {
+                    x1 = x;
+                }
+                soit a = @2[HOMBRE + (z + 1) * G + x];
+                soit b = @2[HOMBRE + (z + 1) * G + x1];
+                soit rayon = a + (((b - a) * DERIVE) .>> 8) - DESCENTE;
+                si rayon .> h {
+                    hs = rayon;
+                    s = ((rayon - h) * 256) / PENOMBRE;
+                    si s > 256 {
+                        s = 256;
+                    }
+                }
+            }
+            @2[HOMBRE + z * G + x] = hs;
+            @2[OMBRE + z * G + x] = s;
+        }
+    }
+    // à l'ombre, il ne reste que la lumière du ciel (104)
+    pour i dans 0..G * G en segments {
+        soit l = @2[LUM + i];
+        @2[LUM + i] = 104 + ((l - 104) * (256 - @2[OMBRE + i])) / 256;
+    }
+}
+
 // les étages fins : la hauteur, puis la lumière par les voisines (comme pour l'étage 2, sur des cases plus petites)
 fonction accordeon() {
     pour e dans 0..2 {
         soit c = 64 << e;
         soit ox = CAMX * 256 - 512 * c;
         soit b = adresse(e);
-        pour z dans 0..G {
+        pour z dans 0..G en segments {
             pour x dans 0..G {
                 @2[b + z * G + x] = detail(ox + x * c, z * c, e);
             }
         }
-        pour z2 dans 0..G {
+        pour z2 dans 0..G en segments {
             pour x2 dans 0..G {
                 soit xa = x2 - 1;
                 si x2 == 0 {
@@ -408,13 +467,14 @@ fonction accordeon() {
                 }
                 soit gx = @2[b + z2 * G + xb] - @2[b + z2 * G + xa];
                 soit gz = @2[b + zb * G + x2] - @2[b + za * G + x2];
-                soit pn = (0 - gx) * 200 + 2 * c * 141 - gz * 77;
+                soit pn = (0 - gx) * SOLDX + 2 * c * SOLDY - gz * SOLDZ;
                 soit norme = racine_entiere(gx * gx + 4 * c * c + gz * gz);
                 soit lam = pn ./ norme;
                 si lam .< 0 {
                     lam = 0;
                 }
-                @2[b + 1048576 + z2 * G + x2] = 92 + lam;
+                soit om = entre4(OMBRE, ox + x2 * c, z2 * c, 2, 0);
+                @2[b + 1048576 + z2 * G + x2] = 104 + (2 * lam * (256 - om)) / 256;
             }
         }
     }
@@ -572,17 +632,9 @@ fonction colonne(sx) {
                         cp = rgb(226, 190, 58);
                     }
                 }
-                @2[IMAGE + y * W + sx] = cp;
-                @2[PROF + y * W + sx] = 2 * z + eau;
-                @2[ANTI + y * W + sx] = 1 + eau;
-                si eau == 1 {
-                    si sx < @2[RANG + 2 * y] {
-                        @2[RANG + 2 * y] = sx;
-                    }
-                    si sx >= @2[RANG + 2 * y + 1] {
-                        @2[RANG + 2 * y + 1] = sx + 1;
-                    }
-                }
+                @2[TIMG + sx * H + y] = cp;
+                @2[TPROF + sx * H + y] = 2 * z + eau;
+                @2[TANTI + sx * H + y] = 1 + eau;
             }
             bas = sy;
         }
@@ -608,17 +660,41 @@ fonction colonne(sx) {
         si l == RIEN {
             l = ciel(sx, y2);
         }
-        @2[IMAGE + y2 * W + sx] = l;
-        @2[PROF + y2 * W + sx] = 2 * ZMAX + 2;
+        @2[TIMG + sx * H + y2] = l;
+        @2[TPROF + sx * H + y2] = 2 * ZMAX + 2;
+    }
+}
+
+// les colonnes remises en lignes (l'image, la profondeur, l'anticube) ; et pour chaque ligne, de quel x à quel x l'eau
+fonction remettre() {
+    pour y dans 0..H en segments {
+        soit premier = W;
+        soit dernier = 0;
+        pour x dans 0..W {
+            @2[IMAGE + y * W + x] = @2[TIMG + x * H + y];
+            @2[PROF + y * W + x] = @2[TPROF + x * H + y];
+            soit a = @2[TANTI + x * H + y];
+            @2[ANTI + y * W + x] = a;
+            si a == 2 {
+                si x < premier {
+                    premier = x;
+                }
+                dernier = x + 1;
+            }
+        }
+        @2[RANG + 2 * y] = premier;
+        @2[RANG + 2 * y + 1] = dernier;
     }
 }
 
 // l'anticube de l'eau : seules les lignes qui ont de l'eau, et sur elles seulement de son premier à son dernier point ;
 // un point d'eau qui touche la terre devient variable (la rive)
 fonction marquer_rives() {
-    pour y dans HORIZON..H {
+    pour y dans HORIZON..H en segments {
         pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
-            si @2[ANTI + y * W + x] == 2 {
+            soit etat_eau = @2[ANTI + y * W + x];
+            @2[RIVES + y * W + x] = etat_eau;
+            si etat_eau == 2 {
                 soit terre = 0;
                 si x > 0 && @2[ANTI + y * W + x - 1] == 1 {
                     terre = 1;
@@ -633,7 +709,7 @@ fonction marquer_rives() {
                     terre = 1;
                 }
                 si terre == 1 {
-                    @2[ANTI + y * W + x] = 3;
+                    @2[RIVES + y * W + x] = 3;
                 }
             }
         }
@@ -668,9 +744,9 @@ fonction reflet_vrai(x, y) {
 // les reflets, seulement là où l'anticube dit vrai ou variable ; troublés de rides ; plus loin, l'eau reflète davantage
 fonction reflets() {
     marquer_rives();
-    pour y dans HORIZON..H {
+    pour y dans HORIZON..H en segments {
         pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
-            soit etat = @2[ANTI + y * W + x];
+            soit etat = @2[RIVES + y * W + x];
             si etat >= 2 {
                 soit ride = (nappes(x, y * 10, 4 + K, 2) - 32768) ./ (2600 / K);
                 soit xr = x + ride;
@@ -697,7 +773,15 @@ fonction reflets() {
                     }
                     c = melange(c, voisin, 128);
                 }
-                @2[IMAGE + y * W + x] = c;
+                @2[REFL + y * W + x] = c;
+            }
+        }
+    }
+    // puis posés sur l'image (calculés à part : aucun segment ne lit ce qu'un autre écrit)
+    pour y3 dans HORIZON..H en segments {
+        pour x3 dans @2[RANG + 2 * y3]..@2[RANG + 2 * y3 + 1] {
+            si @2[RIVES + y3 * W + x3] >= 2 {
+                @2[IMAGE + y3 * W + x3] = @2[REFL + y3 * W + x3];
             }
         }
     }
@@ -1027,15 +1111,13 @@ fonction ecrire_png(nom) {
 
 fonction principal() {
     relief();
+    ombres();
     accordeon();
     preparer_lointain();
-    pour y dans 0..H {
-        @2[RANG + 2 * y] = W;
-        @2[RANG + 2 * y + 1] = 0;
-    }
-    pour sx dans 0..W {
+    pour sx dans 0..W en segments {
         colonne(sx);
     }
+    remettre();
     reflets();
     // du plus loin au plus près : ce qui est devant recouvre ce qui est derrière
     arbre(612, 180, 3);

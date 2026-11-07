@@ -83,6 +83,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_fluide.py")]))
     etapes.append(("Belenos, le tableau (belenos/auvergne.vtx) : forgé, il peint l'image et l'écrit lui-même en PNG juste",
                    [sys.executable, os.path.join("tests", "test_tableau.py")]))
+    etapes.append(("les cylindres (forge128 : « en segments » sur plusieurs cœurs, un cube par cylindre, fondus mot à mot ; "
+                   "une boucle dépendante rejouée dans l'ordre)", [sys.executable, os.path.join("tests", "test_cylindres.py")]))
     etapes.append(("la paillasse d'Ogmios : lue comme le compilateur, gestes rejoués (lier, délier, ajouter, retirer), valeurs",
                    [sys.executable, os.path.join("tests", "test_paillasse.py")]))
     etapes.append(("Ogmios écrit en vtx : l'atelier sur Lugus (édition rejouée, Ctrl+S, F5 sur une machine fille)",
