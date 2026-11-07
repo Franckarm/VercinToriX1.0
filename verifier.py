@@ -106,6 +106,8 @@ if shutil.which("cargo"):
     etapes.append(("mémoire qui se libère et mémoire qui dure (ramasser, sauver_tas)", [sys.executable, os.path.join("vtxc", "test_memoire.py")]))
     etapes.append(("ScoR v0 (spirale, sommeil, épissage à quatre valeurs)", [sys.executable, os.path.join("scor", "test_scor.py")]))
     etapes.append(("traduction en code natif (rustc)", [sys.executable, os.path.join("natif", "test_natif.py")]))
+    etapes.append(("Taranis, la sonde : le SPIR-V de vtx sur une carte par Vulkan (ou SwiftShader), les mêmes mots que le processeur",
+                   [sys.executable, os.path.join("tests", "test_taranis.py")]))
     etapes.append(("atelier en console (pseudo-terminal)", [sys.executable, os.path.join("atelier", "test_atelier.py")]))
 else:
     print("cargo absent : la machine Rust n'est pas vérifiée (voir vtx-rs/LISEZMOI.md)")

@@ -24,6 +24,10 @@ path = "src/vtx64.rs"
 name = "lugus"
 path = "src/lugus.rs"
 
+[[bin]]
+name = "taranis"
+path = "src/taranis.rs"
+
 [dependencies]
 
 [profile.release]

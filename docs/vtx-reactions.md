@@ -1337,3 +1337,36 @@ colonnes (un point, un fil), pas pour le PNG. Le chemin prévu : SPIR-V par Vulk
 calcul pour une boucle en segments sans effet. Deux obstacles honnêtes : les mots de 128 bits (la carte calcule en 32
 bits : chaque opération en coûte plusieurs) ; et la machine de travail n'a pas de carte graphique : chaque pas ne se
 vérifie que sur le PC de l'utilisateur, par un .bat.
+
+## 24. Taranis : la carte graphique, par Vulkan, sans bibliothèque (7 novembre, soir)
+
+**La mesure de la 0.5zh** (24 cœurs) : 2K 1,67 s sur un cœur, **0,83 s** sur tous ; 4K 5,2 s et **2,43 s** ; la même
+image partout. La passe finale coûte environ 130 ms sur 24 cœurs (fils et fusion) ; il reste environ 0,2 s après la
+dernière boucle (objets, cadre, empreinte, PNG). **Le PNG n'est plus le frein** depuis que l'écriture d'octets ne
+cherche plus son canal dans une table (0,28 s gagnées) : ses 644 millions d'instructions font environ 50 ms forgés.
+Un format sans contrôle (PPM, BMP) en gagnerait une partie, pas l'essentiel. Pour la vidéo, la vraie voie est autre :
+les images brutes, et le codeur matériel de la carte (NVENC sur une RTX), pas un PNG par image.
+
+**Ce que vaut Belenos, comparé** : forgé, vtx est mesuré à 1 à 3 fois le temps du C (section des mesures) ; la même
+scène en C sur le processeur irait donc au mieux 2 à 3 fois plus vite (estimation, pas mesure). Un moteur de jeu peint
+un relief de ce genre en 4K en quelques millisecondes : 500 à 1 000 fois plus vite. L'écart n'est pas le langage, c'est
+la carte. D'où le but de l'utilisateur : configurer la partie carte graphique, pas faire une belle image.
+
+**Ce que la machine de travail permet** : ni crates.io, ni PyPI, ni paquets système ; mais le chargeur Vulkan est là,
+et **SwiftShader** (le Vulkan logiciel de Google, livré avec Chromium) aussi : tout ce qui part sur la carte de
+l'utilisateur peut d'abord être vérifié ici, sur le processeur, par une vraie implémentation de Vulkan.
+
+**Taranis, étape zéro (la sonde)**, sans aucune dépendance, comme le reste de vtx-rs :
+- `taranis/spirv.py` : l'écrivain de SPIR-V de vtx (les mots de 32 bits, l'en-tête, les instructions, une relecture qui
+  vérifie longueurs et identifiants) ; il écrit le noyau de la sonde : chaque fil brasse son numéro en 64 tours de
+  xorshift et de multiplication (384 opérations sur 32 bits) et le range ;
+- `vtx-rs/src/taranis.rs` (le binaire `taranis`) : Vulkan chargé à l'exécution (`vulkan-1.dll` sous Windows, que le
+  pilote installe ; `libvulkan.so.1` ailleurs), les structures de la spécification écrites à la main ; la carte choisie
+  (la première dédiée), un tampon visible du processeur, le noyau, n / 64 groupes ; puis le même brassage sur un cœur et
+  sur tous, et la comparaison mot à mot ;
+- `tests/test_taranis.py` (dans le vérificateur) : le noyau embarqué est celui que spirv.py écrit, et la carte (ou
+  SwiftShader) rend les mêmes mots que le processeur. Ici : 1 048 576 mots identiques sur SwiftShader.
+
+**La suite** : la forge écrit le SPIR-V d'une boucle en segments (le corps traduit en opérations de la carte ; les
+mots de 128 bits en quatre mots de 32, ou des boucles prouvées sur 32 bits), puis une passe de Belenos (les colonnes, la
+passe finale) sur la carte, comparée au processeur point pour point.
