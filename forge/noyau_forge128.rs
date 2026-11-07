@@ -550,14 +550,34 @@ fn taranis_boucle(c: &mut Ctx, spv: &[u32], a: u128, b: u128, acces: &[(bool, u1
     if len > (1usize << 31) {
         return false;
     }
-    let mut f = vec![0u64; len];
-    for k in 0..len {
-        let w = c.lire(etg((lo + k as u64) as u128, 2));
-        if w >> 64 != 0 {
-            return false;
-        }
-        f[k] = w as u64;
+    if c.m.a_des_cubes_sur_disque() {
+        return false;
     }
+    // la fenêtre montée page par page (une page absente : des zéros) ; un mot de plus de 64 bits, ou un brin : non
+    let t_cube = std::time::Instant::now();
+    let mut f = vec![0u64; len];
+    let mut vide = true;
+    let mut k = 0usize;
+    while k < len {
+        let adr = lo + k as u64;
+        let dans_page = (65536 - (adr & 65535)) as usize;
+        let m = dans_page.min(len - k);
+        if let Some((mots, brins)) = c.m.page_si(etg(adr as u128, 2)) {
+            if brins {
+                return false;
+            }
+            let src = unsafe { std::slice::from_raw_parts(mots.add((adr & 65535) as usize), m) };
+            for (j, &w) in src.iter().enumerate() {
+                if w >> 64 != 0 {
+                    return false;
+                }
+                f[k + j] = w as u64;
+                vide &= w == 0;
+            }
+        }
+        k += m;
+    }
+    let monte_cube = t_cube.elapsed().as_secs_f64() * 1e3;
     let orig = f.clone();
     let mut p = vec![0u64; 6 + ext.len()];
     p[1] = a as u64;
@@ -567,29 +587,44 @@ fn taranis_boucle(c: &mut Ctx, spv: &[u32], a: u128, b: u128, acces: &[(bool, u1
     for (k, &v) in ext.iter().enumerate() {
         p[6 + k] = v as u64;
     }
-    match carte.lancer(spv, &mut f, &mut p, n) {
-        Ok(ms) => {
-            if taranis_vk::bavard() {
-                eprintln!("taranis : {} tours sur la carte, fenêtre de {} mots, {:.2} ms", n, len, ms);
-            }
-        }
+    let temps = match carte.lancer(spv, &mut f, &mut p, n, vide) {
+        Ok(t) => t,
         Err(e) => {
             if taranis_vk::bavard() {
                 eprintln!("taranis : la carte refuse ({}) : les cylindres prennent la boucle", e);
             }
             return false;
         }
-    }
+    };
     if p[0] != 0 {
         if taranis_vk::bavard() {
             eprintln!("taranis : un accès hors de la fenêtre : les cylindres rejouent la boucle");
         }
         return false;
     }
-    for k in 0..len {
-        if f[k] != orig[k] {
-            c.ecrire(etg((lo + k as u64) as u128, 2), f[k] as u128);
+    // les mots changés, rangés dans le cube page par page
+    let t_cube = std::time::Instant::now();
+    let mut k = 0usize;
+    while k < len {
+        let adr = lo + k as u64;
+        let m = ((65536 - (adr & 65535)) as usize).min(len - k);
+        if f[k..k + m] != orig[k..k + m] {
+            let (mots, _, _) = c.m.page_de(etg(adr as u128, 2));
+            let dst = unsafe { std::slice::from_raw_parts_mut(mots.add((adr & 65535) as usize), m) };
+            for j in 0..m {
+                if f[k + j] != orig[k + j] {
+                    dst[j] = f[k + j] as u128;
+                }
+            }
         }
+        k += m;
+    }
+    c.oublier_pages();
+    if taranis_vk::bavard() {
+        eprintln!("taranis : {} tours sur la carte, fenêtre de {} mots{} ; lire le cube {:.1} ms, monter {:.1} ms, \
+                   la carte {:.1} ms, redescendre {:.1} ms, ranger dans le cube {:.1} ms",
+                  n, len, if vide { " (vide : remplie sur la carte)" } else { "" }, monte_cube, temps[0], temps[1],
+                  temps[2], t_cube.elapsed().as_secs_f64() * 1e3);
     }
     true
 }

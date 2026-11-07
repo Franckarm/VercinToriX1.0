@@ -302,6 +302,12 @@ impl Spu128 {
     }
 
     /// Pour la forge : des cubes de cette machine sont-ils sur le disque (des pages qu'un cylindre ne verrait pas) ?
+    /// Pour Taranis : la page d'une adresse si elle existe (sans la créer) : son premier mot, et si elle a des brins.
+    pub fn page_si(&mut self, adr: u128) -> Option<(*mut u128, bool)> {
+        let (e, i) = Self::place(adr);
+        self.pages[e].get_mut(&(i >> 16)).map(|p| (p.mots.as_mut_ptr(), p.brins.is_some()))
+    }
+
     pub fn a_des_cubes_sur_disque(&self) -> bool {
         self.dossier.as_ref().map(|d| std::fs::read_dir(d).map(|l| l.flatten().any(|f| f.file_name().to_string_lossy()
             .starts_with("cube128-"))).unwrap_or(false)).unwrap_or(false)

@@ -134,12 +134,16 @@ if r.returncode == 0 and os.path.exists(exe_v):
             somme = None
         juste = somme is not None and (somme_ref is None or somme == somme_ref)
         if coeurs == "carte":
-            m = re.search(r"tours sur la carte, fenêtre de \d+ mots, ([\d.]+) ms", r.stderr)
+            m = re.search(r"lire le cube ([\d.]+) ms, monter ([\d.]+) ms, *la carte ([\d.]+) ms, redescendre ([\d.]+) ms, "
+                          r"ranger dans le cube ([\d.]+) ms", r.stderr)
             if not m:
                 print("la boucle n'est pas allée sur la carte :", r.stderr[-300:])
                 continue
-            ajouter("vtx forgé, la boucle sur la carte : la carte (monter, calculer, redescendre)", float(m.group(1)), juste,
+            lc, mo, ca, de, ra = (float(x) for x in m.groups())
+            ajouter("vtx forgé, la boucle sur la carte : la carte seule (copies dans la carte, calcul)", ca, juste,
                     "les mots de 64 bits en deux mots de 32")
+            ajouter("vtx forgé, la boucle sur la carte : lire et ranger le cube, monter, redescendre", lc + mo + de + ra, juste,
+                    f"cube {lc + ra:.0f} ms, monter {mo:.0f} ms, redescendre {de:.0f} ms")
         ajouter(nom, d * 1e3, juste, "le programme entier (ranger les mots dans le cube, la somme)")
 else:
     print("la forge a échoué :", (r.stdout + r.stderr)[-300:])

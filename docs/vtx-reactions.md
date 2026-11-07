@@ -1430,3 +1430,13 @@ fenêtre lève un drapeau : les cylindres rejouent la boucle. Sans carte, ou `VT
 63, 64, 2^63, 2^64 − 1 ; si, tantque, pour, des appels) : 104 boucles sur trois graines, toutes sur la carte, les mêmes
 mots que Lugus. Belenos n'y va pas encore : ses adresses dépendent de variables du corps, ses fonctions lisent la
 mémoire (la suite : une fenêtre de pages entières, et les fonctions qui lisent).
+
+**Sur la RTX 3070** (0.5zk) : 80 boucles tirées au hasard (graines 7 et 99), toutes sur la carte, les mêmes mots que
+Lugus : le SPIR-V écrit par la forge est juste sur une vraie carte. Mais lent : brassage.vtx, la boucle sur la carte,
+1,7 s (contre 0,9 ms pour le noyau de la sonde, 343 ms pour vtx forgé sur 24 cœurs). Le calcul n'y est pour rien
+(environ 64 milliards d'opérations sur 32 bits : quelques millisecondes) : la fenêtre (128 Mo) était montée même vide,
+redescendue par une mémoire visible du processeur mais non cachée (relue octet à octet à travers le bus), et lue puis
+rangée dans le cube mot à mot. **Corrigé (0.5zl)** : une fenêtre vide (que des zéros : des pages absentes) est remplie
+par la carte elle-même (vkCmdFillBuffer) ; la descente passe par une mémoire cachée (HOST_CACHED) ; le cube est lu et
+écrit page par page (page_si, sans créer de page ; page_de pour ranger). `VTX_TARANIS=1` donne le temps de chaque
+étape : lire le cube, monter, la carte, redescendre, ranger dans le cube.

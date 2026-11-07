@@ -175,6 +175,7 @@ const ACCESS_HOST_READ: u32 = 0x2000;
 const BUFFER_USAGE_TRANSFER_SRC: u32 = 0x1;
 const BUFFER_USAGE_TRANSFER_DST: u32 = 0x2;
 const MEM_DEVICE_LOCAL: u32 = 0x1;
+const MEM_HOST_CACHED: u32 = 0x8;
 const QUEUE_COMPUTE: u32 = 0x2;
 const BUFFER_USAGE_STORAGE: u32 = 0x20;
 const MEM_HOST_VISIBLE: u32 = 0x2;
@@ -387,12 +388,13 @@ impl Carte {
     }
 
     /// le noyau sur `fils` fils ; la fenêtre et les paramètres montent, puis redescendent (p[5] est rempli ici) ;
-    /// rend les millisecondes de la carte (lancement compris)
-    pub fn lancer(&mut self, spv: &[u32], fenetre: &mut [u64], params: &mut [u64], fils: u64) -> Result<f64, String> {
-        unsafe { self.lancer_(spv, fenetre, params, fils) }
+    /// vide : la fenêtre n'a que des zéros (elle n'est pas copiée : la carte la remplit elle-même) ; rend les
+    /// millisecondes : préparer et monter, la carte (copies dans la carte, calcul, attente), redescendre
+    pub fn lancer(&mut self, spv: &[u32], fenetre: &mut [u64], params: &mut [u64], fils: u64, vide: bool) -> Result<[f64; 3], String> {
+        unsafe { self.lancer_(spv, fenetre, params, fils, vide) }
     }
 
-    unsafe fn lancer_(&mut self, spv: &[u32], fenetre: &mut [u64], params: &mut [u64], fils: u64) -> Result<f64, String> {
+    unsafe fn lancer_(&mut self, spv: &[u32], fenetre: &mut [u64], params: &mut [u64], fils: u64, vide: bool) -> Result<[f64; 3], String> {
         let t0 = std::time::Instant::now();
         let tf = (fenetre.len().max(1) * 8) as u64;
         let tp = (params.len() * 8) as u64;
@@ -408,14 +410,20 @@ impl Carte {
         params[5] = gx * LARGEUR;
         let pipeline = self.pipeline(spv)?;
         let (bdev, mdev) = self.tampon(tf, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_DEVICE_LOCAL)?;
-        let (bpas, mpas) = self.tampon(tf, BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
+        // le passage : une mémoire visible du processeur et cachée (relire une mémoire non cachée est très lent)
+        let (bpas, mpas) = match self.tampon(tf, BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT | MEM_HOST_CACHED) {
+            Ok(x) => x,
+            Err(_) => self.tampon(tf, BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?,
+        };
         let (bpar, mpar) = self.tampon(tp, BUFFER_USAGE_STORAGE, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
         let map = vkfn!(self, "vkMapMemory", unsafe extern "system" fn(Ptr, H, u64, u64, u32, *mut *mut c_void) -> R);
         let mut vf: *mut c_void = null_mut();
         let mut vp: *mut c_void = null_mut();
         verifie(map(self.dev, mpas, 0, tf, 0, &mut vf), "vkMapMemory")?;
         verifie(map(self.dev, mpar, 0, tp, 0, &mut vp), "vkMapMemory")?;
-        std::ptr::copy_nonoverlapping(fenetre.as_ptr(), vf as *mut u64, fenetre.len());
+        if !vide {
+            std::ptr::copy_nonoverlapping(fenetre.as_ptr(), vf as *mut u64, fenetre.len());
+        }
         std::ptr::copy_nonoverlapping(params.as_ptr(), vp as *mut u64, params.len());
         // les liaisons
         let taille_pool = DescriptorPoolSize { ty: DESCRIPTOR_STORAGE_BUFFER, descriptorCount: 2 };
@@ -451,8 +459,13 @@ impl Carte {
         verifie(reset_pool(self.dev, self.cpool, 0), "vkResetCommandPool")?;
         let cbbi = CommandBufferBeginInfo { sType: ST_COMMAND_BUFFER_BEGIN_INFO, pNext: null(), flags: 1, pInheritanceInfo: null() };
         verifie(begin(self.cb, &cbbi), "vkBeginCommandBuffer")?;
+        let fill = vkfn!(self, "vkCmdFillBuffer", unsafe extern "system" fn(Ptr, H, u64, u64, u32));
         let region = BufferCopy { srcOffset: 0, dstOffset: 0, size: tf };
-        copy(self.cb, bpas, bdev, 1, &region);
+        if vide {
+            fill(self.cb, bdev, 0, tf, 0);
+        } else {
+            copy(self.cb, bpas, bdev, 1, &region);
+        }
         let b1 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE,
             dstAccessMask: ACCESS_SHADER_READ | ACCESS_SHADER_WRITE };
         barrier(self.cb, STAGE_TRANSFER, STAGE_COMPUTE_SHADER, 0, 1, &b1, 0, null(), 0, null());
@@ -469,9 +482,11 @@ impl Carte {
         let si = SubmitInfo { sType: ST_SUBMIT_INFO, pNext: null(), waitSemaphoreCount: 0, pWaitSemaphores: null(),
             pWaitDstStageMask: null(), commandBufferCount: 1, pCommandBuffers: &self.cb, signalSemaphoreCount: 0,
             pSignalSemaphores: null() };
+        let t1 = std::time::Instant::now();
         verifie(submit(self.file, 1, &si, self.fence), "vkQueueSubmit")?;
         verifie(wait(self.dev, 1, &self.fence, 1, 60_000_000_000), "vkWaitForFences")?;
         verifie(reset_f(self.dev, 1, &self.fence), "vkResetFences")?;
+        let t2 = std::time::Instant::now();
         std::ptr::copy_nonoverlapping(vf as *const u64, fenetre.as_mut_ptr(), fenetre.len());
         std::ptr::copy_nonoverlapping(vp as *const u64, params.as_mut_ptr(), params.len());
         // rendre ce qui a servi
@@ -486,6 +501,7 @@ impl Carte {
             destroy_b(self.dev, b, null());
             free_m(self.dev, m, null());
         }
-        Ok(t0.elapsed().as_secs_f64() * 1e3)
+        let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
+        Ok([ms(t0, t1), ms(t1, t2), t2.elapsed().as_secs_f64() * 1e3])
     }
 }
