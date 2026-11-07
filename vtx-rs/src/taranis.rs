@@ -4,6 +4,8 @@
 //                            SPIR-V de vtx) lancé sur N fils ; chaque fil brasse son numéro en 64 tours ; le processeur
 //                            refait le même brassage (un cœur, puis tous) : les mêmes mots, et les temps
 //   taranis N                sur N fils (par défaut 2^24 : 16 777 216)
+// Le calcul se fait dans la mémoire de la carte, puis une copie la ramène au processeur ; la carte chronomètre elle-même
+// (les horodatages de Vulkan) son calcul et la copie, à part du lancement et de l'attente.
 // Les structures et les nombres de Vulkan sont ceux de sa spécification (1.0) ; rien d'autre n'est supposé.
 #![allow(non_snake_case, non_camel_case_types, clippy::upper_case_acronyms)]
 use std::ffi::{c_char, c_void, CStr};
@@ -137,6 +139,13 @@ struct SubmitInfo { sType: u32, pNext: *const c_void, waitSemaphoreCount: u32, p
     pWaitDstStageMask: *const u32, commandBufferCount: u32, pCommandBuffers: *const Ptr, signalSemaphoreCount: u32,
     pSignalSemaphores: *const H }
 #[repr(C)]
+struct QueryPoolCreateInfo { sType: u32, pNext: *const c_void, flags: u32, queryType: u32, queryCount: u32,
+    pipelineStatistics: u32 }
+#[repr(C)]
+struct MemoryBarrier { sType: u32, pNext: *const c_void, srcAccessMask: u32, dstAccessMask: u32 }
+#[repr(C)]
+struct BufferCopy { srcOffset: u64, dstOffset: u64, size: u64 }
+#[repr(C)]
 struct FenceCreateInfo { sType: u32, pNext: *const c_void, flags: u32 }
 
 // les nombres de la spécification
@@ -159,6 +168,21 @@ const ST_WRITE_DESCRIPTOR_SET: u32 = 35;
 const ST_COMMAND_POOL_CREATE_INFO: u32 = 39;
 const ST_COMMAND_BUFFER_ALLOCATE_INFO: u32 = 40;
 const ST_COMMAND_BUFFER_BEGIN_INFO: u32 = 42;
+const ST_QUERY_POOL_CREATE_INFO: u32 = 11;
+const ST_MEMORY_BARRIER: u32 = 46;
+const QUERY_TIMESTAMP: u32 = 2;
+const STAGE_TOP: u32 = 0x1;
+const STAGE_COMPUTE_SHADER: u32 = 0x800;
+const STAGE_TRANSFER: u32 = 0x1000;
+const STAGE_BOTTOM: u32 = 0x2000;
+const STAGE_HOST: u32 = 0x4000;
+const ACCESS_SHADER_WRITE: u32 = 0x40;
+const ACCESS_TRANSFER_READ: u32 = 0x800;
+const ACCESS_TRANSFER_WRITE: u32 = 0x1000;
+const ACCESS_HOST_READ: u32 = 0x2000;
+const BUFFER_USAGE_TRANSFER_SRC: u32 = 0x1;
+const BUFFER_USAGE_TRANSFER_DST: u32 = 0x2;
+const MEM_DEVICE_LOCAL: u32 = 0x1;
 const QUEUE_COMPUTE: u32 = 0x2;
 const BUFFER_USAGE_STORAGE: u32 = 0x20;
 const MEM_HOST_VISIBLE: u32 = 0x2;
@@ -184,6 +208,28 @@ macro_rules! vkfn {
         }
         std::mem::transmute::<*mut c_void, $t>(f)
     }};
+}
+
+/// un tampon et sa mémoire (du type voulu : dans la carte, ou visible du processeur)
+unsafe fn tampon(vk: &Vk, dev: Ptr, mp: &MemoryProperties, taille: u64, usage: u32, voulu: u32) -> Result<(H, H), String> {
+    let create_buffer = vkfn!(vk, "vkCreateBuffer", unsafe extern "system" fn(Ptr, *const BufferCreateInfo, *const c_void, *mut H) -> R);
+    let reqs = vkfn!(vk, "vkGetBufferMemoryRequirements", unsafe extern "system" fn(Ptr, H, *mut MemoryRequirements));
+    let alloc = vkfn!(vk, "vkAllocateMemory", unsafe extern "system" fn(Ptr, *const MemoryAllocateInfo, *const c_void, *mut H) -> R);
+    let bind = vkfn!(vk, "vkBindBufferMemory", unsafe extern "system" fn(Ptr, H, H, u64) -> R);
+    let bci = BufferCreateInfo { sType: ST_BUFFER_CREATE_INFO, pNext: null(), flags: 0, size: taille, usage,
+        sharingMode: 0, queueFamilyIndexCount: 0, pQueueFamilyIndices: null() };
+    let mut b: H = 0;
+    verifie(create_buffer(dev, &bci, null(), &mut b), "vkCreateBuffer")?;
+    let mut mr = MemoryRequirements::default();
+    reqs(dev, b, &mut mr);
+    let ty = (0..mp.memoryTypeCount)
+        .find(|&k| mr.memoryTypeBits & (1 << k) != 0 && mp.memoryTypes[k as usize].propertyFlags & voulu == voulu)
+        .ok_or(format!("aucune mémoire du type {:#x}", voulu))?;
+    let mai = MemoryAllocateInfo { sType: ST_MEMORY_ALLOCATE_INFO, pNext: null(), allocationSize: mr.size, memoryTypeIndex: ty };
+    let mut m: H = 0;
+    verifie(alloc(dev, &mai, null(), &mut m), "vkAllocateMemory")?;
+    verifie(bind(dev, b, m, 0), "vkBindBufferMemory")?;
+    Ok((b, m))
 }
 
 fn verifie(r: R, quoi: &str) -> Result<(), String> {
@@ -255,7 +301,14 @@ unsafe fn sonde(n: u32) -> Result<(), String> {
         }
     }
     let carte = cartes[choix];
-    println!("choisie : la carte {}", choix);
+    props(carte, p.as_mut_ptr() as *mut u8);
+    let b = p.as_ptr() as *const u8;
+    // dans VkPhysicalDeviceLimits (à l'octet 296) : maxComputeWorkGroupCount[0] (+220), maxComputeWorkGroupInvocations
+    // (+232), timestampPeriod (+424, en nanosecondes par tic)
+    let groupes_max = *(b.add(296 + 220) as *const u32);
+    let fils_max = *(b.add(296 + 232) as *const u32);
+    let periode = *(b.add(296 + 424) as *const f32) as f64;
+    println!("choisie : la carte {} ({} groupes au plus, {} fils par groupe au plus, un tic = {} ns)", choix, groupes_max, fils_max, periode);
 
     // une file qui calcule
     let qf = vkfn!(vk, "vkGetPhysicalDeviceQueueFamilyProperties", unsafe extern "system" fn(Ptr, *mut u32, *mut QueueFamilyProperties));
@@ -279,29 +332,13 @@ unsafe fn sonde(n: u32) -> Result<(), String> {
     let mut file: Ptr = null_mut();
     get_queue(dev, famille, 0, &mut file);
 
-    // le tampon : n mots de 32 bits, visibles du processeur
+    // les tampons : n mots de 32 bits dans la carte (le calcul), et autant visibles du processeur (la copie)
     let taille = n as u64 * 4;
-    let create_buffer = vkfn!(vk, "vkCreateBuffer", unsafe extern "system" fn(Ptr, *const BufferCreateInfo, *const c_void, *mut H) -> R);
-    let bci = BufferCreateInfo { sType: ST_BUFFER_CREATE_INFO, pNext: null(), flags: 0, size: taille,
-        usage: BUFFER_USAGE_STORAGE, sharingMode: 0, queueFamilyIndexCount: 0, pQueueFamilyIndices: null() };
-    let mut tampon: H = 0;
-    verifie(create_buffer(dev, &bci, null(), &mut tampon), "vkCreateBuffer")?;
-    let reqs = vkfn!(vk, "vkGetBufferMemoryRequirements", unsafe extern "system" fn(Ptr, H, *mut MemoryRequirements));
-    let mut mr = MemoryRequirements::default();
-    reqs(dev, tampon, &mut mr);
     let memprops = vkfn!(vk, "vkGetPhysicalDeviceMemoryProperties", unsafe extern "system" fn(Ptr, *mut MemoryProperties));
     let mut mp: MemoryProperties = std::mem::zeroed();
     memprops(carte, &mut mp);
-    let voulu = MEM_HOST_VISIBLE | MEM_HOST_COHERENT;
-    let ty = (0..mp.memoryTypeCount)
-        .find(|&k| mr.memoryTypeBits & (1 << k) != 0 && mp.memoryTypes[k as usize].propertyFlags & voulu == voulu)
-        .ok_or("aucune mémoire visible du processeur")?;
-    let alloc = vkfn!(vk, "vkAllocateMemory", unsafe extern "system" fn(Ptr, *const MemoryAllocateInfo, *const c_void, *mut H) -> R);
-    let mai = MemoryAllocateInfo { sType: ST_MEMORY_ALLOCATE_INFO, pNext: null(), allocationSize: mr.size, memoryTypeIndex: ty };
-    let mut memoire: H = 0;
-    verifie(alloc(dev, &mai, null(), &mut memoire), "vkAllocateMemory")?;
-    let bind = vkfn!(vk, "vkBindBufferMemory", unsafe extern "system" fn(Ptr, H, H, u64) -> R);
-    verifie(bind(dev, tampon, memoire, 0), "vkBindBufferMemory")?;
+    let (calcul, _) = tampon(&vk, dev, &mp, taille, BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER_SRC, MEM_DEVICE_LOCAL)?;
+    let (retour, memoire) = tampon(&vk, dev, &mp, taille, BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
     let map = vkfn!(vk, "vkMapMemory", unsafe extern "system" fn(Ptr, H, u64, u64, u32, *mut *mut c_void) -> R);
     let mut vue: *mut c_void = null_mut();
     verifie(map(dev, memoire, 0, taille, 0, &mut vue), "vkMapMemory")?;
@@ -351,7 +388,7 @@ unsafe fn sonde(n: u32) -> Result<(), String> {
         descriptorSetCount: 1, pSetLayouts: &dsl };
     let mut ds: H = 0;
     verifie(alloc_ds(dev, &dsai, &mut ds), "vkAllocateDescriptorSets")?;
-    let dbi = DescriptorBufferInfo { buffer: tampon, offset: 0, range: taille };
+    let dbi = DescriptorBufferInfo { buffer: calcul, offset: 0, range: taille };
     let wds = WriteDescriptorSet { sType: ST_WRITE_DESCRIPTOR_SET, pNext: null(), dstSet: ds, dstBinding: 0,
         dstArrayElement: 0, descriptorCount: 1, descriptorType: DESCRIPTOR_STORAGE_BUFFER, pImageInfo: null(),
         pBufferInfo: &dbi, pTexelBufferView: null() };
@@ -374,10 +411,31 @@ unsafe fn sonde(n: u32) -> Result<(), String> {
     let dispatch = vkfn!(vk, "vkCmdDispatch", unsafe extern "system" fn(Ptr, u32, u32, u32));
     let end = vkfn!(vk, "vkEndCommandBuffer", unsafe extern "system" fn(Ptr) -> R);
     let cbbi = CommandBufferBeginInfo { sType: ST_COMMAND_BUFFER_BEGIN_INFO, pNext: null(), flags: 0, pInheritanceInfo: null() };
+    let create_qp = vkfn!(vk, "vkCreateQueryPool", unsafe extern "system" fn(Ptr, *const QueryPoolCreateInfo, *const c_void, *mut H) -> R);
+    let reset_qp = vkfn!(vk, "vkCmdResetQueryPool", unsafe extern "system" fn(Ptr, H, u32, u32));
+    let stamp = vkfn!(vk, "vkCmdWriteTimestamp", unsafe extern "system" fn(Ptr, u32, H, u32));
+    let barrier = vkfn!(vk, "vkCmdPipelineBarrier", unsafe extern "system" fn(Ptr, u32, u32, u32, u32, *const MemoryBarrier, u32, *const c_void, u32, *const c_void));
+    let copy = vkfn!(vk, "vkCmdCopyBuffer", unsafe extern "system" fn(Ptr, H, H, u32, *const BufferCopy));
+    let results = vkfn!(vk, "vkGetQueryPoolResults", unsafe extern "system" fn(Ptr, H, u32, u32, usize, *mut c_void, u64, u32) -> R);
+    let qpci = QueryPoolCreateInfo { sType: ST_QUERY_POOL_CREATE_INFO, pNext: null(), flags: 0, queryType: QUERY_TIMESTAMP,
+        queryCount: 3, pipelineStatistics: 0 };
+    let mut qp: H = 0;
+    verifie(create_qp(dev, &qpci, null(), &mut qp), "vkCreateQueryPool")?;
+    let horloge = familles[famille as usize].timestampValidBits > 0;
     verifie(begin(cb, &cbbi), "vkBeginCommandBuffer")?;
+    reset_qp(cb, qp, 0, 3);
     bind_p(cb, BIND_POINT_COMPUTE, pipeline);
     bind_ds(cb, BIND_POINT_COMPUTE, pl, 0, 1, &ds, 0, null());
+    stamp(cb, STAGE_TOP, qp, 0);
     dispatch(cb, n / LARGEUR, 1, 1);
+    stamp(cb, STAGE_BOTTOM, qp, 1);
+    let b1 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_SHADER_WRITE, dstAccessMask: ACCESS_TRANSFER_READ };
+    barrier(cb, STAGE_COMPUTE_SHADER, STAGE_TRANSFER, 0, 1, &b1, 0, null(), 0, null());
+    let region = BufferCopy { srcOffset: 0, dstOffset: 0, size: taille };
+    copy(cb, calcul, retour, 1, &region);
+    stamp(cb, STAGE_BOTTOM, qp, 2);
+    let b2 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE, dstAccessMask: ACCESS_HOST_READ };
+    barrier(cb, STAGE_TRANSFER, STAGE_HOST, 0, 1, &b2, 0, null(), 0, null());
     verifie(end(cb), "vkEndCommandBuffer")?;
 
     let create_fence = vkfn!(vk, "vkCreateFence", unsafe extern "system" fn(Ptr, *const FenceCreateInfo, *const c_void, *mut H) -> R);
@@ -393,14 +451,25 @@ unsafe fn sonde(n: u32) -> Result<(), String> {
 
     // une première fois (la carte se réveille, le noyau est traduit), puis cinq mesurées : la meilleure
     let mut meilleur = f64::MAX;
+    let (mut t_calcul, mut t_copie) = (f64::MAX, f64::MAX);
     for k in 0..6 {
         let t = std::time::Instant::now();
         verifie(submit(file, 1, &si, fence), "vkQueueSubmit")?;
         verifie(wait(dev, 1, &fence, 1, 10_000_000_000), "vkWaitForFences")?;
         let s = t.elapsed().as_secs_f64();
         verifie(reset(dev, 1, &fence), "vkResetFences")?;
+        if horloge {
+            let mut tics = [0u64; 3];
+            verifie(results(dev, qp, 0, 3, 24, tics.as_mut_ptr() as *mut c_void, 8, 1 | 2), "vkGetQueryPoolResults")?;
+            let c = (tics[1].wrapping_sub(tics[0])) as f64 * periode * 1e-9;
+            let r = (tics[2].wrapping_sub(tics[1])) as f64 * periode * 1e-9;
+            if k > 0 {
+                t_calcul = t_calcul.min(c);
+                t_copie = t_copie.min(r);
+            }
+        }
         if k == 0 {
-            println!("carte : premier lancement {:.2} ms", s * 1e3);
+            println!("carte : premier lancement {:.2} ms (lancement, calcul, copie, attente)", s * 1e3);
         } else if s < meilleur {
             meilleur = s;
         }
@@ -435,10 +504,17 @@ unsafe fn sonde(n: u32) -> Result<(), String> {
 
     let ops = n as f64 * TOURS as f64 * 8.0;
     println!("{} fils, {} tours de brassage chacun ({:.1} milliards d'opérations sur 32 bits)", n, TOURS, ops / 1e9);
-    println!("carte       : {:8.2} ms   ({:.0} milliards d'opérations par seconde)", meilleur * 1e3, ops / meilleur / 1e9);
+    println!("carte, tout compris  : {:8.2} ms   (lancement, calcul, copie vers le processeur, attente)", meilleur * 1e3);
+    if horloge {
+        println!("carte, le calcul     : {:8.2} ms   ({:.0} milliards d'opérations par seconde)", t_calcul * 1e3, ops / t_calcul / 1e9);
+        println!("carte, la copie      : {:8.2} ms   ({:.1} Go/s vers le processeur)", t_copie * 1e3, taille as f64 / t_copie / 1e9);
+        println!("CALCUL_MS {:.3}", t_calcul * 1e3);
+    }
     println!("processeur, 1 cœur   : {:8.2} ms (en vérifiant)", un_coeur * 1e3);
     println!("processeur, {} cœurs : {:8.2} ms", coeurs, tous * 1e3);
-    println!("la carte va {:.0} fois plus vite que tous les cœurs", tous / meilleur);
+    let ref_carte = if horloge { t_calcul } else { meilleur };
+    println!("la carte (son calcul) va {:.0} fois plus vite que tous les cœurs, {:.0} fois plus vite qu'un cœur", tous / ref_carte, un_coeur / ref_carte);
+    println!("SOMME {}", somme_carte);
     if ecarts == 0 && somme == somme_carte {
         println!("la carte et le processeur : les mêmes {} mots", n);
         Ok(())

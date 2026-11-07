@@ -1,0 +1,33 @@
+// machine : lugus
+// Le brassage de la sonde de Taranis, en vtx : chaque nombre i brassé en 64 tours de xorshift et de multiplication, sur
+// 32 bits (les mêmes mots que le noyau de la carte et que brassage.c) ; la boucle est en segments (forgée : un cylindre
+// par cœur). Sortie : la somme des n mots. L'entrée : n (65 536 par défaut).
+//     lugus taranis/brassage.vtx 65536 ;  python forge/forge128.py taranis/brassage.vtx -o brassage ; brassage 16777216
+constante T = 16777216;
+constante M = 4294967295;
+
+fonction brasser(i) {
+    soit x = i;
+    pour r dans 0..64 {
+        x = x ^ ((x << 13) & M);
+        x = x ^ (x >> 17);
+        x = x ^ ((x << 5) & M);
+        x = (x * 2654435761 + i) & M;
+    }
+    retour x;
+}
+
+fonction principal() {
+    soit n = entrée();
+    si n == 0 {
+        n = 65536;
+    }
+    pour i dans 0..n en segments {
+        @2[T + i] = brasser(i);
+    }
+    soit s = 0;
+    pour j dans 0..n {
+        s = s + @2[T + j];
+    }
+    sortie(s);
+}

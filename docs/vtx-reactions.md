@@ -1370,3 +1370,19 @@ l'utilisateur peut d'abord être vérifié ici, sur le processeur, par une vraie
 **La suite** : la forge écrit le SPIR-V d'une boucle en segments (le corps traduit en opérations de la carte ; les
 mots de 128 bits en quatre mots de 32, ou des boucles prouvées sur 32 bits), puis une passe de Belenos (les colonnes, la
 passe finale) sur la carte, comparée au processeur point pour point.
+
+**La sonde sur la RTX 3070** (0.5zi, chez l'utilisateur) : la carte trouvée par Vulkan 1.4, le SPIR-V de vtx accepté du
+premier coup, 16 777 216 puis 67 108 864 mots identiques au processeur. Carte 25 ms (tout compris) contre 170 ms sur 24
+cœurs et 5,2 s sur un : 7 fois les 24 cœurs. Mais le temps suivait exactement le nombre de fils, à 2,7 Go/s : la
+sonde écrivait dans la mémoire du processeur, à travers le bus ; le calcul lui-même n'était pas mesuré.
+
+**La sonde, deuxième version (0.5zj)** : le calcul dans la mémoire de la carte, puis une copie vers le processeur ; la
+carte horodate elle-même le calcul et la copie (les requêtes d'horodatage de Vulkan ; la période du tic lue dans les
+limites de la carte, à l'octet 296 + 424 des propriétés, avec le nombre de groupes et de fils par groupe : 65 535 et
+256 sur SwiftShader, ce qui vérifie les décalages).
+
+**La comparaison** (`taranis/comparer.py`) : le même calcul sur chaque système que la machine sait faire tourner, chaque
+somme vérifiée : vtx sur la carte (le calcul seul, et tout compris), C (`taranis/brassage.c` : MSVC ou gcc, un cœur
+puis OpenMP), vtx forgé (`taranis/brassage.vtx`, en segments), Rust, Lugus émulé et Python (sur une partie, ramenés à
+n). Sur la machine de travail (un vrai cœur, SwiftShader pour carte) : vtx forgé à égalité avec le C et Rust (93 à
+97 ms sur deux fils pour un million de nombres) ; Python 140 fois plus lent ; Lugus émulé 200 fois.
