@@ -1183,3 +1183,37 @@ moitié lointaine de l'étage 1 ne porte donc que la grille d'une case : pour un
 √2 fois plus profond seulement (et non deux fois). La règle « deux fois plus étendu » reste juste pour ce qui est vu de
 face (les flancs raides des puys) : le filtre actuel mesure le sol à plat, il efface donc aussi le détail des flancs.
 À faire : un filtre qui tient compte de la pente, ou des étages en √2 pour le sol.
+
+## 20. L'anticube de l'image : les vrais reflets, seulement où il faut (7 novembre)
+
+**Idée de l'utilisateur** : superposer à l'image son anticube, qui ne garde que les parties nécessaires pour renvoyer
+le reflet (et plus tard étaler les ombres, avec la position du soleil) ; à mettre dans le moteur graphique.
+
+**D'abord la mesure** (instructions comptées par Lugus, 2K, sur la version à l'accordéon : 13,23 G) : les colonnes
+7,3 G (55 %), l'accordéon 3,9 G (30 %), le relief d'une case, les objets et le PNG 1,9 G, les reflets 0,06 G (0,5 %).
+Les reflets ne coûtaient presque rien parce qu'ils trichaient : le miroir de l'écran par rapport à l'horizon, exact
+pour l'infini seulement.
+
+**Réalisé** (`belenos/auvergne.vtx`) :
+- l'anticube, un état de Belnap par point, écrit par les colonnes sans coût de plus : **inconnu** le ciel et le
+  lointain (rien à renvoyer), **faux** la terre (elle absorbe), **vrai** l'eau (elle renvoie), **variable** la rive
+  (terre et eau à la fois) ; et pour chaque ligne, de quel x à quel x elle a de l'eau ;
+- les **vrais reflets** : le rayon touche l'eau, repart dans le paysage symétrique ; un point de hauteur h à la
+  distance z s'y voit à la ligne HORIZON + (CAMH − 2·EAU + h)·F/z, symétrique de sa vraie ligne par rapport à la
+  ligne de l'eau à cette distance ; au-delà de tout relief, le ciel, à l'infini, où l'ancien miroir est exact. Le lac
+  reflète maintenant les puys qui sont derrière lui, renversés, à leur place ;
+- la rive variable mêle l'eau et la terre voisine : le bord n'est plus en escalier.
+
+**Mesuré** : les vrais reflets avec l'anticube : 1,37 G ; les mêmes calculés sur tout le bas de l'image, sans masque :
+4,68 G ; **le masque économise 70 % des reflets, 18 % de l'image** (17,9 G → 14,6 G). Forgé : 2K 1,1 s, 4K 3,3 s.
+Lugus et forgé : mêmes octets.
+
+**Honnêtement** : sans masque, chaque point de terre s'arrête dès le premier pas (la plaine est au-dessus de l'eau) ;
+le gain grandit avec le prix de l'effet par point (les ombres, plusieurs rebonds) et baisse si l'eau couvre l'image.
+Les vaches et les arbres ne se reflètent pas encore (ils sont posés après).
+
+**La vitesse, honnêtement** : Lugus interprète environ 146 millions d'instructions vtx par seconde ; forgé, le même
+tableau en fait environ 13 milliards par seconde, soit l'ordre d'un code natif sur un cœur. La limite n'est donc plus
+vtx mais le cœur unique : il faut 16,7 ms par image pour 60 images par seconde, et le 2K en demande 1,1 s (65 fois
+trop). Les colonnes sont indépendantes : c'est le travail exact d'une carte graphique (des milliers de cœurs), d'où
+SPIR-V dans le plan ; l'accordéon, lui, ne se recalcule que quand l'œil bouge (et par bandes, segment par segment).

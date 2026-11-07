@@ -8,6 +8,8 @@
 // L'accordéon du relief : près de l'œil, deux étages plus fins (1/4 et 1/2 case, 1024 × 1024 cases chacun, chacun deux
 // fois plus étendu) portent les touffes de l'estive et les blocs des flancs ; le rayon n'y saute jamais une case, et un
 // détail plus fin que ce qu'une ligne d'image couvre s'efface (pas de moiré). Au-delà, la grille d'une case.
+// L'anticube de l'image : un état de Belnap par point (le ciel inconnu, la terre fausse, l'eau vraie, la rive variable) ;
+// les vrais reflets (le rayon renvoyé par l'eau repart dans le paysage) ne sont calculés que là où il dit vrai ou variable.
 // Tout est en entiers (les mêmes nombres sur Lugus et forgé). L'image est rangée dans l'étage 2, puis écrite en PNG par
 // le programme lui-même (CRC-32, Adler-32, blocs « stockés ») dans un fichier d'octets.
 //     lugus belenos/auvergne.vtx            -> belenos/auvergne.png (2048 × 1080, le 2K du cinéma)
@@ -28,6 +30,10 @@ constante NPUYS = 13;
 constante RIEN = 4294967295;
 // l'accordéon du relief : trois étages de G × G cases, chacun deux fois plus étendu, centrés sur l'œil
 //   étage 0 : 1/4 de case, 256 cases autour de l'œil ; étage 1 : 1/2 case, 512 ; étage 2 : la case, tout le pays
+constante ANTI = 58720256;         // @2[ANTI + y·W + x] : l'anticube de l'image, un état de Belnap par point
+//   inconnu (0) : le ciel et le lointain, rien à renvoyer ; faux (1) : la terre, qui absorbe ;
+//   vrai (2) : l'eau, qui renvoie ; variable (3) : la rive, à la fois terre et eau (les deux se mêlent)
+constante RANG = 2097152 + 8192;   // @2[RANG + 2y], @2[RANG + 2y + 1] : de quel x à quel x la ligne y a de l'eau
 constante FIN = 50331648;          // @2[FIN + e·2097152 + z·G + x] : hauteur de l'étage e ; + 1048576 : sa lumière
 constante HORIZON = 560 * K;       // la ligne d'horizon sur l'image
 constante FOCALE = 1774 * K;       // en points (un champ de 60 degrés)
@@ -568,6 +574,15 @@ fonction colonne(sx) {
                 }
                 @2[IMAGE + y * W + sx] = cp;
                 @2[PROF + y * W + sx] = 2 * z + eau;
+                @2[ANTI + y * W + sx] = 1 + eau;
+                si eau == 1 {
+                    si sx < @2[RANG + 2 * y] {
+                        @2[RANG + 2 * y] = sx;
+                    }
+                    si sx >= @2[RANG + 2 * y + 1] {
+                        @2[RANG + 2 * y + 1] = sx + 1;
+                    }
+                }
             }
             bas = sy;
         }
@@ -598,13 +613,65 @@ fonction colonne(sx) {
     }
 }
 
-// le reflet : un point d'eau prend la couleur du point symétrique par rapport à l'horizon (le rayon renvoyé par l'eau
-// monte autant qu'il descendait), troublée de rides ; plus loin, l'eau reflète davantage
-fonction reflets() {
+// l'anticube de l'eau : seules les lignes qui ont de l'eau, et sur elles seulement de son premier à son dernier point ;
+// un point d'eau qui touche la terre devient variable (la rive)
+fonction marquer_rives() {
     pour y dans HORIZON..H {
-        pour x dans 0..W {
-            soit p = @2[PROF + y * W + x];
-            si (p & 1) == 1 {
+        pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
+            si @2[ANTI + y * W + x] == 2 {
+                soit terre = 0;
+                si x > 0 && @2[ANTI + y * W + x - 1] == 1 {
+                    terre = 1;
+                }
+                si x + 1 < W && @2[ANTI + y * W + x + 1] == 1 {
+                    terre = 1;
+                }
+                si @2[ANTI + (y - 1) * W + x] == 1 {
+                    terre = 1;
+                }
+                si y + 1 < H && @2[ANTI + (y + 1) * W + x] == 1 {
+                    terre = 1;
+                }
+                si terre == 1 {
+                    @2[ANTI + y * W + x] = 3;
+                }
+            }
+        }
+    }
+}
+
+// le vrai reflet du point (x, y) : le rayon renvoyé par l'eau part du point où il la touche et repart dans le paysage
+// symétrique ; le point du relief de hauteur h à la distance z s'y voit à la ligne HORIZON + (CAMH - 2·EAU + h)·F / z
+// (symétrique de sa vraie ligne par rapport à la ligne de l'eau à cette distance, et non par rapport à l'horizon) ;
+// au-delà de tout relief : le ciel, à l'infini, où le miroir de l'écran par rapport à l'horizon est exact
+fonction reflet_vrai(x, y) {
+    soit zf = ((CAMH - EAU) * FOCALE) / (y - HORIZON);
+    tantque zf < ZMAX * 256 {
+        soit wx = CAMX * 256 + ((x - W / 2) * zf) ./ FOCALE;
+        soit h = entre4(HAUT, wx, zf, 2, PLAINE);
+        si h .> EAU {
+            soit sym = HORIZON + ((CAMH - 2 * EAU + h) * FOCALE) ./ zf;
+            si sym .>= y {
+                soit c = eclairer(teinte(wx, zf, h, zf >> 8), entre4(LUM, wx, zf, 2, 233));
+                retour melange(c, rgb(206, 194, 186), (zf * 200) / (ZMAX * 256));
+            }
+        }
+        zf = zf + 256 + zf / 240;
+    }
+    soit ym = 2 * HORIZON - y;
+    si ym .< 0 {
+        ym = 0;
+    }
+    retour @2[IMAGE + ym * W + x];
+}
+
+// les reflets, seulement là où l'anticube dit vrai ou variable ; troublés de rides ; plus loin, l'eau reflète davantage
+fonction reflets() {
+    marquer_rives();
+    pour y dans HORIZON..H {
+        pour x dans @2[RANG + 2 * y]..@2[RANG + 2 * y + 1] {
+            soit etat = @2[ANTI + y * W + x];
+            si etat >= 2 {
                 soit ride = (nappes(x, y * 10, 4 + K, 2) - 32768) ./ (2600 / K);
                 soit xr = x + ride;
                 si xr .< 0 {
@@ -613,16 +680,22 @@ fonction reflets() {
                 si xr >= W {
                     xr = W - 1;
                 }
-                soit ym = 2 * HORIZON - y;
-                si ym .< 0 {
-                    ym = 0;
-                }
-                soit vu = @2[IMAGE + ym * W + xr];
-                soit z = p / 2;
-                soit fond_eau = rgb(34, 58, 80);
-                soit c = melange(fond_eau, vu, 120 + z / 4);
+                soit vu = reflet_vrai(xr, y);
+                soit z = @2[PROF + y * W + x] / 2;
+                soit c = melange(rgb(34, 58, 80), vu, 120 + z / 4);
                 si (hache(x >> K, y / K) & 1023) < 5 {
                     c = melange(c, rgb(255, 236, 200), 150);
+                }
+                si etat == 3 {
+                    // la rive : l'eau et la terre voisine se mêlent à parts égales (le bord n'est plus en escalier)
+                    soit voisin = @2[IMAGE + (y - 1) * W + x];
+                    si x > 0 && @2[ANTI + y * W + x - 1] == 1 {
+                        voisin = @2[IMAGE + y * W + x - 1];
+                    }
+                    si x + 1 < W && @2[ANTI + y * W + x + 1] == 1 {
+                        voisin = @2[IMAGE + y * W + x + 1];
+                    }
+                    c = melange(c, voisin, 128);
                 }
                 @2[IMAGE + y * W + x] = c;
             }
@@ -956,6 +1029,10 @@ fonction principal() {
     relief();
     accordeon();
     preparer_lointain();
+    pour y dans 0..H {
+        @2[RANG + 2 * y] = W;
+        @2[RANG + 2 * y + 1] = 0;
+    }
     pour sx dans 0..W {
         colonne(sx);
     }
