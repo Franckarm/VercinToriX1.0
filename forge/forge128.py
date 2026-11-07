@@ -30,6 +30,8 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 import vtx128 as V  # noqa: E402
+sys.path.insert(0, os.path.join(racine, "taranis"))
+import noyau_vtx  # noqa: E402
 from vtx128 import VtxError, est_ref, ligne_de, INTEGRES, OPS_LOGIQUES, SURCHARGES, NOM_TYPE, CHAMPS  # noqa: E402
 
 MARQUE = "/*R*/"          # dans le code d'une expression : un appel qui peut ramasser les miettes
@@ -98,6 +100,8 @@ class Forge(V.Generateur):
         # dans chaque zone, puis le plan (zone -> (numéro, type Rust)) ; None au premier passage
         self.ecrits = {}
         self.plan = None
+        # les noyaux de la carte graphique (Taranis) : le SPIR-V de chaque boucle en segments qui sait y aller
+        self.noyaux = []
 
     def signature(self, nom, ligne):
         f = super().signature(nom, ligne)
@@ -468,7 +472,8 @@ class Forge(V.Generateur):
         self.ligne("{")
         self.niveau += 1
         self.ligne("let mut fait = false;")
-        self.ligne("if cylindres_voulus() > 1 {")
+        self.vers_la_carte(notes)
+        self.ligne("if !fait && cylindres_voulus() > 1 {")
         self.niveau += 1
         self.ligne("let t0 = std::time::Instant::now();")
         self.ligne("let inst = instantane(c);")
@@ -509,6 +514,49 @@ class Forge(V.Generateur):
         self.niveau += 1
         for st in notes:
             self.instr(st)
+        self.niveau -= 1
+        self.ligne("}")
+        self.niveau -= 1
+        self.ligne("}")
+
+    def vers_la_carte(self, notes):
+        """Taranis : la boucle entière (toutes les notes) sur la carte graphique, si son corps sait y aller (le SPIR-V
+        de taranis/noyau_vtx.py) ; la fenêtre de l'étage 2 se calcule ici, aux tours a, a + 1 et b - 1 ; si la carte
+        manque ou refuse, ou si un accès sort de la fenêtre, les cylindres prennent la boucle (fait reste faux)."""
+        if os.environ.get("VTX_CARTE") == "0":
+            return
+        st = notes[0]
+        var, corps = st[1], st[4]
+        try:
+            spv, dehors, acces = noyau_vtx.Noyau(self, var, corps).compiler()
+        except noyau_vtx.PasPourLaCarte as e:
+            if os.environ.get("VTX_TARANIS"):
+                print(f"taranis : la boucle de la ligne {st[5]} reste au processeur : {e}", file=sys.stderr)
+            return
+        k = len(self.noyaux)
+        self.noyaux.append(spv)
+        v = f"v_{ident(var)}"
+        cles = []
+        self.ligne("{")
+        self.niveau += 1
+        self.ligne(f"let ta: u128 = {self.val(st[2], 'e')};")
+        self.ligne(f"let tb: u128 = {self.val(notes[-1][3], 'e')};")
+        self.ligne("if (tb as u64) > (ta as u64) {")
+        self.niveau += 1
+        self.ligne(f"let sauve = {v};")
+        noms = []
+        for j, (genre, et, adr) in enumerate(acces):
+            cle = repr(adr)
+            if cle not in cles:
+                cles.append(cle)
+            for q, point in enumerate(("ta", "((ta as u64).wrapping_add(1)) as u128", "((tb as u64).wrapping_sub(1)) as u128")):
+                self.ligne(f"{v} = {point};")
+                self.ligne(f"let x{j}_{q}: u128 = {self.adresse(et, adr)};")
+            noms.append(f"({'true' if genre == 'E' else 'false'}, x{j}_0, x{j}_1, x{j}_2, {cles.index(cle)}u32)")
+        self.ligne(f"{v} = sauve;")
+        ext = ", ".join(f"v_{ident(n)}" for n in dehors)
+        self.ligne(f"fait = taranis_boucle(c, &SPV{k}, ta, tb, &[{', '.join(noms)}], &[{ext}]);")
+        self.ligne(f"if fait {{ {v} = tb; }}")
         self.niveau -= 1
         self.ligne("}")
         self.niveau -= 1
@@ -1105,6 +1153,7 @@ class Forge(V.Generateur):
                     ramasse.add(n)
                     change = True
         self.ramasse = ramasse
+        self.noyaux = []
         self.plan = planifier_zones(self.forgees, self.ecrits, bool(self.blobs and any(v for _, _, v in self.blobs)),
                                     self.blobs)
         return [self.fonction_rs(f) for f in self.forgees]
@@ -1221,7 +1270,7 @@ def code_zones(plan):
 
 ATTRIBUTS = ("#![allow(unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, dead_code, "
              "clippy::all, non_snake_case, unused_imports, unused_labels, unused_braces)]")
-MODULES = ["qflot128", "spu128", "hote", "miroir"]     # recopiés de vtx-rs/src
+MODULES = ["qflot128", "spu128", "hote", "miroir", "taranis_vk"]     # recopiés de vtx-rs/src
 
 
 def noyau():
@@ -1244,6 +1293,9 @@ def programme_rust(src, dossier=None, nom="programme"):
          f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n"]
     s += [x.replace(MARQUE, "") for x in fonctions]
     s.append(code_zones(fo.plan or {}))
+    for k, spv in enumerate(fo.noyaux):
+        mots = [int.from_bytes(spv[i:i + 4], "little") for i in range(0, len(spv), 4)]
+        s.append(f"#[allow(dead_code)]\nstatic SPV{k}: [u32; {len(mots)}] = [" + ",".join(map(str, mots)) + "];")
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
     s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
              "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 16], pl: [std::ptr::null_mut(); 16], ce: [u128::MAX; 16],\n"

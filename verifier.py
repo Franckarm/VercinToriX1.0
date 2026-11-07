@@ -108,6 +108,8 @@ if shutil.which("cargo"):
     etapes.append(("traduction en code natif (rustc)", [sys.executable, os.path.join("natif", "test_natif.py")]))
     etapes.append(("Taranis, la sonde : le SPIR-V de vtx sur une carte par Vulkan (ou SwiftShader), les mêmes mots que le processeur",
                    [sys.executable, os.path.join("tests", "test_taranis.py")]))
+    etapes.append(("Taranis, les noyaux : des boucles en segments tirées au hasard, forgées pour la carte (SPIR-V), les mêmes mots que Lugus",
+                   [sys.executable, os.path.join("tests", "test_taranis_noyaux.py"), "40" if COMPLET else "16"]))
     etapes.append(("atelier en console (pseudo-terminal)", [sys.executable, os.path.join("atelier", "test_atelier.py")]))
 else:
     print("cargo absent : la machine Rust n'est pas vérifiée (voir vtx-rs/LISEZMOI.md)")

@@ -9,6 +9,9 @@ Le calcul : n nombres (16 777 216 par défaut), chacun brassé en 64 tours de xo
   - C : brassage.c, compilé ici (cl /O2 /openmp sous Windows, gcc -O2 -fopenmp ailleurs), un cœur puis tous ;
   - vtx sur le processeur : brassage.vtx forgé (forge128 -> Rust -> natif), un cœur puis tous (le programme entier :
     il range aussi les n mots dans le cube et en fait la somme) ;
+  - vtx forgé, la boucle sur la carte : le même programme, dont la forge a écrit la boucle en SPIR-V (taranis/
+    noyau_vtx.py, les entiers de 64 bits de Lugus en deux mots de 32) ; le temps de la carte (monter, calculer,
+    redescendre), et le programme entier (il range aussi les mots dans le cube, et fait la somme sur le processeur) ;
   - Rust : le brassage de taranis, un cœur puis tous ;
   - vtx sur Lugus émulé, et Python : sur une partie, ramenés à n.
     python taranis/comparer.py [n]"""
@@ -40,7 +43,7 @@ def ajouter(nom, ms, somme, remarque=""):
 
 def chrono(cmd, env=None):
     t = time.perf_counter()
-    r = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=3600)
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=3600)
     return time.perf_counter() - t, r
 
 
@@ -115,17 +118,29 @@ print("vtx forgé (forge128 -> Rust -> natif) ...", flush=True)
 r = subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), os.path.join(ici, "brassage.vtx"),
                     "-o", exe_v], capture_output=True, text=True)
 if r.returncode == 0 and os.path.exists(exe_v):
-    for coeurs, nom in (("1", "vtx forgé, 1 cœur"), (None, "vtx forgé, tous les cœurs")):
-        e = dict(os.environ)
-        if coeurs:
-            e["VTX_COEURS"] = coeurs
+    for coeurs, nom in (("1", "vtx forgé, 1 cœur"), (None, "vtx forgé, tous les cœurs"),
+                        ("carte", "vtx forgé, la boucle sur la carte : le programme entier")):
+        e = dict(env)
+        if coeurs == "carte":
+            e["VTX_TARANIS"] = "1"
+        else:
+            e["VTX_CARTE"] = "0"
+            if coeurs:
+                e["VTX_COEURS"] = coeurs
         d, r = chrono([exe_v, str(n)], e)
         try:
             somme = int(r.stdout.strip().split()[-1].rstrip(","))
         except (ValueError, IndexError):
             somme = None
-        ajouter(nom, d * 1e3, somme is not None and (somme_ref is None or somme == somme_ref),
-                "le programme entier (ranger les mots dans le cube, la somme)")
+        juste = somme is not None and (somme_ref is None or somme == somme_ref)
+        if coeurs == "carte":
+            m = re.search(r"tours sur la carte, fenêtre de \d+ mots, ([\d.]+) ms", r.stderr)
+            if not m:
+                print("la boucle n'est pas allée sur la carte :", r.stderr[-300:])
+                continue
+            ajouter("vtx forgé, la boucle sur la carte : la carte (monter, calculer, redescendre)", float(m.group(1)), juste,
+                    "les mots de 64 bits en deux mots de 32")
+        ajouter(nom, d * 1e3, juste, "le programme entier (ranger les mots dans le cube, la somme)")
 else:
     print("la forge a échoué :", (r.stdout + r.stderr)[-300:])
 
@@ -156,8 +171,9 @@ for nom, ms, ok, rem in lignes:
     temps = f"{ms:,.1f} ms".replace(",", " ") if ms < 100000 else f"{ms / 1000:,.1f} s".replace(",", " ")
     print(f"{nom:<66} {temps:>12} {ms / base:>11.1f}  {'juste' if ok else 'FAUSSE'}" + (f"   ({rem})" if rem else ""))
 print()
-print("la carte, d'après sa fiche (RTX 3070 : 5 888 cœurs, 1,73 GHz) : environ 5 000 milliards d'opérations entières")
-print("par seconde au mieux ; la mesure de la ligne « le calcul » donne ce que le SPIR-V de vtx en tire aujourd'hui.")
+print("repère : sur la RTX 3070, le noyau de la sonde (écrit à la main en SPIR-V, sur 32 bits) a calculé environ")
+print("10 000 milliards d'opérations par seconde (0.5zj) ; le noyau que la forge écrit depuis vtx calcule en 64 bits")
+print("(deux mots de 32 : 3 à 6 opérations pour une), et monte et redescend la fenêtre du cube.")
 faux = [l for l in lignes if not l[2]]
 shutil.rmtree(tmp, ignore_errors=True)
 print("comparaison : toutes les sommes sont justes" if not faux else f"comparaison : {len(faux)} somme(s) fausse(s)")

@@ -501,3 +501,95 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
         eprintln!("{} : {:.3} s", nom, duree.as_secs_f64());
     }
 }
+
+// ------------------------------------------------------------------ Taranis : une boucle en segments sur la carte
+/// La boucle de a à b sur la carte graphique (le noyau spv, écrit par taranis/noyau_vtx.py). Chaque accès du corps à
+/// l'étage 2 est donné par son adresse aux tours a, a + 1 et b - 1 (son genre : écriture ou lecture ; sa clé : la même
+/// pour la même expression) : il doit avancer d'un pas constant (sinon : non). Une lecture qui croise l'écriture d'une
+/// autre expression, ou toutes les écritures sur le même mot, et la boucle reste aux cylindres (l'ordre compterait).
+/// La fenêtre monte en mots de 64 bits (un mot plus large : non), redescend, et seuls les mots changés sont écrits.
+#[allow(dead_code)]
+fn taranis_boucle(c: &mut Ctx, spv: &[u32], a: u128, b: u128, acces: &[(bool, u128, u128, u128, u32)], ext: &[u128]) -> bool {
+    const M62: u64 = (1u64 << 62) - 1;
+    let n = (b as u64).wrapping_sub(a as u64);
+    if n == 0 || n > (1u64 << 40) || ext.iter().any(|&v| v >> 64 != 0) {
+        return false;
+    }
+    let carte = match taranis_vk::carte() {
+        Some(k) => k,
+        None => return false,
+    };
+    let mut fen: Vec<(bool, u64, u64, u32)> = Vec::new();
+    let (mut lo, mut hi) = (u64::MAX, 0u64);
+    for &(ecrit, x0, x1, xl, cle) in acces {
+        let (s0, s1, sl) = ((x0 as u64) & M62, (x1 as u64) & M62, (xl as u64) & M62);
+        let d = if n > 1 { s1.wrapping_sub(s0) } else { 0 };
+        if n > 1 && s0.wrapping_add(d.wrapping_mul(n - 1)) != sl {
+            return false;
+        }
+        if ecrit && d == 0 && n > 1 {
+            return false;
+        }
+        let (mn, mx) = if (d as i64) >= 0 { (s0, sl) } else { (sl, s0) };
+        lo = lo.min(mn);
+        hi = hi.max(mx + 1);
+        fen.push((ecrit, mn, mx, cle));
+    }
+    for x in &fen {
+        for y in &fen {
+            if x.0 && (x.3 != y.3) && x.1 <= y.2 && y.1 <= x.2 {
+                return false;
+            }
+        }
+    }
+    if fen.is_empty() {
+        lo = 0;
+        hi = 0;
+    }
+    let len = (hi - lo) as usize;
+    if len > (1usize << 31) {
+        return false;
+    }
+    let mut f = vec![0u64; len];
+    for k in 0..len {
+        let w = c.lire(etg((lo + k as u64) as u128, 2));
+        if w >> 64 != 0 {
+            return false;
+        }
+        f[k] = w as u64;
+    }
+    let orig = f.clone();
+    let mut p = vec![0u64; 6 + ext.len()];
+    p[1] = a as u64;
+    p[2] = n;
+    p[3] = lo;
+    p[4] = len as u64;
+    for (k, &v) in ext.iter().enumerate() {
+        p[6 + k] = v as u64;
+    }
+    match carte.lancer(spv, &mut f, &mut p, n) {
+        Ok(ms) => {
+            if taranis_vk::bavard() {
+                eprintln!("taranis : {} tours sur la carte, fenêtre de {} mots, {:.2} ms", n, len, ms);
+            }
+        }
+        Err(e) => {
+            if taranis_vk::bavard() {
+                eprintln!("taranis : la carte refuse ({}) : les cylindres prennent la boucle", e);
+            }
+            return false;
+        }
+    }
+    if p[0] != 0 {
+        if taranis_vk::bavard() {
+            eprintln!("taranis : un accès hors de la fenêtre : les cylindres rejouent la boucle");
+        }
+        return false;
+    }
+    for k in 0..len {
+        if f[k] != orig[k] {
+            c.ecrire(etg((lo + k as u64) as u128, 2), f[k] as u128);
+        }
+    }
+    true
+}

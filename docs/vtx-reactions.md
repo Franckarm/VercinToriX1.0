@@ -1386,3 +1386,47 @@ somme vérifiée : vtx sur la carte (le calcul seul, et tout compris), C (`taran
 puis OpenMP), vtx forgé (`taranis/brassage.vtx`, en segments), Rust, Lugus émulé et Python (sur une partie, ramenés à
 n). Sur la machine de travail (un vrai cœur, SwiftShader pour carte) : vtx forgé à égalité avec le C et Rust (93 à
 97 ms sur deux fils pour un million de nombres) ; Python 140 fois plus lent ; Lugus émulé 200 fois.
+
+## 25. La forge écrit le SPIR-V : une boucle vtx sur la carte (7 novembre, nuit)
+
+**La comparaison sur la RTX 3070** (0.5zj, 16 777 216 nombres brassés en 64 tours, toutes les sommes justes) :
+
+| système | temps | × la carte |
+|---|---|---|
+| vtx sur la carte, le calcul (SPIR-V de la sonde) | 0,9 ms | 1 |
+| vtx sur la carte, tout compris (lancement, copie de 64 Mo, attente) | 26,3 ms | 31 |
+| C (MSVC /O2, OpenMP), tous les cœurs | 169,9 ms | 199 |
+| vtx forgé, tous les cœurs (le programme entier) | 349,3 ms | 409 |
+| C (MSVC /O2), 1 cœur | 2,67 s | 3 123 |
+| vtx forgé, 1 cœur (le programme entier) | 3,00 s | 3 509 |
+| Python 3 | 665 s | 778 558 |
+| vtx sur Lugus émulé | 897 s | 1 050 524 |
+
+Le calcul seul : 8,6 milliards d'opérations en 0,85 ms, environ 10 000 milliards par seconde (le chiffre « d'après
+la fiche », 5 000, était trop bas). Le coût est ailleurs : redescendre 64 Mo prend 25 ms (2,6 Go/s) ; la règle en
+découle : les données restent dans la carte, seul ce qui doit sortir redescend. vtx forgé est à 12 % du C sur un cœur
+(en mots de 128 bits, en rangeant chaque mot dans le cube) ; deux fois sur tous les cœurs (12 segments seulement).
+
+**Le noyau écrit par la forge** (`taranis/noyau_vtx.py`) : une boucle « en segments » dont le corps sait aller sur la
+carte devient un noyau SPIR-V, un fil par tour. Le sens est celui de Lugus : un entier est un mot de 64 bits, calculé
+en deux mots de 32 (les retenues ; le produit étendu, OpUMulExtended ; la division longue en 64 tours, avec les cas
+de Lugus : la division par zéro rend le plus grand entier, le reste par zéro le dividende, la division signée par −1
+rend l'opposé) ; ainsi tout se vérifie sur SwiftShader, qui n'a pas d'entiers de 64 bits, et va sur toute carte. Le
+corps peut avoir des variables, soit, si / sinon, tantque, pour, des comparaisons signées ou non, && || non, des
+appels de fonctions vtx (recopiées dans le noyau ; leur retour à la fin), et lire ou écrire @2[adresse] si l'adresse
+ne dépend que de la variable de boucle et de variables d'avant la boucle.
+
+**Le programme forgé** (`vers_la_carte` dans forge128.py, `taranis_boucle` dans noyau_forge128.rs, le module
+`taranis_vk.rs` recopié dans chaque programme) : avant les cylindres, la boucle entière part sur la carte. La fenêtre de
+l'étage 2 se calcule à l'exécution : chaque adresse est évaluée aux tours a, a + 1 et b − 1 et doit avancer d'un pas
+constant ; une lecture qui croise l'écriture d'une autre expression, ou des écritures toutes sur le même mot, et la
+boucle reste aux cylindres (l'ordre des tours compterait). La fenêtre monte (des mots de 64 bits ; un mot plus large :
+non), le noyau calcule, la fenêtre redescend, seuls les mots changés sont écrits dans le cube. Un accès hors de la
+fenêtre lève un drapeau : les cylindres rejouent la boucle. Sans carte, ou `VTX_CARTE=0` : les cylindres, comme avant.
+`VTX_TARANIS=1` dit ce que fait la carte (et, à la forge, pourquoi une boucle reste au processeur).
+
+**Vérifié** : `taranis/brassage.vtx` forgé sur la carte (SwiftShader) rend la somme de Lugus ;
+`tests/test_taranis_noyaux.py` tire au hasard des boucles (toutes les opérations et leurs cas limites : 0, 1, 31, 32,
+63, 64, 2^63, 2^64 − 1 ; si, tantque, pour, des appels) : 104 boucles sur trois graines, toutes sur la carte, les mêmes
+mots que Lugus. Belenos n'y va pas encore : ses adresses dépendent de variables du corps, ses fonctions lisent la
+mémoire (la suite : une fenêtre de pages entières, et les fonctions qui lisent).
