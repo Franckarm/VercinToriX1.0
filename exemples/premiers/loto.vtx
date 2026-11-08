@@ -1,0 +1,253 @@
+// Le loto, en vtx et rien d'autre : 5 numéros sur 49 et un numéro chance sur 10, comme le Loto de la Française des
+// Jeux. On joue sa grille (ou un flash, tiré au hasard) contre un tirage, on voit ses chances rang par rang (calculées
+// par le programme : les combinaisons), et l'on peut rejouer la même grille cent mille fois pour voir ce que donne
+// vraiment le hasard.
+// « vtx loto.vtx » : un tirage différent à chaque fois (la graine vient du bruit de la machine) ;
+// « vtx loto.vtx 7 » : toujours les mêmes tirages (graine 7), pour vérifier ou comparer.
+
+constante NUMEROS = 5;
+constante PLUS_GRAND = 49;
+constante CHANCES = 10;
+
+// le nombre de façons de choisir k parmi n (sans ordre) ; le produit reste petit : il est divisé à chaque pas
+fonction combinaisons(n, k) {
+    soit r = 1;
+    pour i dans 0..k {
+        r = r * (n - i) / (i + 1);
+    }
+    retour r;
+}
+
+// un tirage : 5 numéros différents de 1 à 49, rangés dans l'ordre
+fonction tirer() {
+    soit t = [];
+    tantque longueur(t) < NUMEROS {
+        soit x = hasard_entre(1, PLUS_GRAND);
+        si contient(t, x) == 0 {
+            ajouter(t, x);
+        }
+    }
+    trier(t);
+    retour t;
+}
+
+fonction numeros_en_texte(t): texte {
+    soit s = "";
+    pour x dans t {
+        si x < 10 {
+            s = s + " ";
+        }
+        s = s + texte(x) + " ";
+    }
+    retour s;
+}
+
+fonction grille_en_texte(t, chance): texte {
+    retour numeros_en_texte(t) + "| chance " + texte(chance);
+}
+
+// combien de numéros de la grille sont dans le tirage
+fonction bons_numeros(grille, tirage) {
+    soit n = 0;
+    pour x dans grille {
+        si contient(tirage, x) == 1 {
+            n = n + 1;
+        }
+    }
+    retour n;
+}
+
+// le rang de gain, de 1 (les 5 numéros et le numéro chance) à 9 (le numéro chance seul ou avec un numéro) ; 0 : rien
+fonction rang(bons, chance) {
+    si bons == 5 {
+        si chance == 1 { retour 1; }
+        retour 2;
+    }
+    si bons == 4 {
+        si chance == 1 { retour 3; }
+        retour 4;
+    }
+    si bons == 3 {
+        si chance == 1 { retour 5; }
+        retour 6;
+    }
+    si bons == 2 {
+        si chance == 1 { retour 7; }
+        retour 8;
+    }
+    si chance == 1 { retour 9; }
+    retour 0;
+}
+
+fonction nom_du_rang(r): texte {
+    si r == 1 { retour "5 bons numéros et le numéro chance"; }
+    si r == 2 { retour "5 bons numéros"; }
+    si r == 3 { retour "4 bons numéros et le numéro chance"; }
+    si r == 4 { retour "4 bons numéros"; }
+    si r == 5 { retour "3 bons numéros et le numéro chance"; }
+    si r == 6 { retour "3 bons numéros"; }
+    si r == 7 { retour "2 bons numéros et le numéro chance"; }
+    si r == 8 { retour "2 bons numéros"; }
+    si r == 9 { retour "le numéro chance (avec 0 ou 1 bon numéro)"; }
+    retour "rien";
+}
+
+// les grilles d'un rang : k bons numéros parmi les 5 tirés, les autres parmi les 44 qui ne le sont pas, et 1 numéro
+// chance sur 10 (le bon) ou 9 (un mauvais)
+fonction grilles_du_rang(r) {
+    soit n = 0;
+    pour bons dans 0..6 {
+        pour c dans 0..2 {
+            si rang(bons, c) == r {
+                soit facon = combinaisons(NUMEROS, bons) * combinaisons(PLUS_GRAND - NUMEROS, NUMEROS - bons);
+                si c == 1 {
+                    n = n + facon;
+                } sinon {
+                    n = n + facon * (CHANCES - 1);
+                }
+            }
+        }
+    }
+    retour n;
+}
+
+fonction montrer_chances() {
+    soit toutes = combinaisons(PLUS_GRAND, NUMEROS) * CHANCES;
+    afficher("Il y a", toutes, "grilles possibles (5 numéros parmi 49, fois 10 numéros chance).");
+    pour r dans 1..10 {
+        soit g = grilles_du_rang(r);
+        afficher("  rang", r, ":", nom_du_rang(r), "-> une grille sur", (toutes + g / 2) / g);
+    }
+    soit perdu = grilles_du_rang(0);
+    afficher("  rien :", perdu, "grilles sur", toutes, "ne gagnent rien, soit", (perdu * 100 + toutes / 2) / toutes, "sur 100.");
+}
+
+// lire 5 numéros (ou rien : un flash) ; rend le tableau rangé, ou un tableau vide si la saisie est fausse
+fonction lire_grille() {
+    ecrire("Vos 5 numéros de 1 à 49, séparés par des espaces (rien : au hasard) : ");
+    soit ligne = nettoyer(lire_ligne());
+    si longueur(ligne) == 0 {
+        soit flash = tirer();
+        afficher("Au hasard :", numeros_en_texte(flash));
+        retour flash;
+    }
+    soit morceaux = decouper(ligne, " ");
+    soit t = [];
+    pour m dans morceaux {
+        soit propre = nettoyer(m);
+        si longueur(propre) > 0 {
+            soit x = nombre(propre);
+            si x < 1 || x > PLUS_GRAND {
+                afficher("«", propre, "» n'est pas un numéro de 1 à 49.");
+                retour [];
+            }
+            si contient(t, x) == 1 {
+                afficher("Le", x, "est donné deux fois.");
+                retour [];
+            }
+            ajouter(t, x);
+        }
+    }
+    si longueur(t) != NUMEROS {
+        afficher("Il faut 5 numéros, pas", longueur(t), ".");
+        retour [];
+    }
+    trier(t);
+    retour t;
+}
+
+fonction lire_chance() {
+    ecrire("Votre numéro chance de 1 à 10 (rien : au hasard) : ");
+    soit ligne = nettoyer(lire_ligne());
+    si longueur(ligne) == 0 {
+        soit c = hasard_entre(1, CHANCES);
+        afficher("Au hasard :", c);
+        retour c;
+    }
+    soit x = nombre(ligne);
+    si x < 1 || x > CHANCES {
+        afficher("Le numéro chance va de 1 à 10 : il sera tiré au hasard.");
+        retour hasard_entre(1, CHANCES);
+    }
+    retour x;
+}
+
+// un tirage contre la grille
+fonction jouer(grille, chance) {
+    soit tirage = tirer();
+    soit tire_chance = hasard_entre(1, CHANCES);
+    afficher("Votre grille :", grille_en_texte(grille, chance));
+    afficher("Le tirage    :", grille_en_texte(tirage, tire_chance));
+    soit bons = bons_numeros(grille, tirage);
+    soit c = 0;
+    si chance == tire_chance {
+        c = 1;
+    }
+    soit r = rang(bons, c);
+    si r == 0 {
+        afficher(bons, "bon(s) numéro(s), pas le numéro chance : perdu.");
+    } sinon {
+        afficher("Gagné, rang", r, ":", nom_du_rang(r));
+    }
+}
+
+// la même grille contre n tirages : combien dans chaque rang, contre ce que donne le calcul
+fonction simuler(grille, chance, n) {
+    soit compte = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    pour k dans 0..n {
+        soit tirage = tirer();
+        soit c = 0;
+        si hasard_entre(1, CHANCES) == chance {
+            c = 1;
+        }
+        soit rg = rang(bons_numeros(grille, tirage), c);
+        compte[rg] = compte[rg] + 1;
+    }
+    soit toutes = combinaisons(PLUS_GRAND, NUMEROS) * CHANCES;
+    afficher(n, "tirages pour la grille", grille_en_texte(grille, chance));
+    pour r dans 1..10 {
+        soit attendu = (grilles_du_rang(r) * (n / 1000) + toutes / 2000) / (toutes / 1000);
+        afficher("  rang", r, ":", compte[r], "fois (le calcul en attendait environ", attendu, ")");
+    }
+    afficher("  rien  :", compte[0], "fois sur", n);
+}
+
+fonction principal() {
+    soit g = entrée();
+    si g == 0 {
+        graine_bruit();
+    } sinon {
+        graine(g);
+    }
+    afficher("Le loto de Vercintorix : 5 numéros sur 49 et un numéro chance sur 10.");
+    soit encore = 1;
+    tantque encore == 1 {
+        afficher("");
+        afficher("1 : jouer une grille contre un tirage");
+        afficher("2 : voir ses chances, rang par rang");
+        afficher("3 : rejouer la même grille 100 000 fois");
+        afficher("0 : quitter");
+        ecrire("Votre choix : ");
+        soit choix = nettoyer(lire_ligne());
+        si choix == "1" {
+            soit grille = lire_grille();
+            si longueur(grille) == NUMEROS {
+                jouer(grille, lire_chance());
+            }
+        } sinon {
+            si choix == "2" {
+                montrer_chances();
+            } sinon {
+                si choix == "3" {
+                    soit grille3 = lire_grille();
+                    si longueur(grille3) == NUMEROS {
+                        simuler(grille3, lire_chance(), 100000);
+                    }
+                } sinon {
+                    encore = 0;
+                }
+            }
+        }
+    }
+    afficher("Au revoir. Le hasard ne se souvient de rien : aucune grille n'a plus de chances qu'une autre.");
+}
