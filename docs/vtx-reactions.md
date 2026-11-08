@@ -1476,3 +1476,22 @@ natif.py), dans vtx.exe, un bouton de l'atelier ; la voix et les cubes ; la pail
 programmes, 0 écart (Linux), et relus pour Windows. Le loto lu d'un fichier quittait : Windows rangeait le compte
 d'octets lus dans la case même où le socle lit un caractère (OCTET) ; le compte a sa propre case. Un programme ouvert
 d'un double clic (seul dans sa fenêtre : GetConsoleProcessList) attend Entrée avant de se fermer.
+
+## 27. L'atelier : la carte du programme, la visionneuse, l'exécutable autonome (8 novembre, 0.5zo)
+
+**La carte du programme sur la paillasse.** Ouvrir n'importe quel programme pose sa carte sur la paillasse : chaque
+fonction est une case, chaque appel une liaison ; les vagues vont de `principal` vers les feuilles (la profondeur
+d'appel ; la récursion est vue, pas suivie à l'infini). La carte se lit et ne se modifie pas : un clic sur une case
+mène à sa ligne dans l'éditeur. Sur le loto : 14 fonctions, 4 vagues, `principal` appelle 5 fonctions
+(tests/test_carte.py, sans ligne écrite en dur). `paillasse --analyse` ignore la carte (les réactions seules).
+
+**La visionneuse.** Avant de lancer un programme, l'atelier relève le dossier du programme et le dossier courant ;
+après, ce qui est apparu ou a changé s'ouvre dans une fenêtre à part : une image (BMP, PNG, JPG, GIF par GDI+,
+agrandie à pixels entiers, sans flou), un son WAV (rejoué d'un clic, Échap l'arrête), un exécutable (lancé dans sa
+propre console). Démonstration : exemples128/visionneuse.vtx (Lugus) écrit `la.wav` (un la 440 Hz en triangle) et
+`belnap.bmp` (les quatre couleurs de Belnap) par le canal `octets:`.
+
+**Ctrl+E : l'exécutable autonome.** Menu Lancer → « Faire l'exécutable autonome » : natif.py --windows traduit le
+programme (machine 32, Senos) en .exe x86-64 qui ne demande que KERNEL32, puis l'ouvre dans la visionneuse.
+Le code Windows de l'atelier est vérifié par le compilateur Rust (cargo check), pas encore lancé ici : c'est l'essai
+0.5zo qui le dira.
