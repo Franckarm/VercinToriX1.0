@@ -1468,3 +1468,11 @@ d'entrée. Pas lancés : la machine de travail n'est pas sous Windows (`natif/te
 
 **La suite** : le corpus lancé sous Windows ; le loto en .exe ; puis le traducteur écrit en vtx (les mêmes octets que
 natif.py), dans vtx.exe, un bouton de l'atelier ; la voix et les cubes ; la paillasse.
+
+**Sous Windows** (0.5zm, chez l'utilisateur) : 481 programmes du corpus sur 487 justes, bonjour.exe parle. Les 6 autres
+échouaient aussi sous Linux : les flottants de 64 bits (0x5B à 0x6B), venus au SPU après la mise de côté de natif.
+**0.5zn** : ils sont traduits (SSE2 : addsd, subsd, mulsd, divsd, sqrtsd, ucomisd, les conversions ; le NaN unique
+0x7FF8000000000000 de la référence ; les conversions vers les entiers saturées, NaN : 0) ; le corpus entier : 487
+programmes, 0 écart (Linux), et relus pour Windows. Le loto lu d'un fichier quittait : Windows rangeait le compte
+d'octets lus dans la case même où le socle lit un caractère (OCTET) ; le compte a sa propre case. Un programme ouvert
+d'un double clic (seul dans sa fenêtre : GetConsoleProcessList) attend Entrée avant de se fermer.

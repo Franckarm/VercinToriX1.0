@@ -93,6 +93,7 @@ ALU = {"add": 0, "or": 1, "adc": 2, "sbb": 3, "and": 4, "sub": 5, "xor": 6, "cmp
 DECAL = {"shl": 4, "shr": 5, "sar": 7}
 UNAIRE = {"not": 2, "neg": 3, "mul": 4, "div": 6}
 SS = {"addss": 0x58, "mulss": 0x59, "subss": 0x5C, "divss": 0x5E, "sqrtss": 0x51}
+SD = {"addsd": 0x58, "mulsd": 0x59, "subsd": 0x5C, "divsd": 0x5E, "sqrtsd": 0x51}
 
 
 class Asm:
@@ -414,6 +415,33 @@ class Asm:
 
     def cvtss2si(self, dst, src):
         self._ins(f"cvtss2si {dst}, {src}", b"\x0F\x2D", dst.n, src, dst.t == 64, pre=b"\xF3")
+
+    def sd(self, nom, dst, src):
+        self._ins(f"{nom} {dst}, {src}", bytes([0x0F, SD[nom]]), dst.n, src, pre=b"\xF2")
+
+    def ucomisd(self, a, b):
+        self._ins(f"ucomisd {a}, {b}", b"\x0F\x2E", a.n, b, pre=b"\x66")
+
+    def cvtsi2sd(self, dst, src):
+        self._ins(f"cvtsi2sd {dst}, {src}", b"\x0F\x2A", dst.n, src, self._t(src) == 64, pre=b"\xF2")
+
+    def cvttsd2si(self, dst, src):
+        self._ins(f"cvttsd2si {dst}, {src}", b"\x0F\x2C", dst.n, src, dst.t == 64, pre=b"\xF2")
+
+    def cvtsd2si(self, dst, src):
+        self._ins(f"cvtsd2si {dst}, {src}", b"\x0F\x2D", dst.n, src, dst.t == 64, pre=b"\xF2")
+
+    def cvtss2sd(self, dst, src):
+        self._ins(f"cvtss2sd {dst}, {src}", b"\x0F\x5A", dst.n, src, pre=b"\xF3")
+
+    def cvtsd2ss(self, dst, src):
+        self._ins(f"cvtsd2ss {dst}, {src}", b"\x0F\x5A", dst.n, src, pre=b"\xF2")
+
+    def movabs(self, dst, v):
+        """mov r64, imm64"""
+        v &= (1 << 64) - 1
+        assert dst.n < 8
+        self._ins(f"movabs {dst}, {v}", bytes([0xB8 + (dst.n & 7)]), w=True, imm=struct.pack("<Q", v))
 
     def paddq(self, dst, src):
         self._ins(f"paddq {dst}, {src}", b"\x0F\xD4", dst.n, src, pre=b"\x66")

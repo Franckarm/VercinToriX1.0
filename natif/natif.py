@@ -39,11 +39,11 @@ from socle import Socle, CARTE, Z, C, F2_31, TAILLE_ETAT  # noqa
 # drapeaux : écrits par ces instructions (z et c)
 ECRIT_DRAPEAUX = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0C, 0x0D, 0x0E, 0x10, 0x11, 0x12, 0x13,
                   0x14, 0x15, 0x16, 0x20, 0x29, 0x38, 0x4C, 0x4D, 0x4E, 0x4F, 0x50, 0x51, 0x53, 0x54, 0x56, 0x57, 0x58,
-                  0x59, 0x5A} | set(range(0x40, 0x4C))
+                  0x59, 0x5A} | set(range(0x40, 0x4C)) | set(range(0x5B, 0x6C))
 LIT_DRAPEAUX = {0x31, 0x32, 0x35, 0x36, 0x4C, 0x4D}
 CONNUS = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x10, 0x11, 0x12, 0x13,
           0x14, 0x15, 0x16, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x29, 0x2A, 0x30, 0x31, 0x32, 0x33,
-          0x34, 0x35, 0x36, 0x38, 0x39, 0x3F} | set(range(0x40, 0x5B))
+          0x34, 0x35, 0x36, 0x38, 0x39, 0x3F} | set(range(0x40, 0x5B)) | set(range(0x5B, 0x6C))
 # instructions dont la traduction n'écrase pas les drapeaux de la machine (et qui ne les écrivent pas)
 SANS_EFFET = {0x00, 0x0B}
 
@@ -583,6 +583,9 @@ class Traducteur:
                 a.test(EAX, EAX)
                 self.ranger(rd, EAX)
                 etat = "N"
+            elif 0x5B <= op <= 0x6B:
+                self.flottant64(op, rd, rs, rt)
+                etat = "N"
             elif op == 0x4E:
                 self.charger(EAX, rs)
                 src = self.source(rt)
@@ -666,6 +669,129 @@ class Traducteur:
                 a.movd(x, EAX)
             else:
                 a.movd(x, self.op(r))
+
+    # ------------------------------------------------------------------ les flottants de 64 bits (0x5B à 0x6B)
+    # une paire de registres (Ri, Ri+3) : le mot bas, le mot haut ; le sens est celui de la machine de référence (vtx.py) :
+    # tout résultat NaN est le NaN unique 0x7FF8000000000000 ; les conversions vers les entiers sont saturées (NaN : 0)
+    def paire_vers(self, x, r):
+        a = self.a
+        self.charger(EAX, r)
+        self.charger(EDX, (r + 3) & 15)
+        a.decaler("shl", RDX, 32)
+        a.alu("or", RAX, RDX)
+        a.movd(x, RAX)
+
+    def ranger_rax_paire(self, rd):
+        """rax -> la paire (rd, rd+3) ; les drapeaux : du ou des deux mots"""
+        a = self.a
+        a.mov(RDX, RAX)
+        a.decaler("shr", RDX, 32)
+        a.mov(ECX, EAX)
+        a.alu("or", ECX, EDX)
+        self.ranger(rd, EAX)
+        self.ranger((rd + 3) & 15, EDX)
+        a.test(ECX, ECX)
+
+    def ranger_double(self, rd):
+        a = self.a
+        ok = self.locale()
+        a.movd(RAX, XMM[0])
+        a.ucomisd(XMM[0], XMM[0])
+        a.jcc("np", ok)
+        a.movabs(RAX, 0x7FF8000000000000)
+        a.etiquette(ok)
+        self.ranger_rax_paire(rd)
+
+    def constante_double(self, x, v):
+        a = self.a
+        a.movabs(RAX, struct.unpack("<Q", struct.pack("<d", v))[0])
+        a.movd(x, RAX)
+
+    def vers_entier(self, op, rd, rs, bits):
+        """flottant de 64 bits -> entier signé de 32 ou 64 bits, tronqué (0x65, 0x6A) ou arrondi au pair (0x66, 0x6B)"""
+        a = self.a
+        nan, haut, bas, fin = (self.locale() for _ in range(4))
+        self.paire_vers(XMM[0], rs)
+        a.ucomisd(XMM[0], XMM[0])
+        a.jcc("p", nan)
+        borne = 2.0 ** 62 if bits == 32 else 2.0 ** 63
+        self.constante_double(XMM[1], borne)
+        a.ucomisd(XMM[0], XMM[1])
+        a.jcc("ae", haut)
+        self.constante_double(XMM[1], -borne)
+        a.ucomisd(XMM[1], XMM[0])
+        a.jcc("a", bas)
+        (a.cvttsd2si if op in (0x65, 0x6A) else a.cvtsd2si)(RAX, XMM[0])
+        if bits == 32:
+            a.movabs(RCX, (1 << 31) - 1)
+            a.alu("cmp", RAX, RCX)
+            a.jcc("g", haut)
+            a.alu("cmp", RAX, -(1 << 31))
+            a.jcc("l", bas)
+        a.jmp(fin)
+        a.etiquette(nan)
+        a.alu("xor", EAX, EAX)
+        a.jmp(fin)
+        a.etiquette(haut)
+        a.movabs(RAX, (1 << (bits - 1)) - 1)
+        a.jmp(fin)
+        a.etiquette(bas)
+        a.movabs(RAX, (1 << 64) - (1 << (bits - 1)) if bits == 64 else 1 << 31)
+        a.etiquette(fin)
+        if bits == 32:
+            a.test(EAX, EAX)
+            self.ranger(rd, EAX)
+        else:
+            self.ranger_rax_paire(rd)
+
+    def flottant64(self, op, rd, rs, rt):
+        a = self.a
+        if op in (0x5B, 0x5C, 0x5D, 0x5E):
+            self.paire_vers(XMM[0], rs)
+            self.paire_vers(XMM[1], rt)
+            a.sd({0x5B: "addsd", 0x5C: "subsd", 0x5D: "mulsd", 0x5E: "divsd"}[op], XMM[0], XMM[1])
+            self.ranger_double(rd)
+        elif op == 0x5F:
+            self.paire_vers(XMM[0], rs)
+            a.sd("sqrtsd", XMM[0], XMM[0])
+            self.ranger_double(rd)
+        elif op in (0x60, 0x61, 0x62):
+            self.paire_vers(XMM[0], rs)
+            self.paire_vers(XMM[1], rt)
+            if op == 0x60:
+                a.ucomisd(XMM[0], XMM[1])
+                a.setcc("e", AL)
+                a.setcc("np", CL)
+                a.alu("and", AL, CL)
+            else:
+                a.ucomisd(XMM[1], XMM[0])
+                a.setcc("a" if op == 0x61 else "ae", AL)
+            a.movzx8(EAX, AL)
+            a.test(EAX, EAX)
+            self.ranger(rd, EAX)
+        elif op in (0x63, 0x64):
+            self.charger(EAX, rs)
+            a.cvtsi2sd(XMM[0], RAX if op == 0x63 else EAX)
+            self.ranger_double(rd)
+        elif op in (0x65, 0x66):
+            self.vers_entier(op, rd, rs, 32)
+        elif op == 0x67:
+            self.charger(EAX, rs)
+            a.movd(XMM[0], EAX)
+            a.cvtss2sd(XMM[0], XMM[0])
+            self.ranger_double(rd)
+        elif op == 0x68:
+            self.paire_vers(XMM[0], rs)
+            a.cvtsd2ss(XMM[0], XMM[0])
+            self.nan_unique()
+            self.ranger(rd, EAX)
+        elif op == 0x69:
+            self.paire_vers(XMM[0], rs)
+            a.movd(RAX, XMM[0])
+            a.cvtsi2sd(XMM[0], RAX)
+            self.ranger_double(rd)
+        else:
+            self.vers_entier(op, rd, rs, 64)
 
     def nan_unique(self):
         """eax = xmm0, NaN rendu 0x7FC00000 ; drapeaux du résultat."""

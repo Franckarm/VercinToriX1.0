@@ -18,11 +18,14 @@ from socle import OCTET, ENVP, CHIFFRES, VEC, TAILLE_ETAT  # noqa
 
 # le nom en UTF-16 : juste après la zone d'état (l'exécutable PE réserve EXTRA octets de plus)
 CHEMIN16 = TAILLE_ETAT
+# le compte d'octets lus ou écrits que Windows rend (pas dans OCTET : le socle y lit et y écrit un caractère)
+COMPTE = TAILLE_ETAT + 16384
 EXTRA = 16384 + 64
+MSG_FERMER = "\n(Entrée pour fermer la fenêtre)".encode("utf-8")
 
 FONCTIONS = ["GetStdHandle", "WriteFile", "ReadFile", "CreateFileW", "CloseHandle", "GetFileSizeEx", "VirtualAlloc",
              "VirtualFree", "ExitProcess", "GetCommandLineA", "SetConsoleOutputCP", "SetConsoleCP",
-             "MultiByteToWideChar"]
+             "MultiByteToWideChar", "GetConsoleProcessList"]
 GARDES = [R8_, R9_, R10_, R11_]
 
 
@@ -95,11 +98,11 @@ def primitives_windows(s):
     handle(s, EDI)
     a.mov(RDX, RSI)
     a.mov(R32[8], EBX)
-    a.lea(R9_, qword(RBP, depl=OCTET))
+    a.lea(R9_, qword(RBP, depl=COMPTE))
     appel(s, "WriteFile", (0,))
     a.test(EAX, EAX)
     a.jcc("e", "OS_ECRIRE_X")
-    a.mov(EAX, dword(RBP, depl=OCTET))
+    a.mov(EAX, dword(RBP, depl=COMPTE))
     a.test(EAX, EAX)
     a.jcc("e", "OS_ECRIRE_X")
     a.alu("add", RSI, RAX)
@@ -122,11 +125,11 @@ def primitives_windows(s):
     handle(s, EDI)
     a.mov(RDX, RSI)
     a.mov(R32[8], EBX)
-    a.lea(R9_, qword(RBP, depl=OCTET))
+    a.lea(R9_, qword(RBP, depl=COMPTE))
     appel(s, "ReadFile", (0,))
     a.test(EAX, EAX)
     a.jcc("e", "OS_LIRE_FIN")
-    a.mov(ECX, dword(RBP, depl=OCTET))
+    a.mov(ECX, dword(RBP, depl=COMPTE))
     a.test(ECX, ECX)
     a.jcc("e", "OS_LIRE_FIN")
     # retirer les \r : rsi lit, rdi écrit, ecx le compte
@@ -195,9 +198,9 @@ def primitives_windows(s):
     a.etiquette("OS_TAILLE")
     s.sauver(GARDES)
     a.mov(ECX, EDI)
-    a.lea(RDX, qword(RBP, depl=OCTET))
+    a.lea(RDX, qword(RBP, depl=COMPTE))
     appel(s, "GetFileSizeEx")
-    a.mov(RAX, qword(RBP, depl=OCTET))
+    a.mov(RAX, qword(RBP, depl=COMPTE))
     s.restaurer(GARDES)
     a.ret()
 
@@ -226,9 +229,31 @@ def primitives_windows(s):
     s.restaurer(GARDES)
     a.ret()
 
-    # OS_QUITTER : edi le code de sortie
+    # OS_QUITTER : edi le code de sortie ; si le programme est seul dans sa fenêtre (ouvert d'un double clic), elle
+    # attend Entrée avant de se fermer : on lit ce que le programme a écrit
     a.etiquette("OS_QUITTER")
-    a.mov(ECX, EDI)
+    a.mov(EBX, EDI)
+    a.lea(RCX, qword(RBP, depl=COMPTE))
+    a.mov(EDX, 4)
+    appel(s, "GetConsoleProcessList")
+    a.alu("cmp", EAX, 1)
+    a.jcc("ne", "OS_QUITTER_F")
+    a.mov(ECX, 0xFFFFFFF5)                # la sortie
+    appel(s, "GetStdHandle")
+    a.mov(RCX, RAX)
+    a.lea(RDX, qword(etiq="MSG_FERMER"))
+    a.mov(R32[8], len(MSG_FERMER))
+    a.lea(R9_, qword(RBP, depl=COMPTE))
+    appel(s, "WriteFile", (0,))
+    a.mov(ECX, 0xFFFFFFF6)                # l'entrée
+    appel(s, "GetStdHandle")
+    a.mov(RCX, RAX)
+    a.lea(RDX, qword(RBP, depl=COMPTE + 16))
+    a.mov(R32[8], 32)
+    a.lea(R9_, qword(RBP, depl=COMPTE))
+    appel(s, "ReadFile", (0,))
+    a.etiquette("OS_QUITTER_F")
+    a.mov(ECX, EBX)
     appel(s, "ExitProcess")
     a.ud2()
 
@@ -313,5 +338,7 @@ def chaines_windows(s):
         a.aligner(2)
         a.etiquette("NOM_" + f)
         a.octets(b"\0\0" + f.encode() + b"\0")
+    a.etiquette("MSG_FERMER")
+    a.octets(MSG_FERMER)
     a.etiquette("DLL_KERNEL32")
     a.octets(b"KERNEL32.dll\0")
