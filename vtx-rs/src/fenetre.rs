@@ -2585,6 +2585,10 @@ unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> 
             }
             let r = at.pail.souris(Souris::Haut, x, y, &texte());
             reponse_paillasse(r);
+            // la carte se lit et ne se modifie pas : après un clic, le clavier revient au texte
+            if a().pail.reaction().map_or(true, |r| r.carte) {
+                SetFocus(a().source);
+            }
             0
         }
         WM_LBUTTONDBLCLK => {
@@ -2592,10 +2596,15 @@ unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> 
             reponse_paillasse(r);
             0
         }
-        WM_KEYDOWN => {
+        // la paillasse ne garde que Suppr et Échap ; toute autre touche va au texte (et le clavier y revient)
+        WM_KEYDOWN if wp == 0x2E || wp == 0x1B => {
             let r = at.pail.touche(wp as u32, &texte());
             reponse_paillasse(r);
             0
+        }
+        WM_KEYDOWN | WM_KEYUP | WM_CHAR => {
+            SetFocus(at.source);
+            SendMessageW(at.source, m, wp, lp)
         }
         WM_MOUSEWHEEL => {
             let cran = ((wp >> 16) & 0xFFFF) as i16 as i32 / 120;
@@ -3192,8 +3201,14 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY, key: 0x1B, cmd: C_FIN_PAS }, // Échap
         ];
         let table = CreateAcceleratorTableW(raccourcis.as_ptr(), raccourcis.len() as i32);
+        guetteur::demarrer();
         let mut msg: Msg = std::mem::zeroed();
         while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+            let b = a();
+            let ou = [(b.source, "le texte"), (b.paillasse, "la paillasse"), (b.cube, "le cube"), (b.journal, "la sortie"),
+                      (b.explications, "les explications"), (b.lignes, "les numéros de ligne"), (fen, "la fenêtre")]
+                .iter().find(|x| x.0 == msg.hwnd).map(|x| x.1).unwrap_or("une autre fenêtre");
+            guetteur::entrer(msg.message, msg.wParam, ou);
             // pendant l'exécution, les touches tapées dans l'image vont au programme (Échap compris)
             let at = a();
             // les raccourcis de l'atelier restent à l'atelier : Ctrl+…, Alt+… et les touches F1 à F12
@@ -3203,6 +3218,93 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
                 TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
+            guetteur::sortir();
         }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ le guetteur
+/// Le guetteur : la boucle des messages dit ce qu'elle traite ; si un message la tient plus de deux secondes, un fil à
+/// part l'écrit dans ogmios.log (à côté de l'atelier), puis combien de temps il a duré. Une panique y est écrite aussi,
+/// avec sa place dans le code : de quoi trouver ce qui fige l'atelier sans le voir.
+mod guetteur {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    static DEPUIS: AtomicU64 = AtomicU64::new(0); // en millisecondes depuis le départ ; 0 : rien en cours
+    static MESSAGE: AtomicU32 = AtomicU32::new(0);
+    static PARAM: AtomicUsize = AtomicUsize::new(0);
+    static OU: Mutex<&'static str> = Mutex::new("");
+    static DEPART: Mutex<Option<Instant>> = Mutex::new(None);
+
+    fn ms() -> u64 {
+        DEPART.lock().unwrap().map_or(1, |d| d.elapsed().as_millis() as u64 + 1)
+    }
+
+    pub fn journal(t: &str) {
+        let p = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("ogmios.log")))
+            .unwrap_or_else(|| std::env::temp_dir().join("ogmios.log"));
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&p) {
+            let _ = writeln!(f, "{}", t);
+        }
+    }
+
+    fn nom(m: u32) -> String {
+        match m {
+            0x000F => "WM_PAINT (dessin)".into(),
+            0x0100 => "WM_KEYDOWN (touche)".into(),
+            0x0101 => "WM_KEYUP (touche relâchée)".into(),
+            0x0102 => "WM_CHAR (caractère)".into(),
+            0x0111 => "WM_COMMAND (menu ou bouton)".into(),
+            0x0113 => "WM_TIMER (minuterie)".into(),
+            0x0200 => "WM_MOUSEMOVE (souris)".into(),
+            0x0201 => "WM_LBUTTONDOWN (clic)".into(),
+            0x0202 => "WM_LBUTTONUP (clic relâché)".into(),
+            0x0203 => "WM_LBUTTONDBLCLK (double clic)".into(),
+            0x020A => "WM_MOUSEWHEEL (molette)".into(),
+            _ => format!("message {:#06X}", m),
+        }
+    }
+
+    pub fn entrer(m: u32, wp: usize, ou: &'static str) {
+        MESSAGE.store(m, Ordering::Relaxed);
+        PARAM.store(wp, Ordering::Relaxed);
+        *OU.lock().unwrap() = ou;
+        DEPUIS.store(ms(), Ordering::Release);
+    }
+
+    pub fn sortir() {
+        DEPUIS.store(0, Ordering::Release);
+    }
+
+    pub fn demarrer() {
+        *DEPART.lock().unwrap() = Some(Instant::now());
+        journal(&format!("--- Ogmios ouvert ({})", std::env::current_exe().map(|e| e.display().to_string()).unwrap_or_default()));
+        std::panic::set_hook(Box::new(|p| {
+            let ou = p.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+            journal(&format!("PANIQUE à {} : {}", ou, p));
+        }));
+        std::thread::spawn(|| {
+            let mut signale = 0u64;
+            loop {
+                std::thread::sleep(Duration::from_millis(250));
+                let d = DEPUIS.load(Ordering::Acquire);
+                if d == 0 {
+                    if signale != 0 {
+                        journal("    … la boucle a repris");
+                        signale = 0;
+                    }
+                    continue;
+                }
+                let dure = ms().saturating_sub(d);
+                if dure > 2000 && signale != d {
+                    signale = d;
+                    journal(&format!("FIGÉ depuis {} ms : {} sur {}, paramètre {:#X} (ou une boîte de dialogue restée ouverte)", dure, nom(MESSAGE.load(Ordering::Relaxed)),
+                                     *OU.lock().unwrap(), PARAM.load(Ordering::Relaxed)));
+                }
+            }
+        });
     }
 }

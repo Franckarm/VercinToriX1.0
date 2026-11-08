@@ -862,7 +862,8 @@ pub fn installer(poser: bool) -> Result<String, String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        let atelier = dossier.join("atelier.exe");
+        // Ogmios.exe (le dossier Ogmios que pose l'essai), sinon atelier.exe
+        let atelier = if dossier.join("Ogmios.exe").exists() { dossier.join("Ogmios.exe") } else { dossier.join("atelier.exe") };
         let icone = dossier.join("vtx.ico");
         let reg = |args: &[&str]| {
             let r = process::Command::new("reg").args(args).creation_flags(0x0800_0000).output();
@@ -1033,7 +1034,7 @@ fn main() {
     // atelier.exe (le même programme sous ce nom) : l'atelier, sur le fichier donné ou en commençant par « ouvrir ».
     // Un double-clic sur atelier.exe, ou « Ouvrir avec » sur un fichier .vtx, arrive ici.
     let nom = std::path::Path::new(&args[0]).file_stem().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-    if nom == "atelier" {
+    if nom == "atelier" || nom == "ogmios" {
         // sous Windows, la fenêtre ; ailleurs, l'atelier en console
         #[cfg(windows)]
         fenetre::lancer_fenetre(args.get(1).map(|s| s.as_str()));

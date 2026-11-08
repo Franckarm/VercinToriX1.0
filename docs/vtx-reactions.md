@@ -1495,3 +1495,13 @@ propre console). Démonstration : exemples128/visionneuse.vtx (Lugus) écrit `la
 programme (machine 32, Senos) en .exe x86-64 qui ne demande que KERNEL32, puis l'ouvre dans la visionneuse.
 Le code Windows de l'atelier est vérifié par le compilateur Rust (cargo check), pas encore lancé ici : c'est l'essai
 0.5zo qui le dira.
+
+**0.5zp : le dossier Ogmios, le clavier, le guetteur.** L'essai pose l'atelier à un endroit fixe,
+`Vercintorix1.0 rust\Ogmios\Ogmios.exe` (avec vtx.exe, natif, les exemples et la bibliothèque ; un fichier déjà là et
+plus récent n'est pas remplacé), un raccourci « Ogmios » sur le Bureau et dans le menu Démarrer, et les .vtx s'ouvrent
+d'un double clic dans Ogmios (`vtx desinstaller` défait l'association). Un clic sur la paillasse lui donnait le clavier,
+et elle ne garde que Suppr et Échap : les autres touches se perdaient (« les touches ne répondent plus »). Elles vont
+maintenant au texte, et après un clic sur la carte le clavier revient au texte. Le guetteur : si un message tient la
+boucle de l'atelier plus de deux secondes, un fil à part l'écrit dans ogmios.log (quel message, sur quelle partie de la
+fenêtre), et une panique y laisse sa place dans le code. Le cube n'est pas dans loto.exe : l'exécutable autonome n'a
+encore ni la vue du cube ni la voix ; c'est un chantier à venir, avec Lugus en .exe.
