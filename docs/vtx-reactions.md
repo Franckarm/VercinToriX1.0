@@ -1505,3 +1505,8 @@ maintenant au texte, et après un clic sur la carte le clavier revient au texte.
 boucle de l'atelier plus de deux secondes, un fil à part l'écrit dans ogmios.log (quel message, sur quelle partie de la
 fenêtre), et une panique y laisse sa place dans le code. Le cube n'est pas dans loto.exe : l'exécutable autonome n'a
 encore ni la vue du cube ni la voix ; c'est un chantier à venir, avec Lugus en .exe.
+
+**0.5zq.** La carte se promène : glisser le vide à la souris (de gauche à droite comme de haut en bas), la molette
+(haut, bas), Maj + molette ou la molette penchée du pavé tactile (gauche, droite). Le loto choisit seul : « 4 » la
+machine tire une grille et un numéro chance et les joue contre un tirage ; « 5 » elle propose des grilles (5 par défaut,
+jusqu'à 100) sans les jouer. Mêmes mots par vtx.py et vtxc, même sortie par le .exe autonome.

@@ -173,6 +173,13 @@ fonction lire_chance() {
     retour x;
 }
 
+// le flash : la machine choisit seule les 5 numéros et le numéro chance, et donne la grille à jouer
+fonction flash(combien) {
+    pour k dans 0..combien {
+        afficher("  grille", k + 1, ":", grille_en_texte(tirer(), hasard_entre(1, CHANCES)));
+    }
+}
+
 // un tirage contre la grille
 fonction jouer(grille, chance) {
     soit tirage = tirer();
@@ -227,6 +234,8 @@ fonction principal() {
         afficher("1 : jouer une grille contre un tirage");
         afficher("2 : voir ses chances, rang par rang");
         afficher("3 : rejouer la même grille 100 000 fois");
+        afficher("4 : la machine joue seule (un flash contre un tirage)");
+        afficher("5 : la machine choisit des grilles pour vous (sans les jouer)");
         afficher("0 : quitter");
         ecrire("Votre choix : ");
         soit choix = nettoyer(lire_ligne());
@@ -245,7 +254,22 @@ fonction principal() {
                         simuler(grille3, lire_chance(), 100000);
                     }
                 } sinon {
-                    encore = 0;
+                    si choix == "4" {
+                        soit grille4 = tirer();
+                        afficher("La machine a choisi la grille et le numéro chance, au hasard.");
+                        jouer(grille4, hasard_entre(1, CHANCES));
+                    } sinon {
+                        si choix == "5" {
+                            ecrire("Combien de grilles (rien : 5) ? ");
+                            soit n5 = nombre(nettoyer(lire_ligne()));
+                            si n5 < 1 || n5 > 100 {
+                                n5 = 5;
+                            }
+                            flash(n5);
+                        } sinon {
+                            encore = 0;
+                        }
+                    }
                 }
             }
         }

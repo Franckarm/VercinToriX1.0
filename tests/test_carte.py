@@ -22,16 +22,16 @@ def verifier(nom, ok, detail=""):
 r = subprocess.run([vtx, "paillasse", os.path.join(racine, "exemples", "premiers", "loto.vtx"), "--plan"],
                    capture_output=True, text=True, encoding="utf-8")
 o = r.stdout
-verifier("le loto : une carte de 14 fonctions en 4 vagues", "La carte du programme : 14 fonctions, 4 vagues" in o, o[-400:])
+verifier("le loto : une carte de 15 fonctions en 4 vagues", "La carte du programme : 15 fonctions, 4 vagues" in o, o[-400:])
 verifier("un onglet « le programme »", "onglet le programme" in o, o[-400:])
 cases = [l for l in o.splitlines() if l.startswith("case ")]
-verifier("14 cases", len(cases) == 14, "\n".join(cases))
-# principal appelle cinq fonctions : cinq entrées
+verifier("15 cases", len(cases) == 15, "\n".join(cases))
+# principal appelle sept fonctions : sept entrées
 ligne_p = 1 + next(k for k, l in enumerate(open(os.path.join(racine, "exemples", "premiers", "loto.vtx"), encoding="utf-8"))
                    if l.startswith("fonction principal"))
 p = [l for l in cases if l.split()[1] == str(ligne_p)]
-verifier("principal : 5 entrées (lire_grille, jouer, lire_chance, montrer_chances, simuler)",
-         len(p) == 1 and len(p[0].split("|")[1].split()) == 5, str(p))
+verifier("principal : 7 entrées (tirer, flash, lire_grille, jouer, lire_chance, montrer_chances, simuler)",
+         len(p) == 1 and len(p[0].split("|")[1].split()) == 7, str(p))
 # un texte où une fonction s'appelle elle-même : pas de cycle annoncé, la case reste
 d = tempfile.mkdtemp()
 f = os.path.join(d, "rec.vtx")

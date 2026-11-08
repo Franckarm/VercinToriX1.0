@@ -1330,8 +1330,21 @@ impl Paillasse {
                         let l = self.reaction().unwrap().atomes[k].ligne;
                         return Reponse::Aller(l);
                     }
+                    // le vide : on fait glisser la carte (de gauche à droite, de haut en bas)
                     self.choisi = None;
+                    self.geste = Some(Geste::Panoramique { x0: x, y0: y, d0: self.decal });
                     return Reponse::Redessiner;
+                }
+                Souris::Bouge => {
+                    if let Some(Geste::Panoramique { x0, y0, d0 }) = self.geste.clone() {
+                        self.decal = (d0.0 + x - x0, d0.1 + y - y0);
+                        return Reponse::Redessiner;
+                    }
+                    return Reponse::Rien;
+                }
+                Souris::Haut => {
+                    self.geste = None;
+                    return Reponse::Rien;
                 }
                 Souris::Double => {
                     // un double clic dans le vide d'un programme sans réaction : une réaction neuve, comme avant
@@ -1341,7 +1354,6 @@ impl Paillasse {
                     }
                     return Reponse::Rien;
                 }
-                _ => return Reponse::Rien,
             }
         }
         match genre {
@@ -1543,7 +1555,8 @@ impl Paillasse {
                 None => {
                     t.push_str(&format!("La carte du programme : {} fonction{}, {} vague{} d'appels. Chaque case est une fonction ; \
                                          une liaison va de la fonction appelée (à gauche) vers celle qui l'appelle (à droite).\r\n\
-                                         Un clic sur une case : le texte va à la fonction. La carte se lit ; le texte se change dans \
+                                         Un clic sur une case : le texte va à la fonction. Pour voyager sur la carte : glisser le vide à la souris, \
+                                         la molette (haut, bas), Maj + molette (gauche, droite). La carte se lit ; le texte se change dans \
                                          l'éditeur, et la carte suit.\r\n", r.atomes.len(), if r.atomes.len() > 1 { "s" } else { "" },
                                         r.nb_vagues, if r.nb_vagues > 1 { "s" } else { "" }));
                 }

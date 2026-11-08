@@ -235,6 +235,7 @@ const WM_SYSKEYDOWN: u32 = 0x0104;
 const WM_SYSKEYUP: u32 = 0x0105;
 const WM_KILLFOCUS: u32 = 0x0008;
 const WM_MOUSEWHEEL: u32 = 0x020A;
+const WM_MOUSEHWHEEL: u32 = 0x020E;
 const WM_CUT: u32 = 0x0300;
 const WM_COPY: u32 = 0x0301;
 const WM_PASTE: u32 = 0x0302;
@@ -2606,9 +2607,17 @@ unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> 
             SetFocus(at.source);
             SendMessageW(at.source, m, wp, lp)
         }
-        WM_MOUSEWHEEL => {
-            let cran = ((wp >> 16) & 0xFFFF) as i16 as i32 / 120;
-            at.pail.decal.1 += cran * (60.0 * at.echelle) as i32;
+        // la molette : de haut en bas ; Maj + molette, ou la molette penchée (et le pavé tactile) : de gauche à droite
+        WM_MOUSEWHEEL | WM_MOUSEHWHEEL => {
+            let cran = ((wp >> 16) & 0xFFFF) as i16 as i32;
+            let pas = cran * (60.0 * at.echelle) as i32 / 120;
+            if m == WM_MOUSEHWHEEL {
+                at.pail.decal.0 -= pas;
+            } else if wp & 0x0004 != 0 {
+                at.pail.decal.0 += pas;
+            } else {
+                at.pail.decal.1 += pas;
+            }
             InvalidateRect(h, std::ptr::null(), 0);
             0
         }
