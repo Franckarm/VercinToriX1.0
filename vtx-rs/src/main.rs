@@ -46,6 +46,7 @@ mod spu128;
 #[allow(dead_code)]
 mod machine128;
 mod pas128;
+mod symboles;
 #[allow(dead_code)]
 mod adn;
 #[allow(dead_code)]
@@ -1081,6 +1082,7 @@ fn main() {
         },
         Some("essai-pas64") => pas64::essai(&args[2..]),
         Some("essai-pas128") => pas128::essai(&args[2..]),
+        Some("regarder128") => symboles::essai(&args[2..]),
         Some("atelier") => atelier::atelier(args.get(2).map(|s| s.as_str())),
         Some("traduire") if args.len() > 2 => traduire_programme(&args[2], args.get(3)),
         Some("traduire-corpus") if args.len() > 3 => {

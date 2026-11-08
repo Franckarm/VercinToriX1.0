@@ -4805,6 +4805,203 @@ fonction borne(x, a, b) {
     }
     retour x;
 }
+// ---- le vocabulaire de 0.5zr : tableaux, hasard, textes, entiers (inclus seulement s'ils sont appelés)
+fonction maximum(t) {
+    si longueur(t) == 0 {
+        retour 0;
+    }
+    soit m = t[0];
+    pour x dans t {
+        si x .> m {
+            m = x;
+        }
+    }
+    retour m;
+}
+fonction minimum(t) {
+    si longueur(t) == 0 {
+        retour 0;
+    }
+    soit m = t[0];
+    pour x dans t {
+        si x .< m {
+            m = x;
+        }
+    }
+    retour m;
+}
+fonction combien(t, v) {
+    soit n = 0;
+    pour x dans t {
+        si x == v {
+            n = n + 1;
+        }
+    }
+    retour n;
+}
+fonction tranche(t, a, b) {
+    soit r = tableau(0);
+    soit fin = b;
+    si fin > longueur(t) {
+        fin = longueur(t);
+    }
+    soit i = a;
+    tantque i < fin {
+        ajouter(r, t[i]);
+        i = i + 1;
+    }
+    retour r;
+}
+fonction sans_doublons(t) {
+    soit r = tableau(0);
+    pour x dans t {
+        si contient(r, x) == 0 {
+            ajouter(r, x);
+        }
+    }
+    retour r;
+}
+fonction brasser(t) {
+    // le mélange de Fisher et Yates : chaque ordre a la même chance
+    soit i = longueur(t);
+    tantque i > 1 {
+        soit j = hasard(i);
+        i = i - 1;
+        soit x = t[i];
+        t[i] = t[j];
+        t[j] = x;
+    }
+}
+fonction piocher(t) {
+    retour t[hasard(longueur(t))];
+}
+fonction tirage(k, a, b) {
+    // k nombres différents de a à b, rangés dans l'ordre (le loto : tirage(5, 1, 49))
+    soit r = tableau(0);
+    si k > b - a + 1 {
+        retour r;
+    }
+    tantque longueur(r) < k {
+        soit x = hasard_entre(a, b);
+        si contient(r, x) == 0 {
+            ajouter(r, x);
+        }
+    }
+    trier(r);
+    retour r;
+}
+fonction inverser_texte(t: texte): texte {
+    soit n = longueur(t);
+    soit r = texte_neuf(n);
+    pour i dans 0..n {
+        changer_car(r, i, car(t, n - 1 - i));
+    }
+    retour r;
+}
+fonction combien_texte(t: texte, motif: texte) {
+    // les apparitions de motif dans t, sans chevauchement
+    soit n = 0;
+    soit m = longueur(motif);
+    si m == 0 {
+        retour 0;
+    }
+    soit i = 0;
+    tantque i + m <= longueur(t) {
+        soit k = 0;
+        tantque k < m && car(t, i + k) == car(motif, k) {
+            k = k + 1;
+        }
+        si k == m {
+            n = n + 1;
+            i = i + m;
+        } sinon {
+            i = i + 1;
+        }
+    }
+    retour n;
+}
+fonction aligner_droite(t: texte, n): texte {
+    si longueur(t) >= n {
+        retour t;
+    }
+    retour __texte_plus(repeter(" ", n - longueur(t)), t);
+}
+fonction aligner_gauche(t: texte, n): texte {
+    si longueur(t) >= n {
+        retour t;
+    }
+    retour __texte_plus(t, repeter(" ", n - longueur(t)));
+}
+fonction centrer(t: texte, n): texte {
+    si longueur(t) >= n {
+        retour t;
+    }
+    soit avant = (n - longueur(t)) / 2;
+    retour __texte_plus(__texte_plus(repeter(" ", avant), t), repeter(" ", n - longueur(t) - avant));
+}
+fonction est_chiffre(c) {
+    si c >= 48 && c <= 57 {
+        retour 1;
+    }
+    retour 0;
+}
+fonction est_lettre(c) {
+    // les lettres latines, accents compris (À à ÿ, sauf × et ÷), œ, Œ
+    si (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 192 && c <= 255 && c != 215 && c != 247) || c == 338 || c == 339 {
+        retour 1;
+    }
+    retour 0;
+}
+fonction factorielle(n) {
+    soit r = 1;
+    pour i dans 2..n + 1 {
+        r = r * i;
+    }
+    retour r;
+}
+fonction parmi(k, n) {
+    // k parmi n : les façons de choisir k objets parmi n, sans ordre (le produit reste petit : divisé à chaque pas)
+    si k > n {
+        retour 0;
+    }
+    soit r = 1;
+    pour i dans 0..k {
+        r = r * (n - i) / (i + 1);
+    }
+    retour r;
+}
+fonction est_premier(n) {
+    si n < 2 {
+        retour 0;
+    }
+    soit d = 2;
+    tantque d * d <= n {
+        si n % d == 0 {
+            retour 0;
+        }
+        d = d + 1;
+    }
+    retour 1;
+}
+fonction ppcm(a, b) {
+    si a == 0 || b == 0 {
+        retour 0;
+    }
+    retour a / pgcd(a, b) * b;
+}
+fonction puissance_entiere(a, b) {
+    soit r = 1;
+    soit x = a;
+    soit reste = b;
+    tantque reste > 0 {
+        si reste % 2 == 1 {
+            r = r * x;
+        }
+        x = x * x;
+        reste = reste / 2;
+    }
+    retour r;
+}
 """
 
 INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1, "vers_ieee128": 1, "de_ieee128": 1,

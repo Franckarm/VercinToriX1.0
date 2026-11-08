@@ -95,6 +95,10 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_fischer.py")]))
     etapes.append(("vtxc128 : le compilateur écrit en vtx pour Lugus (point fixe, mêmes mots que vtx128.py)",
                    [sys.executable, os.path.join("vtxc", "test_vtxc128.py")] + (["--complet"] if COMPLET else [])))
+    etapes.append(("le vocabulaire du prélude sur les trois machines : mêmes mots par les deux compilateurs de chacune",
+                   [sys.executable, os.path.join("tests", "test_vocabulaire.py")]))
+    etapes.append(("le débogueur de Lugus par les noms : la pile des appels, les variables, sortir d'une fonction",
+                   [sys.executable, os.path.join("tests", "test_debogueur128.py")]))
     etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
                    [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",

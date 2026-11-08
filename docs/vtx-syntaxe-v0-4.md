@@ -334,6 +334,29 @@ pour mot: texte dans cles(d) {} // annotation si le compilateur ne voit pas que 
 
 `contient`, `existe`, `commence_par`, `finit_par` rendent 1 ou 0, comme une comparaison, pour servir directement dans `si`. Un logique à quatre valeurs ne sert pas de condition : ces mots ne répondent jamais « inconnu ».
 
+### Le vocabulaire de 0.5zr
+
+Sur les trois machines, dans le prélude (inclus seulement s'il est appelé ; une fonction du programme du même nom
+l'emporte) :
+
+| Mot | Effet |
+|---|---|
+| `maximum(t)`, `minimum(t)` | le plus grand, le plus petit élément (entiers signés ; 0 pour un tableau vide) |
+| `combien(t, v)` | combien de fois v est dans t |
+| `tranche(t, a, b)` | un tableau neuf : les cases de a à b (b exclu) |
+| `sans_doublons(t)` | un tableau neuf, chaque valeur une fois (la première gardée) |
+| `brasser(t)` | mélange t sur place (Fisher et Yates : chaque ordre a la même chance) |
+| `piocher(t)` | un élément au hasard |
+| `tirage(k, a, b)` | k nombres différents de a à b, rangés : `tirage(5, 1, 49)` |
+| `inverser_texte(t)`, `combien_texte(t, motif)` | le texte à l'envers ; les apparitions du motif (sans chevauchement) |
+| `aligner_droite(t, n)`, `aligner_gauche(t, n)`, `centrer(t, n)` | le texte complété d'espaces jusqu'à n caractères |
+| `est_chiffre(c)`, `est_lettre(c)` | 1 ou 0 pour un caractère (les lettres accentuées, œ et Œ comptent) |
+| `factorielle(n)`, `parmi(k, n)` | n! ; « k parmi n », les façons de choisir k objets parmi n : `parmi(5, 49)` vaut 1 906 884 |
+| `est_premier(n)`, `ppcm(a, b)`, `puissance_entiere(a, b)` | 1 ou 0 ; le plus petit multiple commun ; a^b en entiers |
+
+`exemples/premiers/vocabulaire.vtx` les montre tous ; `tests/test_vocabulaire.py` vérifie les mêmes mots par les
+deux compilateurs de chaque machine.
+
 ### Dictionnaires
 
 `soit d = dico();` puis `ranger(d, cle, valeur)`, `trouver(d, cle)` (0 si la clé manque), `existe(d, cle)` (la clé a une entrée), `cles(d)` (un tableau de textes, dans l'ordre de la table de hachage, pas dans l'ordre d'arrivée). Les clés sont des textes, la valeur est un mot.
@@ -466,6 +489,15 @@ Chaque commande s'arrête après 50 millions d'instructions sans atteindre son a
 
 Pour Python, la classe `Debogueur(src, entrées, dossier, nom)` offre les mêmes opérations : `demarrer`, `pas`, `suivant`, `sortir`, `continuer`, `arreter_a(ligne, fichier)`, `enlever`, `valeur(nom)`, `variables`, `pile`, `memoire`.
 
+**Dans l'atelier, sur Lugus (0.5zr).** Le pas à pas (F7, F8, Maj+F8 pour sortir de la fonction, F5, F9) montre
+d'abord ce que le programme entend : la pile des appels (chaque fonction avec sa ligne), puis les variables de chaque
+fonction de la pile, par leur nom et selon leur sorte : `nom = "Lugus"`, `grille = [3, 12, 25, 31, 44]`,
+`noms = ["Vercingétorix", "Ogmios"]`, `poids = 2.5`, `l = inconnu`, `message = (pas encore de texte)`. Les registres
+et le cadre suivent. vtxc128 écrit pour cela `code.sym` en pas à pas (le nom, la place et la sorte de chaque
+variable) ; `vtx-spu regarder128 prog.vtx LIGNE [FOIS] [--sortir]` montre la même vue sans fenêtre. Un entier
+dont la valeur désigne un tableau du tas est montré comme le tableau (le texte du programme ne dit pas lequel des deux
+il est). Senos et Dunon montrent encore les cases du cadre (-1, -2…).
+
 ## 10 ter. Partition automatique des tâches
 
 Rien n'est à écrire dans le programme. Dès qu'une fonction contient au moins deux appels de fonctions écrits l'un après l'autre comme instructions (`a(); b(); c();`), le compilateur en fait un **accord** :
@@ -519,5 +551,5 @@ fonction principal() {
 - Pas de contrôle d'indice à l'exécution ; les tableaux à plusieurs dimensions se font avec des tableaux de tableaux ; pas de flottants dans un tableau dynamique.
 - Le `flottant_petuar` est calculé par le prélude (pas encore d'instruction du SPU) : de mille à quarante mille fois plus lent qu'un `flottant_64` ; pas de mathématiques `*_petuar` (sinus, exponentielle…) au-delà de `racine` ; pas de directive qui change la précision de tout un fichier.
 - Un flottant_64, un long, un entier_petuar ou un flottant_petuar ne se range pas dans un tableau ou une structure : seulement des mots (`bas(x)` et `haut(x)`, ou les quatre mots de `bits(x)`).
-- Le débogueur n'a pas encore de points d'arrêt conditionnels ni de surveillance d'une case mémoire, et ne montre pas les champs des structures par leur nom.
+- Le débogueur n'a pas encore de points d'arrêt conditionnels ni de surveillance d'une case mémoire, et ne montre pas les champs des structures par leur nom ; dans l'atelier, les noms des variables ne sont montrés que sur Lugus.
 - Le compilateur n'optimise pas l'allocation des registres : beaucoup d'empilements et de dépilements.

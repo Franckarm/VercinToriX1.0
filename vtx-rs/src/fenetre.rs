@@ -13,7 +13,7 @@ use super::spu64::Spu64;
 use super::pas64::{panneau64, table_des_lignes, Moteur, Pas, Vue64};
 use super::spu128::Spu128;
 use super::pas128::{image128, panneau128, presenter128};
-use super::machine128::{compiler128, compiler128_iso, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
+use super::machine128::{compiler128_iso, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
 use super::adn;
 use super::provenance;
 use super::machine128::compiler128_prov;
@@ -304,6 +304,7 @@ const C_LANCER: u16 = 1201;
 const C_PAS: u16 = 1202;
 const C_ARRETER: u16 = 1203;
 const C_PAS_DESSUS: u16 = 1206;
+const C_PAS_SORTIR: u16 = 1320;
 const C_POINT: u16 = 1207;
 const C_FIN_PAS: u16 = 1208;
 const C_MACHINE64: u16 = 1209; // la machine suivante (Ctrl+M, le bouton)
@@ -368,6 +369,7 @@ struct Atelier {
     onglets: [H; 4],
     // le pas à pas, dans la fenêtre même : la machine arrêtée entre deux lignes, les points d'arrêt, le panneau
     pas: Option<Pas>,
+    symboles: super::symboles::Symboles, // Lugus : les fonctions et leurs variables (code.sym), pour le pas à pas
     points: HashSet<usize>,
     pas_texte: H,
     onglet: usize,
@@ -404,6 +406,7 @@ struct Atelier {
 enum Avance {
     Pas,
     Dessus,
+    Sortir,
     Continuer,
 }
 
@@ -1776,7 +1779,7 @@ fn panneau_pas() -> String {
     };
     t.push_str(&format!("pas à pas · {} · {} instructions · {}\n", ou, d.compte(),
                         match d.moteur { Moteur::M128(_) => "Lugus", Moteur::M64(_) => "Dunon", _ => "Senos" }));
-    t.push_str("F7 ligne suivante · F8 sans entrer dans les fonctions · F5 continuer · F9 point d'arrêt · Échap arrêter\n\n");
+    t.push_str("F7 ligne suivante · F8 sans entrer dans les fonctions · Maj+F8 sortir de la fonction · F5 continuer · F9 point d'arrêt · Échap arrêter\n\n");
     let (mem, et) = match &d.moteur {
         Moteur::M32 { mem, et, .. } => (mem, et),
         Moteur::M64(s) => {
@@ -1784,6 +1787,20 @@ fn panneau_pas() -> String {
             return t;
         }
         Moteur::M128(s) => {
+            // d'abord ce que le programme entend : la pile des appels, les variables par leur nom ; puis la machine
+            let mut lignes: Vec<(u64, usize)> = d.debuts.iter().map(|(&a, &l)| (a, l)).collect();
+            lignes.sort();
+            let ligne_de = |pc: u128| -> Option<usize> {
+                let k = lignes.partition_point(|x| x.0 as u128 <= pc);
+                if k == 0 { None } else { Some(lignes[k - 1].1) }
+            };
+            let vue = a().symboles.vue(s, &ligne_de);
+            if !vue.is_empty() {
+                t.push_str(&vue);
+                t.push_str("
+—— la machine ——
+");
+            }
             panneau128(s, &mut t);
             return t;
         }
@@ -1902,7 +1919,7 @@ fn debuter_pas64(fichier: &Path, source: &str, base: &str, entrees: Vec<u64>) ->
 /// début.
 fn debuter_pas128(fichier: &Path, source: &str, base: &str, entrees: Vec<u64>) -> bool {
     let at = a();
-    let (mots, _, dbg) = match compiler128(&nombres128(VTXC128), source, base, PAS_A_PAS128, true) {
+    let (mots, dbg, sym) = match super::machine128::compiler128_dbg(&nombres128(VTXC128), source, base, PAS_A_PAS128) {
         Ok(r) => r,
         Err(e) => {
             let (t, ligne) = situer_erreur(&e, &fichier.to_string_lossy());
@@ -1920,6 +1937,7 @@ fn debuter_pas128(fichier: &Path, source: &str, base: &str, entrees: Vec<u64>) -
     s.entree.extend(entrees.into_iter().map(|x| x as u128));
     s.parler = Some(super::parler_hote);
     at.ligne_erreur = None;
+    at.symboles = super::symboles::Symboles::lire(&sym);
     at.pas = Some(Pas { moteur: Moteur::M128(s), debuts: table_des_lignes(dbg.into_iter().map(|x| x as u64)), ligne: None, fini: false });
     true
 }
@@ -1970,11 +1988,20 @@ fn avancer(mode: Avance) {
                     break;
                 }
             }
+            if mode == Avance::Sortir && d.cadre() > cadre {
+                // le cadre de l'appelante est revenu (« dépiler R13 ») : encore le retour lui-même, puis l'on s'arrête
+                // dans l'appelante, au milieu de sa ligne (la ligne qui commence avant le pc)
+                let _ = d.une_instruction();
+                let pc = d.pc();
+                d.ligne = d.debuts.iter().filter(|(&a, _)| a <= pc).max_by_key(|(&a, _)| a).map(|(_, &l)| l);
+                break;
+            }
             if let Some(&l) = d.debuts.get(&d.pc()) {
                 d.ligne = Some(l);
                 let arreter = match mode {
                     Avance::Pas => true,
                     Avance::Dessus => d.cadre() >= cadre,
+                    Avance::Sortir => false,
                     Avance::Continuer => points.contains(&l),
                 };
                 if arreter {
@@ -1995,7 +2022,7 @@ fn avancer(mode: Avance) {
         d.ligne = None;
         etat(&format!("programme fini en {} instructions · le cube et l'arbre montrent sa mémoire · F7 recommence", d.compte()));
     } else {
-        etat(&format!("pas à pas · ligne {} · F7 ligne · F8 par-dessus · F5 continuer · F9 point d'arrêt · Échap arrêter",
+        etat(&format!("pas à pas · ligne {} · F7 ligne · F8 par-dessus · Maj+F8 sortir · F5 continuer · F9 point d'arrêt · Échap arrêter",
                       d.ligne.map(|l| l + 1).unwrap_or(0)));
     }
     let (ligne, fini) = (d.ligne, d.fini);
@@ -2825,6 +2852,7 @@ fn menus(fen: H) {
         ajouter(executer, "", 0);
         ajouter(executer, "&Pas à pas : ligne suivante\tF7", C_PAS);
         ajouter(executer, "Pas à pas &sans entrer dans les fonctions\tF8", C_PAS_DESSUS);
+        ajouter(executer, "&Sortir de la fonction en cours\tMaj+F8", C_PAS_SORTIR);
         ajouter(executer, "Point d'arrêt sur la &ligne\tF9", C_POINT);
         ajouter(executer, "&Continuer jusqu'au point d'arrêt\tF5", C_LANCER);
         ajouter(executer, "Arrêter le pas à pas\tÉchap", C_FIN_PAS);
@@ -2965,6 +2993,7 @@ fn commande(c: u16) {
             C_EXECUTABLE => faire_executable(),
             C_PAS => avancer(Avance::Pas),
             C_PAS_DESSUS => avancer(Avance::Dessus),
+            C_PAS_SORTIR => avancer(Avance::Sortir),
             C_POINT => basculer_point(),
             C_FIN_PAS => arreter_pas("pas à pas arrêté : retour à l'édition"),
             x if (C_ETAGE..C_ETAGE + 4).contains(&x) => {
@@ -3118,7 +3147,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             police: std::ptr::null_mut(), police_ui: std::ptr::null_mut(), pinceau: std::ptr::null_mut(), echelle: 1.0,
             fichier: None, mem: None, etage: 1, iso: true, vue_quits: false, largeur: 64, base: 0, zoom: 1.0, en_cours: false, ancien_proc_source: 0,
             term_entree: std::ptr::null_mut(), journal: std::ptr::null_mut(), onglets: [std::ptr::null_mut(); 4], onglet: 1,
-            pas: None, points: HashSet::new(), pas_texte: std::ptr::null_mut(),
+            pas: None, symboles: Default::default(), points: HashSet::new(), pas_texte: std::ptr::null_mut(),
             ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),
             ouverts: HashSet::new(), defile: 0, choisi: None, lignes: std::ptr::null_mut(), vue_lignes: (-1, -1), ligne_erreur: None,
             dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(), machine: 64, vue64: None,
@@ -3206,6 +3235,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6
             Accel { fVirt: FVIRTKEY, key: 0x76, cmd: C_PAS },    // F7
             Accel { fVirt: FVIRTKEY, key: 0x77, cmd: C_PAS_DESSUS }, // F8
+            Accel { fVirt: FVIRTKEY | 4, key: 0x77, cmd: C_PAS_SORTIR }, // Maj+F8
             Accel { fVirt: FVIRTKEY, key: 0x78, cmd: C_POINT },  // F9
             Accel { fVirt: FVIRTKEY, key: 0x1B, cmd: C_FIN_PAS }, // Échap
         ];

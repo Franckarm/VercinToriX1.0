@@ -1,0 +1,28 @@
+// machine : lugus
+// Le débogueur par les noms : F7 (pas à pas) ; le panneau montre la pile des appels et chaque variable comme le
+// programme l'entend (le texte entre guillemets, le tableau entre crochets, le flottant, le logique). F8 passe par-dessus
+// un appel, Maj+F8 sort de la fonction en cours, F9 pose un point d'arrêt, F5 continue.
+fonction saluer(nom: texte, fois): texte {
+    soit s = "Bonjour " + nom;
+    soit poids = 2.5;
+    soit grille = [3, 12, 25, 31, 44];
+    soit noms = ["Vercingétorix", "Ogmios"];
+    soit l: logique = inconnu;
+    pour i dans 0..fois {
+        s = s + "!";
+    }
+    retour s;
+}
+
+fonction compter(n) {
+    si n == 0 {
+        retour 0;
+    }
+    retour 1 + compter(n - 1);
+}
+
+fonction principal() {
+    soit n = 42;
+    soit message = saluer("Lugus", 3);
+    afficher(message, compter(3), n);
+}

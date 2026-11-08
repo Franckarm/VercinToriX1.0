@@ -1,0 +1,25 @@
+// Le vocabulaire de 0.5zr, sur les trois machines (Senos, Dunon, Lugus) : les tableaux (maximum, minimum, combien,
+// tranche, sans_doublons), le hasard (brasser, piocher, tirage), les textes (inverser_texte, combien_texte,
+// aligner_droite, aligner_gauche, centrer, est_chiffre, est_lettre) et les entiers (factorielle, parmi, est_premier,
+// ppcm, puissance_entiere).
+fonction principal() {
+    soit t = [5, 3, 9, 1, 9, 3];
+    afficher("max", maximum(t), "min", minimum(t), "combien 9", combien(t, 9));
+    afficher("tranche", assembler_nombres(tranche(t, 1, 4)), "sans doublons", assembler_nombres(sans_doublons(t)));
+    graine(7);
+    soit u = [1, 2, 3, 4, 5, 6, 7, 8];
+    brasser(u);
+    afficher("brassé", assembler_nombres(u), "somme", somme(u));
+    afficher("pioché", piocher([42]), "tirage", assembler_nombres(tirage(5, 1, 49)));
+    afficher("[" + inverser_texte("Vercingétorix") + "]", combien_texte("abababa", "aba"));
+    afficher("[" + aligner_droite("7", 3) + "][" + aligner_gauche("ab", 4) + "][" + centrer("ok", 6) + "]");
+    afficher(est_chiffre('7'), est_chiffre('a'), est_lettre('é'), est_lettre('3'));
+    afficher(factorielle(10), parmi(5, 49), est_premier(97), est_premier(91), ppcm(4, 6), puissance_entiere(3, 13));
+}
+fonction assembler_nombres(t): texte {
+    soit s = "";
+    pour x dans t {
+        s = s + texte(x) + " ";
+    }
+    retour s;
+}

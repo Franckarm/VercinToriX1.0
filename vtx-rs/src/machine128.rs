@@ -41,7 +41,7 @@ pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128
 /// arrête la compilation.
 pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool)
                         -> Result<(Vec<u128>, Vec<u128>, Vec<u128>, String), String> {
-    let (code, prov, ex, _) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
+    let (code, prov, ex, _, _) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
     if !ex.trim().is_empty() {
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
@@ -52,11 +52,26 @@ pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mo
     Ok((mots, table, dbg, prov))
 }
 
+/// Compile pour le débogueur : les mots, la table des lignes, et code.sym (les fonctions et leurs variables, que
+/// symboles.rs lit) ; les exemples sont rejoués comme pour compiler128.
+pub fn compiler128_dbg(compilateur: &[u128], source: &str, base: &str, mode: Mode128)
+                       -> Result<(Vec<u128>, Vec<u128>, String), String> {
+    let (code, _, ex, _, sym) = passer_vtxc128(compilateur, source, base, mode, true, false, false)?;
+    if !ex.trim().is_empty() {
+        rejouer_exemples(compilateur, source, base, mode, &ex)?;
+    }
+    let mut morceaux = code.split(';');
+    let mots = nombres128(morceaux.next().unwrap_or(""));
+    let _table = morceaux.next();
+    let dbg = nombres128(morceaux.next().unwrap_or(""));
+    Ok((mots, dbg, sym))
+}
+
 /// Compile pour l'ADN : les mots (exemples rejoués) et les isotopes lourds, (réaction, place de son premier mot), que
 /// vtxc128 écrit dans code.iso pour les réactions qui portent un atome lourd (« -> a lourd »).
 pub fn compiler128_iso(compilateur: &[u128], source: &str, base: &str, mode: Mode128)
                        -> Result<(Vec<u128>, Vec<(String, usize)>), String> {
-    let (code, _, ex, iso) = passer_vtxc128(compilateur, source, base, mode, false, false, false)?;
+    let (code, _, ex, iso, _) = passer_vtxc128(compilateur, source, base, mode, false, false, false)?;
     if !ex.trim().is_empty() {
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
@@ -87,7 +102,7 @@ pub fn retrotranscrire(t: &crate::adn::Temoins, mots: &[u128], base: &str) -> (u
 
 /// une passe de vtxc128 dans un dossier de travail : (code.mots, code.prov, code.ex, code.iso), ou les messages d'erreur
 fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool,
-                  exemples: bool) -> Result<(String, String, String, String), String> {
+                  exemples: bool) -> Result<(String, String, String, String, String), String> {
     let dossier = std::env::temp_dir().join(format!("vtxc128-{}-{}", std::process::id(),
                                                      std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                                          .map(|d| d.as_nanos()).unwrap_or(0)));
@@ -106,13 +121,14 @@ fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128,
     let prov = std::fs::read_to_string(dossier.join("code.prov")).unwrap_or_default();
     let ex = std::fs::read_to_string(dossier.join("code.ex")).unwrap_or_default();
     let iso = std::fs::read_to_string(dossier.join("code.iso")).unwrap_or_default();
+    let sym = std::fs::read_to_string(dossier.join("code.sym")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dossier);
     let messages: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
     if let Err(e) = r {
         return Err(format!("{}{}\n", messages, e));
     }
     match code {
-        Ok(t) => Ok((t, prov, ex, iso)),
+        Ok(t) => Ok((t, prov, ex, iso, sym)),
         Err(_) => Err(messages),
     }
 }
@@ -128,7 +144,7 @@ fn rejouer_exemples(compilateur: &[u128], source: &str, base: &str, mode: Mode12
         return Ok(());
     }
     let mode_ex = Mode128 { prelude: mode.prelude, optim: mode.optim, partition: false };
-    let (code, _, _, _) = passer_vtxc128(compilateur, source, base, mode_ex, false, false, true)?;
+    let (code, _, _, _, _) = passer_vtxc128(compilateur, source, base, mode_ex, false, false, true)?;
     let mut m = Spu128::nouveau();
     m.charger(&nombres128(code.split(';').next().unwrap_or("")));
     if let Err(e) = m.executer(50_000_000) {

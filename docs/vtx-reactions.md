@@ -1510,3 +1510,22 @@ encore ni la vue du cube ni la voix ; c'est un chantier à venir, avec Lugus en 
 (haut, bas), Maj + molette ou la molette penchée du pavé tactile (gauche, droite). Le loto choisit seul : « 4 » la
 machine tire une grille et un numéro chance et les joue contre un tirage ; « 5 » elle propose des grilles (5 par défaut,
 jusqu'à 100) sans les jouer. Mêmes mots par vtx.py et vtxc, même sortie par le .exe autonome.
+
+## 28. Le débogueur par les noms, et le vocabulaire (8 novembre, 0.5zr)
+
+**Le débogueur de Lugus.** En pas à pas, vtxc128 écrit `code.sym` : pour chaque fonction gardée son nom, la place de
+son premier mot (en demi-mots, le pc de Lugus) et sa ligne ; pour chaque variable son nom, sa place dans le cadre et sa
+sorte (les textes, tableaux de textes et de flottants sont notés par typer_textes avant que la génération n'en fasse
+des entiers). L'atelier (symboles.rs) remonte la pile des appels par le cadre R13 (l'ancien cadre en +0, l'adresse de
+retour en +1) et écrit chaque variable comme le programme l'entend. Maj+F8 sort de la fonction en cours : l'arrêt se
+fait dès le retour, au milieu de la ligne de l'appelante. Les mots du programme ne changent pas (code.sym est à part).
+`vtx-spu regarder128` donne la même vue en console ; tests/test_debogueur128.py : variables d'une fonction, deuxième
+passage dans une boucle, quatre étapes d'une récursion avec chacune son n, sortir d'une fonction.
+
+**Le vocabulaire.** Vingt mots dans le prélude des trois machines (tableaux, hasard, textes, entiers ; la liste est
+dans la référence du langage). Dans le prélude, `+` sur des textes ne se réécrit pas : il faut `__texte_plus`.
+
+**Une erreur ancienne de vtxc128.** prelude_utile coupe le prélude en morceaux, d'une « fonction » en début de ligne à
+la suivante ; la dernière fonction du prélude (borne) ne se compilait pas sur Lugus par vtxc128 (« caractère
+inattendu »), alors que vtx128.py l'acceptait. Une fonction vide, jamais appelée, ferme maintenant le prélude
+(`__fin_du_prelude`) : borne et puissance_entiere se compilent. La cause exacte reste à comprendre.
