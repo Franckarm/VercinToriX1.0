@@ -1440,3 +1440,31 @@ rangée dans le cube mot à mot. **Corrigé (0.5zl)** : une fenêtre vide (que d
 par la carte elle-même (vkCmdFillBuffer) ; la descente passe par une mémoire cachée (HOST_CACHED) ; le cube est lu et
 écrit page par page (page_si, sans créer de page ; page_de pour ranger). `VTX_TARANIS=1` donne le temps de chaque
 étape : lire le cube, monter, la carte, redescendre, ranger dans le cube.
+
+## 26. L'autonomie : vtx en .exe Windows, sans Rust (8 novembre)
+
+**La question de l'utilisateur** : à quoi sert la carte graphique aujourd'hui pour le langage, et pourquoi passer par
+Rust à chaque fois ? Réponse honnête : Taranis a prouvé que vtx sait écrire lui-même le SPIR-V d'une carte, juste sur la
+RTX 3070 (80 boucles au hasard, les mêmes mots que Lugus) ; il s'arrête là tant qu'un vrai besoin ne le demande pas. La
+dépendance à Rust est ailleurs : la machine (Lugus, vtx-rs) est le support du processeur quaternaire qui n'existe pas
+encore ; la forge (vtx -> Rust -> rustc) et l'atelier, eux, dépendent de Rust sans raison de fond. Décision : reprendre
+`natif/` (mis de côté jusqu'ici) pour que vtx fasse ses exécutables lui-même, en perfectionnant l'atelier et la
+paillasse.
+
+**`natif/` tel qu'il était** : le programme du SPU-32 traduit directement en code machine x86-64 (l'assembleur maison
+`natif/x86.py`, vérifié octet pour octet contre GNU as ; le socle `natif/socle.py` : démarrage, sorties, texte, canaux,
+services), un exécutable Linux (ELF) sans Rust ni LLVM ; le corpus de conformité sans écart. Le socle était prévu pour
+un portage (seules 14 primitives OS_* parlent au système ; `socle_windows` était appelé, jamais écrit).
+
+**Windows (0.5zm)** : `natif/socle_windows.py` écrit les primitives par KERNEL32 (la seule bibliothèque, toujours là) :
+l'appel de Windows x64 (rcx, rdx, r8, r9, 32 octets réservés, la pile alignée ; r8 à r11 gardés pour le socle) ; les
+descripteurs 0, 1, 2 par GetStdHandle ; la console en UTF-8 ; les \r des lignes tapées retirés ; les noms de fichiers
+en UTF-16 (MultiByteToWideChar : les accents passent) ; la mémoire du SPU par VirtualAlloc ; le bruit par rdtsc ; la
+ligne de commande sans le nom du programme. Pas encore : la voix, les cubes rangés (erreur claire). `natif.py --windows`
+écrit le .exe lui-même (PE32+ : en-têtes DOS, PE, optionnel, une section lisible, inscriptible et exécutable, la table
+d'import dans le socle) : ni Rust, ni éditeur de liens. Vérifié ici : le code du socle Windows réassemblé par GNU as
+(mêmes octets), les 487 programmes du corpus en .exe relus par objdump (PE32+, KERNEL32, ses 13 fonctions), le point
+d'entrée. Pas lancés : la machine de travail n'est pas sous Windows (`natif/test_windows.py` les lance sous Windows).
+
+**La suite** : le corpus lancé sous Windows ; le loto en .exe ; puis le traducteur écrit en vtx (les mêmes octets que
+natif.py), dans vtx.exe, un bouton de l'atelier ; la voix et les cubes ; la paillasse.

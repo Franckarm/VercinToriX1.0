@@ -18,6 +18,7 @@ Machine traduite :
 Utilisation :
   python3 natif/natif.py PROG.vtx [SORTIE]         compile (vtx.py) puis traduit : un exécutable Linux (ELF)
   python3 natif/natif.py --mots PROG.mots [SORTIE]  traduit des mots déjà compilés (séparés par des virgules)
+  --windows (avant le reste)                        un exécutable Windows (PE32+, KERNEL32 seulement : socle_windows)
 """
 import os
 import struct
@@ -128,11 +129,17 @@ def vie_drapeaux(mots, vues, retours):
     return vivant, succ
 
 
+# Windows : l'image à 0x400000 (sans relocations : elle est toujours chargée là), une seule section à 0x401000
+IMAGE_W, SECTION_W, FICHIER_W = 0x400000, 0x1000, 0x200
+
+
 class Traducteur:
-    def __init__(self, mots, corpus=False, texte=True):
+    def __init__(self, mots, corpus=False, texte=True, systeme="linux"):
         self.mots = list(mots)
         self.corpus = corpus
-        self.a = Asm(BASE + ENTETE)
+        self.systeme = systeme
+        self.a = Asm(IMAGE_W + SECTION_W if systeme == "windows" else BASE + ENTETE)
+        self.a.image = IMAGE_W
         self.a.avec_texte = texte
         self.locales = 0
 
@@ -184,7 +191,7 @@ class Traducteur:
                     if suivante[pc] != s:
                         jonctions.add(s)
 
-        Socle(a).construire(n, self.corpus)
+        Socle(a, self.systeme).construire(n, self.corpus)
         etat = "M"
 
         def vivant_a(p):
@@ -682,22 +689,54 @@ class Traducteur:
         return eh + ph + code
 
 
-def traduire(mots, corpus=False, texte=False):
-    t = Traducteur(mots, corpus, texte)
+    def pe(self):
+        """L'exécutable Windows (PE32+) : les en-têtes (DOS, PE, optionnel, une section), puis le code ; la section est
+        lisible, inscriptible et exécutable, comme le segment unique de l'ELF ; la zone d'état la suit (non écrite
+        dans le fichier, remplie de zéros au chargement) ; la table d'import (KERNEL32) est dans le socle."""
+        from socle_windows import EXTRA
+        a = self.a
+        code = bytes(a.resoudre())
+        def rva(e):
+            return SECTION_W + a.etiquettes[e]
+        brut = (len(code) + FICHIER_W - 1) // FICHIER_W * FICHIER_W
+        virtuel = len(code) + TAILLE_ETAT + EXTRA + 64
+        image = (SECTION_W + virtuel + 0xFFF) // 0x1000 * 0x1000
+        dos = b"MZ" + b"\0" * 58 + struct.pack("<I", 64)
+        coff = struct.pack("<HHIIIHH", 0x8664, 1, 0, 0, 0, 240, 0x0023)
+        rep_ = [(0, 0)] * 16
+        rep_[1] = (rva("IMPORTS"), rva("FIN_IMPORTS") - rva("IMPORTS"))
+        rep_[12] = (rva("IAT"), rva("FIN_IAT") - rva("IAT"))
+        opt = struct.pack("<HBBIIIIIQIIHHHHHHIIIIHHQQQQII", 0x20B, 14, 0, brut, 0, virtuel - len(code), rva("DEMARRER"),
+                          SECTION_W, IMAGE_W, SECTION_W, FICHIER_W, 6, 0, 0, 0, 6, 0, 0, image, FICHIER_W, 0, 3, 0x8000,
+                          0x800000, 0x10000, 0x100000, 0x1000, 0, 16)
+        opt += b"".join(struct.pack("<II", r, t) for r, t in rep_)
+        sec = struct.pack("<8sIIIIIIHHI", b".vtx", virtuel, SECTION_W, brut, FICHIER_W, 0, 0, 0, 0, 0xE0000060)
+        tete = dos + b"PE\0\0" + coff + opt + sec
+        assert len(tete) <= FICHIER_W and len(opt) == 240
+        return tete + b"\0" * (FICHIER_W - len(tete)) + code + b"\0" * (brut - len(code))
+
+
+def traduire(mots, corpus=False, texte=False, systeme="linux"):
+    t = Traducteur(mots, corpus, texte, systeme)
     t.traduire()
     return t
 
 
-def ecrire_executable(chemin, mots, corpus=False):
-    t = traduire(mots, corpus)
+def ecrire_executable(chemin, mots, corpus=False, systeme="linux"):
+    t = traduire(mots, corpus, systeme=systeme)
     with open(chemin, "wb") as f:
-        f.write(t.elf())
-    os.chmod(chemin, 0o755)
+        f.write(t.pe() if systeme == "windows" else t.elf())
+    if systeme != "windows":
+        os.chmod(chemin, 0o755)
     return t
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
+    systeme = "linux"
+    if args and args[0] == "--windows":
+        systeme = "windows"
+        args = args[1:]
     if not args:
         print(__doc__)
         sys.exit(2)
@@ -710,5 +749,7 @@ if __name__ == "__main__":
         src = open(args[0], encoding="utf-8").read()
         mots = vtx.assembler(vtx.compiler(src, dossier=os.path.dirname(os.path.abspath(args[0]))))
         sortie = args[1] if len(args) > 1 else os.path.splitext(args[0])[0]
-    t = ecrire_executable(sortie, mots)
+    if systeme == "windows" and not sortie.lower().endswith(".exe"):
+        sortie += ".exe"
+    t = ecrire_executable(sortie, mots, systeme=systeme)
     print(f"{sortie} : {len(mots)} mots du SPU -> {len(t.a.code)} octets x86-64")

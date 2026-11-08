@@ -105,6 +105,8 @@ if shutil.which("cargo"):
     etapes.append(("tableaux, dictionnaires, vocabulaire, lire_ligne (vtx.py et vtxc)", [sys.executable, os.path.join("vtxc", "test_tableaux.py")]))
     etapes.append(("mémoire qui se libère et mémoire qui dure (ramasser, sauver_tas)", [sys.executable, os.path.join("vtxc", "test_memoire.py")]))
     etapes.append(("ScoR v0 (spirale, sommeil, épissage à quatre valeurs)", [sys.executable, os.path.join("scor", "test_scor.py")]))
+    etapes.append(("traduction directe pour Windows : le corpus en .exe PE32+ (KERNEL32 seulement), sans Rust ni éditeur de liens",
+                   [sys.executable, os.path.join("natif", "test_windows.py")]))
     etapes.append(("traduction en code natif (rustc)", [sys.executable, os.path.join("natif", "test_natif.py")]))
     etapes.append(("Taranis, la sonde : le SPIR-V de vtx sur une carte par Vulkan (ou SwiftShader), les mêmes mots que le processeur",
                    [sys.executable, os.path.join("tests", "test_taranis.py")]))
