@@ -28,6 +28,7 @@ vtx programme.vtx                 compile puis exécute
 vtx programme.vtx 3 4             avec les entrées 3 et 4 (lues par entrée())
 vtx traduire programme.vtx        fabrique programme.exe, en code natif (environ 12 fois plus rapide)
 programme.exe 3 4                 lance la version native
+vtx exe128 programme.vtx          un programme de Lugus et ses cubes sur disque en un seul programme.exe (sans Rust)
 ```
 
 Ce qui s'affiche : d'abord les nombres donnés à `sortie()`, sur une ligne, séparés par des virgules ; ensuite le texte écrit sur la console (`ecrire_texte(1, …)`). Une erreur donne le fichier, la ligne et ce qui ne va pas :

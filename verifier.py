@@ -99,6 +99,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_vocabulaire.py")]))
     etapes.append(("le débogueur de Lugus par les noms : la pile des appels, les variables, sortir d'une fonction",
                    [sys.executable, os.path.join("tests", "test_debogueur128.py")]))
+    etapes.append(("l'exécutable de Lugus : la machine, le programme et ses cubes sur disque en un fichier (vtx exe128)",
+                   [sys.executable, os.path.join("tests", "test_exe128.py")]))
     etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
                    [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",

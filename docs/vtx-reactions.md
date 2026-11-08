@@ -1529,3 +1529,35 @@ dans la référence du langage). Dans le prélude, `+` sur des textes ne se ré�
 la suivante ; la dernière fonction du prélude (borne) ne se compilait pas sur Lugus par vtxc128 (« caractère
 inattendu »), alors que vtx128.py l'acceptait. Une fonction vide, jamais appelée, ferme maintenant le prélude
 (`__fin_du_prelude`) : borne et puissance_entiere se compilent. La cause exacte reste à comprendre.
+
+Le lecteur d'ADN embarqué dans Lugus (`vtx-rs/lecteur_adn.mots`) a été recompilé : le prélude ayant changé, ses mots
+aussi (même nombre, 3 528).
+
+## 29. Lugus fait les .exe, avec ses cubes (8 novembre, 0.5zs)
+
+**Le choix.** Le créateur a choisi la traduction directe, sans Rust (comme le .exe de Senos, écrit en x86-64 par
+natif.py). Pour Lugus elle se fait en deux temps. D'abord le **paquet** (cette version) : le .exe est la machine
+elle-même, vtx.exe déjà construite, suivie du programme compilé par vtxc128 et des fichiers dont il a besoin. Le faire ne
+demande ni Rust ni Python : une compilation et une copie, une fraction de seconde. Ensuite la **traduction** : les mots
+deviendront du x86-64 dans le même paquet, et la machine embarquée gardera ce qui ne se traduit pas en quelques
+instructions (les pages du cube, les flottants quaternaires de qflot128, les services, la fenêtre). Le paquet est le socle
+sur lequel la traduction viendra se poser ; il est utile dès maintenant.
+
+**Ce que le .exe emporte.** Les mots ; les cubes sur disque du dossier du programme (`cube128-É-F.cub`, avec son
+anti-cube et son ombre) ; les fichiers que les textes de la source nomment, s'ils sont dans le dossier (`"notes.txt"`,
+`"octets:image.png"`). Au lancement, il pose à côté de lui ceux qui n'y sont pas encore, jamais par-dessus ceux qui y
+sont (le programme a pu les changer), puis joue. Sa console lit le clavier au fil de l'eau (le loto se joue au
+clavier) ; la fenêtre de dessin s'ouvre à la première image présentée ; la voix et la machine fille sont là. Lancé d'un
+double clic, il attend Entrée avant de fermer sa console.
+
+**Le format.** La fin du fichier : `[paquet][longueur u64][VTXLUGUS]`. Au démarrage, vtx lit les 16 derniers octets de
+son propre exécutable : sans la marque, il est la machine ordinaire. Le paquet : des entrées nom/données (`@nom`,
+`@mots` en u128 petit-boutiste, puis les fichiers).
+
+**Où.** `vtx exe128 PROG.vtx [SORTIE]` en console ; Ctrl+E dans Ogmios sur Lugus (la machine emportée est le vtx.exe du
+dossier Ogmios), puis le .exe est lancé dans sa console. Dunon n'a pas encore d'exécutable. `tests/test_exe128.py` : même
+texte et mêmes sorties que `lugus PROG.vtx`, le loto au clavier, un cube rangé par un programme puis relu par le .exe
+lancé dans un autre dossier (état du disque : vrai), un fichier déjà là jamais écrasé, une erreur de compilation dite.
+
+**Ce qui manque encore.** La vue du cube d'Ogmios (la mémoire en couleurs pendant que le programme tourne) n'est pas
+dans le .exe ; la traduction en x86-64 ; Dunon.

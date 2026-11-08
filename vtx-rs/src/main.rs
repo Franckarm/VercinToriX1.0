@@ -10,6 +10,7 @@
 //   vtx-spu compiler PROG.vtx [SORTIE] compile seulement ; écrit « mots; » dans SORTIE (par défaut PROG.prog)
 //   vtx-spu renouveler VTXC.vtx       vtxc se recompile lui-même et remplace le compilateur embarqué (vtxc.mots)
 //   vtx-spu traduire PROG.vtx [SORTIE] traduit en code natif : un exécutable (rustc doit être installé)
+//   vtx-spu exe128 PROG.vtx [SORTIE]   l'exécutable de Lugus : la machine, le programme et ses cubes sur disque, en un fichier
 //   vtx-spu traduire-corpus FICHIER SORTIE.rs   tout un corpus en un seul programme Rust (vérification)
 use std::env;
 use std::fs;
@@ -47,6 +48,7 @@ mod spu128;
 mod machine128;
 mod pas128;
 mod symboles;
+mod exe128;
 #[allow(dead_code)]
 mod adn;
 #[allow(dead_code)]
@@ -1032,6 +1034,10 @@ fn traduire_programme(fichier: &str, sortie: Option<&String>) {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    // un exécutable de Lugus (vtx exe128, Ctrl+E d'Ogmios) : la machine porte son programme à sa fin
+    if let Some(p) = exe128::paquet_embarque() {
+        exe128::jouer(p);
+    }
     // atelier.exe (le même programme sous ce nom) : l'atelier, sur le fichier donné ou en commençant par « ouvrir ».
     // Un double-clic sur atelier.exe, ou « Ouvrir avec » sur un fichier .vtx, arrive ici.
     let nom = std::path::Path::new(&args[0]).file_stem().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
@@ -1083,6 +1089,7 @@ fn main() {
         Some("essai-pas64") => pas64::essai(&args[2..]),
         Some("essai-pas128") => pas128::essai(&args[2..]),
         Some("regarder128") => symboles::essai(&args[2..]),
+        Some("exe128") => exe128::commande(&args[2..]),
         Some("atelier") => atelier::atelier(args.get(2).map(|s| s.as_str())),
         Some("traduire") if args.len() > 2 => traduire_programme(&args[2], args.get(3)),
         Some("traduire-corpus") if args.len() > 3 => {

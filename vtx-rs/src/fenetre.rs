@@ -1261,9 +1261,13 @@ fn dossier_natif() -> Option<PathBuf> {
 /// éditeur de liens ; KERNEL32 seulement), à côté du programme, puis lancé dans sa propre console
 fn faire_executable() {
     let at = a();
+    if at.machine == 128 {
+        faire_executable128();
+        return;
+    }
     if at.machine != 32 {
-        message("L'exécutable autonome ne sait faire, pour l'instant, que les programmes de la machine Senos (SPU-32) : \
-                 Exécuter > Machine Senos, puis recommencer.");
+        message("L'exécutable autonome sait faire les programmes de Senos (SPU-32) et de Lugus (SPU-128), pas encore ceux \
+                 de Dunon : Exécuter > Machine suivante, puis recommencer.");
         return;
     }
     if at.fichier.is_none() || !enregistrer(false) {
@@ -1306,6 +1310,46 @@ fn faire_executable() {
             ajouter_texte(at.journal, &String::from_utf8_lossy(&r.stdout));
             let t = super::visionneuse::ouvrir(&sortie);
             etat(&format!("l'exécutable : {} · {}", sortie.display(), t));
+        }
+    }
+}
+
+/// la machine qui porte un programme de Lugus : vtx.exe (ou vtx-spu.exe) à côté d'Ogmios, la console à elle
+fn socle128() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let d = exe.parent()?.to_path_buf();
+    ["vtx.exe", "vtx-spu.exe", "vtx", "vtx-spu"].iter().map(|n| d.join(n)).find(|p| p.is_file())
+}
+
+/// le programme de Lugus emporté dans un .exe (exe128.rs) : la machine, les mots, les cubes sur disque et les fichiers
+/// que le programme nomme ; ni Rust ni Python. Puis lancé dans sa propre console.
+fn faire_executable128() {
+    let at = a();
+    if at.fichier.is_none() || !enregistrer(false) {
+        etat("l'exécutable : le programme doit d'abord être enregistré");
+        return;
+    }
+    let fichier = at.fichier.clone().unwrap();
+    let socle = match socle128() {
+        Some(s) => s,
+        None => {
+            message("La machine (vtx.exe) est introuvable à côté d'Ogmios : c'est elle que l'exécutable emporte.");
+            return;
+        }
+    };
+    let sortie = fichier.with_extension("exe");
+    etat("l'exécutable : Lugus compile et emporte le programme…");
+    match super::exe128::fabriquer(&fichier, &socle, &sortie) {
+        Ok(t) => {
+            ajouter_texte(at.journal, &format!("{}\n", t));
+            let l = super::visionneuse::ouvrir(&sortie);
+            etat(&format!("l'exécutable : {} · {}", sortie.display(), l));
+        }
+        Err(e) => {
+            let f = fichier.to_string_lossy().into_owned();
+            let (t, _) = situer_erreur(&e, &f);
+            ajouter_texte(at.journal, &format!("l'exécutable : échec\n{}\n", t));
+            etat("l'exécutable : la compilation a échoué (voir la sortie)");
         }
     }
 }
@@ -2843,7 +2887,7 @@ fn menus(fen: H) {
         ajouter(executer, "Lancer un &ADN rangé (vérifié, réparé)…", C_LANCER_ADN);
         ajouter(executer, "&Pourquoi ? La provenance du nom sous le curseur (Lugus)\tCtrl+P", C_POURQUOI);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
-        ajouter(executer, "Faire l'&exécutable autonome (.exe, sans Rust) et le lancer\tCtrl+E", C_EXECUTABLE);
+        ajouter(executer, "Faire l'&exécutable autonome (.exe : Senos ou Lugus, ses cubes compris) et le lancer\tCtrl+E", C_EXECUTABLE);
         ajouter(executer, "", 0);
         ajouter(executer, "Machine &suivante (Dunon → Lugus → Senos)\tCtrl+M", C_MACHINE64);
         ajouter(executer, "Machine &Dunon (SPU-64, 64 bits, vtxc64)", C_M64);
