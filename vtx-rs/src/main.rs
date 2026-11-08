@@ -54,6 +54,8 @@ mod provenance;
 mod paillasse;
 #[cfg(any(windows, feature = "verif_fenetre"))]
 mod fenetre;
+#[cfg(any(windows, feature = "verif_fenetre"))]
+mod visionneuse;
 
 const MASK: u64 = 0xFFFF_FFFF;
 const PILE_HAUT: u32 = 0x7F_FFFF;

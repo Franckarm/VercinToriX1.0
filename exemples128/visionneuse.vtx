@@ -1,0 +1,111 @@
+// machine : lugus
+// La visionneuse d'Ogmios, pour l'essayer : ce programme crée, à côté de lui, un son (la.wav : un la, 440 Hz, en onde
+// triangle qui s'éteint) et une image (belnap.bmp : les quatre états de Belnap en carrés, inconnu, faux, vrai, variable,
+// fondus du noir à leur couleur). Lancé dans l'atelier (F5), les deux s'ouvrent chacun dans sa fenêtre.
+// Des formats sans compression : WAV (PCM 8 bits) et BMP (24 bits) ; chaque octet écrit à la main.
+
+constante TAUX = 22050;
+constante DUREE = 33075;
+constante COTE = 256;
+
+fonction mot16(f, v) {
+    ecrire_car(f, v & 255);
+    ecrire_car(f, (v >> 8) & 255);
+}
+
+fonction mot32(f, v) {
+    mot16(f, v & 65535);
+    mot16(f, (v >> 16) & 65535);
+}
+
+fonction texte4(f, a, b, c, d) {
+    ecrire_car(f, a);
+    ecrire_car(f, b);
+    ecrire_car(f, c);
+    ecrire_car(f, d);
+}
+
+// le son : 1,5 seconde, 22 050 échantillons par seconde, un octet chacun (128 : le silence)
+fonction ecrire_son() {
+    soit f = ouvrir_ecriture("octets:la.wav");
+    texte4(f, 82, 73, 70, 70);
+    mot32(f, 36 + DUREE);
+    texte4(f, 87, 65, 86, 69);
+    texte4(f, 102, 109, 116, 32);
+    mot32(f, 16);
+    mot16(f, 1);
+    mot16(f, 1);
+    mot32(f, TAUX);
+    mot32(f, TAUX);
+    mot16(f, 1);
+    mot16(f, 8);
+    texte4(f, 100, 97, 116, 97);
+    mot32(f, DUREE);
+    pour i dans 0..DUREE {
+        // la phase en 1/65536 de période : 440 périodes par seconde
+        soit phase = ((i * 440 * 65536) / TAUX) & 65535;
+        soit tri = phase;
+        si phase >= 32768 {
+            tri = 65535 - phase;
+        }
+        // l'enveloppe : une attaque brève, une extinction lente ; l'amplitude a (de 0 à 120) autour de 128
+        soit env = DUREE - i;
+        si i < 400 {
+            env = i * DUREE / 400;
+        }
+        soit amp = env * 120 / DUREE;
+        soit ech = 128 - amp + (tri * 2 * amp) / 65535;
+        ecrire_car(f, ech & 255);
+    }
+    fermer(f);
+}
+
+// l'image : 256 × 256, quatre carrés ; chaque carré fond du noir (en bas) à sa couleur (en haut)
+fonction couleur(etat) {
+    si etat == 0 { retour 8421504; }
+    si etat == 1 { retour 14423100; }
+    si etat == 2 { retour 3329330; }
+    retour 14329120;
+}
+
+fonction ecrire_image() {
+    soit ligne = COTE * 3;
+    soit g = ouvrir_ecriture("octets:belnap.bmp");
+    ecrire_car(g, 66);
+    ecrire_car(g, 77);
+    mot32(g, 54 + ligne * COTE);
+    mot32(g, 0);
+    mot32(g, 54);
+    mot32(g, 40);
+    mot32(g, COTE);
+    mot32(g, COTE);
+    mot16(g, 1);
+    mot16(g, 24);
+    mot32(g, 0);
+    mot32(g, ligne * COTE);
+    mot32(g, 2835);
+    mot32(g, 2835);
+    mot32(g, 0);
+    mot32(g, 0);
+    // les lignes, de bas en haut ; chaque point : bleu, vert, rouge
+    pour y dans 0..COTE {
+        pour x dans 0..COTE {
+            soit etat = (x / 128) + 2 * (y / 128);
+            soit c = couleur(etat);
+            soit k = (y & 127) * 2 + 1;
+            si ((x / 16) ^ (y / 16)) & 1 == 1 {
+                k = k * 3 / 4;
+            }
+            ecrire_car(g, ((c & 255) * k) / 256);
+            ecrire_car(g, (((c >> 8) & 255) * k) / 256);
+            ecrire_car(g, (((c >> 16) & 255) * k) / 256);
+        }
+    }
+    fermer(g);
+}
+
+fonction principal() {
+    ecrire_son();
+    ecrire_image();
+    afficher("la.wav et belnap.bmp sont écrits à côté du programme.");
+}

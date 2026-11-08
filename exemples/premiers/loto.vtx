@@ -1,3 +1,4 @@
+// machine : senos
 // Le loto, en vtx et rien d'autre : 5 numéros sur 49 et un numéro chance sur 10, comme le Loto de la Française des
 // Jeux. On joue sa grille (ou un flash, tiré au hasard) contre un tirage, on voit ses chances rang par rang (calculées
 // par le programme : les combinaisons), et l'on peut rejouer la même grille cent mille fois pour voir ce que donne

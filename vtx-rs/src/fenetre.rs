@@ -324,6 +324,7 @@ const C_APROPOS: u16 = 1401;
 const C_GIF: u16 = 1316;
 const C_PNG: u16 = 1317;
 const C_ONGLET_ARBRE: u16 = 1318;
+const C_EXECUTABLE: u16 = 1319;
 
 const FOND: u32 = 0x001E1E1E; // COLORREF : 0x00BBGGRR
 const TEXTE: u32 = 0x00D4D4D4;
@@ -812,6 +813,12 @@ fn lancer_avec(adn_range: Option<PathBuf>) {
     let source = lire_texte(at.source).replace("\r\n", "\n");
     let entrees: Vec<u64> = lire_texte(at.entrees).split_whitespace().filter_map(|x| x.parse::<u64>().ok()).collect();
     let m = if adn_range.is_some() { 128 } else { at.machine };
+    // la visionneuse : ce que le programme créera dans son dossier (ou le dossier courant) s'ouvrira à la fin
+    let mut dossiers: Vec<PathBuf> = fichier.parent().map(|d| vec![d.to_path_buf()]).unwrap_or_default();
+    if let Ok(d) = std::env::current_dir() {
+        dossiers.push(d);
+    }
+    super::visionneuse::retenir(&dossiers);
     at.en_cours = true;
     // la mémoire du programme précédent est rendue avant d'en prendre une autre
     at.mem = None;
@@ -1217,8 +1224,85 @@ fn fini() {
     } else {
         etat(&format!("programme terminé · cube : étage {} · l'arbre montre les objets du tas", at.etage));
     }
+    // ce que le programme a créé (images, sons) s'ouvre dans sa propre fenêtre
+    let crees = super::visionneuse::apres();
+    for p in &crees {
+        let t = super::visionneuse::ouvrir(p);
+        ajouter_texte(at.journal, &format!("{}\n", t));
+    }
+    if !crees.is_empty() {
+        etat(&format!("programme terminé · {} fichier{} créé{} : ouvert{} dans la visionneuse", crees.len(),
+                      if crees.len() > 1 { "s" } else { "" }, if crees.len() > 1 { "s" } else { "" },
+                      if crees.len() > 1 { "s" } else { "" }));
+    }
     unsafe {
         InvalidateRect(at.cube, std::ptr::null(), 0);
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ l'exécutable autonome
+/// le dossier natif/ (le traducteur directement en x86-64) : à côté de l'atelier, ou au-dessus (vtx-rs/target/release)
+fn dossier_natif() -> Option<PathBuf> {
+    let mut points: Vec<PathBuf> = Vec::new();
+    if let Ok(e) = std::env::current_exe() {
+        points.extend(e.ancestors().skip(1).take(6).map(|p| p.to_path_buf()));
+    }
+    if let Some(f) = &a().fichier {
+        points.extend(f.ancestors().skip(1).take(6).map(|p| p.to_path_buf()));
+    }
+    points.into_iter().map(|p| p.join("natif")).find(|n| n.join("natif.py").exists())
+}
+
+/// le programme de Senos (SPU-32) traduit directement en un .exe de Windows (natif/natif.py --windows : ni Rust, ni
+/// éditeur de liens ; KERNEL32 seulement), à côté du programme, puis lancé dans sa propre console
+fn faire_executable() {
+    let at = a();
+    if at.machine != 32 {
+        message("L'exécutable autonome ne sait faire, pour l'instant, que les programmes de la machine Senos (SPU-32) : \
+                 Exécuter > Machine Senos, puis recommencer.");
+        return;
+    }
+    if at.fichier.is_none() || !enregistrer(false) {
+        etat("l'exécutable : le programme doit d'abord être enregistré");
+        return;
+    }
+    let fichier = at.fichier.clone().unwrap();
+    let natif = match dossier_natif() {
+        Some(d) => d,
+        None => {
+            message("Le traducteur (le dossier natif, avec natif.py) est introuvable à côté de l'atelier.");
+            return;
+        }
+    };
+    let sortie = fichier.with_extension("exe");
+    etat("l'exécutable : traduction en x86-64…");
+    let mut essai = None;
+    for py in ["python", "py", "python3"] {
+        let mut c = std::process::Command::new(py);
+        c.arg(natif.join("natif.py")).arg("--windows").arg(&fichier).arg(&sortie);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            c.creation_flags(0x0800_0000);
+        }
+        if let Ok(r) = c.output() {
+            essai = Some(r);
+            break;
+        }
+    }
+    match essai {
+        None => message("Il faut Python pour traduire (le traducteur est encore écrit en Python ; il le sera en vtx)."),
+        Some(r) if !r.status.success() => {
+            let e = String::from_utf8_lossy(&r.stderr).into_owned() + &String::from_utf8_lossy(&r.stdout);
+            let fin: String = e.lines().rev().take(6).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+            ajouter_texte(at.journal, &format!("l'exécutable : échec\n{}\n", fin));
+            etat("l'exécutable : la traduction a échoué (voir la sortie)");
+        }
+        Some(r) => {
+            ajouter_texte(at.journal, &String::from_utf8_lossy(&r.stdout));
+            let t = super::visionneuse::ouvrir(&sortie);
+            etat(&format!("l'exécutable : {} · {}", sortie.display(), t));
+        }
     }
 }
 
@@ -2714,6 +2798,7 @@ fn menus(fen: H) {
         ajouter(executer, "Lancer un &ADN rangé (vérifié, réparé)…", C_LANCER_ADN);
         ajouter(executer, "&Pourquoi ? La provenance du nom sous le curseur (Lugus)\tCtrl+P", C_POURQUOI);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
+        ajouter(executer, "Faire l'&exécutable autonome (.exe, sans Rust) et le lancer\tCtrl+E", C_EXECUTABLE);
         ajouter(executer, "", 0);
         ajouter(executer, "Machine &suivante (Dunon → Lugus → Senos)\tCtrl+M", C_MACHINE64);
         ajouter(executer, "Machine &Dunon (SPU-64, 64 bits, vtxc64)", C_M64);
@@ -2859,6 +2944,7 @@ fn commande(c: u16) {
             },
             C_GIF => basculer_enregistrement(),
             C_PNG => image_png(),
+            C_EXECUTABLE => faire_executable(),
             C_PAS => avancer(Avance::Pas),
             C_PAS_DESSUS => avancer(Avance::Dessus),
             C_POINT => basculer_point(),
@@ -3097,6 +3183,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'G' as u16, cmd: C_GIF },
             Accel { fVirt: FVIRTKEY, key: 0x74, cmd: C_LANCER }, // F5
             Accel { fVirt: FVIRTKEY | FCONTROL, key: 0x50, cmd: C_POURQUOI }, // Ctrl+P
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: 0x45, cmd: C_EXECUTABLE }, // Ctrl+E
             Accel { fVirt: FVIRTKEY | 4, key: 0x74, cmd: C_ARRETER }, // Maj+F5
             Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6
             Accel { fVirt: FVIRTKEY, key: 0x76, cmd: C_PAS },    // F7

@@ -87,6 +87,8 @@ if shutil.which("cargo"):
                    "une boucle dépendante rejouée dans l'ordre)", [sys.executable, os.path.join("tests", "test_cylindres.py")]))
     etapes.append(("la paillasse d'Ogmios : lue comme le compilateur, gestes rejoués (lier, délier, ajouter, retirer), valeurs",
                    [sys.executable, os.path.join("tests", "test_paillasse.py")]))
+    etapes.append(("la carte du programme sur la paillasse : une case par fonction, une liaison par appel",
+                   [sys.executable, os.path.join("tests", "test_carte.py")]))
     etapes.append(("Ogmios écrit en vtx : l'atelier sur Lugus (édition rejouée, Ctrl+S, F5 sur une machine fille)",
                    [sys.executable, os.path.join("tests", "test_ogmios.py")]))
     etapes.append(("Fischer : le fil de Hilbert, la signature des molécules, le cube des molécules",

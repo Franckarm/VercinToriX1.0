@@ -73,6 +73,9 @@ pub struct Reaction {
     pub contrats: Vec<(usize, String)>,
     pub erreurs: Vec<String>,
     pub nb_vagues: usize,
+    /// la carte du programme (pas une réaction) : une case par fonction, une liaison par appel ; on la regarde, on y
+    /// choisit une fonction, on n'y réécrit pas le texte
+    pub carte: bool,
 }
 
 const MOTS: &[&str] = &["si", "alors", "sinon", "pour", "chaque", "dans", "somme", "min", "max", "rendez", "vous", "rendezvous",
@@ -253,7 +256,7 @@ pub fn analyser(source: &str) -> Vec<Reaction> {
             j += 1;
         }
         let mut r = Reaction { nom, ligne: i, fin: j.min(lignes.len().saturating_sub(1)), params, resultat, atomes: vec![], contrats: vec![],
-                               erreurs: vec![], nb_vagues: 0 };
+                               erreurs: vec![], nb_vagues: 0, carte: false };
         if prof > 0 {
             r.erreurs.push(format!("la réaction {} n'est pas fermée (une accolade manque)", r.nom));
         }
@@ -571,6 +574,137 @@ fn relier_et_ranger(r: &mut Reaction, lignes: &[&str]) {
     r.nb_vagues = vague.iter().copied().max().unwrap_or(0);
 }
 
+// ------------------------------------------------------------------------------------------------ la carte du programme
+/// La carte d'un programme : chaque fonction est une case (son élément : sa valence, comme un atome), chaque appel une
+/// liaison de la fonction appelée (à gauche) vers celle qui l'appelle (à droite) : le programme se lit comme une molécule,
+/// des feuilles (qui n'appellent rien) jusqu'à principal. Les vagues : la profondeur des appels (un appel récursif ne
+/// compte pas). None : le texte n'a pas de fonction.
+pub fn carte(source: &str) -> Option<Reaction> {
+    let lignes: Vec<&str> = source.split('\n').collect();
+    // les fonctions : leur nom, leurs paramètres, leurs lignes (de l'en-tête à l'accolade fermante)
+    let mut fonctions: Vec<(String, String, usize, usize)> = Vec::new();
+    let mut i = 0;
+    while i < lignes.len() {
+        let l = lignes[i].trim_end_matches('\r');
+        let t = l.trim_start();
+        if let Some(reste) = t.strip_prefix("fonction ") {
+            let nom: String = reste.trim_start().chars().take_while(|&c| lettre(c)).collect();
+            if !nom.is_empty() {
+                let sig = reste.split('{').next().unwrap_or("").trim().to_string();
+                let mut prof = 0i32;
+                let mut vu = false;
+                let mut j = i;
+                'tout: while j < lignes.len() {
+                    let lj = lignes[j];
+                    let code = &lj[..fin_code(lj)];
+                    let mut dans = false;
+                    for c in code.chars() {
+                        match c {
+                            '"' => dans = !dans,
+                            '{' if !dans => {
+                                prof += 1;
+                                vu = true;
+                            }
+                            '}' if !dans => {
+                                prof -= 1;
+                                if vu && prof == 0 {
+                                    break 'tout;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    j += 1;
+                }
+                let fin = j.min(lignes.len().saturating_sub(1));
+                fonctions.push((nom, sig, i, fin));
+                i = fin + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    if fonctions.is_empty() {
+        return None;
+    }
+    let noms: HashMap<String, usize> = fonctions.iter().enumerate().map(|(k, f)| (f.0.clone(), k)).collect();
+    // les appels : un nom de fonction du programme suivi de « ( », hors des textes et des commentaires
+    let mut appels: Vec<Vec<usize>> = vec![vec![]; fonctions.len()];
+    for (k, f) in fonctions.iter().enumerate() {
+        for lj in &lignes[f.2..=f.3] {
+            let code = &lj[..fin_code(lj)];
+            let b: Vec<char> = code.chars().collect();
+            let mut dans = false;
+            let mut x = 0;
+            while x < b.len() {
+                if b[x] == '"' {
+                    dans = !dans;
+                    x += 1;
+                    continue;
+                }
+                if !dans && lettre(b[x]) && (x == 0 || !lettre(b[x - 1])) {
+                    let d = x;
+                    while x < b.len() && lettre(b[x]) {
+                        x += 1;
+                    }
+                    let mot: String = b[d..x].iter().collect();
+                    let mut y = x;
+                    while y < b.len() && b[y] == ' ' {
+                        y += 1;
+                    }
+                    let entete = d >= 9 && b[..d].iter().collect::<String>().trim_end().ends_with("fonction");
+                    if y < b.len() && b[y] == '(' && !entete {
+                        if let Some(&c) = noms.get(&mot) {
+                            if !appels[k].contains(&c) {
+                                appels[k].push(c);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                x += 1;
+            }
+        }
+    }
+    let mut atomes: Vec<Atome> = fonctions.iter().enumerate().map(|(k, f)| {
+        let entrees: Vec<Port> = appels[k].iter().filter(|&&c| c != k).map(|&c| Port { nom: fonctions[c].0.clone(), places: vec![] }).collect();
+        let mut a = Atome { ligne: f.2, nom: f.0.clone(), quoi: format!("fonction {}", f.1), sorties: vec![f.0.clone()], entrees,
+                            apres: vec![], genre: Genre::Calcul, vague: 0, element: String::new(), lourd: false };
+        a.element = element_de(a.valence());
+        a
+    }).collect();
+    // les vagues : 1 pour une fonction qui n'appelle rien, sinon une de plus que la plus profonde qu'elle appelle
+    let n = atomes.len();
+    let mut vague = vec![0usize; n];
+    let mut etat = vec![0u8; n];
+    fn visiter(k: usize, appels: &[Vec<usize>], vague: &mut [usize], etat: &mut [u8]) -> usize {
+        if etat[k] == 2 {
+            return vague[k];
+        }
+        if etat[k] == 1 {
+            return 0;
+        }
+        etat[k] = 1;
+        let mut v = 1;
+        for &d in &appels[k] {
+            if d != k {
+                v = v.max(visiter(d, appels, vague, etat) + 1);
+            }
+        }
+        etat[k] = 2;
+        vague[k] = v;
+        v
+    }
+    for k in 0..n {
+        visiter(k, &appels, &mut vague, &mut etat);
+    }
+    for (k, a) in atomes.iter_mut().enumerate() {
+        a.vague = vague[k];
+    }
+    Some(Reaction { nom: "le programme".into(), ligne: 0, fin: lignes.len().saturating_sub(1), params: vec![], resultat: None,
+                    atomes, contrats: vec![], erreurs: vec![], nb_vagues: vague.iter().copied().max().unwrap_or(0), carte: true })
+}
+
 // ------------------------------------------------------------------------------------------------ les gestes sur le texte
 fn remplacer_places(l: &str, places: &[(usize, usize)], par: &str) -> String {
     let mut p: Vec<(usize, usize)> = places.to_vec();
@@ -873,6 +1007,10 @@ impl Paillasse {
         let nom = self.reactions.get(self.courante).map(|r| r.nom.clone());
         let cle = self.choisi.and_then(|k| self.reaction().and_then(|r| r.atomes.get(k)).map(|a| a.cle()));
         self.reactions = analyser(source);
+        // la carte du programme : toujours là, après les réactions (la seule paillasse d'un programme sans réaction)
+        if let Some(c) = carte(source) {
+            self.reactions.push(c);
+        }
         self.courante = nom.and_then(|n| self.reactions.iter().position(|r| r.nom == n)).unwrap_or(0).min(self.reactions.len().saturating_sub(1));
         self.choisi = cle.and_then(|c| self.reaction().and_then(|r| r.atomes.iter().position(|a| a.cle() == c)));
         self.geste = None;
@@ -887,6 +1025,9 @@ impl Paillasse {
     pub fn choisir_ligne(&mut self, ligne: usize) -> bool {
         for (k, r) in self.reactions.iter().enumerate() {
             if ligne >= r.ligne && ligne <= r.fin {
+                if r.carte && self.courante < self.reactions.len() && !self.reactions[self.courante].carte {
+                    return false;
+                }
                 let a = r.atomes.iter().position(|a| a.ligne == ligne);
                 let change = self.courante != k || self.choisi != a;
                 self.courante = k;
@@ -1170,6 +1311,39 @@ impl Paillasse {
         if self.cases.is_empty() && self.onglets.is_empty() {
             self.dessiner(800, 600);
         }
+        if self.reaction().map_or(false, |r| r.carte) {
+            // la carte : choisir une fonction (le texte y va), glisser le vide ; rien ne réécrit le texte
+            match genre {
+                Souris::Bas => {
+                    for &(ox, oy, ol, oh, k) in &self.onglets {
+                        if x >= ox && x < ox + ol && y >= oy && y < oy + oh {
+                            self.courante = k;
+                            self.choisi = None;
+                            return match self.reaction() {
+                                Some(r) => Reponse::Aller(r.ligne),
+                                None => Reponse::Redessiner,
+                            };
+                        }
+                    }
+                    if let Some(k) = self.case_sous(x, y).map(|c| c.atome) {
+                        self.choisi = Some(k);
+                        let l = self.reaction().unwrap().atomes[k].ligne;
+                        return Reponse::Aller(l);
+                    }
+                    self.choisi = None;
+                    return Reponse::Redessiner;
+                }
+                Souris::Double => {
+                    // un double clic dans le vide d'un programme sans réaction : une réaction neuve, comme avant
+                    if self.case_sous(x, y).is_none() && self.reactions.iter().all(|r| r.carte) {
+                        let (s, l) = ajouter_reaction(source);
+                        return Reponse::Texte { source: s, ligne: l };
+                    }
+                    return Reponse::Rien;
+                }
+                _ => return Reponse::Rien,
+            }
+        }
         match genre {
             Souris::Bas => {
                 self.message = None;
@@ -1321,6 +1495,9 @@ impl Paillasse {
 
     /// une touche quand la paillasse a le clavier : Suppr retire l'atome choisi, Échap oublie le choix
     pub fn touche(&mut self, vk: u32, source: &str) -> Reponse {
+        if self.reaction().map_or(false, |r| r.carte) && vk == 0x2E {
+            return Reponse::Message("la carte du programme se lit, elle ne se réécrit pas : retirez la fonction dans le texte".into());
+        }
         match vk {
             0x2E => {
                 let (r, k) = match (self.reaction(), self.choisi) {
@@ -1352,6 +1529,27 @@ impl Paillasse {
             }
         };
         let mut t = String::new();
+        if r.carte {
+            match self.choisi.and_then(|k| r.atomes.get(k)) {
+                Some(a) => {
+                    let appelle: Vec<&str> = a.entrees.iter().map(|p| p.nom.as_str()).collect();
+                    let appelee: Vec<&str> = r.atomes.iter().filter(|b| b.entrees.iter().any(|p| p.nom == a.nom)).map(|b| b.nom.as_str()).collect();
+                    t.push_str(&format!("{} — ligne {}\r\n{}\r\n", a.nom, a.ligne + 1, a.quoi));
+                    t.push_str(&format!("Elle appelle : {}.\r\nElle est appelée par : {}.\r\n",
+                                        if appelle.is_empty() { "rien (une feuille)".to_string() } else { appelle.join(", ") },
+                                        if appelee.is_empty() { "personne".to_string() } else { appelee.join(", ") }));
+                    t.push_str(&format!("Vague {} : la profondeur de ses appels.\r\n", a.vague));
+                }
+                None => {
+                    t.push_str(&format!("La carte du programme : {} fonction{}, {} vague{} d'appels. Chaque case est une fonction ; \
+                                         une liaison va de la fonction appelée (à gauche) vers celle qui l'appelle (à droite).\r\n\
+                                         Un clic sur une case : le texte va à la fonction. La carte se lit ; le texte se change dans \
+                                         l'éditeur, et la carte suit.\r\n", r.atomes.len(), if r.atomes.len() > 1 { "s" } else { "" },
+                                        r.nb_vagues, if r.nb_vagues > 1 { "s" } else { "" }));
+                }
+            }
+            return t;
+        }
         match self.choisi.and_then(|k| r.atomes.get(k)) {
             Some(a) => {
                 let nom_el = match a.element.chars().next() {
@@ -1583,7 +1781,7 @@ pub fn commande(args: &[String]) {
     }
     if analyse {
         // la lecture : « réaction|ligne|nom|élément|vague|entrées|sorties » par atome, puis les erreurs
-        for r in &p.reactions {
+        for r in p.reactions.iter().filter(|r| !r.carte) {
             for a in &r.atomes {
                 let e: Vec<&str> = a.entrees.iter().map(|x| x.nom.as_str()).collect();
                 println!("atome {}|{}|{}|{}|{}|{}|{}", r.nom, a.ligne + 1, a.nom, a.element, a.vague, e.join(","), a.sorties.join(","));
