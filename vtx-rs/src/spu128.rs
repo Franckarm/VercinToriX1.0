@@ -68,8 +68,6 @@ pub struct Spu128 {
     // par elles au lieu du texte gardé ; arret : Maj+F5 de l'atelier ; parler : la voix (le canal « voix: »)
     pub console_ecrire: Option<Box<dyn FnMut(u128)>>,
     pub console_lire: Option<Box<dyn FnMut() -> u128>>,
-    /// appelée juste avant que le programme n'attende le clavier (la vitrine d'un .exe y prend la mémoire à montrer)
-    pub avant_lire: Option<fn(&Spu128)>,
     pub arret: Option<&'static std::sync::atomic::AtomicBool>,
     pub parler: Option<fn(&str)>,
     /// la patrouille de l'ADN (chimie : docs/vtx-reactions.md) : appelée toutes les 65 536 instructions (une colonne
@@ -152,7 +150,6 @@ impl Spu128 {
             machine_fille: None,
             console_ecrire: None,
             console_lire: None,
-            avant_lire: None,
             arret: None,
             parler: None,
             patrouille: None,
@@ -515,9 +512,6 @@ impl Spu128 {
             return self.entree.pop_front().unwrap_or(0);
         }
         if c == 1 {
-            if let Some(g) = self.avant_lire {
-                g(self);
-            }
             if let Some(f) = self.console_lire.as_mut() {
                 return f();
             }

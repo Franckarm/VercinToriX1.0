@@ -244,6 +244,8 @@ const WM_APP_FINI: u32 = 0x8001;
 // la première image d'un programme : la vue du cube prend le clavier (demandé par message, pas pendant la peinture)
 const WM_APP_CLAVIER: u32 = 0x8003;
 const WM_APP_POURQUOI: u32 = 0x8009;
+// la boîte du clic droit sur la paillasse : wParam 1 écrire, 0 renoncer
+const WM_APP_CASE: u32 = 0x800B;
 const WM_TIMER: u32 = 0x0113;
 const EM_GETSEL: u32 = 0x00B0;
 const EM_SETSEL: u32 = 0x00B1;
@@ -2579,6 +2581,15 @@ fn reponse_paillasse(r: super::paillasse::Reponse) {
         }
         Reponse::Aller(l) => choisir_ligne_texte(l, true),
         Reponse::Message(m) => etat(&format!("paillasse : {}", m)),
+        Reponse::Editer { source, ligne, texte, x, y } => {
+            if let Some(s) = source {
+                remplacer_texte(&s, ligne);
+            } else {
+                choisir_ligne_texte(ligne, true);
+            }
+            ouvrir_boite_case(ligne, &texte, x, y);
+            etat("paillasse : écrivez la case, Entrée l'écrit dans le texte, Échap renonce");
+        }
         Reponse::Rien => return,
         Reponse::Redessiner => {}
     }
@@ -2590,6 +2601,88 @@ fn reponse_paillasse(r: super::paillasse::Reponse) {
 
 fn couleur_bgr(c: u32) -> u32 {
     ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF)
+}
+
+/// la boîte du clic droit : (la ligne qu'elle récrit, la boîte, l'ancienne procédure de l'EDIT)
+static BOITE_CASE: Mutex<Option<(usize, isize, isize)>> = Mutex::new(None);
+
+/// poser sur la paillasse une petite boîte d'édition, pleine du texte de la case, tout choisi
+fn ouvrir_boite_case(ligne: usize, texte: &str, x: i32, y: i32) {
+    fermer_boite_case(false);
+    let at = a();
+    unsafe {
+        let mut r = Rect::default();
+        GetClientRect(at.paillasse, &mut r);
+        let ch = at.pail.car_h.max(12) + (10.0 * at.echelle) as i32;
+        let l = ((texte.chars().count() as i32 + 12) * at.pail.car_l.max(6)).clamp((320.0 * at.echelle) as i32, (r.right - 8).max(100));
+        let x = x.clamp(4, (r.right - l - 4).max(4));
+        let y = y.clamp(4, (r.bottom - ch - 4).max(4));
+        let b = CreateWindowExW(WS_EX_CLIENTEDGE, w("EDIT").as_ptr(), w(texte).as_ptr(), WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+                                x, y, l, ch, at.paillasse, 21 as H, at.inst, std::ptr::null_mut());
+        if b.is_null() {
+            return;
+        }
+        SendMessageW(b, WM_SETFONT, at.police as usize, 1);
+        let ancien = SetWindowLongPtrW(b, GWLP_WNDPROC, proc_boite_case as *const () as usize as isize);
+        *BOITE_CASE.lock().unwrap() = Some((ligne, b as isize, ancien));
+        SendMessageW(b, EM_SETSEL, 0, -1);
+        SetFocus(b);
+    }
+}
+
+/// fermer la boîte : avec écrire, sa ligne du texte devient ce qu'on y a tapé (au même retrait)
+fn fermer_boite_case(ecrire: bool) {
+    let pris = BOITE_CASE.lock().unwrap().take();
+    if let Some((ligne, b, ancien)) = pris {
+        let t = lire_texte(b as H);
+        unsafe {
+            SetWindowLongPtrW(b as H, GWLP_WNDPROC, ancien);
+            DestroyWindow(b as H);
+        }
+        let at = a();
+        if ecrire {
+            let source = lire_texte(at.source).replace("\r\n", "\n");
+            let ancienne = source.split('\n').nth(ligne).unwrap_or("").trim().to_string();
+            if t.trim() != ancienne {
+                let neuf = super::paillasse::editer_ligne(&source, ligne, &t);
+                remplacer_texte(&neuf, ligne);
+                etat("paillasse : la case est écrite dans le texte (Ctrl+Z dans le texte le défait)");
+            } else {
+                etat("paillasse : la case n'a pas changé");
+            }
+        } else {
+            etat("paillasse : édition abandonnée");
+        }
+        unsafe {
+            SetFocus(at.paillasse);
+            InvalidateRect(at.paillasse, std::ptr::null(), 0);
+        }
+        maj_explications();
+    }
+}
+
+unsafe extern "system" fn proc_boite_case(h: H, m: u32, wp: usize, lp: isize) -> isize {
+    let ancien = BOITE_CASE.lock().unwrap().map(|b| b.2).unwrap_or(0);
+    match m {
+        // Entrée écrit, Échap renonce (par un message à la paillasse : la boîte ne se détruit pas elle-même ici)
+        WM_KEYDOWN if wp == 0x0D || wp == 0x1B => {
+            PostMessageW(a().paillasse, WM_APP_CASE, (wp == 0x0D) as usize, 0);
+            0
+        }
+        WM_CHAR if wp == 0x0D || wp == 0x1B => 0,
+        // un clic ailleurs : la boîte écrit ce qu'on y a tapé, comme Entrée
+        WM_KILLFOCUS => {
+            PostMessageW(a().paillasse, WM_APP_CASE, 1, 0);
+            CallWindowProcW(ancien, h, m, wp, lp)
+        }
+        _ => {
+            if ancien == 0 {
+                DefWindowProcW(h, m, wp, lp)
+            } else {
+                CallWindowProcW(ancien, h, m, wp, lp)
+            }
+        }
+    }
 }
 
 unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> isize {
@@ -2668,6 +2761,17 @@ unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> 
             reponse_paillasse(r);
             0
         }
+        // le clic droit : éditer la case (ou en poser une neuve là, dans le vide)
+        WM_RBUTTONDOWN => {
+            fermer_boite_case(true);
+            let r = at.pail.souris(Souris::Droit, x, y, &texte());
+            reponse_paillasse(r);
+            0
+        }
+        WM_APP_CASE => {
+            fermer_boite_case(wp == 1);
+            0
+        }
         // la paillasse ne garde que Suppr et Échap ; toute autre touche va au texte (et le clavier y revient)
         WM_KEYDOWN if wp == 0x2E || wp == 0x1B => {
             let r = at.pail.touche(wp as u32, &texte());
@@ -2719,7 +2823,7 @@ fn creer_controles(fen: H) {
         at.pas_texte = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
             WS_CHILD | WS_VSCROLL | WS_HSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL | ES_READONLY,
             0, 0, 10, 10, fen, 19 as H, at.inst, std::ptr::null_mut());
-        at.paillasse = CreateWindowExW(WS_EX_CLIENTEDGE, w("VtxPaillasse").as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE,
+        at.paillasse = CreateWindowExW(WS_EX_CLIENTEDGE, w("VtxPaillasse").as_ptr(), w("").as_ptr(), WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
             0, 0, 10, 10, fen, 20 as H, at.inst, std::ptr::null_mut());
         at.explications = CreateWindowExW(WS_EX_CLIENTEDGE, edit.as_ptr(), w("").as_ptr(),
             WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY,

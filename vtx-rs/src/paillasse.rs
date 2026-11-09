@@ -7,7 +7,8 @@
 //     n'est pas encore juste, comme une entrée libre « _ », une liaison inconnue) ;
 //   - sur la paillasse, on déplace une case, on tire une liaison d'une sortie vers une case (elle remplit son entrée
 //     libre « _ », ou remplace l'entrée visée), on tire une entrée vers le vide (elle redevient « _ »), on ajoute un
-//     atome (double clic dans le vide : la ligne « = _ -> l1 » s'écrit dans la réaction), on en retire un (Suppr) :
+//     atome (double clic dans le vide : la ligne « = _ -> l1 » s'écrit dans la réaction), on en retire un (Suppr),
+//     on pose ou on édite une case au clic droit (une petite boîte sur la case : Entrée récrit sa ligne) :
 //     chaque geste réécrit la ligne du texte.
 // Après une exécution avec la provenance (Ctrl+P), chaque liaison porte sa valeur et son état de Belnap : vrai (arrivée),
 // faux (sa branche n'a pas réagi), inconnu (jamais calculée).
@@ -771,6 +772,14 @@ pub fn ajouter_atome(source: &str, r: &Reaction) -> (String, usize) {
     (v.join("\n"), place)
 }
 
+/// éditer une case : sa ligne devient « texte », au même retrait (le texte tapé dans la boîte du clic droit)
+pub fn editer_ligne(source: &str, ligne: usize, texte: &str) -> String {
+    let l = source.split('\n').nth(ligne).unwrap_or("").trim_end_matches('\r');
+    let retrait = &l[..l.len() - l.trim_start().len()];
+    let t = texte.trim().replace(['\r', '\n'], " ");
+    remplacer_ligne(source, ligne, &format!("{}{}", retrait, t))
+}
+
 /// retirer un atome : sa ligne s'en va
 pub fn retirer_atome(source: &str, a: &Atome) -> String {
     let mut v: Vec<&str> = source.split('\n').collect();
@@ -857,6 +866,9 @@ pub enum Reponse {
     /// aller à cette ligne dans l'éditeur
     Aller(usize),
     Message(String),
+    /// le clic droit : écrire le texte d'une case dans une petite boîte posée sur elle (en x, y de la paillasse) ;
+    /// source : le texte réécrit d'abord (une case neuve posée là), ligne : la ligne qu'Entrée remplacera
+    Editer { source: Option<String>, ligne: usize, texte: String, x: i32, y: i32 },
 }
 
 pub enum Souris {
@@ -864,6 +876,8 @@ pub enum Souris {
     Bouge,
     Haut,
     Double,
+    /// le clic droit : sur une case, l'éditer ; dans le vide, poser une case neuve là et l'éditer
+    Droit,
 }
 
 pub struct Paillasse {
@@ -1346,6 +1360,14 @@ impl Paillasse {
                     self.geste = None;
                     return Reponse::Rien;
                 }
+                Souris::Droit => {
+                    if let Some(k) = self.case_sous(x, y).map(|c| c.atome) {
+                        self.choisi = Some(k);
+                        return Reponse::Message("la carte se lit : une fonction s'écrit dans le texte ; dans une réaction \
+                                                 (onglet du haut), le clic droit édite ses cases".into());
+                    }
+                    return Reponse::Rien;
+                }
                 Souris::Double => {
                     // un double clic dans le vide d'un programme sans réaction : une réaction neuve, comme avant
                     if self.case_sous(x, y).is_none() && self.reactions.iter().all(|r| r.carte) {
@@ -1476,6 +1498,24 @@ impl Paillasse {
                     _ => Reponse::Redessiner,
                 }
             }
+            Souris::Droit => {
+                self.geste = None;
+                if self.reactions.is_empty() {
+                    let (s, l) = ajouter_reaction(source);
+                    let t = s.split('\n').nth(l).unwrap_or("").trim().to_string();
+                    return Reponse::Editer { source: Some(s), ligne: l, texte: t, x, y };
+                }
+                if let Some(c) = self.case_sous(x, y).cloned() {
+                    self.choisi = Some(c.atome);
+                    let r = self.reaction().unwrap();
+                    let l = r.atomes[c.atome].ligne;
+                    let t = source.split('\n').nth(l).unwrap_or("").trim().to_string();
+                    return Reponse::Editer { source: None, ligne: l, texte: t, x: c.x, y: c.y };
+                }
+                let (s, l) = self.poser_atome(x, y, source);
+                let t = s.split('\n').nth(l).unwrap_or("").trim().to_string();
+                Reponse::Editer { source: Some(s), ligne: l, texte: t, x, y }
+            }
             Souris::Double => {
                 self.geste = None;
                 if self.reactions.is_empty() {
@@ -1486,23 +1526,28 @@ impl Paillasse {
                     let r = self.reaction().unwrap();
                     return Reponse::Aller(r.atomes[c.atome].ligne);
                 }
-                let r = self.reaction().unwrap().clone();
-                let (s, l) = ajouter_atome(source, &r);
-                // l'atome neuf vient où l'on a cliqué
-                let nom = format!("l{}", {
-                    let mut k = 1;
-                    while r.params.contains(&format!("l{}", k)) || r.atomes.iter().any(|a| a.sorties.contains(&format!("l{}", k))) {
-                        k += 1;
-                    }
-                    k
-                });
-                let (ox, oy) = self.origine();
-                let px = ((x - ox) as f32 / self.echelle) as i32;
-                let py = ((y - oy) as f32 / self.echelle) as i32;
-                self.positions.insert((r.nom.clone(), nom), (px, py));
+                let (s, l) = self.poser_atome(x, y, source);
                 Reponse::Texte { source: s, ligne: l }
             }
         }
+    }
+
+    /// un atome neuf « = _ -> lK » à la fin de la réaction, placé où l'on a cliqué ; rend le texte et sa ligne
+    fn poser_atome(&mut self, x: i32, y: i32, source: &str) -> (String, usize) {
+        let r = self.reaction().unwrap().clone();
+        let (s, l) = ajouter_atome(source, &r);
+        let nom = format!("l{}", {
+            let mut k = 1;
+            while r.params.contains(&format!("l{}", k)) || r.atomes.iter().any(|a| a.sorties.contains(&format!("l{}", k))) {
+                k += 1;
+            }
+            k
+        });
+        let (ox, oy) = self.origine();
+        let px = ((x - ox) as f32 / self.echelle) as i32;
+        let py = ((y - oy) as f32 / self.echelle) as i32;
+        self.positions.insert((r.nom.clone(), nom), (px, py));
+        (s, l)
     }
 
     /// une touche quand la paillasse a le clavier : Suppr retire l'atome choisi, Échap oublie le choix
@@ -1616,8 +1661,9 @@ impl Paillasse {
                 t.push_str(".\r\n");
                 t.push_str("Glisser une case : la déplacer. Tirer d'une sortie (à droite d'une case) vers une case : lier (la \
                             liaison remplit son entrée libre « _ », ou l'entrée visée). Tirer une entrée vers le vide : délier.\r\n\
-                            Double clic dans le vide : un atome neuf (« = _ -> l1 » s'écrit dans le texte). Suppr : retirer l'atome \
-                            choisi. Glisser le vide : déplacer la paillasse.\r\n\
+                            Double clic dans le vide : un atome neuf (« = _ -> l1 » s'écrit dans le texte). Clic droit sur une case : \
+                            l'éditer (Entrée écrit, Échap renonce) ; clic droit dans le vide : poser une case là et l'éditer. \
+                            Suppr : retirer l'atome choisi. Glisser le vide : déplacer la paillasse.\r\n\
                             Ctrl+P : faire réagir avec la provenance ; chaque liaison montre alors sa valeur (vert : arrivée, rouge : \
                             sa branche n'a pas réagi, gris : jamais calculée).\r\n");
             }
@@ -1744,6 +1790,7 @@ pub fn commande(args: &[String]) {
     p.dessiner(taille.0, taille.1);
     if let Some(g) = gestes {
         let t = std::fs::read_to_string(&g).unwrap_or_default();
+        let mut en_edition: Option<usize> = None;
         for l in t.lines() {
             let m: Vec<&str> = l.split('#').next().unwrap_or("").split_whitespace().collect();
             if m.is_empty() {
@@ -1755,6 +1802,15 @@ pub fn commande(args: &[String]) {
                 "bouge" => p.souris(Souris::Bouge, n(1), n(2), &source),
                 "haut" => p.souris(Souris::Haut, n(1), n(2), &source),
                 "double" => p.souris(Souris::Double, n(1), n(2), &source),
+                "droit" => p.souris(Souris::Droit, n(1), n(2), &source),
+                // ecrire TEXTE : ce qu'on tape dans la boîte du clic droit, puis Entrée
+                "ecrire" => match en_edition.take() {
+                    Some(ligne) => {
+                        let t = l.splitn(2, char::is_whitespace).nth(1).unwrap_or("").trim();
+                        Reponse::Texte { source: editer_ligne(&source, ligne, t), ligne }
+                    }
+                    None => Reponse::Message("rien à écrire : pas de case en édition (clic droit d'abord)".into()),
+                },
                 "touche" => p.touche(n(1) as u32, &source),
                 "ligne" => {
                     p.choisir_ligne((n(1) - 1).max(0) as usize);
@@ -1781,6 +1837,14 @@ pub fn commande(args: &[String]) {
                 }
                 Reponse::Aller(l) => println!("aller à la ligne {}", l + 1),
                 Reponse::Message(m) => println!("message : {}", m),
+                Reponse::Editer { source: s, ligne, texte, .. } => {
+                    if let Some(s) = s {
+                        source = s;
+                        p.lire(&source);
+                    }
+                    en_edition = Some(ligne);
+                    println!("édition de la ligne {} : {}", ligne + 1, texte);
+                }
                 _ => {}
             }
             p.dessiner(taille.0, taille.1);

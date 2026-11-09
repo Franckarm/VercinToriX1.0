@@ -6,7 +6,7 @@ roulant, le quaternaire. Voici l'ordre suivi, une idée et une mesure à la fois
 
 ## 1. Le programme qui sort de l'atelier (en cours)
 - 0.5zs : Lugus fait les .exe, la machine, les mots et les cubes sur disque en un fichier.
-- 0.5zt : la vitrine : le texte et le cube chromatique de la mémoire dans une fenêtre.
+- 0.5zt-zu : la vitrine : le texte dans une fenêtre (sans le cube, au choix du créateur).
 - Ensuite : la traduction des mots de Lugus en x86-64 dans le paquet (comme natif.py pour Senos) ; la machine
   embarquée garde les pages du cube, qflot128, les services. Mesure : le .exe traduit contre Lugus émulé, mêmes
   sorties, même mémoire, et le gain.

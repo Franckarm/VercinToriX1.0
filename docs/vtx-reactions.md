@@ -1578,3 +1578,18 @@ fenêtre vit sur son propre fil et ne tient que des statiques. Fermer la vitrine
 
 Lancé depuis un terminal (PowerShell, cmd) ou avec `--console` (ou la variable VTX_CONSOLE), le .exe reste en console,
 comme en 0.5zs : les tests et les scripts le lisent ainsi. Sous Linux, la console seule.
+
+## 31. Les cases au clic droit, la vitrine sans le cube (9 novembre, 0.5zu)
+
+**La paillasse.** Le clic droit sur une case ouvre une petite boîte posée sur elle, pleine de sa ligne (« double = a ×
+2 -> b »), tout choisi : on tape, Entrée récrit la ligne au même retrait, Échap renonce, un clic ailleurs écrit comme
+Entrée. Le clic droit dans le vide pose une case neuve là où l'on a cliqué (« = _ -> l1 ») et ouvre aussitôt sa boîte.
+Sur la carte du programme, le clic droit dit que la carte se lit (une fonction s'écrit dans le texte). Comme les autres
+gestes, Ctrl+Z dans le texte défait. paillasse.rs reste sans Windows : `Souris::Droit` rend `Reponse::Editer`, et
+`editer_ligne` récrit ; « vtx paillasse --gestes » rejoue `droit X Y` puis `ecrire TEXTE` (tests/test_paillasse.py :
+x + 1 devient x + 2 et r(3) passe de 12 à 15 ; une case posée dans le vide et écrite).
+
+**La vitrine.** Le créateur : inutile de montrer le cube dans les programmes (il pensait que le .exe gardait le cube
+pour fonctionner : c'est le cas, les cubes sur disque sont emportés et posés à côté). La vitrine garde la fenêtre (le
+texte, la saisie en ambre, l'état et le compteur d'instructions) et n'a plus le cube ; le crochet `avant_lire` de
+Spu128, qui ne servait qu'à lui, est retiré.

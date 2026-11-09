@@ -1,11 +1,10 @@
 // La vitrine d'un .exe de Lugus : lancé d'un double clic sous Windows, le programme a sa fenêtre à lui au lieu d'une
-// console grise. À gauche son texte (ce qu'il écrit, ce qu'on lui tape) ; à droite le cube chromatique de sa mémoire,
-// en perspective, qui se remplit pendant qu'il tourne ; en bas l'état de la machine. La fenêtre de dessin (toile)
-// s'ouvre à part, à la première image, comme avant.
+// console grise : son texte (ce qu'il écrit, ce qu'on lui tape, la saisie en ambre) et, en bas, l'état de la machine.
+// La fenêtre de dessin (toile) s'ouvre à part, à la première image, comme avant. (0.5zt montrait aussi le cube de la
+// mémoire ; le créateur n'en veut pas dans les programmes : 0.5zu l'a retiré.)
 //
-// La machine tourne sur son fil, par tranches de quelques millions d'instructions ; entre deux tranches, et chaque fois
-// que le programme attend le clavier, elle laisse une vue de sa mémoire (pas64::Vue64, celle d'Ogmios) que la fenêtre
-// dessine avec cube::rendre_iso. Clic : l'étage suivant ; clic droit : tourner d'un quart ; molette : zoom.
+// La machine tourne sur le fil principal, par tranches de quelques millions d'instructions (le compteur de l'état) ; la
+// fenêtre vit sur son fil et ne tient que des statiques.
 
 #[cfg(windows)]
 pub use w::jouer;
@@ -16,11 +15,8 @@ mod w {
     use std::ffi::c_void;
     use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU64, Ordering};
     use std::sync::{Condvar, Mutex};
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
-    use super::super::cube::rendre_iso;
-    use super::super::memoire::Memoire;
-    use super::super::pas64::Vue64;
     use super::super::spu128::Spu128;
 
     type H = *mut c_void;
@@ -37,12 +33,6 @@ mod w {
     struct Msg { h: H, m: u32, wp: usize, lp: isize, t: u32, x: i32, y: i32 }
     #[repr(C)]
     struct PaintStruct { dc: H, efface: i32, r: Rect, restore: i32, maj: i32, res: [u8; 32] }
-    #[repr(C)]
-    struct BitmapInfoHeader {
-        size: u32, l: i32, h: i32, plans: u16, bits: u16, compr: u32, taille: u32, xm: i32, ym: i32, used: u32, imp: u32,
-    }
-    #[repr(C)]
-    struct BitmapInfo { tete: BitmapInfoHeader, couleurs: [u32; 1] }
     #[repr(C)]
     #[derive(Default)]
     struct Taille { cx: i32, cy: i32 }
@@ -72,8 +62,6 @@ mod w {
     }
     #[link(name = "gdi32")]
     extern "system" {
-        fn StretchDIBits(dc: H, x: i32, y: i32, l: i32, h: i32, sx: i32, sy: i32, sl: i32, sh: i32, bits: *const c_void,
-                         info: *const BitmapInfo, usage: u32, rop: u32) -> i32;
         fn CreateFontW(h: i32, l: i32, e: i32, o: i32, poids: i32, it: u32, so: u32, ba: u32, cs: u32, op: u32, cp: u32,
                        q: u32, pf: u32, nom: *const u16) -> H;
         fn SelectObject(dc: H, o: H) -> H;
@@ -107,22 +95,10 @@ mod w {
     const SAISIE: u32 = 0xF2_C14E;
     const DISCRET: u32 = 0x8A_93A6;
 
-    /// la mémoire montrée : une Memoire de 32 bits par étage (le cube de l'atelier), prise par la machine
-    struct Vue(Memoire);
-    unsafe impl Send for Vue {}
-
     struct Etat {
         lignes: Vec<String>,
         saisie: String,
         fini: Option<String>,
-        vue: Option<Vue>,
-        etages_pleins: [bool; 4],
-        // la vue dessinée (refaite quand la mémoire ou le regard change)
-        rendu: Option<(usize, usize, Vec<u32>, usize)>,
-        neuf: bool,
-        etage: u32,
-        quart: u32,
-        zoom: f32,
     }
 
     static ETAT: Mutex<Option<Etat>> = Mutex::new(None);
@@ -130,7 +106,6 @@ mod w {
     static SIGNAL: Condvar = Condvar::new();
     static FERMEE: AtomicBool = AtomicBool::new(false);
     static PAS: AtomicU64 = AtomicU64::new(0);
-    static DERNIERE_VUE: AtomicU64 = AtomicU64::new(u64::MAX);
     static FENETRE: AtomicIsize = AtomicIsize::new(0);
     static ATTEND: AtomicBool = AtomicBool::new(false);
     static FINI: AtomicBool = AtomicBool::new(false);
@@ -146,30 +121,6 @@ mod w {
         if f != 0 {
             unsafe { InvalidateRect(f as H, std::ptr::null(), 0) };
         }
-    }
-
-    /// la machine laisse une vue de sa mémoire (au plus une par pas : la lecture d'une ligne en appelle une par lettre)
-    fn prendre_vue(s: &Spu128) {
-        if DERNIERE_VUE.swap(s.pas, Ordering::Relaxed) == s.pas {
-            return;
-        }
-        PAS.store(s.pas, Ordering::Relaxed);
-        let mut v = Vue64::depuis128(s);
-        let mut pleins = [false; 4];
-        for e in 0..4usize {
-            pleins[e] = !s.pages_etage(e).is_empty();
-        }
-        let m = v.memoire();
-        avec(|e| {
-            e.vue = Some(Vue(m));
-            e.etages_pleins = pleins;
-            // le premier regard : l'étage des données (3, le tas) s'il a quelque chose, sinon celui du code
-            if !e.etages_pleins[e.etage as usize] {
-                e.etage = [3u32, 2, 1, 0].into_iter().find(|&k| pleins[k as usize]).unwrap_or(0);
-            }
-            e.neuf = true;
-        });
-        rafraichir();
     }
 
     fn ecrire_car(v: u128) {
@@ -250,34 +201,6 @@ mod w {
                 InvalidateRect(h, std::ptr::null(), 0);
                 0
             }
-            0x0201 | 0x0204 => {
-                // clic : l'étage suivant qui a quelque chose ; clic droit : un quart de tour
-                avec(|e| {
-                    if m == 0x0201 {
-                        for k in 1..=4u32 {
-                            let n = (e.etage + k) % 4;
-                            if e.etages_pleins[n as usize] {
-                                e.etage = n;
-                                break;
-                            }
-                        }
-                    } else {
-                        e.quart = (e.quart + 1) % 4;
-                    }
-                    e.neuf = true;
-                });
-                InvalidateRect(h, std::ptr::null(), 0);
-                0
-            }
-            0x020A => {
-                let d = ((wp >> 16) & 0xFFFF) as i16 as i32;
-                avec(|e| {
-                    e.zoom = (e.zoom * if d > 0 { 1.25 } else { 0.8 }).clamp(0.25, 16.0);
-                    e.neuf = true;
-                });
-                InvalidateRect(h, std::ptr::null(), 0);
-                0
-            }
             0x0113 => {
                 // WM_TIMER : le compteur d'instructions et le curseur
                 InvalidateRect(h, std::ptr::null(), 0);
@@ -322,8 +245,7 @@ mod w {
         let (cw, ch) = (t.cx.max(6), t.cy.max(12) + 2);
 
         let marge = 14;
-        let cube_l = (l * 2 / 5).clamp(200, 900);
-        let texte_l = l - cube_l - marge * 3;
+        let texte_l = l - marge * 2;
         let colonnes = (texte_l / cw).max(10) as usize;
         let bas = ht - ch - marge;
 
@@ -376,40 +298,14 @@ mod w {
             }
         }
 
-        // le cube
-        let (cx, cy, cl, chh) = (l - cube_l - marge, marge, cube_l, bas - marge * 2);
-        let (pl, ph) = (cl.max(1) as usize, chh.max(1) as usize);
-        let refaire = e.neuf || e.rendu.as_ref().map(|r| r.0 != pl || r.1 != ph).unwrap_or(true);
-        if refaire {
-            if let Some(v) = &e.vue {
-                let mut px = vec![FOND; pl * ph];
-                let n = rendre_iso(&v.0, e.etage, e.zoom, e.quart, (0, 0), pl, ph, &mut px);
-                e.rendu = Some((pl, ph, px, n));
-                e.neuf = false;
-            }
-        }
-        if let Some((rl, rh, px, _)) = &e.rendu {
-            let info = BitmapInfo {
-                tete: BitmapInfoHeader { size: std::mem::size_of::<BitmapInfoHeader>() as u32, l: *rl as i32, h: -(*rh as i32),
-                    plans: 1, bits: 32, compr: 0, taille: 0, xm: 0, ym: 0, used: 0, imp: 0 },
-                couleurs: [0],
-            };
-            StretchDIBits(dc, cx, cy, *rl as i32, *rh as i32, 0, 0, *rl as i32, *rh as i32, px.as_ptr() as *const c_void, &info,
-                          0, 0x00CC_0020);
-        } else {
-            texte(dc, cx + 10, cy + 10, "le cube se remplit quand la machine tourne…", DISCRET);
-        }
-
         // l'état
         let pas = PAS.load(Ordering::Relaxed);
-        let mots = e.rendu.as_ref().map(|r| r.3).unwrap_or(0);
         let ou = match &e.fini {
             Some(f) => format!("{} · Entrée ou Échap : fermer", f),
             None if ATTEND.load(Ordering::Relaxed) => "le programme attend votre réponse (Entrée pour l'envoyer)".to_string(),
             None => "la machine tourne".to_string(),
         };
-        let etat = format!("{} · Lugus · {} instructions · cube : étage {}, {} mots · clic : étage · clic droit : tourner · molette : zoom",
-                           ou, grouper(pas), e.etage, mots);
+        let etat = format!("{} · Lugus · {} instructions", ou, grouper(pas));
         texte(dc, marge, ht - ch - 6, &etat, DISCRET);
         drop(g);
 
@@ -441,12 +337,10 @@ mod w {
             SetProcessDPIAware();
         }
         *ETAT.lock().unwrap() = Some(Etat {
-            lignes: vec![String::new()], saisie: String::new(), fini: None, vue: None,
-            etages_pleins: [false; 4], rendu: None, neuf: false, etage: 3, quart: 0, zoom: 1.0,
+            lignes: vec![String::new()], saisie: String::new(), fini: None,
         });
         s.console_ecrire = Some(Box::new(ecrire_car));
         s.console_lire = Some(Box::new(lire_car));
-        s.avant_lire = Some(prendre_vue);
         *TITRE.lock().unwrap() = format!("{} — Vercintorix, machine Lugus", nom);
         // la fenêtre sur son fil (elle ne tient que des statiques) ; la machine sur celui-ci
         let (tx, rx) = std::sync::mpsc::channel::<bool>();
@@ -488,23 +382,17 @@ mod w {
         if rx.recv() != Ok(true) {
             return 2;
         }
-        let mut derniere = Instant::now();
         let r = loop {
             let borne = s.pas.saturating_add(3_000_000);
             match s.executer(borne) {
                 Ok(()) => break Ok(()),
                 Err(e) if e.starts_with("limite de") && !s.arrete => {
                     PAS.store(s.pas, Ordering::Relaxed);
-                    if derniere.elapsed() > Duration::from_millis(400) {
-                        prendre_vue(&s);
-                        derniere = Instant::now();
-                    }
                 }
                 Err(e) => break Err(e),
             }
         };
-        DERNIERE_VUE.store(u64::MAX, Ordering::Relaxed);
-        prendre_vue(&s);
+        PAS.store(s.pas, Ordering::Relaxed);
         if !s.sortie.is_empty() {
             let t = s.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");
             for c in format!("\nsorties : {}\n", t).chars() {
