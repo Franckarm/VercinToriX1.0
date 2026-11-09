@@ -1631,3 +1631,19 @@ u64 dans la machine : plus rien de 128 bits ne traverse un appel) ; et un planta
 « a cessé de fonctionner », qui attend (SetErrorMode la retire ; SetUnhandledExceptionFilter écrit le code et
 l'adresse de l'exception, puis le .exe s'arrête). Le test dit chaque programme avant de le jouer, sur l'écran et dans
 le journal, et arrête au bout de deux minutes un programme figé : la prochaine fois, on saura lequel.
+
+**Mesuré chez le créateur (0.5zw, Windows 10).** Tout conforme : les 20 programmes traduits et joués par Lugus seul
+donnent le même texte et le même nombre d'instructions ; le banc : 0,42 s traduit contre 0,93 s, un gain de 2,2 sur
+son processeur (3 à 4 ici). La cause du figement de 0.5zv était donc bien le mot de 128 bits rendu par la convention
+d'appel.
+
+## 33. Les quatre vérités (9 novembre, 0.5zx)
+
+Le créateur : remplacer un test inutile (le banc, rejoué en double dans le .bat) par un test **visible**, qui montre
+le quaternaire. `exemples128/quatre_verites.vtx` : les quatre valeurs et leurs deux preuves ; la table de `fusion`
+(rassembler deux témoignages : vrai et faux donnent variable, inconnu ne change rien) et celle de `et4` ; le conseil
+d'Alésia, trois éclaireurs par porte, une décision par `selon` (vrai : les remparts ; faux : on dort ; inconnu : on
+envoie un éclaireur ; variable : on réunit le conseil) ; ce qu'un booléen aurait dit (l'absence de nouvelles devient
+« non », la contradiction du gué disparaît) ; seize fusions en une seule instruction OU. `tests/test_quatre_verites.py`
+recalcule les tables d'après les deux bits de preuve, vérifie chaque porte, les mêmes mots par vtx128.py et vtxc128,
+et le .exe traduit contre Lugus seul ; le .bat joue le .exe à l'écran.

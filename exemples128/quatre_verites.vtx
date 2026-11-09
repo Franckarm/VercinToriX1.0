@@ -1,0 +1,89 @@
+// machine : lugus
+// Les quatre vérités : ce que la logique de Belnap sait dire et qu'un oui / non ne sait pas.
+// Le conseil d'Alésia interroge ses éclaireurs : « les légions arrivent-elles ? ». Chaque éclaireur répond oui
+// (vrai), non (faux), ou ne répond pas (inconnu) ; rassemblés, deux témoignages contraires donnent variable :
+// la contradiction est gardée, elle n'est pas écrasée par le dernier qui a parlé.
+
+fonction nom(l: logique): texte {
+    retour nommer(l, ["inconnu ", "faux    ", "vrai    ", "variable"]);
+}
+
+fonction decision(l: logique): texte {
+    soit t = "";
+    selon l {
+        vrai { t = "on garnit les remparts"; }
+        faux { t = "on dort tranquille"; }
+        inconnu { t = "personne n'a rien vu : on envoie un éclaireur"; }
+        variable { t = "les éclaireurs se contredisent : on réunit le conseil"; }
+    }
+    retour t;
+}
+
+fonction porte(p): texte {
+    si p == 0 { retour "porte du nord "; }
+    si p == 1 { retour "porte du sud  "; }
+    si p == 2 { retour "porte de l'est"; }
+    retour "porte du gué  ";
+}
+
+fonction principal() {
+    afficher("=== Les quatre valeurs (deux preuves : une du oui, une du non) ===");
+    afficher("inconnu  : aucune preuve        faux : une preuve du non");
+    afficher("vrai     : une preuve du oui    variable : des preuves des deux côtés");
+    afficher("");
+    afficher("=== Rassembler deux témoignages : fusion(a, b) ===");
+    afficher("            inconnu   faux      vrai      variable");
+    pour i dans 0..4 {
+        soit ligne = nom(comme_logique(i)) + "    ";
+        pour j dans 0..4 {
+            ligne = ligne + nom(fusion(comme_logique(i), comme_logique(j))) + "  ";
+        }
+        afficher(ligne);
+    }
+    afficher("");
+    afficher("=== et4 : les deux à la fois ===");
+    pour i2 dans 0..4 {
+        soit ligne2 = nom(comme_logique(i2)) + "    ";
+        pour j2 dans 0..4 {
+            ligne2 = ligne2 + nom(et4(comme_logique(i2), comme_logique(j2))) + "  ";
+        }
+        afficher(ligne2);
+    }
+    afficher("");
+    afficher("=== Le conseil d'Alésia : trois éclaireurs par porte ===");
+    // les réponses : 0 sans nouvelles, 1 non, 2 oui
+    soit reponses = [2, 0, 2,   1, 1, 0,   0, 0, 0,   2, 1, 0];
+    soit oui_non = 0;
+    pour p dans 0..4 {
+        soit avis: logique = inconnu;
+        soit dit = "";
+        pour e dans 0..3 {
+            soit r = reponses[p * 3 + e];
+            soit l: logique = comme_logique(r);
+            avis = fusion(avis, l);
+            dit = dit + nom(l) + " ";
+        }
+        afficher(porte(p), ":", dit, "->", nom(avis), ":", decision(avis));
+    }
+    afficher("");
+    afficher("=== Ce qu'un oui / non aurait dit ===");
+    afficher("Avec un booléen, « pas de nouvelles » devient non : la porte de l'est dormirait sans éclaireur,");
+    afficher("et le gué, où l'un a vu les légions et l'autre non, prendrait le dernier avis (pas de nouvelles, donc non) : on dort.");
+    afficher("La porte du gué est le danger : Belnap le dit (variable), le binaire le cache.");
+    afficher("");
+    afficher("=== Seize portes d'un seul coup ===");
+    // seize logiques rangés dans un mot : une seule instruction fusionne seize paires de témoignages
+    soit a = 0;
+    soit b = 0;
+    pour k dans 0..16 {
+        a = a | ((k % 4) << (2 * k));
+        b = b | (((k / 4) % 4) << (2 * k));
+    }
+    soit f = a | b;
+    soit compte_var = 0;
+    pour k dans 0..16 {
+        si ((f >> (2 * k)) & 3) == 3 { compte_var = compte_var + 1; }
+    }
+    afficher("seize fusions en une instruction (OU) :", compte_var, "contradictions sur 16, comme dans la table");
+    sortie(compte_var);
+}
