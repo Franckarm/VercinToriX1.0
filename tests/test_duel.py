@@ -52,6 +52,8 @@ except KeyError:
 verifier("binaire juste, d'expert et quaternaire : les mêmes décisions", B[:6] == C[:6] == D[:6] and B[3] == B[4] + B[5], f"{B} {C} {D}")
 verifier("le binaire naïf se trompe au moins cinq fois plus", A[0] >= 5 * max(D[0], 1), f"{A[0]} contre {D[0]}")
 verifier("le quaternaire joue au moins cinq fois moins d'instructions que le binaire juste", D[6] * 5 <= B[6], f"{D[6]} contre {B[6]}")
+verifier("le quaternaire (64 logiques par mot, boucles fondues) joue moins d'instructions que le binaire d'expert",
+         D[6] < C[6], f"{D[6]} contre {C[6]}")
 print(f"   instructions : naïf {A[4]:,}, juste {B[6]:,}, expert {C[6]:,}, quaternaire {D[6]:,}")
 exe = os.path.join(d, "duel" + X)
 subprocess.run([os.path.join(BIN, "vtx" + X), "exe128", PROG, exe], capture_output=True)

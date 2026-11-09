@@ -414,7 +414,7 @@ NOM_LOGIQUE = {v: k for k, v in LOGIQUES.items()}
 OPS_LOGIQUES = {"et4": 2, "ou4": 2, "non4": 1, "anti": 1, "fusion": 2, "consensus": 2}
 BITS_V, BITS_F = 0xAAAAAAAAAAAAAAAA, 0x5555555555555555
 RANGES = ("quits", "logique")      # tableaux rangés 32 par mot
-QPM, QSH = 32, 5                   # quits par mot, et son logarithme
+QPM, QSH = 64, 6                   # quits par mot (le mot de Lugus entier : 128 bits), et son logarithme
 VECTORISER = True                  # réécrire les boucles élément par élément en boucles de 32 éléments d'un coup
 SIGNE = 1 << 63
 
@@ -2499,7 +2499,7 @@ class Analyseur:
             raise VtxError(f"ligne {l} : l'indice d'un tableau de {self.tableaux[nom][3]} ne doit pas appeler de fonction : "
                            f"rangez-le d'abord dans une variable")
         adr, dec = self.mot_et_decalage(base, idx)
-        v = ("bin", "&", ("bin", ">>", ("lire", et, adr, zone), dec), ("nombre", 3))
+        v = ("appel", "__large", [("bin", "&", ("bin", ">>", ("lire", et, adr, zone), dec), ("nombre", 3))], l)
         return ("appel", "comme_logique", [v], l) if self.tableaux[nom][3] == "logique" else v
 
     def ecrire_rangee(self, nom, l):
@@ -2520,7 +2520,8 @@ class Analyseur:
         adr, dec = self.mot_et_decalage(base, ("var", qi, l))
         nouveau = ("bin", "|", ("bin", "&", ("lire", et, adr, zone), ("non", ("bin", "<<", ("nombre", 3), dec))),
                    ("bin", "<<", ("bin", "&", ("var", qv, l), ("nombre", 3)), dec))
-        return [("soit", qi, idx, l, "e"), ("soit", qv, v, l, "e"), ("ecrire", et, adr, nouveau, l, zone)]
+        return [("soit", qi, idx, l, "e"), ("soit", qv, v, l, "e"),
+                ("ecrire", et, adr, ("appel", "__large", [nouveau], l), l, zone)]
 
     def abaisser(self, x):
         """Traduit les accès aux tableaux rangés (32 par mot) en lectures et écritures de mots."""
@@ -2544,7 +2545,7 @@ class Analyseur:
         d'un coup, les éléments du début et de la fin qui ne remplissent pas un mot restent traités un par un."""
         if isinstance(x, list):
             out = []
-            for y in x:
+            for y in self.fondre(x):
                 v = self.vectoriser(y)
                 out.extend(v) if isinstance(v, list) else out.append(v)
             return out
@@ -2555,6 +2556,34 @@ class Analyseur:
             if r is not None:
                 return r
         return tuple(self.vectoriser(y) if isinstance(y, (list, tuple)) else y for y in x)
+
+    def vectorisable(self, st):
+        """La boucle se réécrit-elle mot par mot ? (sans rien changer : le compteur des réécritures est remis)"""
+        n = getattr(self, "nvect", 0)
+        r = self.boucle_vectorielle(st) is not None
+        self.nvect = n
+        return r
+
+    def fondre(self, liste):
+        """Fond les boucles voisines « pour i dans a..b » de même variable et mêmes bornes (un nombre, ou la même
+        variable) quand chacune et la boucle fondue se réécrivent mot par mot : chaque élément ne dépend que des
+        éléments de même indice, l'ordre des calculs d'un même indice est gardé ; une seule passe sur la mémoire au lieu
+        de plusieurs. Une borne ne doit pas être l'accumulateur d'une des boucles."""
+        out = []
+        for y in liste:
+            p = out[-1] if out else None
+            if (p is not None and isinstance(y, tuple) and y[0] == "pour" and len(y) == 7 and y[6] == 1
+                    and isinstance(p, tuple) and p[0] == "pour" and len(p) == 7 and p[6] == 1 and p[1] == y[1]
+                    and meme_borne(p[2], y[2]) and meme_borne(p[3], y[3]) and self.vectorisable(p) and self.vectorisable(y)):
+                fondue = ("pour", p[1], p[2], p[3], list(p[4]) + list(y[4]), p[5], 1)
+                bornes = {b[1] for b in (p[2], p[3]) if b[0] == "var"}
+                accus = {r_[0] for s_ in fondue[4] for r_ in [self.reduction(s_, p[1]) if s_[0] != "rangee_ecrire" else None]
+                         if r_}
+                if not (bornes & accus) and self.vectorisable(fondue):
+                    out[-1] = fondue
+                    continue
+            out.append(y)
+        return out
 
     @staticmethod
     def noms_lus(x, acc):
@@ -2635,18 +2664,27 @@ class Analyseur:
                      ("bin", "*", ("nombre", 2), ("appel", "nb_bits", [("bin", "&", w, ("nombre", BITS_V))], l)))
             else:
                 c = ("appel", "nb_bits", [("appel", "qegal", ws, l)], l)
-                if genre == "!=":
-                    c = ("bin", "-", ("nombre", QPM), c)
+            c = ("appel", "__large", [c], l)
+            if genre == "!=":
+                c = ("bin", "-", ("nombre", QPM), c)
             sommes.append(("affecter", n_, ("bin", "+", ("var", n_, l), c), l))
         self.nvect = getattr(self, "nvect", 0) + 1
         n = self.nvect
         va, vb, vh, vt, vk = (f"__v{c}{n}" for c in "abhtk")
         V = lambda nom: ("var", nom, l)
+        # les écritures et les comptes dans l'ordre du corps : un compte qui lit un tableau écrit plus loin dans la
+        # boucle lit l'ancien mot, comme l'élément lisait l'ancien élément
         corps_mots = []
-        for nom, w, ln in mots:
+        im, isom = iter(mots), iter(sommes)
+        for s_ in corps:
+            if s_[0] != "rangee_ecrire":
+                corps_mots.append(next(isom))
+                continue
+            nom, w, ln = next(im)
             et, base, taille, struct = self.tableaux[nom]
             zone = (et, base, base + self.mots_tableau(taille, struct))
-            corps_mots.append(("ecrire", et, ("bin", "+", ("nombre", base), V(vk)) if base else V(vk), w, ln, zone))
+            corps_mots.append(("ecrire", et, ("bin", "+", ("nombre", base), V(vk)) if base else V(vk),
+                               ("appel", "__large", [w], ln), ln, zone))
         return [
             ("soit", va, a, l, "e"),
             ("soit", vb, b, l, "e"),
@@ -2655,7 +2693,7 @@ class Analyseur:
             ("soit", vt, ("bin", "&", V(vb), ("non", ("nombre", QPM - 1))), l, "e"),
             ("si", ("bin", "<", V(vt), V(vh)), [("affecter", vt, V(vh), l)], None, l),
             ("pour", var, V(va), V(vh), corps, l, 1),
-            ("pour", vk, ("bin", ">>", V(vh), ("nombre", QSH)), ("bin", ">>", V(vt), ("nombre", QSH)), corps_mots + sommes,
+            ("pour", vk, ("bin", ">>", V(vh), ("nombre", QSH)), ("bin", ">>", V(vt), ("nombre", QSH)), corps_mots,
              l, 1),
             ("pour", var, V(vt), V(vb), corps, l, 1),   # abaisser en fait une copie distincte du corps
         ]
@@ -6906,7 +6944,7 @@ INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "flottant_petuar_signe": 1,
             "entier_petuar_de": 2, "bas": 1, "haut": 1,
             "lire_car": 1, "ecrire_car": 2, "ouvrir_lecture": 1, "ouvrir_ecriture": 1, "fermer": 1, "fin_de": 1, "bruit": 0,
             "pile": 0, "__service": 2, "__rompre": 0, "sortie": 1, "entrée": 0, "min4": 2, "max4": 2, "addm4": 2, "cmp3": 1, "gdot": 2,
-            "gemv": 5, "qegal": 2, "nb_bits": 1, "mul_haut": 2, "mul_haut_signe": 2,
+            "gemv": 5, "qegal": 2, "nb_bits": 1, "__large": 1, "mul_haut": 2, "mul_haut_signe": 2,
             "brin": 1, "marquer_adn": 2, "marquer_arn": 2, "liberer_brin": 2,
             "flottant": 1, "flottant_64": 1, "flottant_32": 1, "flottant_signe": 1, "entier": 1, "entier_32": 1,
             "arrondi": 1, "racine": 1, "comme_flottant": 1, "comme_flottant_32": 1, "bits": 1,
@@ -7683,6 +7721,11 @@ def epissage(lignes):
 # instructions quaternaires LDQ et STQ, quand l'indice est simple : un nombre, une variable, ou a + b, a - b, a × b de
 # ceux-là (le même indice, écrit pareil, à chaque place) ; vtxc fait exactement le même test. Calculer l'indice une
 # seule fois au lieu de deux ne change rien : il n'appelle pas de fonction.
+def meme_borne(a, b):
+    """Deux bornes de boucle égales pour la fusion : le même nombre, ou la même variable (la ligne n'y compte pas)."""
+    return a[0] == b[0] and a[0] in ("nombre", "var") and a[1] == b[1]
+
+
 def indice_simple(x):
     feuille = lambda y: y[0] in ("nombre", "var")
     return feuille(x) or (x[0] == "bin" and x[1] in ("+", "-", "*") and feuille(x[2]) and feuille(x[3]))
@@ -7717,6 +7760,8 @@ def motif_quit(e):
 def motif_ecriture_quit(s):
     """(étage, base, indice, valeur) si s est l'écriture d'un quit rangé, sinon None."""
     et, adr, nv = s[1], s[2], s[3]
+    if nv[0] == "appel" and nv[1] == "__large":
+        nv = nv[2][0]
     if not (isinstance(et, int) and nv[0] == "bin" and nv[1] == "|" and nv[2][0] == "bin" and nv[2][1] == "&"
             and nv[3][0] == "bin" and nv[3][1] == "<<"):
         return None
@@ -8411,7 +8456,7 @@ class Generateur:
                 b = base | (et << 62)
                 if b:
                     self.charger("R3", b)
-                self.emettre(f"STQ R1,{'R3' if b else 'R0'},R2")
+                self.emettre(f"STQ.L R1,{'R3' if b else 'R0'},R2")
             else:
                 self.ecrire_mem(et, s[2], s[3], s[4])
         elif g == "si":
@@ -8640,16 +8685,6 @@ class Generateur:
         """Entier (64 bits) ou entier_32 (64 bits dont les 32 hauts sont nuls : les opérations qui débordent sont
         suivies de ZEXT32)."""
         g = e[0]
-        q = motif_quit(e) if self.optim and g == "bin" and e[1] == "&" else None
-        if q:
-            # LDQ : le quit i d'un tableau rangé, en une instruction
-            et, base, idx = q
-            self.expr(idx, "e")
-            b = base | (et << 62)
-            if b:
-                self.charger("R2", b)
-            self.emettre(f"LDQ R1,{'R2' if b else 'R0'},R1")
-            return
         if g in ("nombre", "inombre"):
             self.charger("R1", e[1])
         elif g == "var":
@@ -8837,6 +8872,65 @@ class Generateur:
         else:
             self.expr_e(e)
 
+    # Les tableaux de quits et de logiques rangent 64 éléments par mot (le mot de Lugus entier) : leurs mots se calculent
+    # à toute la largeur (.L). __large(e) : e calculé à 128 bits, par une génération à part, simple et la même dans
+    # vtxc128 (la pile pour le second opérande ; les adresses, elles, à la largeur ordinaire). Une constante d'un mot
+    # entier de quits (0x5555…, 0xAAAA…, 0xFFFF…) y vaut le motif répété sur les 128 bits.
+    LARGES_BIN = {"&": "AND", "|": "OR", "^": "XOR", ">>": "SHR", "<<": "SHL", "+": "ADD", "-": "SUB", "*": "MUL"}
+    LARGES_APPELS = {"et4": "ET4", "ou4": "OU4", "fusion": "OR", "consensus": "AND", "qegal": "QEGAL", "min4": "MIN",
+                     "max4": "MAX", "addm4": "ADDM4", "non4": "NON4", "anti": "ANTI", "nb_bits": "COMPTE", "cmp3": "CMP3"}
+
+    def expr_large(self, e):
+        g = e[0]
+        q = motif_quit(e) if self.optim and g == "bin" and e[1] == "&" else None
+        if q:
+            # LDQ : le quit i d'un tableau rangé, en une instruction
+            et, base, idx = q
+            self.expr(idx, "e")
+            b = base | (et << 62)
+            if b:
+                self.charger("R2", b)
+            self.emettre(f"LDQ.L R1,{'R2' if b else 'R0'},R1")
+            return
+        if g in ("nombre", "qnombre", "blit"):
+            v = (e[2] if g == "blit" else e[1]) & MASK
+            if v in (BITS_F, BITS_V, MASK):
+                self.charger_l("R1", v | (v << 64))
+            else:
+                self.charger("R1", v)
+        elif g == "lire":
+            self.lire_mem(e[1], e[2])
+        elif g == "var":
+            self.expr(e, "e")
+        elif g == "non":
+            self.expr_large(e[1])
+            self.emettre("CMP3.L R1,R1")
+        elif g == "bin" and e[1] in self.LARGES_BIN:
+            self.expr_large(e[2])
+            self.emettre("PUSH R1")
+            if e[1] in (">>", "<<"):
+                self.expr(e[3], "e")             # le décalage : un nombre ordinaire (l'indice du quit, fois 2)
+            else:
+                self.expr_large(e[3])
+            self.emettre("MOV R2,R1")
+            self.emettre("POP R1")
+            self.emettre(f"{self.LARGES_BIN[e[1]]}.L R1,R1,R2")
+        elif g == "appel" and e[1] in ("comme_logique", "entier", "__large") and len(e[2]) == 1:
+            self.expr_large(e[2][0])
+        elif g == "appel" and e[1] in self.LARGES_APPELS:
+            args = e[2]
+            self.expr_large(args[0])
+            if len(args) == 2:
+                self.emettre("PUSH R1")
+                self.expr_large(args[1])
+                self.emettre("MOV R2,R1")
+                self.emettre("POP R1")
+                self.emettre(f"{self.LARGES_APPELS[e[1]]}.L R1,R1,R2")
+            else:
+                self.emettre(f"{self.LARGES_APPELS[e[1]]}.L R1,R1")
+        else:
+            raise VtxError(f"ligne {ligne_de(e)} : calcul d'un mot de quits non prévu ({g})")
+
     def bits_x(self, a):
         """Les deux mots d'un flottant_petuar (élargi d'abord s'il le faut), vus comme un entier_petuar."""
         l = ligne_de(a)
@@ -8962,6 +9056,8 @@ class Generateur:
                 # un service de la machine hôte : SYS code, argument
                 self.deux(args[0], args[1])
                 self.emettre("SYS R1,R1,R2")
+            elif nom == "__large":
+                self.expr_large(args[0])
             elif nom == "nb_bits":
                 self.expr(args[0], "e")
                 self.emettre("COMPTE R1,R1")

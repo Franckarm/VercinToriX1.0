@@ -189,7 +189,7 @@ structure Fonction { nom, params: Param, nb, rtype, corps: Noeud, etiq, ligne, g
                      er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif, mol: Molecule,
                      dbg_t: Liste, dbg_tt: Liste, dbg_tf: Liste, dbg_v: Var }   // mol : la molécule d'une réaction ; dbg_ : code.sym
 structure Constante { nom, val, type, haut, suivant: Constante }
-// sorte : 0 tableau d'entiers, 1 de quits, 2 de logiques (32 par mot), 3 de structures (st : son numéro)
+// sorte : 0 tableau d'entiers, 1 de quits, 2 de logiques (64 par mot), 3 de structures (st : son numéro)
 structure Tableau { nom, etage, base, taille, sorte, st, suivant: Tableau }
 structure Texte { val, etiq, suivant: Texte }
 structure Donnee { etage, adr, vals: Liste, etiq, suivant: Donnee }
@@ -586,7 +586,7 @@ fonction ranger_noms(k, noms) {
 // les mots-clés et les intégrés, rangés une fois au départ
 fonction tables_glacees() {
     ranger_noms(K_MOTS, "fonction soit si sinon tantque retour constante pour dans donnees arrêter continuer hypothèse annuler valider selon");
-    ranger_noms(K_INTEGRES, "__service addm4 arrondi bas bits brin bruit cmp3 comme_flottant comme_flottant_32 comme_flottant_petuar de_ieee128 de_ieee64 ecrire_car entier entier_128 entier_128_de entier_128_signe entier_32 entier_petuar entier_petuar_de entier_petuar_signe entrée __rompre fermer fin_de flottant flottant_128 flottant_32 flottant_64 flottant_petuar flottant_signe gdot gemv haut liberer_brin lire_car marquer_adn marquer_arn max4 min4 mul_haut mul_haut_signe nb_bits ouvrir_ecriture ouvrir_lecture pile qegal racine sortie vers_ieee128 vers_ieee64 point point32 matiere comme_point melanger antipoint avec_etat avec_reflet avec_lumiere avec_transparence avec_profondeur avec_rugosite flottant_petuar_signe __mot128");
+    ranger_noms(K_INTEGRES, "__service addm4 arrondi bas bits brin bruit cmp3 comme_flottant comme_flottant_32 comme_flottant_petuar de_ieee128 de_ieee64 ecrire_car entier entier_128 entier_128_de entier_128_signe entier_32 entier_petuar entier_petuar_de entier_petuar_signe entrée __rompre fermer fin_de flottant flottant_128 flottant_32 flottant_64 flottant_petuar flottant_signe gdot gemv haut liberer_brin lire_car marquer_adn marquer_arn max4 min4 mul_haut mul_haut_signe nb_bits __large ouvrir_ecriture ouvrir_lecture pile qegal racine sortie vers_ieee128 vers_ieee64 point point32 matiere comme_point melanger antipoint avec_etat avec_reflet avec_lumiere avec_transparence avec_profondeur avec_rugosite flottant_petuar_signe __mot128");
 }
 
 fonction est_mot_cle(t) {
@@ -1828,7 +1828,7 @@ fonction case_tableau(c: Ctx, t: Tableau, l): Noeud {
 
 fonction mots_tableau(c: Ctx, t: Tableau) {
     si t.sorte == 1 || t.sorte == 2 {
-        retour (t.taille + 31) / 32;
+        retour (t.taille + 63) / 64;
     }
     si t.sorte == 3 {
         retour t.taille * struct_numero(c, t.st).nb;
@@ -2711,7 +2711,7 @@ fonction mot_vectoriel(c: Ctx, e: Noeud, var, sorte, vk): Noeud {
             k = bin("+", nombre(t.base, l), k, l);
         }
         retour Noeud { genre: N_LIRE, val: t.etage, b: k, ligne: l, zet: t.etage + 1, zlo: t.base,
-                       zhi: t.base + (t.taille + 31) / 32 };
+                       zhi: t.base + (t.taille + 63) / 64 };
     }
     si sorte == 2 && (g == N_QNOMBRE || g == N_BLIT) {
         retour nombre(e.val * BITS_F, l);
@@ -2880,8 +2880,9 @@ fonction boucle_vectorielle(c: Ctx, st: Noeud): Noeud {
             si t.base != 0 {
                 k = bin("+", nombre(t.base, s.ligne), k, s.ligne);
             }
-            soit e = Noeud { genre: N_ECRIRE, val: t.etage, b: k, c: w, ligne: s.ligne, zet: t.etage + 1, zlo: t.base,
-                             zhi: t.base + (t.taille + 31) / 32 };
+            soit e = Noeud { genre: N_ECRIRE, val: t.etage, b: k, c: appel1("__large", w, s.ligne), ligne: s.ligne,
+                             zet: t.etage + 1, zlo: t.base,
+                             zhi: t.base + (t.taille + 63) / 64 };
             si dm == nul {
                 mots = e;
             } sinon {
@@ -2891,7 +2892,9 @@ fonction boucle_vectorielle(c: Ctx, st: Noeud): Noeud {
         }
         s = s.suivant;
     }
-    // les réductions : 32 éléments comptés d'un coup
+    // les réductions : 64 éléments comptés d'un coup
+    soit rmots: Noeud = nul;
+    soit rdm: Noeud = nul;
     r1 = reds;
     tantque r1 != nul {
         soit w1 = mot_vectoriel(c, r1.e1, var, sorte, vk);
@@ -2919,36 +2922,62 @@ fonction boucle_vectorielle(c: Ctx, st: Noeud): Noeud {
         } sinon {
             w1.suivant = w2;
             compte = appel1("nb_bits", appel1("qegal", w1, l), l);
-            si r1.genre == 3 {
-                compte = bin("-", nombre(32, l), compte, l);
-            }
+        }
+        compte = appel1("__large", compte, l);
+        si r1.genre == 3 {
+            compte = bin("-", nombre(64, l), compte, l);
         }
         soit maj = Noeud { genre: N_AFFECTER, nom: r1.nom, a: bin("+", var_n(r1.nom, l), compte, l), ligne: l };
-        si dm == nul {
-            mots = maj;
+        si rdm == nul {
+            rmots = maj;
         } sinon {
-            dm.suivant = maj;
+            rdm.suivant = maj;
         }
-        dm = maj;
+        rdm = maj;
         r1 = r1.suivant;
+    }
+    // les écritures et les comptes dans l'ordre du corps : un compte qui lit un tableau écrit plus loin dans la boucle
+    // lit l'ancien mot, comme l'élément lisait l'ancien élément (comme vtx128.py)
+    soit wx = mots;
+    soit rx = rmots;
+    mots = nul;
+    dm = nul;
+    s = corps;
+    tantque s != nul {
+        soit pris: Noeud = nul;
+        si s.genre == N_RECRIRE {
+            pris = wx;
+            wx = wx.suivant;
+        } sinon {
+            pris = rx;
+            rx = rx.suivant;
+        }
+        pris.suivant = nul;
+        si dm == nul {
+            mots = pris;
+        } sinon {
+            dm.suivant = pris;
+        }
+        dm = pris;
+        s = s.suivant;
     }
     c.nvect = n;
     soit va = nom_cache("__va", n);
     soit vb = nom_cache("__vb", n);
     soit vh = nom_cache("__vh", n);
     soit vt = nom_cache("__vt", n);
-    soit quinze = Noeud { genre: N_NON, a: nombre(31, l), ligne: l };
+    soit quinze = Noeud { genre: N_NON, a: nombre(63, l), ligne: l };
     soit s1 = Noeud { genre: N_SOIT, nom: va, a: st.a, ligne: l };
     soit s2 = Noeud { genre: N_SOIT, nom: vb, a: st.b, ligne: l };
-    soit s3 = Noeud { genre: N_SOIT, nom: vh, a: bin("&", bin("+", var_n(va, l), nombre(31, l), l), quinze, l), ligne: l };
+    soit s3 = Noeud { genre: N_SOIT, nom: vh, a: bin("&", bin("+", var_n(va, l), nombre(63, l), l), quinze, l), ligne: l };
     soit s4 = Noeud { genre: N_SI, a: bin(">", var_n(vh, l), var_n(vb, l), l),
                       premier: Noeud { genre: N_AFFECTER, nom: vh, a: var_n(vb, l), ligne: l }, ligne: l };
-    soit s5 = Noeud { genre: N_SOIT, nom: vt, a: bin("&", var_n(vb, l), Noeud { genre: N_NON, a: nombre(31, l), ligne: l }, l), ligne: l };
+    soit s5 = Noeud { genre: N_SOIT, nom: vt, a: bin("&", var_n(vb, l), Noeud { genre: N_NON, a: nombre(63, l), ligne: l }, l), ligne: l };
     soit s6 = Noeud { genre: N_SI, a: bin("<", var_n(vt, l), var_n(vh, l), l),
                       premier: Noeud { genre: N_AFFECTER, nom: vt, a: var_n(vh, l), ligne: l }, ligne: l };
     soit s7 = Noeud { genre: N_POUR, nom: var, a: var_n(va, l), b: var_n(vh, l), premier: corps, val: 1, ligne: l };
-    soit s8 = Noeud { genre: N_POUR, nom: vk, a: bin(">>", var_n(vh, l), nombre(5, l), l),
-                      b: bin(">>", var_n(vt, l), nombre(5, l), l), premier: mots, val: 1, ligne: l };
+    soit s8 = Noeud { genre: N_POUR, nom: vk, a: bin(">>", var_n(vh, l), nombre(6, l), l),
+                      b: bin(">>", var_n(vt, l), nombre(6, l), l), premier: mots, val: 1, ligne: l };
     soit s9 = Noeud { genre: N_POUR, nom: var, a: var_n(vt, l), b: var_n(vb, l), premier: renumeroter(c, copier_liste(corps)), val: 1, ligne: l };
     s1.suivant = s2;
     s2.suivant = s3;
@@ -2961,9 +2990,84 @@ fonction boucle_vectorielle(c: Ctx, st: Noeud): Noeud {
     retour s1;
 }
 
-fonction vectoriser(c: Ctx, s: Noeud): Noeud {
+// La boucle se réécrit-elle mot par mot ? (sans rien changer : les compteurs des réécritures sont remis)
+fonction vectorisable(c: Ctx, st: Noeud) {
+    soit nv = c.nvect;
+    soit nr = c.nrangee;
+    soit r = boucle_vectorielle(c, st) != nul;
+    c.nvect = nv;
+    c.nrangee = nr;
+    retour r;
+}
+
+// Deux bornes de boucle égales pour la fusion : le même nombre, ou la même variable (la ligne n'y compte pas)
+fonction meme_borne(a: Noeud, b: Noeud) {
+    si a == nul || b == nul || a.genre != b.genre {
+        retour 0;
+    }
+    si a.genre == N_NOMBRE {
+        retour a.val == b.val;
+    }
+    retour a.genre == N_VAR && egal(a.nom, b.nom);
+}
+
+fonction boucle_a_fondre(s: Noeud) {
+    retour s != nul && s.genre == N_POUR && s.val == 1 && s.op == 0;
+}
+
+// Fond les boucles voisines « pour i dans a..b » de même variable et mêmes bornes quand chacune et la boucle fondue se
+// réécrivent mot par mot : une seule passe sur la mémoire. Une borne ne doit pas être l'accumulateur d'une des boucles.
+// Comme fondre de vtx128.py.
+fonction fondre(c: Ctx, s: Noeud): Noeud {
     soit tete: Noeud = nul;
     soit dernier: Noeud = nul;
+    tantque s != nul {
+        soit suivant = s.suivant;
+        s.suivant = nul;
+        soit fondu = 0;
+        si dernier != nul && boucle_a_fondre(dernier) && boucle_a_fondre(s) && egal(dernier.nom, s.nom)
+                && meme_borne(dernier.a, s.a) && meme_borne(dernier.b, s.b) && dernier.premier != nul && s.premier != nul
+                && vectorisable(c, dernier) && vectorisable(c, s) {
+            soit fin1 = dernier.premier;
+            tantque fin1.suivant != nul {
+                fin1 = fin1.suivant;
+            }
+            fin1.suivant = s.premier;
+            soit borne_lue = 0;
+            soit x = dernier.premier;
+            tantque x != nul {
+                si x.genre != N_RECRIRE {
+                    soit r = reduction(x);
+                    si r != nul && ((dernier.a.genre == N_VAR && egal(r.nom, dernier.a.nom))
+                            || (dernier.b.genre == N_VAR && egal(r.nom, dernier.b.nom))) {
+                        borne_lue = 1;
+                    }
+                }
+                x = x.suivant;
+            }
+            si borne_lue == 0 && vectorisable(c, dernier) {
+                fondu = 1;
+            } sinon {
+                fin1.suivant = nul;
+            }
+        }
+        si fondu == 0 {
+            si dernier == nul {
+                tete = s;
+            } sinon {
+                dernier.suivant = s;
+            }
+            dernier = s;
+        }
+        s = suivant;
+    }
+    retour tete;
+}
+
+fonction vectoriser(c: Ctx, s0: Noeud): Noeud {
+    soit tete: Noeud = nul;
+    soit dernier: Noeud = nul;
+    soit s = fondre(c, s0);
     tantque s != nul {
         soit suivant = s.suivant;
         soit r: Noeud = nul;
@@ -3230,7 +3334,8 @@ fonction abaisser_liste(c: Ctx, s: Noeud): Noeud {
             soit garde = bin("&", m, Noeud { genre: N_NON, a: bin("<<", nombre(3, l), d, l), ligne: l }, l);
             soit neuf = bin("|", garde, bin("<<", bin("&", var_n(nv, l), nombre(3, l), l), d, l), l);
             s1.suivant = s2;
-            s2.suivant = Noeud { genre: N_ECRIRE, val: t.etage, b: m.b, c: neuf, ligne: l, zet: m.zet, zlo: m.zlo, zhi: m.zhi };
+            s2.suivant = Noeud { genre: N_ECRIRE, val: t.etage, b: m.b, c: appel1("__large", neuf, l), ligne: l, zet: m.zet,
+                                 zlo: m.zlo, zhi: m.zhi };
             r = s1;
         } sinon {
             s.a = abaisser_expr(c, s.a);
@@ -7085,7 +7190,7 @@ fonction arite_integre_lent(nom) {
     }
     si egal(nom, "bas") || egal(nom, "haut") || egal(nom, "lire_car") || egal(nom, "ouvrir_lecture")
         || egal(nom, "ouvrir_ecriture") || egal(nom, "fermer") || egal(nom, "fin_de") || egal(nom, "sortie")
-        || egal(nom, "cmp3") || egal(nom, "nb_bits") || egal(nom, "brin") || egal(nom, "entier")
+        || egal(nom, "cmp3") || egal(nom, "nb_bits") || egal(nom, "__large") || egal(nom, "brin") || egal(nom, "entier")
         || egal(nom, "arrondi") || egal(nom, "racine") || egal(nom, "bits") || egal(nom, "vers_ieee64") {
         retour 1;
     }
@@ -7770,7 +7875,39 @@ fonction code_signe(o) {
     retour 0;
 }
 
-fonction expr_e(c: Ctx, e: Noeud) {
+// Les mots des tableaux de quits et de logiques (64 éléments par mot) se calculent à toute la largeur : __large(e),
+// une génération à part, simple, la même que expr_large de vtx128.py (la pile pour le second opérande ; les adresses à
+// la largeur ordinaire). Une constante d'un mot entier de quits (0x5555…, 0xAAAA…, 0xFFFF…) y vaut le motif répété
+// sur les 128 bits.
+fonction code_large_bin(o) {
+    si egal(o, "&") { retour 20; }
+    si egal(o, "|") { retour 21; }
+    si egal(o, "^") { retour 22; }
+    si egal(o, ">>") { retour 9; }
+    si egal(o, "<<") { retour 8; }
+    si egal(o, "+") { retour 1; }
+    si egal(o, "-") { retour 2; }
+    si egal(o, "*") { retour 3; }
+    retour 0;
+}
+
+fonction code_large_appel(nom) {
+    si egal(nom, "et4") { retour 86; }
+    si egal(nom, "ou4") { retour 87; }
+    si egal(nom, "fusion") { retour 21; }
+    si egal(nom, "consensus") { retour 20; }
+    si egal(nom, "qegal") { retour 79; }
+    si egal(nom, "min4") { retour 16; }
+    si egal(nom, "max4") { retour 17; }
+    si egal(nom, "addm4") { retour 19; }
+    si egal(nom, "non4") { retour 88; }
+    si egal(nom, "anti") { retour 89; }
+    si egal(nom, "nb_bits") { retour 80; }
+    si egal(nom, "cmp3") { retour 18; }
+    retour 0;
+}
+
+fonction expr_large(c: Ctx, e: Noeud) {
     soit g = e.genre;
     si c.optim && g == N_BIN && egal(e.op, "&") {
         soit q = motif_quit(e);
@@ -7783,10 +7920,57 @@ fonction expr_e(c: Ctx, e: Noeud) {
                 charger(c, 2, b);
                 rq = 2;
             }
-            rrr(c, 84, 1, rq, 1);
+            rrr_l(c, 84, 1, rq, 1);
             retour;
         }
     }
+    si g == N_NOMBRE {
+        soit v = e.val;
+        si v == BITS_F || v == BITS_V || v == 18446744073709551615 {
+            charger_l(c, 1, v, v);
+        } sinon {
+            charger(c, 1, v);
+        }
+    } sinon si g == N_LIRE {
+        lire_mem(c, e.val, e.a, e.b);
+    } sinon si g == N_VAR {
+        gen_v(c, e, 0);
+    } sinon si g == N_NON {
+        expr_large(c, e.a);
+        rr_l(c, 18, 1, 1);
+    } sinon si g == N_BIN && code_large_bin(e.op) != 0 {
+        expr_large(c, e.a);
+        pousser(c, 1);
+        si egal(e.op, ">>") || egal(e.op, "<<") {
+            gen_v(c, e.b, 0);                    // le décalage : un nombre ordinaire (l'indice du quit, fois 2)
+        } sinon {
+            expr_large(c, e.b);
+        }
+        mov(c, 2, 1);
+        depiler(c, 1);
+        rrr_l(c, code_large_bin(e.op), 1, 1, 2);
+    } sinon si g == N_APPEL && (egal(e.nom, "comme_logique") || egal(e.nom, "entier") || egal(e.nom, "__large"))
+            && e.premier != nul && e.premier.suivant == nul {
+        expr_large(c, e.premier);
+    } sinon si g == N_APPEL && code_large_appel(e.nom) != 0 && e.premier != nul {
+        soit a = e.premier;
+        expr_large(c, a);
+        si a.suivant != nul {
+            pousser(c, 1);
+            expr_large(c, a.suivant);
+            mov(c, 2, 1);
+            depiler(c, 1);
+            rrr_l(c, code_large_appel(e.nom), 1, 1, 2);
+        } sinon {
+            rr_l(c, code_large_appel(e.nom), 1, 1);
+        }
+    } sinon {
+        erreur(c, e.ligne, "calcul d'un mot de quits non prévu");
+    }
+}
+
+fonction expr_e(c: Ctx, e: Noeud) {
+    soit g = e.genre;
     si g == N_NOMBRE || g == N_INOMBRE {
         charger(c, 1, e.val);
     } sinon si g == N_VAR {
@@ -8566,6 +8750,8 @@ fonction appel(c: Ctx, e: Noeud) {
         } sinon si egal(nom, "__service") {
             deux(c, a, a.suivant);
             rrr(c, 83, 1, 1, 2);
+        } sinon si egal(nom, "__large") {
+            expr_large(c, a);
         } sinon si egal(nom, "nb_bits") {
             gen_v(c, a, 0);
             rr(c, 80, 1, 1);
@@ -9028,25 +9214,26 @@ fonction surcharge(c: Ctx, e: Noeud, t) {
 }
 
 // --------------------------------------------------------------------------------------------- tableaux rangés
-// t[i] d'un tableau de quits ou de logiques (32 par mot) : (@e[base + (i >> 5)] >> ((i & 31) * 2)) & 3
+// t[i] d'un tableau de quits ou de logiques (64 par mot, le mot de Lugus entier) :
+// (@e[base + (i >> 6)] >> ((i & 63) * 2)) & 3, calculé à 128 bits (__large)
 fonction mot_rangee(t: Tableau, idx: Noeud, l): Noeud {
-    soit adr = bin(">>", idx, nombre(5, l), l);
+    soit adr = bin(">>", idx, nombre(6, l), l);
     si t.base != 0 {
         adr = bin("+", nombre(t.base, l), adr, l);
     }
     retour Noeud { genre: N_LIRE, val: t.etage, b: adr, ligne: l, zet: t.etage + 1, zlo: t.base,
-                   zhi: t.base + (t.taille + 31) / 32 };
+                   zhi: t.base + (t.taille + 63) / 64 };
 }
 
 fonction decalage_rangee(idx: Noeud, l): Noeud {
-    retour bin("*", bin("&", idx, nombre(31, l), l), nombre(2, l), l);
+    retour bin("*", bin("&", idx, nombre(63, l), l), nombre(2, l), l);
 }
 
 // t[i] traduit en lecture de mot : (mot >> décalage) & 3, lu comme un logique pour un tableau de logiques
 fonction rangee_basse(c: Ctx, e: Noeud): Noeud {
     soit t = tableau_de(c, e.nom);
     soit l = e.ligne;
-    soit v = bin("&", bin(">>", mot_rangee(t, e.a, l), decalage_rangee(e.a, l), l), nombre(3, l), l);
+    soit v = appel1("__large", bin("&", bin(">>", mot_rangee(t, e.a, l), decalage_rangee(e.a, l), l), nombre(3, l), l), l);
     si t.sorte == 2 {
         retour Noeud { genre: N_APPEL, nom: "comme_logique", premier: v, ligne: l };
     }
@@ -9099,20 +9286,20 @@ fonction meme_indice(a: Noeud, b: Noeud) {
     retour meme_feuille(a, b);
 }
 
-// base + (i >> 5) (ou i >> 5) et (i & 31) * 2, avec le même indice simple
+// base + (i >> 6) (ou i >> 6) et (i & 63) * 2, avec le même indice simple
 fonction motif_place(etg, adr: Noeud, dec: Noeud): Quit {
-    si !(est_bin(dec, "*") && est_nombre(dec.b, 2) && est_bin(dec.a, "&") && est_nombre(dec.a.b, 31)) {
+    si !(est_bin(dec, "*") && est_nombre(dec.b, 2) && est_bin(dec.a, "&") && est_nombre(dec.a.b, 63)) {
         retour nul;
     }
     soit idx = dec.a.a;
     si !indice_simple(idx) {
         retour nul;
     }
-    si est_bin(adr, ">>") && meme_indice(adr.a, idx) && est_nombre(adr.b, 5) {
+    si est_bin(adr, ">>") && meme_indice(adr.a, idx) && est_nombre(adr.b, 6) {
         retour Quit { etg: etg, base: 0, idx: idx };
     }
     si est_bin(adr, "+") && adr.a.genre == N_NOMBRE && est_bin(adr.b, ">>") && meme_indice(adr.b.a, idx)
-            && est_nombre(adr.b.b, 5) {
+            && est_nombre(adr.b.b, 6) {
         retour Quit { etg: etg, base: adr.a.val, idx: idx };
     }
     retour nul;
@@ -9135,6 +9322,9 @@ fonction motif_quit(e: Noeud): Quit {
 
 fonction motif_ecriture_quit(s: Noeud): Quit {
     soit nv = s.c;
+    si nv != nul && nv.genre == N_APPEL && egal(nv.nom, "__large") {
+        nv = nv.premier;
+    }
     si s.a != nul || s.val == 4 || !(est_bin(nv, "|") && est_bin(nv.a, "&") && est_bin(nv.b, "<<")) {
         retour nul;
     }
@@ -9255,7 +9445,7 @@ fonction instr(c: Ctx, s: Noeud) {
                 charger(c, 3, b);
                 rbq = 3;
             }
-            rrr(c, 85, 1, rbq, 2);
+            rrr_l(c, 85, 1, rbq, 2);
         } sinon {
             ecrire_mem(c, s.val, s.a, s.b, s.c, s.ligne);
         }
@@ -9349,7 +9539,7 @@ fonction instr(c: Ctx, s: Noeud) {
         soit d = decalage_rangee(qi, lr);
         soit garde = bin("&", m, Noeud { genre: N_NON, a: bin("<<", nombre(3, lr), d, lr), ligne: lr }, lr);
         soit neuf = bin("|", garde, bin("<<", bin("&", qv, nombre(3, lr), lr), d, lr), lr);
-        instr(c, Noeud { genre: N_ECRIRE, val: tr.etage, b: m.b, c: neuf, ligne: lr });
+        instr(c, Noeud { genre: N_ECRIRE, val: tr.etage, b: m.b, c: appel1("__large", neuf, lr), ligne: lr });
     } sinon si g == N_ACCORD {
         soit me = s.premier;
         soit k = 1;
@@ -12276,7 +12466,7 @@ fonction principal() {
         tantque tz != nul {
             soit nm = tz.taille;
             si tz.sorte == 1 || tz.sorte == 2 {
-                nm = (tz.taille + 31) / 32;
+                nm = (tz.taille + 63) / 64;
             } sinon si tz.sorte == 3 {
                 nm = tz.taille * struct_numero(c, tz.st).nb;
             }

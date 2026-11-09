@@ -76,7 +76,12 @@ for nom, src, e in sources:
     mots64 += len(a)
     mots128 += len(b)
 r64, r128 = jouer(EXE64, p64), jouer(EXE128, p128)
-ecarts = [i for i, (x, y) in enumerate(zip(r64, r128)) if visible(x) != visible(y)]
+# Lugus range 64 quits ou logiques par mot (son mot entier de 128 bits), le SPU-64 32 : un programme qui regarde les mots
+# d'un tableau de logiques (@2[0] == @2[1]) voit deux rangements différents, à juste titre (0.5zz)
+RANGEMENT = {"quaternaire64.vtx"}
+ecarts = [i for i, (x, y) in enumerate(zip(r64, r128)) if visible(x) != visible(y) and noms[i] not in RANGEMENT]
+if RANGEMENT & set(noms):
+    print(f"  (laissé de côté : {', '.join(sorted(RANGEMENT & set(noms)))}, qui regarde le rangement des logiques dans les mots)")
 for i in ecarts[:5]:
     print(f"  ÉCART {noms[i]}\n    SPU-64 : {r64[i][:300]}\n    Lugus  : {r128[i][:300]}")
 pas64 = sum(int(x.split("|")[0]) for x in r64 if not x.startswith("ERREUR"))

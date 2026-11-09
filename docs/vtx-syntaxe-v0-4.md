@@ -165,7 +165,7 @@ fonction moyenne(a: flottant, b: flottant): flottant { retour (a + b) / 2.0; }
 fonction principal() { … }                 // point d'entrée, sans paramètre
 ```
 
-**Tableaux de quits et de logiques.** `de quits` range 16 valeurs de 0 à 3 par mot, `de logique` 16 logiques par mot : 16 fois moins de mémoire. `t[i]` lit ou écrit un seul élément (le compilateur calcule le mot `i / 16` et la place `i mod 16`) ; c'est commode, mais plus lent qu'un tableau ordinaire. Pour traiter 16 éléments d'un coup, on déclare un second tableau ordinaire au même endroit et on travaille mot par mot (`qegal`, `nb_bits`, `fusion`…). **Réécriture automatique, 16 éléments d'un coup.** Une boucle écrite élément par élément,
+**Tableaux de quits et de logiques.** `de quits` range 16 valeurs de 0 à 3 par mot, `de logique` 16 logiques par mot : 16 fois moins de mémoire. (Sur Lugus : **64 par mot**, son mot entier de 128 bits ; Dunon : 32. Les boucles réécrites y traitent 64 éléments d'un coup, et des boucles voisines de mêmes bornes, qui se réécrivent chacune, sont **fondues en une seule passe**.) `t[i]` lit ou écrit un seul élément (le compilateur calcule le mot `i / 16` et la place `i mod 16`) ; c'est commode, mais plus lent qu'un tableau ordinaire. Pour traiter 16 éléments d'un coup, on déclare un second tableau ordinaire au même endroit et on travaille mot par mot (`qegal`, `nb_bits`, `fusion`…). **Réécriture automatique, 16 éléments d'un coup.** Une boucle écrite élément par élément,
 ```
 pour i dans 0..4096 { etat[i] = fusion(capteur_a[i], capteur_b[i]); }
 ```

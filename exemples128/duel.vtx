@@ -9,10 +9,10 @@
 //   B. le binaire juste, comme on l'écrit d'habitude : deux booléens par porte (« quelqu'un a dit oui »,
 //      « quelqu'un a dit non »), une porte à la fois, des si partout ;
 //   C. le binaire d'expert : les mêmes deux booléens, rangés en deux plans de bits, 64 portes par mot ;
-//   D. le quaternaire : un logique par porte, écrit porte par porte avec fusion ; le compilateur le joue
-//      32 portes à la fois (deux bits de preuve par porte, rangés ensemble dans un seul tableau).
+//   D. le quaternaire : un logique par porte, écrit porte par porte avec fusion ; le compilateur fond les boucles
+//      voisines et les joue 64 portes à la fois (deux bits de preuve par porte, rangés ensemble dans un seul tableau).
 
-// les tableaux de logiques : 32 par mot sur Lugus (deux bits de preuve par porte), rangés dans l'étage 2
+// les tableaux de logiques : 64 par mot sur Lugus (deux bits de preuve par porte), rangés dans l'étage 2
 tableau r0[65536] de logique @2[0];
 tableau r1[65536] de logique @2[4096];
 tableau r2[65536] de logique @2[8192];
@@ -124,17 +124,18 @@ fonction principal() {
     }
     soit c_instr = instructions() - i0;
 
-    // D. le quaternaire : porte par porte, comme on le pense
+    // D. le quaternaire : porte par porte, comme on le pense ; le compilateur fond ces sept boucles voisines en une
+    // seule passe, et la joue 64 portes à la fois (un mot de Lugus : 64 logiques)
+    soit d_fausses = 0;
+    soit d_manquees = 0;
+    soit d_inconnus = 0;
+    soit d_contra = 0;
     i0 = instructions();
     pour p dans 0..n { avis[p] = fusion(fusion(r0[p], r1[p]), r2[p]); }
     // une fausse alerte : l'avis dit vrai là où il n'y a rien (la garde y vaut inconnu ; faux là où sont les légions,
     // et vrai rassemblé avec faux n'est plus vrai) ; une alerte manquée : l'avis dit faux là où sont les légions
     pour p dans 0..n { fa[p] = fusion(avis[p], garde_fausse[p]); }
     pour p dans 0..n { ma[p] = fusion(avis[p], garde_manquee[p]); }
-    soit d_fausses = 0;
-    soit d_manquees = 0;
-    soit d_inconnus = 0;
-    soit d_contra = 0;
     pour p dans 0..n { si fa[p] == vrai { d_fausses = d_fausses + 1; } }
     pour p dans 0..n { si ma[p] == faux { d_manquees = d_manquees + 1; } }
     pour p dans 0..n { si avis[p] == inconnu { d_inconnus = d_inconnus + 1; } }
@@ -162,12 +163,13 @@ fonction principal() {
     si c_instr < d_instr {
         soit r10 = d_instr * 10 / c_instr;
         afficher("Le binaire d'expert va encore plus vite :", c_instr, "contre", d_instr, "instructions (" + texte(r10 / 10) + ","
-                 + texte(r10 % 10), "fois moins). Sur une machine binaire, deux plans de bits valent deux bits de preuve ;");
-        afficher("et ici Lugus ne range que 32 logiques par mot (la moitié de son mot de 128 bits), en sept passes au lieu d'une.");
+                 + texte(r10 % 10), "fois moins). Sur une machine binaire, deux plans de bits valent deux bits de preuve.");
     } sinon {
-        afficher("Le binaire d'expert ne fait pas mieux :", c_instr, "contre", d_instr, "instructions.");
+        soit q10 = c_instr * 10 / d_instr;
+        afficher("Et le quaternaire bat même le binaire d'expert :", d_instr, "contre", c_instr, "instructions (" + texte(q10 / 10)
+                 + "," + texte(q10 % 10), "fois moins) : 64 logiques par mot, et une seule passe.");
     }
-    afficher("Mais l'expert a dû inventer deux plans de bits et leurs masques ; le quaternaire s'écrit porte par porte.");
+    afficher("Et l'expert a dû inventer deux plans de bits et leurs masques ; le quaternaire s'écrit porte par porte.");
     sortie(a_manquees + a_fausses);
     sortie(d_manquees + d_fausses);
     sortie(b_manquees + b_fausses);

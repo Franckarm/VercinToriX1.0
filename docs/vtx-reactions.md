@@ -1682,3 +1682,31 @@ trompe au moins cinq fois plus ; D joue au moins cinq fois moins que B ; le .exe
 Les quatre vérités font maintenant 32 fusions d'un coup (un entier de Lugus porte 32 logiques). Le pas à pas de
 vtxc/test_vtxc128.py laisse de côté les programmes qui écrivent `instructions()` : en pas à pas leur code est plus
 long, ils écrivent d'autres nombres, à juste titre.
+
+## 35. Soixante-quatre logiques par mot, et les boucles fondues (9 novembre, 0.5zz)
+
+Le duel l'avait montré : Lugus ne rangeait que 32 logiques par mot, la moitié de son mot de 128 bits, et son
+quaternaire faisait sept passes là où l'expert n'en faisait qu'une. Les deux sont corrigés, dans vtx128.py et dans
+vtxc128, avec les mêmes mots.
+
+**64 par mot.** Les tableaux de quits et de logiques de Lugus rangent 64 éléments par mot (`t[i]` : le mot `i >> 6`, le
+quit `i & 63`). Les calculs sur ces mots passent par `__large(e)`, une génération à part, simple et la même dans les
+deux compilateurs : chaque opération à toute la largeur (AND.L, OR.L, ET4.L, QEGAL.L, COMPTE.L…, LDQ.L et STQ.L pour
+un seul élément), la pile pour le second opérande, les adresses et les décalages à la largeur ordinaire ; une constante
+d'un mot entier de quits (0x5555…, 0xAAAA…, 0xFFFF…) y vaut le motif répété sur 128 bits. Un entier ordinaire de Lugus
+(64 bits) porte toujours 32 logiques : `fusion(a, b)` sur des entiers en fusionne 32.
+
+**Les boucles fondues.** Deux boucles voisines `pour i dans a..b`, de même variable et mêmes bornes (un nombre, ou la
+même variable), qui se réécrivent chacune mot par mot, sont fondues quand la boucle fondue se réécrit encore : chaque
+élément ne dépend que des éléments de même indice, l'ordre des calculs d'un même indice est gardé. Une borne ne doit pas
+être l'accumulateur d'une des boucles. Le test de réécriture ne change rien (les compteurs de noms sont remis).
+
+**Le duel, refait.** Le quaternaire passe de 284 984 instructions à 144 696 (64 par mot), puis 80 941 (une seule
+passe) : **1,6 fois moins que le binaire d'expert** (128 016), et 71 fois moins que le binaire juste, pour les mêmes
+décisions. (L'expert pourrait encore affûter son code à la main ; le quaternaire, lui, s'écrit porte par porte.)
+
+**Vérifié.** `tests/test_rangees128.py` : des programmes au hasard (tailles qui ne remplissent pas les mots, bornes au
+milieu des mots, boucles voisines de mêmes bornes ou non, quits et logiques, toutes les opérations quit par quit,
+comptes et sommes) : mêmes mots par les deux compilateurs, et Lugus écrit ce que Python calcule élément par élément.
+`tests/test_vtx128_differentiel.py` laisse de côté `exemples64/quaternaire64.vtx`, qui compare les deux mots d'un
+tableau de logiques (32 par mot sur le SPU-64, 64 sur Lugus : deux rangements, à juste titre).
