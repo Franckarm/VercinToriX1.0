@@ -7,9 +7,12 @@ roulant, le quaternaire. Voici l'ordre suivi, une idée et une mesure à la fois
 ## 1. Le programme qui sort de l'atelier (en cours)
 - 0.5zs : Lugus fait les .exe, la machine, les mots et les cubes sur disque en un fichier.
 - 0.5zt-zu : la vitrine : le texte dans une fenêtre (sans le cube, au choix du créateur).
-- Ensuite : la traduction des mots de Lugus en x86-64 dans le paquet (comme natif.py pour Senos) ; la machine
-  embarquée garde les pages du cube, qflot128, les services. Mesure : le .exe traduit contre Lugus émulé, mêmes
-  sorties, même mémoire, et le gain.
+- 0.5zv : la traduction des mots de Lugus en x86-64, au lancement du .exe (natif128.rs) : les entiers de 64 bits, la
+  mémoire, la pile, les sauts, CALL et RET ; le reste rejoué par Lugus. Mêmes résultats et même compte d'instructions
+  partout ; trois à quatre fois plus vite sur le banc.
+- Ensuite : traduire les flottants (qflot128), les divisions, les largeurs 32 et 128, les services les plus appelés ;
+  garder les registres de Lugus dans ceux du processeur dans les boucles.
+- Le SPU en circuit : Senos en Verilog, simulé et comparé à la machine Rust, puis sur un FPGA ; un jour, une puce.
 - Dunon en .exe, par le même paquet.
 
 ## 2. Le cube comme espace de calcul

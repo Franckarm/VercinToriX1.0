@@ -50,6 +50,7 @@ mod pas128;
 mod symboles;
 mod exe128;
 mod vitrine;
+mod natif128;
 #[allow(dead_code)]
 mod adn;
 #[allow(dead_code)]

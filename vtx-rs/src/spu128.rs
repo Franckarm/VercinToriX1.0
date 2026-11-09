@@ -121,6 +121,25 @@ fn de_voies(v: [u128; 4]) -> u128 {
     (v[0] & M32) | ((v[1] & M32) << 32) | ((v[2] & M32) << 64) | ((v[3] & M32) << 96)
 }
 
+/// Pour la traduction en x86-64 (natif128.rs) : les places des champs que le code traduit lit et écrit lui-même
+/// (r, pc, z, c, pas), en octets depuis le début de la machine.
+pub fn places_natif() -> [usize; 5] {
+    [std::mem::offset_of!(Spu128, r), std::mem::offset_of!(Spu128, pc), std::mem::offset_of!(Spu128, z),
+     std::mem::offset_of!(Spu128, c), std::mem::offset_of!(Spu128, pas)]
+}
+
+/// Pour le code traduit : lire un mot (les pages, leur cache, le disque : le chemin de Lugus même).
+pub extern "sysv64" fn natif_lire(s: *mut Spu128, lo: u64, hi: u64) -> u128 {
+    unsafe { (*s).lire(((hi as u128) << 64) | lo as u128) }
+}
+
+/// Pour le code traduit : écrire un mot ; 0 s'il est écrit, 1 sinon (un mot d'ADN : l'instruction est alors rejouée
+/// par Lugus, qui dit l'erreur).
+pub extern "sysv64" fn natif_ecrire(s: *mut Spu128, lo: u64, hi: u64, vlo: u64, vhi: u64) -> u64 {
+    let v = ((vhi as u128) << 64) | vlo as u128;
+    unsafe { (*s).ecrire_mem(((hi as u128) << 64) | lo as u128, v).is_err() as u64 }
+}
+
 impl Spu128 {
     pub fn nouveau() -> Spu128 {
         let mut r = [0u128; 16];

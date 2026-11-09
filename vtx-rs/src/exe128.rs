@@ -248,12 +248,12 @@ pub fn jouer(p: Paquet) -> ! {
     {
         let force_console = args.iter().any(|a| a == "--console") || std::env::var("VTX_CONSOLE").is_ok();
         if !force_console && console_a_lui() {
-            let code = super::vitrine::jouer(s, &p.nom);
+            let code = super::vitrine::jouer(s, &p.nom, &p.mots);
             std::process::exit(code)
         }
     }
     brancher_terminal128(&mut s);
-    let r = s.executer(u64::MAX);
+    let r = avancer(&mut s, &p.mots);
     {
         use std::io::Write;
         let _ = std::io::stdout().flush();
@@ -271,6 +271,25 @@ pub fn jouer(p: Paquet) -> ! {
     };
     attendre_si_seul();
     std::process::exit(code)
+}
+
+/// Joue la machine jusqu'à son arrêt : traduite en x86-64 (natif128.rs), sauf avec VTX_INTERPRETE (Lugus seul, pour
+/// comparer) ou si la mémoire exécutable est refusée. VTX_COMPTE écrit, sur la sortie d'erreur, le compte des
+/// instructions et la part traduite.
+pub fn avancer(s: &mut super::spu128::Spu128, mots: &[u128]) -> Result<(), String> {
+    let t0 = std::time::Instant::now();
+    let interprete = std::env::var("VTX_INTERPRETE").is_ok() || !cfg!(target_arch = "x86_64");
+    let (r, quoi) = match if interprete { None } else { super::natif128::traduire(mots) } {
+        Some(t) => {
+            let q = format!("traduit en x86-64 : {} demi-instructions sur {}", t.traduites, t.n);
+            (t.executer(s), q)
+        }
+        None => (s.executer(u64::MAX), "joué par Lugus (sans traduction)".to_string()),
+    };
+    if std::env::var("VTX_COMPTE").is_ok() {
+        eprintln!("instructions {} ; {} ; {:.3} s", s.pas, quoi, t0.elapsed().as_secs_f64());
+    }
+    r
 }
 
 /// vtx exe128 PROG.vtx [SORTIE] : l'exécutable de Lugus, fait à partir de cette machine-ci.

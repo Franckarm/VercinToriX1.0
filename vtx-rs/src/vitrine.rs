@@ -331,7 +331,7 @@ mod w {
     }
 
     /// Joue le programme dans la vitrine ; rend le code de sortie quand la fenêtre est fermée.
-    pub fn jouer(mut s: Spu128, nom: &str) -> i32 {
+    pub fn jouer(mut s: Spu128, nom: &str, mots: &[u128]) -> i32 {
         unsafe {
             FreeConsole();
             SetProcessDPIAware();
@@ -382,16 +382,7 @@ mod w {
         if rx.recv() != Ok(true) {
             return 2;
         }
-        let r = loop {
-            let borne = s.pas.saturating_add(3_000_000);
-            match s.executer(borne) {
-                Ok(()) => break Ok(()),
-                Err(e) if e.starts_with("limite de") && !s.arrete => {
-                    PAS.store(s.pas, Ordering::Relaxed);
-                }
-                Err(e) => break Err(e),
-            }
-        };
+        let r = super::super::exe128::avancer(&mut s, mots);
         PAS.store(s.pas, Ordering::Relaxed);
         if !s.sortie.is_empty() {
             let t = s.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",");

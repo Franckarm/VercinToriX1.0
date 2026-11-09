@@ -1,0 +1,23 @@
+// machine : lugus
+// le banc de la traduction en x86-64 (0.5zv) : un crible, une récursion (CALL et RET), un brassage d'entiers
+fonction fib(n) {
+    si n < 2 { retour n; }
+    retour fib(n - 1) + fib(n - 2);
+}
+fonction principal() {
+    soit n = 2000000;
+    tableau crible[n];
+    soit compte = 0;
+    pour i dans 2..n {
+        si crible[i] == 0 {
+            compte = compte + 1;
+            soit j = i * i;
+            tantque j < n { crible[j] = 1; j = j + i; }
+        }
+    }
+    afficher("premiers :", compte);
+    afficher("fib(27) :", fib(27));
+    soit h = 7;
+    pour k dans 0..3000000 { h = (h * 31 + k) ^ (h >> 3); }
+    afficher("brassage :", h);
+}

@@ -1593,3 +1593,33 @@ x + 1 devient x + 2 et r(3) passe de 12 à 15 ; une case posée dans le vide et 
 pour fonctionner : c'est le cas, les cubes sur disque sont emportés et posés à côté). La vitrine garde la fenêtre (le
 texte, la saisie en ambre, l'état et le compteur d'instructions) et n'a plus le cube ; le crochet `avant_lire` de
 Spu128, qui ne servait qu'à lui, est retiré.
+
+## 32. Lugus traduit en x86-64 (9 novembre, 0.5zv)
+
+**Le principe.** Au lancement d'un .exe de Lugus, ses mots sont traduits une fois en instructions du processeur du PC
+(natif128.rs), dans une mémoire rendue exécutable (mmap sous Linux, VirtualAlloc sous Windows). Chaque
+demi-instruction devient un morceau de x86-64 qui travaille sur la machine même : les registres r0 à r15, z, c et le
+compte des instructions restent à leur place dans Spu128 (le code traduit les lit et les écrit là, `offset_of!`). La
+mémoire de Lugus passe par deux portes, `natif_lire` et `natif_ecrire` : les pages, leur cache, les cubes sur disque
+et la protection de l'ADN restent ceux de Lugus. Rien de Rust ni de Python n'est demandé à l'utilisateur : le
+traducteur est dans vtx.exe.
+
+**Ce qui est traduit.** À la largeur 64 : ADD, ADDI, SUB, SUBI, CMP, CMPI, MUL, AND, OR, XOR, les trois décalages,
+les deux MOVI, ETG ; à la largeur 128 : MOV, les lectures et écritures (par registre, dans le cadre R13, la pile
+R14), les sauts (direct et sur z, c), CALL, et RET par une table des adresses traduites. Tout le reste (flottants,
+divisions, services, arrêt, ce qui sort du programme) est **rejoué par Lugus** une instruction, puis le code traduit
+reprend : la traduction ne peut pas se tromper sur ce qu'elle ne sait pas faire. Une écriture refusée (un mot d'ADN)
+revient à Lugus sans rien changer, et Lugus dit l'erreur.
+
+**Mesuré.** tests/test_natif128.py : les 14 exemples de Lugus, le vocabulaire, le loto au clavier, quatre programmes
+faits pour cela (les bords des entiers de 64 bits, Ackermann pour la pile, une lecture hors du tableau, les textes et
+les flottants) : traduits et joués par Lugus seul (VTX_INTERPRETE), le même texte, les mêmes sorties, la même fin et
+**le même nombre d'instructions** à l'unité. Le banc (exemples128/banc_traduction.vtx : un crible jusqu'à deux
+millions, fib(27), trois millions de brassages ; 131 millions d'instructions) : 1,06 à 1,43 s par Lugus, 0,28 à
+0,49 s traduit, **3 à 4 fois plus vite**. Les programmes de flottants gagnent peu (mandel_reaction : 1,1) : qflot128
+n'est pas encore traduit.
+
+**Les limites, dites.** Le code traduit ne regarde ni la limite d'instructions, ni la patrouille, ni l'arrêt demandé
+d'Ogmios : c'est le mode des .exe (Ogmios garde Lugus). Un programme qui écrirait dans son propre code serait suivi par
+Lugus, pas par la traduction faite au départ. VTX_INTERPRETE joue sans traduction ; VTX_COMPTE écrit le compte et la
+part traduite. Hors d'un processeur x86-64 (un PC ARM), le .exe joue par Lugus.
