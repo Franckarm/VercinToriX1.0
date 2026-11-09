@@ -1623,3 +1623,11 @@ n'est pas encore traduit.
 d'Ogmios : c'est le mode des .exe (Ogmios garde Lugus). Un programme qui écrirait dans son propre code serait suivi par
 Lugus, pas par la traduction faite au départ. VTX_INTERPRETE joue sans traduction ; VTX_COMPTE écrit le compte et la
 part traduite. Hors d'un processeur x86-64 (un PC ARM), le .exe joue par Lugus.
+
+**0.5zw, pour Windows.** Sous Windows, le test de la traduction s'est figé (le .bat arrêté par Ctrl+C), sans message.
+Deux suspects, corrigés ensemble : le mot lu par `natif_lire` revenait comme un u128 dans rax:rdx, une convention que
+Rust tient sous Linux mais dont rien ne garantit la forme sous Windows (il passe maintenant par `natif_tampon`, deux
+u64 dans la machine : plus rien de 128 bits ne traverse un appel) ; et un plantage du .exe ouvrait la boîte de Windows
+« a cessé de fonctionner », qui attend (SetErrorMode la retire ; SetUnhandledExceptionFilter écrit le code et
+l'adresse de l'exception, puis le .exe s'arrête). Le test dit chaque programme avant de le jouer, sur l'écran et dans
+le journal, et arrête au bout de deux minutes un programme figé : la prochaine fois, on saura lequel.

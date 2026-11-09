@@ -196,6 +196,21 @@ pub fn brancher_terminal128(s: &mut super::spu128::Spu128) {
 #[link(name = "kernel32")]
 extern "system" {
     fn GetConsoleProcessList(liste: *mut u32, n: u32) -> u32;
+    fn SetErrorMode(m: u32) -> u32;
+    fn SetUnhandledExceptionFilter(f: unsafe extern "system" fn(*const *const u8) -> i32) -> usize;
+    fn ExitProcess(c: u32) -> !;
+}
+
+/// Sous Windows, un plantage ne doit pas ouvrir la boîte « a cessé de fonctionner » (qui attend, et tient le .bat) :
+/// il est dit sur la sortie d'erreur, avec son code et son adresse, et le .exe s'arrête (code 3).
+#[cfg(windows)]
+unsafe extern "system" fn plantage(e: *const *const u8) -> i32 {
+    let rec = *e;
+    let code = *(rec as *const u32);
+    let adr = *(rec.add(16) as *const usize);
+    eprintln!("\nerreur : le .exe a planté (exception #{:08X} à l'adresse #{:X}) ; relancez avec VTX_INTERPRETE=1 \
+               pour jouer sans la traduction", code, adr);
+    ExitProcess(3)
 }
 
 /// la console n'est qu'à ce programme : il a été lancé d'un double clic, pas depuis un terminal
@@ -221,6 +236,11 @@ fn attendre_si_seul() {
 
 /// Joue le programme emporté : les fichiers posés à côté de l'exécutable s'ils manquent, puis Lugus.
 pub fn jouer(p: Paquet) -> ! {
+    #[cfg(windows)]
+    unsafe {
+        SetErrorMode(0x8003);
+        SetUnhandledExceptionFilter(plantage);
+    }
     let exe = std::env::current_exe().unwrap_or_default();
     let dossier = exe.parent().map(|d| d.to_path_buf()).unwrap_or_default();
     for (nom, d) in &p.fichiers {

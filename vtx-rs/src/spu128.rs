@@ -61,6 +61,8 @@ pub struct Spu128 {
     pub dossier: Option<std::path::PathBuf>,
     pages_vues: std::collections::HashSet<(usize, u128)>,
     pub pas: u64,
+    /// pour la traduction en x86-64 : le mot que natif_lire vient de lire
+    pub natif_tampon: [u64; 2],
     pub presenter: Option<Box<dyn FnMut(&Spu128) -> u128>>,
     /// le service 24, la machine fille (posée par celui qui lance : machine128::machine_fille ; la forge n'en a pas)
     pub machine_fille: Option<fn(&std::path::Path, u64) -> String>,
@@ -123,14 +125,18 @@ fn de_voies(v: [u128; 4]) -> u128 {
 
 /// Pour la traduction en x86-64 (natif128.rs) : les places des champs que le code traduit lit et écrit lui-même
 /// (r, pc, z, c, pas), en octets depuis le début de la machine.
-pub fn places_natif() -> [usize; 5] {
+pub fn places_natif() -> [usize; 6] {
     [std::mem::offset_of!(Spu128, r), std::mem::offset_of!(Spu128, pc), std::mem::offset_of!(Spu128, z),
-     std::mem::offset_of!(Spu128, c), std::mem::offset_of!(Spu128, pas)]
+     std::mem::offset_of!(Spu128, c), std::mem::offset_of!(Spu128, pas), std::mem::offset_of!(Spu128, natif_tampon)]
 }
 
-/// Pour le code traduit : lire un mot (les pages, leur cache, le disque : le chemin de Lugus même).
-pub extern "sysv64" fn natif_lire(s: *mut Spu128, lo: u64, hi: u64) -> u128 {
-    unsafe { (*s).lire(((hi as u128) << 64) | lo as u128) }
+/// Pour le code traduit : lire un mot (les pages, leur cache, le disque : le chemin de Lugus même). Le mot est rendu
+/// dans natif_tampon (deux u64) : rien de 128 bits ne passe par la convention d'appel, la même sous Windows et Linux.
+pub extern "sysv64" fn natif_lire(s: *mut Spu128, lo: u64, hi: u64) {
+    unsafe {
+        let v = (*s).lire(((hi as u128) << 64) | lo as u128);
+        (*s).natif_tampon = [v as u64, (v >> 64) as u64];
+    }
 }
 
 /// Pour le code traduit : écrire un mot ; 0 s'il est écrit, 1 sinon (un mot d'ADN : l'instruction est alors rejouée
@@ -165,6 +171,7 @@ impl Spu128 {
             dossier: None,
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
+            natif_tampon: [0, 0],
             presenter: None,
             machine_fille: None,
             console_ecrire: None,

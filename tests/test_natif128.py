@@ -18,11 +18,21 @@ X = ".exe" if os.name == "nt" else ""
 VTX = os.path.join(racine, "vtx-rs", "target", "release", "vtx" + X)
 d = tempfile.mkdtemp()
 echecs = 0
+_journal = os.environ.get("VTXJOURNAL")
+
+
+def print(*a, **k):  # noqa: A001 : à l'écran et, depuis le .bat, dans son journal (on voit où l'on en est)
+    import builtins
+    builtins.print(*a, **k)
+    if _journal:
+        with open(_journal, "a", encoding="utf-8") as f:
+            f.write(" ".join(str(x) for x in a) + "\n")
+
 
 
 def verifier(nom, ok, detail=""):
     global echecs
-    print(("OK   " if ok else "ÉCHEC ") + nom + ("" if ok else f" : {detail}"))
+    print(("OK   " if ok else "ÉCHEC ") + nom + ("" if ok else f" : {detail}"), flush=True)
     echecs += 0 if ok else 1
 
 
@@ -36,8 +46,12 @@ def jouer(exe, interprete, entree=""):
     env.pop("VTX_INTERPRETE", None)
     if interprete:
         env["VTX_INTERPRETE"] = "1"
-    r = subprocess.run([exe], input=entree, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=d,
-                       env=env, timeout=600)
+    print(f"   … {os.path.basename(exe)} {'par Lugus seul' if interprete else 'traduit'}", flush=True)
+    try:
+        r = subprocess.run([exe], input=entree, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                           cwd=d, env=env, timeout=120)
+    except subprocess.TimeoutExpired:
+        return -9, "", -1, 0.0, ["figé : plus de deux minutes"], "figé"
     m = re.search(r"instructions (\d+) ; (.*?) ; ([\d.]+) s", r.stderr)
     erreur = [l for l in r.stderr.splitlines() if l.startswith("erreur")]
     return r.returncode, r.stdout, int(m.group(1)) if m else -1, float(m.group(3)) if m else 0.0, erreur, (m.group(2) if m else r.stderr)

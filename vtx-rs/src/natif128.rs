@@ -196,7 +196,7 @@ fn demi(mots: &[u128], p: usize) -> u64 {
 
 /// Traduit les mots du programme (le code, au début de l'étage 0). None si la mémoire exécutable est refusée.
 pub fn traduire(mots: &[u128]) -> Option<Traduction> {
-    let [or, opc, oz, oc, opas] = places_natif();
+    let [or, opc, oz, oc, opas, otampon] = places_natif();
     let reg = |i: usize| or + 16 * i;
     let n = mots.len() * 2;
     let mut a = Asm { o: Vec::with_capacity(n * 40), sauts: Vec::new(), sorties: Vec::new() };
@@ -312,8 +312,9 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                 }
                 a.b(&[0x48, 0x89, 0xDF]); // mov rdi, rbx
                 a.appeler(lire);
-                // la valeur en rax:rdx, gardée dans r8:r9
-                a.b(&[0x49, 0x89, 0xC0, 0x49, 0x89, 0xD1]);
+                // la valeur, rendue dans natif_tampon, gardée dans r8:r9
+                a.charger(R8, otampon);
+                a.charger(R9, otampon + 8);
                 if op == 0x28 {
                     // r14 = (r14 + 1) & M120
                     a.b(&[0x48, 0x83, 0x83]);
@@ -392,6 +393,8 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                 a.charger(RDX, reg(14) + 8);
                 a.b(&[0x48, 0x89, 0xDF]);
                 a.appeler(lire);
+                a.charger(RAX, otampon);
+                a.charger(RDX, otampon + 8);
                 // r14 = (r14 + 1) & M120
                 a.b(&[0x48, 0x83, 0x83]);
                 a.d32(reg(14) as u32);
