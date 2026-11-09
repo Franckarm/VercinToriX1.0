@@ -1710,3 +1710,8 @@ milieu des mots, boucles voisines de mêmes bornes ou non, quits et logiques, to
 comptes et sommes) : mêmes mots par les deux compilateurs, et Lugus écrit ce que Python calcule élément par élément.
 `tests/test_vtx128_differentiel.py` laisse de côté `exemples64/quaternaire64.vtx`, qui compare les deux mots d'un
 tableau de logiques (32 par mot sur le SPU-64, 64 sur Lugus : deux rangements, à juste titre).
+
+**Trouvé en route par le test au hasard.** Dans une boucle réécrite, les écritures de mots passaient avant les comptes :
+un compte qui lisait un tableau écrit plus loin dans la même boucle (`s = s + ta[i]` puis `ta[i] = …`) lisait le
+nouveau mot au lieu de l'ancien. Rare dans une seule boucle, fréquent une fois les boucles fondues. Les écritures et les
+comptes gardent maintenant l'ordre du corps, dans les deux compilateurs (200 programmes au hasard : conformes).

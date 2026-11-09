@@ -107,6 +107,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_quatre_verites.py")]))
     etapes.append(("le duel du binaire et du quaternaire : mêmes décisions, erreurs du naïf, instructions mesurées",
                    [sys.executable, os.path.join("tests", "test_duel.py")]))
+    etapes.append(("les tableaux de quits et de logiques de Lugus : 64 par mot, boucles fondues, contre Python",
+                   [sys.executable, os.path.join("tests", "test_rangees128.py"), "200" if COMPLET else "60"]))
     etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
                    [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",
