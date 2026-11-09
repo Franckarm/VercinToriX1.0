@@ -5,3 +5,4 @@ __pycache__/
 verifier.log
 feu/feu-de-camp.png
 ombre/ombre-256.png
+vtx-rs/target
