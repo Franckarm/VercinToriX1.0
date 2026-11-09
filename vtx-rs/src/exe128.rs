@@ -198,13 +198,18 @@ extern "system" {
     fn GetConsoleProcessList(liste: *mut u32, n: u32) -> u32;
 }
 
-/// Lancé d'un double-clic, le .exe a sa console à lui : elle se fermerait avec lui. On attend alors une touche.
+/// la console n'est qu'à ce programme : il a été lancé d'un double clic, pas depuis un terminal
+#[cfg(windows)]
+fn console_a_lui() -> bool {
+    let mut l = [0u32; 4];
+    unsafe { GetConsoleProcessList(l.as_mut_ptr(), 4) == 1 }
+}
+
+/// Lancé d'un double-clic en mode console, le .exe a sa console à lui : elle se fermerait avec lui. On attend une touche.
 fn attendre_si_seul() {
     #[cfg(windows)]
     {
-        let mut l = [0u32; 4];
-        let n = unsafe { GetConsoleProcessList(l.as_mut_ptr(), 4) };
-        if n == 1 && std::env::var("VTX_SANS_PAUSE").is_err() {
+        if console_a_lui() && std::env::var("VTX_SANS_PAUSE").is_err() {
             use std::io::Write;
             print!("\n(Entrée pour fermer)");
             let _ = std::io::stdout().flush();
@@ -231,7 +236,6 @@ pub fn jouer(p: Paquet) -> ! {
     s.dossier = Some(dossier);
     s.charger(&p.mots);
     s.entree.extend(args.iter().filter_map(|x| x.parse::<u128>().ok()));
-    brancher_terminal128(&mut s);
     s.presenter = Some(Box::new(super::pas128::presenter128));
     s.machine_fille = Some(super::machine128::machine_fille);
     s.parler = Some(super::parler_hote);
@@ -239,6 +243,16 @@ pub fn jouer(p: Paquet) -> ! {
     if let Some(f) = super::sortie::fenetre(&p.nom) {
         super::sortie::installer(Some(f));
     }
+    // lancé d'un double clic (sa console à lui), sous Windows : la vitrine, une fenêtre avec le texte et le cube
+    #[cfg(windows)]
+    {
+        let force_console = args.iter().any(|a| a == "--console") || std::env::var("VTX_CONSOLE").is_ok();
+        if !force_console && console_a_lui() {
+            let code = super::vitrine::jouer(s, &p.nom);
+            std::process::exit(code)
+        }
+    }
+    brancher_terminal128(&mut s);
     let r = s.executer(u64::MAX);
     {
         use std::io::Write;

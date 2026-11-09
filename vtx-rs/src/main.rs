@@ -49,6 +49,7 @@ mod machine128;
 mod pas128;
 mod symboles;
 mod exe128;
+mod vitrine;
 #[allow(dead_code)]
 mod adn;
 #[allow(dead_code)]

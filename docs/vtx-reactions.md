@@ -1561,3 +1561,20 @@ lancé dans un autre dossier (état du disque : vrai), un fichier déjà là jam
 
 **Ce qui manque encore.** La vue du cube d'Ogmios (la mémoire en couleurs pendant que le programme tourne) n'est pas
 dans le .exe ; la traduction en x86-64 ; Dunon.
+
+## 30. La vitrine des .exe de Lugus (9 novembre, 0.5zt)
+
+« Le loto en commande est un peu austère pour un exécutable. » Lancé d'un double clic sous Windows (ou par Ctrl+E
+d'Ogmios), le .exe de Lugus n'a plus de console grise : il ouvre sa **vitrine** (vitrine.rs). À gauche le texte du
+programme, ce qu'il écrit et ce qu'on lui tape (la saisie en ambre, Entrée l'envoie) ; à droite le **cube chromatique de
+sa mémoire**, en perspective, qui se remplit pendant qu'il tourne ; en bas l'état : la machine tourne, attend une
+réponse ou a fini, le nombre d'instructions, l'étage du cube et ses mots. Clic : l'étage suivant qui a quelque chose ;
+clic droit : un quart de tour ; molette : zoom. La toile s'ouvre toujours à part, à la première image.
+
+La machine tourne sur le fil principal par tranches de trois millions d'instructions ; entre deux tranches (au plus
+toutes les 0,4 s) et chaque fois que le programme attend le clavier (un crochet nouveau de Spu128, `avant_lire`), elle
+laisse une vue de sa mémoire, celle d'Ogmios (Vue64::depuis128), que la fenêtre dessine avec cube::rendre_iso. La
+fenêtre vit sur son propre fil et ne tient que des statiques. Fermer la vitrine arrête le programme.
+
+Lancé depuis un terminal (PowerShell, cmd) ou avec `--console` (ou la variable VTX_CONSOLE), le .exe reste en console,
+comme en 0.5zs : les tests et les scripts le lisent ainsi. Sous Linux, la console seule.
