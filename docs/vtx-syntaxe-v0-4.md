@@ -269,6 +269,7 @@ selon porte {
 | `souris()`, `souris_x(m)`, `souris_y(m)`, `souris_boutons(m)`, `souris_dedans(m)` | la souris dans l'image (0 sans fenêtre) | SYS 16, prélude |
 | `touche()`, `appuyee(t)`, `touche_gauche()`… | la prochaine touche (sans attendre), une touche enfoncée | SYS 17, SYS 21 |
 | `molette()`, `horloge()`, `cadence(ms)` | crans de molette, millisecondes, cadence des images | SYS 20, 18, 19 |
+| `instructions()` | Lugus : le nombre d'instructions jouées depuis le lancement (mesurer un morceau : la différence de deux lectures ; le même traduit ou non, plus grand en pas à pas) | SYS 25 |
 | `etat_disque()` | l'état des cubes relus (miroir inversé) : vrai, faux (réparé), variable, inconnu | SYS 22 |
 | `anti_couleur(c)`, `pixel_anti(x, y)`, `rectangle_anti(x, y, l, h)` | l'anti-cube des couleurs (255 − c, involutif) | prélude |
 | `texte_image(x, y, t, c)`, `texte_image_grand(x, y, t, c, e)`, `largeur_texte(t, e)` | du texte dans l'image (police 5 × 7, accents français) | prélude |

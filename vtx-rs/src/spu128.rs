@@ -678,6 +678,8 @@ impl Spu128 {
             13 => Ok(self.jeter_cube(arg)),
             16..=21 | 23 => Ok(crate::hote::service(code as u64, arg as u64, u64::MAX).unwrap_or(0) as u128),
             22 => Ok(crate::miroir::prendre_etat() as u128),
+            // le compte des instructions jouées (instructions() du prélude)
+            25 => Ok(self.pas as u128),
             24 => {
                 // la machine fille : le programme vtx nommé (un texte) compilé et lancé sur un Lugus neuf ; son compte
                 // rendu se lit comme un fichier (le canal rendu, lire_car)

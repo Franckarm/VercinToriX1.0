@@ -1647,3 +1647,38 @@ envoie un éclaireur ; variable : on réunit le conseil) ; ce qu'un booléen aur
 « non », la contradiction du gué disparaît) ; seize fusions en une seule instruction OU. `tests/test_quatre_verites.py`
 recalcule les tables d'après les deux bits de preuve, vérifie chaque porte, les mêmes mots par vtx128.py et vtxc128,
 et le .exe traduit contre Lugus seul ; le .bat joue le .exe à l'écran.
+
+## 34. Le duel du binaire et du quaternaire (9 novembre, 0.5zy)
+
+Le créateur : « 0 a plus d'intérêt à annoncer une inconnue ; 1, 2, 3 sont des réponses (non, oui, variable) ». C'est
+la lecture de Belnap : 0 n'a aucune preuve (personne n'a répondu), les trois autres en ont au moins une. Et la
+question : comment démontrer que le quaternaire fonctionne mieux que le binaire ?
+
+`exemples128/duel.vtx` : 65 536 portes, trois éclaireurs chacune ; un quart voient les légions ; un éclaireur sur trois
+se tait, et celui qui parle se trompe une fois sur vingt. Quatre méthodes sur les mêmes rapports, mesurées par
+`instructions()` (nouveau, Lugus, service 25 : le compte des instructions jouées) :
+
+| | erreurs | à vérifier | instructions |
+|---|---|---|---|
+| A. binaire naïf (le silence vaut non, le dernier a raison) | 7 762 (12 %) | 0 | 4 920 828 |
+| B. binaire juste, une porte à la fois, deux booléens | 809 (1 %) | 8 016 | 5 789 605 |
+| C. binaire d'expert, deux plans de bits, 64 portes par mot | 809 | 8 016 | 128 016 |
+| D. quaternaire, écrit porte par porte, joué 32 à la fois | 809 | 8 016 | 284 984 |
+
+**Ce que le duel dit, honnêtement.** Le binaire naïf se trompe dix fois plus et ne sait pas qu'il se trompe ; le
+quaternaire prend les mêmes décisions que le binaire juste (les silences sont ses inconnus, les contradictions ses
+variables) avec **20 fois moins d'instructions**. Mais le binaire d'expert, qui a réinventé à la main les deux bits de
+preuve en deux plans de bits, va **2,2 fois plus vite** que notre quaternaire : sur une machine binaire, deux plans de
+bits valent deux bits de preuve, il n'y a pas de bit magique. Deux raisons, qui sont deux chantiers :
+- Lugus ne range que **32 logiques par mot**, la moitié de son mot de 128 bits (les tableaux de logiques suivent
+  l'entier de 64 bits) ; à 64 par mot, le compte d'instructions des boucles réécrites tomberait de moitié ;
+- le compilateur réécrit chaque boucle à part : sept passes sur la mémoire, là où l'expert n'en fait qu'une ; fondre
+  les boucles voisines qui parcourent les mêmes tableaux rattraperait l'expert.
+L'avantage qui reste au quaternaire, même à vitesse égale : il s'écrit comme on pense (porte par porte, fusion,
+selon), et l'on ne peut pas oublier le silence ni la contradiction ; l'expert a dû inventer ses plans et ses masques.
+
+`tests/test_duel.py` : mêmes mots par vtx128.py et vtxc128 ; B, C et D prennent exactement les mêmes décisions ; A se
+trompe au moins cinq fois plus ; D joue au moins cinq fois moins que B ; le .exe traduit dit la même chose que Lugus.
+Les quatre vérités font maintenant 32 fusions d'un coup (un entier de Lugus porte 32 logiques). Le pas à pas de
+vtxc/test_vtxc128.py laisse de côté les programmes qui écrivent `instructions()` : en pas à pas leur code est plus
+long, ils écrivent d'autres nombres, à juste titre.

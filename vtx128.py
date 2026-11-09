@@ -6891,6 +6891,11 @@ fonction puissance_entiere(a, b) {
     }
     retour r;
 }
+fonction instructions() {
+    // le nombre d'instructions que la machine a jouées depuis le lancement (pour mesurer un morceau de programme :
+    // la différence de deux lectures ; la même avec ou sans la traduction en x86-64)
+    retour __service(25, 0);
+}
 // la dernière fonction du prélude : vtxc128 lit chaque fonction jusqu'à la suivante ; celle-ci n'est jamais appelée
 fonction __fin_du_prelude() {
 }

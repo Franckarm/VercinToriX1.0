@@ -59,8 +59,8 @@ attendu = {"porte du nord": ("vrai", "remparts"), "porte du sud": ("faux", "tran
 for p, (v, mot) in attendu.items():
     l = [x for x in lignes if x.startswith(p)]
     verifier(f"{p} : {v}, {mot}", len(l) == 1 and f"-> {v}" in l[0] and mot in l[0], str(l))
-verifier("seize fusions d'un coup : 9 contradictions, comme dans la table",
-         "9 contradictions sur 16" in o and sum(fus(a, b) == 3 for a in range(4) for b in range(4)) == 9, o[-300:])
+verifier("trente-deux fusions d'un coup : 18 contradictions, deux fois la table",
+         "18 contradictions sur 32" in o and sum(fus(a, b) == 3 for a in range(4) for b in range(4)) == 9, o[-300:])
 
 exe = os.path.join(d, "quatre_verites" + X)
 subprocess.run([os.path.join(BIN, "vtx" + X), "exe128", PROG, exe], capture_output=True)

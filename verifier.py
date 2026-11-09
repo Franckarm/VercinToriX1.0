@@ -105,6 +105,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_natif128.py")]))
     etapes.append(("les quatre vérités : la logique de Belnap montrée (fusion, et4, le conseil d'Alésia, seize d'un coup)",
                    [sys.executable, os.path.join("tests", "test_quatre_verites.py")]))
+    etapes.append(("le duel du binaire et du quaternaire : mêmes décisions, erreurs du naïf, instructions mesurées",
+                   [sys.executable, os.path.join("tests", "test_duel.py")]))
     etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
                    [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",

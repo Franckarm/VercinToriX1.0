@@ -1,0 +1,175 @@
+// machine : lugus
+// Le duel : le binaire contre le quaternaire, sur le même problème.
+// 65 536 portes, trois éclaireurs par porte. Un quart des portes voient arriver les légions. Un éclaireur sur trois ne
+// répond pas (silence) ; quand il répond, il se trompe une fois sur vingt. Il faut décider, pour chaque porte :
+// alerte (oui), calme (non), ou vérifier (personne n'a rien dit, ou les éclaireurs se contredisent).
+// Une erreur : une alerte manquée (des légions, et l'on dort) ou une fausse alerte (rien, et l'on garnit les remparts).
+//
+//   A. le binaire naïf : un booléen par porte, le silence vaut non, le dernier qui parle a raison ;
+//   B. le binaire juste, comme on l'écrit d'habitude : deux booléens par porte (« quelqu'un a dit oui »,
+//      « quelqu'un a dit non »), une porte à la fois, des si partout ;
+//   C. le binaire d'expert : les mêmes deux booléens, rangés en deux plans de bits, 64 portes par mot ;
+//   D. le quaternaire : un logique par porte, écrit porte par porte avec fusion ; le compilateur le joue
+//      32 portes à la fois (deux bits de preuve par porte, rangés ensemble dans un seul tableau).
+
+// les tableaux de logiques : 32 par mot sur Lugus (deux bits de preuve par porte), rangés dans l'étage 2
+tableau r0[65536] de logique @2[0];
+tableau r1[65536] de logique @2[4096];
+tableau r2[65536] de logique @2[8192];
+tableau garde_fausse[65536] de logique @2[12288];
+tableau garde_manquee[65536] de logique @2[16384];
+tableau avis[65536] de logique @2[20480];
+tableau fa[65536] de logique @2[24576];
+tableau ma[65536] de logique @2[28672];
+
+fonction pour_cent(a, b) {
+    retour (a * 1000 / b + 5) / 10;
+}
+
+fonction principal() {
+    graine(2026);
+    soit n = 65536;
+    soit k = 3;
+    soit plans = n / 64;
+    tableau verite[n];
+    tableau rapport[n * k];
+    tableau po[k * plans];
+    tableau pn[k * plans];
+    tableau vb[plans];
+    // les éclaireurs parlent (la même chose pour les quatre méthodes ; chacune la reçoit dans sa forme)
+    pour p dans 0..n {
+        soit legions = 0;
+        si hasard(4) == 0 { legions = 1; }
+        verite[p] = legions;
+        si legions == 1 {
+            vb[p / 64] = vb[p / 64] | (1 << (p % 64));
+            garde_fausse[p] = faux;
+        } sinon {
+            garde_manquee[p] = vrai;
+        }
+        pour e dans 0..k {
+            soit r = 0;
+            si hasard(3) != 0 {
+                soit juste = 1;
+                si hasard(20) == 0 { juste = 0; }
+                si (legions == 1) == (juste == 1) { r = 2; } sinon { r = 1; }
+            }
+            rapport[p * k + e] = r;
+            si r == 2 { po[e * plans + p / 64] = po[e * plans + p / 64] | (1 << (p % 64)); }
+            si r == 1 { pn[e * plans + p / 64] = pn[e * plans + p / 64] | (1 << (p % 64)); }
+            soit l: logique = comme_logique(r);
+            si e == 0 { r0[p] = l; }
+            si e == 1 { r1[p] = l; }
+            si e == 2 { r2[p] = l; }
+        }
+    }
+
+    // A. le binaire naïf
+    soit i0 = instructions();
+    soit a_manquees = 0;
+    soit a_fausses = 0;
+    pour p dans 0..n {
+        soit b = 0;
+        pour e dans 0..k {
+            si rapport[p * k + e] == 2 { b = 1; } sinon { b = 0; }
+        }
+        si b == 1 {
+            si verite[p] == 0 { a_fausses = a_fausses + 1; }
+        } sinon {
+            si verite[p] == 1 { a_manquees = a_manquees + 1; }
+        }
+    }
+    soit a_instr = instructions() - i0;
+
+    // B. le binaire juste, une porte à la fois
+    i0 = instructions();
+    soit b_manquees = 0;
+    soit b_fausses = 0;
+    soit b_inconnus = 0;
+    soit b_contra = 0;
+    pour p dans 0..n {
+        soit dit_oui = 0;
+        soit dit_non = 0;
+        pour e dans 0..k {
+            soit rb = rapport[p * k + e];
+            si rb == 2 { dit_oui = 1; }
+            si rb == 1 { dit_non = 1; }
+        }
+        si dit_oui == 1 {
+            si dit_non == 1 { b_contra = b_contra + 1; } sinon {
+                si verite[p] == 0 { b_fausses = b_fausses + 1; }
+            }
+        } sinon {
+            si dit_non == 1 {
+                si verite[p] == 1 { b_manquees = b_manquees + 1; }
+            } sinon { b_inconnus = b_inconnus + 1; }
+        }
+    }
+    soit b_instr = instructions() - i0;
+
+    // C. le binaire d'expert : deux plans de bits
+    i0 = instructions();
+    soit c_manquees = 0;
+    soit c_fausses = 0;
+    soit c_inconnus = 0;
+    soit c_contra = 0;
+    pour w dans 0..plans {
+        soit o = po[w] | po[plans + w] | po[2 * plans + w];
+        soit z = pn[w] | pn[plans + w] | pn[2 * plans + w];
+        soit t = vb[w];
+        c_fausses = c_fausses + nb_bits(o & ~z & ~t);
+        c_manquees = c_manquees + nb_bits(z & ~o & t);
+        c_inconnus = c_inconnus + nb_bits(~(o | z));
+        c_contra = c_contra + nb_bits(o & z);
+    }
+    soit c_instr = instructions() - i0;
+
+    // D. le quaternaire : porte par porte, comme on le pense
+    i0 = instructions();
+    pour p dans 0..n { avis[p] = fusion(fusion(r0[p], r1[p]), r2[p]); }
+    // une fausse alerte : l'avis dit vrai là où il n'y a rien (la garde y vaut inconnu ; faux là où sont les légions,
+    // et vrai rassemblé avec faux n'est plus vrai) ; une alerte manquée : l'avis dit faux là où sont les légions
+    pour p dans 0..n { fa[p] = fusion(avis[p], garde_fausse[p]); }
+    pour p dans 0..n { ma[p] = fusion(avis[p], garde_manquee[p]); }
+    soit d_fausses = 0;
+    soit d_manquees = 0;
+    soit d_inconnus = 0;
+    soit d_contra = 0;
+    pour p dans 0..n { si fa[p] == vrai { d_fausses = d_fausses + 1; } }
+    pour p dans 0..n { si ma[p] == faux { d_manquees = d_manquees + 1; } }
+    pour p dans 0..n { si avis[p] == inconnu { d_inconnus = d_inconnus + 1; } }
+    pour p dans 0..n { si avis[p] == variable { d_contra = d_contra + 1; } }
+    soit d_instr = instructions() - i0;
+
+    afficher("=== Le duel : 65 536 portes, trois éclaireurs chacune ===");
+    afficher("");
+    afficher("A. binaire naïf     : erreurs", a_manquees + a_fausses, "(", a_manquees, "alertes manquées,", a_fausses,
+             "fausses alertes ) ; à vérifier 0 ;", a_instr, "instructions");
+    afficher("B. binaire juste    : erreurs", b_manquees + b_fausses, "(", b_manquees, "manquées,", b_fausses,
+             "fausses ) ; à vérifier", b_inconnus + b_contra, "(", b_inconnus, "silences,", b_contra, "contradictions ) ;",
+             b_instr, "instructions");
+    afficher("C. binaire d'expert : erreurs", c_manquees + c_fausses, "(", c_manquees, "manquées,", c_fausses,
+             "fausses ) ; à vérifier", c_inconnus + c_contra, "(", c_inconnus, "silences,", c_contra, "contradictions ) ;",
+             c_instr, "instructions");
+    afficher("D. quaternaire      : erreurs", d_manquees + d_fausses, "(", d_manquees, "manquées,", d_fausses,
+             "fausses ) ; à vérifier", d_inconnus + d_contra, "(", d_inconnus, "inconnus,", d_contra, "variables ) ;",
+             d_instr, "instructions");
+    afficher("");
+    afficher("Le binaire naïf se trompe sur", pour_cent(a_manquees + a_fausses, n), "% des portes ; le quaternaire sur",
+             pour_cent(d_manquees + d_fausses, n), "%, et il dit lesquelles vérifier.");
+    afficher("Pour le même résultat que le binaire juste, le quaternaire joue", b_instr / d_instr,
+             "fois moins d'instructions.");
+    si c_instr < d_instr {
+        soit r10 = d_instr * 10 / c_instr;
+        afficher("Le binaire d'expert va encore plus vite :", c_instr, "contre", d_instr, "instructions (" + texte(r10 / 10) + ","
+                 + texte(r10 % 10), "fois moins). Sur une machine binaire, deux plans de bits valent deux bits de preuve ;");
+        afficher("et ici Lugus ne range que 32 logiques par mot (la moitié de son mot de 128 bits), en sept passes au lieu d'une.");
+    } sinon {
+        afficher("Le binaire d'expert ne fait pas mieux :", c_instr, "contre", d_instr, "instructions.");
+    }
+    afficher("Mais l'expert a dû inventer deux plans de bits et leurs masques ; le quaternaire s'écrit porte par porte.");
+    sortie(a_manquees + a_fausses);
+    sortie(d_manquees + d_fausses);
+    sortie(b_manquees + b_fausses);
+    sortie(c_manquees + c_fausses);
+}

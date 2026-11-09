@@ -71,19 +71,19 @@ fonction principal() {
     afficher("et le gué, où l'un a vu les légions et l'autre non, prendrait le dernier avis (pas de nouvelles, donc non) : on dort.");
     afficher("La porte du gué est le danger : Belnap le dit (variable), le binaire le cache.");
     afficher("");
-    afficher("=== Seize portes d'un seul coup ===");
-    // seize logiques rangés dans un mot : une seule instruction fusionne seize paires de témoignages
+    afficher("=== Trente-deux portes d'un seul coup ===");
+    // un entier de Lugus (64 bits) range 32 logiques : une seule instruction fusionne 32 paires de témoignages
     soit a = 0;
     soit b = 0;
-    pour k dans 0..16 {
+    pour k dans 0..32 {
         a = a | ((k % 4) << (2 * k));
         b = b | (((k / 4) % 4) << (2 * k));
     }
     soit f = a | b;
     soit compte_var = 0;
-    pour k dans 0..16 {
+    pour k dans 0..32 {
         si ((f >> (2 * k)) & 3) == 3 { compte_var = compte_var + 1; }
     }
-    afficher("seize fusions en une instruction (OU) :", compte_var, "contradictions sur 16, comme dans la table");
+    afficher("trente-deux fusions en une instruction (OU) :", compte_var, "contradictions sur 32 (deux fois la table : 9 sur 16)");
     sortie(compte_var);
 }

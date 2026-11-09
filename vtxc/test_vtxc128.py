@@ -142,7 +142,10 @@ if not seul:
     dex = os.path.join(racine, "exemples128")
     # les réactions comprises : vtxc128 les lit (vtxc/test_reactions_vtxc128.py) ; les exemples vérifiés ne sont rejoués
     # que par vtx128.py
-    exs = sorted(f for f in os.listdir(dex) if f.endswith(".vtx"))
+    # un programme qui écrit instructions() mesure son propre code : le pas à pas (plus d'instructions par ligne) écrit
+    # d'autres nombres, à juste titre (le duel)
+    exs = sorted(f for f in os.listdir(dex) if f.endswith(".vtx")
+                 and "instructions()" not in open(os.path.join(dex, f), encoding="utf-8").read())
     ecarts = []
     for f in exs:
         r = subprocess.run([spu, "essai-pas128", os.path.join(dex, f)], cwd=TMP, capture_output=True, text=True,
