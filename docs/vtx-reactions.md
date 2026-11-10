@@ -1772,3 +1772,9 @@ Trouvé par le test du SPU-64 contre Lugus : les textes écrits dans une fonctio
 programme, même quand la fonction n'y sert pas (un petit programme passait de 23 à 154 mots, et son `@0[100]` tombait
 dans le code). `vers_logique` ne garde donc aucun texte : elle compare l'empreinte du mot (ses lettres en base 257,
 `__empreinte`) à celles des mots compris, calculées d'avance. Règle pour le prélude : pas de texte littéral.
+
+**Les livraisons allégées (0.6b).** Le créateur : alléger les tests et les dossiers envoyés. Le paquet d'essai ne
+porte plus que ce qui sert à construire et à essayer (AUTEUR, COMMENCER, LISEZMOI, vtx.py, vtx64.py, vtx128.py, vtx-rs,
+vtxc, spu64, spu128, chimie, natif, les exemples, bibliotheque, docs et les tests que joue le .bat) : 3,8 Mo au lieu de
+5,7 ; il a été extrait, construit et testé seul avant l'envoi. Le dépôt GitHub garde tout (conformité, mesures,
+vérification complète). Le .bat ne rejoue plus à chaque essai ce qui est stable (l'exécutable, les quatre vérités).
