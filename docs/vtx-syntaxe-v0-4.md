@@ -270,6 +270,19 @@ selon porte {
 | `touche()`, `appuyee(t)`, `touche_gauche()`… | la prochaine touche (sans attendre), une touche enfoncée | SYS 17, SYS 21 |
 | `molette()`, `horloge()`, `cadence(ms)` | crans de molette, millisecondes, cadence des images | SYS 20, 18, 19 |
 | `instructions()` | Lugus : le nombre d'instructions jouées depuis le lancement (mesurer un morceau : la différence de deux lectures ; le même traduit ou non, plus grand en pas à pas) | SYS 25 |
+
+**Les quatre valeurs aux bords du monde (0.6, Lugus).** Ce qui vient du dehors dit s'il est su : rien n'a été dit,
+`inconnu` ; un oui, `vrai` ; un non, `faux` ; les deux à la fois, `variable`. Une réponse vide ou incomprise n'est jamais
+changée en « non ».
+
+| fonction | rend |
+|---|---|
+| `de_preuves(des_oui, des_non)` | la valeur que font deux comptes de preuves (0 et 0 : inconnu ; les deux : variable) |
+| `vers_logique(t: texte)` | une réponse écrite : oui, o, vrai, 1… ; non, n, faux, 0… ; les deux, oui et non… ; le reste : inconnu |
+| `lire_logique()` | une ligne du clavier comprise ainsi ; la fin de l'entrée : inconnu |
+| `nombre_su(t: texte)` | vrai : un nombre entier ; faux : autre chose ; inconnu : rien d'écrit |
+| `fichier_present(nom: texte)` | vrai : le fichier se lit ; faux : il ne se lit pas |
+| `temoins(t)` | un tableau de réponses (0 rien, 1 non, 2 oui, 3 les deux) rassemblées en une valeur |
 | `etat_disque()` | l'état des cubes relus (miroir inversé) : vrai, faux (réparé), variable, inconnu | SYS 22 |
 | `anti_couleur(c)`, `pixel_anti(x, y)`, `rectangle_anti(x, y, l, h)` | l'anti-cube des couleurs (255 − c, involutif) | prélude |
 | `texte_image(x, y, t, c)`, `texte_image_grand(x, y, t, c, e)`, `largeur_texte(t, e)` | du texte dans l'image (police 5 × 7, accents français) | prélude |

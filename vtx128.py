@@ -6929,6 +6929,105 @@ fonction puissance_entiere(a, b) {
     }
     retour r;
 }
+// --- les quatre valeurs aux bords du monde (0.6) : ce qui vient du dehors dit s'il est su.
+// Rien n'a été dit : inconnu ; un oui : vrai ; un non : faux ; les deux à la fois : variable.
+fonction de_preuves(des_oui, des_non): logique {
+    // deux comptes de preuves (des oui, des non) : la valeur de Belnap qu'ils font
+    soit v = 0;
+    si des_oui > 0 {
+        v = 2;
+    }
+    soit f = 0;
+    si des_non > 0 {
+        f = 1;
+    }
+    retour comme_logique(v + f);
+}
+fonction __mot_dans(m: texte, mots: texte) {
+    // m est-il un des mots de la liste (séparés par |) ?
+    soit n = longueur(mots);
+    soit debut = 0;
+    pour i dans 0..n + 1 {
+        si i == n || car(mots, i) == 124 {
+            si i - debut == longueur(m) {
+                soit pareil = 1;
+                pour k dans 0..longueur(m) {
+                    si car(m, k) != car(mots, debut + k) {
+                        pareil = 0;
+                    }
+                }
+                si pareil == 1 {
+                    retour 1;
+                }
+            }
+            debut = i + 1;
+        }
+    }
+    retour 0;
+}
+fonction vers_logique(t: texte): logique {
+    // une réponse écrite : oui, non, les deux, ou rien (ce qui n'est pas compris reste inconnu)
+    soit m = minuscules(nettoyer(t));
+    si __mot_dans(m, "oui|o|vrai|v|1|yes|y|ok|bien sur|bien sûr") == 1 {
+        retour vrai;
+    }
+    si __mot_dans(m, "non|n|faux|f|0|no") == 1 {
+        retour faux;
+    }
+    si __mot_dans(m, "les deux|oui et non|oui non|variable|contradiction|ca depend|ça dépend") == 1 {
+        retour variable;
+    }
+    retour inconnu;
+}
+fonction lire_logique(): logique {
+    // une ligne du clavier, comprise comme une réponse ; la fin de l'entrée ou une ligne vide : inconnu
+    retour vers_logique(lire_ligne());
+}
+fonction nombre_su(t: texte): logique {
+    // vrai : le texte est un nombre entier (un signe, des chiffres) ; faux : il y a autre chose ; inconnu : il est vide
+    soit m = nettoyer(t);
+    soit n = longueur(m);
+    si n == 0 {
+        retour inconnu;
+    }
+    soit i = 0;
+    si car(m, 0) == 45 || car(m, 0) == 43 {
+        i = 1;
+    }
+    si i == n {
+        retour faux;
+    }
+    tantque i < n {
+        si car(m, i) < 48 || car(m, i) > 57 {
+            retour faux;
+        }
+        i = i + 1;
+    }
+    retour vrai;
+}
+fonction fichier_present(nom: texte): logique {
+    // vrai : le fichier se lit ; faux : il ne se lit pas (absent, ou pas de dossier pour le chercher)
+    soit c = ouvrir_lecture(nom);
+    si c == 18446744073709551615 {
+        retour faux;
+    }
+    fermer(c);
+    retour vrai;
+}
+fonction temoins(t): logique {
+    // un tableau de réponses (0 rien, 1 non, 2 oui, 3 les deux) rassemblées : la fusion de tous les témoignages
+    soit des_oui = 0;
+    soit des_non = 0;
+    pour x dans t {
+        si x == 2 || x == 3 {
+            des_oui = des_oui + 1;
+        }
+        si x == 1 || x == 3 {
+            des_non = des_non + 1;
+        }
+    }
+    retour de_preuves(des_oui, des_non);
+}
 fonction instructions() {
     // le nombre d'instructions que la machine a jouées depuis le lancement (pour mesurer un morceau de programme :
     // la différence de deux lectures ; la même avec ou sans la traduction en x86-64)

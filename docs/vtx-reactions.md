@@ -1750,3 +1750,20 @@ flottant. Mesuré : mandel_reaction 3,3 s traduit contre 4,9 s par Lugus seul (i
 1,4 s de calcul : l'écart qui reste est dans le calcul des flottants de 128 bits eux-mêmes et dans les registres
 relus en mémoire à chaque instruction, les deux prochains morceaux. Même texte, mêmes sorties et même compte
 d'instructions partout (tests/test_natif128.py).
+
+## 37. Les quatre valeurs aux bords du monde (10 novembre, 0.6)
+
+Le créateur : étendre les quatre valeurs pour les rendre exploitables. Le premier pas : là où un programme touche le
+monde (le clavier, un texte lu, un fichier), la réponse dit si elle est sue, au lieu de devenir un zéro ou un « non »
+en silence. Dans le prélude de Lugus (les mêmes mots par vtx128.py et vtxc128) : `de_preuves`, `vers_logique`,
+`lire_logique`, `nombre_su`, `fichier_present`, `temoins` (le tableau de la syntaxe). La règle est celle de Belnap :
+deux preuves, une du oui et une du non ; aucune, inconnu ; les deux, variable.
+
+`exemples128/bords_du_monde.vtx` : trois guetteurs répondent au clavier (rien reste inconnu, oui puis non donne
+variable, et le conseil décide par `selon`) ; un relevé de nombres où la ligne vide est inconnue et « beaucoup » est
+faux, au lieu d'un zéro chacun ; un registre absent ; des témoignages rassemblés. `tests/test_bords128.py` : chaque
+cas, les mêmes mots, et la démonstration au clavier traduite comme jouée par Lugus seul, pour quatre jeux de réponses.
+
+Limite dite : `fichier_present` ne distingue pas encore « absent » de « pas de dossier où chercher » (les deux
+rendent faux ; le second devrait être inconnu) : il faudra un service de la machine qui le dise. Senos et Dunon
+n'ont pas encore ces fonctions.
