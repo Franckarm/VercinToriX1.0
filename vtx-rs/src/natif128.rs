@@ -7,14 +7,16 @@
 // cubes sur disque : le même chemin que Lugus).
 //
 // Ce qui est traduit : à la largeur 64, les opérations entières du chemin court de Lugus (ADD, ADDI, SUB, CMP, MUL,
-// AND, OR, XOR, les décalages, MOVI, ETG), la division et le reste sans signe ; les constantes LDI et LDIH ; à la largeur 128 : MOV, les lectures et écritures de la mémoire et de la
+// AND, OR, XOR, les décalages, MOVI, ETG), la division et le reste sans signe ; les constantes LDI et LDIH ;
+// les flottants quaternaires (addition, soustraction, produit, quotient, racine, comparaisons, conversions depuis les
+// entiers), par un appel direct à natif_flot, le format en constante ; à la largeur 128 : MOV, les lectures et écritures de la mémoire et de la
 // pile, les sauts, CALL et RET. Tout le reste (les flottants, les divisions, les services, l'arrêt…) est rejoué par
 // Lugus lui-même, une instruction, puis le code traduit reprend. Les deux donnent donc toujours le même résultat : on le
 // vérifie (tests/test_natif128.py) en comparant les sorties, le texte, les registres et le compte des instructions.
 //
 // Les registres de x86-64 : rbx porte l'adresse de la machine ; rax, rcx, rdx, rsi, rdi, r8, r9 servent de brouillon.
 // Les appels suivent la convention System V (extern "sysv64"), la même sous Windows et sous Linux.
-use super::spu128::{natif_ecrire, natif_lire, natif_rejouer, places_natif, Spu128};
+use super::spu128::{natif_ecrire, natif_flot_pour, natif_lire, natif_rejouer, places_natif, Spu128};
 
 const M120_HAUT: u64 = (1u64 << 56) - 1;
 
@@ -332,6 +334,14 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                 a.octet(oc, 0);
                 a.compter(opas);
                 a.jmp_pc(p + 2);
+            }
+            (0 | 1 | 2, 0x40..=0x49 | 0x5B | 0x5C | 0x5D) if natif_flot_pour(op, wl).is_some() => {
+                // les flottants quaternaires : un appel direct à natif_flot (le format en constante)
+                a.b(&[0x48, 0x89, 0xDF]); // mov rdi, rbx
+                a.b(&[0xBE]); // mov esi, regs
+                a.d32((d | s << 4 | t << 8 | ((imm & 3) as usize) << 12) as u32);
+                a.appeler(natif_flot_pour(op, wl).unwrap());
+                a.compter(opas);
             }
             (0, 0x0B) => {
                 if d != 0 {

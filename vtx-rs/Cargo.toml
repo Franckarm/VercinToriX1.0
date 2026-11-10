@@ -1,6 +1,6 @@
 [package]
 name = "vtx-spu"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 description = "Émulateur du SPU à cube chromatique (Vercintorix, vtx 0.5)"
 

@@ -1735,3 +1735,18 @@ quitter le code traduit : il appelle `natif_rejouer`, qui fait jouer l'instructi
 0,14 s traduit contre 0,36 à 0,55 s ; le banc 0,29 s contre 0,81 s ; mandel_reaction 4,1 s contre 4,9 s : les flottants
 quaternaires (codes #40 à #48, 63 millions d'instructions sur 143) restent le gros du travail, encore joués par Lugus.
 Mêmes textes, mêmes sorties, même compte d'instructions partout (tests/test_natif128.py).
+
+## 37. Vercintorix 0.6 : les flottants traduits (10 novembre)
+
+La version passe à 0.6 (branche vtx-0.6, dossier vtx-0.6), à la demande du créateur ; la direction est écrite dans
+docs/vtx-0-6-vision.md (le projet « Inv. » en a la copie).
+
+**Les flottants quaternaires dans le code traduit.** L'addition, la soustraction, le produit, le quotient, la racine,
+les comparaisons, la négation, l'état et les conversions depuis les entiers (codes #40 à #49, #5B à #5D, aux trois
+largeurs) sont appelés directement depuis le x86-64 : `natif_flot::<OP, W>`, une fonction par code et par largeur,
+dont le format (Q128, Q64, Q32) est une constante, comme dans l'atelier forgé. Plus de décodage par Lugus à chaque
+flottant. Mesuré : mandel_reaction 3,3 s traduit contre 4,9 s par Lugus seul (il ne reste plus que 3 instructions sur
+143 millions qui ne soient pas traduites) ; freinage 0,031 contre 0,054 s. La forge (Rust compilé) fait Mandelbrot en
+1,4 s de calcul : l'écart qui reste est dans le calcul des flottants de 128 bits eux-mêmes et dans les registres
+relus en mémoire à chaque instruction, les deux prochains morceaux. Même texte, mêmes sorties et même compte
+d'instructions partout (tests/test_natif128.py).

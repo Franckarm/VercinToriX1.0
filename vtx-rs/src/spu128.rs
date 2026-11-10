@@ -154,6 +154,71 @@ pub fn garde_plantage() {
     }
 }
 
+/// Pour le code traduit : une opération sur les flottants quaternaires, faite d'ici sans passer par le décodage de
+/// Lugus. OP (le code) et W (la largeur : 0 Q128, 1 Q64, 2 Q32) sont des constantes : le format est connu, ses champs
+/// deviennent des constantes, comme dans l'atelier forgé. regs : d | s << 4 | t << 8 | (imm & 3) << 12. Les mêmes
+/// calculs que le bras des flottants de pas_general, et le même poser (z selon la valeur, c effacé).
+pub extern "sysv64" fn natif_flot<const OP: u16, const W: u32>(s: *mut Spu128, regs: u64) {
+    let s = unsafe { &mut *s };
+    let (d, rs, rt, li) = ((regs & 15) as usize, ((regs >> 4) & 15) as usize, ((regs >> 8) & 15) as usize, (regs >> 12) & 3);
+    let f = format(W);
+    let (sv, tv) = (s.r[rs], s.r[rt]);
+    let (a, b) = (sv & f.masque(), tv & f.masque());
+    let li = match li {
+        1 => 64,
+        2 => 32,
+        _ => 128,
+    };
+    let v = match OP {
+        0x40 => f.add(a, b),
+        0x41 => f.sub(a, b),
+        0x42 => f.mul(a, b),
+        0x43 => f.div(a, b),
+        0x47 => f.racine(a),
+        0x44 => (f.cmp(a, b) == 0) as u128,
+        0x45 => (f.cmp(a, b) == 1) as u128,
+        0x46 => (f.cmp(a, b) < 2) as u128,
+        0x5D => f.cmp(a, b),
+        0x5B => f.neg(a),
+        0x5C => f.etat(a),
+        0x48 => f.de_entier(sv, li, false),
+        _ => f.de_entier(sv, li, true),
+    };
+    s.poser(d, v, false, 128);
+}
+
+/// l'adresse de natif_flot pour ce code et cette largeur (None : pas une opération qu'on sait appeler ainsi)
+pub fn natif_flot_pour(op: u16, w: u32) -> Option<u64> {
+    macro_rules! f {
+        ($o:literal) => {
+            match w {
+                0 => natif_flot::<$o, 0> as *const () as usize as u64,
+                1 => natif_flot::<$o, 1> as *const () as usize as u64,
+                _ => natif_flot::<$o, 2> as *const () as usize as u64,
+            }
+        };
+    }
+    if w > 2 {
+        return None;
+    }
+    Some(match op {
+        0x40 => f!(0x40),
+        0x41 => f!(0x41),
+        0x42 => f!(0x42),
+        0x43 => f!(0x43),
+        0x47 => f!(0x47),
+        0x44 => f!(0x44),
+        0x45 => f!(0x45),
+        0x46 => f!(0x46),
+        0x5D => f!(0x5D),
+        0x5B => f!(0x5B),
+        0x5C => f!(0x5C),
+        0x48 => f!(0x48),
+        0x49 => f!(0x49),
+        _ => return None,
+    })
+}
+
 /// Pour le code traduit : jouer par Lugus l'instruction de la place p (ce que la traduction ne sait pas encore faire :
 /// les flottants, les services…), sans quitter le code traduit. Rend 0 si l'on continue à la suite, 1 si la machine est
 /// allée ailleurs ou s'est arrêtée (pc le dit), 2 pour une erreur (gardée dans natif_erreur).
@@ -579,7 +644,7 @@ impl Spu128 {
             self.r[d] = v;
         }
     }
-    fn poser(&mut self, d: usize, v: u128, c: bool, l: u32) {
+    pub(crate) fn poser(&mut self, d: usize, v: u128, c: bool, l: u32) {
         let v = v & masque(l);
         self.ecrire(d, v);
         self.z = v == 0;
