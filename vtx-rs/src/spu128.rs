@@ -63,6 +63,8 @@ pub struct Spu128 {
     pub pas: u64,
     /// pour la traduction en x86-64 : le mot que natif_lire vient de lire
     pub natif_tampon: [u64; 2],
+    /// pour la traduction en x86-64 : l'erreur d'une instruction rejouée par Lugus depuis le code traduit
+    pub natif_erreur: Option<String>,
     pub presenter: Option<Box<dyn FnMut(&Spu128) -> u128>>,
     /// le service 24, la machine fille (posée par celui qui lance : machine128::machine_fille ; la forge n'en a pas)
     pub machine_fille: Option<fn(&std::path::Path, u64) -> String>,
@@ -123,6 +125,57 @@ fn de_voies(v: [u128; 4]) -> u128 {
     (v[0] & M32) | ((v[1] & M32) << 32) | ((v[2] & M32) << 64) | ((v[3] & M32) << 96)
 }
 
+#[cfg(windows)]
+#[link(name = "kernel32")]
+extern "system" {
+    fn SetErrorMode(m: u32) -> u32;
+    fn SetUnhandledExceptionFilter(f: unsafe extern "system" fn(*const *const u8) -> i32) -> usize;
+    fn ExitProcess(c: u32) -> !;
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn plantage(e: *const *const u8) -> i32 {
+    let rec = *e;
+    let code = *(rec as *const u32);
+    let adr = *(rec.add(16) as *const usize);
+    eprintln!("\nerreur : le programme a planté (exception #{:08X} à l'adresse #{:X}) ; pour un .exe de Lugus, \
+               VTX_INTERPRETE=1 le joue sans la traduction", code, adr);
+    ExitProcess(3)
+}
+
+/// Sous Windows, un plantage ne doit pas ouvrir la boîte « a cessé de fonctionner » (qui attend, et tient un .bat ou un
+/// test) : il est dit sur la sortie d'erreur, avec son code et son adresse, et le programme s'arrête (code 3). À appeler
+/// au début de main (vtx, lugus). Ailleurs : rien.
+pub fn garde_plantage() {
+    #[cfg(windows)]
+    unsafe {
+        SetErrorMode(0x8003);
+        SetUnhandledExceptionFilter(plantage);
+    }
+}
+
+/// Pour le code traduit : jouer par Lugus l'instruction de la place p (ce que la traduction ne sait pas encore faire :
+/// les flottants, les services…), sans quitter le code traduit. Rend 0 si l'on continue à la suite, 1 si la machine est
+/// allée ailleurs ou s'est arrêtée (pc le dit), 2 pour une erreur (gardée dans natif_erreur).
+pub extern "sysv64" fn natif_rejouer(s: *mut Spu128, p: u64) -> u64 {
+    let s = unsafe { &mut *s };
+    s.pc = p as u128;
+    match s.pas_unique() {
+        Ok(()) => (s.arrete || s.pc != p as u128 + 1) as u64,
+        Err(e) => {
+            s.natif_erreur = Some(e);
+            2
+        }
+    }
+}
+
+impl Spu128 {
+    /// la demi-instruction à cette place (pour le profil de la traduction)
+    pub fn demi_pub(&mut self, p: u128) -> u64 {
+        self.demi(p)
+    }
+}
+
 /// Pour la traduction en x86-64 (natif128.rs) : les places des champs que le code traduit lit et écrit lui-même
 /// (r, pc, z, c, pas), en octets depuis le début de la machine.
 pub fn places_natif() -> [usize; 6] {
@@ -172,6 +225,7 @@ impl Spu128 {
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
             natif_tampon: [0, 0],
+            natif_erreur: None,
             presenter: None,
             machine_fille: None,
             console_ecrire: None,

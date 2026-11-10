@@ -264,6 +264,7 @@ fn lire_nombres(t: &str) -> Vec<u128> {
 }
 
 fn main() {
+    spu128::garde_plantage();
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 3 && args[1] == "corpus" {
         let texte = std::fs::read_to_string(&args[2]).expect("fichier du corpus illisible");

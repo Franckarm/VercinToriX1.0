@@ -1715,3 +1715,23 @@ tableau de logiques (32 par mot sur le SPU-64, 64 sur Lugus : deux rangements, �
 un compte qui lisait un tableau écrit plus loin dans la même boucle (`s = s + ta[i]` puis `ta[i] = …`) lisait le
 nouveau mot au lieu de l'ancien. Rare dans une seule boucle, fréquent une fois les boucles fondues. Les écritures et les
 comptes gardent maintenant l'ordre du corps, dans les deux compilateurs (200 programmes au hasard : conformes).
+
+## 36. La traduction avance, et un écart sous Windows à comprendre (10 novembre, 0.5zza)
+
+**L'écart.** Chez le créateur, 0.5zz : tout conforme sauf `test_rangees128.py`, qui dit « programme 137 : mêmes mots :
+265 contre None », sans message, puis le .bat arrêté par Ctrl+C. Ici le même programme (même graine) se compile juste,
+400 fois de suite, même avec une petite pile : la cause n'est pas trouvée. « None » veut dire que `lugus compiler` a
+rendu un code d'erreur sans rien écrire sur sa sortie d'erreur : un plantage, ou un fichier tenu un instant par
+l'antivirus. Pour le savoir : le test écrit maintenant le code de retour et les deux sorties, donne à chaque programme
+son fichier de mots, réessaie une fois, dit où il en est tous les 20 programmes (à l'écran et dans le journal) ; et vtx
+comme lugus disent un plantage (code et adresse de l'exception) au lieu d'ouvrir la boîte de Windows qui attend
+(`spu128::garde_plantage`, au début de main).
+
+**La traduction.** VTX_PROFIL compte les instructions que la traduction laisse à Lugus, par code et largeur. D'après
+lui, traduits maintenant : la division et le reste sans signe à 64 bits (par zéro : tout à un, ou le dividende), LDI
+et LDIH (la constante est la demi-instruction suivante, que l'on saute). Et ce qui n'est pas traduit n'oblige plus à
+quitter le code traduit : il appelle `natif_rejouer`, qui fait jouer l'instruction par Lugus et revient à la suite
+(sortie seulement si la machine est allée ailleurs, s'est arrêtée ou a rendu une erreur). Mesuré ici : le duel entier
+0,14 s traduit contre 0,36 à 0,55 s ; le banc 0,29 s contre 0,81 s ; mandel_reaction 4,1 s contre 4,9 s : les flottants
+quaternaires (codes #40 à #48, 63 millions d'instructions sur 143) restent le gros du travail, encore joués par Lugus.
+Mêmes textes, mêmes sorties, même compte d'instructions partout (tests/test_natif128.py).

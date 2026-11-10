@@ -1035,6 +1035,7 @@ fn traduire_programme(fichier: &str, sortie: Option<&String>) {
 }
 
 fn main() {
+    spu128::garde_plantage();
     let args: Vec<String> = env::args().collect();
     // un exécutable de Lugus (vtx exe128, Ctrl+E d'Ogmios) : la machine porte son programme à sa fin
     if let Some(p) = exe128::paquet_embarque() {

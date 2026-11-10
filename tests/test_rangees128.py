@@ -22,6 +22,16 @@ X = ".exe" if os.name == "nt" else ""
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + X)
 d = tempfile.mkdtemp()
 echecs = 0
+_journal = os.environ.get("VTXJOURNAL")
+
+
+def print(*a, **k):  # noqa: A001 : à l'écran et, depuis le .bat, dans son journal (on voit où l'on en est)
+    import builtins
+    builtins.print(*a, **k)
+    if _journal:
+        with open(_journal, "a", encoding="utf-8") as f:
+            f.write(" ".join(str(x) for x in a) + "\n")
+
 
 
 def verifier(nom, ok, detail=""):
@@ -132,15 +142,26 @@ for k in range(N):
     fic = os.path.join(d, f"r{k}.vtx")
     open(fic, "w", encoding="utf-8").write(src)
     ref = vtx128.assembler(vtx128.compiler(src, dossier=d))
-    rr = subprocess.run([LUGUS, "compiler", fic, os.path.join(d, "r.mots")], capture_output=True, text=True, encoding="utf-8")
-    m = [int(x) for x in open(os.path.join(d, "r.mots")).read().split(";")[0].split(",") if x.strip()] if rr.returncode == 0 else None
+    sortie_mots = os.path.join(d, f"r{k}.mots")
+    m, dit = None, ""
+    for essai in range(2):
+        # (un second essai : sous Windows, un antivirus peut tenir un instant un fichier tout juste écrit)
+        rr = subprocess.run([LUGUS, "compiler", fic, sortie_mots], capture_output=True, text=True, encoding="utf-8",
+                            errors="replace", timeout=120)
+        dit = f"code {rr.returncode} ; sortie {rr.stdout[-200:]!r} ; erreur {rr.stderr[-300:]!r}"
+        if rr.returncode == 0 and os.path.isfile(sortie_mots):
+            m = [int(x) for x in open(sortie_mots).read().split(";")[0].split(",") if x.strip()]
+            break
+        print(f"   programme {k}, essai {essai + 1} : la compilation n'a pas abouti ({dit})", flush=True)
     if m == ref:
         mots_ok += 1
     else:
-        verifier(f"programme {k} : mêmes mots", False, f"{len(ref)} contre {None if m is None else len(m)} ; {rr.stderr[-200:]}")
+        verifier(f"programme {k} : mêmes mots", False, f"{len(ref)} contre {None if m is None else len(m)} ; {dit}")
         print(src)
         continue
-    o = subprocess.run([LUGUS, fic], capture_output=True, text=True, encoding="utf-8").stdout.strip()
+    if k % 20 == 19:
+        print(f"   … {k + 1} programmes sur {N}", flush=True)
+    o = subprocess.run([LUGUS, fic], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120).stdout.strip()
     if o == attendu:
         sorties_ok += 1
     else:

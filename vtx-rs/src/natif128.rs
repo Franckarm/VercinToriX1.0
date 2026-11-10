@@ -7,14 +7,14 @@
 // cubes sur disque : le même chemin que Lugus).
 //
 // Ce qui est traduit : à la largeur 64, les opérations entières du chemin court de Lugus (ADD, ADDI, SUB, CMP, MUL,
-// AND, OR, XOR, les décalages, MOVI, ETG) ; à la largeur 128 : MOV, les lectures et écritures de la mémoire et de la
+// AND, OR, XOR, les décalages, MOVI, ETG), la division et le reste sans signe ; les constantes LDI et LDIH ; à la largeur 128 : MOV, les lectures et écritures de la mémoire et de la
 // pile, les sauts, CALL et RET. Tout le reste (les flottants, les divisions, les services, l'arrêt…) est rejoué par
 // Lugus lui-même, une instruction, puis le code traduit reprend. Les deux donnent donc toujours le même résultat : on le
 // vérifie (tests/test_natif128.py) en comparant les sorties, le texte, les registres et le compte des instructions.
 //
 // Les registres de x86-64 : rbx porte l'adresse de la machine ; rax, rcx, rdx, rsi, rdi, r8, r9 servent de brouillon.
 // Les appels suivent la convention System V (extern "sysv64"), la même sous Windows et sous Linux.
-use super::spu128::{natif_ecrire, natif_lire, places_natif, Spu128};
+use super::spu128::{natif_ecrire, natif_lire, natif_rejouer, places_natif, Spu128};
 
 const M120_HAUT: u64 = (1u64 << 56) - 1;
 
@@ -196,6 +196,9 @@ fn demi(mots: &[u128], p: usize) -> u64 {
 
 /// Traduit les mots du programme (le code, au début de l'étage 0). None si la mémoire exécutable est refusée.
 pub fn traduire(mots: &[u128]) -> Option<Traduction> {
+    // VTX_PROFIL : chaque instruction non traduite ressort du code traduit, pour être comptée
+    let profil = std::env::var("VTX_PROFIL").is_ok();
+    let rejouer = natif_rejouer as *const () as usize as u64;
     let [or, opc, oz, oc, opas, otampon] = places_natif();
     let reg = |i: usize| or + 16 * i;
     let n = mots.len() * 2;
@@ -277,6 +280,58 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                     a.zero(reg(d) + 8);
                 }
                 a.compter(opas);
+            }
+            (1, 0x0C | 0x0D) => {
+                // la division et le reste, sans signe ; par zéro : tout à un pour la division, le dividende pour le reste
+                a.charger(RAX, reg(s));
+                a.charger(RCX, reg(t));
+                a.b(&[0x48, 0x85, 0xC9]); // test rcx, rcx
+                if op == 0x0C {
+                    a.b(&[0x74, 0x07]); // jz : diviseur nul
+                    a.b(&[0x31, 0xD2, 0x48, 0xF7, 0xF1]); // xor edx, edx ; div rcx
+                    a.b(&[0xEB, 0x07]); // jmp : fin
+                    a.b(&[0x48, 0xC7, 0xC0, 0xFF, 0xFF, 0xFF, 0xFF]); // mov rax, -1
+                } else {
+                    a.b(&[0x74, 0x08]); // jz : diviseur nul, rax garde le dividende
+                    a.b(&[0x31, 0xD2, 0x48, 0xF7, 0xF1]); // xor edx, edx ; div rcx
+                    a.b(&[0x48, 0x89, 0xD0]); // mov rax, rdx
+                }
+                a.octet(oc, 0);
+                a.b(&[0x48, 0x85, 0xC0]); // test rax, rax
+                a.poser_drapeau(0x94, oz);
+                if d != 0 {
+                    a.ranger(reg(d), RAX);
+                    a.zero(reg(d) + 8);
+                }
+                a.compter(opas);
+            }
+            (0 | 1 | 2, 0x0A | 0x2B) if p + 2 <= n => {
+                // LDI et LDIH : la constante est la demi-instruction suivante (64 bits), qu'on saute
+                let k = demi(mots, p + 1);
+                if op == 0x0A {
+                    if d != 0 {
+                        a.imm64(RAX, k);
+                        a.ranger(reg(d), RAX);
+                        a.zero(reg(d) + 8);
+                    }
+                    a.octet(oz, (k == 0) as u8);
+                } else {
+                    // le haut du mot ; le bas reste (z : tout le mot est nul)
+                    if d != 0 {
+                        a.imm64(RAX, k);
+                        a.ranger(reg(d) + 8, RAX);
+                    }
+                    if k != 0 {
+                        a.octet(oz, 0);
+                    } else {
+                        a.charger(RAX, reg(d));
+                        a.b(&[0x48, 0x85, 0xC0]); // test rax, rax
+                        a.poser_drapeau(0x94, oz);
+                    }
+                }
+                a.octet(oc, 0);
+                a.compter(opas);
+                a.jmp_pc(p + 2);
             }
             (0, 0x0B) => {
                 if d != 0 {
@@ -420,12 +475,24 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
             }
             _ => ok = false,
         }
-        if !ok {
-            // rejouée par Lugus
+        if !ok && profil {
             a.o.truncate(debuts[p]);
             a.b(&[0xB8]);
             a.d32(p as u32);
             a.jmp_sortie(0);
+        } else if !ok {
+            // rejouée par Lugus, appelé d'ici (natif_rejouer) : on ne quitte le code traduit que si la machine est
+            // allée ailleurs (1) ou sur une erreur (2)
+            a.o.truncate(debuts[p]);
+            a.b(&[0x48, 0x89, 0xDF]); // mov rdi, rbx
+            a.b(&[0xBE]); // mov esi, p
+            a.d32(p as u32);
+            a.appeler(rejouer);
+            a.b(&[0x85, 0xC0]); // test eax, eax
+            a.b(&[0x74, 0x0E]); // jz : à la suite
+            a.b(&[0x83, 0xF8, 0x01]); // cmp eax, 1
+            a.jcc_sortie(0x84, 2);
+            a.jmp_sortie(3);
         } else {
             traduit[p] = true;
         }
@@ -447,8 +514,16 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
     a.ranger(opc + 8, RDX);
     a.b(&[0x31, 0xC0]);
     a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
+    // la sortie « ailleurs » : pc est déjà posé ; rendre 0
+    let sortie2 = a.o.len();
+    a.b(&[0x31, 0xC0]);
+    a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
+    // la sortie « erreur » : rendre 2
+    let sortie3 = a.o.len();
+    a.b(&[0xB8, 2, 0, 0, 0]);
+    a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
     for &(place, k) in &a.sorties {
-        let but = if k == 0 { sortie0 } else { sortie1 };
+        let but = [sortie0, sortie1, sortie2, sortie3][k as usize];
         let rel = but as i64 - (place as i64 + 4);
         a.o[place..place + 4].copy_from_slice(&(rel as i32).to_le_bytes());
     }
@@ -480,15 +555,33 @@ impl Traduction {
     /// .exe. (Un programme qui écrirait dans son propre code serait suivi par Lugus, pas par la traduction.)
     pub fn executer(&self, s: &mut Spu128) -> Result<(), String> {
         let sp: *mut Spu128 = s;
+        // VTX_PROFIL : le compte des instructions rejouées par Lugus, par code et largeur (ce qu'il reste à traduire)
+        let mut profil = if std::env::var("VTX_PROFIL").is_ok() { Some(std::collections::HashMap::new()) } else { None };
         while !s.arrete {
             let p = s.pc;
             if p < self.n as u128 {
                 let r = (self.entree)(sp, unsafe { *self.table_p.add(p as usize) });
+                if r == 2 {
+                    return Err(s.natif_erreur.take().unwrap_or_else(|| "erreur dans le code traduit".to_string()));
+                }
                 if r == 1 {
+                    if let Some(pr) = profil.as_mut() {
+                        let h = s.demi_pub(s.pc);
+                        *pr.entry(((h >> 48) as u16, ((h >> 32) & 15) as u8)).or_insert(0u64) += 1;
+                    }
                     s.pas_unique()?;
                 }
             } else {
                 s.pas_unique()?;
+            }
+        }
+        if let Some(pr) = profil {
+            let mut v: Vec<_> = pr.into_iter().collect();
+            v.sort_by(|a, b| b.1.cmp(&a.1));
+            let total: u64 = v.iter().map(|x| x.1).sum();
+            eprintln!("rejouées par Lugus : {} sur {} instructions", total, s.pas);
+            for ((op, wl), n) in v.iter().take(14) {
+                eprintln!("  code #{:02X} largeur {} : {}", op, wl, n);
             }
         }
         Ok(())
