@@ -6943,38 +6943,25 @@ fonction de_preuves(des_oui, des_non): logique {
     }
     retour comme_logique(v + f);
 }
-fonction __mot_dans(m: texte, mots: texte) {
-    // m est-il un des mots de la liste (séparés par |) ?
-    soit n = longueur(mots);
-    soit debut = 0;
-    pour i dans 0..n + 1 {
-        si i == n || car(mots, i) == 124 {
-            si i - debut == longueur(m) {
-                soit pareil = 1;
-                pour k dans 0..longueur(m) {
-                    si car(m, k) != car(mots, debut + k) {
-                        pareil = 0;
-                    }
-                }
-                si pareil == 1 {
-                    retour 1;
-                }
-            }
-            debut = i + 1;
-        }
+fonction __empreinte(t: texte) {
+    // l'empreinte d'un mot (les lettres en base 257) : le prélude ne garde aucun texte, qui irait dans chaque programme
+    soit x = 0;
+    pour i dans 0..longueur(t) {
+        x = x * 257 + car(t, i);
     }
-    retour 0;
+    retour x;
 }
 fonction vers_logique(t: texte): logique {
-    // une réponse écrite : oui, non, les deux, ou rien (ce qui n'est pas compris reste inconnu)
-    soit m = minuscules(nettoyer(t));
-    si __mot_dans(m, "oui|o|vrai|v|1|yes|y|ok|bien sur|bien sûr") == 1 {
+    // une réponse écrite : oui, o, vrai, 1, yes, ok… ; non, n, faux, 0, no ; les deux, oui et non, variable,
+    // contradiction, ça dépend ; le reste (rien, ou ce qui n'est pas compris) reste inconnu
+    soit h = __empreinte(minuscules(nettoyer(t)));
+    si h == 7361613 || h == 111 || h == 2010556594 || h == 118 || h == 49 || h == 8018001 || h == 121 || h == 28634 || h == 7287381715945034520 || h == 7287381715945068958 {
         retour vrai;
     }
-    si __mot_dans(m, "non|n|faux|f|0|no") == 1 {
+    si h == 7294027 || h == 110 || h == 1737845428 || h == 102 || h == 48 || h == 28381 {
         retour faux;
     }
-    si __mot_dans(m, "les deux|oui et non|oui non|variable|contradiction|ca depend|ça dépend") == 1 {
+    si h == 8026756121079349018 || h == 16253884254863074737 || h == 32114819366597816 || h == 8766114366418826310 || h == 17238292545346179953 || h == 9708051852539499092 || h == 13062394351231877980 {
         retour variable;
     }
     retour inconnu;

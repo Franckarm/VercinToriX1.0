@@ -1767,3 +1767,8 @@ cas, les mêmes mots, et la démonstration au clavier traduite comme jouée par 
 Limite dite : `fichier_present` ne distingue pas encore « absent » de « pas de dossier où chercher » (les deux
 rendent faux ; le second devrait être inconnu) : il faudra un service de la machine qui le dise. Senos et Dunon
 n'ont pas encore ces fonctions.
+
+Trouvé par le test du SPU-64 contre Lugus : les textes écrits dans une fonction du prélude vont dans **chaque**
+programme, même quand la fonction n'y sert pas (un petit programme passait de 23 à 154 mots, et son `@0[100]` tombait
+dans le code). `vers_logique` ne garde donc aucun texte : elle compare l'empreinte du mot (ses lettres en base 257,
+`__empreinte`) à celles des mots compris, calculées d'avance. Règle pour le prélude : pas de texte littéral.
