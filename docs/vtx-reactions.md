@@ -1957,3 +1957,29 @@ dit oui, l'autre non) laisse le garde en garde, sauf si le flair la perce, et al
 **Corrigé en route :** sur Lugus, un tableau de textes écrit et rangé dans une variable (`soit t = ["a", "b"];`)
 voit maintenant ses cases comme des textes (affichage, `+`, `==`), dans vtx128.py et vtxc128, mêmes mots.
 `tests/test_combat.py` : mêmes mots, traduit = Lugus seul, les quatre réactions, le tournoi, et la machine en Python.
+
+**Le hasard de la valeur variable (0.6g), sur l'avis du créateur :** devant une contradiction, une réaction fixe
+donne toujours le même résultat ; ne vaudrait-il pas mieux tirer au sort, et n'est-ce pas là que le codon gagne ?
+Deux changements pour le mesurer : le légionnaire **apprend** (derrière une feinte, il fait ce qui a battu la
+dernière réaction du garde à une feinte ; et parer une feinte vide coûte 2), et un garde peut, devant « variable »,
+**tirer au sort** entre parer (5 fois sur 9) et attaquer (4 sur 9) au lieu de se garder.
+
+| Garde (500 combats) | La garde tient (coût 1) | La garde est enfoncée (coût 3) |
+|---|---|---|
+| le codon et le hasard | 494 | 494 |
+| le codon seul | 499 | 474 |
+| la fusion et le hasard | 457 | 457 |
+| la fusion seule | 479 | 199 |
+| binaire prudent | 64 | 64 |
+| binaire hardi | 23 | 23 |
+
+- **Le hasard ne gagne que s'il n'existe pas de réponse sûre.** Tant que se garder ne coûte presque rien, la
+  réaction fixe reste la meilleure (499 contre 494) ; dès que la garde peut être enfoncée, celui qui répond toujours
+  pareil se fait lire et le tirage passe devant (494 contre 474 ; sans codon, 457 contre 199).
+- **Le codon gagne nettement face à un adversaire qui apprend** (499 contre 479, et 474 contre 199) : chaque feinte
+  percée par le flair est une feinte où il n'y a ni à se garder ni à tirer au sort.
+- Le tirage ne dépend pas des règles : il fait 494 dans les deux cas. C'est sa qualité (on ne peut pas l'exploiter)
+  et sa limite (il ne profite pas d'une réponse sûre quand il y en a une).
+- Les binaires s'effondrent (64 et 23 sur 500) : le légionnaire apprend vite ce que fait un garde à deux réactions.
+- Pas encore fait : des poids de tirage donnés par le codon (son penchant) ; ici une feinte non percée est toujours
+  « un oui contre un non », sans penchant.

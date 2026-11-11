@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Le combat (0.6, exemples128/combat.vtx) : un garde dont les quatre réactions (parer, attaquer, se garder, chercher)
 suivent les quatre valeurs de la question « est-ce qu'il me frappe ? », lue par le codon avec ordre (vue, ouïe, flair),
-contre un garde à quatre valeurs sans codon et deux gardes binaires, dans les mêmes 500 combats. Mêmes mots par
+avec ou sans tirage au sort devant la contradiction, contre des gardes sans codon et deux gardes binaires, face à un
+légionnaire qui apprend, dans deux tournois de 500 combats (la garde tient, la garde est enfoncée). Mêmes mots par
 vtx128.py et vtxc128 ; traduit en x86-64 comme joué par Lugus seul ; et, avec l'argument « python », comme la machine
 de référence en Python (une demi-minute)."""
 import os
@@ -46,24 +47,31 @@ verifier("combat.vtx : mêmes mots par vtx128.py et vtxc128", m == ref, f"{len(r
 a, b = jouer(demo), jouer(demo, True)
 verifier("traduit en x86-64 comme joué par Lugus seul", a == b and len(a) > 500, a[-300:])
 lignes = a.splitlines()
-verifier("le combat raconté : les quatre réactions paraissent (pare, attaque, se garde, cherche)",
-         all(any(("Brennos " + mot) in x for x in lignes) for mot in ("pare et riposte", "attaque", "se garde", "cherche")), "")
-verifier("une feinte percée par le flair est tranchée ; une feinte non percée : il se garde",
-         "        vue : non ; ouïe : oui ; flair : non\n        Brennos attaque" in a
-         and "        vue : non ; ouïe : oui ; flair : rien\n        Brennos se garde" in a, "")
+verifier("le combat raconté : les réactions paraissent (pare, attaque, cherche), et le tirage au sort devant une feinte",
+         all(any(mot in x for x in lignes) for mot in ("Brennos pare et riposte", "Brennos attaque", "Brennos cherche",
+                                                       "Brennos tire au sort : ")), "")
+verifier("une feinte percée par le flair est tranchée sans tirage ; une feinte non percée : il tire au sort",
+         "        vue : oui ; ouïe : non ; flair : non\n        Brennos attaque" in a
+         and "        vue : non ; ouïe : oui ; flair : rien\n        Brennos tire au sort : " in a, "")
 
 
-def score(nom):
-    x = [l for l in lignes if l.startswith(nom)]
-    if not x:
+def tournoi(titre):
+    i = [k for k, x in enumerate(lignes) if x.startswith(titre)]
+    if not i:
         return None
-    mots = x[0].replace(";", " ").split()
-    return int(mots[mots.index("gagnés") + 1]), int(mots[mots.index("perdus") + 1]), int(mots[-1])
+    t = []
+    for x in lignes[i[0] + 1:i[0] + 7]:
+        mots = x.replace(";", " ").split()
+        t.append((int(mots[mots.index("gagnés") + 1]), int(mots[mots.index("perdus") + 1])))
+    return t
 
 
-q, f, h, p = score("Brennos"), score("quatre valeurs, la fusion"), score("le binaire hardi"), score("le binaire prudent")
-verifier("le tournoi : codon 499 gagnés, fusion seule 495, binaire prudent 418, binaire hardi 200",
-         (q, f, h, p) == ((499, 1, 15), (495, 5, 13), (200, 300, 2), (418, 82, 7)), str((q, f, h, p)))
+# dans l'ordre : le codon et le hasard, le codon seul, la fusion et le hasard, la fusion seule, prudent, hardi
+tient, enfoncee = tournoi("Le tournoi quand la garde tient"), tournoi("Le tournoi quand la garde est enfoncée")
+verifier("quand la garde tient : le codon seul 499, avec le hasard 494, la fusion 479 et 457, les binaires 64 et 23",
+         tient == [(494, 6), (499, 1), (457, 43), (479, 21), (64, 436), (23, 477)], str(tient))
+verifier("quand la garde est enfoncée : le hasard passe devant (494 contre 474 ; la fusion 457 contre 199)",
+         enfoncee == [(494, 6), (474, 26), (457, 43), (199, 301), (64, 436), (23, 477)], str(enfoncee))
 # un tableau de textes écrit, rangé dans une variable : ses cases sont des textes (corrigé en 0.6f)
 cas = os.path.join(d, "textes.vtx")
 open(cas, "w", encoding="utf-8").write("""// machine : lugus

@@ -5,10 +5,12 @@
 //     vrai      (il frappe)                 -> parer et riposter
 //     faux      (il ne frappe pas)          -> attaquer
 //     inconnu   (je ne perçois rien)        -> chercher
-//     variable  (mes sens se contredisent)  -> se garder
+//     variable  (mes sens se contredisent)  -> se garder, ou tirer au sort entre parer et attaquer
+// Le légionnaire apprend : derrière une feinte, il fait ce qui a battu la dernière réaction du garde à une feinte.
+// Un garde qui répond toujours pareil à la contradiction se fait lire ; celui qui tire au sort, non.
 // En face, deux gardes binaires, qui n'ont qu'un oui ou un non : le hardi (pas d'alarme = j'attaque) et le prudent
-// (pas de preuve qu'il recule = je pare). Et un garde à quatre valeurs sans le codon (la fusion seule), pour voir
-// ce que le recoupement ajoute. Tous affrontent exactement les mêmes combats.
+// (pas de preuve qu'il recule = je pare). Et des gardes à quatre valeurs sans le hasard, ou sans le codon (la fusion
+// seule), pour voir ce que chacun ajoute. Tous affrontent le même légionnaire, avec les mêmes tirages.
 // Les règles du combat sont inventées pour l'exemple ; ce qui se mesure est l'écart entre les gardes, à règles égales.
 importer "../bibliotheque/codon.vtx";
 
@@ -28,7 +30,8 @@ fonction nom_evenement(s): texte {
 
 // ce qui se passe ce tour : la sorte (0 charge, 1 recul, 2 caché, 3 feinte), la vérité (0 un coup vient, 1 pas de
 // coup, 2 il est caché) et ce que les sens du garde en perçoivent (un codon : vue, ouïe, flair)
-fonction evenement() {
+// habitude : la dernière réaction du garde à une feinte (4 : il n'en a pas encore vu)
+fonction evenement(habitude) {
     // sur huit tours : trois charges, un recul, deux cachettes, deux feintes
     soit tirage = hasard(8);
     soit sorte = 0;
@@ -54,6 +57,9 @@ fonction evenement() {
     si sorte == 3 {
         // la feinte : un sens dit oui, l'autre dit non ; derrière, un vrai coup ou rien
         verite = hasard(2);
+        // il a appris : si le garde a paré la dernière feinte, celle-ci est vide ; sinon un vrai coup la suit
+        si habitude == 0 { verite = 1; }
+        si habitude == 1 || habitude == 2 || habitude == 3 { verite = 0; }
         si hasard(2) == 0 {
             vue = vrai;
             ouie = faux;
@@ -124,25 +130,40 @@ fonction reagir_fusion(d) {
     retour r;
 }
 
-fonction reagir(garde, d) {
-    si garde == 0 { retour reagir_quatre(d); }
-    si garde == 1 { retour reagir_fusion(d); }
-    si garde == 2 { retour reagir_hardi(d); }
-    retour reagir_prudent(d);
+// devant une contradiction, tirer au sort : parer cinq fois sur neuf, attaquer quatre fois sur neuf
+// (le mélange qu'un adversaire qui apprend ne peut pas exploiter, avec les blessures de ce combat)
+fonction au_sort(r, tirage) {
+    si r != 2 { retour r; }
+    si tirage < 5 { retour 0; }
+    retour 1;
+}
+
+// les gardes : 0 le codon et le hasard, 1 le codon seul, 2 la fusion et le hasard, 3 la fusion seule,
+// 4 le binaire prudent, 5 le binaire hardi
+fonction reagir(garde, d, tirage) {
+    si garde == 0 { retour au_sort(reagir_quatre(d), tirage); }
+    si garde == 1 { retour reagir_quatre(d); }
+    si garde == 2 { retour au_sort(reagir_fusion(d), tirage); }
+    si garde == 3 { retour reagir_fusion(d); }
+    si garde == 4 { retour reagir_prudent(d); }
+    retour reagir_hardi(d);
 }
 
 // l'issue d'un tour : 16 fois les blessures du garde, plus celles du légionnaire
-fonction issue(verite, r) {
+// force : ce que coûte un coup reçu en garde (1 : la garde tient ; 3 : la garde est enfoncée)
+fonction issue(verite, r, feinte, force) {
     si verite == 0 {
         // un coup vient
         si r == 0 { retour 2; }             // paré, riposte
         si r == 1 { retour 4 * 16 + 2; }    // les deux se frappent, le garde à découvert
-        si r == 2 { retour 1 * 16; }        // en garde : le coup glisse
+        si r == 2 { retour force * 16; }    // en garde : le coup glisse, ou enfonce la garde
         retour 5 * 16;                      // il cherchait ailleurs
     }
     si verite == 1 {
         // pas de coup : seul celui qui attaque en profite
         si r == 1 { retour 3; }
+        // il a mordu à la feinte : le coup vient de l'autre côté
+        si r == 0 && feinte == 1 { retour 2 * 16; }
         retour 0;
     }
     // il est caché
@@ -153,16 +174,25 @@ fonction issue(verite, r) {
 }
 
 // un combat : 20 points de vie pour le garde, 36 pour le légionnaire, 60 tours au plus. Rend 1000 * (vie du garde) + (vie du légionnaire).
-fonction combat(garde, numero, raconter) {
+fonction combat(garde, numero, raconter, force) {
     graine(numero);
     soit vie_garde = 20;
     soit vie_romain = 36;
     soit tour = 0;
+    soit habitude = 4;
+    // le dé du garde, à part : les tirages du légionnaire restent les mêmes pour tous les gardes
+    soit de = numero * 2654435761 + 12345;
     tantque tour < 60 && vie_garde > 0 && vie_romain > 0 {
-        soit e = evenement();
+        soit e = evenement(habitude);
         soit d = e & 63;
-        soit r = reagir(garde, d);
-        soit i = issue((e >> 6) & 3, r);
+        de = (de * 1103515245 + 12345) & 2147483647;
+        soit r = reagir(garde, d, (de >> 8) % 9);
+        soit feinte = 0;
+        si (e >> 8) == 3 {
+            feinte = 1;
+            habitude = r;
+        }
+        soit i = issue((e >> 6) & 3, r, feinte, force);
         soit perd_garde = i >> 4;
         soit perd_romain = i & 15;
         si perd_garde > vie_garde { perd_garde = vie_garde; }
@@ -170,9 +200,11 @@ fonction combat(garde, numero, raconter) {
         vie_garde = vie_garde - perd_garde;
         vie_romain = vie_romain - perd_romain;
         si raconter == 1 && tour < 12 {
+            soit sort = "";
+            si reagir(1, d, 0) == 2 { sort = "tire au sort : "; }
             afficher("tour", tour + 1, ":", nom_evenement(e >> 8));
             afficher("        vue : " + nom4(lettre(d, 0)) + " ; ouïe : " + nom4(lettre(d, 1)) + " ; flair : " + nom4(lettre(d, 2)));
-            afficher("        Brennos " + nom_reaction(r) + " ; vie de Brennos", vie_garde, "; du légionnaire", vie_romain);
+            afficher("        Brennos " + sort + nom_reaction(r) + " ; vie de Brennos", vie_garde, "; du légionnaire", vie_romain);
         }
         tour = tour + 1;
     }
@@ -180,30 +212,35 @@ fonction combat(garde, numero, raconter) {
 }
 
 fonction nom_garde(g): texte {
-    soit noms = ["Brennos, quatre valeurs et le codon ", "quatre valeurs, la fusion seule     ", "le binaire hardi                   ",
-                 "le binaire prudent                 "];
+    soit noms = ["Brennos : le codon et le hasard", "le codon seul                 ", "la fusion et le hasard        ",
+                 "la fusion seule               ", "le binaire prudent            ", "le binaire hardi              "];
     retour noms[g];
 }
 
-fonction principal() {
-    afficher("Le premier combat, raconté (douze tours) :");
-    soit fin = combat(0, 6, 1);
-    afficher("        ... à la fin : vie de Brennos", fin / 1000, "; du légionnaire", fin % 1000);
-    afficher("");
-    afficher("Le tournoi : les mêmes 500 combats pour chaque garde");
-    pour g dans 0..4 {
+fonction tournoi(titre: texte, force) {
+    afficher(titre);
+    pour g dans 0..6 {
         soit gagnes = 0;
         soit perdus = 0;
         soit vie = 0;
         pour n dans 1..501 {
-            soit f = combat(g, n, 0);
+            soit f = combat(g, n, 0, force);
             soit a = f / 1000;
             soit b = f % 1000;
             si b == 0 && a > 0 { gagnes = gagnes + 1; }
             si a == 0 { perdus = perdus + 1; }
             vie = vie + a;
         }
-        afficher(nom_garde(g), ": gagnés", gagnes, "; perdus", perdus, "; nuls", 500 - gagnes - perdus, "; vie restante en moyenne",
-                 vie / 500);
+        afficher(nom_garde(g), ": gagnés", gagnes, "; perdus", perdus, "; vie restante en moyenne", vie / 500);
     }
+}
+
+fonction principal() {
+    afficher("Le premier combat, raconté (douze tours) :");
+    soit fin = combat(0, 6, 1, 1);
+    afficher("        ... à la fin : vie de Brennos", fin / 1000, "; du légionnaire", fin % 1000);
+    afficher("");
+    tournoi("Le tournoi quand la garde tient (un coup reçu en garde coûte 1) : 500 combats par garde", 1);
+    afficher("");
+    tournoi("Le tournoi quand la garde est enfoncée (un coup reçu en garde coûte 3) :", 3);
 }
