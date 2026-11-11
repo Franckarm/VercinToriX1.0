@@ -222,6 +222,16 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
         let imm = (h & 0xFFFF_FFFF) as u32;
         let cible = imm as usize;
         let mut ok = true;
+        // l'instruction suivante pose z et c sans les lire, et rien ne sort du code traduit avant : celle-ci n'a pas à
+        // les écrire (deux écritures en mémoire de moins ; un saut qui arrive sur la suivante n'y change rien)
+        let suivante_pose = p + 1 < n && {
+            let h2 = demi(mots, p + 1);
+            let (op2, wl2) = ((h2 >> 48) as u16, ((h2 >> 32) & 15) as u32);
+            (wl2 == 1 && matches!(op2, 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15 | 0x16 | 0x08 | 0x09
+                | 0x17 | 0x18 | 0x19 | 0x0C | 0x0D))
+                || (wl2 == 0 && matches!(op2, 0x20 | 0x25))
+                || (wl2 <= 2 && matches!(op2, 0x0A | 0x2B) && p + 3 <= n)
+        };
         // l'adresse rsi:rdx = r[base] + imm (signé), masquée à 120 bits si masque
         let adresse = |a: &mut Asm, base: usize, masque: bool| {
             a.charger(RSI, reg(base));
@@ -256,13 +266,15 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                     0x18 => { a.b(&[0x48, 0xC7, 0xC0]); a.d32(imm); }
                     _ => { a.b(&[0xB8]); a.d32(imm); } // 0x19 : mov eax, imm32 (les 32 bits hauts à zéro)
                 }
-                if retenue {
-                    a.poser_drapeau(0x92, oc);
-                } else {
-                    a.octet(oc, 0);
+                if !suivante_pose {
+                    if retenue {
+                        a.poser_drapeau(0x92, oc);
+                    } else {
+                        a.octet(oc, 0);
+                    }
+                    a.b(&[0x48, 0x85, 0xC0]); // test rax, rax
+                    a.poser_drapeau(0x94, oz);
                 }
-                a.b(&[0x48, 0x85, 0xC0]); // test rax, rax
-                a.poser_drapeau(0x94, oz);
                 let ecrit = !matches!(op, 0x0E | 0x0F);
                 if ecrit && d != 0 {
                     a.ranger(reg(d), RAX);

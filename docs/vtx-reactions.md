@@ -1823,3 +1823,39 @@ appel (les pages du cube) ; les drapeaux z et c sont écrits à chaque instructi
 instructions. Les prochains gains, dans l'ordre de ce qu'ils rapportent : les registres de Lugus dans ceux du
 processeur, l'accès direct aux pages déjà ouvertes, les drapeaux calculés seulement quand ils sont lus.
 (Le banc à 128 bits de Lugus garde des indices de 64 bits dans le crible ; C et Rust y sont tout en 128.)
+
+## 40. T, U et la valeur variable (11 novembre) : la lecture proposée
+
+La question du créateur : entre l'ADN et l'ARN, T (en mémoire) et U (en écriture) sont-ils la valeur variable ? U
+est-il la valeur variable qui se fixe en T ? T est-il l'indicateur d'une valeur variable présentée en U à
+l'exploitation ? Et cela peut-il accélérer le langage ?
+
+**Ce qui est déjà gravé** (23 octobre) : A = 0, C = 1, G = 2, T = U = 3 ; T est le résultat fixé (ADN), U le travail
+(ARN) ; le brin est un quit de marque à côté du mot (libre, ADN, ARN), pas dans sa valeur. Donc T et U sont la **même
+valeur 3**, celle que Belnap appelle variable ; ce qui les distingue est le brin du mot qui la porte.
+
+**Deux axes, à ne pas confondre.** La valeur dit ce qu'on sait (inconnu, faux, vrai, variable : rien, un non, un oui,
+les deux). Le brin dit si le mot peut encore changer (ARN : oui ; ADN : non). « Variable » chez Belnap est une
+contradiction, pas « une chose qui varie » : le mot français invite à mêler les deux axes, et c'est en les croisant
+qu'on obtient la lecture utile, la deuxième du créateur, précisée :
+- **U : la contradiction ouverte.** Deux témoignages contraires, dans un mot de travail : on a encore le droit de la
+  trancher (un nouveau témoin, une vérification), ou de l'annuler (une hypothèse).
+- **T : la contradiction constatée.** Fixée dans l'ADN : elle fait partie de ce qui a été établi, on ne la retouche
+  plus ; qui la lit sait qu'elle a été vue et gardée telle.
+- Et de même pour les trois autres valeurs : en ARN elles sont provisoires, en ADN acquises. T et U sont le seul endroit
+  où l'alphabet le montre, parce que 3 est la seule valeur que de nouveaux témoignages ne peuvent plus changer.
+
+**Ce que cela accélère, à mesurer.**
+1. *La saturation.* Dans l'ordre du savoir, on ne fait que monter : inconnu, puis vrai ou faux, puis variable. Une
+   fusion ne redescend jamais. Un mot tout à 3 est saturé (aucun témoignage ne le changera), un mot tout à 0 est neutre
+   (il ne change rien à ce qu'on fusionne avec lui) : une boucle de fusion peut sauter les deux sans les calculer.
+2. *L'ADN est une constante.* Un mot d'ADN ne change plus : la traduction peut le lire directement, sans passer par
+   la porte des pages, le garder dans un registre, ne jamais le relire ; une réaction dont toutes les entrées sont de
+   l'ADN a un résultat qu'on peut garder (le souvenir). C'est le deuxième des trois coûts mesurés contre C.
+3. *L'ARN est privé.* Une copie de travail n'appartient qu'à celui qui travaille : pas de partage à surveiller entre
+   les tâches du tapis roulant ; seul `fixer` la rend publique.
+
+**Mesuré ce jour, et sans gain :** ne plus écrire z et c quand l'instruction suivante les pose sans les lire (la
+troisième cause de l'écart avec C). Conforme partout, mais le temps ne bouge pas de façon mesurable (0,186 s contre
+0,179 s de processeur sur le banc, dans le bruit). Gardé parce que juste et sans coût ; les gains sont ailleurs : les
+registres et l'accès à la mémoire.
