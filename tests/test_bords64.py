@@ -85,5 +85,14 @@ for reponses, sait in (("oui\n\nnon\n", "variable"), ("oui\noui\n\n", "vrai"), (
     verifier(f"bords_du_monde, réponses {reponses.split(chr(10))[:3]} : le conseil sait {sait} ; Dunon écrit comme Lugus",
              a == b and f"ce que le conseil sait : {sait}" in a and "lus : 4 ; total : 21 ; vides (inconnus) : 1" in a,
              a[-400:])
+# Lugus lancé en ligne de commande lit le clavier (0.6i), comme son exécutable ; VTX_SANS_CLAVIER=1 le lui retire
+lugus = [os.path.join(BIN, "lugus" + X), demo]
+direct = subprocess.run(lugus, input="oui\n\nnon\n", capture_output=True, text=True, encoding="utf-8", errors="replace",
+                        cwd=d, timeout=120).stdout
+verifier("lugus PROG.vtx lit le clavier : la même sortie que l'exécutable de Lugus",
+         direct == sur_lugus(demo, "oui\n\nnon\n") and "ce que le conseil sait : variable" in direct, direct[-300:])
+sans = subprocess.run(lugus, input="oui\noui\noui\n", capture_output=True, text=True, encoding="utf-8", errors="replace",
+                      cwd=d, timeout=120, env=dict(os.environ, VTX_SANS_CLAVIER="1")).stdout
+verifier("VTX_SANS_CLAVIER=1 : aucune réponse n'est lue, le conseil ne sait rien", "ce que le conseil sait : inconnu" in sans, sans[-300:])
 print("les quatre valeurs aux bords du monde, sur Dunon : " + ("tout est conforme" if echecs == 0 else f"{echecs} échec(s)"))
 sys.exit(1 if echecs else 0)

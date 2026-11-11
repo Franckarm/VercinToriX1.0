@@ -199,6 +199,56 @@ fn armer_patrouille(spu: &mut Spu128, mots: &[u128], mols: Vec<adn::Molecule>, t
     p
 }
 
+/// Un caractère lu au clavier (UTF-8) ; u128::MAX à la fin de l'entrée.
+fn lire_car_clavier() -> u128 {
+    use std::io::Read;
+    let mut entree = std::io::stdin().lock();
+    let mut o = [0u8; 4];
+    if entree.read(&mut o[..1]).unwrap_or(0) == 0 {
+        return u128::MAX;
+    }
+    let n = match o[0] {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        _ => 4,
+    };
+    for k in 1..n {
+        if entree.read(&mut o[k..k + 1]).unwrap_or(0) == 0 {
+            return u128::MAX;
+        }
+    }
+    std::str::from_utf8(&o[..n]).ok().and_then(|t| t.chars().next()).map(|c| c as u128).unwrap_or(0xFFFD)
+}
+
+/// Le clavier (0.6i) : ce que le programme lit vient de l'entrée, comme dans l'exécutable de Lugus et sur Dunon.
+/// Devant quelqu'un (l'entrée et la sortie sont un terminal), ce qu'il écrit paraît aussitôt, pour que la question
+/// se lise avant la réponse ; sinon la sortie reste rendue à la fin, comme avant. VTX_SANS_CLAVIER=1 : pas de
+/// clavier du tout (toute lecture est la fin de l'entrée), pour les vérifications lancées depuis une console.
+fn brancher_clavier(spu: &mut Spu128) {
+    use std::io::IsTerminal;
+    if std::env::var("VTX_SANS_CLAVIER").is_ok() {
+        return;
+    }
+    spu.console_lire = Some(Box::new(|| {
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+        lire_car_clavier()
+    }));
+    if std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+        spu.console_ecrire = Some(Box::new(|v: u128| {
+            use std::io::Write;
+            let mut o = std::io::stdout();
+            if let Some(c) = char::from_u32((v & 0x1F_FFFF) as u32) {
+                let _ = write!(o, "{}", c);
+            }
+            if v == 10 {
+                let _ = o.flush();
+            }
+        }));
+    }
+}
+
 /// lance ; avec un ADN, l'épigénome est d'abord repris, et la patrouille veille si elle est armée ; rend la
 /// machine (pour apprendre)
 fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::PathBuf>, t: Option<&adn::Temoins>,
@@ -232,6 +282,7 @@ fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::Path
         }
     };
     spu.entree.extend(entrees.iter().filter(|a| *a != "--veille").filter_map(|x| x.parse::<u128>().ok()));
+    brancher_clavier(&mut spu);
     let debut = std::time::Instant::now();
     let r = spu.executer(u64::MAX);
     let duree = debut.elapsed();

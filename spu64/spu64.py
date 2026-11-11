@@ -496,6 +496,9 @@ class CPU:
             return 1 if f is None or f[0] != "l" or f[2] >= len(f[1]) else 0
         if code == 5:
             return int.from_bytes(os.urandom(8), "little")
+        if code == 25:
+            # le compte des instructions jouées (instructions() du prélude), comme sur Lugus
+            return self.pas
         if code in (6, 7):
             # écrire ou lire un bloc de mots (nom, adresse longue et nombre de mots en @3[14680060..14680062], comme au
             # SPU-32) ; huit octets par mot, petit-boutiste

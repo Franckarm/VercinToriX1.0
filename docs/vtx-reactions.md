@@ -2012,3 +2012,19 @@ change), en gardant la lecture des programmes déjà écrits.
 - Senos (32 bits) n'a rien reçu : il était gelé ; à décider avec le créateur s'il faut le dégeler.
 - Trouvé en route : `lugus PROG.vtx` ne lit pas le clavier (les réponses restent inconnues) ; l'exécutable de Lugus
   et `vtx64 PROG.vtx` le lisent. À corriger.
+
+**Suite (0.6i) : deux manques comblés.**
+- `instructions()` existe sur Dunon (service 25, machine Rust et machine de référence en Python, même compte) :
+  `exemples128/codon.vtx` y compile et écrit ce que Lugus écrit, sauf le compte lui-même (un tri de dossier : 71
+  instructions de Dunon, 63 de Lugus).
+- `lugus PROG.vtx` lit le clavier, comme l'exécutable de Lugus et comme Dunon. Devant quelqu'un (un terminal), ce que
+  le programme écrit paraît aussitôt ; sinon la sortie reste rendue à la fin, comme avant. `VTX_SANS_CLAVIER=1`
+  retire le clavier ; `verifier.py` lance ses étapes sans clavier (une lecture y est la fin de l'entrée).
+
+**Senos (le 32 bits) : l'avis donné au créateur, qui se demande s'il faut l'arrêter et donner son nom à autre chose.**
+L'arrêter, oui : il reste lisible et vérifié (les anciens programmes tournent), mais ne reçoit plus rien de neuf ;
+chaque ajout porté sur trois machines coûte trois fois, et c'est son compilateur, le plus ancien, qui risquerait le
+plus de changer les mots d'un vieux programme. Changer le sens du nom, plutôt non : « senos » veut dire « l'ancien »
+en gaulois, ce qui convient exactement à une machine gelée, et les documents, les dossiers et les tests disent
+partout « Senos » pour le 32 bits ; le réemployer brouillerait la lecture de l'ancien. La décision revient au
+créateur.

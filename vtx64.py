@@ -5093,6 +5093,11 @@ fonction temoins(t): logique {
     }
     retour de_preuves(des_oui, des_non);
 }
+fonction instructions() {
+    // le nombre d'instructions que la machine a jouées depuis le lancement (pour mesurer un morceau de programme :
+    // la différence de deux lectures)
+    retour __service(25, 0);
+}
 """
 
 INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1, "vers_ieee128": 1, "de_ieee128": 1,

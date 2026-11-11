@@ -128,5 +128,13 @@ for nom, repere in (("conseil.vtx", "le soir         : vrai faux vrai variable i
     verifier(f"{nom} (écrit pour Lugus) : mêmes mots par vtx64.py et vtxc64", ok, detail)
     a = exe(prog)
     verifier(f"{nom} : Dunon écrit exactement ce que Lugus écrit", a == sur_lugus(prog) and repere in a, a[-300:])
+# instructions() sur Dunon (0.6i) : codon.vtx, qui mesure son coût, y compile ; tout est pareil sauf le compte lui-même
+prog = os.path.join(racine, "exemples128", "codon.vtx")
+ok, detail = memes_mots(prog)
+verifier("codon.vtx (il mesure son coût par instructions()) : mêmes mots par vtx64.py et vtxc64", ok, detail)
+a, b = exe(prog).splitlines(), sur_lugus(prog).splitlines()
+verifier("codon.vtx : Dunon écrit ce que Lugus écrit, sauf la ligne du coût (71 instructions de Dunon, 63 de Lugus)",
+         len(a) > 40 and a[:-1] == b[:-1] and a[-1].startswith("un tri de dossier : 71 instructions")
+         and b[-1].startswith("un tri de dossier : 63 instructions") and a[-1].endswith("sommes 13152000 168000"), a[-1] if a else "")
 print("Dunon fait le travail de Lugus : " + ("tout est conforme" if echecs == 0 else f"{echecs} échec(s)"))
 sys.exit(1 if echecs else 0)

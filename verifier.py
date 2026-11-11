@@ -170,7 +170,7 @@ for nom, cmd in etapes:
             echecs += 1
             noms_echecs.append(nom)
         continue
-    r = subprocess.run(cmd, cwd=ici, **TEXTE)
+    r = subprocess.run(cmd, cwd=ici, stdin=subprocess.DEVNULL, **TEXTE)   # pas de clavier : une lecture est la fin de l'entrée
     sortie = (r.stdout + r.stderr).strip().split("\n")
     print("\n".join(sortie[-6:]))
     if r.returncode != 0:

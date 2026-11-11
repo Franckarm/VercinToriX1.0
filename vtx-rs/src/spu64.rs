@@ -388,6 +388,8 @@ impl Spu64 {
             11 => Ok(self.ranger_cube(arg)),
             13 => Ok(self.jeter_cube(arg)),
             16..=21 | 23 => Ok(crate::hote::service(code, arg, u64::MAX).unwrap_or(0)),
+            // 25 : le compte des instructions jouées (instructions() du prélude), comme sur Lugus
+            25 => Ok(self.pas),
             // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé)
             22 => Ok(crate::miroir::prendre_etat() as u64),
             12 => {
