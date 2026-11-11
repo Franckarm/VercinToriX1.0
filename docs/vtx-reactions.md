@@ -1923,3 +1923,37 @@ qui tranche est décisif partout où il est entendu (10 cases sur 16), alors que
 surtout redondante. On ne peut pas avoir les deux rôles à la fois ; c'est le rôle de juge qui a été gardé, parce que
 c'est lui qui fait sortir une contradiction du suspens. Ce qui reste vrai de l'analogie : dans une case pleine, une
 erreur sur la troisième lettre ne change rien.
+
+## 42. Le combat : quatre réactions pour quatre valeurs (11 novembre, 0.6f)
+
+**La demande du créateur :** un test plus explicite, un combat avec un personnage dont l'IA a quatre réactions selon
+ce qui arrive.
+
+**`exemples128/combat.vtx`.** Brennos, garde gaulois, face à un légionnaire. À chaque tour : une charge, un recul,
+une cachette ou une feinte. Le garde ne le sait que par ses sens : la vue et l'ouïe (premier rang), le flair (le
+recoupement). Sa question : « est-ce qu'il me frappe ? ». vrai : parer et riposter ; faux : attaquer ; inconnu :
+chercher ; variable : se garder. La réponse est `verdict_ordonne` du codon (vue, ouïe, flair) : une feinte (un sens
+dit oui, l'autre non) laisse le garde en garde, sauf si le flair la perce, et alors il pare ou attaque.
+
+**Le tournoi : les mêmes 500 combats pour quatre gardes** (20 points de vie contre 36, 60 tours au plus) :
+
+| Garde | Gagnés | Perdus | Vie restante |
+|---|---|---|---|
+| Brennos, quatre valeurs et le codon | 499 | 1 | 15 |
+| quatre valeurs, la fusion seule | 495 | 5 | 13 |
+| binaire prudent (pas de preuve qu'il recule : je pare) | 418 | 82 | 7 |
+| binaire hardi (pas d'alarme : j'attaque) | 200 | 300 | 2 |
+
+**Ce que cela dit, et ce que cela ne dit pas.**
+- L'écart vient surtout des quatre valeurs elles-mêmes : savoir qu'on ne sait pas (chercher au lieu de frapper le
+  vide) et savoir qu'on est trompé (se garder au lieu de mordre à la feinte).
+- Le codon ajoute peu ici : 499 contre 495, 15 points de vie contre 13. Il ne sert que dans une feinte sur quatre.
+- Les règles du combat sont inventées pour l'exemple, et réglées pour que les gardes se départagent (avec un
+  légionnaire à 20 points de vie, le binaire prudent gagnait lui aussi 500 fois sur 500). Ce qui se mesure est
+  l'écart entre les gardes à règles égales, pas une vérité sur les jeux.
+- Un programmeur binaire peut écrire le même garde avec deux bits et une table : c'est Belnap fait à la main. Le
+  gain du langage est que ce soit natif, vérifié, et qu'on ne puisse pas oublier un des quatre cas (`selon`).
+
+**Corrigé en route :** sur Lugus, un tableau de textes écrit et rangé dans une variable (`soit t = ["a", "b"];`)
+voit maintenant ses cases comme des textes (affichage, `+`, `==`), dans vtx128.py et vtxc128, mêmes mots.
+`tests/test_combat.py` : mêmes mots, traduit = Lugus seul, les quatre réactions, le tournoi, et la machine en Python.

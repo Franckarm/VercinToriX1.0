@@ -1,0 +1,209 @@
+// machine : lugus
+// Le combat (0.6) : un garde gaulois, Brennos, face à un légionnaire. À chaque tour il se passe quelque chose, et le
+// garde ne le sait que par ses sens : la vue, l'ouïe, et le flair qui recoupe. La question qu'il se pose est toujours
+// la même : « est-ce qu'il me frappe ? ». Quatre réponses possibles, quatre réactions :
+//     vrai      (il frappe)                 -> parer et riposter
+//     faux      (il ne frappe pas)          -> attaquer
+//     inconnu   (je ne perçois rien)        -> chercher
+//     variable  (mes sens se contredisent)  -> se garder
+// En face, deux gardes binaires, qui n'ont qu'un oui ou un non : le hardi (pas d'alarme = j'attaque) et le prudent
+// (pas de preuve qu'il recule = je pare). Et un garde à quatre valeurs sans le codon (la fusion seule), pour voir
+// ce que le recoupement ajoute. Tous affrontent exactement les mêmes combats.
+// Les règles du combat sont inventées pour l'exemple ; ce qui se mesure est l'écart entre les gardes, à règles égales.
+importer "../bibliotheque/codon.vtx";
+
+fonction nom4(l: logique): texte {
+    retour nommer(l, ["rien", "non", "oui", "oui et non"]);
+}
+
+fonction nom_reaction(r): texte {
+    soit noms = ["pare et riposte", "attaque", "se garde", "cherche"];
+    retour noms[r];
+}
+
+fonction nom_evenement(s): texte {
+    soit noms = ["le légionnaire charge", "le légionnaire recule pour souffler", "le légionnaire se cache", "le légionnaire feinte"];
+    retour noms[s];
+}
+
+// ce qui se passe ce tour : la sorte (0 charge, 1 recul, 2 caché, 3 feinte), la vérité (0 un coup vient, 1 pas de
+// coup, 2 il est caché) et ce que les sens du garde en perçoivent (un codon : vue, ouïe, flair)
+fonction evenement() {
+    // sur huit tours : trois charges, un recul, deux cachettes, deux feintes
+    soit tirage = hasard(8);
+    soit sorte = 0;
+    si tirage == 3 { sorte = 1; }
+    si tirage == 4 || tirage == 5 { sorte = 2; }
+    si tirage >= 6 { sorte = 3; }
+    soit verite = sorte;
+    soit vue: logique = inconnu;
+    soit ouie: logique = inconnu;
+    soit flair: logique = inconnu;
+    si sorte == 0 {
+        vue = vrai;
+        ouie = vrai;
+        // le brouillard : une fois sur quatre il ne le voit pas venir ; une fois sur quatre il ne l'entend pas
+        si hasard(4) == 0 { vue = inconnu; }
+        si hasard(4) == 0 { ouie = inconnu; }
+    }
+    si sorte == 1 {
+        vue = faux;
+        ouie = faux;
+        si hasard(4) == 0 { ouie = inconnu; }
+    }
+    si sorte == 3 {
+        // la feinte : un sens dit oui, l'autre dit non ; derrière, un vrai coup ou rien
+        verite = hasard(2);
+        si hasard(2) == 0 {
+            vue = vrai;
+            ouie = faux;
+        } sinon {
+            vue = faux;
+            ouie = vrai;
+        }
+        // une fois sur deux, le flair perce la feinte
+        si hasard(2) == 0 {
+            si verite == 0 { flair = vrai; } sinon { flair = faux; }
+        }
+    }
+    retour codon(vue, ouie, flair) + 64 * verite + 256 * sorte;
+}
+
+// le garde à quatre valeurs : le verdict du codon avec ordre choisit la réaction
+fonction reagir_quatre(d) {
+    soit v = verdict_ordonne(d);
+    soit r = 3;
+    selon v {
+        vrai { r = 0; }
+        faux { r = 1; }
+        variable { r = 2; }
+        inconnu { r = 3; }
+    }
+    retour r;
+}
+
+// un sens vu par un garde binaire : y a-t-il un oui ? y a-t-il un non ?
+fonction un_oui(d) {
+    soit n = 0;
+    pour k dans 0..3 {
+        si lettre(d, k) == vrai || lettre(d, k) == variable { n = 1; }
+    }
+    retour n;
+}
+
+fonction un_non(d) {
+    soit n = 0;
+    pour k dans 0..3 {
+        si lettre(d, k) == faux || lettre(d, k) == variable { n = 1; }
+    }
+    retour n;
+}
+
+// le binaire hardi : une alarme, il pare ; sinon il attaque
+fonction reagir_hardi(d) {
+    si un_oui(d) == 1 { retour 0; }
+    retour 1;
+}
+
+// le binaire prudent : il n'attaque que si on lui dit non et que rien ne dit oui ; sinon il pare
+fonction reagir_prudent(d) {
+    si un_non(d) == 1 && un_oui(d) == 0 { retour 1; }
+    retour 0;
+}
+
+// quatre valeurs sans le codon : la fusion des trois sens, sans rang ; une contradiction reste une contradiction
+fonction reagir_fusion(d) {
+    soit v = fusion(fusion(lettre(d, 0), lettre(d, 1)), lettre(d, 2));
+    soit r = 3;
+    selon v {
+        vrai { r = 0; }
+        faux { r = 1; }
+        variable { r = 2; }
+        inconnu { r = 3; }
+    }
+    retour r;
+}
+
+fonction reagir(garde, d) {
+    si garde == 0 { retour reagir_quatre(d); }
+    si garde == 1 { retour reagir_fusion(d); }
+    si garde == 2 { retour reagir_hardi(d); }
+    retour reagir_prudent(d);
+}
+
+// l'issue d'un tour : 16 fois les blessures du garde, plus celles du légionnaire
+fonction issue(verite, r) {
+    si verite == 0 {
+        // un coup vient
+        si r == 0 { retour 2; }             // paré, riposte
+        si r == 1 { retour 4 * 16 + 2; }    // les deux se frappent, le garde à découvert
+        si r == 2 { retour 1 * 16; }        // en garde : le coup glisse
+        retour 5 * 16;                      // il cherchait ailleurs
+    }
+    si verite == 1 {
+        // pas de coup : seul celui qui attaque en profite
+        si r == 1 { retour 3; }
+        retour 0;
+    }
+    // il est caché
+    si r == 0 { retour 2 * 16; }            // il pare le vide, l'embuscade le touche
+    si r == 1 { retour 3 * 16; }            // il frappe le vide et se découvre
+    si r == 2 { retour 1 * 16; }            // en garde : l'embuscade est amortie
+    retour 1;                               // il le débusque
+}
+
+// un combat : 20 points de vie pour le garde, 36 pour le légionnaire, 60 tours au plus. Rend 1000 * (vie du garde) + (vie du légionnaire).
+fonction combat(garde, numero, raconter) {
+    graine(numero);
+    soit vie_garde = 20;
+    soit vie_romain = 36;
+    soit tour = 0;
+    tantque tour < 60 && vie_garde > 0 && vie_romain > 0 {
+        soit e = evenement();
+        soit d = e & 63;
+        soit r = reagir(garde, d);
+        soit i = issue((e >> 6) & 3, r);
+        soit perd_garde = i >> 4;
+        soit perd_romain = i & 15;
+        si perd_garde > vie_garde { perd_garde = vie_garde; }
+        si perd_romain > vie_romain { perd_romain = vie_romain; }
+        vie_garde = vie_garde - perd_garde;
+        vie_romain = vie_romain - perd_romain;
+        si raconter == 1 && tour < 12 {
+            afficher("tour", tour + 1, ":", nom_evenement(e >> 8));
+            afficher("        vue : " + nom4(lettre(d, 0)) + " ; ouïe : " + nom4(lettre(d, 1)) + " ; flair : " + nom4(lettre(d, 2)));
+            afficher("        Brennos " + nom_reaction(r) + " ; vie de Brennos", vie_garde, "; du légionnaire", vie_romain);
+        }
+        tour = tour + 1;
+    }
+    retour 1000 * vie_garde + vie_romain;
+}
+
+fonction nom_garde(g): texte {
+    soit noms = ["Brennos, quatre valeurs et le codon ", "quatre valeurs, la fusion seule     ", "le binaire hardi                   ",
+                 "le binaire prudent                 "];
+    retour noms[g];
+}
+
+fonction principal() {
+    afficher("Le premier combat, raconté (douze tours) :");
+    soit fin = combat(0, 6, 1);
+    afficher("        ... à la fin : vie de Brennos", fin / 1000, "; du légionnaire", fin % 1000);
+    afficher("");
+    afficher("Le tournoi : les mêmes 500 combats pour chaque garde");
+    pour g dans 0..4 {
+        soit gagnes = 0;
+        soit perdus = 0;
+        soit vie = 0;
+        pour n dans 1..501 {
+            soit f = combat(g, n, 0);
+            soit a = f / 1000;
+            soit b = f % 1000;
+            si b == 0 && a > 0 { gagnes = gagnes + 1; }
+            si a == 0 { perdus = perdus + 1; }
+            vie = vie + a;
+        }
+        afficher(nom_garde(g), ": gagnés", gagnes, "; perdus", perdus, "; nuls", 500 - gagnes - perdus, "; vie restante en moyenne",
+                 vie / 500);
+    }
+}

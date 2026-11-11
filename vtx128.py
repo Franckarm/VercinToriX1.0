@@ -9714,9 +9714,20 @@ def typer_textes(fs, types_champs):
             return a[2][2][2]
         return None
 
+    def literal_texte(e):
+        # ["a", "b"] : un tableau écrit dont toutes les valeurs sont des textes écrits (0.6f)
+        vu = False
+        while isinstance(e, tuple) and e and e[0] == "appel" and e[1] == "__remplir" and "__remplir" in du_prelude:
+            if e[2][2][0] != "etiq":
+                return False
+            vu = True
+            e = e[2][0]
+        return vu
+
     def tableau_de_textes(h):
         return ((h[0] == "var" and h[1] in tabtextes)
-                or (h[0] == "appel" and h[1] in TABLEAUX_DE_TEXTES and h[1] in du_prelude))
+                or (h[0] == "appel" and h[1] in TABLEAUX_DE_TEXTES and h[1] in du_prelude)
+                or literal_texte(h))
 
     def est_texte(e, env):
         if not isinstance(e, tuple) or not e:

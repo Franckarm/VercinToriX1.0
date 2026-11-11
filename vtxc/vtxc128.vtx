@@ -11813,11 +11813,27 @@ fonction champ_texte(c: Ctx, nom) {
 }
 
 // la poignée h est-elle un tableau de textes (decouper, cles, ou une variable qui en contient un) ?
+// ["a", "b"] : un tableau écrit dont toutes les valeurs sont des textes écrits (0.6f)
+fonction literal_texte(c: Ctx, e: Noeud) {
+    soit vu = 0;
+    tantque e != nul && e.genre == N_APPEL && egal(e.nom, "__remplir") && du_prelude(c, "__remplir") {
+        si e.premier.suivant.suivant.genre != N_ETIQ {
+            retour 0;
+        }
+        vu = 1;
+        e = e.premier;
+    }
+    retour vu;
+}
+
 fonction tableau_de_textes(c: Ctx, h: Noeud, tabs: Liste) {
     si h.genre == N_VAR {
         retour dans_liste(tabs, h.nom);
     }
-    retour h.genre == N_APPEL && (egal(h.nom, "decouper") || egal(h.nom, "cles")) && du_prelude(c, h.nom);
+    si h.genre == N_APPEL && (egal(h.nom, "decouper") || egal(h.nom, "cles")) && du_prelude(c, h.nom) {
+        retour 1;
+    }
+    retour literal_texte(c, h);
 }
 
 // ---- les tableaux de flottants : lus comme flottants, écrits par leurs bits
