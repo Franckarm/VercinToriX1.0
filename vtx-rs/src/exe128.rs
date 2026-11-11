@@ -287,7 +287,8 @@ pub fn avancer(s: &mut super::spu128::Spu128, mots: &[u128]) -> Result<(), Strin
         None => (s.executer(u64::MAX), "joué par Lugus (sans traduction)".to_string()),
     };
     if std::env::var("VTX_COMPTE").is_ok() {
-        eprintln!("instructions {} ; {} ; {:.3} s", s.pas, quoi, t0.elapsed().as_secs_f64());
+        eprintln!("instructions {} ; {} ; {:.3} s ; accès par Lugus : {}", s.pas, quoi, t0.elapsed().as_secs_f64(),
+                  super::spu128::LENTS.load(std::sync::atomic::Ordering::Relaxed));
     }
     r
 }

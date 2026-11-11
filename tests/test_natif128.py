@@ -125,6 +125,59 @@ fonction principal() {
     afficher(b);
 }
 """,
+    # 0.6j : les opérations sur tout le mot de 128 bits, traduites (retenue du bas au haut, zéro sur 128 bits,
+    # décalages de 0 à 127, produit, comparaisons suivies d'un saut)
+    "large": """// machine : lugus
+// les opérations sur tout le mot de 128 bits : chaque résultat écrit, pour comparer la traduction à Lugus seul
+fonction montrer(x: entier_128) {
+    ecrire(haut(x));
+    ecrire(" ");
+    ecrire(bas(x));
+    ecrire(" ; ");
+}
+fonction principal() {
+    soit a: entier_128 = 1;
+    soit b: entier_128 = 3;
+    soit somme: entier_128 = 0;
+    soit petits = 0;
+    soit egaux = 0;
+    pour tour dans 0..400 {
+        // des valeurs qui débordent des 64 bits, dans les deux sens
+        a = a * 6364136223846793005 + 1442695040888963407;
+        b = (b * a) ^ (a >> 17) ^ (b << 29);
+        soit n = tour % 131;
+        soit g: entier_128 = a << n;
+        soit d: entier_128 = b >> n;
+        soit e: entier_128 = (a - b) + (a & b) - (a | b) + (g ^ d);
+        somme = somme + e - 7;
+        si a < b { petits = petits + 1; }
+        si a - a == 0 { egaux = egaux + 1; }
+        si g == d { egaux = egaux + 1000; }
+        si tour % 40 == 0 {
+            montrer(a); montrer(b); montrer(g); montrer(d); montrer(e); montrer(somme);
+            afficher(n, petits, egaux);
+        }
+    }
+    // les bords : la retenue qui passe du bas au haut, le zéro sur 128 bits, les décalages de 0, 63, 64, 65, 127
+    soit un: entier_128 = 1;
+    soit plein: entier_128 = 18446744073709551615;
+    soit haut_seul: entier_128 = un << 64;
+    montrer(plein + un); montrer(haut_seul - un); montrer(haut_seul * haut_seul); montrer(plein * plein);
+    afficher("");
+    soit moins: entier_128 = 0 - un;
+    pour k dans [0, 1, 63, 64, 65, 127] {
+        montrer(un << k); montrer(moins >> k); montrer(haut_seul >> k); montrer(plein << k);
+        afficher(k);
+    }
+    soit z: entier_128 = haut_seul;
+    soit tours = 0;
+    tantque z != 0 { z = z - haut_seul; tours = tours + 1; }
+    si haut_seul < un { afficher("faux : 2^64 < 1"); } sinon { afficher("2^64 n'est pas plus petit que 1 ;", tours); }
+    si moins < un { afficher("-1 < 1"); } sinon { afficher("-1 n'est pas plus petit que 1"); }
+    montrer(somme);
+    afficher(petits, egaux);
+}
+""",
 }
 for nom, src in cas.items():
     f = os.path.join(d, nom + ".vtx")

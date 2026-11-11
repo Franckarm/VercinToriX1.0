@@ -63,6 +63,10 @@ pub struct Spu128 {
     pub pas: u64,
     /// pour la traduction en x86-64 : le mot que natif_lire vient de lire
     pub natif_tampon: [u64; 2],
+    /// pour le code traduit (0.6j) : seize pages qu'il lit et écrit lui-même, sans appel : [clé, adresse du premier
+    /// mot] dans la case (clé & 15). La clé est l'adresse courte >> 16 ; u64::MAX : vide. N'y entre qu'une page sans
+    /// brin (rien d'ADN à protéger). Vidé chaque fois que Lugus reprend la main.
+    pub natif_cache: [u64; 32],
     /// pour la traduction en x86-64 : l'erreur d'une instruction rejouée par Lugus depuis le code traduit
     pub natif_erreur: Option<String>,
     pub presenter: Option<Box<dyn FnMut(&Spu128) -> u128>>,
@@ -224,6 +228,8 @@ pub fn natif_flot_pour(op: u16, w: u32) -> Option<u64> {
 /// allée ailleurs ou s'est arrêtée (pc le dit), 2 pour une erreur (gardée dans natif_erreur).
 pub extern "sysv64" fn natif_rejouer(s: *mut Spu128, p: u64) -> u64 {
     let s = unsafe { &mut *s };
+    // Lugus reprend la main : il peut marquer un mot d'ADN, jeter ou charger des pages
+    s.natif_oublier();
     s.pc = p as u128;
     match s.pas_unique() {
         Ok(()) => (s.arrete || s.pc != p as u128 + 1) as u64,
@@ -235,6 +241,30 @@ pub extern "sysv64" fn natif_rejouer(s: *mut Spu128, p: u64) -> u64 {
 }
 
 impl Spu128 {
+    /// le code traduit ne garde plus aucune page
+    pub fn natif_oublier(&mut self) {
+        self.natif_cache = [u64::MAX; 32];
+    }
+
+    /// après un accès par le chemin de Lugus : si la page de cette adresse courte est dans le cache de Lugus et n'a
+    /// aucun brin, le code traduit la lira et l'écrira lui-même la prochaine fois
+    fn natif_retenir(&mut self, lo: u64, hi: u64) {
+        if hi != 0 {
+            return;
+        }
+        let (e, i) = Self::place(lo as u128);
+        let cle = i >> 16;
+        let k = case16(cle);
+        if self.cache[e][k].0 == cle {
+            let p = self.cache[e][k].1;
+            if unsafe { (*p).brins.is_none() } {
+                let c = 2 * ((lo >> 16) & 15) as usize;
+                self.natif_cache[c] = lo >> 16;
+                self.natif_cache[c + 1] = unsafe { (*p).mots.as_mut_ptr() } as u64;
+            }
+        }
+    }
+
     /// la demi-instruction à cette place (pour le profil de la traduction)
     pub fn demi_pub(&mut self, p: u128) -> u64 {
         self.demi(p)
@@ -243,17 +273,21 @@ impl Spu128 {
 
 /// Pour la traduction en x86-64 (natif128.rs) : les places des champs que le code traduit lit et écrit lui-même
 /// (r, pc, z, c, pas), en octets depuis le début de la machine.
-pub fn places_natif() -> [usize; 6] {
+pub fn places_natif() -> [usize; 7] {
     [std::mem::offset_of!(Spu128, r), std::mem::offset_of!(Spu128, pc), std::mem::offset_of!(Spu128, z),
-     std::mem::offset_of!(Spu128, c), std::mem::offset_of!(Spu128, pas), std::mem::offset_of!(Spu128, natif_tampon)]
+     std::mem::offset_of!(Spu128, c), std::mem::offset_of!(Spu128, pas), std::mem::offset_of!(Spu128, natif_tampon),
+     std::mem::offset_of!(Spu128, natif_cache)]
 }
 
 /// Pour le code traduit : lire un mot (les pages, leur cache, le disque : le chemin de Lugus même). Le mot est rendu
 /// dans natif_tampon (deux u64) : rien de 128 bits ne passe par la convention d'appel, la même sous Windows et Linux.
+pub static LENTS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 pub extern "sysv64" fn natif_lire(s: *mut Spu128, lo: u64, hi: u64) {
+    LENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     unsafe {
         let v = (*s).lire(((hi as u128) << 64) | lo as u128);
         (*s).natif_tampon = [v as u64, (v >> 64) as u64];
+        (*s).natif_retenir(lo, hi);
     }
 }
 
@@ -261,7 +295,12 @@ pub extern "sysv64" fn natif_lire(s: *mut Spu128, lo: u64, hi: u64) {
 /// par Lugus, qui dit l'erreur).
 pub extern "sysv64" fn natif_ecrire(s: *mut Spu128, lo: u64, hi: u64, vlo: u64, vhi: u64) -> u64 {
     let v = ((vhi as u128) << 64) | vlo as u128;
-    unsafe { (*s).ecrire_mem(((hi as u128) << 64) | lo as u128, v).is_err() as u64 }
+    LENTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    unsafe {
+        let r = (*s).ecrire_mem(((hi as u128) << 64) | lo as u128, v).is_err() as u64;
+        (*s).natif_retenir(lo, hi);
+        r
+    }
 }
 
 impl Spu128 {
@@ -290,6 +329,7 @@ impl Spu128 {
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
             natif_tampon: [0, 0],
+            natif_cache: [u64::MAX; 32],
             natif_erreur: None,
             presenter: None,
             machine_fille: None,

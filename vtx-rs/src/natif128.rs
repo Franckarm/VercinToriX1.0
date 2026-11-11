@@ -7,14 +7,15 @@
 // cubes sur disque : le même chemin que Lugus).
 //
 // Ce qui est traduit : à la largeur 64, les opérations entières du chemin court de Lugus (ADD, ADDI, SUB, CMP, MUL,
-// AND, OR, XOR, les décalages, MOVI, ETG), la division et le reste sans signe ; les constantes LDI et LDIH ;
+// AND, OR, XOR, les décalages, MOVI, ETG), la division et le reste sans signe ; les mêmes (sauf ETG et la division)
+// sur tout le mot de 128 bits (0.6j) ; les constantes LDI et LDIH ;
 // les flottants quaternaires (addition, soustraction, produit, quotient, racine, comparaisons, conversions depuis les
 // entiers), par un appel direct à natif_flot, le format en constante ; à la largeur 128 : MOV, les lectures et écritures de la mémoire et de la
 // pile, les sauts, CALL et RET. Tout le reste (les flottants, les divisions, les services, l'arrêt…) est rejoué par
 // Lugus lui-même, une instruction, puis le code traduit reprend. Les deux donnent donc toujours le même résultat : on le
 // vérifie (tests/test_natif128.py) en comparant les sorties, le texte, les registres et le compte des instructions.
 //
-// Les registres de x86-64 : rbx porte l'adresse de la machine ; rax, rcx, rdx, rsi, rdi, r8, r9 servent de brouillon.
+// Les registres de x86-64 : rbx porte l'adresse de la machine ; r12 le compte des instructions (0.6j) ; rax, rcx, rdx, rsi, rdi, r8, r9 servent de brouillon.
 // Les appels suivent la convention System V (extern "sysv64"), la même sous Windows et sous Linux.
 use super::spu128::{natif_ecrire, natif_flot_pour, natif_lire, natif_rejouer, places_natif, Spu128};
 
@@ -26,6 +27,8 @@ struct Asm {
     sauts: Vec<(usize, usize)>,
     // (place du rel32, étiquette : 0 la sortie « rejouer », 1 la sortie « continuer »)
     sorties: Vec<(usize, u8)>,
+    // la place du compte des instructions dans la machine (Spu128.pas)
+    pas: usize,
 }
 
 const RAX: u8 = 0;
@@ -34,6 +37,7 @@ const RDX: u8 = 2;
 const RSI: u8 = 6;
 const R8: u8 = 8;
 const R9: u8 = 9;
+const R12: u8 = 12;
 
 impl Asm {
     fn b(&mut self, x: &[u8]) {
@@ -69,11 +73,10 @@ impl Asm {
         self.b(&[0x0F, cc, 0x83]);
         self.d32(d as u32);
     }
-    /// add qword [rbx + d], 1
-    fn compter(&mut self, d: usize) {
-        self.b(&[0x48, 0x83, 0x83]);
-        self.d32(d as u32);
-        self.b(&[1]);
+    /// le compte des instructions vit dans r12 tant qu'on est dans le code traduit (0.6j) : lea r12, [r12 + 1], qui ne
+    /// touche pas aux drapeaux du processeur. En mémoire, chaque instruction attendait l'écriture de la précédente.
+    fn compter(&mut self, _d: usize) {
+        self.b(&[0x4D, 0x8D, 0x64, 0x24, 0x01]);
     }
     /// mov reg, imm64
     fn imm64(&mut self, reg: u8, v: u64) {
@@ -102,10 +105,76 @@ impl Asm {
         self.sorties.push((self.o.len(), k));
         self.d32(0);
     }
-    /// appeler une fonction (son adresse dans rax : mov rax, imm64 ; call rax)
+    /// Le début commun d'un accès rapide (0.6j) : l'adresse est en rsi:rdx. Si elle est courte et que sa page est
+    /// gardée (natif_cache, la case (adresse >> 16) & 15), rax reçoit l'adresse du mot ; sinon on saute au chemin de
+    /// Lugus. rdi sert de brouillon. Rend les deux places de saut à corriger.
+    fn mot_rapide(&mut self, cache: usize) -> [usize; 2] {
+        self.b(&[0x48, 0x85, 0xD2]); // test rdx, rdx
+        self.b(&[0x0F, 0x85]); // jnz : adresse longue
+        let s1 = self.o.len();
+        self.d32(0);
+        self.b(&[0x48, 0x89, 0xF0, 0x48, 0xC1, 0xE8, 0x10]); // mov rax, rsi ; shr rax, 16
+        self.b(&[0x89, 0xC7, 0x83, 0xE7, 0x0F, 0xC1, 0xE7, 0x04]); // mov edi, eax ; and edi, 15 ; shl edi, 4
+        self.b(&[0x48, 0x3B, 0x84, 0x3B]); // cmp rax, [rbx + rdi + clé]
+        self.d32(cache as u32);
+        self.b(&[0x0F, 0x85]); // jne : une autre page
+        let s2 = self.o.len();
+        self.d32(0);
+        self.b(&[0x0F, 0xB7, 0xC6, 0xC1, 0xE0, 0x04]); // movzx eax, si ; shl eax, 4
+        self.b(&[0x48, 0x03, 0x84, 0x3B]); // add rax, [rbx + rdi + premier mot]
+        self.d32((cache + 8) as u32);
+        [s1, s2]
+    }
+    /// corrige un saut court posé par mot_rapide (ou un jmp) pour qu'il arrive ici
+    fn ici(&mut self, place: usize) {
+        let rel = (self.o.len() - (place + 4)) as u32;
+        self.o[place..place + 4].copy_from_slice(&rel.to_le_bytes());
+    }
+    /// lire le mot d'adresse rsi:rdx dans r8:r9 : dans la page gardée s'il y est, sinon par natif_lire (qui la retient)
+    fn lire_rapide(&mut self, cache: usize, lire: u64, tampon: usize) {
+        let [s1, s2] = self.mot_rapide(cache);
+        self.b(&[0x4C, 0x8B, 0x00, 0x4C, 0x8B, 0x48, 0x08]); // mov r8, [rax] ; mov r9, [rax + 8]
+        self.b(&[0xE9]);
+        let fin = self.o.len();
+        self.d32(0);
+        self.ici(s1);
+        self.ici(s2);
+        self.b(&[0x48, 0x89, 0xDF]); // mov rdi, rbx
+        self.appeler(lire);
+        self.charger(R8, tampon);
+        self.charger(R9, tampon + 8);
+        self.ici(fin);
+    }
+    /// écrire rcx:r8 à l'adresse rsi:rdx (gardées) : dans la page gardée, sinon par natif_ecrire ; refusée (un mot
+    /// d'ADN) : rien n'a changé, on sort pour que Lugus rejoue l'instruction p et dise l'erreur
+    fn ecrire_rapide(&mut self, cache: usize, ecrire: u64, p: usize) {
+        let [s1, s2] = self.mot_rapide(cache);
+        self.b(&[0x48, 0x89, 0x08, 0x4C, 0x89, 0x40, 0x08]); // mov [rax], rcx ; mov [rax + 8], r8
+        self.b(&[0xE9]);
+        let fin = self.o.len();
+        self.d32(0);
+        self.ici(s1);
+        self.ici(s2);
+        // garder l'adresse dans la pile : push rsi ; push rdx (l'alignement revient à 16)
+        self.b(&[0x56, 0x52]);
+        self.b(&[0x48, 0x89, 0xDF]); // mov rdi, rbx
+        self.appeler(ecrire);
+        self.b(&[0x5A, 0x5E]); // pop rdx ; pop rsi
+        self.b(&[0x48, 0x85, 0xC0]); // test rax, rax
+        self.b(&[0x0F, 0x84, 0x0A, 0x00, 0x00, 0x00]); // je +10 (écrite)
+        self.b(&[0xB8]); // mov eax, p
+        self.d32(p as u32);
+        self.jmp_sortie(0);
+        self.ici(fin);
+    }
+    /// appeler une fonction de Lugus (son adresse dans rax : mov rax, imm64 ; call rax) : le compte des instructions
+    /// est rendu à la machine avant l'appel et repris après (la fonction peut le lire ou l'avancer)
     fn appeler(&mut self, f: u64) {
+        let d = self.pas;
+        self.ranger(d, R12);
         self.imm64(RAX, f);
         self.b(&[0xFF, 0xD0]);
+        self.charger(R12, d);
     }
 }
 
@@ -201,12 +270,15 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
     // VTX_PROFIL : chaque instruction non traduite ressort du code traduit, pour être comptée
     let profil = std::env::var("VTX_PROFIL").is_ok();
     let rejouer = natif_rejouer as *const () as usize as u64;
-    let [or, opc, oz, oc, opas, otampon] = places_natif();
+    let [or, opc, oz, oc, opas, otampon, ocache] = places_natif();
     let reg = |i: usize| or + 16 * i;
     let n = mots.len() * 2;
-    let mut a = Asm { o: Vec::with_capacity(n * 40), sauts: Vec::new(), sorties: Vec::new() };
-    // l'entrée : push rbx ; push rbp ; push r12 (la pile reste alignée sur 16 pour les appels) ; mov rbx, rdi ; jmp rsi
-    a.b(&[0x53, 0x55, 0x41, 0x54, 0x48, 0x89, 0xFB, 0xFF, 0xE6]);
+    let mut a = Asm { o: Vec::with_capacity(n * 40), sauts: Vec::new(), sorties: Vec::new(), pas: opas };
+    // l'entrée : push rbx ; push rbp ; push r12 (la pile reste alignée sur 16 pour les appels) ; mov rbx, rdi ;
+    // r12 = le compte des instructions ; jmp rsi
+    a.b(&[0x53, 0x55, 0x41, 0x54, 0x48, 0x89, 0xFB]);
+    a.charger(R12, opas);
+    a.b(&[0xFF, 0xE6]);
     let mut debuts = vec![0usize; n + 1];
     let mut traduit = vec![false; n];
     let lire = natif_lire as *const () as usize as u64;
@@ -229,7 +301,8 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
             let (op2, wl2) = ((h2 >> 48) as u16, ((h2 >> 32) & 15) as u32);
             (wl2 == 1 && matches!(op2, 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15 | 0x16 | 0x08 | 0x09
                 | 0x17 | 0x18 | 0x19 | 0x0C | 0x0D))
-                || (wl2 == 0 && matches!(op2, 0x20 | 0x25))
+                || (wl2 == 0 && matches!(op2, 0x20 | 0x25 | 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15
+                    | 0x16 | 0x08 | 0x09 | 0x17 | 0x18 | 0x19))
                 || (wl2 <= 2 && matches!(op2, 0x0A | 0x2B) && p + 3 <= n)
         };
         // l'adresse rsi:rdx = r[base] + imm (signé), masquée à 120 bits si masque
@@ -268,11 +341,12 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                 }
                 if !suivante_pose {
                     if retenue {
+                        // l'addition ou la soustraction a posé la retenue et le zéro du processeur : on les copie
                         a.poser_drapeau(0x92, oc);
                     } else {
                         a.octet(oc, 0);
+                        a.b(&[0x48, 0x85, 0xC0]); // test rax, rax (z ; la retenue du processeur à zéro, comme c)
                     }
-                    a.b(&[0x48, 0x85, 0xC0]); // test rax, rax
                     a.poser_drapeau(0x94, oz);
                 }
                 let ecrit = !matches!(op, 0x0E | 0x0F);
@@ -281,6 +355,119 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                     a.zero(reg(d) + 8);
                 }
                 a.compter(opas);
+                // la suivante est un saut selon z ou c (0.6j) : les drapeaux du processeur disent encore z et c (ni mov,
+                // ni lea, ni setcc ne les changent) ; on saute tout de suite, sans relire la mémoire. Le saut garde son
+                // propre morceau, à sa place, pour qui arrive sur lui d'ailleurs.
+                if !suivante_pose && p + 1 < n {
+                    let h2 = demi(mots, p + 1);
+                    let (op2, wl2, cible2) = ((h2 >> 48) as u16, ((h2 >> 32) & 15) as u32, (h2 & 0xFFFF_FFFF) as usize);
+                    if wl2 <= 2 && matches!(op2, 0x31 | 0x32 | 0x35 | 0x36) && cible2 < n {
+                        a.compter(opas);
+                        a.jcc_pc(match op2 { 0x31 => 0x84, 0x32 => 0x85, 0x35 => 0x82, _ => 0x83 }, cible2);
+                        a.jmp_pc(p + 2);
+                    }
+                }
+            }
+            (0, 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15 | 0x16 | 0x08 | 0x09 | 0x17 | 0x18 | 0x19) => {
+                // les mêmes opérations sur tout le mot de Lugus, 128 bits (0.6j) : S dans rax:rdx, T dans rcx:r8
+                let immediat = matches!(op, 0x06 | 0x07 | 0x0F);
+                let decalage = matches!(op, 0x08 | 0x09 | 0x17);
+                if !matches!(op, 0x18 | 0x19) {
+                    a.charger(RAX, reg(s));
+                    a.charger(RDX, reg(s) + 8);
+                }
+                if immediat {
+                    // l'immédiat, avec son signe étendu à 128 bits
+                    a.b(&[0x48, 0xC7, 0xC1]); // mov rcx, imm32 (signé)
+                    a.d32(imm);
+                    if (imm as i32) < 0 {
+                        a.b(&[0x49, 0xC7, 0xC0, 0xFF, 0xFF, 0xFF, 0xFF]); // mov r8, -1
+                    } else {
+                        a.b(&[0x45, 0x31, 0xC0]); // xor r8d, r8d
+                    }
+                } else if decalage {
+                    a.charger(RCX, reg(t));
+                    a.b(&[0x83, 0xE1, 0x7F]); // and ecx, 127
+                } else if !matches!(op, 0x18 | 0x19) {
+                    a.charger(RCX, reg(t));
+                    a.charger(R8, reg(t) + 8);
+                }
+                let mut retenue = false;
+                match op {
+                    0x01 | 0x06 => { a.b(&[0x48, 0x01, 0xC8, 0x4C, 0x11, 0xC2]); retenue = true; } // add rax, rcx ; adc rdx, r8
+                    0x02 | 0x07 | 0x0E | 0x0F => { a.b(&[0x48, 0x29, 0xC8, 0x4C, 0x19, 0xC2]); retenue = true; } // sub ; sbb
+                    0x14 => a.b(&[0x48, 0x21, 0xC8, 0x4C, 0x21, 0xC2]),
+                    0x15 => a.b(&[0x48, 0x09, 0xC8, 0x4C, 0x09, 0xC2]),
+                    0x16 => a.b(&[0x48, 0x31, 0xC8, 0x4C, 0x31, 0xC2]),
+                    0x03 => {
+                        // le bas du produit : bas × bas sur 128 bits, plus les deux produits croisés dans le haut
+                        a.b(&[0x48, 0x89, 0xD6]); // mov rsi, rdx
+                        a.b(&[0x48, 0x0F, 0xAF, 0xF1]); // imul rsi, rcx
+                        a.b(&[0x4C, 0x0F, 0xAF, 0xC0]); // imul r8, rax
+                        a.b(&[0x4C, 0x01, 0xC6]); // add rsi, r8
+                        a.b(&[0x48, 0xF7, 0xE1]); // mul rcx
+                        a.b(&[0x48, 0x01, 0xF2]); // add rdx, rsi
+                    }
+                    0x08 => {
+                        // à gauche de 0 à 127 : 64 ou plus, le bas passe en haut d'abord
+                        a.b(&[0xF6, 0xC1, 0x40, 0x74, 0x05]); // test cl, 64 ; jz +5
+                        a.b(&[0x48, 0x89, 0xC2, 0x31, 0xC0]); // mov rdx, rax ; xor eax, eax
+                        a.b(&[0x48, 0x0F, 0xA5, 0xC2]); // shld rdx, rax, cl
+                        a.b(&[0x48, 0xD3, 0xE0]); // shl rax, cl
+                    }
+                    0x09 => {
+                        a.b(&[0xF6, 0xC1, 0x40, 0x74, 0x05]); // test cl, 64 ; jz +5
+                        a.b(&[0x48, 0x89, 0xD0, 0x31, 0xD2]); // mov rax, rdx ; xor edx, edx
+                        a.b(&[0x48, 0x0F, 0xAD, 0xD0]); // shrd rax, rdx, cl
+                        a.b(&[0x48, 0xD3, 0xEA]); // shr rdx, cl
+                    }
+                    0x17 => {
+                        a.b(&[0xF6, 0xC1, 0x40, 0x74, 0x07]); // test cl, 64 ; jz +7
+                        a.b(&[0x48, 0x89, 0xD0, 0x48, 0xC1, 0xFA, 0x3F]); // mov rax, rdx ; sar rdx, 63
+                        a.b(&[0x48, 0x0F, 0xAD, 0xD0]); // shrd rax, rdx, cl
+                        a.b(&[0x48, 0xD3, 0xFA]); // sar rdx, cl
+                    }
+                    0x18 => {
+                        a.b(&[0x48, 0xC7, 0xC0]); // mov rax, imm32 (signé)
+                        a.d32(imm);
+                        if (imm as i32) < 0 {
+                            a.b(&[0x48, 0xC7, 0xC2, 0xFF, 0xFF, 0xFF, 0xFF]); // mov rdx, -1
+                        } else {
+                            a.b(&[0x31, 0xD2]); // xor edx, edx
+                        }
+                    }
+                    _ => { a.b(&[0xB8]); a.d32(imm); a.b(&[0x31, 0xD2]); } // 0x19 : mov eax, imm32 ; xor edx, edx
+                }
+                if !suivante_pose {
+                    if retenue {
+                        // la retenue du processeur, gardée dans dil (le calcul de z va l'effacer)
+                        a.b(&[0x40, 0x0F, 0x92, 0xC7]); // setc dil
+                        a.b(&[0x40, 0x88, 0xBB]); // mov [rbx + c], dil
+                        a.d32(oc as u32);
+                    } else {
+                        a.octet(oc, 0);
+                    }
+                    a.b(&[0x48, 0x89, 0xC6, 0x48, 0x09, 0xD6]); // mov rsi, rax ; or rsi, rdx (z ; la retenue à zéro)
+                    a.poser_drapeau(0x94, oz);
+                }
+                if !matches!(op, 0x0E | 0x0F) && d != 0 {
+                    a.ranger(reg(d), RAX);
+                    a.ranger(reg(d) + 8, RDX);
+                }
+                a.compter(opas);
+                // la suivante est un saut selon z ou c : comme à 64 bits, on saute tout de suite
+                if !suivante_pose && p + 1 < n {
+                    let h2 = demi(mots, p + 1);
+                    let (op2, wl2, cible2) = ((h2 >> 48) as u16, ((h2 >> 32) & 15) as u32, (h2 & 0xFFFF_FFFF) as usize);
+                    if wl2 <= 2 && matches!(op2, 0x31 | 0x32 | 0x35 | 0x36) && cible2 < n {
+                        a.compter(opas);
+                        if retenue && matches!(op2, 0x35 | 0x36) {
+                            a.b(&[0x40, 0xD0, 0xEF]); // shr dil, 1 : la retenue gardée revient dans celle du processeur
+                        }
+                        a.jcc_pc(match op2 { 0x31 => 0x84, 0x32 => 0x85, 0x35 => 0x82, _ => 0x83 }, cible2);
+                        a.jmp_pc(p + 2);
+                    }
+                }
             }
             (1, 0x1F) => {
                 // ETG : l'étage dans les deux bits hauts ; z et c ne changent pas
@@ -387,11 +574,8 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                         a.charger(RDX, reg(14) + 8);
                     }
                 }
-                a.b(&[0x48, 0x89, 0xDF]); // mov rdi, rbx
-                a.appeler(lire);
-                // la valeur, rendue dans natif_tampon, gardée dans r8:r9
-                a.charger(R8, otampon);
-                a.charger(R9, otampon + 8);
+                // la valeur dans r8:r9
+                a.lire_rapide(ocache, lire, otampon);
                 if op == 0x28 {
                     // r14 = (r14 + 1) & M120
                     a.b(&[0x48, 0x83, 0x83]);
@@ -445,17 +629,7 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                         }
                     }
                 }
-                // garder l'adresse (pour poser r14) dans la pile : push rsi ; push rdx (l'alignement revient à 16)
-                a.b(&[0x56, 0x52]);
-                a.b(&[0x48, 0x89, 0xDF]); // mov rdi, rbx
-                a.appeler(ecrire);
-                a.b(&[0x5A, 0x5E]); // pop rdx ; pop rsi
-                a.b(&[0x48, 0x85, 0xC0]); // test rax, rax
-                // refusée : rien n'a changé, Lugus rejoue l'instruction et dit l'erreur
-                a.b(&[0x0F, 0x84, 0x0A, 0x00, 0x00, 0x00]); // je +10 (écrite)
-                a.b(&[0xB8]); // mov eax, p
-                a.d32(p as u32);
-                a.jmp_sortie(0);
+                a.ecrire_rapide(ocache, ecrire, p);
                 if op == 0x27 || op == 0x33 {
                     a.ranger(reg(14), RSI);
                     a.ranger(reg(14) + 8, RDX);
@@ -468,10 +642,8 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
             (0 | 1 | 2, 0x34) => {
                 a.charger(RSI, reg(14));
                 a.charger(RDX, reg(14) + 8);
-                a.b(&[0x48, 0x89, 0xDF]);
-                a.appeler(lire);
-                a.charger(RAX, otampon);
-                a.charger(RDX, otampon + 8);
+                a.lire_rapide(ocache, lire, otampon);
+                a.b(&[0x4C, 0x89, 0xC0, 0x4C, 0x89, 0xCA]); // mov rax, r8 ; mov rdx, r9
                 // r14 = (r14 + 1) & M120
                 a.b(&[0x48, 0x83, 0x83]);
                 a.d32(reg(14) as u32);
@@ -526,22 +698,26 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
     a.jmp_sortie(0);
     // la sortie « rejouer » : eax = p ; pc = p ; rendre 1
     let sortie0 = a.o.len();
+    a.ranger(opas, R12);
     a.ranger(opc, RAX);
     a.zero(opc + 8);
     a.b(&[0xB8, 1, 0, 0, 0]);
     a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
     // la sortie « continuer » : rax:rdx = pc ; rendre 0
     let sortie1 = a.o.len();
+    a.ranger(opas, R12);
     a.ranger(opc, RAX);
     a.ranger(opc + 8, RDX);
     a.b(&[0x31, 0xC0]);
     a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
     // la sortie « ailleurs » : pc est déjà posé ; rendre 0
     let sortie2 = a.o.len();
+    a.ranger(opas, R12);
     a.b(&[0x31, 0xC0]);
     a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
     // la sortie « erreur » : rendre 2
     let sortie3 = a.o.len();
+    a.ranger(opas, R12);
     a.b(&[0xB8, 2, 0, 0, 0]);
     a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
     for &(place, k) in &a.sorties {
@@ -582,6 +758,8 @@ impl Traduction {
         while !s.arrete {
             let p = s.pc;
             if p < self.n as u128 {
+                // Lugus a pu jouer entre-temps : le code traduit ne garde aucune page d'une entrée à l'autre
+                s.natif_oublier();
                 let r = (self.entree)(sp, unsafe { *self.table_p.add(p as usize) });
                 if r == 2 {
                     return Err(s.natif_erreur.take().unwrap_or_else(|| "erreur dans le code traduit".to_string()));

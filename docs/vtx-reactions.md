@@ -2028,3 +2028,54 @@ plus de changer les mots d'un vieux programme. Changer le sens du nom, plutôt n
 en gaulois, ce qui convient exactement à une machine gelée, et les documents, les dossiers et les tests disent
 partout « Senos » pour le 32 bits ; le réemployer brouillerait la lecture de l'ancien. La décision revient au
 créateur.
+
+## 44. La vitesse de la traduction (11 novembre, 0.6j)
+
+**La demande du créateur :** de la vitesse.
+
+**Ce qui a été essayé, dans l'ordre, et ce que chaque pas a donné** (le banc `banc_traduction.vtx`, 130 millions
+d'instructions de Lugus ; avant : 0,26 s) :
+1. *Le compte des instructions dans un registre du processeur (r12) au lieu de la mémoire.* Attendu : un gros gain
+   (chaque instruction attendait l'écriture de la précédente). Mesuré : **rien**. Le pas est gardé (il est juste, et
+   il libère les drapeaux du processeur pour le pas 3), mais ce n'était pas le frein.
+2. *Lire et écrire la mémoire de Lugus sans appel.* Le vrai frein : les variables d'un programme vivent dans le
+   cadre, en mémoire, et chaque accès appelait une fonction de Lugus. Le code traduit garde maintenant seize pages
+   (clé, adresse du premier mot) et y lit ou écrit lui-même ; il n'appelle Lugus que pour une page qu'il ne tient
+   pas, ou qui porte un mot d'ADN (les brins : ces pages-là restent toujours vérifiées par Lugus). Une première
+   version à deux pages laissait 12 millions d'accès à Lugus (la poignée d'un tableau et ses données se chassaient) ;
+   à seize pages il en reste 0,4 million.
+3. *Une comparaison suivie d'un saut saute tout de suite*, avec les drapeaux du processeur, sans relire z et c en
+   mémoire. Le saut garde son propre morceau pour qui arrive sur lui d'ailleurs.
+4. *Les opérations sur tout le mot de 128 bits sont traduites* (addition et soustraction avec la retenue du bas au
+   haut, comparaison, produit, et, ou, ou exclusif, décalages de 0 à 127, constantes). Avant, chacune était rejouée
+   par Lugus : 27 millions sur 167 dans le banc à 128 bits.
+
+**Mesuré** (le meilleur de 12 lancements entrelacés, temps total du programme, lancement compris) :
+
+| | 64 bits | 128 bits |
+|---|---|---|
+| C (gcc -O2) | 0,025 s | 0,044 s |
+| Rust | 0,023 s | 0,038 s |
+| Java | 0,087 s | 1,085 s |
+| Lugus traduit, avant | 0,207 s | 0,541 s |
+| **Lugus traduit, 0.6j** | **0,113 s** | **0,154 s** |
+| Lugus seul | 0,710 s | 1,047 s |
+
+L'écart avec C passe de 8 à 4,5 fois (64 bits) et de 12 à 3,5 fois (128 bits). À 128 bits, Lugus traduit est 7 fois
+plus rapide que Java (qui n'a pas d'entier de 128 bits).
+
+**Sur la puissance de Lugus face à C, dit honnêtement.** Un mot de 128 bits ne rend pas un calcul ordinaire plus
+rapide : le processeur du PC travaille par 64 bits, et une opération de 128 bits lui coûte deux ou trois des
+siennes. Là où la largeur gagne, c'est quand un mot porte beaucoup de petites choses à la fois (64 logiques par mot :
+une instruction en traite 64), ou quand il faut des entiers plus grands que 64 bits. C sait aussi faire du 128 bits
+(`__int128`), c'est ce que mesure la colonne de droite.
+
+**Vérifié.** Mêmes texte, sorties, registres et compte d'instructions que Lugus seul, sur tous les exemples et les
+cas de `tests/test_natif128.py`, dont un nouveau cas « large » (128 bits : retenues, zéro, décalages 0, 1, 63, 64,
+65, 127, produit), identique aussi à la machine de référence en Python. `VTX_COMPTE=1` dit maintenant combien
+d'accès à la mémoire sont passés par Lugus.
+
+**Ce qui reste entre Lugus et C.** Les registres de Lugus vivent encore dans la mémoire de la machine (chaque
+opération les lit et les écrit) ; chaque accès au cadre refait le calcul d'adresse et la vérification de page ; les
+appels et retours passent par la mémoire de Lugus et une table. Le prochain pas serait de garder les registres les
+plus utilisés dans ceux du processeur, à l'intérieur d'un bloc sans saut.
