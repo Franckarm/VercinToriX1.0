@@ -246,6 +246,7 @@ structure Ctx {
     niter,              // compteur des boucles « pour x dans t » (variables cachées __itN, __ikN)
     tabtextes: Liste,   // typer_textes : les variables qui contiennent un tableau de textes
     tabflot: Liste,     // typer_textes : les variables qui contiennent un tableau de flottants
+    tablog: Liste,      // typer_textes : les variables qui contiennent un tableau de logiques
     dbg: Liste,
     segs_prog: Liste,
     kconst,             // 1 : les constantes du prélude (table à part)
@@ -318,6 +319,7 @@ constante T_X = 1000007;     // flottant_petuar : le flottant quaternaire de 128
 constante T_S = 1000005;     // flottant_32 : le flottant quaternaire de 32 bits
 constante T_P = 1000008;     // point : le point de matière de Lugus (#RRRRRRRR_VVVVVVVV_BBBBBBBB_MMMMMMMM)
 constante N_PNOMBRE = 42;    // point écrit : val = mot bas, nom = mot haut
+constante T_TL = 1000009;    // logique[] : la poignée d'un tableau de logiques ; redevient un entier (typer_textes)
 constante T_TF = 1000004;    // flottant[] : la poignée d'un tableau de flottants ; redevient un entier (typer_textes)     // texte : l'adresse d'un bloc ; redevient un entier avant la génération (typer_textes)
 constante N_FNOMBRE = 16;    // val = les bits du flottant
 constante N_INOMBRE = 17;    // entier_32 écrit (42S) : val
@@ -1569,6 +1571,12 @@ fonction type_opt(c: Ctx) {
         retour T_X;
     }
     si egal(nom, "logique") {
+        si est_op(c, "[") {
+            // logique[] : un tableau dynamique de logiques (chaque case : le code 0 inconnu, 1 faux, 2 vrai, 3 variable)
+            avancer(c);
+            attendre(c, "]");
+            retour T_TL;
+        }
         retour T_LOG;
     }
     si egal(nom, "texte") {
@@ -11847,6 +11855,84 @@ fonction tableau_flottant(c: Ctx, h: Noeud) {
     retour 0;
 }
 
+// ---- les tableaux de logiques : lus comme logiques, écrits par leurs codes (comme vtx128.py)
+// [a, b, c] avec au moins un logique écrit (vrai, faux, inconnu, variable) : un tableau de logiques
+fonction literal_logique(c: Ctx, e: Noeud) {
+    tantque e != nul && e.genre == N_APPEL && egal(e.nom, "__remplir") && du_prelude(c, "__remplir") {
+        soit v = e.premier.suivant.suivant;
+        si v.genre == N_BLIT || v.genre == N_QNOMBRE {
+            retour 1;
+        }
+        e = e.premier;
+    }
+    retour 0;
+}
+
+fonction tableau_logique(c: Ctx, h: Noeud) {
+    si h == nul {
+        retour 0;
+    }
+    si h.genre == N_VAR {
+        retour dans_liste(c.tablog, h.nom);
+    }
+    si h.genre == N_APPEL {
+        si egal(h.nom, "copie") && du_prelude(c, "copie") && h.premier != nul && h.premier.suivant == nul {
+            retour tableau_logique(c, h.premier);
+        }
+        soit f = fonction_de(c, h.nom);
+        retour (f != nul && f.rtype == T_TL) || literal_logique(c, h);
+    }
+    retour 0;
+}
+
+// un logique rangé dans un tableau de logiques : son code (vrai et faux écrits : 2 et 1, pas 1 et 0)
+fonction en_code(v: Noeud): Noeud {
+    si v.genre == N_BLIT {
+        retour nombre(v.val, v.ligne);
+    }
+    retour appel1_de("entier", v, v.ligne);
+}
+
+fonction en_codes_litteral(x: Noeud) {
+    tantque x != nul && x.genre == N_APPEL && egal(x.nom, "__remplir") {
+        soit k = x.premier.suivant;
+        soit nv = en_code(k.suivant);
+        k.suivant = nv;
+        nv.suivant = nul;
+        x = x.premier;
+    }
+}
+
+// les règles des tableaux de logiques sur un noeud dont les enfants sont faits ; 1 si une règle a servi
+fonction logiques_noeud(c: Ctx, e: Noeud) {
+    si poignee(e) != nul && tableau_logique(c, poignee(e)) {
+        envelopper(e, "comme_logique");
+        retour 1;
+    }
+    si e.genre == N_ECRIRE && e.val == 3 && e.a == nul && tableau_logique(c, adresse_poignee(e.b)) {
+        e.c = en_code(e.c);
+        retour 1;
+    }
+    si e.genre == N_APPEL && e.premier != nul && tableau_logique(c, e.premier) && du_prelude(c, e.nom) {
+        si (egal(e.nom, "ajouter") || egal(e.nom, "inserer") || egal(e.nom, "indice")
+            || egal(e.nom, "contient")) && e.premier.suivant != nul {
+            soit av = e.premier;
+            tantque av.suivant.suivant != nul {
+                av = av.suivant;
+            }
+            soit nv = en_code(av.suivant);
+            av.suivant = nv;
+            nv.suivant = nul;
+            retour 1;
+        }
+        si egal(e.nom, "retirer") || egal(e.nom, "enlever") {
+            envelopper(e, "comme_logique");
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
 // t[i] : (« lire », 3, (+, (« lire », 3, (+, t, 2)), i)) : la poignée t, sinon nul
 fonction poignee(e: Noeud): Noeud {
     si e != nul && e.genre == N_LIRE && e.val == 3 && e.a == nul && e.b.genre == N_BIN && egal(e.b.op, "+")
@@ -11993,7 +12079,7 @@ fonction soits_textes(c: Ctx, s: Noeud, env: Liste, normaliser) {
     tantque s != nul {
         si s.genre == N_SOIT {
             si normaliser {
-                si s.val == T_T || s.val == T_TF {
+                si s.val == T_T || s.val == T_TF || s.val == T_TL {
                     s.val = 0;
                 }
             } sinon {
@@ -12013,6 +12099,10 @@ fonction soits_textes(c: Ctx, s: Noeud, env: Liste, normaliser) {
                 }
                 si !dans_liste(c.tabflot, s.nom) && (s.val == T_TF || tableau_flottant(c, s.a)) {
                     ajouter(c.tabflot, s.nom);
+                    n = n + 1;
+                }
+                si !dans_liste(c.tablog, s.nom) && (s.val == T_TL || tableau_logique(c, s.a)) {
+                    ajouter(c.tablog, s.nom);
                     n = n + 1;
                 }
             }
@@ -12054,12 +12144,23 @@ fonction textes_noeud(c: Ctx, e: Noeud, env: Liste) {
     si e.genre == N_APPEL && egal(e.nom, "__remplir") && literal_flottant(c, e) {
         en_bits_litteral(e);
     }
+    // un littéral de logiques : chaque valeur rangée par son code
+    si e.genre == N_SOIT && e.val == T_TL && e.a != nul && e.a.genre == N_APPEL && egal(e.a.nom, "__remplir")
+        && du_prelude(c, "__remplir") {
+        en_codes_litteral(e.a);
+    }
+    si e.genre == N_APPEL && egal(e.nom, "__remplir") && literal_logique(c, e) {
+        en_codes_litteral(e);
+    }
     textes_noeud(c, e.a, env);
     textes_noeud(c, e.b, env);
     textes_noeud(c, e.c, env);
     textes_liste(c, e.premier, env);
     textes_liste(c, e.deuxieme, env);
     si flottants_noeud(c, e) {
+        retour;
+    }
+    si logiques_noeud(c, e) {
         retour;
     }
     si e.genre == N_BIN && egal(e.op, "+") && (est_texte(c, e.a, env) || est_texte(c, e.b, env)) {
@@ -12367,6 +12468,7 @@ fonction typer_textes(c: Ctx) {
         si !f.prelude {
             c.tabtextes = liste();
             c.tabflot = liste();
+            c.tablog = liste();
             soit env = liste();
             soit p = f.params;
             tantque p != nul {
@@ -12375,6 +12477,9 @@ fonction typer_textes(c: Ctx) {
                 }
                 si p.type == T_TF {
                     ajouter(c.tabflot, p.nom);
+                }
+                si p.type == T_TL {
+                    ajouter(c.tablog, p.nom);
                 }
                 p = p.suivant;
             }
@@ -12391,12 +12496,12 @@ fonction typer_textes(c: Ctx) {
     // pour la génération du code, un texte est un entier
     f = c.fonctions;
     tantque f != nul {
-        si f.rtype == T_T || f.rtype == T_TF {
+        si f.rtype == T_T || f.rtype == T_TF || f.rtype == T_TL {
             f.rtype = 0;
         }
         soit p2 = f.params;
         tantque p2 != nul {
-            si p2.type == T_T || p2.type == T_TF {
+            si p2.type == T_T || p2.type == T_TF || p2.type == T_TL {
                 p2.type = 0;
             }
             p2 = p2.suivant;

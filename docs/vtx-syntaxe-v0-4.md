@@ -271,6 +271,14 @@ selon porte {
 | `molette()`, `horloge()`, `cadence(ms)` | crans de molette, millisecondes, cadence des images | SYS 20, 18, 19 |
 | `instructions()` | Lugus : le nombre d'instructions jouées depuis le lancement (mesurer un morceau : la différence de deux lectures ; le même traduit ou non, plus grand en pas à pas) | SYS 25 |
 
+**Les tableaux dynamiques de logiques, `logique[]` (0.6, Lugus).** Un tableau qui grandit et dont chaque case porte
+une des quatre valeurs (0 inconnu : personne n'a parlé ; 1 faux, 2 vrai : une réponse ; 3 variable : deux réponses
+contraires). Il se déclare (`soit t: logique[] = [vrai, inconnu];`), ou se reconnaît à ses valeurs écrites
+(`[faux, variable]`) ; il se passe à une fonction (`fonction f(t: logique[])`) et en revient (`: logique[]`) ; `t[i]`
+et `pour x dans t` rendent des logiques (pour `selon`, `fusion`, `== vrai`) ; `ajouter`, `inserer`, `retirer`,
+`enlever`, `indice`, `contient`, `copie`, `longueur` comme pour les autres tableaux. À côté : `tableau t[n] de logique
+@2[a];` reste le tableau rangé, de taille fixe, 64 par mot, pour les grands volumes (il ne se passe pas à une fonction).
+
 **Les quatre valeurs aux bords du monde (0.6, Lugus).** Ce qui vient du dehors dit s'il est su : rien n'a été dit,
 `inconnu` ; un oui, `vrai` ; un non, `faux` ; les deux à la fois, `variable`. Une réponse vide ou incomprise n'est jamais
 changée en « non ».

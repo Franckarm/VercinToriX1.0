@@ -1713,6 +1713,11 @@ class Analyseur:
             self.suivant()
             self.attendre("]")
             return "F"
+        if v == "logique" and self.est_op("["):
+            # logique[] : un tableau dynamique de logiques (chaque case : le code 0 inconnu, 1 faux, 2 vrai, 3 variable)
+            self.suivant()
+            self.attendre("]")
+            return "L"
         if v == "flottant" and not getattr(self, "compat", True):
             return "x"                         # Lugus : le flottant par défaut a 128 bits
         return TYPES[v]
@@ -9642,6 +9647,38 @@ def typer_textes(fs, types_champs):
     tabtextes = set()
     tabflot = set()
     rtabflot = {f.nom for f in fs if f.rtype == "F"}
+    tablog = set()
+    rtablog = {f.nom for f in fs if f.rtype == "L"}
+
+    def literal_logique(e):
+        # [a, b, c] avec au moins un logique écrit (vrai, faux, inconnu, variable) : un tableau de logiques
+        while isinstance(e, tuple) and e and e[0] == "appel" and e[1] == "__remplir" and "__remplir" in du_prelude:
+            if e[2][2][0] in ("blit", "qnombre"):
+                return True
+            e = e[2][0]
+        return False
+
+    def tableau_logique(h):
+        if not isinstance(h, tuple) or not h:
+            return False
+        if h[0] == "var":
+            return h[1] in tablog
+        if h[0] == "appel":
+            if h[1] == "copie" and "copie" in du_prelude and len(h[2]) == 1:
+                return tableau_logique(h[2][0])
+            return h[1] in rtablog or literal_logique(h)
+        return False
+
+    def en_code(v):
+        # un logique rangé dans un tableau de logiques : son code (vrai et faux écrits : 2 et 1, pas 1 et 0)
+        if v[0] == "blit":
+            return ("nombre", v[1])
+        return ("appel", "entier", [v], ligne_de(v))
+
+    def en_codes_litteral(x):
+        if isinstance(x, tuple) and x and x[0] == "appel" and x[1] == "__remplir":
+            return ("appel", "__remplir", [en_codes_litteral(x[2][0]), x[2][1], en_code(x[2][2])], x[3])
+        return x
 
     def literal_flottant(e):
         # [a, b, c] avec au moins un flottant écrit en chiffres : un tableau de flottants
@@ -9723,6 +9760,12 @@ def typer_textes(fs, types_champs):
         if isinstance(x, tuple) and x and x[0] == "appel" and x[1] == "__remplir" and literal_flottant(x):
             # un littéral de flottants : chaque valeur rangée par ses bits (les entiers écrits deviennent des flottants)
             x = en_bits_litteral(x)
+        if (isinstance(x, tuple) and x and x[0] == "soit" and len(x) > 4 and x[4] == "L" and isinstance(x[2], tuple)
+                and x[2][0] == "appel" and x[2][1] == "__remplir" and "__remplir" in du_prelude):
+            x = x[:2] + (en_codes_litteral(x[2]),) + x[3:]
+        if isinstance(x, tuple) and x and x[0] == "appel" and x[1] == "__remplir" and literal_logique(x):
+            # un littéral de logiques : chaque valeur rangée par son code
+            x = en_codes_litteral(x)
         if isinstance(x, list):
             r = []
             for y in x:
@@ -9756,6 +9799,16 @@ def typer_textes(fs, types_champs):
                 return ("appel", "comme_flottant", [x], x[3])
             if x[1] in ("somme", "trier") and len(x[2]) == 1:
                 return ("appel", "__" + x[1] + "_f", x[2], x[3])
+        # les tableaux de logiques : lus comme logiques, écrits par leurs codes
+        if h is not None and tableau_logique(h):
+            return ("appel", "comme_logique", [x], ligne_de(x))
+        if g == "ecrire" and x[1] == 3 and tableau_logique(adresse_poignee(x[2])):
+            return x[:3] + (en_code(x[3]),) + x[4:]
+        if g == "appel" and x[2] and tableau_logique(x[2][0]) and x[1] in du_prelude:
+            if x[1] in ("ajouter", "inserer", "indice", "contient") and len(x[2]) >= 2:
+                return ("appel", x[1], x[2][:-1] + [en_code(x[2][-1])], x[3])
+            if x[1] in ("retirer", "enlever"):
+                return ("appel", "comme_logique", [x], x[3])
         if g == "bin" and x[1] == "+" and (est_texte(x[2], env) or est_texte(x[3], env)):
             return ("appel", "__texte_plus", [vers_texte(x[2], env), vers_texte(x[3], env)], ligne_de(x))
         if g == "bin" and x[1] in ("==", "!=") and est_texte(x[2], env) and est_texte(x[3], env):
@@ -9782,6 +9835,8 @@ def typer_textes(fs, types_champs):
         tabtextes.clear()
         tabflot.clear()
         tabflot.update(p for p, t in zip(f.params, f.ptypes) if t == "F")
+        tablog.clear()
+        tablog.update(p for p, t in zip(f.params, f.ptypes) if t == "L")
         env = {p: t == "t" for p, t in zip(f.params, f.ptypes)}
         if getattr(f, "origine", "") != "prélude":
             liste = []
@@ -9800,10 +9855,13 @@ def typer_textes(fs, types_champs):
                     if st[1] not in tabflot and ((len(st) > 4 and st[4] == "F") or tableau_flottant(st[2])):
                         tabflot.add(st[1])
                         change = True
+                    if st[1] not in tablog and ((len(st) > 4 and st[4] == "L") or tableau_logique(st[2])):
+                        tablog.add(st[1])
+                        change = True
             f.corps = rw(f.corps, env)
         # pour la génération du code, un texte (et la poignée d'un tableau de flottants) est un entier
-        f.ptypes = ["e" if t in ("t", "F") else t for t in f.ptypes]
-        if f.rtype in ("t", "F"):
+        f.ptypes = ["e" if t in ("t", "F", "L") else t for t in f.ptypes]
+        if f.rtype in ("t", "F", "L"):
             f.rtype = "e"
         f.corps = sans_type_texte(f.corps)
     for cs in types_champs.values():
@@ -9861,7 +9919,7 @@ def sans_type_texte(x):
     if isinstance(x, list):
         return [sans_type_texte(y) for y in x]
     if isinstance(x, tuple) and x:
-        if x[0] == "soit" and len(x) > 4 and x[4] in ("t", "F"):
+        if x[0] == "soit" and len(x) > 4 and x[4] in ("t", "F", "L"):
             x = x[:4] + ("e",) + x[5:]
         return tuple(sans_type_texte(y) if isinstance(y, (list, tuple)) else y for y in x)
     return x

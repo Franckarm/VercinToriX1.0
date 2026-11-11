@@ -1778,3 +1778,22 @@ porte plus que ce qui sert à construire et à essayer (AUTEUR, COMMENCER, LISEZ
 vtxc, spu64, spu128, chimie, natif, les exemples, bibliotheque, docs et les tests que joue le .bat) : 3,8 Mo au lieu de
 5,7 ; il a été extrait, construit et testé seul avant l'envoi. Le dépôt GitHub garde tout (conformité, mesures,
 vérification complète). Le .bat ne rejoue plus à chaque essai ce qui est stable (l'exécutable, les quatre vérités).
+
+## 38. Les quatre valeurs partout : logique[] (11 novembre, 0.6c)
+
+Le créateur : « le rôle du 0 et du 4, inconnu et variable, doivent être compris ». Le 0 n'est pas une réponse : c'est
+l'absence de réponse ; 1, 2 et 3 en sont. Pour que ce rôle tienne dans les programmes, les quatre valeurs doivent
+pouvoir vivre partout où vit un nombre : la première place qui manquait, c'est le tableau qui grandit et se passe à
+une fonction.
+
+`logique[]`, dans vtx128.py et vtxc128 (les mêmes mots) : le type se déclare ou se reconnaît à un littéral qui porte un
+logique écrit ; la passe des textes et des tableaux (typer_textes) sait quelles variables, quels paramètres et quels
+retours sont des tableaux de logiques, lit `t[i]` par `comme_logique`, range par le code (`vrai` et `faux` écrits : 2
+et 1, pas les entiers 1 et 0), et fait de même pour ajouter, inserer, indice, contient, retirer, enlever. Dessous, c'est
+le tableau dynamique ordinaire : une case, un mot. `exemples128/conseil.vtx` : la mémoire du conseil, cinq questions
+d'abord inconnues, des témoignages qui s'ajoutent sans s'effacer (vrai puis faux : variable), les questions restées à
+demander, les paroles rassemblées. `tests/test_logiques128.py` : huit cas, les mêmes mots, traduit comme joué.
+
+Limites dites : un littéral fait de lectures (`[t[0], t[2]]`) n'est pas reconnu comme tableau de logiques (il faut un
+logique écrit, ou le type) ; le tableau rangé (64 par mot) ne se passe toujours pas à une fonction ; Senos et Dunon
+n'ont ni logique[] ni les fonctions des bords du monde : c'est la suite.

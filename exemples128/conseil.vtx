@@ -1,0 +1,69 @@
+// machine : lugus
+// Le conseil garde la mémoire de ce qu'il sait (0.6) : un tableau de logiques qui grandit, logique[].
+// Chaque case porte une des quatre valeurs. 0, inconnu : personne n'a encore parlé. 1 faux, 2 vrai : une réponse.
+// 3, variable : deux réponses contraires. Le tableau se passe à une fonction, s'allonge, se rassemble.
+
+fonction nom4(l: logique): texte {
+    retour nommer(l, ["inconnu", "faux", "vrai", "variable"]);
+}
+
+// ce que tout le conseil sait : la fusion de tous les avis
+fonction rassembler(avis: logique[]): logique {
+    soit a: logique = inconnu;
+    pour x dans avis {
+        a = fusion(a, x);
+    }
+    retour a;
+}
+
+// combien de cases portent cette valeur
+fonction combien_de(avis: logique[], v: logique) {
+    soit n = 0;
+    pour x dans avis {
+        si x == v { n = n + 1; }
+    }
+    retour n;
+}
+
+// les questions restées sans réponse : leurs numéros
+fonction a_demander(avis: logique[]) {
+    soit t = [];
+    pour i dans 0..longueur(avis) {
+        si avis[i] == inconnu { ajouter(t, i); }
+    }
+    retour t;
+}
+
+// un nouveau témoignage sur la question i : il s'ajoute à ce qu'on savait (il ne l'efface pas)
+fonction temoigner(avis: logique[], i, parole: logique) {
+    avis[i] = fusion(avis[i], parole);
+}
+
+fonction principal() {
+    // cinq questions ; au début, on ne sait rien
+    soit avis: logique[] = [inconnu, inconnu, inconnu, inconnu, inconnu];
+    afficher("au début        :", nom4(avis[0]), nom4(avis[1]), nom4(avis[2]), nom4(avis[3]), nom4(avis[4]));
+    temoigner(avis, 0, vrai);
+    temoigner(avis, 1, faux);
+    temoigner(avis, 3, vrai);
+    temoigner(avis, 3, faux);
+    afficher("après le matin  :", nom4(avis[0]), nom4(avis[1]), nom4(avis[2]), nom4(avis[3]), nom4(avis[4]));
+    afficher("sues (vrai)     :", combien_de(avis, vrai), "; fausses :", combien_de(avis, faux), "; inconnues :",
+             combien_de(avis, inconnu), "; contradictions :", combien_de(avis, variable));
+    soit reste = a_demander(avis);
+    afficher("à demander      : questions", reste[0], "et", reste[1]);
+    // une sixième question arrive, déjà tranchée
+    ajouter(avis, vrai);
+    temoigner(avis, 2, vrai);
+    afficher("le soir         :", nom4(avis[0]), nom4(avis[1]), nom4(avis[2]), nom4(avis[3]), nom4(avis[4]), nom4(avis[5]));
+    // la question 3, de plus près : les paroles des trois guetteurs qui en ont parlé
+    soit paroles: logique[] = [vrai, inconnu, faux];
+    afficher("question 3, les trois paroles rassemblées :", nom4(rassembler(paroles)));
+    soit derniere = retirer(paroles);
+    afficher("sans la dernière (" + nom4(derniere) + ") :", nom4(rassembler(paroles)), "; il en reste", longueur(paroles));
+    soit copie_du_soir = copie(avis);
+    copie_du_soir[3] = inconnu;
+    afficher("une copie où l'on oublie la question 3 :", nom4(copie_du_soir[3]), "; la mémoire du conseil garde :", nom4(avis[3]));
+    afficher("la première contradiction est la question", indice(avis, variable), "; reste-t-il de l'inconnu ?",
+             contient(avis, inconnu));
+}
