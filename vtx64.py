@@ -446,6 +446,11 @@ class Analyseur:
             self.suivant()
             self.attendre("]")
             return "F"
+        if v == "logique" and self.est_op("["):
+            # logique[] : un tableau dynamique de logiques (chaque case : le code 0 inconnu, 1 faux, 2 vrai, 3 variable)
+            self.suivant()
+            self.attendre("]")
+            return "L"
         return TYPES[v]
 
     def cval(self, e, l):
@@ -5002,6 +5007,92 @@ fonction puissance_entiere(a, b) {
     }
     retour r;
 }
+// --- les quatre valeurs aux bords du monde (0.6) : ce qui vient du dehors dit s'il est su.
+// Rien n'a été dit : inconnu ; un oui : vrai ; un non : faux ; les deux à la fois : variable.
+fonction de_preuves(des_oui, des_non): logique {
+    // deux comptes de preuves (des oui, des non) : la valeur de Belnap qu'ils font
+    soit v = 0;
+    si des_oui > 0 {
+        v = 2;
+    }
+    soit f = 0;
+    si des_non > 0 {
+        f = 1;
+    }
+    retour comme_logique(v + f);
+}
+fonction __empreinte(t: texte) {
+    // l'empreinte d'un mot (les lettres en base 257) : le prélude ne garde aucun texte, qui irait dans chaque programme
+    soit x = 0;
+    pour i dans 0..longueur(t) {
+        x = x * 257 + car(t, i);
+    }
+    retour x;
+}
+fonction vers_logique(t: texte): logique {
+    // une réponse écrite : oui, o, vrai, 1, yes, ok… ; non, n, faux, 0, no ; les deux, oui et non, variable,
+    // contradiction, ça dépend ; le reste (rien, ou ce qui n'est pas compris) reste inconnu
+    soit h = __empreinte(minuscules(nettoyer(t)));
+    si h == 7361613 || h == 111 || h == 2010556594 || h == 118 || h == 49 || h == 8018001 || h == 121 || h == 28634 || h == 7287381715945034520 || h == 7287381715945068958 {
+        retour vrai;
+    }
+    si h == 7294027 || h == 110 || h == 1737845428 || h == 102 || h == 48 || h == 28381 {
+        retour faux;
+    }
+    si h == 8026756121079349018 || h == 16253884254863074737 || h == 32114819366597816 || h == 8766114366418826310 || h == 17238292545346179953 || h == 9708051852539499092 || h == 13062394351231877980 {
+        retour variable;
+    }
+    retour inconnu;
+}
+fonction lire_logique(): logique {
+    // une ligne du clavier, comprise comme une réponse ; la fin de l'entrée ou une ligne vide : inconnu
+    retour vers_logique(lire_ligne());
+}
+fonction nombre_su(t: texte): logique {
+    // vrai : le texte est un nombre entier (un signe, des chiffres) ; faux : il y a autre chose ; inconnu : il est vide
+    soit m = nettoyer(t);
+    soit n = longueur(m);
+    si n == 0 {
+        retour inconnu;
+    }
+    soit i = 0;
+    si car(m, 0) == 45 || car(m, 0) == 43 {
+        i = 1;
+    }
+    si i == n {
+        retour faux;
+    }
+    tantque i < n {
+        si car(m, i) < 48 || car(m, i) > 57 {
+            retour faux;
+        }
+        i = i + 1;
+    }
+    retour vrai;
+}
+fonction fichier_present(nom: texte): logique {
+    // vrai : le fichier se lit ; faux : il ne se lit pas (absent, ou pas de dossier pour le chercher)
+    soit c = ouvrir_lecture(nom);
+    si c == 18446744073709551615 {
+        retour faux;
+    }
+    fermer(c);
+    retour vrai;
+}
+fonction temoins(t): logique {
+    // un tableau de réponses (0 rien, 1 non, 2 oui, 3 les deux) rassemblées : la fusion de tous les témoignages
+    soit des_oui = 0;
+    soit des_non = 0;
+    pour x dans t {
+        si x == 2 || x == 3 {
+            des_oui = des_oui + 1;
+        }
+        si x == 1 || x == 3 {
+            des_non = des_non + 1;
+        }
+    }
+    retour de_preuves(des_oui, des_non);
+}
 """
 
 INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1, "vers_ieee128": 1, "de_ieee128": 1,
@@ -7301,6 +7392,38 @@ def typer_textes(fs, types_champs):
     tabtextes = set()
     tabflot = set()
     rtabflot = {f.nom for f in fs if f.rtype == "F"}
+    tablog = set()
+    rtablog = {f.nom for f in fs if f.rtype == "L"}
+
+    def literal_logique(e):
+        # [a, b, c] avec au moins un logique écrit (vrai, faux, inconnu, variable) : un tableau de logiques
+        while isinstance(e, tuple) and e and e[0] == "appel" and e[1] == "__remplir" and "__remplir" in du_prelude:
+            if e[2][2][0] in ("blit", "qnombre"):
+                return True
+            e = e[2][0]
+        return False
+
+    def tableau_logique(h):
+        if not isinstance(h, tuple) or not h:
+            return False
+        if h[0] == "var":
+            return h[1] in tablog
+        if h[0] == "appel":
+            if h[1] == "copie" and "copie" in du_prelude and len(h[2]) == 1:
+                return tableau_logique(h[2][0])
+            return h[1] in rtablog or literal_logique(h)
+        return False
+
+    def en_code(v):
+        # un logique rangé dans un tableau de logiques : son code (vrai et faux écrits : 2 et 1, pas 1 et 0)
+        if v[0] == "blit":
+            return ("nombre", v[1])
+        return ("appel", "entier", [v], ligne_de(v))
+
+    def en_codes_litteral(x):
+        if isinstance(x, tuple) and x and x[0] == "appel" and x[1] == "__remplir":
+            return ("appel", "__remplir", [en_codes_litteral(x[2][0]), x[2][1], en_code(x[2][2])], x[3])
+        return x
 
     def literal_flottant(e):
         # [a, b, c] avec au moins un flottant écrit en chiffres : un tableau de flottants
@@ -7336,9 +7459,20 @@ def typer_textes(fs, types_champs):
             return a[2][2][2]
         return None
 
+    def literal_texte(e):
+        # ["a", "b"] : un tableau écrit dont toutes les valeurs sont des textes écrits (0.6f)
+        vu = False
+        while isinstance(e, tuple) and e and e[0] == "appel" and e[1] == "__remplir" and "__remplir" in du_prelude:
+            if e[2][2][0] != "etiq":
+                return False
+            vu = True
+            e = e[2][0]
+        return vu
+
     def tableau_de_textes(h):
         return ((h[0] == "var" and h[1] in tabtextes)
-                or (h[0] == "appel" and h[1] in TABLEAUX_DE_TEXTES and h[1] in du_prelude))
+                or (h[0] == "appel" and h[1] in TABLEAUX_DE_TEXTES and h[1] in du_prelude)
+                or literal_texte(h))
 
     def est_texte(e, env):
         if not isinstance(e, tuple) or not e:
@@ -7382,6 +7516,12 @@ def typer_textes(fs, types_champs):
         if isinstance(x, tuple) and x and x[0] == "appel" and x[1] == "__remplir" and literal_flottant(x):
             # un littéral de flottants : chaque valeur rangée par ses bits (les entiers écrits deviennent des flottants)
             x = en_bits_litteral(x)
+        if (isinstance(x, tuple) and x and x[0] == "soit" and len(x) > 4 and x[4] == "L" and isinstance(x[2], tuple)
+                and x[2][0] == "appel" and x[2][1] == "__remplir" and "__remplir" in du_prelude):
+            x = x[:2] + (en_codes_litteral(x[2]),) + x[3:]
+        if isinstance(x, tuple) and x and x[0] == "appel" and x[1] == "__remplir" and literal_logique(x):
+            # un littéral de logiques : chaque valeur rangée par son code
+            x = en_codes_litteral(x)
         if isinstance(x, list):
             r = []
             for y in x:
@@ -7415,6 +7555,16 @@ def typer_textes(fs, types_champs):
                 return ("appel", "comme_flottant", [x], x[3])
             if x[1] in ("somme", "trier") and len(x[2]) == 1:
                 return ("appel", "__" + x[1] + "_f", x[2], x[3])
+        # les tableaux de logiques : lus comme logiques, écrits par leurs codes
+        if h is not None and tableau_logique(h):
+            return ("appel", "comme_logique", [x], ligne_de(x))
+        if g == "ecrire" and x[1] == 3 and tableau_logique(adresse_poignee(x[2])):
+            return x[:3] + (en_code(x[3]),) + x[4:]
+        if g == "appel" and x[2] and tableau_logique(x[2][0]) and x[1] in du_prelude:
+            if x[1] in ("ajouter", "inserer", "indice", "contient") and len(x[2]) >= 2:
+                return ("appel", x[1], x[2][:-1] + [en_code(x[2][-1])], x[3])
+            if x[1] in ("retirer", "enlever"):
+                return ("appel", "comme_logique", [x], x[3])
         if g == "bin" and x[1] == "+" and (est_texte(x[2], env) or est_texte(x[3], env)):
             return ("appel", "__texte_plus", [vers_texte(x[2], env), vers_texte(x[3], env)], ligne_de(x))
         if g == "bin" and x[1] in ("==", "!=") and est_texte(x[2], env) and est_texte(x[3], env):
@@ -7441,6 +7591,8 @@ def typer_textes(fs, types_champs):
         tabtextes.clear()
         tabflot.clear()
         tabflot.update(p for p, t in zip(f.params, f.ptypes) if t == "F")
+        tablog.clear()
+        tablog.update(p for p, t in zip(f.params, f.ptypes) if t == "L")
         env = {p: t == "t" for p, t in zip(f.params, f.ptypes)}
         if getattr(f, "origine", "") != "prélude":
             liste = []
@@ -7459,10 +7611,13 @@ def typer_textes(fs, types_champs):
                     if st[1] not in tabflot and ((len(st) > 4 and st[4] == "F") or tableau_flottant(st[2])):
                         tabflot.add(st[1])
                         change = True
+                    if st[1] not in tablog and ((len(st) > 4 and st[4] == "L") or tableau_logique(st[2])):
+                        tablog.add(st[1])
+                        change = True
             f.corps = rw(f.corps, env)
         # pour la génération du code, un texte (et la poignée d'un tableau de flottants) est un entier
-        f.ptypes = ["e" if t in ("t", "F") else t for t in f.ptypes]
-        if f.rtype in ("t", "F"):
+        f.ptypes = ["e" if t in ("t", "F", "L") else t for t in f.ptypes]
+        if f.rtype in ("t", "F", "L"):
             f.rtype = "e"
         f.corps = sans_type_texte(f.corps)
     for cs in types_champs.values():
@@ -7504,7 +7659,7 @@ def sans_type_texte(x):
     if isinstance(x, list):
         return [sans_type_texte(y) for y in x]
     if isinstance(x, tuple) and x:
-        if x[0] == "soit" and len(x) > 4 and x[4] in ("t", "F"):
+        if x[0] == "soit" and len(x) > 4 and x[4] in ("t", "F", "L"):
             x = x[:4] + ("e",) + x[5:]
         return tuple(sans_type_texte(y) if isinstance(y, (list, tuple)) else y for y in x)
     return x

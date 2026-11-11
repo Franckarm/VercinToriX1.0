@@ -1,0 +1,55 @@
+// machine : dunon
+// Les quatre valeurs aux bords du monde (0.6), sur Dunon comme sur Lugus : ce qui vient du dehors dit s'il est su.
+// Le druide interroge trois guetteurs ; chacun répond au clavier (oui, non, les deux, ou rien). Une réponse vide ou
+// incomprise reste inconnue : elle n'est pas changée en « non ». Puis il compte les sangliers d'après un relevé écrit,
+// et cherche le registre de la tribu. À la fin, une seule valeur dit ce qu'on sait, et ce qu'il faut faire.
+
+fonction nom4(l: logique): texte {
+    retour nommer(l, ["inconnu", "faux", "vrai", "variable"]);
+}
+
+fonction principal() {
+    afficher("=== Le druide interroge trois guetteurs : « les Romains sont-ils au gué ? » ===");
+    afficher("(répondez oui, non, les deux, ou rien)");
+    soit avis: logique = inconnu;
+    pour g dans 1..4 {
+        ecrire("guetteur " + texte(g) + " : ");
+        soit r = lire_logique();
+        afficher("   compris :", nom4(r));
+        avis = fusion(avis, r);
+    }
+    afficher("ce que le conseil sait :", nom4(avis));
+    selon avis {
+        vrai { afficher("-> on garnit le gué"); }
+        faux { afficher("-> on reste au village"); }
+        inconnu { afficher("-> personne n'a rien dit : on envoie un éclaireur"); }
+        variable { afficher("-> les guetteurs se contredisent : on va voir soi-même"); }
+    }
+    afficher("");
+    afficher("=== Le relevé des sangliers : chaque ligne doit être un nombre ===");
+    soit releve = ["12", "", "7", "beaucoup", "-3", "  5 "];
+    soit total = 0;
+    soit lus = 0;
+    soit vides = 0;
+    soit faux_releves = 0;
+    pour t dans releve {
+        soit l = nombre_su(t);
+        selon l {
+            vrai { total = total + nombre(nettoyer(t)); lus = lus + 1; }
+            faux { faux_releves = faux_releves + 1; }
+            inconnu { vides = vides + 1; }
+            variable { faux_releves = faux_releves + 1; }
+        }
+    }
+    afficher("lus :", lus, "; total :", total, "; vides (inconnus) :", vides, "; pas des nombres (faux) :", faux_releves);
+    afficher("Un binaire aurait compté « beaucoup » et la ligne vide pour zéro, sans le dire.");
+    afficher("");
+    afficher("=== Le registre de la tribu ===");
+    soit reg = fichier_present("registre.txt");
+    afficher("registre.txt présent :", nom4(reg));
+    afficher("");
+    afficher("=== Les témoignages rassemblés d'un coup (0 rien, 1 non, 2 oui, 3 les deux) ===");
+    afficher("[0, 2, 0] ->", nom4(temoins([0, 2, 0])), " ; [1, 1] ->", nom4(temoins([1, 1])), " ; [] ->", nom4(temoins([])),
+             " ; [2, 1] ->", nom4(temoins([2, 1])));
+    afficher("de_preuves(4 oui, 0 non) ->", nom4(de_preuves(4, 0)), " ; de_preuves(2, 3) ->", nom4(de_preuves(2, 3)));
+}

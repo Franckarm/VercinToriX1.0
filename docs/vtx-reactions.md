@@ -1983,3 +1983,32 @@ dernière réaction du garde à une feinte ; et parer une feinte vide coûte 2),
 - Les binaires s'effondrent (64 et 23 sur 500) : le légionnaire apprend vite ce que fait un garde à deux réactions.
 - Pas encore fait : des poids de tirage donnés par le codon (son penchant) ; ici une feinte non percée est toujours
   « un oui contre un non », sans penchant.
+
+## 43. Dunon fait le travail de Lugus (11 novembre, 0.6h)
+
+**La demande du créateur :** Senos et Dunon doivent faire le même travail que Lugus (seule la finesse en bits
+change), en gardant la lecture des programmes déjà écrits.
+
+**Fait sur Dunon (le SPU-64), dans vtx64.py et vtxc64, mêmes mots :**
+- les quatre valeurs aux bords du monde : `de_preuves`, `vers_logique`, `lire_logique`, `nombre_su`,
+  `fichier_present`, `temoins` (le même texte que dans le prélude de Lugus) ;
+- `logique[]` : les tableaux dynamiques de logiques (déclarés, reconnus à leurs valeurs écrites, passés aux
+  fonctions, allongés, copiés) ;
+- un tableau de textes écrit et rangé dans une variable voit ses cases comme des textes (le défaut existait aussi
+  sur Dunon).
+
+**Vérifié.**
+- *Le même travail :* `conseil.vtx` et `combat.vtx`, écrits pour Lugus, écrivent sur Dunon exactement la même
+  sortie, à l'octet près (le tournoi compris) ; `bords_du_monde.vtx` aussi, pour quatre jeux de réponses au clavier.
+- *La lecture de l'ancien :* les 47 programmes des dossiers d'exemples et de la bibliothèque que Dunon acceptait
+  donnent, après ces ajouts, exactement les mêmes mots qu'avant (comparaison avec le compilateur d'avant).
+- `tests/test_bords64.py`, `tests/test_logiques64.py`.
+
+**Ce qui manque encore, dit.**
+- `instructions()` n'existe pas sur Dunon : `exemples128/codon.vtx`, qui mesure son coût, n'y compile pas (la
+  bibliothèque `codon.vtx` elle-même y marche : le combat s'en sert).
+- La traduction en x86-64 et les exécutables autonomes restent propres à Lugus.
+- Les tableaux rangés 64 par mot et les boucles fondues sont de Lugus (sur Dunon : 32 par mot, sans fusion).
+- Senos (32 bits) n'a rien reçu : il était gelé ; à décider avec le créateur s'il faut le dégeler.
+- Trouvé en route : `lugus PROG.vtx` ne lit pas le clavier (les réponses restent inconnues) ; l'exécutable de Lugus
+  et `vtx64 PROG.vtx` le lisent. À corriger.

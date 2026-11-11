@@ -271,7 +271,7 @@ selon porte {
 | `molette()`, `horloge()`, `cadence(ms)` | crans de molette, millisecondes, cadence des images | SYS 20, 18, 19 |
 | `instructions()` | Lugus : le nombre d'instructions jouées depuis le lancement (mesurer un morceau : la différence de deux lectures ; le même traduit ou non, plus grand en pas à pas) | SYS 25 |
 
-**Les tableaux dynamiques de logiques, `logique[]` (0.6, Lugus).** Un tableau qui grandit et dont chaque case porte
+**Les tableaux dynamiques de logiques, `logique[]` (0.6, Lugus ; 0.6h : Dunon aussi, comme les bords du monde).** Un tableau qui grandit et dont chaque case porte
 une des quatre valeurs (0 inconnu : personne n'a parlé ; 1 faux, 2 vrai : une réponse ; 3 variable : deux réponses
 contraires). Il se déclare (`soit t: logique[] = [vrai, inconnu];`), ou se reconnaît à ses valeurs écrites
 (`[faux, variable]`) ; il se passe à une fonction (`fonction f(t: logique[])`) et en revient (`: logique[]`) ; `t[i]`
