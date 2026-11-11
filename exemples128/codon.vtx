@@ -1,0 +1,99 @@
+// machine : lugus
+// Le codon (0.6) : trois lectures à quatre valeurs pour une contradiction en suspens.
+// 1. les 20 situations que font trois témoins de même rang, et ce que la fusion seule en garde ;
+// 2. les trois sorties d'un dossier : tranché, recoupé, échu ; et un dossier fixé qu'on rouvre ;
+// 3. la table du programmeur : chacun décide quoi faire de chaque situation, comme la cellule a sa table ;
+// 4. ce que cela coûte, en instructions de la machine.
+importer "../bibliotheque/codon.vtx";
+
+fonction nom4(l: logique): texte {
+    retour nommer(l, ["inconnu", "faux", "vrai", "variable"]);
+}
+
+fonction de_code(n) {
+    retour codon(comme_logique(n % 4), comme_logique(n / 4 % 4), comme_logique(n / 16 % 4));
+}
+
+fonction fusion3(d): logique {
+    retour fusion(fusion(lettre(d, 0), lettre(d, 1)), lettre(d, 2));
+}
+
+fonction nom_action(n): texte {
+    soit noms = ["attendre", "agir", "renoncer", "demander un témoin de plus"];
+    retour noms[n];
+}
+
+fonction montrer(titre: texte, d) {
+    afficher(titre, ":", nom_situation(d), "; verdict", nom4(verdict(d)), ";", nom_etat(d), "; âge", age(d));
+}
+
+fonction principal() {
+    // --- 1. les 64 codons écrits dans l'ordre se rangent en 20 situations
+    tableau ordres[20];
+    tableau exemple[20];
+    soit fusion_variable = 0;
+    soit suspens = 0;
+    soit tranches = 0;
+    pour n dans 0..64 {
+        soit d = de_code(n);
+        soit s = situation(d);
+        ordres[s] = ordres[s] + 1;
+        exemple[s] = d;
+        si fusion3(d) == variable { fusion_variable = fusion_variable + 1; }
+        soit v = verdict(d);
+        si v == variable { suspens = suspens + 1; }
+        si v == vrai || v == faux { tranches = tranches + 1; }
+    }
+    afficher("Les 20 situations de trois témoins (numéro, écritures possibles, verdict, penchant) :");
+    pour k dans 0..20 {
+        soit e = exemple[k];
+        afficher(k, ordres[k], nom4(verdict(e)), nom4(penche(e)), nom_situation(e));
+    }
+    afficher("Sur 64 codons, la fusion seule dit « variable » pour", fusion_variable, ";");
+    afficher("le codon tranche", tranches, "de ces cas et en laisse", suspens, "en suspens ; le dernier est le silence.");
+
+    // --- 2. les trois sorties
+    afficher("");
+    soit a = codon(vrai, faux, inconnu);
+    montrer("ouvert  ", a);
+    a = consolider(a);
+    montrer("un tri  ", a);
+    a = recouper(a, 2, vrai);
+    montrer("recoupé ", a);
+    a = consolider(a);
+    montrer("tranché ", a);
+
+    afficher("");
+    soit b = codon(vrai, faux, inconnu);
+    pour i dans 0..3 { b = consolider(b); }
+    montrer("échu    ", b);
+    soit pareil = recouper(b, 0, vrai);
+    afficher("une lecture qui n'apprend rien le laisse tel quel :", pareil == b);
+    b = recouper(b, 2, faux);
+    montrer("rouvert ", b);
+    b = consolider(b);
+    montrer("tranché ", b);
+
+    // --- 3. la table du programmeur : ici un conseil prudent, qui n'agit qu'à l'unanimité ou sans opposition
+    // (0 attendre, 1 agir, 2 renoncer, 3 demander un témoin de plus)
+    soit prudent = [0, 2, 2, 2, 1, 3, 3, 1, 3, 1, 3, 3, 3, 3, 0, 3, 3, 0, 0, 0];
+    afficher("");
+    afficher("le conseil prudent, devant « deux oui contre un non » :", nom_action(prudent[situation(codon(vrai, faux, vrai))]));
+    afficher("le conseil prudent, devant « deux oui, un absent »    :", nom_action(prudent[situation(codon(vrai, inconnu, vrai))]));
+
+    // --- 4. le coût : mille tris de 64 dossiers, contre mille fois 64 fusions de trois lectures
+    soit t0 = instructions();
+    soit somme_c = 0;
+    pour tour dans 0..1000 {
+        pour m dans 0..64 { somme_c = somme_c + consolider(m); }
+    }
+    soit t1 = instructions();
+    soit somme_f = 0;
+    pour passe dans 0..1000 {
+        pour q dans 0..64 { somme_f = somme_f + entier(fusion3(q)); }
+    }
+    soit t2 = instructions();
+    afficher("");
+    afficher("un tri de dossier :", (t1 - t0) / 64000, "instructions ; une fusion de trois lectures :", (t2 - t1) / 64000,
+             "; sommes", somme_c, somme_f);
+}

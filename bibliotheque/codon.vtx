@@ -1,0 +1,118 @@
+// machine : lugus
+// Le codon (0.6) : une contradiction en suspens garde trois lectures à quatre valeurs, comme trois lettres.
+// Sans ordre entre les trois (trois témoins de même rang), il y a exactement 20 situations : de quoi dire
+// « deux oui contre un non » autrement que « un oui, un non, un absent », que la fusion seule confond.
+//
+// Un dossier est un entier : les trois lettres (2 bits chacune), l'état (0 en suspens : U ; 1 tranché ;
+// 2 échu : la contradiction fixée en T), puis l'âge, compté en consolidations sans rien de neuf.
+// Un dossier ne se modifie pas : chaque fonction en rend un nouveau (d = recouper(d, 2, vrai);).
+//
+// Trois sorties : tranché (une majorité franche) ; recoupé (une lecture nouvelle change le codon : l'étude
+// reprend, même sur un dossier fixé) ; échu (le délai passe : fixé en T, avec ses trois lettres).
+
+fonction codon(a: logique, b: logique, c: logique) {
+    retour entier(a) + 4 * entier(b) + 16 * entier(c);
+}
+
+// la lecture à la place k (0, 1 ou 2)
+fonction lettre(d, k): logique {
+    retour comme_logique((d >> (2 * k)) & 3);
+}
+
+fonction etat(d) {
+    retour (d >> 6) & 3;
+}
+
+fonction age(d) {
+    retour d >> 8;
+}
+
+// le délai : le nombre de consolidations sans rien de neuf après lequel une contradiction est fixée
+fonction delai() {
+    retour 3;
+}
+
+// combien de lettres portent le code v (0 inconnu, 1 faux, 2 vrai, 3 variable)
+fonction __compte(d, v) {
+    soit n = 0;
+    si (d & 3) == v { n = n + 1; }
+    si ((d >> 2) & 3) == v { n = n + 1; }
+    si ((d >> 4) & 3) == v { n = n + 1; }
+    retour n;
+}
+
+fonction absents(d) {
+    retour __compte(d, 0);
+}
+
+// le numéro de la situation, de 0 à 19 : le même pour les trois lettres dans n'importe quel ordre
+fonction situation(d) {
+    soit a = d & 3;
+    soit b = (d >> 2) & 3;
+    soit c = (d >> 4) & 3;
+    soit x = a;
+    si b < x { x = b; }
+    si c < x { x = c; }
+    soit z = a;
+    si b > z { z = b; }
+    si c > z { z = c; }
+    soit y = a + b + c - x - z;
+    retour x + y * (y + 1) / 2 + z * (z + 1) * (z + 2) / 6;
+}
+
+// ce que disent les trois lettres : vrai si les oui francs dépassent tout le reste exprimé (les non et les
+// témoins partagés), faux de même, inconnu si personne n'a parlé, variable sinon (la contradiction en suspens).
+// Les 64 réponses tiennent en deux entiers, deux bits par codon : une seule lecture, comme le ribosome lit sa table.
+// (tests/test_codon.py vérifie ces deux entiers contre la règle écrite ci-dessus)
+fonction verdict(d): logique {
+    soit c = d & 63;
+    si c < 32 { retour comme_logique((17863340962037560804 >> (2 * c)) & 3); }
+    retour comme_logique((18442231677715146734 >> (2 * c - 64)) & 3);
+}
+
+// de quel côté penche un dossier en suspens : vrai, faux, ou inconnu s'il est en équilibre
+fonction penche(d): logique {
+    soit oui = __compte(d, 2);
+    soit des_non = __compte(d, 1);
+    si oui > des_non { retour vrai; }
+    si des_non > oui { retour faux; }
+    retour inconnu;
+}
+
+// une lecture nouvelle à la place k : elle s'ajoute à ce que cette place disait (elle ne l'efface pas).
+// Si le codon change, l'étude reprend : le dossier revient en suspens, l'âge à zéro, même s'il était fixé.
+// Si elle n'apprend rien, le dossier est rendu tel quel.
+fonction recouper(d, k, parole: logique) {
+    soit avant = lettre(d, k);
+    soit apres = fusion(avant, parole);
+    si apres == avant { retour d; }
+    retour (d & 63) - (entier(avant) << (2 * k)) + (entier(apres) << (2 * k));
+}
+
+// le tri, comme le sommeil consolide la mémoire : un dossier en suspens est tranché si une majorité franche
+// s'est faite ; sinon il vieillit, et au bout du délai la contradiction est fixée (échue)
+fonction consolider(d) {
+    si etat(d) != 0 { retour d; }
+    soit v = verdict(d);
+    si v == inconnu { retour d; }
+    si v == variable {
+        si age(d) + 1 >= delai() { retour (d & 63) + 128; }
+        retour d + 256;
+    }
+    retour (d & 63) + 64;
+}
+
+fonction nom_situation(d): texte {
+    soit noms = ["silence", "un non, seul", "deux non, un absent", "non unanime", "un oui, seul",
+                 "un oui contre un non, un absent", "deux non contre un oui", "deux oui, un absent",
+                 "deux oui contre un non", "oui unanime", "un partagé, seul", "un non, un partagé, un absent",
+                 "deux non, un partagé", "un oui, un partagé, un absent", "un oui, un non, un partagé",
+                 "deux oui, un partagé", "deux partagés, un absent", "deux partagés, un non",
+                 "deux partagés, un oui", "trois partagés"];
+    retour noms[situation(d)];
+}
+
+fonction nom_etat(d): texte {
+    soit noms = ["en suspens", "tranché", "échu"];
+    retour noms[etat(d)];
+}

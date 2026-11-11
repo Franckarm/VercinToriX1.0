@@ -19,6 +19,7 @@ s'y ouvrent de toute façon).
 | `releves.vtx` | des tableaux dans une réaction (`pour chaque`, `garder`), deux résultats (`-> moyenne, ecart`), `selon`, une division réparée (`reparer … par`) ; s'ouvre sur la paillasse d'Ogmios |
 | `freinage.vtx` | l'ADN vivant : `-> a lourd` (un isotope lourd), relu par la patrouille à chaque entrée et sortie ; `lugus ranger`, puis `LUGUS_AVARIE=1000050:15:100 lugus exemples128/freinage.adn` (réparé) ou `LUGUS_AVARIE=1000001:20:70 …` (l'apoptose) |
 | `quatre_decors.vtx` | les souvenirs et les cœurs : quatre atomes à souvenir d'une vague ; la forge fait réagir ensemble ceux qui ont oublié (`quatre 30000000`, et `VTX_COEURS=1` pour comparer) |
+| `codon.vtx` | la contradiction en suspens : trois lectures à quatre valeurs, les 20 situations de trois témoins, les trois sorties (tranché, recoupé, échu), la table du programmeur (`bibliotheque/codon.vtx`) |
 
     lugus exemples128/bonjour128.vtx                 compile (vtxc128 embarqué) et lance, sans Python
     python forge/forge128.py exemples128/bonjour128.vtx   l'exécutable natif (forgé)

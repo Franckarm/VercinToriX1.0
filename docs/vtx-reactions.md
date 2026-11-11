@@ -1859,3 +1859,43 @@ qu'on obtient la lecture utile, la deuxième du créateur, précisée :
 troisième cause de l'écart avec C). Conforme partout, mais le temps ne bouge pas de façon mesurable (0,186 s contre
 0,179 s de processeur sur le banc, dans le bruit). Gardé parce que juste et sans coût ; les gains sont ailleurs : les
 registres et l'accès à la mémoire.
+
+## 41. Le codon : la contradiction en suspens (11 novembre, 0.6d)
+
+**L'idée du créateur**, devant le tableau du code génétique : une contradiction ne doit pas être un déchet ; qu'elle
+garde de quoi être réétudiée, avec un délai, et que la lecture se fasse comme celle d'un codon, trois lettres qui
+donnent une fonction parmi une vingtaine.
+
+**Le compte.** Trois lectures à quatre valeurs font 64 codons écrits dans l'ordre. Si l'ordre ne compte pas (trois
+témoins de même rang), il reste exactement **20 situations** : 4 unanimités, 12 « deux contre un », 4 « trois avis
+différents ». Honnêteté sur la biologie : la cellule ne compte pas ainsi (chez elle l'ordre compte, et les 64 codons
+donnent 20 acides aminés par redondance, surtout sur la troisième lettre) ; le compte sans ordre est le code de
+combinaison de Gamow (années 1950), juste en mathématiques, faux pour le vivant. Les deux lectures servent : sans
+ordre pour des témoins égaux (faite), avec ordre quand la place a un rôle (à faire).
+
+**Ce qui est construit** (`bibliotheque/codon.vtx`, en vtx, sans toucher aux compilateurs ni au prélude) :
+- un dossier est un entier : trois lettres (6 bits), l'état (en suspens : U ; tranché ; échu : fixé en T), l'âge ;
+- `codon(a, b, c)`, `lettre(d, k)`, `situation(d)` (0 à 19, le même numéro dans tout ordre), `nom_situation(d)` ;
+- `verdict(d)` : vrai si les oui francs dépassent tout le reste exprimé (les non et les témoins partagés), faux de
+  même, inconnu si personne n'a parlé, variable sinon. Les 64 réponses tiennent en deux entiers, deux bits par codon :
+  une seule lecture de table ; `penche(d)`, `absents(d)` ;
+- `recouper(d, k, parole)` : la lecture nouvelle s'ajoute à ce que la place disait (un témoin qui se dédit devient un
+  témoin partagé ; rien ne revient à inconnu) ; si le codon change, l'étude reprend, même sur un dossier fixé ;
+- `consolider(d)` : le tri. Majorité franche : tranché. Sinon le dossier vieillit ; après `delai()` = 3 tris sans rien
+  de neuf, il est échu. Le délai se compte en tris, pas en secondes : le même programme donne le même résultat ;
+- la table du programmeur : un tableau de 20 cases indexé par `situation(d)` (dans l'exemple, un conseil prudent).
+
+**Mesuré.** Sur les 64 codons, la fusion seule répond « variable » 49 fois. Le codon en tranche 26, en laisse 37 en
+suspens (dont chacun dit de quel côté il penche et s'il lui reste un absent à entendre), 1 est le silence. Coût : un
+tri de dossier 63 instructions, contre 35 pour la fusion de trois lectures (184 avant la table en deux entiers).
+`tests/test_codon.py` vérifie les 64 codons contre une référence en Python, la vie d'un dossier, et les mêmes mots.
+
+**Ce qui ne va pas encore, dit.**
+- Le codon dit ce qui a été dit, pas par qui : la liste des sources reste à garder à part si on la veut.
+- « La majorité l'emporte » est un choix, pas une vérité : deux menteurs battent un témoin juste. D'où la table du
+  programmeur ; le verdict fourni n'est qu'une table par défaut.
+- Trois lectures seulement : un quatrième témoin n'a pas de place. À voir : des codons en chaîne (un gène).
+- Pas encore de `selon` sur une situation dans le langage : on passe par un tableau ou des `si`.
+- Trouvé en route : sur Lugus, un tableau de textes rangé dans une variable ne s'affiche pas comme des textes
+  (`soit t = ["a", "b"]; afficher(t[0]);` écrit un nombre) ; il faut le rendre par une fonction `: texte`. À corriger
+  dans les deux compilateurs.

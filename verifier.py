@@ -113,6 +113,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_bords128.py")]))
     etapes.append(("les tableaux dynamiques de logiques, logique[] (Lugus)",
                    [sys.executable, os.path.join("tests", "test_logiques128.py")]))
+    etapes.append(("le codon : trois lectures pour une contradiction en suspens, 20 situations, les trois sorties (Lugus)",
+                   [sys.executable, os.path.join("tests", "test_codon.py")]))
     etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
                    [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",
