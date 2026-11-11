@@ -3,7 +3,8 @@
 // 1. les 20 situations que font trois témoins de même rang, et ce que la fusion seule en garde ;
 // 2. les trois sorties d'un dossier : tranché, recoupé, échu ; et un dossier fixé qu'on rouvre ;
 // 3. la table du programmeur : chacun décide quoi faire de chaque situation, comme la cellule a sa table ;
-// 4. ce que cela coûte, en instructions de la machine.
+// 4. le codon avec ordre : deux lectures de premier rang, puis le recoupement ; le tableau comme celui du vivant ;
+// 5. ce que cela coûte, en instructions de la machine.
 importer "../bibliotheque/codon.vtx";
 
 fonction nom4(l: logique): texte {
@@ -21,6 +22,27 @@ fonction fusion3(d): logique {
 fonction nom_action(n): texte {
     soit noms = ["attendre", "agir", "renoncer", "demander un témoin de plus"];
     retour noms[n];
+}
+
+// les quatre valeurs comme les quatre bases : A inconnu, C faux, G vrai, U variable
+fonction base(l: logique): texte {
+    retour nommer(l, ["A", "C", "G", "U"]);
+}
+
+// combien de fois changer la lettre de la place k change le verdict (sur 192 changements) ; ordonne : 0 ou 1
+fonction sensibilite(k, ordonne) {
+    soit n = 0;
+    pour c dans 0..64 {
+        pour x dans 1..4 {
+            soit autre = c ^ (x << (2 * k));
+            si ordonne == 1 {
+                si verdict_ordonne(c) != verdict_ordonne(autre) { n = n + 1; }
+            } sinon {
+                si verdict(c) != verdict(autre) { n = n + 1; }
+            }
+        }
+    }
+    retour n;
 }
 
 fonction montrer(titre: texte, d) {
@@ -81,7 +103,37 @@ fonction principal() {
     afficher("le conseil prudent, devant « deux oui contre un non » :", nom_action(prudent[situation(codon(vrai, faux, vrai))]));
     afficher("le conseil prudent, devant « deux oui, un absent »    :", nom_action(prudent[situation(codon(vrai, inconnu, vrai))]));
 
-    // --- 4. le coût : mille tris de 64 dossiers, contre mille fois 64 fusions de trois lectures
+    // --- 4. le codon avec ordre : première lettre en ligne, deuxième en colonne, et dans chaque case les quatre
+    // verdicts selon la troisième lettre (A, C, G, U). Une case pleine répète quatre fois la même lettre.
+    afficher("");
+    afficher("Le codon avec ordre (ligne : 1re lettre ; colonne : 2e ; dans la case : le verdict pour la 3e = A, C, G, U)");
+    afficher("       A      C      G      U");
+    soit pleines = 0;
+    soit tranches_o = 0;
+    pour i dans 0..4 {
+        soit ligne = base(comme_logique(i)) + "  ";
+        pour j dans 0..4 {
+            ligne = ligne + "   ";
+            pour r dans 0..4 {
+                soit w = verdict_ordonne(i + 4 * j + 16 * r);
+                ligne = ligne + base(w);
+                si w == vrai || w == faux { tranches_o = tranches_o + 1; }
+            }
+            pleines = pleines + case_pleine(i + 4 * j);
+        }
+        afficher(ligne);
+    }
+    afficher("cases pleines (la 3e lettre est libre) :", pleines, "sur 16 ; le code génétique en a 8 sur 16.");
+    afficher("le codon avec ordre tranche", tranches_o, "codons sur 64 (sans ordre : 26).");
+    afficher("changer une lettre change le verdict, sur 192 essais par place :");
+    afficher("  sans ordre : place 1 :", sensibilite(0, 0), "; place 2 :", sensibilite(1, 0), "; place 3 :", sensibilite(2, 0));
+    afficher("  avec ordre : place 1 :", sensibilite(0, 1), "; place 2 :", sensibilite(1, 1), "; place 3 :", sensibilite(2, 1));
+    soit o = codon(vrai, faux, inconnu);
+    o = recouper(o, 2, vrai);
+    o = consolider_ordonne(o);
+    afficher("la mémoire dit oui, la lecture nouvelle dit non, le recoupement dit oui :", nom_etat(o), nom4(verdict_ordonne(o)));
+
+    // --- 5. le coût : mille tris de 64 dossiers, contre mille fois 64 fusions de trois lectures
     soit t0 = instructions();
     soit somme_c = 0;
     pour tour dans 0..1000 {

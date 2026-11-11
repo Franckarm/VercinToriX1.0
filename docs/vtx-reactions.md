@@ -1899,3 +1899,27 @@ tri de dossier 63 instructions, contre 35 pour la fusion de trois lectures (184 
 - Trouvé en route : sur Lugus, un tableau de textes rangé dans une variable ne s'affiche pas comme des textes
   (`soit t = ["a", "b"]; afficher(t[0]);` écrit un nombre) ; il faut le rendre par une fonction `: texte`. À corriger
   dans les deux compilateurs.
+
+**Le codon avec ordre (0.6e).** Chaque place a son rôle : places 0 et 1, deux lectures de premier rang (la mémoire
+et la lecture nouvelle, égales entre elles) ; place 2, le recoupement, de second rang. Règle : si les deux premières
+donnent une réponse franche (un oui ou un non, sans contradiction), la troisième ne change rien ; si elles se
+contredisent ou se taisent, la troisième tranche si elle est franche. `verdict_ordonne(d)` (table en deux entiers),
+`case_pleine(d)`, `situation_ordonnee(d)` (40 numéros : 10 paires sans ordre pour les deux premières, fois 4),
+`consolider_ordonne(d)`. L'exemple écrit le tableau comme celui du vivant (A inconnu, C faux, G vrai, U variable) :
+
+           A      C      G      U
+    A     ACGU   CCCC   GGGG   UCGU
+    C     CCCC   CCCC   UCGU   UCGU
+    G     GGGG   UCGU   GGGG   UCGU
+    U     UCGU   UCGU   UCGU   UCGU
+
+*Mesuré.* 6 cases pleines sur 16 (le code génétique : 8 sur 16) ; 44 codons tranchés sur 64 (sans ordre : 26 ; la
+fusion seule : 14). Changer une lettre change le verdict, sur 192 essais par place : sans ordre 88, 88, 88 ; avec
+ordre 82, 82, **102**.
+
+*Une annonce fausse, corrigée.* Il avait été dit que la troisième lettre serait la moins sensible, comme dans le
+code génétique. C'est l'inverse : elle est la plus sensible (102 contre 82). La raison est de fond : un recoupement
+qui tranche est décisif partout où il est entendu (10 cases sur 16), alors que la troisième lettre du vivant est
+surtout redondante. On ne peut pas avoir les deux rôles à la fois ; c'est le rôle de juge qui a été gardé, parce que
+c'est lui qui fait sortir une contradiction du suspens. Ce qui reste vrai de l'analogie : dans une case pleine, une
+erreur sur la troisième lettre ne change rien.

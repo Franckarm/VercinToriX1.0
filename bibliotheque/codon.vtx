@@ -89,17 +89,58 @@ fonction recouper(d, k, parole: logique) {
     retour (d & 63) - (entier(avant) << (2 * k)) + (entier(apres) << (2 * k));
 }
 
-// le tri, comme le sommeil consolide la mémoire : un dossier en suspens est tranché si une majorité franche
-// s'est faite ; sinon il vieillit, et au bout du délai la contradiction est fixée (échue)
-fonction consolider(d) {
+// le tri d'un dossier dont le verdict est v : tranché si v est vrai ou faux ; sinon il vieillit, puis il est échu
+fonction __trier(d, v: logique) {
     si etat(d) != 0 { retour d; }
-    soit v = verdict(d);
     si v == inconnu { retour d; }
     si v == variable {
         si age(d) + 1 >= delai() { retour (d & 63) + 128; }
         retour d + 256;
     }
     retour (d & 63) + 64;
+}
+
+// le tri, comme le sommeil consolide la mémoire : un dossier en suspens est tranché si une majorité franche
+// s'est faite ; sinon il vieillit, et au bout du délai la contradiction est fixée (échue)
+fonction consolider(d) {
+    retour __trier(d, verdict(d));
+}
+
+// --- le codon avec ordre : chaque place a son rôle. Places 0 et 1 : deux lectures de premier rang (la mémoire et
+// la lecture nouvelle) ; place 2 : le recoupement, de second rang, entendu seulement si les deux premières ne
+// suffisent pas. Si elles donnent une réponse franche (un oui ou un non, sans contradiction), la troisième lettre
+// ne change rien : la case est pleine, comme les cases du code génétique où la troisième lettre est libre.
+// Si elles se contredisent ou se taisent, la troisième tranche si elle est franche.
+// (les deux entiers sont vérifiés contre cette règle par tests/test_codon.py)
+fonction verdict_ordonne(d): logique {
+    soit c = d & 63;
+    si c < 32 { retour comme_logique((6153699837422269924 >> (2 * c)) & 3); }
+    retour comme_logique((18441947899478320550 >> (2 * c - 64)) & 3);
+}
+
+// la troisième lettre est-elle libre (1 : elle ne change pas le verdict ; 0 : c'est elle qui décide) ?
+fonction case_pleine(d) {
+    soit base = (d & 3) | ((d >> 2) & 3);
+    si base == 1 || base == 2 { retour 1; }
+    retour 0;
+}
+
+// le numéro de la situation avec ordre, de 0 à 39 : les deux premières places sans ordre entre elles (10 paires),
+// puis la troisième
+fonction situation_ordonnee(d) {
+    soit a = d & 3;
+    soit b = (d >> 2) & 3;
+    soit x = a;
+    soit y = b;
+    si b < a {
+        x = b;
+        y = a;
+    }
+    retour (x + y * (y + 1) / 2) * 4 + ((d >> 4) & 3);
+}
+
+fonction consolider_ordonne(d) {
+    retour __trier(d, verdict_ordonne(d));
 }
 
 fonction nom_situation(d): texte {
