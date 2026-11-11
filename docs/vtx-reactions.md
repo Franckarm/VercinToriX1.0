@@ -1797,3 +1797,29 @@ demander, les paroles rassemblées. `tests/test_logiques128.py` : huit cas, les 
 Limites dites : un littéral fait de lectures (`[t[0], t[2]]`) n'est pas reconnu comme tableau de logiques (il faut un
 logique écrit, ou le type) ; le tableau rangé (64 par mot) ne se passe toujours pas à une fonction ; Senos et Dunon
 n'ont ni logique[] ni les fonctions des bords du monde : c'est la suite.
+
+## 39. Lugus contre C, Rust, Java et Python (11 novembre)
+
+Le créateur : la traduction va deux fois plus vite, mais comparée aux meilleurs langages ? Le même banc (un crible
+jusqu'à deux millions, fib(27) en récursion, trois millions de brassages) écrit dans chaque langage, en entiers de 64
+bits puis de 128 bits ; tous écrivent les mêmes trois résultats. Le meilleur temps de plusieurs lancements, programme
+entier (démarrage compris), sur la machine de travail (Xeon 2,1 GHz). `mesures/banc_langages/`.
+
+| | 64 bits | 128 bits |
+|---|---|---|
+| C (gcc -O2) | 0,029 s | 0,044 s |
+| Rust (-O) | 0,030 s | 0,051 s |
+| Java | 0,099 s | 1,129 s (BigInteger : pas d'entier de 128 bits) |
+| **Lugus traduit** | 0,268 s | 0,457 s |
+| Lugus seul | 0,706 s | 1,148 s |
+| Python 3 | 1,206 s | 1,731 s |
+
+**Dit sans fard.** Lugus traduit est 4,5 fois plus rapide que Python et 2,6 fois plus que Lugus seul ; il est **9 fois
+plus lent que C et Rust** en 64 bits comme en 128, et 2,7 fois plus lent que Java en 64 bits. En 128 bits il bat Java
+de 2,5 fois : le mot de 128 bits est natif chez Lugus, pas chez Java. L'écart avec C a des causes connues, toutes dans
+la traduction et non dans le langage : chaque registre de Lugus vit en mémoire (une lecture et une écriture par
+instruction, là où C garde tout dans les registres du processeur) ; chaque accès à la mémoire de Lugus passe par un
+appel (les pages du cube) ; les drapeaux z et c sont écrits à chaque instruction ; aucune optimisation entre
+instructions. Les prochains gains, dans l'ordre de ce qu'ils rapportent : les registres de Lugus dans ceux du
+processeur, l'accès direct aux pages déjà ouvertes, les drapeaux calculés seulement quand ils sont lus.
+(Le banc à 128 bits de Lugus garde des indices de 64 bits dans le crible ; C et Rust y sont tout en 128.)

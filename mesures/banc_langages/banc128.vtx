@@ -1,0 +1,27 @@
+// machine : lugus
+// le banc à 128 bits : les entiers de toute la largeur du mot de Lugus (entier_128)
+fonction fib(n: entier_128): entier_128 {
+    si n < 2 { retour n; }
+    retour fib(n - 1) + fib(n - 2);
+}
+fonction principal() {
+    soit n = 2000000;
+    tableau crible[n];
+    soit compte: entier_128 = 0;
+    pour i dans 2..n {
+        si crible[i] == 0 {
+            compte = compte + 1;
+            soit j = i * i;
+            tantque j < n { crible[j] = 1; j = j + i; }
+        }
+    }
+    afficher("premiers :", bas(compte));
+    afficher("fib(27) :", bas(fib(27)));
+    soit h: entier_128 = 7;
+    soit k: entier_128 = 0;
+    tantque k < 3000000 {
+        h = (h * 31 + k) ^ (h >> 3);
+        k = k + 1;
+    }
+    afficher("brassage :", haut(h), bas(h));
+}
