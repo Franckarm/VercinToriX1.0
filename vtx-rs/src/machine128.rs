@@ -90,14 +90,58 @@ pub fn retrotranscrire(t: &crate::adn::Temoins, mots: &[u128], base: &str) -> (u
         Some(l) => l.join("\n"),
         None => return (crate::adn::INCONNU, "l'ADN ne garde pas de texte".into()),
     };
+    // l'intron « compilateur » (0.6n) : si le compilateur a changé depuis le rangement, des mots qui ne reviennent pas
+    // ne disent pas que le texte a été retouché : on ne sait pas (inconnu)
+    let comp = t.intron("compilateur").and_then(|l| l.first().cloned());
+    let change = comp.as_ref().map(|c| *c != signature_compilateur().to_string()).unwrap_or(false);
+    let inconnu = || (crate::adn::INCONNU, "le compilateur a changé depuis le rangement : le texte ne peut pas être vérifié".to_string());
     match compiler128_iso(&nombres128(VTXC128), &src, base, COMPLET128) {
+        Err(_) if change => inconnu(),
         Err(e) => (crate::adn::FAUX, format!("le texte gardé ne compile plus : {}", e.trim_end())),
         Ok((m2, _)) if m2 == mots => (crate::adn::VRAI, "le texte gardé redonne les mots, un pour un".into()),
+        Ok(_) if change => inconnu(),
         Ok((m2, _)) => {
             let ecarts = m2.iter().zip(mots.iter()).filter(|(a, b)| a != b).count() + m2.len().abs_diff(mots.len());
-            (crate::adn::FAUX, format!("le texte gardé ne redonne pas ces mots ({} écart(s))", ecarts))
+            if comp.is_none() {
+                (crate::adn::FAUX, format!("le texte gardé ne redonne pas ces mots ({} écart(s)) ; cet ADN ne note pas \
+                                            son compilateur : il a pu changer depuis", ecarts))
+            } else {
+                (crate::adn::FAUX, format!("le texte gardé ne redonne pas ces mots ({} écart(s))", ecarts))
+            }
         }
     }
+}
+
+/// la signature des mots du compilateur embarqué (vtxc128) : l'intron « compilateur » de l'ADN
+pub fn signature_compilateur() -> u64 {
+    // les mots jusqu'au « ; » (comme chimie/adn.py) : nombres128 lit « 10; » comme un 0
+    crate::adn::signature(&nombres128(VTXC128.split(';').next().unwrap_or("")))
+}
+
+/// Le lecteur d'ADN écrit en vtx (chimie/adn.vtx) : ses entrées sont des textes (un caractère par entrée, chacun terminé
+/// par 0). Rend l'état qu'il a sorti (2 vrai, 1 faux : réparé, 3 variable, 0 illisible) ; ce qu'il écrit va sur la
+/// sortie d'erreur, comme le compte rendu de Lugus.
+pub fn adn_en_vtx(entrees: &[String]) -> Result<u8, String> {
+    let mut spu = Spu128::nouveau();
+    spu.dossier = Some(std::path::PathBuf::from("."));
+    spu.charger(&nombres128(LECTEUR_ADN));
+    for e in entrees {
+        spu.entree.extend(e.chars().map(|ch| ch as u128));
+        spu.entree.push_back(0);
+    }
+    let r = spu.executer(u64::MAX);
+    let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
+    eprint!("{}", t);
+    r.map_err(|e| format!("erreur : {}", e))?;
+    Ok(spu.sortie.last().copied().unwrap_or(0) as u8)
+}
+
+/// un chemin absolu (le lecteur en vtx ouvre les fichiers depuis son propre dossier)
+pub fn chemin_absolu(x: &str) -> String {
+    std::fs::canonicalize(std::path::Path::new(x).parent().filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(std::path::Path::new(".")))
+        .map(|d| d.join(std::path::Path::new(x).file_name().unwrap_or_default()))
+        .unwrap_or_else(|_| std::path::PathBuf::from(x)).to_string_lossy().into_owned()
 }
 
 /// une passe de vtxc128 dans un dossier de travail : (code.mots, code.prov, code.ex, code.iso), ou les messages d'erreur

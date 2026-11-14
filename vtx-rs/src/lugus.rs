@@ -32,7 +32,7 @@ mod machine128;
 mod adn;
 #[allow(dead_code)]
 mod provenance;
-use machine128::{compiler128, compiler128_iso, compiler128_prov, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, LECTEUR_ADN, VTXC128};
+use machine128::{compiler128, compiler128_iso, compiler128_prov, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, VTXC128};
 use spu128::Spu128;
 
 fn compiler_ou_sortir(compilateur: &[u128], fichier: &str, mode: machine128::Mode128) -> Vec<u128> {
@@ -378,31 +378,36 @@ fn main() {
         ecrire_mots(&chemin.to_string_lossy(), &m1);
         println!("point fixe : {} mots -> {}", m1.len(), chemin.display());
     } else if args.len() >= 3 && args[1] == "ranger" {
+        // 0.6n : le rangement est fait par le lecteur d'ADN écrit en vtx (chimie/adn.vtx) ; Lugus ne fait que compiler
+        // (par vtxc128, lui aussi en vtx) et lui passer les fichiers
         let source = std::fs::read_to_string(&args[2]).unwrap_or_else(|e| {
             eprintln!("lecture de {} impossible : {}", args[2], e);
             std::process::exit(1)
         });
-        let (mots, isotopes) = compiler128_iso(&nombres128(VTXC128), &source, &dossier_de128(&args[2]), COMPLET128)
+        let (mots, mut isotopes) = compiler128_iso(&nombres128(VTXC128), &source, &dossier_de128(&args[2]), COMPLET128)
             .unwrap_or_else(|e| {
                 eprint!("{}", e);
                 std::process::exit(1)
             });
         let sortie = if args.len() > 3 { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("adn").to_string_lossy().into_owned() };
-        let (mols, t) = adn::ranger_texte(&mots, &isotopes, &source);
-        if let Err(e) = adn::ecrire_adn(&sortie, &mots, &mols, &t) {
-            eprintln!("écriture de {} impossible : {}", sortie, e);
-            std::process::exit(1);
-        }
-        let p = adn::place_des_temoins(&mots, &mols);
-        let mut noms: Vec<String> = Vec::new();
-        for (n, a) in &isotopes {
-            if mols.iter().any(|m| m.isotope && m.debut == *a) {
-                noms.push(n.clone());
-            }
-        }
-        println!("{} mots, {} molécules, témoins {} mots ({:.1} %){} -> {}", mots.len(), mols.len(), p,
-                 100.0 * p as f64 / mots.len() as f64,
-                 if noms.is_empty() { String::new() } else { format!(", isotopes lourds : {}", noms.join(", ")) }, sortie);
+        let travail = std::env::temp_dir().join(format!("vtx-ranger-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&travail);
+        let f_mots = travail.join("code.mots");
+        ecrire_mots(&f_mots.to_string_lossy(), &mots);
+        isotopes.sort_by_key(|x| x.1);
+        let f_iso = travail.join("code.iso");
+        let iso_txt: String = isotopes.iter().map(|(n, a)| format!("{}|{}\n", n, a)).collect();
+        let _ = std::fs::write(&f_iso, iso_txt);
+        let entrees = vec![f_mots.to_string_lossy().into_owned(), machine128::chemin_absolu(&sortie), "ranger".into(),
+                           machine128::chemin_absolu(&args[2]),
+                           if isotopes.is_empty() { String::new() } else { f_iso.to_string_lossy().into_owned() },
+                           machine128::signature_compilateur().to_string()];
+        let etat = machine128::adn_en_vtx(&entrees).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
+        let _ = std::fs::remove_dir_all(&travail);
+        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "pourquoi" {
         // d'un .adn : le texte qu'il garde, s'il redonne bien ses mots (la rétrotranscription)
         let source = if args[2].ends_with(".adn") {
@@ -481,54 +486,34 @@ fn main() {
         }
     } else if args.len() >= 3 && args[1] == "relire" {
         // le lecteur d'ADN écrit en vtx : les chemins lui sont donnés en entrées (un caractère par entrée, terminés par 0)
-        let absolu = |x: &str| std::fs::canonicalize(std::path::Path::new(x).parent().filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or(std::path::Path::new("."))).map(|d| d.join(std::path::Path::new(x).file_name().unwrap_or_default()))
-            .unwrap_or_else(|_| std::path::PathBuf::from(x)).to_string_lossy().into_owned();
-        let mut spu = Spu128::nouveau();
-        spu.dossier = Some(std::path::PathBuf::from("."));
-        spu.charger(&nombres128(LECTEUR_ADN));
-        for chemin in [Some(absolu(&args[2])), args.get(3).map(|x| absolu(x))] {
-            if let Some(c) = chemin {
-                spu.entree.extend(c.chars().map(|ch| ch as u128));
-            }
-            spu.entree.push_back(0);
+        let mut entrees = vec![machine128::chemin_absolu(&args[2])];
+        if let Some(x) = args.get(3) {
+            entrees.push(machine128::chemin_absolu(x));
         }
-        let r = spu.executer(u64::MAX);
-        let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
-        eprint!("{}", t);
-        if let Err(e) = r {
-            eprintln!("erreur : {}", e);
-            std::process::exit(1);
-        }
-        let etat = spu.sortie.last().copied().unwrap_or(0) as u8;
+        let etat = machine128::adn_en_vtx(&entrees).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
         std::process::exit(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "transcrire" {
-        match adn::transcrire(&args[2], true) {
-            Ok((mots, _, t)) => {
-                if t.intron("source").is_some() {
-                    let (e, quoi) = machine128::retrotranscrire(&t, &mots, &dossier_de128(&args[2]));
-                    eprintln!("le texte : {}, {}", adn::nom_etat(e).split(' ').next().unwrap_or(""), quoi);
-                }
-                let sortie = if args.len() > 3 && !args[3].starts_with("--") { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("mots").to_string_lossy().into_owned() };
-                let isoforme = args.iter().position(|a| a == "--isoforme").and_then(|i| args.get(i + 1)).cloned();
-                if sortie.ends_with(".arn") || isoforme.is_some() {
-                    // l'épissage alternatif : l'isoforme choisie (rapide par défaut)
-                    let iso = isoforme.unwrap_or_else(|| "rapide".into());
-                    let sortie = if sortie.ends_with(".arn") { sortie } else { std::path::Path::new(&args[2]).with_extension("arn").to_string_lossy().into_owned() };
-                    let mols = adn::lire_adn(&args[2]).map(|x| x.1).unwrap_or_default();
-                    if let Err(e) = adn::ecrire_arn(&sortie, &mots, &mols, &t, &iso) {
-                        eprintln!("{}", e);
-                        std::process::exit(1);
-                    }
-                    println!("l'ARN, isoforme {} (avec sa coiffe) -> {}", iso, sortie);
-                } else {
-                    ecrire_mots(&sortie, &mots);
-                    println!("l'ARN (les mots seuls, les témoins retirés) -> {}", sortie);
-                }
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
+        // 0.6n : la transcription (vérifier, réparer, réécrire l'ADN réparé, écrire l'ARN) est faite par le lecteur d'ADN
+        // écrit en vtx ; Lugus ne garde que la rétrotranscription, qui recompile le texte (par vtxc128) et compare
+        let sortie = if args.len() > 3 && !args[3].starts_with("--") { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("mots").to_string_lossy().into_owned() };
+        let isoforme = args.iter().position(|a| a == "--isoforme").and_then(|i| args.get(i + 1)).cloned();
+        let sortie = if isoforme.is_some() && !sortie.ends_with(".arn") { std::path::Path::new(&args[2]).with_extension("arn").to_string_lossy().into_owned() } else { sortie };
+        let entrees = vec![machine128::chemin_absolu(&args[2]), machine128::chemin_absolu(&sortie), "transcrire".into(),
+                           isoforme.unwrap_or_default()];
+        let etat = machine128::adn_en_vtx(&entrees).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
+        if etat != adn::VRAI && etat != adn::FAUX {
+            std::process::exit(1);
+        }
+        if let Ok((mots, _, t)) = adn::lire_adn(&args[2]) {
+            if t.intron("source").is_some() {
+                let (e, quoi) = machine128::retrotranscrire(&t, &mots, &dossier_de128(&args[2]));
+                eprintln!("le texte : {}, {}", adn::nom_etat(e).split(' ').next().unwrap_or(""), quoi);
             }
         }
     } else if args.len() >= 2 && args[1].ends_with(".adn") {

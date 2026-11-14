@@ -40,6 +40,10 @@ constante NOM = 7130600;         // le nom d'une section lue
 constante CHEMIN = 7130700;      // le chemin de l'ADN lu (un texte, 290 caractères au plus)
 constante G = 7131000;           // l'état du lecteur
 constante CHEMIN2 = 7131100;     // le chemin de l'ADN relu (290 caractères au plus)
+constante CHEMIN3 = 7197600;     // le verbe (relire, ranger, transcrire), puis les chemins suivants (0.6n) : entre la
+constante CHEMIN4 = 7197900;     // table CRC2 (jusqu'à 7 197 536) et le brouillon (7 200 000)
+constante CHEMIN5 = 7198200;
+constante CHEMIN6 = 7198500;
 constante CRC2 = 7132000;        // le CRC-8 deux octets à la fois (65 536) : CRC2[x | y << 8] = CRC[CRC[x] ^ y]
 constante BROUILLON = 7200000;   // les polynômes du décodage (repris à chaque voie)
 constante INTR = 8000000;        // les introns inconnus, recopiés tels quels
@@ -1331,11 +1335,12 @@ fonction ecrire_adn(chemin) {
     fermer(c);
 }
 
-// un chemin lu dans les entrées (un caractère par entrée, terminé par 0) : un texte de l'étage 2, ou 0 s'il est vide
+// un chemin (ou un mot) lu dans les entrées : un caractère par entrée, terminé par 0 (ou par la fin des entrées) ; un
+// texte de l'étage 2, ou 0 s'il est vide
 fonction lire_chemin(place) {
     soit n = 0;
     soit x = entrée();
-    tantque x != 0 {
+    tantque x != 0 && x < 1114112 {
         si n < 290 {
             @2[place + 1 + n] = x;
             n = n + 1;
@@ -1349,10 +1354,547 @@ fonction lire_chemin(place) {
     retour ETAGE2 + place;
 }
 
+fonction finit_par_texte(t, fin) {
+    soit n = longueur(t);
+    soit m = longueur(fin);
+    si m > n {
+        retour 0;
+    }
+    pour i dans 0..m {
+        si car(t, n - m + i) != car(fin, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// --------------------------------------------------------------------------------------------- ranger (0.6n)
+// L'ADN d'un programme : ses mots (un fichier « a,b,c;\n », celui de lugus compiler), découpés en molécules, leurs
+// trois témoins, et les introns : les isotopes lourds, le texte du programme, la signature du compilateur qui l'a
+// compilé. Le même ADN que chimie/adn.py et vtx-rs/src/adn.rs, octet pour octet.
+
+// les mots d'un fichier de mots (jusqu'au « ; »)
+fonction lire_fichier_mots(chemin) {
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        refuser("le fichier des mots ne s'ouvre pas");
+        retour;
+    }
+    @2[G + G_CANAL] = f;
+    @2[G + G_COPIE] = 0;
+    avancer();
+    soit n = 0;
+    tantque car_courant() != ';' && car_courant() != FIN && car_courant() != 10 && @2[G + G_ERR] == 0 {
+        si n >= MAXMOTS {
+            refuser("trop de mots pour ce lecteur (un million au plus)");
+            fermer(f);
+            retour;
+        }
+        soit l = lire_nombre();
+        @2[MH + n] = @2[G + G_HAUT];
+        @2[MB + n] = l;
+        n = n + 1;
+        si car_courant() == ',' {
+            avancer();
+        }
+    }
+    fermer(f);
+    @2[G + G_N] = n;
+}
+
+// les demi-instructions qui sont des instructions (pas la constante d'un LDI ou d'un LDIH) : 1 dans AH + p
+fonction marquer_instructions(n) {
+    soit lit = 0;
+    pour p dans 0..2 * n {
+        soit h = @2[MB + p / 2];
+        si p % 2 == 0 {
+            h = @2[MH + p / 2];
+        }
+        si lit == 1 {
+            @2[AH + p] = 0;
+            lit = 0;
+        } sinon {
+            @2[AH + p] = 1;
+            soit op = h >> 48;
+            si op == 10 || op == 43 {
+                lit = 1;
+            }
+        }
+    }
+}
+
+fonction op_frontiere(op) {
+    retour op == 33 || op == 36 || op == 42 || op == 57 || op == 82 || op == 83 || op == 85 || op == 94 || op == 95;
+}
+
+// les molécules : la tête, puis une par fonction (de la cible d'un CALL à la suivante) ; une frontière (O) si son code
+// écrit en mémoire ou sort quelque chose. Les débuts sont marqués dans AB (les mots), les instructions dans AH (2n).
+fonction decouper() {
+    soit n = @2[G + G_N];
+    marquer_instructions(n);
+    pour i dans 0..n {
+        @2[AB + i] = 0;
+    }
+    @2[AB] = 1;
+    pour p dans 0..2 * n {
+        si @2[AH + p] == 1 {
+            soit h = @2[MB + p / 2];
+            si p % 2 == 0 {
+                h = @2[MH + p / 2];
+            }
+            si (h >> 48) == 51 {
+                soit cible = (h & 4294967295) / 2;
+                si cible < n {
+                    @2[AB + cible] = 1;
+                }
+            }
+        }
+    }
+    soit nm = 0;
+    soit debut = 0;
+    pour i2 dans 1..n + 1 {
+        si i2 == n || @2[AB + i2] == 1 {
+            soit base = MOL + 8 * nm;
+            @2[base] = debut;
+            @2[base + 1] = i2;
+            soit fr = 0;
+            pour q dans 2 * debut..2 * i2 {
+                si @2[AH + q] == 1 {
+                    soit hq = @2[MB + q / 2];
+                    si q % 2 == 0 {
+                        hq = @2[MH + q / 2];
+                    }
+                    si op_frontiere(hq >> 48) {
+                        fr = 1;
+                    }
+                }
+            }
+            @2[base + 2] = fr;
+            @2[base + 3] = 0;
+            nm = nm + 1;
+            debut = i2;
+        }
+    }
+    @2[G + G_NM] = nm;
+}
+
+// une ligne de texte dans les introns
+fonction intron_car(x) {
+    soit ni = @2[G + G_NI];
+    si ni < MAXINTR - INTR {
+        @2[INTR + ni] = x;
+        @2[G + G_NI] = ni + 1;
+    } sinon {
+        refuser("les introns sont trop longs pour ce lecteur");
+    }
+}
+
+fonction intron_texte(t) {
+    pour i dans 0..longueur(t) {
+        intron_car(car(t, i));
+    }
+}
+
+fonction intron_nombre(x) {
+    si x >= 10 {
+        intron_nombre(x / 10);
+    }
+    intron_car(48 + x % 10);
+}
+
+// les isotopes lourds (un fichier de lignes « nom|place », rangées par place) : chaque molécule où tombe une place
+// est un isotope ; puis l'intron « isotopes », recopié tel quel
+fonction lire_isotopes(chemin) {
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        retour;
+    }
+    // d'abord les lignes, comptées et gardées dans le brouillon (étage 2, BROUILLON)
+    soit nl = 0;
+    soit nc = 0;
+    soit place = 0;
+    soit dans_place = 0;
+    tantque fin_de(f) == 0 {
+        soit c = lire_car(f);
+        si c == 13 {
+            continuer;
+        }
+        si c == 10 {
+            si nc > 0 {
+                @2[BROUILLON + nc] = 10;
+                nc = nc + 1;
+                nl = nl + 1;
+                pour j dans 0..@2[G + G_NM] {
+                    si @2[MOL + 8 * j] <= place && place < @2[MOL + 8 * j + 1] {
+                        @2[MOL + 8 * j + 3] = 1;
+                    }
+                }
+            }
+            place = 0;
+            dans_place = 0;
+        } sinon {
+            @2[BROUILLON + nc] = c;
+            nc = nc + 1;
+            si c == '|' {
+                dans_place = 1;
+            } sinon si dans_place == 1 {
+                place = place * 10 + (c - 48);
+            }
+        }
+    }
+    fermer(f);
+    si nl == 0 {
+        retour;
+    }
+    intron_texte("GU isotopes ");
+    intron_nombre(nl);
+    intron_car(10);
+    pour k dans 0..nc {
+        intron_car(@2[BROUILLON + k]);
+    }
+    intron_texte("AG\n");
+}
+
+// le texte du programme, dans l'intron « source » : ses lignes (\r\n devient \n), la dernière comprise même vide
+fonction garder_source(chemin) {
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        refuser("le texte du programme ne s'ouvre pas");
+        retour;
+    }
+    // compter les lignes d'abord : le nombre est dans l'en-tête
+    soit nl = 1;
+    tantque fin_de(f) == 0 {
+        soit c = lire_car(f);
+        si c == 10 {
+            nl = nl + 1;
+        }
+    }
+    fermer(f);
+    intron_texte("GU source ");
+    intron_nombre(nl);
+    intron_car(10);
+    soit f2 = ouvrir_lecture(chemin);
+    soit prec = 0;
+    soit a_prec = 0;
+    tantque fin_de(f2) == 0 {
+        soit c2 = lire_car(f2);
+        si a_prec == 1 && !(prec == 13 && c2 == 10) {
+            intron_car(prec);
+        }
+        prec = c2;
+        a_prec = 1;
+    }
+    si a_prec == 1 {
+        intron_car(prec);
+    }
+    fermer(f2);
+    intron_texte("\nAG\n");
+}
+
+// la signature du compilateur (un nombre écrit par Lugus) : l'intron « compilateur ». À la rétrotranscription, des
+// mots qui ne reviennent pas sont un texte retouché si le compilateur est le même, et un inconnu s'il a changé.
+fonction garder_compilateur(t) {
+    si t == 0 {
+        retour;
+    }
+    intron_texte("GU compilateur 1\n");
+    intron_texte(t);
+    intron_texte("\nAG\n");
+}
+
+fonction ranger(mots, adn, source, isotopes, compilateur) {
+    lire_fichier_mots(mots);
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    soit n = @2[G + G_N];
+    si n == 0 {
+        refuser("aucun mot à ranger");
+        retour;
+    }
+    @2[G + G_VERSION] = 4;
+    preparer_neutrons();
+    decouper();
+    @2[G + G_NI] = 0;
+    si isotopes != 0 {
+        lire_isotopes(isotopes);
+    }
+    // les témoins : la signature de chaque molécule, les neutrons des frontières et des isotopes, l'ombre des colonnes
+    soit neutrones = 0;
+    pour i dans 0..n {
+        @2[NEU + i] = 256;
+    }
+    pour j dans 0..@2[G + G_NM] {
+        soit base = MOL + 8 * j;
+        @2[base + 4] = signature(@2[base], @2[base + 1]);
+        si @2[base + 2] == 1 || @2[base + 3] == 1 {
+            pour i2 dans @2[base]..@2[base + 1] {
+                @2[NEU + i2] = crc4(@2[MH + i2], @2[MB + i2]);
+            }
+            neutrones = neutrones + @2[base + 1] - @2[base];
+        }
+    }
+    soit nc = nb_colonnes(n);
+    @2[G + G_NC] = nc;
+    @2[G + G_NO] = nc;
+    pour k dans 0..nc {
+        soit m = 0;
+        soit p = k;
+        tantque p < n {
+            @2[DH + m] = @2[MH + p];
+            @2[DB + m] = @2[MB + p];
+            m = m + 1;
+            p = p + nc;
+        }
+        ombre_colonne(m);
+        pour z dans 0..2 * OMBRE {
+            @2[OMB + 8 * k + z] = @2[OC + z];
+        }
+    }
+    si source != 0 {
+        garder_source(source);
+    }
+    garder_compilateur(compilateur);
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    ecrire_adn(adn);
+    // le compte rendu, comme Lugus : les témoins en mots (deux signatures par mot, l'ombre, seize neutrons par mot)
+    soit nm = @2[G + G_NM];
+    soit tm = (nm + 1) / 2 + OMBRE * nc + (neutrones + 15) / 16;
+    ecrire_u64(1, n);
+    ecrire_t(1, " mots, ");
+    ecrire_u64(1, nm);
+    ecrire_t(1, " molécules, témoins ");
+    ecrire_u64(1, tm);
+    ecrire_t(1, " mots (");
+    soit pm = (tm * 1000 + n / 2) / n;
+    ecrire_u64(1, pm / 10);
+    ecrire_car(1, '.');
+    ecrire_u64(1, pm % 10);
+    ecrire_t(1, " %)");
+    soit premier = 1;
+    pour j2 dans 0..nm {
+        si @2[MOL + 8 * j2 + 3] == 1 {
+            si premier == 1 {
+                ecrire_t(1, ", isotopes lourds : m");
+                premier = 0;
+            } sinon {
+                ecrire_t(1, ", m");
+            }
+            ecrire_u64(1, @2[MOL + 8 * j2]);
+        }
+    }
+    ecrire_t(1, " -> ");
+    ecrire_t(1, adn);
+    ecrire_car(1, 10);
+}
+
+// --------------------------------------------------------------------------------------------- transcrire (0.6n)
+// l'ARN : les mots seuls (« a,b,c;\n »), ou, pour un fichier .arn ou une isoforme nommée, l'ARN avec sa coiffe (la
+// signature des mots et l'isoforme : rapide, sur, memoire, complet), comme vtx-rs/src/adn.rs l'écrit
+fonction ecrire_mots_seuls(chemin) {
+    soit c = ouvrir_ecriture(chemin);
+    pour i dans 0..@2[G + G_N] {
+        si i > 0 {
+            ecrire_car(c, ',');
+        }
+        ecrire_u128(c, @2[MH + i], @2[MB + i]);
+    }
+    ecrire_t(c, ";\n");
+    fermer(c);
+}
+
+// la section « nom » des introns, recopiée telle quelle sur le canal c (rien si elle n'y est pas)
+fonction recopier_section(c, nom) {
+    soit ni = @2[G + G_NI];
+    soit i = 0;
+    tantque i < ni {
+        // une section commence par « GU nom N\n » et finit par la ligne « AG\n »
+        soit ok = 1;
+        si @2[INTR + i] != 'G' || @2[INTR + i + 1] != 'U' || @2[INTR + i + 2] != ' ' {
+            ok = 0;
+        }
+        si ok == 1 {
+            pour k dans 0..longueur(nom) {
+                si @2[INTR + i + 3 + k] != car(nom, k) {
+                    ok = 0;
+                }
+            }
+            si @2[INTR + i + 3 + longueur(nom)] != ' ' {
+                ok = 0;
+            }
+        }
+        // la fin de cette section : après la ligne « AG »
+        soit j = i;
+        soit fin = ni;
+        soit debut_ligne = 1;
+        tantque j < ni {
+            si debut_ligne == 1 && j > i && @2[INTR + j] == 'A' && @2[INTR + j + 1] == 'G' && @2[INTR + j + 2] == 10 {
+                fin = j + 3;
+                j = ni;
+            } sinon {
+                debut_ligne = @2[INTR + j] == 10;
+                j = j + 1;
+            }
+        }
+        si ok == 1 {
+            pour q dans i..fin {
+                ecrire_car(c, @2[INTR + q]);
+            }
+            retour;
+        }
+        i = fin;
+    }
+}
+
+fonction ecrire_arn(chemin, isoforme) {
+    soit sur = texte_egal(isoforme, "sur") || texte_egal(isoforme, "complet");
+    soit memoire = texte_egal(isoforme, "memoire") || texte_egal(isoforme, "complet");
+    si !sur && !memoire && !texte_egal(isoforme, "rapide") {
+        ecrire_t(1, "isoforme inconnue « ");
+        ecrire_t(1, isoforme);
+        ecrire_t(1, " » (rapide, sur, memoire, complet)\n");
+        @2[G + G_ERR] = 1;
+        retour;
+    }
+    soit c = ouvrir_ecriture(chemin);
+    si @2[G + G_VERSION] >= 4 {
+        ecrire_t(c, "VTXARN02\n");
+    } sinon {
+        ecrire_t(c, "VTXARN01\n");
+    }
+    ecrire_t(c, "GU coiffe 1\n");
+    ecrire_u64(c, signature(0, @2[G + G_N]));
+    ecrire_car(c, '|');
+    ecrire_t(c, isoforme);
+    ecrire_t(c, "\nAG\nGU mots 1\n");
+    pour i dans 0..@2[G + G_N] {
+        si i > 0 {
+            ecrire_car(c, ',');
+        }
+        ecrire_u128(c, @2[MH + i], @2[MB + i]);
+    }
+    ecrire_t(c, "\nAG\n");
+    si sur {
+        ecrire_t(c, "GU molecules ");
+        ecrire_u64(c, @2[G + G_NM]);
+        ecrire_car(c, 10);
+        pour j dans 0..@2[G + G_NM] {
+            soit base = MOL + 8 * j;
+            ecrire_car(c, 'm');
+            ecrire_u64(c, @2[base]);
+            ecrire_car(c, '|');
+            ecrire_u64(c, @2[base]);
+            ecrire_car(c, '|');
+            ecrire_u64(c, @2[base + 1]);
+            ecrire_car(c, '|');
+            ecrire_u64(c, @2[base + 2]);
+            ecrire_car(c, '|');
+            ecrire_u64(c, @2[base + 4]);
+            ecrire_car(c, '|');
+            ecrire_u64(c, @2[base + 3]);
+            ecrire_car(c, 10);
+        }
+        ecrire_t(c, "AG\nGU ombres ");
+        ecrire_u64(c, @2[G + G_NO]);
+        ecrire_car(c, 10);
+        pour k dans 0..@2[G + G_NO] {
+            pour z dans 0..OMBRE {
+                si z > 0 {
+                    ecrire_car(c, ',');
+                }
+                ecrire_u128(c, @2[OMB + 8 * k + 2 * z], @2[OMB + 8 * k + 2 * z + 1]);
+            }
+            ecrire_car(c, 10);
+        }
+        ecrire_t(c, "AG\nGU neutrons 1\n");
+        soit premier = 1;
+        pour i2 dans 0..@2[G + G_N] {
+            si @2[NEU + i2] != 256 {
+                si premier == 0 {
+                    ecrire_car(c, ',');
+                }
+                premier = 0;
+                ecrire_u64(c, i2);
+                ecrire_car(c, ':');
+                ecrire_u64(c, @2[NEU + i2]);
+            }
+        }
+        ecrire_t(c, "\nAG\n");
+    }
+    si memoire {
+        recopier_section(c, "epigenome");
+    }
+    fermer(c);
+}
+
+// rend l'état de l'ADN (comme le lecteur) ; l'ARN n'est écrit que d'un ADN vrai ou réparé
+fonction transcrire(adn, sortie, isoforme) {
+    lire_adn(adn);
+    si @2[G + G_ERR] != 0 {
+        retour E_INCONNU;
+    }
+    soit etat = lire();
+    rendre_compte(etat);
+    si etat == E_VARIABLE {
+        ecrire_t(1, "rien n'est transcrit : l'ADN est gardé tel qu'il a été lu, pour la preuve\n");
+        retour etat;
+    }
+    si etat == E_FAUX {
+        ecrire_adn(adn);
+        ecrire_t(1, "l'ADN réparé est réécrit\n");
+    }
+    si isoforme != 0 || finit_par_texte(sortie, ".arn") {
+        soit iso = isoforme;
+        si iso == 0 {
+            iso = "rapide";
+        }
+        ecrire_arn(sortie, iso);
+        si @2[G + G_ERR] == 0 {
+            ecrire_t(1, "l'ARN, isoforme ");
+            ecrire_t(1, iso);
+            ecrire_t(1, " (avec sa coiffe) -> ");
+            ecrire_t(1, sortie);
+            ecrire_car(1, 10);
+        }
+    } sinon {
+        ecrire_mots_seuls(sortie);
+        ecrire_t(1, "l'ARN (les mots seuls, les témoins retirés) -> ");
+        ecrire_t(1, sortie);
+        ecrire_car(1, 10);
+    }
+    retour etat;
+}
+
+// Les entrées : deux chemins, puis le verbe (relire, ranger, transcrire ; relire s'il manque), puis selon le verbe :
+//   relire     ADN [RELU]
+//   transcrire ADN SORTIE [ISOFORME]
+//   ranger     MOTS ADN SOURCE [ISOTOPES] [SIGNATURE DU COMPILATEUR]
+// La sortie : l'état de l'ADN (2 vrai, 1 faux : réparé, 3 variable, 0 : illisible).
 fonction principal() {
     preparer();
     soit entree = lire_chemin(CHEMIN);
     soit relu = lire_chemin(CHEMIN2);
+    soit verbe = lire_chemin(CHEMIN3);
+    si verbe != 0 && texte_egal(verbe, "ranger") {
+        soit source = lire_chemin(CHEMIN4);
+        soit iso = lire_chemin(CHEMIN5);
+        soit comp = lire_chemin(CHEMIN6);
+        ranger(entree, relu, source, iso, comp);
+        si @2[G + G_ERR] != 0 {
+            sortie(E_INCONNU);
+            retour;
+        }
+        sortie(E_VRAI);
+        retour;
+    }
+    si verbe != 0 && texte_egal(verbe, "transcrire") {
+        soit isof = lire_chemin(CHEMIN4);
+        sortie(transcrire(entree, relu, isof));
+        retour;
+    }
     si entree == 0 {
         entree = "code.adn";
     }

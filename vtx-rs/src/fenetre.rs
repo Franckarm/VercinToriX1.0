@@ -1034,7 +1034,7 @@ fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     let tc = t0.elapsed().as_secs_f64();
     // l'ADN : rangé à côté du programme (PROG.adn : ses trois témoins, ses isotopes et son texte), puis lu comme au
     // lancement d'un ADN
-    let (mols, mut t) = adn::ranger_texte(&mots, &isotopes, source);
+    let (mols, mut t) = adn::ranger_texte(&mots, &isotopes, source, crate::machine128::signature_compilateur());
     let mut mots = mots;
     let (etat_adn, _) = adn::lire(&mut mots, &mols, &mut t);
     let temp = fichier.starts_with(std::env::temp_dir());

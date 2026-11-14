@@ -471,19 +471,36 @@ def intron(t, nom):
     return next((x for n, x in t.get("introns", []) if n == nom), None)
 
 
+def signature_compilateur():
+    """la signature des mots du compilateur de Lugus (vtxc/vtxc128.mots, celui qu'embarque lugus) : l'intron
+    « compilateur » de l'ADN (0.6n)"""
+    texte = open(os.path.join(racine, "vtxc", "vtxc128.mots")).read().split(";")[0]
+    return signature([int(x) for x in texte.split(",") if x.strip()])
+
+
 def retrotranscrire(mots, t, dossier):
     """le texte gardé dans l'ADN, recompilé, redonne-t-il ses mots ? (VRAI, FAUX : un autre texte, INCONNU : pas de
-    texte), et le message"""
+    texte, ou le compilateur a changé depuis le rangement), et le message"""
     src = intron(t, "source")
     if src is None:
         return INCONNU, "l'ADN ne garde pas de texte"
+    comp = intron(t, "compilateur")
+    change = comp is not None and comp[:1] != [str(signature_compilateur())]
     try:
         m2, _, _ = molecules_et_isotopes("\n".join(src), dossier)
     except Exception as e:      # noqa: BLE001
+        if change:
+            return INCONNU, "le compilateur a changé depuis le rangement : le texte ne peut pas être vérifié"
         return FAUX, f"le texte gardé ne compile plus : {e}"
     if m2 == mots:
         return VRAI, "le texte gardé redonne les mots, un pour un"
-    return FAUX, f"le texte gardé ne redonne pas ces mots ({sum(a != b for a, b in zip(m2, mots)) + abs(len(m2) - len(mots))} écart(s))"
+    if change:
+        return INCONNU, "le compilateur a changé depuis le rangement : le texte ne peut pas être vérifié"
+    ecarts = sum(a != b for a, b in zip(m2, mots)) + abs(len(m2) - len(mots))
+    if comp is None:
+        return FAUX, (f"le texte gardé ne redonne pas ces mots ({ecarts} écart(s)) ; cet ADN ne note pas son "
+                      "compilateur : il a pu changer depuis")
+    return FAUX, f"le texte gardé ne redonne pas ces mots ({ecarts} écart(s))"
 
 
 def ranger_texte(src, dossier):
@@ -493,6 +510,7 @@ def ranger_texte(src, dossier):
     if isotopes:
         t["introns"].append(("isotopes", [f"{n}|{a}" for n, a in isotopes]))
     t["introns"].append(("source", src.replace("\r\n", "\n").split("\n")))
+    t["introns"].append(("compilateur", [str(signature_compilateur())]))
     return mots, molecules, t
 
 

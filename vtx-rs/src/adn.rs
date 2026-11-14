@@ -668,7 +668,8 @@ pub fn ranger(mots: &[u128]) -> (Vec<Molecule>, Temoins) {
 
 /// ranger avec les introns : les isotopes lourds (réaction, place de son premier mot) donnent des neutrons à leur
 /// molécule ; le texte du programme est gardé, pour la rétrotranscription (recompilé, il doit redonner les mots)
-pub fn ranger_texte(mots: &[u128], isotopes: &[(String, usize)], source: &str) -> (Vec<Molecule>, Temoins) {
+/// compilateur : la signature des mots du compilateur qui a fait ces mots (l'intron « compilateur », 0.6n)
+pub fn ranger_texte(mots: &[u128], isotopes: &[(String, usize)], source: &str, compilateur: u64) -> (Vec<Molecule>, Temoins) {
     let mut mols = decouper(mots);
     let mut iso: Vec<(String, usize)> = isotopes.to_vec();
     iso.sort_by_key(|x| x.1);
@@ -684,6 +685,7 @@ pub fn ranger_texte(mots: &[u128], isotopes: &[(String, usize)], source: &str) -
         t.introns.push(("isotopes".into(), iso.iter().map(|(n, a)| format!("{}|{}", n, a)).collect()));
     }
     t.introns.push(("source".into(), source.replace("\r\n", "\n").split('\n').map(|x| x.to_string()).collect()));
+    t.introns.push(("compilateur".into(), vec![compilateur.to_string()]));
     (mols, t)
 }
 

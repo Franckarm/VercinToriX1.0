@@ -2194,3 +2194,46 @@ Dunon écrit ce que Lugus écrit ; le .exe traduit comme Lugus seul.
 **Une remarque de biologie** : déplacer le cadre de lecture d'une place change toutes les familles, donc le verdict du
 gène (comme une mutation par décalage du cadre dans le vivant) ; le compte de tous, lui, ne change pas. Ce n'est pas une
 faute : le cadre fait partie du sens.
+
+## 48. Le chemin de l'ADN, tout en vtx (14 novembre, 0.6n)
+
+**La demande du créateur :** l'ADN et l'ARN doivent être compris en vtx ; le chemin Cube → Hex → ADN → ARN haché entre
+Rust, Python et vtx, « ce n'est pas top ».
+
+**Ce qui est fait.** Le lecteur d'ADN écrit en vtx (`chimie/adn.vtx`, embarqué dans lugus) range et transcrit, en plus
+de relire. Ses entrées : deux chemins, puis un verbe :
+- **ranger** : il lit les mots compilés (le fichier de `lugus compiler`), découpe les molécules (la tête, puis une par
+  fonction, de la cible d'un CALL à la suivante ; une frontière O si son code écrit en mémoire ou sort quelque chose),
+  marque les isotopes lourds, calcule les trois témoins (la signature de chaque molécule, l'ombre de Reed-Solomon des
+  colonnes entrelacées, les neutrons quaternaires des frontières et des isotopes), garde le texte du programme et la
+  signature du compilateur, et écrit l'ADN version 4 ;
+- **transcrire** : il vérifie et répare, réécrit l'ADN réparé, puis écrit l'ARN : les mots seuls, ou l'ARN avec sa
+  coiffe et son isoforme (rapide, sur, memoire, complet ; l'épigénome recopié dans « memoire » et « complet ») ;
+- **relire** : comme avant.
+
+`lugus ranger` et `lugus transcrire` passent maintenant par lui : Lugus ne fait que compiler (par vtxc128, lui aussi
+écrit en vtx) et lui passer les fichiers. Ce qui reste à Lugus : la rétrotranscription (recompiler le texte gardé et
+comparer les mots ; la compilation est vtxc128, la comparaison une ligne), et la lecture de l'ADN au lancement et par
+la patrouille, qui sont du travail de machine (comme la mémoire à correction d'erreurs d'un ordinateur).
+
+**L'intron « compilateur ».** Chaque ADN rangé garde la signature des mots du compilateur qui l'a fait. À la
+rétrotranscription, si le texte gardé ne redonne plus les mots :
+- même compilateur : le texte a été retouché, **faux** ;
+- compilateur changé depuis le rangement : on ne peut pas savoir, **inconnu** (« le compilateur a changé depuis le
+  rangement : le texte ne peut pas être vérifié ») ;
+- ADN rangé avant cet intron : **faux**, avec la réserve « cet ADN ne note pas son compilateur : il a pu changer depuis ».
+C'est la réponse au problème vu en 0.6k : chaque changement du prélude faisait dire « faux » à des textes intacts.
+
+**Trouvé en route.** Lugus lisait les mots de son compilateur en prenant le dernier nombre (« 10; ») pour un 0. Sans
+effet sur le compilateur, mais la signature différait de celle de Python ; elle est maintenant prise sur les mots avant
+le « ; », des deux côtés.
+
+**Vérifié** (`tests/test_adn_chemin.py`) : l'ADN rangé en vtx est celui de Python, octet pour octet, sur quatre
+programmes (dont un isotope lourd, un texte en \r\n et accentué) ; trois mots abîmés, transcrits en vtx : les mots
+d'origine, et l'ADN réparé réécrit comme Python le réécrit ; les quatre isoformes de l'ARN, au format de Lugus, leur
+coiffe reconnue, lancées elles donnent la sortie du programme ; l'épigénome appris recopié dans l'ARN « memoire » ; la
+rétrotranscription vrai, faux, inconnu et faux avec réserve. Les suites de l'ADN, du lecteur en vtx, de la patrouille et
+de la provenance restent conformes.
+
+**L'autonomie, mise à jour** (section donnée le même jour) : l'ADN passe d'environ 50 % à environ 85 % écrit en vtx ;
+l'ensemble, d'environ 45 % à environ 48 %.
