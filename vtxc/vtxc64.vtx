@@ -1965,9 +1965,336 @@ fonction code_logique(t) {
 // Une branche de selon : codes logiques (bits 0 à 3 de val) et corps
 structure Branche { codes, liste: Noeud, corps: Noeud, ligne, suivant: Branche }
 
+fonction elem_noeud(l: Liste, i): Noeud {
+    soit n: Noeud = elem(l, i);
+    retour n;
+}
+
+// « selon (a, b, c) » ou « selon {a, b, c} » : de 2 à 4 lectures d'un coup (0.6l). Une virgule au premier niveau
+// des parenthèses le dit : « selon (x) » reste un selon ordinaire.
+fonction selon_plusieurs_ici(c: Ctx) {
+    si est_op(c, "{") {
+        retour 1;
+    }
+    si !est_op(c, "(") {
+        retour 0;
+    }
+    soit j = c.tok;
+    soit prof = 0;
+    tantque j != nul && j.genre != 6 {
+        si jeton_ouvre(j) {
+            prof = prof + 1;
+        } sinon si jeton_ferme(j) {
+            prof = prof - 1;
+            si prof == 0 {
+                retour 0;
+            }
+        } sinon si prof == 1 && jeton_op(j, ",") {
+            retour 1;
+        }
+        j = j.suivant;
+    }
+    retour 0;
+}
+
+// une branche : (vrai, faux|variable, _) avec ordre, {vrai, vrai, _} sans ordre ; rend les places en un nombre, quatre
+// bits chacune (le masque des codes permis ; 15 pour _)
+fonction motif_selon(c: Ctx, ordre, n) {
+    soit lm = c.tok.ligne;
+    soit ouvre = "{";
+    soit ferme = "}";
+    si ordre {
+        ouvre = "(";
+        ferme = ")";
+    }
+    si !est_op(c, ouvre) {
+        erreur(c, lm, "branche de « selon » attendue : (…), {…} ou autre");
+        retour 0;
+    }
+    avancer(c);
+    soit motif = 0;
+    soit places = 0;
+    soit encore = 1;
+    tantque encore && c.erreur == 0 {
+        soit masque = 0;
+        soit autre_code = 1;
+        tantque autre_code && c.erreur == 0 {
+            soit lp = c.tok.ligne;
+            si est_id(c, "_") {
+                masque = 15;
+            } sinon si c.tok.genre == 1 && code_logique(c.tok.texte) != 0 - 1 {
+                masque = masque | (1 << code_logique(c.tok.texte));
+            } sinon {
+                erreur(c, lp, "dans une branche de « selon » : vrai, faux, inconnu, variable ou _");
+            }
+            avancer(c);
+            autre_code = est_op(c, "|");
+            si autre_code && c.erreur == 0 {
+                si !ordre {
+                    erreur(c, lp, "sans ordre, chaque place nomme une seule valeur (ou _)");
+                }
+                avancer(c);
+            }
+        }
+        si places < 4 {
+            motif = motif | (masque << (4 * places));
+        }
+        places = places + 1;
+        encore = est_op(c, ",");
+        si encore {
+            avancer(c);
+        }
+    }
+    si c.erreur == 0 {
+        attendre(c, ferme);
+    }
+    si c.erreur == 0 && places != n {
+        erreur(c, lm, "cette branche de « selon » n'a pas autant de places que de lectures");
+    }
+    retour motif;
+}
+
+// le motif prend-il les lectures t (deux bits par place) ?
+fonction motif_prend(motif, t, ordre, n) {
+    si ordre {
+        pour i dans 0..n {
+            soit permis = (motif >> (4 * i)) & 15;
+            si ((permis >> ((t >> (2 * i)) & 3)) & 1) == 0 {
+                retour 0;
+            }
+        }
+        retour 1;
+    }
+    // sans ordre : chaque valeur nommée doit se trouver au moins autant de fois parmi les lectures
+    pour v dans 0..4 {
+        soit voulu = 0;
+        soit vu = 0;
+        pour k dans 0..n {
+            si ((motif >> (4 * k)) & 15) == (1 << v) {
+                voulu = voulu + 1;
+            }
+            si ((t >> (2 * k)) & 3) == v {
+                vu = vu + 1;
+            }
+        }
+        si vu < voulu {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+fonction nom_selon_place(n, i) {
+    soit base = nom_cache("__selon", n);
+    soit l = liste();
+    pour k dans 0..longueur(base) {
+        ajouter(l, car(base, k));
+    }
+    ajouter(l, '_');
+    ajouter(l, '0' + i);
+    retour texte_de(l, 0, l.n);
+}
+
+// une lecture dans une condition : son nom est posé à la fin (le numéro du selon est pris après ses branches, comme
+// dans vtx128.py : un selon dans une branche prend le sien d'abord) ; refs garde le nœud et sa place
+fonction var_selon(c: Ctx, refs: Liste, i, l): Noeud {
+    soit v = Noeud { genre: N_VAR, ligne: l };
+    ajouter(refs, bits(v));
+    ajouter(refs, i);
+    retour v;
+}
+
+// la condition d'un motif, comme vtx128.py : avec ordre, la conjonction des places nommées (chacune la disjonction de
+// ses valeurs) ; sans ordre, pour chaque valeur nommée, le compte des lectures qui la portent (au moins, s'il y a des _)
+fonction condition_motif(c: Ctx, motif, ordre, n, refs: Liste, l): Noeud {
+    soit c1: Noeud = nul;
+    si ordre {
+        pour i dans 0..n {
+            soit permis = (motif >> (4 * i)) & 15;
+            si permis != 15 {
+                soit ci: Noeud = nul;
+                pour v dans 0..4 {
+                    si (permis >> v) & 1 {
+                        soit t = bin("==", var_selon(c, refs, i, l), Noeud { genre: N_QNOMBRE, val: v, ligne: l }, l);
+                        si ci == nul {
+                            ci = t;
+                        } sinon {
+                            ci = bin("||", ci, t, l);
+                        }
+                    }
+                }
+                si c1 == nul {
+                    c1 = ci;
+                } sinon {
+                    c1 = bin("&&", c1, ci, l);
+                }
+            }
+        }
+    } sinon {
+        soit nommes = 0;
+        pour k dans 0..n {
+            si ((motif >> (4 * k)) & 15) != 15 {
+                nommes = nommes + 1;
+            }
+        }
+        soit libre = nommes < n;
+        pour w dans 0..4 {
+            soit combien = 0;
+            pour k2 dans 0..n {
+                si ((motif >> (4 * k2)) & 15) == (1 << w) {
+                    combien = combien + 1;
+                }
+            }
+            si combien > 0 {
+                soit compte: Noeud = nul;
+                pour i2 dans 0..n {
+                    soit t2 = bin("==", var_selon(c, refs, i2, l), Noeud { genre: N_QNOMBRE, val: w, ligne: l }, l);
+                    si compte == nul {
+                        compte = t2;
+                    } sinon {
+                        compte = bin("+", compte, t2, l);
+                    }
+                }
+                soit op = "==";
+                si libre {
+                    op = ">=";
+                }
+                soit t3 = bin(op, compte, nombre(combien, l), l);
+                si c1 == nul {
+                    c1 = t3;
+                } sinon {
+                    c1 = bin("&&", c1, t3, l);
+                }
+            }
+        }
+    }
+    si c1 == nul {
+        c1 = nombre(1, l);
+    }
+    retour c1;
+}
+
+// selon (a, b, c) { (vrai, faux|variable, _) { … } (_, vrai, _), (vrai, _, _) { … } autre { … } } et
+// selon {a, b, c} { {vrai, vrai, _} { … } } : la première branche qui convient est jouée ; une branche que les
+// précédentes rendent inatteignable est refusée. Rendu comme vtx128.py : une variable cachée par lecture, puis une suite
+// de si / sinon si.
+fonction analyse_selon_plusieurs(c: Ctx, l): Noeud {
+    soit ordre = est_op(c, "(");
+    soit l0 = c.tok.ligne;
+    avancer(c);
+    soit es = liste();
+    ajouter(es, bits(expr(c, 0)));
+    tantque c.erreur == 0 && est_op(c, ",") {
+        avancer(c);
+        ajouter(es, bits(expr(c, 0)));
+    }
+    si ordre {
+        attendre(c, ")");
+    } sinon {
+        attendre(c, "}");
+    }
+    soit n = es.n;
+    si c.erreur == 0 && (n < 2 || n > 4) {
+        erreur(c, l0, "« selon » lit de 2 à 4 valeurs à la fois");
+    }
+    attendre(c, "{");
+    soit couverts = liste();
+    soit ncas = 1;
+    si c.erreur == 0 {
+        ncas = 1 << (2 * n);
+    }
+    soit refs = liste();
+    pour q dans 0..ncas {
+        ajouter(couverts, 0);
+    }
+    soit branches: Branche = nul;
+    soit autre: Noeud = nul;
+    soit a_autre = 0;
+    tantque c.erreur == 0 && !est_op(c, "}") {
+        soit l2 = c.tok.ligne;
+        si est_id(c, "autre") {
+            avancer(c);
+            si a_autre {
+                erreur(c, l2, "« autre » apparaît deux fois");
+            }
+            a_autre = 1;
+            autre = bloc(c);
+        } sinon {
+            soit motifs = liste();
+            ajouter(motifs, motif_selon(c, ordre, n));
+            tantque c.erreur == 0 && est_op(c, ",") {
+                avancer(c);
+                ajouter(motifs, motif_selon(c, ordre, n));
+            }
+            soit neuf = 0;
+            pour t dans 0..ncas {
+                soit pris = 0;
+                pour m dans 0..motifs.n {
+                    si motif_prend(elem(motifs, m), t, ordre, n) {
+                        pris = 1;
+                    }
+                }
+                si pris {
+                    si elem(couverts, t) == 0 {
+                        neuf = 1;
+                    }
+                    poser(couverts, t, 1);
+                }
+            }
+            si c.erreur == 0 && neuf == 0 {
+                erreur(c, l2, "cette branche de « selon » n'est jamais atteinte (les précédentes prennent tous ses cas)");
+            }
+            soit corps = bloc(c);
+            soit ncond: Noeud = nul;
+            pour mm dans 0..motifs.n {
+                soit cm = condition_motif(c, elem(motifs, mm), ordre, n, refs, l2);
+                si ncond == nul {
+                    ncond = cm;
+                } sinon {
+                    ncond = bin("||", ncond, cm, l2);
+                }
+            }
+            branches = Branche { liste: ncond, corps: corps, ligne: l2, suivant: branches };
+        }
+    }
+    attendre(c, "}");
+    c.nselon = c.nselon + 1;
+    soit r = 0;
+    tantque r < refs.n {
+        soit vr = elem_noeud(refs, r);
+        vr.nom = nom_selon_place(c.nselon, elem(refs, r + 1));
+        r = r + 2;
+    }
+    soit chaine: Noeud = autre;
+    soit a_chaine = a_autre;
+    soit b = branches;
+    tantque b != nul {
+        soit si_ = Noeud { genre: N_SI, a: b.liste, premier: b.corps, ligne: b.ligne };
+        si a_chaine {
+            si_.val = 1;
+            si_.deuxieme = chaine;
+        }
+        chaine = si_;
+        a_chaine = 1;
+        b = b.suivant;
+    }
+    // les variables cachées, de la dernière à la première, devant la chaîne
+    soit suite: Noeud = chaine;
+    soit k = n;
+    tantque k > 0 {
+        k = k - 1;
+        suite = Noeud { genre: N_SOIT, nom: nom_selon_place(c.nselon, k), val: T_LOG, a: elem_noeud(es, k), ligne: l,
+                        suivant: suite };
+    }
+    retour suite;
+}
+
 // selon x { vrai { … } faux, inconnu { … } autre { … } } : la valeur est calculée une fois dans une variable cachée,
 // puis rendue comme une suite de si / sinon si, exactement comme vtx.py
 fonction analyse_selon(c: Ctx, l): Noeud {
+    si selon_plusieurs_ici(c) {
+        retour analyse_selon_plusieurs(c, l);
+    }
     soit x = expr(c, 0);
     attendre(c, "{");
     soit branches: Branche = nul;

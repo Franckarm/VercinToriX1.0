@@ -19,6 +19,7 @@ Utilisation :
 """
 import bisect
 import math
+import itertools
 import os
 import random
 import re
@@ -1588,9 +1589,150 @@ class Analyseur:
         """Fin d'une instruction : « ; »."""
         self.attendre(";")
 
+    def selon_plusieurs(self):
+        """« selon (a, b, c) » ou « selon {a, b, c} » : de 2 à 4 lectures d'un coup (0.6l). Rend None si ce n'est pas le
+        cas (un selon ordinaire, même « selon (x) »)."""
+        if self.est_op("{"):
+            ordre = False
+        elif self.est_op("("):
+            # une virgule au premier niveau des parenthèses : plusieurs lectures ; sinon une seule expression
+            prof, k, virgule = 0, 0, False
+            while True:
+                kk, vv, _ = self.regard(k)
+                if kk == "op" and vv in ("(", "[", "{"):
+                    prof += 1
+                elif kk == "op" and vv in (")", "]", "}"):
+                    prof -= 1
+                    if prof == 0:
+                        break
+                elif kk == "op" and vv == "," and prof == 1:
+                    virgule = True
+                elif kk == "eof":
+                    break
+                k += 1
+            if not virgule:
+                return None
+            ordre = True
+        else:
+            return None
+        ferme = ")" if ordre else "}"
+        l0 = self.suivant()[2]
+        es = [self.expr()]
+        while self.est_op(","):
+            self.suivant()
+            es.append(self.expr())
+        self.attendre(ferme)
+        if not 2 <= len(es) <= 4:
+            raise VtxError(f"ligne {l0} : « selon » lit de 2 à 4 valeurs à la fois")
+        return ordre, es
+
+    def motif_selon(self, ordre, n):
+        """(vrai, faux|variable, _) avec ordre ; {vrai, vrai, _} sans ordre : pour chaque place, l'ensemble des codes
+        permis (tous pour _)"""
+        ouvre, ferme = ("(", ")") if ordre else ("{", "}")
+        l = self.regard()[2]
+        if not self.est_op(ouvre):
+            raise VtxError(f"ligne {l} : branche de « selon » attendue : {ouvre}…{ferme} ou autre")
+        self.suivant()
+        places = []
+        while True:
+            codes = set()
+            while True:
+                k2, v2, l2 = self.suivant()
+                if k2 == "id" and v2 == "_":
+                    codes = {0, 1, 2, 3}
+                elif k2 == "id" and v2 in LOGIQUES:
+                    codes.add(LOGIQUES[v2])
+                else:
+                    raise VtxError(f"ligne {l2} : dans une branche de « selon » : vrai, faux, inconnu, variable ou _")
+                if not self.est_op("|"):
+                    break
+                if not ordre:
+                    raise VtxError(f"ligne {l2} : sans ordre, chaque place nomme une seule valeur (ou _)")
+                self.suivant()
+            places.append(codes)
+            if self.est_op(","):
+                self.suivant()
+                continue
+            break
+        self.attendre(ferme)
+        if len(places) != n:
+            raise VtxError(f"ligne {l} : cette branche de « selon » a {len(places)} places au lieu de {n}")
+        return places
+
     def selon(self, l):
         """selon x { vrai { … } faux, inconnu { … } autre { … } } : la valeur est calculée une fois, puis une branche au plus
-        est jouée ; « autre » prend les valeurs non nommées. Rendu comme une suite de si / sinon si."""
+        est jouée ; « autre » prend les valeurs non nommées. Rendu comme une suite de si / sinon si.
+
+        selon (a, b, c) { (vrai, faux|variable, _) { … } (_, vrai, _), (vrai, _, _) { … } autre { … } } : plusieurs
+        lectures dont la place compte ; selon {a, b, c} { {vrai, vrai, _} { … } } : des témoins de même rang, sans ordre
+        (la branche convient si les valeurs nommées se trouvent parmi les lectures, _ prenant le reste). La première
+        branche qui convient est jouée ; une branche que les précédentes rendent inatteignable est refusée (0.6l)."""
+        pl = self.selon_plusieurs()
+        if pl is not None:
+            ordre, es = pl
+            n = len(es)
+            self.attendre("{")
+            branches, autre, couverts = [], None, set()
+            tous = list(itertools.product(range(4), repeat=n))
+            while not self.est_op("}"):
+                k2, v2, l2 = self.regard()
+                if k2 == "id" and v2 == "autre":
+                    self.suivant()
+                    if autre is not None:
+                        raise VtxError(f"ligne {l2} : « autre » apparaît deux fois")
+                    autre = self.bloc()
+                    continue
+                motifs = [self.motif_selon(ordre, n)]
+                while self.est_op(","):
+                    self.suivant()
+                    motifs.append(self.motif_selon(ordre, n))
+                pris = set()
+                for m in motifs:
+                    for t in tous:
+                        if ordre:
+                            ok = all(t[i] in m[i] for i in range(n))
+                        else:
+                            ok = all(t.count(v) >= sum(1 for c in m if c == {v}) for v in range(4))
+                        if ok:
+                            pris.add(t)
+                if not pris - couverts:
+                    raise VtxError(f"ligne {l2} : cette branche de « selon » n'est jamais atteinte (les précédentes "
+                                   f"prennent tous ses cas)")
+                couverts |= pris
+                branches.append((motifs, self.bloc(), l2))
+            self.attendre("}")
+            self.nselon = getattr(self, "nselon", 0) + 1
+            tmps = [f"__selon{self.nselon}_{i}" for i in range(n)]
+            chaine = autre
+            for motifs, corps, lb in reversed(branches):
+                cond = None
+                for m in motifs:
+                    c1 = None
+                    if ordre:
+                        for i in range(n):
+                            if len(m[i]) == 4:
+                                continue
+                            ci = None
+                            for c in sorted(m[i]):
+                                t = ("bin", "==", ("var", tmps[i], lb), ("qnombre", c))
+                                ci = t if ci is None else ("bin", "||", ci, t)
+                            c1 = ci if c1 is None else ("bin", "&&", c1, ci)
+                    else:
+                        nommes = [next(iter(c)) for c in m if len(c) == 1]
+                        libre = len(nommes) < n
+                        for v in sorted(set(nommes)):
+                            compte = None
+                            for i in range(n):
+                                t = ("bin", "==", ("var", tmps[i], lb), ("qnombre", v))
+                                compte = t if compte is None else ("bin", "+", compte, t)
+                            t = ("bin", ">=" if libre else "==", compte, ("nombre", nommes.count(v)))
+                            c1 = t if c1 is None else ("bin", "&&", c1, t)
+                    if c1 is None:
+                        c1 = ("nombre", 1)
+                    cond = c1 if cond is None else ("bin", "||", cond, c1)
+                chaine = [("si", cond, corps, chaine, lb)]
+            return [("soit", tmps[i], es[i], l, "q") for i in range(n)] + (chaine or [])
         e = self.expr()
         self.attendre("{")
         branches, vus, autre = [], set(), None

@@ -19,9 +19,16 @@ fonction fusion3(d): logique {
     retour fusion(fusion(lettre(d, 0), lettre(d, 1)), lettre(d, 2));
 }
 
-fonction nom_action(n): texte {
-    soit noms = ["attendre", "agir", "renoncer", "demander un témoin de plus"];
-    retour noms[n];
+// la table du programmeur, écrite dans le langage (0.6l) : un conseil prudent, qui n'agit qu'à l'unanimité ou sans
+// opposition. Trois témoins de même rang : selon {a, b, c}, sans ordre ; la première branche qui convient.
+fonction conseil_prudent(a: logique, b: logique, c: logique): texte {
+    selon {a, b, c} {
+        {faux, inconnu, inconnu}, {faux, faux, inconnu}, {faux, faux, faux} { retour "renoncer"; }
+        {vrai, inconnu, inconnu}, {vrai, vrai, inconnu}, {vrai, vrai, vrai} { retour "agir"; }
+        {inconnu, inconnu, inconnu}, {vrai, faux, variable} { retour "attendre"; }
+        {variable, variable, faux}, {variable, variable, vrai}, {variable, variable, variable} { retour "attendre"; }
+    }
+    retour "demander un témoin de plus";
 }
 
 // les quatre valeurs comme les quatre bases : A inconnu, C faux, G vrai, U variable
@@ -96,12 +103,10 @@ fonction principal() {
     b = consolider(b);
     montrer("tranché ", b);
 
-    // --- 3. la table du programmeur : ici un conseil prudent, qui n'agit qu'à l'unanimité ou sans opposition
-    // (0 attendre, 1 agir, 2 renoncer, 3 demander un témoin de plus)
-    soit prudent = [0, 2, 2, 2, 1, 3, 3, 1, 3, 1, 3, 3, 3, 3, 0, 3, 3, 0, 0, 0];
+    // --- 3. la table du programmeur : le conseil prudent (plus haut), écrit en selon
     afficher("");
-    afficher("le conseil prudent, devant « deux oui contre un non » :", nom_action(prudent[situation(codon(vrai, faux, vrai))]));
-    afficher("le conseil prudent, devant « deux oui, un absent »    :", nom_action(prudent[situation(codon(vrai, inconnu, vrai))]));
+    afficher("le conseil prudent, devant « deux oui contre un non » :", conseil_prudent(vrai, faux, vrai));
+    afficher("le conseil prudent, devant « deux oui, un absent »    :", conseil_prudent(vrai, inconnu, vrai));
 
     // --- 4. le codon avec ordre : première lettre en ligne, deuxième en colonne, et dans chaque case les quatre
     // verdicts selon la troisième lettre (A, C, G, U). Une case pleine répète quatre fois la même lettre.

@@ -2120,3 +2120,39 @@ plus de la mémoire mais du nombre d'instructions que la traduction produit (le 
 haute de chaque registre, les drapeaux encore vivants, la vérification de page à chaque accès). Le gagner demande un
 vrai compilateur, qui voit tout un morceau de programme à la fois (où va chaque valeur, quels drapeaux servent) ;
 c'est le prochain grand chantier de la vitesse, et il ne se fera pas par petites touches.
+
+## 46. Selon sur plusieurs lectures : la table du programmeur dans le langage (14 novembre, 0.6l)
+
+**Décidé avec le créateur** (après la vitesse, qu'on arrête là : battre C sur un processeur binaire ne dit rien de ce
+que vaut le quaternaire) : revenir au langage. D'abord le `selon` sur codon, puis les codons en chaîne (un gène), puis
+un Ogmios plus intuitif.
+
+**Ce qui est fait** (vtx128.py et vtxc128 pour Lugus, vtx64.py et vtxc64 pour Dunon, les mêmes mots) :
+- `selon (a, b, c) { (vrai, faux|variable, _) { … } … }` : de 2 à 4 lectures dont la place compte ; `_` prend toute
+  valeur, `|` donne le choix ; plusieurs motifs par branche, séparés par des virgules ;
+- `selon {a, b, c} { {vrai, vrai, _} { … } … }` : des témoins de même rang, sans ordre ;
+- la première branche qui convient est jouée ; `autre` prend le reste ;
+- le compilateur **refuse une branche inatteignable** (il essaie les 4ⁿ lectures : une branche dont tous les cas sont
+  déjà pris par les précédentes est une faute de raisonnement, dite à la compilation) ;
+- `selon (x)` garde son sens ; tous les programmes déjà écrits donnent exactement les mêmes mots qu'avant (67 sur
+  Lugus, 58 sur Dunon, comparés au compilateur d'avant).
+
+**Dans les exemples.** Le conseil prudent de `exemples128/codon.vtx` n'est plus un tableau de 20 cases indexé par un
+numéro de situation, mais un `selon {a, b, c}` qui se lit. En l'écrivant, le compilateur n'a rien dit mais le test a
+vu une faute : `{variable, variable, _}` prenait aussi « deux partagés, un absent », que l'ancienne table envoyait
+chercher un témoin de plus ; corrigée en nommant les trois cas. C'est la limite de `_` : il dit « n'importe quoi », y
+compris l'absence.
+
+**Vérifié** (`tests/test_selon.py`) : des `selon` tirés au hasard (2 à 4 lectures, avec et sans ordre, `_` et `|`,
+plusieurs motifs, avec ou sans `autre`), sur Lugus et sur Dunon : mêmes mots par les deux compilateurs de chaque
+machine, et sur toutes les combinaisons de lectures la branche jouée est celle d'une référence écrite à part ; les
+branches inatteignables refusées par les deux ; des `selon` imbriqués ; les deux verdicts du codon écrits en `selon`
+décident comme les tables en deux entiers (64 sur 64) ; le conseil prudent comme l'ancienne table (64 sur 64).
+
+**Le coût.** Un `selon` se déplie en comparaisons : la table en deux entiers du codon reste plus rapide (une lecture)
+pour un verdict appelé des millions de fois ; le `selon` est fait pour ce que le programmeur décide et doit pouvoir
+relire.
+
+**La suite** : les codons en chaîne (un gène : plus de trois témoins, lus par groupes de trois) ; puis un Ogmios plus
+intuitif ; et, avant d'écrire des programmes durables, la version du prélude gardée dans l'ADN (sinon chaque changement
+du prélude fait dire « le texte : faux » à la rétrotranscription des programmes rangés avant).

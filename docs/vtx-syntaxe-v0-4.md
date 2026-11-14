@@ -224,6 +224,27 @@ selon porte {
 }
 ```
 
+**Plusieurs lectures d'un coup (0.6l).** `selon` lit de 2 à 4 logiques à la fois, avec ou sans ordre :
+
+```
+selon (vue, ouie, flair) {                       // la place compte
+    (vrai, vrai, _) { parer(); }                 // _ : n'importe quelle valeur
+    (vrai|faux, faux|vrai, vrai) { parer(); }    // | : l'une ou l'autre
+    (_, _, faux), (inconnu, inconnu, _) { attendre(); }   // plusieurs motifs pour une branche
+    autre { se_garder(); }
+}
+selon {a, b, c} {                                // sans ordre : trois témoins de même rang
+    {vrai, vrai, _} { agir(); }                  // au moins deux oui, n'importe où
+    {vrai, faux, inconnu} { demander(); }        // ces trois valeurs, dans n'importe quel ordre
+}
+```
+
+La première branche qui convient est jouée ; sans `autre`, rien n'est joué si aucune ne convient. Sans ordre, chaque place
+nomme une seule valeur (ou `_`) : la branche convient si les valeurs nommées se trouvent parmi les lectures (`_` prend
+le reste). Le compilateur **refuse une branche que les précédentes rendent inatteignable** (« cette branche de « selon »
+n'est jamais atteinte »), et une branche qui n'a pas autant de places que de lectures. `selon (x)` (une seule valeur
+entre parenthèses) garde son sens ordinaire. Lugus et Dunon ; les mêmes mots par les deux compilateurs de chacun.
+
 | Opération | Définition | Effet |
 |---|---|---|
 | `et4(a, b)` | v = v₁ ET v₂, f = f₁ OU f₂ | conjonction |
