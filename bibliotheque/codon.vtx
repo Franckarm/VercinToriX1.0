@@ -157,3 +157,115 @@ fonction nom_etat(d): texte {
     soit noms = ["en suspens", "tranché", "échu"];
     retour noms[etat(d)];
 }
+
+// --- le gène (0.6m) : plus de trois témoins. Une chaîne de lectures (un logique[]) est lue par codons de trois, dans
+// l'ordre (le cadre de lecture) ; les verdicts des codons forment une nouvelle chaîne, relue de la même façon, trois
+// par trois, jusqu'à un seul verdict : 3 lectures, puis 9, 27, 81… Une place qui manque au bout de la chaîne (sa
+// longueur n'est pas un multiple de trois) est un témoin absent : inconnu. Les témoins d'un même codon sont une
+// famille (trois éclaireurs d'une porte, trois sens d'un même instant) : une famille qui se contredit reste une
+// contradiction locale, que le gène sait montrer (gene_suspens) au lieu de la fondre dans le compte de tous.
+// Pour décider, le compte de tous (gene_plat) est le meilleur : regrouper avant de compter perd de l'information
+// (mesuré dans exemples128/gene.vtx). Le gène sert à savoir quelle famille se contredit, et à lire chaque famille
+// avec ordre quand ses places ont un rôle.
+
+// le codon k de la chaîne g (ses lettres 3k, 3k + 1, 3k + 2 ; inconnu au-delà du bout)
+fonction gene_codon(g: logique[], k) {
+    soit n = longueur(g);
+    soit a: logique = inconnu;
+    soit b: logique = inconnu;
+    soit c: logique = inconnu;
+    si 3 * k < n {
+        a = g[3 * k];
+    }
+    si 3 * k + 1 < n {
+        b = g[3 * k + 1];
+    }
+    si 3 * k + 2 < n {
+        c = g[3 * k + 2];
+    }
+    retour codon(a, b, c);
+}
+
+fonction gene_codons(g: logique[]) {
+    retour (longueur(g) + 2) / 3;
+}
+
+// un étage du gène : le verdict de chaque codon (ordonne : 1, avec ordre ; 0, sans). Au-dessus du premier étage
+// (taire : 1), une famille restée en contradiction se tait : elle n'apporte ni oui ni non à l'étage du dessus (sa
+// contradiction reste marquée en bas, où gene_suspens la montre). Mesuré : sans cette règle, une seule famille
+// partagée bloquait tout le gène, qui restait en suspens trois fois sur vingt (exemples128/gene.vtx).
+fonction __gene_etage(g: logique[], ordonne, taire): logique[] {
+    soit r: logique[] = tableau(0);
+    pour k dans 0..gene_codons(g) {
+        soit d = gene_codon(g, k);
+        si taire == 1 {
+            pour j dans 0..3 {
+                si lettre(d, j) == variable {
+                    d = d - (3 << (2 * j));
+                }
+            }
+        }
+        si ordonne == 1 {
+            ajouter(r, verdict_ordonne(d));
+        } sinon {
+            ajouter(r, verdict(d));
+        }
+    }
+    retour r;
+}
+
+fonction __gene_lire(g: logique[], ordonne): logique {
+    si longueur(g) == 0 {
+        retour inconnu;
+    }
+    soit t: logique[] = g;
+    soit taire = 0;
+    tantque longueur(t) > 1 {
+        t = __gene_etage(t, ordonne, taire);
+        taire = 1;
+    }
+    retour t[0];
+}
+
+// le verdict du gène, codons sans ordre (des témoins de même rang dans chaque famille)
+fonction gene_lire(g: logique[]): logique {
+    retour __gene_lire(g, 0);
+}
+
+// le verdict du gène, codons avec ordre (dans chaque codon, deux lectures de premier rang puis le recoupement)
+fonction gene_lire_ordonne(g: logique[]): logique {
+    retour __gene_lire(g, 1);
+}
+
+// le même compte que verdict(), sur toute la chaîne d'un coup, sans familles : vrai si les oui dépassent tout le reste
+// exprimé (les non et les témoins partagés), faux de même, inconnu si personne n'a parlé, variable sinon
+fonction gene_plat(g: logique[]): logique {
+    soit oui = 0;
+    soit des_non = 0;
+    soit partages = 0;
+    pour x dans g {
+        selon x {
+            vrai { oui = oui + 1; }
+            faux { des_non = des_non + 1; }
+            variable { partages = partages + 1; }
+        }
+    }
+    si oui > des_non + partages { retour vrai; }
+    si des_non > oui + partages { retour faux; }
+    si oui + des_non + partages == 0 { retour inconnu; }
+    retour variable;
+}
+
+// où sont les contradictions : les codons du premier étage restés en suspens (verdict variable), un logique par codon
+// (vrai : en suspens ; faux : tranché ; inconnu : silencieux)
+fonction gene_suspens(g: logique[]): logique[] {
+    soit r: logique[] = tableau(0);
+    pour k dans 0..gene_codons(g) {
+        selon verdict(gene_codon(g, k)) {
+            variable { ajouter(r, vrai); }
+            inconnu { ajouter(r, inconnu); }
+            autre { ajouter(r, faux); }
+        }
+    }
+    retour r;
+}

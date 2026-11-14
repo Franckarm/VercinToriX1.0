@@ -2156,3 +2156,41 @@ relire.
 **La suite** : les codons en chaîne (un gène : plus de trois témoins, lus par groupes de trois) ; puis un Ogmios plus
 intuitif ; et, avant d'écrire des programmes durables, la version du prélude gardée dans l'ADN (sinon chaque changement
 du prélude fait dire « le texte : faux » à la rétrotranscription des programmes rangés avant).
+
+## 47. Le gène : plus de trois témoins (14 novembre, 0.6m)
+
+**La question.** Le codon donne une place à trois témoins ; un quatrième n'en avait pas. Un **gène** est une chaîne de
+témoins (un `logique[]`), lue par codons de trois dans l'ordre (le cadre de lecture), puis les verdicts des codons
+relus trois par trois, jusqu'à un seul : 3, 9, 27, 81 témoins. Les trois témoins d'un codon sont une **famille** (les
+trois éclaireurs d'une porte, les trois sens d'un même instant). Une place qui manque au bout de la chaîne est un témoin
+absent : inconnu. Dans `bibliotheque/codon.vtx` : `gene_codon(g, k)`, `gene_codons(g)`, `gene_lire(g)`,
+`gene_lire_ordonne(g)`, `gene_plat(g)`, `gene_suspens(g)`.
+
+**Mesuré d'abord, et dit sans fard** (27 témoins en 9 familles ; en Python sur 20 000 questions, puis en vtx sur 400) :
+
+| | décide juste | se trompe | reste en suspens |
+|---|---|---|---|
+| bruit épars : le compte de tous (`gene_plat`) | 98,5 % | 0,8 % | 0,7 % |
+| bruit épars : le gène, première règle | 83,2 % | 0,6 % | 16,2 % |
+| bruit épars : le gène, une famille partagée se tait au-dessus | 94,9 % | 1,3 % | 3,6 % |
+| familles achetées (une sur quatre ment en bloc) : le compte de tous | 92,3 % | 5,8 % | 1,9 % |
+| familles achetées : le gène | 91,2 % | 5,9 % | 2,9 % |
+
+- **Pour décider, le compte de tous est le meilleur.** Regrouper les témoins avant de compter perd de l'information
+  (c'est le théorème du jury de Condorcet : avec des témoins indépendants, la majorité de tous est la règle la plus
+  sûre). Le gène ne décide pas mieux, et il ne faut pas le présenter ainsi.
+- **La première règle était mauvaise** : une seule famille partagée remontait « variable » et bloquait tout le gène (en
+  suspens trois fois sur vingt). Corrigée : au-dessus du premier étage, une famille en contradiction **se tait** (elle
+  n'apporte ni oui ni non) ; sa contradiction reste marquée en bas.
+- **Ce que le gène apporte** : savoir **quelle famille** se contredit (`gene_suspens`), et lire chaque famille avec
+  ordre quand ses places ont un rôle (`gene_lire_ordonne`). La structure n'est pas un vote meilleur, c'est une carte.
+
+**L'exemple** `exemples128/gene.vtx` : une question racontée (27 éclaireurs, 9 portes ; les portes 2 et 5 se
+contredisent ; tous disent oui), puis la mesure sur 400 questions : bruit épars, le compte de tous 394 justes, le gène
+384 ; familles achetées, 371 contre 361. **Vérifié** (`tests/test_gene.py`) : 84 chaînes tirées au hasard (0 à 30
+témoins) contre une référence en Python, sur Lugus et sur Dunon, mêmes mots par les deux compilateurs de chacun ;
+Dunon écrit ce que Lugus écrit ; le .exe traduit comme Lugus seul.
+
+**Une remarque de biologie** : déplacer le cadre de lecture d'une place change toutes les familles, donc le verdict du
+gène (comme une mutation par décalage du cadre dans le vivant) ; le compte de tous, lui, ne change pas. Ce n'est pas une
+faute : le cadre fait partie du sens.

@@ -117,6 +117,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_bords64.py")]))
     etapes.append(("Dunon fait le travail de Lugus : logique[], tableaux de textes, conseil.vtx et combat.vtx à l'identique",
                    [sys.executable, os.path.join("tests", "test_logiques64.py")]))
+    etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
+                   [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_selon.py")]))
     etapes.append(("le codon : trois lectures pour une contradiction en suspens, 20 situations, les trois sorties (Lugus)",

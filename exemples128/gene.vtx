@@ -1,0 +1,94 @@
+// machine : lugus
+// Le gène (0.6m) : plus de trois témoins. Vingt-sept éclaireurs en neuf familles de trois (une famille : les trois
+// éclaireurs d'une même porte). La chaîne de leurs réponses est lue par codons, famille par famille, puis les verdicts
+// des familles sont relus trois par trois (bibliotheque/codon.vtx).
+// 1. une question, racontée : ce que dit chaque famille, et où est la contradiction ;
+// 2. la mesure, honnête : pour décider, le compte de tous (gene_plat) contre le gène, sur deux sortes de bruit.
+importer "../bibliotheque/codon.vtx";
+
+fonction nom4(l: logique): texte {
+    retour nommer(l, ["rien", "non", "oui", "oui et non"]);
+}
+
+// une question : sa vérité (vrai ou faux) et les 27 réponses. sorte 0 : chaque éclaireur se tait une fois sur trois et
+// se trompe une fois sur quatre quand il parle ; sorte 1 : une famille sur quatre est achetée et ment en bloc.
+fonction temoigner(verite: logique, sorte): logique[] {
+    soit g: logique[] = tableau(0);
+    soit contraire = non4(verite);
+    pour f dans 0..9 {
+        soit achetee = 0;
+        si sorte == 1 && hasard(4) == 0 {
+            achetee = 1;
+        }
+        pour e dans 0..3 {
+            si hasard(3) == 0 {
+                ajouter(g, inconnu);
+            } sinon si achetee == 1 {
+                ajouter(g, contraire);
+            } sinon si sorte == 0 && hasard(4) == 0 {
+                ajouter(g, contraire);
+            } sinon {
+                ajouter(g, verite);
+            }
+        }
+    }
+    retour g;
+}
+
+// 0 juste, 1 faux, 2 en suspens, 3 rien
+fonction classer(r: logique, verite: logique) {
+    si r == verite { retour 0; }
+    si r == non4(verite) { retour 1; }
+    si r == variable { retour 2; }
+    retour 3;
+}
+
+fonction mesurer(sorte, n, titre: texte) {
+    tableau plat[4];
+    tableau gene[4];
+    pour q dans 0..n {
+        soit verite: logique = vrai;
+        si hasard(2) == 0 {
+            verite = faux;
+        }
+        soit g = temoigner(verite, sorte);
+        soit kp = classer(gene_plat(g), verite);
+        soit kg = classer(gene_lire(g), verite);
+        plat[kp] = plat[kp] + 1;
+        gene[kg] = gene[kg] + 1;
+    }
+    afficher(titre);
+    afficher("  le compte de tous : justes", plat[0], "; fausses", plat[1], "; en suspens", plat[2], "; sans réponse", plat[3]);
+    afficher("  le gène           : justes", gene[0], "; fausses", gene[1], "; en suspens", gene[2], "; sans réponse", gene[3]);
+}
+
+fonction principal() {
+    graine(5);
+    // --- 1. une question, racontée
+    soit g = temoigner(vrai, 0);
+    afficher("Les légions viennent-elles ? (la vérité : oui ; 27 éclaireurs, 9 portes)");
+    pour f dans 0..9 {
+        soit d = gene_codon(g, f);
+        afficher("  porte", f + 1, ":", nom4(lettre(d, 0)) + ", " + nom4(lettre(d, 1)) + ", " + nom4(lettre(d, 2)),
+                 "->", nom4(verdict(d)));
+    }
+    ecrire("  portes qui se contredisent :");
+    soit k = 1;
+    pour s dans gene_suspens(g) {
+        si s == vrai {
+            ecrire(" ");
+            ecrire(k);
+        }
+        k = k + 1;
+    }
+    afficher("");
+    afficher("  le gène dit", nom4(gene_lire(g)), "; avec ordre", nom4(gene_lire_ordonne(g)), "; le compte de tous",
+             nom4(gene_plat(g)));
+
+    // --- 2. la mesure : les mêmes questions pour les deux méthodes
+    afficher("");
+    mesurer(0, 400, "Bruit épars (400 questions : chacun se tait une fois sur trois, se trompe une fois sur quatre) :");
+    mesurer(1, 400, "Familles achetées (400 questions : une famille sur quatre ment en bloc) :");
+    afficher("");
+    afficher("Pour décider, le compte de tous ; pour savoir quelle porte se contredit, le gène.");
+}
