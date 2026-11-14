@@ -72,6 +72,9 @@ pub struct Spu128 {
     pub presenter: Option<Box<dyn FnMut(&Spu128) -> u128>>,
     /// le service 24, la machine fille (posée par celui qui lance : machine128::machine_fille ; la forge n'en a pas)
     pub machine_fille: Option<fn(&std::path::Path, u64) -> String>,
+    /// le service 27, le compilateur du lecteur d'ADN (0.6n bis) : un texte vtx compilé par vtxc128 (en vtx, sur une
+    /// machine fille) dans le dossier de la machine ; rend « mots;\n » ou « !l'erreur » (machine128::compiler_pour_lecteur)
+    pub compilateur: Option<fn(&str, &std::path::Path) -> String>,
     // la console branchée ailleurs (l'atelier, un terminal) : ce que le programme écrit et lit sur le canal 1 passe
     // par elles au lieu du texte gardé ; arret : Maj+F5 de l'atelier ; parler : la voix (le canal « voix: »)
     pub console_ecrire: Option<Box<dyn FnMut(u128)>>,
@@ -333,6 +336,7 @@ impl Spu128 {
             natif_erreur: None,
             presenter: None,
             machine_fille: None,
+            compilateur: None,
             console_ecrire: None,
             console_lire: None,
             arret: None,
@@ -879,6 +883,24 @@ impl Spu128 {
                 };
                 let canal = self.canal_libre();
                 self.fichiers.insert(canal, (true, rapport.chars().map(|c| c as u128).collect(), 0, String::new()));
+                Ok(canal)
+            }
+            27 => {
+                // le compilateur du lecteur d'ADN (0.6n bis) : le texte (en mémoire) compilé par vtxc128 sur une machine
+                // fille, les importations cherchées dans le dossier de la machine ; ses mots se lisent comme un fichier
+                let d = match &self.dossier {
+                    Some(d) => d.clone(),
+                    None => return Ok(u128::MAX),
+                };
+                // le texte entier (texte_memoire s'arrête à 4096 caractères : un nom de fichier)
+                let n = self.lire(arg).min(1 << 24);
+                let src: String = (0..n).map(|k| char::from_u32((self.lire(arg.wrapping_add(1 + k)) & 0x1F_FFFF) as u32).unwrap_or('?')).collect();
+                let rendu = match self.compilateur {
+                    Some(f) => f(&src, &d),
+                    None => return Ok(u128::MAX),
+                };
+                let canal = self.canal_libre();
+                self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }
             12 => {

@@ -45,6 +45,10 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
     rapide|sur|memoire` tire plusieurs ARN d'un même ADN, avec une coiffe vérifiée ; `lugus relire PROG.adn` fait la
     même lecture avec le lecteur écrit en vtx (`chimie/adn.vtx`), forgeable en exécutable (docs/vtx-reactions.md,
     section 9).
+  - **dans les deux sens** (0.6n bis) : `lugus retrotranscrire PROG.arn` refait l'ADN d'un ARN (l'ADNc, réparé par ses
+    témoins s'il en a) ; `lugus hex PROG.adn` écrit les mots en hex, chacun à sa place du cube ; `lugus cube PROG.adn`
+    les range dans le cube (`cube128-1-440.cub`, avec son anti-cube et son ombre) ; `lugus ranger` reprend un hex ou un
+    cube en ADN, et `lugus PROG.hex`, `lugus cube128-1-440.cub` se lancent (docs/vtx-reactions.md, section 49).
 - **L'atelier Ogmios** (`atelier.exe`) : le texte à gauche, **la paillasse au centre** (les réactions dessinées en
   atomes et liaisons, rangées en vagues, dans les deux sens avec le texte : tirer une liaison, ajouter ou retirer un
   atome réécrit la ligne), le cube à droite ; en bas, Sortie, Terminal, Pas à pas, Arbre et la fenêtre des explications.
@@ -80,6 +84,9 @@ lugus ranger exemples128/chute.vtx                  # l'ADN : chute.adn
 lugus exemples128/chute.adn                         # vérifié, réparé si besoin, lancé sous la patrouille
 lugus apprendre exemples128/alternance.adn          # (après lugus ranger) ses souvenirs gardés dans l'ADN
 lugus transcrire exemples128/chute.adn chute.arn --isoforme sur   # un ARN qui garde ses témoins
+lugus retrotranscrire chute.arn                     # l'ARN rendu à l'ADN : chute-c.adn
+lugus hex exemples128/chute.adn                     # les mots en hex : chute.hex
+lugus cube exemples128/chute.hex                    # dans le cube : cube128-1-440.cub, puis : lugus cube128-1-440.cub
 vtx paillasse exemples128/chute.vtx --valeurs --png chute.png   # la paillasse sans écran, avec les valeurs
 vtx toile128 ogmios/ogmios.vtx --fichier exemples128/chute.vtx   # Ogmios écrit en vtx (F5, Ctrl+S, Ctrl+Q)
 ```

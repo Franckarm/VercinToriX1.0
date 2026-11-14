@@ -405,6 +405,26 @@ class CPU:
             for k in range(n):
                 self.ecrire_mem((3 << 62) + p + k, 0)
             return 0
+        if code == 27:
+            # le compilateur du lecteur d'ADN (0.6n bis) : le texte en mémoire compilé (ici par vtx128.py, la
+            # référence ; Lugus en Rust le donne à vtxc128), les importations cherchées dans le dossier de la machine ;
+            # ses mots se lisent comme un fichier, « a,b,c;\n », ou « ! » suivi de l'erreur
+            if self.dossier is None:
+                return M128
+            src = "".join(chr(self.lire(arg + 1 + k) & 0x1FFFFF) for k in range(min(self.lire(arg), 1 << 24)))
+            try:
+                if os.path.dirname(ici) not in sys.path:
+                    sys.path.insert(0, os.path.dirname(ici))
+                import vtx128
+                vtx128.COMPAT_64 = False
+                vtx128.REACTIONS.clear()
+                mots, _ = vtx128.assembler(vtx128.compiler(src, dossier=self.dossier), True)
+                rendu = ",".join(map(str, mots)) + ";\n"
+            except Exception as e:      # noqa: BLE001
+                rendu = "!" + str(e).rstrip()
+            canal = max([1] + list(self.fichiers)) + 1
+            self.fichiers[canal] = ["l", [ord(ch) for ch in rendu], 0, ""]
+            return canal
         if code == 22:
             etat = getattr(self, "_etat_disque", 0)
             self._etat_disque = 0

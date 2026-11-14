@@ -377,6 +377,37 @@ fn main() {
         let chemin = std::path::Path::new(&args[2]).with_extension("mots");
         ecrire_mots(&chemin.to_string_lossy(), &m1);
         println!("point fixe : {} mots -> {}", m1.len(), chemin.display());
+    } else if args.len() >= 3 && (args[1] == "retrotranscrire" || (args[1] == "ranger" && !args[2].ends_with(".vtx"))) {
+        // 0.6n bis : ranger un brin qui n'est pas un texte (des mots, un hex, un cube, un ARN : la rétrotranscription,
+        // ARN → ADN) ; tout est fait par le lecteur d'ADN écrit en vtx. L'ADN d'un ARN (l'ADNc) ne prend pas le nom de
+        // l'ADN d'origine : NOM-c.adn
+        let p = std::path::Path::new(&args[2]);
+        let sortie = if args.len() > 3 { args[3].clone() } else if args[2].ends_with(".arn") {
+            p.with_file_name(format!("{}-c.adn", p.file_stem().map(|x| x.to_string_lossy().into_owned()).unwrap_or_default()))
+                .to_string_lossy().into_owned()
+        } else { p.with_extension("adn").to_string_lossy().into_owned() };
+        let entrees = vec![machine128::chemin_absolu(&args[2]), machine128::chemin_absolu(&sortie), "ranger".into()];
+        let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[2]))).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
+        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
+    } else if args.len() >= 3 && (args[1] == "hex" || args[1] == "cube") {
+        // 0.6n bis : le chemin dans l'autre sens, ADN (ou ARN, mots, hex, cube) → Hex → Cube, par le lecteur en vtx
+        let (sortie, freq) = if args[1] == "hex" {
+            (if args.len() > 3 { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("hex").to_string_lossy().into_owned() },
+             String::new())
+        } else {
+            (String::new(), args.get(3).cloned().unwrap_or_default())
+        };
+        let entrees = vec![machine128::chemin_absolu(&args[2]),
+                           if sortie.is_empty() { String::new() } else { machine128::chemin_absolu(&sortie) },
+                           args[1].clone(), freq];
+        let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[2]))).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
+        std::process::exit(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "ranger" {
         // 0.6n : le rangement est fait par le lecteur d'ADN écrit en vtx (chimie/adn.vtx) ; Lugus ne fait que compiler
         // (par vtxc128, lui aussi en vtx) et lui passer les fichiers
@@ -501,20 +532,16 @@ fn main() {
         let sortie = if args.len() > 3 && !args[3].starts_with("--") { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("mots").to_string_lossy().into_owned() };
         let isoforme = args.iter().position(|a| a == "--isoforme").and_then(|i| args.get(i + 1)).cloned();
         let sortie = if isoforme.is_some() && !sortie.ends_with(".arn") { std::path::Path::new(&args[2]).with_extension("arn").to_string_lossy().into_owned() } else { sortie };
+        // 0.6n bis : la vérification du texte gardé aussi (le lecteur le donne au compilateur, vtxc128, sur une
+        // machine fille, et compare les mots) ; la signature du compilateur d'aujourd'hui lui est passée
         let entrees = vec![machine128::chemin_absolu(&args[2]), machine128::chemin_absolu(&sortie), "transcrire".into(),
-                           isoforme.unwrap_or_default()];
-        let etat = machine128::adn_en_vtx(&entrees).unwrap_or_else(|e| {
+                           isoforme.unwrap_or_default(), machine128::signature_compilateur().to_string()];
+        let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[2]))).unwrap_or_else(|e| {
             eprintln!("{}", e);
             std::process::exit(1)
         });
         if etat != adn::VRAI && etat != adn::FAUX {
             std::process::exit(1);
-        }
-        if let Ok((mots, _, t)) = adn::lire_adn(&args[2]) {
-            if t.intron("source").is_some() {
-                let (e, quoi) = machine128::retrotranscrire(&t, &mots, &dossier_de128(&args[2]));
-                eprintln!("le texte : {}, {}", adn::nom_etat(e).split(' ').next().unwrap_or(""), quoi);
-            }
         }
     } else if args.len() >= 2 && args[1].ends_with(".adn") {
         // l'ADN est vérifié et réparé avant de tourner : seul un ADN vrai ou réparé est lancé
@@ -530,6 +557,22 @@ fn main() {
                 std::process::exit(1);
             }
         }
+    } else if args.len() >= 2 && (args[1].ends_with(".hex") || args[1].ends_with(".cub")) {
+        // 0.6n bis : un hex ou un cube se lance aussi ; le lecteur en vtx le lit (le cube : relu par son miroir, sa coiffe
+        // vérifiée), puis Lugus joue ses mots
+        let travail = std::env::temp_dir().join(format!("vtx-brin-{}.mots", std::process::id()));
+        let entrees = vec![machine128::chemin_absolu(&args[1]), travail.to_string_lossy().into_owned(), "mots".into()];
+        let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[1]))).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
+        let mots = std::fs::read_to_string(&travail).map(|t| nombres128(t.split(';').next().unwrap_or(""))).unwrap_or_default();
+        let _ = std::fs::remove_file(&travail);
+        if (etat != adn::VRAI && etat != adn::FAUX) || mots.is_empty() {
+            std::process::exit(1);
+        }
+        let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
+        jouer(&mots, &args[2..], dossier);
     } else if args.len() >= 2 && args[1].ends_with(".arn") {
         // l'ARN : sa coiffe vérifiée (un ARN qui ne reconnaît pas ses mots n'est pas lancé)
         let mut arn = adn::lire_arn(&args[1]).unwrap_or_else(|e| {
@@ -545,7 +588,7 @@ fn main() {
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus transcrire PROG.adn [PROG.mots] | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-1-F.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
         std::process::exit(2);
     }
 }

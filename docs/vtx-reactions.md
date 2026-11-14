@@ -2237,3 +2237,73 @@ de la provenance restent conformes.
 
 **L'autonomie, mise à jour** (section donnée le même jour) : l'ADN passe d'environ 50 % à environ 85 % écrit en vtx ;
 l'ensemble, d'environ 45 % à environ 48 %.
+
+## 49. Le chemin dans les deux sens (14 novembre, 0.6n bis)
+
+**La demande du créateur :** réfléchir à la rétrotranscription ; que le chemin ARN, ADN, hex, cube soit fonctionnel
+dans les deux sens. Le carnet le disait déjà : « copier l'ADN en ARN pour travailler, refixer l'ARN en ADN pour
+garder ».
+
+**La rétrotranscription, au sens de la biologie.** Jusqu'ici, le mot nommait la vérification du texte gardé (recompilé,
+redonne-t-il les mots ?). En biologie, c'est autre chose : la transcriptase inverse refait de l'ADN à partir d'un ARN
+(l'ADN complémentaire, l'ADNc). Les deux existent maintenant, et les deux sont faites par le lecteur écrit en vtx :
+- **ARN → ADN** : `lugus retrotranscrire PROG.arn [PROG-c.adn]`. Un ARN sûr ou complet garde ses témoins : il est
+  vérifié et réparé comme un ADN, et si les trois témoins reconnaissent les mots mais pas la coiffe, c'est la coiffe qui
+  est abîmée (deux contre un), elle est refaite. Un ARN rapide ou mémoire n'a que sa coiffe : si elle ne reconnaît pas
+  les mots, rien ne tranche, l'ARN est **variable** et rien n'est écrit ; sinon ses témoins sont refaits. L'épigénome
+  est gardé. Comme l'ADNc de la biologie, celui de vtx n'a pas d'introns : le texte du programme et le nom des
+  isotopes ont été retirés à l'épissage (les drapeaux des isotopes restent dans les molécules d'un ARN sûr). Il prend
+  le nom `PROG-c.adn`, pour ne jamais écraser l'ADN d'origine, qui a son texte.
+- **Le texte gardé** : la vérification aussi est faite en vtx. Le lecteur donne le texte au compilateur de vtx
+  (vtxc128, écrit en vtx, lancé sur une machine fille : le service 27, sur Lugus et sur la machine Python), relit ses
+  mots et les compare un pour un ; vrai, faux, inconnu (compilateur changé) et faux avec réserve, comme avant.
+
+**Le hex.** L'écriture des mots à la main de l'homme : `VTXHEX01 N SIGNATURE`, puis une ligne par mot, sa place dans
+le cube et ses quatre voies :
+
+```
+VTXHEX01 107 5859642989249918019
+#000000 #0018E001_7FFFFFFF_000A2000_00000000
+#000001 #00000000_0000006B_005E0020_00000001
+```
+
+Les adresses voyagent avec les données. Le hex n'a pas de témoins : c'est l'écriture brute, celle qu'on peut lire et
+retoucher. À la relecture, les lignes vides et `//` sont sautées, les `_` sont libres ; des places qui ne se suivent pas
+sont refusées ; un hex retouché depuis qu'il a été écrit (sa signature ne reconnaît plus ses mots) est dit, puis pris
+tel qu'il est écrit, parce qu'écrire un programme en hex à la main est un usage légitime.
+
+**Le cube.** La mémoire elle-même : les mots rangés aux points du cube de l'étage 1, à une fréquence (440, le la du
+diapason, si rien n'est dit) ; la queue, au point blanc `#FFFFFF`, dit combien il y en a, la coiffe, au point
+`#FFFFFE`, les signe. La machine l'écrit (`cube128-1-440.cub`) avec son anti-cube et son ombre, le miroir inversé de
+la 0.5, et le relit réparé s'il a été abîmé ou effacé.
+
+**Les commandes.**
+- `lugus hex PROG.adn [PROG.hex]` : ADN → hex (aussi depuis un ARN, des mots, un cube) ;
+- `lugus cube PROG.adn [FRÉQUENCE]` : → `cube128-1-FRÉQUENCE.cub` (aussi depuis un hex, un ARN, des mots) ;
+- `lugus ranger PROG.hex|cube128-1-F.cub|PROG.mots [PROG.adn]` : → ADN (ses témoins refaits) ;
+- `lugus retrotranscrire PROG.arn` (ou `lugus ranger PROG.arn`) : ARN → ADNc ;
+- `lugus PROG.hex`, `lugus cube128-1-440.cub` : lancés comme un ADN ou un ARN (lus par le lecteur en vtx).
+
+**Vérifié** (`tests/test_adn_deux_sens.py`, 42 contrôles) : sur trois programmes (dont un isotope lourd et des
+accents), le hex écrit en vtx est celui de la référence Python, octet pour octet, et redonne les mots ; l'ADN refait
+depuis un hex ou un cube est celui de la référence ; l'ADNc de chacune des quatre isoformes est celui de la référence
+et a les mots de l'ADN ; un hex et un cube lancés donnent la sortie du programme ; le tour entier, vtx → ADN → ARN →
+ADNc → hex → cube → ADN → ARN, lancé, donne la même sortie ; les avaries : hex retouché (dit, pris tel quel), places en
+désordre (refusé), un mot abîmé dans le cube et le cube effacé (réparés par l'anti-cube et l'ombre), un ARN sûr abîmé
+de deux mots ou à la coiffe abîmée (réparé, le même ADNc que l'ARN intact), un ARN rapide abîmé (variable, rien
+d'écrit) ; le texte d'un long programme qui importe une bibliothèque (codon.vtx), vérifié en vtx : vrai.
+`test_adn_chemin`, `test_adn_vtx`, `test_adn`, `test_patrouille` et `test_provenance` restent conformes ; les deux compilateurs donnent les mêmes
+8681 mots du lecteur.
+
+**Trouvé en route.** La machine lit un texte en mémoire jusqu'à 4096 caractères (c'est fait pour un nom de fichier) :
+le texte de codon.vtx (6902) arrivait coupé au compilateur, « erreur ligne 101 ». Le service 27 lit maintenant le texte
+entier.
+
+**Ce qui reste en Rust, honnêtement.** La lecture de l'ADN au lancement et par la patrouille (du travail de machine) ;
+`lugus pourquoi`, qui vérifie encore le texte par Rust ; et l'orchestration de la machine fille du service 27 (le
+compilateur lui-même est vtxc128, en vtx). L'ADN passe d'environ 85 % à environ 92 % écrit en vtx ; l'ensemble, d'environ
+48 % à environ 49 %.
+
+**Une question ouverte.** L'ADN écrit ses mots en décimal, pas en bases : le hex est maintenant une station à part.
+Écrire les mots de l'ADN en bases (A, C, G, T, deux bits par base) serait plus fidèle au cap « ADN et ARN
+hexadécimaux », au prix d'un changement de format (une version 5) : à trancher.

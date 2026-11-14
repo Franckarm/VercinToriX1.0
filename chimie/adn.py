@@ -23,6 +23,8 @@ refait), variable (abîmée au-delà de ses témoins : gardée telle quelle, pou
 
     python3 chimie/adn.py ranger PROG.vtx [PROG.adn]      l'ADN : les mots et les témoins
     python3 chimie/adn.py transcrire PROG.adn [PROG.mots]  vérifie, répare, épisse : les mots
+    python3 chimie/adn.py hex PROG.adn [PROG.hex]         les mots en hex, chacun à sa place du cube (0.6n bis)
+    python3 chimie/adn.py retrotranscrire PROG.arn [PROG-c.adn]  l'ARN rendu à l'ADN : l'ADNc (0.6n bis)
     python3 chimie/adn.py abimer PROG.adn [N] [GRAINE]     abîme N mots au hasard (pour essayer la réparation)
     python3 chimie/adn.py essai [PROG.vtx…]                les avaries mesurées (détection, réparation, place)"""
 import os
@@ -514,6 +516,74 @@ def ranger_texte(src, dossier):
     return mots, molecules, t
 
 
+# ---------------------------------------------------------------------------------------------------- le chemin dans les deux sens (0.6n bis)
+def ecrire_hex(chemin, mots):
+    """le hex : « VTXHEX01 N SIGNATURE », puis une ligne par mot, sa place dans le cube (#RRGGBB) et ses quatre voies
+    (#RRRRRRRR_VVVVVVVV_BBBBBBBB_MMMMMMMM) ; comme le lecteur en vtx (chimie/adn.vtx) l'écrit"""
+    with open(chemin, "w", encoding="utf-8", newline="\n") as f:
+        f.write(f"VTXHEX01 {len(mots)} {signature(mots)}\n")
+        for i, w in enumerate(mots):
+            x = f"{w:032X}"
+            f.write(f"#{i:06X} #{x[0:8]}_{x[8:16]}_{x[16:24]}_{x[24:32]}\n")
+
+
+def lire_hex(chemin):
+    """(les mots, retouché) d'un hex : les lignes vides et « // » sautées, les « _ » libres, les places qui se suivent"""
+    l = open(chemin, encoding="utf-8").read().replace("\r\n", "\n").split("\n")
+    tete = l[0].split(" ")
+    if len(tete) != 3 or tete[0] != "VTXHEX01":
+        raise ValueError("ce n'est pas un hex de vtx (VTXHEX01)")
+    mots = []
+    for x in l[1:]:
+        x = x.strip()
+        if not x or x.startswith("//"):
+            continue
+        place, mot = x.split()
+        if int(place[1:], 16) != len(mots):
+            raise ValueError("les places ne se suivent pas")
+        mots.append(int(mot[1:].replace("_", ""), 16))
+    if len(mots) != int(tete[1]):
+        raise ValueError("le hex annonce un autre nombre de mots")
+    return mots, signature(mots) != int(tete[2])
+
+
+def adnc(chemin):
+    """la rétrotranscription : l'ADN d'un ARN (l'ADNc), comme le lecteur en vtx le fait. Rend (état, mots, molécules,
+    témoins) : un ARN sûr (avec ses témoins) est vérifié et réparé, et sa coiffe refaite si les témoins reconnaissent
+    les mots ; un ARN sans témoins n'a que sa coiffe (variable si elle ne reconnaît pas les mots), ses témoins sont
+    refaits. L'épigénome est gardé ; le texte et le nom des isotopes, retirés à l'épissage, n'y sont pas."""
+    texte = open(chemin, encoding="utf-8").read().replace("\r\n", "\n")
+    l0 = texte.split("\n")[0]
+    if l0 not in ("VTXARN01", "VTXARN02"):
+        raise ValueError("ce n'est pas un ARN de vtx")
+    version = 4 if l0 == "VTXARN02" else 3
+    tout = sections_adn(texte)
+    sec = dict(tout)
+    sig = int(sec["coiffe"][0].split("|")[0])
+    mots = [int(x) for x in sec["mots"][0].split(",") if x]
+    introns = [(n, x) for n, x in tout if n not in CONNUES + ("coiffe",)]
+    if "molecules" in sec:
+        molecules, sigs = [], []
+        for x in sec["molecules"]:
+            nom, a, b, fr, sg, iso = x.split("|")
+            molecules.append(Molecule(nom, int(a), int(b), fr == "1", iso == "1"))
+            sigs.append(int(sg))
+        t = {"signatures": sigs, "ombres": [[int(v) for v in o.split(",")] for o in sec["ombres"]],
+             "neutrons": {int(a): int(b) for a, b in (x.split(":") for x in sec["neutrons"][0].split(",") if x)},
+             "introns": introns, "version": version}
+        etat, _ = lire(mots, molecules, t)
+        if etat != VARIABLE and signature(mots) != sig:
+            etat = pire(etat, FAUX)
+        return etat, mots, molecules, t
+    if signature(mots) != sig:
+        return VARIABLE, mots, [], {}
+    molecules = decouper(mots)
+    t = temoins(mots, molecules)
+    t["neutrons"] = {i: neutron(mots[i], version) for i in t["neutrons"]}
+    t["introns"], t["version"] = introns, version
+    return VRAI, mots, molecules, t
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -548,6 +618,23 @@ def main():
         if etat == FAUX:
             ecrire_adn(sys.argv[2], mots, molecules, t)          # l'ADN réparé est réécrit
             print("l'ADN réparé est réécrit")
+    elif cmd == "hex":
+        mots, molecules, t = lire_adn(sys.argv[2])
+        etat, _ = lire(mots, molecules, t)
+        if etat == VARIABLE:
+            print("rien n'est écrit : l'ADN est gardé tel qu'il a été lu, pour la preuve")
+            sys.exit(1)
+        sortie = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(sys.argv[2])[0] + ".hex"
+        ecrire_hex(sortie, mots)
+        print(f"le hex : {len(mots)} mots, chacun à sa place du cube -> {sortie}")
+    elif cmd == "retrotranscrire":
+        etat, mots, molecules, t = adnc(sys.argv[2])
+        print(f"l'ARN : {NOM_ETAT[etat]}")
+        if etat == VARIABLE:
+            sys.exit(1)
+        sortie = sys.argv[3] if len(sys.argv) > 3 else os.path.splitext(sys.argv[2])[0] + "-c.adn"
+        ecrire_adn(sortie, mots, molecules, t)
+        print(f"l'ADNc -> {sortie}")
     elif cmd == "abimer":
         mots, molecules, t = lire_adn(sys.argv[2])
         n = int(sys.argv[3]) if len(sys.argv) > 3 else 3

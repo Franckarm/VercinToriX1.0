@@ -122,8 +122,15 @@ pub fn signature_compilateur() -> u64 {
 /// par 0). Rend l'état qu'il a sorti (2 vrai, 1 faux : réparé, 3 variable, 0 illisible) ; ce qu'il écrit va sur la
 /// sortie d'erreur, comme le compte rendu de Lugus.
 pub fn adn_en_vtx(entrees: &[String]) -> Result<u8, String> {
+    adn_en_vtx_dans(entrees, None)
+}
+
+/// Le lecteur d'ADN dans un dossier : celui où il écrit et relit les cubes, et où le compilateur cherche les
+/// importations du texte gardé (0.6n bis) ; « . » sinon.
+pub fn adn_en_vtx_dans(entrees: &[String], dossier: Option<&std::path::Path>) -> Result<u8, String> {
     let mut spu = Spu128::nouveau();
-    spu.dossier = Some(std::path::PathBuf::from("."));
+    spu.dossier = Some(dossier.map(|d| d.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")));
+    spu.compilateur = Some(compiler_pour_lecteur);
     spu.charger(&nombres128(LECTEUR_ADN));
     for e in entrees {
         spu.entree.extend(e.chars().map(|ch| ch as u128));
@@ -134,6 +141,23 @@ pub fn adn_en_vtx(entrees: &[String]) -> Result<u8, String> {
     eprint!("{}", t);
     r.map_err(|e| format!("erreur : {}", e))?;
     Ok(spu.sortie.last().copied().unwrap_or(0) as u8)
+}
+
+/// Le service 27 du lecteur d'ADN : le texte compilé par vtxc128 (le compilateur de vtx, écrit en vtx, lancé sur une
+/// machine fille), comme « lugus compiler » ; ses mots « a,b,c;\n », ou « ! » suivi de l'erreur.
+pub fn compiler_pour_lecteur(source: &str, dossier: &std::path::Path) -> String {
+    // le préfixe « \\?\ » des chemins canoniques de Windows est retiré : les importations se cherchent depuis ce dossier
+    let base = dossier.to_string_lossy().into_owned();
+    let base = base.strip_prefix(r"\\?\").unwrap_or(&base).to_string();
+    match compiler128_iso(&nombres128(VTXC128), source, &base, COMPLET128) {
+        Ok((m, _)) => format!("{};\n", m.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",")),
+        Err(e) => format!("!{}", e.trim_end()),
+    }
+}
+
+/// le dossier d'un fichier, absolu (pour le lecteur d'ADN)
+pub fn dossier_absolu(x: &str) -> std::path::PathBuf {
+    std::path::Path::new(&chemin_absolu(x)).parent().map(|p| p.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from("."))
 }
 
 /// un chemin absolu (le lecteur en vtx ouvre les fichiers depuis son propre dossier)

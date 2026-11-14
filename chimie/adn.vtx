@@ -44,6 +44,8 @@ constante CHEMIN3 = 7197600;     // le verbe (relire, ranger, transcrire), puis 
 constante CHEMIN4 = 7197900;     // table CRC2 (jusqu'à 7 197 536) et le brouillon (7 200 000)
 constante CHEMIN5 = 7198200;
 constante CHEMIN6 = 7198500;
+constante CHEMIN7 = 7198800;
+constante TEXTE = 30000000;      // le texte gardé, recopié pour le compilateur (une longueur, puis ses caractères)
 constante CRC2 = 7132000;        // le CRC-8 deux octets à la fois (65 536) : CRC2[x | y << 8] = CRC[CRC[x] ^ y]
 constante BROUILLON = 7200000;   // les polynômes du décodage (repris à chaque voie)
 constante INTR = 8000000;        // les introns inconnus, recopiés tels quels
@@ -66,6 +68,11 @@ constante G_HAUT = 9;
 constante G_COPIE = 10;
 constante G_OMB4 = 11;
 constante G_VERSION = 12;        // 3 : neutrons CRC-8 ; 4 : neutrons quaternaires (GF(4))
+constante G_COIFFE = 13;         // la signature de la coiffe d'un ARN lu (0.6n bis)
+constante G_ARN = 14;            // 1 : le brin lu est un ARN
+constante G_TEM = 15;            // 1 : les trois témoins ont été lus (un ADN, un ARN sûr) ; 0 : les mots seuls
+constante G_SDEB = 16;           // une section des introns trouvée : le début de ses lignes, sa fin (sans le dernier \n)
+constante G_SFIN = 17;
 
 constante COLONNE = 251;
 constante OMBRE = 4;
@@ -332,7 +339,9 @@ fonction lire_adn(chemin) {
     @2[G + G_CANAL] = f;
     @2[G + G_COPIE] = 0;
     avancer();
-    soit tete = "VTXADN0";
+    // « VTXADN03 », « VTXADN04 » ; ou l'ARN (0.6n bis) : « VTXARN01 » (neutrons CRC-8, ceux de la version 3),
+    // « VTXARN02 » (quaternaires, version 4), lu par le même chemin : sa coiffe est une section connue de plus
+    soit tete = "VTXA";
     pour i dans 0..longueur(tete) {
         si car_courant() != car(tete, i) {
             refuser("ce n'est pas un ADN de vtx (version 3 ou 4)");
@@ -341,12 +350,39 @@ fonction lire_adn(chemin) {
         }
         avancer();
     }
-    si car_courant() != '3' && car_courant() != '4' {
+    soit arn = 0;
+    si car_courant() == 'R' {
+        arn = 1;
+    } sinon si car_courant() != 'D' {
         refuser("ce n'est pas un ADN de vtx (version 3 ou 4)");
         fermer(f);
         retour;
     }
-    @2[G + G_VERSION] = car_courant() - 48;
+    @2[G + G_ARN] = arn;
+    avancer();
+    si car_courant() != 'N' {
+        refuser("ce n'est pas un ADN de vtx (version 3 ou 4)");
+        fermer(f);
+        retour;
+    }
+    avancer();
+    si car_courant() != '0' {
+        refuser("ce n'est pas un ADN de vtx (version 3 ou 4)");
+        fermer(f);
+        retour;
+    }
+    avancer();
+    soit v = car_courant() - 48 + 2 * arn;
+    si v != 3 && v != 4 {
+        si arn == 1 {
+            refuser("ce n'est pas un ARN de vtx (version 1 ou 2)");
+        } sinon {
+            refuser("ce n'est pas un ADN de vtx (version 3 ou 4)");
+        }
+        fermer(f);
+        retour;
+    }
+    @2[G + G_VERSION] = v;
     avancer();
     attendre(10);
     preparer_neutrons();
@@ -393,6 +429,17 @@ fonction lire_adn(chemin) {
             @2[G + G_NI] = marque;
             lire_neutrons(nl);
             vus = vus | 8;
+        } sinon si nom_est("coiffe") == 1 && arn == 1 {
+            // la coiffe de l'ARN : « signature|isoforme » ; l'isoforme n'est pas gardée (l'ADN n'en a pas)
+            @2[G + G_COPIE] = 0;
+            @2[G + G_NI] = marque;
+            @2[G + G_COIFFE] = lire_nombre();
+            attendre('|');
+            tantque car_courant() != 10 && car_courant() != FIN {
+                avancer();
+            }
+            attendre(10);
+            vus = vus | 16;
         } sinon {
             recopier_intron(nl);
         }
@@ -413,7 +460,22 @@ fonction lire_adn(chemin) {
     si @2[G + G_ERR] != 0 {
         retour;
     }
-    si vus != 15 {
+    @2[G + G_TEM] = 1;
+    si arn == 1 {
+        // l'ARN : la coiffe et les mots, et les trois témoins (sur, complet) ou aucun (rapide, memoire)
+        si (vus & 17) != 17 {
+            refuser("l'ARN est dégradé (sans coiffe ou sans mots)");
+            retour;
+        }
+        si (vus & 14) == 0 {
+            @2[G + G_TEM] = 0;
+            retour;
+        }
+        si (vus & 14) != 14 {
+            refuser("une section des témoins de l'ARN manque");
+            retour;
+        }
+    } sinon si vus != 15 {
         refuser("une section manque");
         retour;
     }
@@ -1263,7 +1325,11 @@ fonction rendre_compte(etat) {
             ecrire_car(1, 10);
         }
     }
-    ecrire_t(1, "l'ADN : ");
+    si @2[G + G_ARN] == 1 {
+        ecrire_t(1, "l'ARN : ");
+    } sinon {
+        ecrire_t(1, "l'ADN : ");
+    }
     ecrire_etat(1, etat);
     ecrire_car(1, 10);
 }
@@ -1603,25 +1669,15 @@ fonction garder_compilateur(t) {
     intron_texte("\nAG\n");
 }
 
-fonction ranger(mots, adn, source, isotopes, compilateur) {
-    lire_fichier_mots(mots);
-    si @2[G + G_ERR] != 0 {
-        retour;
-    }
+// les témoins d'un brin qui n'a que ses mots (un fichier de mots, un hex, un cube, un ARN rapide) : les molécules
+// découpées, les isotopes lourds s'il y en a, la signature de chaque molécule, les neutrons des frontières et des
+// isotopes, l'ombre des colonnes
+fonction faire_temoins(isotopes) {
     soit n = @2[G + G_N];
-    si n == 0 {
-        refuser("aucun mot à ranger");
-        retour;
-    }
-    @2[G + G_VERSION] = 4;
-    preparer_neutrons();
     decouper();
-    @2[G + G_NI] = 0;
     si isotopes != 0 {
         lire_isotopes(isotopes);
     }
-    // les témoins : la signature de chaque molécule, les neutrons des frontières et des isotopes, l'ombre des colonnes
-    soit neutrones = 0;
     pour i dans 0..n {
         @2[NEU + i] = 256;
     }
@@ -1630,9 +1686,8 @@ fonction ranger(mots, adn, source, isotopes, compilateur) {
         @2[base + 4] = signature(@2[base], @2[base + 1]);
         si @2[base + 2] == 1 || @2[base + 3] == 1 {
             pour i2 dans @2[base]..@2[base + 1] {
-                @2[NEU + i2] = crc4(@2[MH + i2], @2[MB + i2]);
+                @2[NEU + i2] = neutron(@2[MH + i2], @2[MB + i2]);
             }
-            neutrones = neutrones + @2[base + 1] - @2[base];
         }
     }
     soit nc = nb_colonnes(n);
@@ -1652,6 +1707,34 @@ fonction ranger(mots, adn, source, isotopes, compilateur) {
             @2[OMB + 8 * k + z] = @2[OC + z];
         }
     }
+}
+
+fonction ranger(mots, adn, source, isotopes, compilateur) {
+    soit etat = charger(mots);
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    si etat == E_VARIABLE {
+        ecrire_t(1, "rien n'est rangé : le brin est gardé tel qu'il a été lu, pour la preuve\n");
+        @2[G + G_ERR] = 1;
+        retour;
+    }
+    soit n = @2[G + G_N];
+    si n == 0 {
+        refuser("aucun mot à ranger");
+        retour;
+    }
+    si @2[G + G_TEM] == 0 {
+        // les mots seuls : l'ADN version 4 (un ARN rapide garde la version de son ADN)
+        faire_temoins(isotopes);
+    }
+    soit neutrones = 0;
+    pour i dans 0..n {
+        si @2[NEU + i] != 256 {
+            neutrones = neutrones + 1;
+        }
+    }
+    soit nc = @2[G + G_NC];
     si source != 0 {
         garder_source(source);
     }
@@ -1689,6 +1772,13 @@ fonction ranger(mots, adn, source, isotopes, compilateur) {
     ecrire_t(1, " -> ");
     ecrire_t(1, adn);
     ecrire_car(1, 10);
+    si @2[G + G_ARN] == 1 {
+        ecrire_t(1, "l'ADNc : l'ARN rétrotranscrit, ses mots et ses témoins");
+        si @2[G + G_TEM] == 0 {
+            ecrire_t(1, " (refaits : l'isoforme n'en avait pas)");
+        }
+        ecrire_t(1, " ; le texte du programme et le nom des isotopes, retirés à l'épissage, n'y sont pas\n");
+    }
 }
 
 // --------------------------------------------------------------------------------------------- transcrire (0.6n)
@@ -1868,11 +1958,500 @@ fonction transcrire(adn, sortie, isoforme) {
     retour etat;
 }
 
-// Les entrées : deux chemins, puis le verbe (relire, ranger, transcrire ; relire s'il manque), puis selon le verbe :
+// --------------------------------------------------------------------------------------------- le chemin dans les deux sens (0.6n bis)
+// Cube → Hex → ADN → ARN, et retour : ARN → ADN (la rétrotranscription, l'ADNc), ADN → Hex → Cube. Chaque station
+// rend les mêmes mots. Le hex est l'écriture des mots à la main de l'homme : une ligne par mot, sa place dans le cube
+// (#RRGGBB) et le mot, ses quatre voies (#RRRRRRRR_VVVVVVVV_BBBBBBBB_MMMMMMMM). Le cube est la mémoire elle-même : les
+// mots rangés aux points du cube de l'étage 1, à une fréquence (440, le la du diapason, si rien n'est dit) ; la queue,
+// au point blanc #FFFFFF, dit combien il y en a, la coiffe, au point #FFFFFE, les signe ; la machine l'écrit avec son
+// anti-cube et son ombre (le miroir inversé), et le relit réparé s'il a été abîmé.
+
+fonction chiffre_hex(c) {
+    si c >= 48 && c <= 57 {
+        retour c - 48;
+    }
+    si c >= 65 && c <= 70 {
+        retour c - 55;
+    }
+    si c >= 97 && c <= 102 {
+        retour c - 87;
+    }
+    retour 16;
+}
+
+// les k chiffres hexadécimaux de x, le plus fort d'abord
+fonction ecrire_hex(c, x, k) {
+    soit i = k;
+    tantque i > 0 {
+        i = i - 1;
+        soit d = (x >> (4 * i)) & 15;
+        si d < 10 {
+            ecrire_car(c, 48 + d);
+        } sinon {
+            ecrire_car(c, 55 + d);
+        }
+    }
+}
+
+fonction ecrire_hex_fichier(chemin) {
+    soit n = @2[G + G_N];
+    soit c = ouvrir_ecriture(chemin);
+    si c == 18446744073709551615 {
+        refuser("le hex ne s'écrit pas");
+        retour;
+    }
+    ecrire_t(c, "VTXHEX01 ");
+    ecrire_u64(c, n);
+    ecrire_car(c, ' ');
+    ecrire_u64(c, signature(0, n));
+    ecrire_car(c, 10);
+    pour i dans 0..n {
+        ecrire_car(c, '#');
+        ecrire_hex(c, i, 6);
+        ecrire_t(c, " #");
+        soit h = @2[MH + i];
+        soit b = @2[MB + i];
+        ecrire_hex(c, h >> 32, 8);
+        ecrire_car(c, '_');
+        ecrire_hex(c, h & 4294967295, 8);
+        ecrire_car(c, '_');
+        ecrire_hex(c, b >> 32, 8);
+        ecrire_car(c, '_');
+        ecrire_hex(c, b & 4294967295, 8);
+        ecrire_car(c, 10);
+    }
+    fermer(c);
+    ecrire_t(1, "le hex : ");
+    ecrire_u64(1, n);
+    ecrire_t(1, " mots, chacun à sa place du cube -> ");
+    ecrire_t(1, chemin);
+    ecrire_car(1, 10);
+}
+
+// la fin d'une ligne : sautée jusqu'au \n compris
+fonction sauter_ligne() {
+    tantque car_courant() != 10 && car_courant() != FIN {
+        avancer();
+    }
+    si car_courant() == 10 {
+        avancer();
+    }
+}
+
+// le hex : « VTXHEX01 N SIGNATURE », puis une ligne par mot ; les lignes vides et celles qui commencent par « // »
+// sont sautées, les « _ » d'un mot sont libres ; les places doivent se suivre (#000000, #000001…)
+fonction lire_hex(chemin) {
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        refuser("le hex ne s'ouvre pas");
+        retour;
+    }
+    @2[G + G_CANAL] = f;
+    @2[G + G_COPIE] = 0;
+    avancer();
+    soit tete = "VTXHEX01 ";
+    pour i dans 0..longueur(tete) {
+        si car_courant() != car(tete, i) {
+            refuser("ce n'est pas un hex de vtx (VTXHEX01)");
+            fermer(f);
+            retour;
+        }
+        avancer();
+    }
+    soit annonce = lire_nombre();
+    attendre(' ');
+    soit sig = lire_nombre();
+    attendre(10);
+    soit n = 0;
+    tantque car_courant() != FIN && @2[G + G_ERR] == 0 {
+        soit c = car_courant();
+        si c == 10 || c == 32 {
+            avancer();
+        } sinon si c == '/' {
+            sauter_ligne();
+        } sinon {
+            attendre('#');
+            soit place = 0;
+            pour k dans 0..6 {
+                soit d = chiffre_hex(car_courant());
+                si d > 15 {
+                    refuser("une place du cube (#RRGGBB) est attendue");
+                }
+                place = (place << 4) | d;
+                avancer();
+            }
+            si @2[G + G_ERR] == 0 && place != n {
+                refuser("les places ne se suivent pas (chaque mot à la sienne, depuis #000000)");
+            }
+            attendre(' ');
+            attendre('#');
+            soit h = 0;
+            soit b = 0;
+            soit nd = 0;
+            tantque nd < 32 && @2[G + G_ERR] == 0 {
+                soit c2 = car_courant();
+                si c2 == '_' {
+                    avancer();
+                } sinon {
+                    soit d2 = chiffre_hex(c2);
+                    si d2 > 15 {
+                        refuser("un mot a 32 chiffres hexadécimaux");
+                    } sinon {
+                        si nd < 16 {
+                            h = (h << 4) | d2;
+                        } sinon {
+                            b = (b << 4) | d2;
+                        }
+                        nd = nd + 1;
+                        avancer();
+                    }
+                }
+            }
+            si @2[G + G_ERR] == 0 {
+                si n >= MAXMOTS {
+                    refuser("trop de mots pour ce lecteur (un million au plus)");
+                } sinon {
+                    @2[MH + n] = h;
+                    @2[MB + n] = b;
+                    n = n + 1;
+                }
+            }
+            tantque car_courant() == 32 {
+                avancer();
+            }
+            si car_courant() != FIN {
+                attendre(10);
+            }
+        }
+    }
+    fermer(f);
+    @2[G + G_N] = n;
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    si n != annonce {
+        refuser("le hex annonce un autre nombre de mots : il est tronqué ou mal recopié");
+        retour;
+    }
+    si signature(0, n) != sig {
+        ecrire_t(1, "le hex a été retouché depuis qu'il a été écrit (sa signature ne reconnaît plus ses mots) : ses mots sont pris tels qu'ils sont écrits\n");
+    }
+}
+
+// un nombre écrit dans un texte, à partir de la place i ; rend 4294967295 s'il n'y a pas de chiffre
+fonction nombre_dans(t, i) {
+    si i >= longueur(t) || car(t, i) < 48 || car(t, i) > 57 {
+        retour 4294967295;
+    }
+    soit x = 0;
+    soit j = i;
+    tantque j < longueur(t) && car(t, j) >= 48 && car(t, j) <= 57 {
+        x = x * 10 + car(t, j) - 48;
+        j = j + 1;
+    }
+    @2[G + G_SFIN] = j;
+    retour x;
+}
+
+// le cube nommé « cube128-ÉTAGE-FRÉQUENCE.cub » : l'étage dans G_SDEB, la fréquence rendue (4294967295 : pas ce nom)
+fonction cube_du_nom(chemin) {
+    soit n = longueur(chemin);
+    soit d = 0;
+    pour i dans 0..n {
+        si car(chemin, i) == '/' || car(chemin, i) == 92 {
+            d = i + 1;
+        }
+    }
+    soit tete = "cube128-";
+    pour k dans 0..longueur(tete) {
+        si d + k >= n || car(chemin, d + k) != car(tete, k) {
+            retour 4294967295;
+        }
+    }
+    soit e = nombre_dans(chemin, d + 8);
+    si e == 4294967295 || e < 1 || e > 3 {
+        retour 4294967295;
+    }
+    soit j = @2[G + G_SFIN];
+    si j >= n || car(chemin, j) != '-' {
+        retour 4294967295;
+    }
+    soit fr = nombre_dans(chemin, j + 1);
+    @2[G + G_SDEB] = e;
+    retour fr;
+}
+
+// lire un cube : les pages viennent du disque à la demande (la machine accorde le cube, son anti-cube et son ombre) ;
+// rend l'état : celui du disque (vrai, faux : réparé), variable si les copies se contredisent ou si la coiffe ne
+// reconnaît pas les mots
+fonction lire_cube(chemin) {
+    soit fr = cube_du_nom(chemin);
+    si fr == 4294967295 {
+        refuser("un cube se nomme cube128-ÉTAGE-FRÉQUENCE.cub");
+        retour E_INCONNU;
+    }
+    soit e = @2[G + G_SDEB];
+    soit tout = etat_disque();
+    soit n = @[cube_adresse(e, fr, 16777215)];
+    soit sig = @[cube_adresse(e, fr, 16777214)];
+    si n == 0 || n > MAXMOTS {
+        refuser("le cube ne porte pas de programme (sa queue, au point #FFFFFF, est vide)");
+        retour E_INCONNU;
+    }
+    pour k dans 0..n {
+        soit w: entier_128 = @[cube_adresse(e, fr, k)];
+        @2[MH + k] = haut(w);
+        @2[MB + k] = bas(w);
+    }
+    @2[G + G_N] = n;
+    soit d = etat_disque();
+    soit etat = E_VRAI;
+    selon d {
+        vrai {
+            etat = E_VRAI;
+        }
+        faux {
+            ecrire_t(1, "le cube a été réparé par son anti-cube et son ombre (ses fichiers sont réécrits)\n");
+            etat = E_FAUX;
+        }
+        variable {
+            ecrire_t(1, "les copies du cube se contredisent, au-delà de son ombre\n");
+            etat = E_VARIABLE;
+        }
+        inconnu {
+            etat = E_VRAI;
+        }
+    }
+    si etat != E_VARIABLE && signature(0, n) != sig {
+        ecrire_t(1, "la coiffe du cube (au point #FFFFFE) ne reconnaît pas ses mots\n");
+        etat = E_VARIABLE;
+    }
+    ecrire_t(1, "le cube : ");
+    ecrire_etat(1, etat);
+    ecrire_car(1, 10);
+    retour etat;
+}
+
+fonction ecrire_cube(fr) {
+    soit n = @2[G + G_N];
+    si n > 16777214 {
+        refuser("trop de mots pour un cube");
+        retour;
+    }
+    // le cube est d'abord vidé (sans relire le disque), puis chaque mot va à sa place
+    jeter_cube(1, fr);
+    pour k dans 0..n {
+        @[cube_adresse(1, fr, k)] = entier_128_de(@2[MH + k], @2[MB + k]);
+    }
+    @[cube_adresse(1, fr, 16777214)] = signature(0, n);
+    @[cube_adresse(1, fr, 16777215)] = n;
+    soit pages = ranger_cube(1, fr);
+    si pages == 18446744073709551615 {
+        refuser("le cube ne s'écrit pas");
+        retour;
+    }
+    ecrire_t(1, "le cube : ");
+    ecrire_u64(1, n);
+    ecrire_t(1, " mots aux points #000000 à #");
+    ecrire_hex(1, n - 1, 6);
+    ecrire_t(1, " de l'étage 1, la coiffe en #FFFFFE, la queue en #FFFFFF, ");
+    ecrire_u64(1, pages);
+    ecrire_t(1, " page(s) -> cube128-1-");
+    ecrire_u64(1, fr);
+    ecrire_t(1, ".cub, avec son anti-cube et son ombre\n");
+}
+
+// un brin, quel qu'il soit (selon son nom) : des mots (.mots), un hex, un cube, un ARN, un ADN ; rend son état (un
+// ADN, un ARN sûr ou un cube : vérifié, réparé s'il le faut ; des mots seuls : vrai, rien ne les vérifie)
+fonction charger(chemin) {
+    @2[G + G_NI] = 0;
+    @2[G + G_TEM] = 0;
+    @2[G + G_ARN] = 0;
+    @2[G + G_VERSION] = 4;
+    si chemin == 0 {
+        refuser("aucun brin n'est nommé");
+        retour E_INCONNU;
+    }
+    si finit_par_texte(chemin, ".adn") || finit_par_texte(chemin, ".arn") {
+        lire_adn(chemin);
+        si @2[G + G_ERR] != 0 {
+            retour E_INCONNU;
+        }
+        si @2[G + G_TEM] == 0 {
+            // un ARN sans témoins : sa coiffe seule dit si ses mots sont les siens
+            si signature(0, @2[G + G_N]) != @2[G + G_COIFFE] {
+                ecrire_t(1, "la coiffe ne reconnaît pas les mots : l'ARN est dégradé, et sans témoins rien ne le répare\n");
+                retour E_VARIABLE;
+            }
+            ecrire_t(1, "l'ARN : vrai (sa coiffe reconnaît ses mots)\n");
+            retour E_VRAI;
+        }
+        soit etat = lire();
+        si @2[G + G_ARN] == 1 && etat != E_VARIABLE && signature(0, @2[G + G_N]) != @2[G + G_COIFFE] {
+            // les trois témoins reconnaissent les mots, la coiffe seule non : c'est elle qui est abîmée
+            ecrire_t(1, "  la coiffe : faux (réparé), les témoins reconnaissent les mots, elle est refaite\n");
+            etat = pire(etat, E_FAUX);
+        }
+        rendre_compte(etat);
+        retour etat;
+    }
+    preparer_neutrons();
+    si finit_par_texte(chemin, ".hex") {
+        lire_hex(chemin);
+        retour E_VRAI;
+    }
+    si finit_par_texte(chemin, ".cub") {
+        retour lire_cube(chemin);
+    }
+    lire_fichier_mots(chemin);
+    retour E_VRAI;
+}
+
+// --------------------------------------------------------------------------------------------- le texte gardé (0.6n bis)
+// La vérification du texte, en vtx : le texte gardé dans l'ADN est donné au compilateur de vtx (vtxc128, en vtx lui
+// aussi, sur une machine fille : service 27), et ses mots sont comparés à ceux de l'ADN, un pour un.
+
+// la section « nom » des introns : le début de ses lignes dans G_SDEB, leur fin (sans le dernier \n) dans G_SFIN ;
+// rend 1 si elle y est. Les lignes sont comptées par l'en-tête (une ligne du texte peut être « AG »)
+fonction trouver_section(nom) {
+    soit ni = @2[G + G_NI];
+    soit i = 0;
+    tantque i < ni {
+        soit ok = 1;
+        si @2[INTR + i] != 'G' || @2[INTR + i + 1] != 'U' || @2[INTR + i + 2] != ' ' {
+            retour 0;
+        }
+        pour k dans 0..longueur(nom) {
+            si @2[INTR + i + 3 + k] != car(nom, k) {
+                ok = 0;
+            }
+        }
+        soit j = i + 3;
+        tantque j < ni && @2[INTR + j] != ' ' {
+            j = j + 1;
+        }
+        si j - i - 3 != longueur(nom) {
+            ok = 0;
+        }
+        soit nl = 0;
+        j = j + 1;
+        tantque j < ni && @2[INTR + j] >= 48 && @2[INTR + j] <= 57 {
+            nl = nl * 10 + @2[INTR + j] - 48;
+            j = j + 1;
+        }
+        j = j + 1;
+        soit debut = j;
+        soit vues = 0;
+        tantque vues < nl && j < ni {
+            si @2[INTR + j] == 10 {
+                vues = vues + 1;
+            }
+            j = j + 1;
+        }
+        si ok == 1 {
+            @2[G + G_SDEB] = debut;
+            si j > debut {
+                @2[G + G_SFIN] = j - 1;
+            } sinon {
+                @2[G + G_SFIN] = debut;
+            }
+            retour 1;
+        }
+        // « AG\n »
+        i = j + 3;
+    }
+    retour 0;
+}
+
+fonction verifier_texte(comp_actuel) {
+    si trouver_section("source") == 0 {
+        retour;
+    }
+    soit d = @2[G + G_SDEB];
+    soit l = @2[G + G_SFIN] - d;
+    @2[TEXTE] = l;
+    pour q dans 0..l {
+        @2[TEXTE + 1 + q] = @2[INTR + d + q];
+    }
+    soit a_comp = trouver_section("compilateur");
+    soit change = 0;
+    si a_comp == 1 && comp_actuel != 0 {
+        soit dc = @2[G + G_SDEB];
+        soit lc = @2[G + G_SFIN] - dc;
+        si lc != longueur(comp_actuel) {
+            change = 1;
+        } sinon {
+            pour k dans 0..lc {
+                si @2[INTR + dc + k] != car(comp_actuel, k) {
+                    change = 1;
+                }
+            }
+        }
+    }
+    soit f = __service(27, ETAGE2 + TEXTE);
+    si f == 18446744073709551615 {
+        ecrire_t(1, "le texte : inconnu, cette machine n'a pas de compilateur pour le lecteur\n");
+        retour;
+    }
+    @2[G + G_CANAL] = f;
+    @2[G + G_COPIE] = 0;
+    avancer();
+    si car_courant() == '!' {
+        si change == 1 {
+            ecrire_t(1, "le texte : inconnu, le compilateur a changé depuis le rangement : le texte ne peut pas être vérifié\n");
+        } sinon {
+            ecrire_t(1, "le texte : faux, le texte gardé ne compile plus : ");
+            avancer();
+            tantque car_courant() != FIN {
+                ecrire_car(1, car_courant());
+                avancer();
+            }
+            ecrire_car(1, 10);
+        }
+        fermer(f);
+        retour;
+    }
+    soit n = @2[G + G_N];
+    soit k2 = 0;
+    soit ecarts = 0;
+    tantque car_courant() != ';' && car_courant() != FIN {
+        soit b = lire_nombre();
+        soit h = @2[G + G_HAUT];
+        si k2 >= n || h != @2[MH + k2] || b != @2[MB + k2] {
+            ecarts = ecarts + 1;
+        }
+        k2 = k2 + 1;
+        si car_courant() == ',' {
+            avancer();
+        }
+    }
+    fermer(f);
+    si k2 < n {
+        ecarts = ecarts + n - k2;
+    }
+    si ecarts == 0 {
+        ecrire_t(1, "le texte : vrai, le texte gardé redonne les mots, un pour un\n");
+    } sinon si change == 1 {
+        ecrire_t(1, "le texte : inconnu, le compilateur a changé depuis le rangement : le texte ne peut pas être vérifié\n");
+    } sinon {
+        ecrire_t(1, "le texte : faux, le texte gardé ne redonne pas ces mots (");
+        ecrire_u64(1, ecarts);
+        ecrire_t(1, " écart(s))");
+        si a_comp == 0 {
+            ecrire_t(1, " ; cet ADN ne note pas son compilateur : il a pu changer depuis");
+        }
+        ecrire_car(1, 10);
+    }
+}
+
+// Les entrées : deux chemins, puis le verbe (relire s'il manque), puis selon le verbe :
 //   relire     ADN [RELU]
-//   transcrire ADN SORTIE [ISOFORME]
-//   ranger     MOTS ADN SOURCE [ISOTOPES] [SIGNATURE DU COMPILATEUR]
-// La sortie : l'état de l'ADN (2 vrai, 1 faux : réparé, 3 variable, 0 : illisible).
+//   transcrire ADN SORTIE [ISOFORME] [SIGNATURE DU COMPILATEUR : le texte gardé est alors vérifié]
+//   ranger     BRIN ADN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR]   (le brin : .mots, .hex, .cub, .arn, .adn)
+//   hex        BRIN HEX
+//   cube       BRIN - [FRÉQUENCE]        (cube128-1-FRÉQUENCE.cub, dans le dossier de la machine ; 440 sinon)
+//   mots       BRIN MOTS                 (les mots seuls, pour les lancer)
+// La sortie : l'état du brin (2 vrai, 1 faux : réparé, 3 variable, 0 : illisible).
 fonction principal() {
     preparer();
     soit entree = lire_chemin(CHEMIN);
@@ -1892,7 +2471,46 @@ fonction principal() {
     }
     si verbe != 0 && texte_egal(verbe, "transcrire") {
         soit isof = lire_chemin(CHEMIN4);
-        sortie(transcrire(entree, relu, isof));
+        soit comp2 = lire_chemin(CHEMIN5);
+        soit etat_t = transcrire(entree, relu, isof);
+        si comp2 != 0 && (etat_t == E_VRAI || etat_t == E_FAUX) && @2[G + G_ERR] == 0 {
+            verifier_texte(comp2);
+        }
+        sortie(etat_t);
+        retour;
+    }
+    si verbe != 0 && (texte_egal(verbe, "hex") || texte_egal(verbe, "cube") || texte_egal(verbe, "mots")) {
+        soit fr0 = lire_chemin(CHEMIN4);
+        soit e2 = charger(entree);
+        si @2[G + G_ERR] != 0 {
+            sortie(E_INCONNU);
+            retour;
+        }
+        si e2 == E_VARIABLE {
+            ecrire_t(1, "rien n'est écrit : le brin est gardé tel qu'il a été lu, pour la preuve\n");
+            sortie(e2);
+            retour;
+        }
+        si texte_egal(verbe, "hex") {
+            ecrire_hex_fichier(relu);
+        } sinon si texte_egal(verbe, "cube") {
+            soit fr = 440;
+            si fr0 != 0 {
+                fr = nombre_dans(fr0, 0);
+            }
+            si fr > 16777215 {
+                refuser("la fréquence d'un cube est un nombre, de 0 à 16 777 215");
+            } sinon {
+                ecrire_cube(fr);
+            }
+        } sinon {
+            ecrire_mots_seuls(relu);
+        }
+        si @2[G + G_ERR] != 0 {
+            sortie(E_INCONNU);
+            retour;
+        }
+        sortie(e2);
         retour;
     }
     si entree == 0 {
