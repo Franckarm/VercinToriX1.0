@@ -29,7 +29,17 @@ struct Asm {
     sorties: Vec<(usize, u8)>,
     // la place du compte des instructions dans la machine (Spu128.pas)
     pas: usize,
+    // la place des registres de Lugus dans la machine (Spu128.r)
+    or: usize,
+    // 0.6k : le registre du processeur qui porte la moitié basse de chaque registre de Lugus (NUL : en mémoire)
+    carte: [u8; 16],
 }
+
+const NUL: u8 = 0xFF;
+// Les registres de Lugus gardés dans ceux du processeur (0.6k) : les plus utilisés par les programmes compilés (r1 et
+// r2 les calculs, r14 la pile, r13 le cadre, r9 et r10). Seule la moitié basse y vit ; la haute reste en mémoire.
+// rbp, r13, r14, r15 survivent aux appels ; r10 et r11 non, mais chaque appel range et reprend tout de toute façon.
+const CARTE: [(usize, u8); 6] = [(1, 13), (2, 14), (14, 15), (13, 5), (9, 10), (10, 11)];
 
 const RAX: u8 = 0;
 const RCX: u8 = 1;
@@ -48,19 +58,83 @@ impl Asm {
     }
     /// mov reg, [rbx + d]
     fn charger(&mut self, reg: u8, d: usize) {
-        self.b(&[0x48 | ((reg >> 3) << 2), 0x8B, 0x80 | ((reg & 7) << 3) | 3]);
-        self.d32(d as u32);
+        if let Some(m) = self.garde(d) {
+            if m != reg {
+                self.mov(reg, m);
+            }
+            return;
+        }
+        self.charger_mem(reg, d);
     }
     /// mov [rbx + d], reg
     fn ranger(&mut self, d: usize, reg: u8) {
-        self.b(&[0x48 | ((reg >> 3) << 2), 0x89, 0x80 | ((reg & 7) << 3) | 3]);
-        self.d32(d as u32);
+        if let Some(m) = self.garde(d) {
+            if m != reg {
+                self.mov(m, reg);
+            }
+            return;
+        }
+        self.ranger_mem(d, reg);
     }
-    /// mov qword [rbx + d], 0
+    /// mov qword [rbx + d], 0 (ou mov r32, 0 si la place est gardée : ni l'un ni l'autre ne touche aux drapeaux)
     fn zero(&mut self, d: usize) {
+        if let Some(m) = self.garde(d) {
+            if m >= 8 {
+                self.b(&[0x41]);
+            }
+            self.b(&[0xB8 + (m & 7)]);
+            self.d32(0);
+            return;
+        }
         self.b(&[0x48, 0xC7, 0x83]);
         self.d32(d as u32);
         self.d32(0);
+    }
+    /// add qword [rbx + d], 1, ou add m, 1 si la place est gardée (pose la retenue pour un adc qui suit)
+    fn plus_un(&mut self, d: usize) {
+        if let Some(m) = self.garde(d) {
+            self.b(&[0x48 | (m >> 3), 0x83, 0xC0 | (m & 7), 1]);
+            return;
+        }
+        self.b(&[0x48, 0x83, 0x83]);
+        self.d32(d as u32);
+        self.b(&[1]);
+    }
+    /// le registre du processeur qui garde la place d (la moitié basse d'un registre de Lugus), s'il y en a un
+    fn garde(&self, d: usize) -> Option<u8> {
+        if d >= self.or && d < self.or + 256 && (d - self.or) % 16 == 0 {
+            let m = self.carte[(d - self.or) / 16];
+            if m != NUL {
+                return Some(m);
+            }
+        }
+        None
+    }
+    /// mov dst, src (64 bits)
+    fn mov(&mut self, dst: u8, src: u8) {
+        self.b(&[0x48 | ((src >> 3) << 2) | (dst >> 3), 0x89, 0xC0 | ((src & 7) << 3) | (dst & 7)]);
+    }
+    fn charger_mem(&mut self, reg: u8, d: usize) {
+        self.b(&[0x48 | ((reg >> 3) << 2), 0x8B, 0x80 | ((reg & 7) << 3) | 3]);
+        self.d32(d as u32);
+    }
+    fn ranger_mem(&mut self, d: usize, reg: u8) {
+        self.b(&[0x48 | ((reg >> 3) << 2), 0x89, 0x80 | ((reg & 7) << 3) | 3]);
+        self.d32(d as u32);
+    }
+    /// les registres gardés retournent dans la machine (avant un appel à Lugus ou une sortie)
+    fn deposer(&mut self) {
+        for &(k, m) in CARTE.iter() {
+            let d = self.or + 16 * k;
+            self.ranger_mem(d, m);
+        }
+    }
+    /// et reviennent de la machine (à l'entrée, après un appel : Lugus a pu les changer)
+    fn reprendre(&mut self) {
+        for &(k, m) in CARTE.iter() {
+            let d = self.or + 16 * k;
+            self.charger_mem(m, d);
+        }
     }
     /// mov byte [rbx + d], v
     fn octet(&mut self, d: usize, v: u8) {
@@ -106,7 +180,7 @@ impl Asm {
         self.d32(0);
     }
     /// Le début commun d'un accès rapide (0.6j) : l'adresse est en rsi:rdx. Si elle est courte et que sa page est
-    /// gardée (natif_cache, la case (adresse >> 16) & 15), rax reçoit l'adresse du mot ; sinon on saute au chemin de
+    /// gardée (natif_cache, la case (adresse >> 16) & 63), rax reçoit l'adresse du mot ; sinon on saute au chemin de
     /// Lugus. rdi sert de brouillon. Rend les deux places de saut à corriger.
     fn mot_rapide(&mut self, cache: usize) -> [usize; 2] {
         self.b(&[0x48, 0x85, 0xD2]); // test rdx, rdx
@@ -114,7 +188,7 @@ impl Asm {
         let s1 = self.o.len();
         self.d32(0);
         self.b(&[0x48, 0x89, 0xF0, 0x48, 0xC1, 0xE8, 0x10]); // mov rax, rsi ; shr rax, 16
-        self.b(&[0x89, 0xC7, 0x83, 0xE7, 0x0F, 0xC1, 0xE7, 0x04]); // mov edi, eax ; and edi, 15 ; shl edi, 4
+        self.b(&[0x89, 0xC7, 0x83, 0xE7, 0x3F, 0xC1, 0xE7, 0x04]); // mov edi, eax ; and edi, 63 ; shl edi, 4
         self.b(&[0x48, 0x3B, 0x84, 0x3B]); // cmp rax, [rbx + rdi + clé]
         self.d32(cache as u32);
         self.b(&[0x0F, 0x85]); // jne : une autre page
@@ -172,8 +246,10 @@ impl Asm {
     fn appeler(&mut self, f: u64) {
         let d = self.pas;
         self.ranger(d, R12);
+        self.deposer();
         self.imm64(RAX, f);
         self.b(&[0xFF, 0xD0]);
+        self.reprendre();
         self.charger(R12, d);
     }
 }
@@ -273,10 +349,15 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
     let [or, opc, oz, oc, opas, otampon, ocache] = places_natif();
     let reg = |i: usize| or + 16 * i;
     let n = mots.len() * 2;
-    let mut a = Asm { o: Vec::with_capacity(n * 40), sauts: Vec::new(), sorties: Vec::new(), pas: opas };
-    // l'entrée : push rbx ; push rbp ; push r12 (la pile reste alignée sur 16 pour les appels) ; mov rbx, rdi ;
-    // r12 = le compte des instructions ; jmp rsi
-    a.b(&[0x53, 0x55, 0x41, 0x54, 0x48, 0x89, 0xFB]);
+    let mut carte = [NUL; 16];
+    for &(k, m) in CARTE.iter() {
+        carte[k] = m;
+    }
+    let mut a = Asm { o: Vec::with_capacity(n * 40), sauts: Vec::new(), sorties: Vec::new(), pas: opas, or, carte };
+    // l'entrée : push rbx, rbp, r12, r13, r14, r15, et rax pour que la pile reste alignée sur 16 pour les appels ;
+    // mov rbx, rdi ; les registres gardés ; r12 = le compte des instructions ; jmp rsi
+    a.b(&[0x53, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x50, 0x48, 0x89, 0xFB]);
+    a.reprendre();
     a.charger(R12, opas);
     a.b(&[0xFF, 0xE6]);
     let mut debuts = vec![0usize; n + 1];
@@ -294,16 +375,39 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
         let imm = (h & 0xFFFF_FFFF) as u32;
         let cible = imm as usize;
         let mut ok = true;
-        // l'instruction suivante pose z et c sans les lire, et rien ne sort du code traduit avant : celle-ci n'a pas à
-        // les écrire (deux écritures en mémoire de moins ; un saut qui arrive sur la suivante n'y change rien)
-        let suivante_pose = p + 1 < n && {
-            let h2 = demi(mots, p + 1);
-            let (op2, wl2) = ((h2 >> 48) as u16, ((h2 >> 32) & 15) as u32);
-            (wl2 == 1 && matches!(op2, 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15 | 0x16 | 0x08 | 0x09
-                | 0x17 | 0x18 | 0x19 | 0x0C | 0x0D))
-                || (wl2 == 0 && matches!(op2, 0x20 | 0x25 | 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15
-                    | 0x16 | 0x08 | 0x09 | 0x17 | 0x18 | 0x19))
-                || (wl2 <= 2 && matches!(op2, 0x0A | 0x2B) && p + 3 <= n)
+        // les drapeaux que pose celle-ci sont morts (0.6k) : en suivant le seul chemin qui part d'elle, on trouve une
+        // instruction qui pose z et c sans les lire avant toute instruction qui les lit, qui peut sortir du code
+        // traduit ou appeler Lugus. On traverse MOV et ETG (ils ne touchent ni aux drapeaux, ni à la mémoire) et les
+        // sauts sans condition. Elle n'a pas à les écrire (des écritures en mémoire de moins ; un saut qui arrive
+        // ailleurs sur ce chemin n'y change rien : les drapeaux y sont morts aussi).
+        let suivante_pose = {
+            let pose = |q: usize, op2: u16, wl2: u32| -> bool {
+                (wl2 == 1 && matches!(op2, 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15 | 0x16 | 0x08 | 0x09
+                    | 0x17 | 0x18 | 0x19 | 0x0C | 0x0D))
+                    || (wl2 == 0 && matches!(op2, 0x20 | 0x25 | 0x01 | 0x06 | 0x02 | 0x07 | 0x0E | 0x0F | 0x03 | 0x14 | 0x15
+                        | 0x16 | 0x08 | 0x09 | 0x17 | 0x18 | 0x19))
+                    || (wl2 <= 2 && matches!(op2, 0x0A | 0x2B) && q + 2 <= n)
+            };
+            let mut q = p + 1;
+            let mut vus = 0;
+            loop {
+                if q >= n || vus > 16 {
+                    break false;
+                }
+                let h2 = demi(mots, q);
+                let (op2, wl2, c2) = ((h2 >> 48) as u16, ((h2 >> 32) & 15) as u32, (h2 & 0xFFFF_FFFF) as usize);
+                if pose(q, op2, wl2) {
+                    break true;
+                }
+                if (wl2 == 0 && op2 == 0x0B) || (wl2 == 1 && op2 == 0x1F) {
+                    q += 1;
+                } else if op2 == 0x30 && wl2 <= 2 && c2 < n {
+                    q = c2;
+                } else {
+                    break false;
+                }
+                vus += 1;
+            }
         };
         // l'adresse rsi:rdx = r[base] + imm (signé), masquée à 120 bits si masque
         let adresse = |a: &mut Asm, base: usize, masque: bool| {
@@ -578,16 +682,14 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                 a.lire_rapide(ocache, lire, otampon);
                 if op == 0x28 {
                     // r14 = (r14 + 1) & M120
-                    a.b(&[0x48, 0x83, 0x83]);
-                    a.d32(reg(14) as u32);
-                    a.b(&[1]);
+                    a.plus_un(reg(14));
                     a.b(&[0x48, 0x83, 0x93]);
                     a.d32((reg(14) + 8) as u32);
                     a.b(&[0]);
                     a.imm64(RCX, M120_HAUT);
                     a.b(&[0x48, 0x21, 0x8B]); // and [rbx + d], rcx
                     a.d32((reg(14) + 8) as u32);
-                } else {
+                } else if !suivante_pose {
                     a.octet(oc, 0);
                     a.b(&[0x4C, 0x89, 0xC0, 0x4C, 0x09, 0xC8]); // mov rax, r8 ; or rax, r9
                     a.poser_drapeau(0x94, oz);
@@ -645,9 +747,7 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                 a.lire_rapide(ocache, lire, otampon);
                 a.b(&[0x4C, 0x89, 0xC0, 0x4C, 0x89, 0xCA]); // mov rax, r8 ; mov rdx, r9
                 // r14 = (r14 + 1) & M120
-                a.b(&[0x48, 0x83, 0x83]);
-                a.d32(reg(14) as u32);
-                a.b(&[1]);
+                a.plus_un(reg(14));
                 a.b(&[0x48, 0x83, 0x93]);
                 a.d32((reg(14) + 8) as u32);
                 a.b(&[0]);
@@ -699,27 +799,31 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
     // la sortie « rejouer » : eax = p ; pc = p ; rendre 1
     let sortie0 = a.o.len();
     a.ranger(opas, R12);
+    a.deposer();
     a.ranger(opc, RAX);
     a.zero(opc + 8);
     a.b(&[0xB8, 1, 0, 0, 0]);
-    a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
+    a.b(&[0x59, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5D, 0x5B, 0xC3]); // pop rcx (l'alignement), r15 … rbx ; ret
     // la sortie « continuer » : rax:rdx = pc ; rendre 0
     let sortie1 = a.o.len();
     a.ranger(opas, R12);
+    a.deposer();
     a.ranger(opc, RAX);
     a.ranger(opc + 8, RDX);
     a.b(&[0x31, 0xC0]);
-    a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
+    a.b(&[0x59, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5D, 0x5B, 0xC3]); // pop rcx (l'alignement), r15 … rbx ; ret
     // la sortie « ailleurs » : pc est déjà posé ; rendre 0
     let sortie2 = a.o.len();
     a.ranger(opas, R12);
+    a.deposer();
     a.b(&[0x31, 0xC0]);
-    a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
+    a.b(&[0x59, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5D, 0x5B, 0xC3]); // pop rcx (l'alignement), r15 … rbx ; ret
     // la sortie « erreur » : rendre 2
     let sortie3 = a.o.len();
     a.ranger(opas, R12);
+    a.deposer();
     a.b(&[0xB8, 2, 0, 0, 0]);
-    a.b(&[0x41, 0x5C, 0x5D, 0x5B, 0xC3]);
+    a.b(&[0x59, 0x41, 0x5F, 0x41, 0x5E, 0x41, 0x5D, 0x41, 0x5C, 0x5D, 0x5B, 0xC3]); // pop rcx (l'alignement), r15 … rbx ; ret
     for &(place, k) in &a.sorties {
         let but = [sortie0, sortie1, sortie2, sortie3][k as usize];
         let rel = but as i64 - (place as i64 + 4);
@@ -736,6 +840,12 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
     let tp = table.as_ptr() as u64;
     for pl in places_table {
         a.o[pl..pl + 8].copy_from_slice(&tp.to_le_bytes());
+    }
+    // VTX_VIDAGE=fichier : le code traduit écrit tel quel, et la place de chaque demi-instruction dans fichier.places
+    if let Ok(f) = std::env::var("VTX_VIDAGE") {
+        let _ = std::fs::write(&f, &a.o);
+        let places: Vec<String> = debuts.iter().map(|x| x.to_string()).collect();
+        let _ = std::fs::write(format!("{}.places", f), places.join("\n"));
     }
     let code = Executable::nouveau(&a.o)?;
     for p in 0..n {

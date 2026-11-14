@@ -3061,9 +3061,7 @@ fonction nouveau(n) {
             @3[14680064 + n] = @3[t];
             @3[t - 1] = n;
             liberer_brin(0xC000000000000000 + t, n);
-            pour i dans 0..n {
-                @3[t + i] = 0;
-            }
+            __service(26, t + n * 16777216);
             retour 0xC000000000000000 + t;
         }
     }
@@ -3084,9 +3082,7 @@ fonction nouveau(n) {
             }
             @3[g - 1] = taille;
             liberer_brin(0xC000000000000000 + g, taille);
-            pour j dans 0..taille {
-                @3[g + j] = 0;
-            }
+            __service(26, g + taille * 16777216);
             retour 0xC000000000000000 + g;
         }
         prec = g;
@@ -3117,9 +3113,8 @@ fonction nouveau(n) {
     @3[p] = n;
     @3[14680056] = p + n + 1;
     liberer_brin(0xC000000000000001 + p, n);
-    pour k dans 0..n {
-        @3[p + 1 + k] = 0;
-    }
+    // le bloc remis à zéro par la machine, d'un coup (0.6k ; une boucle de neuf instructions par mot avant)
+    __service(26, p + 1 + n * 16777216);
     retour 0xC000000000000001 + p;
 }
 // un bloc libre d'en-tête h0, qui s'étend jusqu'à h1 (exclu) : rangé dans la liste de sa taille

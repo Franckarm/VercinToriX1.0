@@ -63,10 +63,10 @@ pub struct Spu128 {
     pub pas: u64,
     /// pour la traduction en x86-64 : le mot que natif_lire vient de lire
     pub natif_tampon: [u64; 2],
-    /// pour le code traduit (0.6j) : seize pages qu'il lit et écrit lui-même, sans appel : [clé, adresse du premier
-    /// mot] dans la case (clé & 15). La clé est l'adresse courte >> 16 ; u64::MAX : vide. N'y entre qu'une page sans
+    /// pour le code traduit (0.6j) : soixante-quatre pages (0.6k ; seize avant) qu'il lit et écrit lui-même, sans
+    /// appel : [clé, adresse du premier mot] dans la case (clé & 63). La clé est l'adresse courte >> 16 ; u64::MAX : vide. N'y entre qu'une page sans
     /// brin (rien d'ADN à protéger). Vidé chaque fois que Lugus reprend la main.
-    pub natif_cache: [u64; 32],
+    pub natif_cache: [u64; 128],
     /// pour la traduction en x86-64 : l'erreur d'une instruction rejouée par Lugus depuis le code traduit
     pub natif_erreur: Option<String>,
     pub presenter: Option<Box<dyn FnMut(&Spu128) -> u128>>,
@@ -243,7 +243,7 @@ pub extern "sysv64" fn natif_rejouer(s: *mut Spu128, p: u64) -> u64 {
 impl Spu128 {
     /// le code traduit ne garde plus aucune page
     pub fn natif_oublier(&mut self) {
-        self.natif_cache = [u64::MAX; 32];
+        self.natif_cache = [u64::MAX; 128];
     }
 
     /// après un accès par le chemin de Lugus : si la page de cette adresse courte est dans le cache de Lugus et n'a
@@ -258,7 +258,7 @@ impl Spu128 {
         if self.cache[e][k].0 == cle {
             let p = self.cache[e][k].1;
             if unsafe { (*p).brins.is_none() } {
-                let c = 2 * ((lo >> 16) & 15) as usize;
+                let c = 2 * ((lo >> 16) & 63) as usize;
                 self.natif_cache[c] = lo >> 16;
                 self.natif_cache[c + 1] = unsafe { (*p).mots.as_mut_ptr() } as u64;
             }
@@ -329,7 +329,7 @@ impl Spu128 {
             pages_vues: std::collections::HashSet::new(),
             pas: 0,
             natif_tampon: [0, 0],
-            natif_cache: [u64::MAX; 32],
+            natif_cache: [u64::MAX; 128],
             natif_erreur: None,
             presenter: None,
             machine_fille: None,
@@ -839,6 +839,32 @@ impl Spu128 {
             22 => Ok(crate::miroir::prendre_etat() as u128),
             // le compte des instructions jouées (instructions() du prélude)
             25 => Ok(self.pas as u128),
+            // effacer n mots de l'étage 3 à partir de p (arg = p + n * 2^24), comme les boucles de nouveau d'avant
+            // (0.6k) : chaque page touchée comme la boucle la touchait (le premier mot écrit par ecrire_mem : chargée
+            // du disque ou créée, l'ADN vérifié), puis le reste de la page effacé d'un coup s'il n'a pas de brin
+            26 => {
+                let (p, n) = (arg & 0xFF_FFFF, (arg >> 24) & 0xFF_FFFF);
+                let base = 3u128 << 62;
+                let mut k = 0u128;
+                while k < n {
+                    let adr = base + p + k;
+                    self.ecrire_mem(adr, 0)?;
+                    let (e, i) = Self::place(adr);
+                    let j = (i as usize) & (PAGE - 1);
+                    let fin = ((n - k) as usize).min(PAGE - j);
+                    let a_des_adn = self.a_des_adn;
+                    let pg = self.page_mut(e, i);
+                    if pg.brins.is_none() || !a_des_adn {
+                        pg.mots[j..j + fin].fill(0);
+                    } else {
+                        for q in 1..fin {
+                            self.ecrire_mem(adr + q as u128, 0)?;
+                        }
+                    }
+                    k += fin as u128;
+                }
+                Ok(0)
+            }
             24 => {
                 // la machine fille : le programme vtx nommé (un texte) compilé et lancé sur un Lugus neuf ; son compte
                 // rendu se lit comme un fichier (le canal rendu, lire_car)

@@ -395,6 +395,16 @@ class CPU:
             return self.jeter_cube(arg)
         if code in (16, 17, 20, 21, 23):
             return 0
+        if code == 25:
+            # le compte des instructions jouées (instructions() du prélude)
+            return self.pas
+        if code == 26:
+            # effacer n mots de l'étage 3 à partir de p (arg = p + n * 2^24), comme les boucles de nouveau d'avant
+            # (0.6k) : chaque mot écrit à zéro, l'ADN vérifié ; une seule instruction au lieu de neuf par mot
+            p, n = arg & 0xFFFFFF, (arg >> 24) & 0xFFFFFF
+            for k in range(n):
+                self.ecrire_mem((3 << 62) + p + k, 0)
+            return 0
         if code == 22:
             etat = getattr(self, "_etat_disque", 0)
             self._etat_disque = 0

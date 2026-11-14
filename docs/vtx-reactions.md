@@ -2079,3 +2079,44 @@ d'accès à la mémoire sont passés par Lugus.
 opération les lit et les écrit) ; chaque accès au cadre refait le calcul d'adresse et la vérification de page ; les
 appels et retours passent par la mémoire de Lugus et une table. Le prochain pas serait de garder les registres les
 plus utilisés dans ceux du processeur, à l'intérieur d'un bloc sans saut.
+
+## 45. La vitesse, deuxième passe (14 novembre, 0.6k)
+
+**Ce qui a été essayé, et ce que chaque pas a donné** (mesuré dans une même séance, le meilleur de 15 lancements) :
+1. *Les registres de Lugus les plus utilisés gardés dans ceux du processeur* (r1, r2, r14 la pile, r13 le cadre,
+   r9, r10 ; leur moitié basse, dans rbp, r10, r11, r13, r14, r15). Ils retournent dans la machine à chaque sortie
+   et avant chaque appel à Lugus, et en reviennent après. Attendu : le grand pas. Mesuré : **presque rien**
+   (0 % à 64 bits, 7 % à 128 bits). Le code machine d'une boucle chaude, regardé instruction par instruction
+   (`VTX_VIDAGE=fichier` l'écrit), montre pourquoi : les valeurs qui comptaient passaient déjà par le cache du
+   processeur ; ce n'était pas le frein. Gardé, parce qu'il est juste et ne coûte rien.
+2. *La table des pages du code traduit passe de 16 à 64 pages.* Le tableau du crible en occupe 31 : elles se
+   chassaient (433 000 accès repassaient par Lugus ; il en reste 81). Mesuré : **rien** non plus.
+3. *Le vrai frein n'était pas dans la traduction mais dans le prélude* : `nouveau` remettait chaque bloc neuf à zéro
+   case par case, neuf instructions par case. Créer le tableau du crible coûtait 18 millions d'instructions sur 90.
+   C'est maintenant un service de la machine (26), qui fait exactement ce que faisait la boucle : chaque page
+   touchée comme elle la touchait (chargée du disque ou créée, l'ADN vérifié), puis effacée d'un coup. Seul le
+   nombre d'instructions change (dans les deux compilateurs, mêmes mots ; la machine en Python aussi).
+4. *Les drapeaux morts ne sont plus écrits*, en regardant plus loin que l'instruction suivante : à travers MOV, ETG
+   et les sauts sans condition, jusqu'à une instruction qui les pose sans les lire. Avant toute instruction qui
+   peut sortir du code traduit ou appeler Lugus, ils restent écrits.
+
+**Mesuré** (même séance ; la machine était plus lente ce jour-là qu'à la section 44, d'où d'autres chiffres absolus) :
+
+| | 64 bits | 128 bits |
+|---|---|---|
+| C (gcc -O2) | 0,028 s | 0,046 s |
+| Rust | 0,026 s | 0,040 s |
+| Java | 0,094 s | 1,271 s |
+| Lugus traduit, 0.6j | 0,158 s | 0,193 s |
+| **Lugus traduit, 0.6k** | **0,112 s** | **0,133 s** |
+| Lugus seul | 0,766 s | 1,270 s |
+
+L'écart avec C passe de 5,6 à 4,0 fois à 64 bits, et de 4,2 à 2,9 fois à 128 bits. À 128 bits, Lugus traduit va
+9 fois plus vite que Java.
+
+**Où en est l'écart, dit honnêtement.** Le crible seul, sur un tableau qui tient dans le cache et sur un tableau
+dix fois plus grand, est 3,3 fois plus lent que le même crible en C sur des cases de 128 bits : l'écart ne vient
+plus de la mémoire mais du nombre d'instructions que la traduction produit (le compte des instructions, la moitié
+haute de chaque registre, les drapeaux encore vivants, la vérification de page à chaque accès). Le gagner demande un
+vrai compilateur, qui voit tout un morceau de programme à la fois (où va chaque valeur, quels drapeaux servent) ;
+c'est le prochain grand chantier de la vitesse, et il ne se fera pas par petites touches.
