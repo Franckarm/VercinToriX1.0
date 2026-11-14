@@ -166,6 +166,7 @@ pub fn chemin_absolu(x: &str) -> String {
         .unwrap_or(std::path::Path::new(".")))
         .map(|d| d.join(std::path::Path::new(x).file_name().unwrap_or_default()))
         .unwrap_or_else(|_| std::path::PathBuf::from(x)).to_string_lossy().into_owned()
+        .trim_start_matches(r"\\?\").to_string()
 }
 
 /// une passe de vtxc128 dans un dossier de travail : (code.mots, code.prov, code.ex, code.iso), ou les messages d'erreur

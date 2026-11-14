@@ -1777,7 +1777,11 @@ fonction ranger(mots, adn, source, isotopes, compilateur) {
         si @2[G + G_TEM] == 0 {
             ecrire_t(1, " (refaits : l'isoforme n'en avait pas)");
         }
-        ecrire_t(1, " ; le texte du programme et le nom des isotopes, retirés à l'épissage, n'y sont pas\n");
+        si trouver_section("source") == 1 {
+            ecrire_t(1, " ; l'ARNc portait le texte du programme : l'ADN est entier\n");
+        } sinon {
+            ecrire_t(1, " ; le texte du programme et le nom des isotopes, retirés à l'épissage, n'y sont pas\n");
+        }
     }
 }
 
@@ -1840,12 +1844,15 @@ fonction recopier_section(c, nom) {
 }
 
 fonction ecrire_arn(chemin, isoforme) {
-    soit sur = texte_egal(isoforme, "sur") || texte_egal(isoforme, "complet");
+    // l'ARNc (0.6o) : l'ARN sûr qui porte aussi tous les introns (le texte, les isotopes, le compilateur,
+    // l'épigénome) : rétrotranscrit, il rend l'ADN entier
+    soit arnc = texte_egal(isoforme, "arnc");
+    soit sur = texte_egal(isoforme, "sur") || texte_egal(isoforme, "complet") || arnc;
     soit memoire = texte_egal(isoforme, "memoire") || texte_egal(isoforme, "complet");
     si !sur && !memoire && !texte_egal(isoforme, "rapide") {
         ecrire_t(1, "isoforme inconnue « ");
         ecrire_t(1, isoforme);
-        ecrire_t(1, " » (rapide, sur, memoire, complet)\n");
+        ecrire_t(1, " » (rapide, sur, memoire, complet, arnc)\n");
         @2[G + G_ERR] = 1;
         retour;
     }
@@ -1916,6 +1923,11 @@ fonction ecrire_arn(chemin, isoforme) {
     }
     si memoire {
         recopier_section(c, "epigenome");
+    }
+    si arnc {
+        pour i9 dans 0..@2[G + G_NI] {
+            ecrire_car(c, @2[INTR + i9]);
+        }
     }
     fermer(c);
 }
@@ -2444,10 +2456,44 @@ fonction verifier_texte(comp_actuel) {
     }
 }
 
+// --------------------------------------------------------------------------------------------- l'ARNc (0.6o)
+// Le programme naît en ARN (le travail), sans passer par un fichier d'ADN : ses mots compilés, la coiffe, les trois
+// témoins, et les introns (les isotopes, le texte, la signature du compilateur). La rétrotranscription de cet ARN
+// rend l'ADN entier, celui que « ranger » aurait écrit, octet pour octet.
+fonction faire_arnc(mots, sortie, source, isotopes, compilateur) {
+    charger(mots);
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    si @2[G + G_N] == 0 {
+        refuser("aucun mot à transcrire");
+        retour;
+    }
+    faire_temoins(isotopes);
+    si source != 0 {
+        garder_source(source);
+    }
+    garder_compilateur(compilateur);
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    ecrire_arn(sortie, "arnc");
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    ecrire_u64(1, @2[G + G_N]);
+    ecrire_t(1, " mots, ");
+    ecrire_u64(1, @2[G + G_NM]);
+    ecrire_t(1, " molécules : l'ARNc (sa coiffe, ses témoins, le texte du programme) -> ");
+    ecrire_t(1, sortie);
+    ecrire_car(1, 10);
+}
+
 // Les entrées : deux chemins, puis le verbe (relire s'il manque), puis selon le verbe :
 //   relire     ADN [RELU]
 //   transcrire ADN SORTIE [ISOFORME] [SIGNATURE DU COMPILATEUR : le texte gardé est alors vérifié]
 //   ranger     BRIN ADN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR]   (le brin : .mots, .hex, .cub, .arn, .adn)
+//   arnc       MOTS ARN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR]   (l'ARNc : le programme né en ARN)
 //   hex        BRIN HEX
 //   cube       BRIN - [FRÉQUENCE]        (cube128-1-FRÉQUENCE.cub, dans le dossier de la machine ; 440 sinon)
 //   mots       BRIN MOTS                 (les mots seuls, pour les lancer)
@@ -2462,6 +2508,18 @@ fonction principal() {
         soit iso = lire_chemin(CHEMIN5);
         soit comp = lire_chemin(CHEMIN6);
         ranger(entree, relu, source, iso, comp);
+        si @2[G + G_ERR] != 0 {
+            sortie(E_INCONNU);
+            retour;
+        }
+        sortie(E_VRAI);
+        retour;
+    }
+    si verbe != 0 && texte_egal(verbe, "arnc") {
+        soit source2 = lire_chemin(CHEMIN4);
+        soit iso2 = lire_chemin(CHEMIN5);
+        soit comp3 = lire_chemin(CHEMIN6);
+        faire_arnc(entree, relu, source2, iso2, comp3);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);
             retour;

@@ -2307,3 +2307,37 @@ compilateur lui-même est vtxc128, en vtx). L'ADN passe d'environ 85 % à enviro
 **Une question ouverte.** L'ADN écrit ses mots en décimal, pas en bases : le hex est maintenant une station à part.
 Écrire les mots de l'ADN en bases (A, C, G, T, deux bits par base) serait plus fidèle au cap « ADN et ARN
 hexadécimaux », au prix d'un changement de format (une version 5) : à trancher.
+
+## 50. L'ARNc : le programme naît en ARN (14 novembre, 0.6o)
+
+**La remarque du créateur :** le tour devrait être vtx → ARN → ADNc → hex → cube → hex → ADN → ARN ; « c'est assez
+étrange que cet ordre ne soit pas retenu » ; peut-être par un ARNc, une passe de l'ARN sûr assurée par vtx.
+
+**Il avait raison, et c'est ce qui est gravé** (section 40) : U est le travail, T ce qui est fixé. Écrire un programme,
+c'est travailler : il naît en ARN ; on le fixe en ADN quand on veut le garder. L'objection faite d'abord (un ARN tiré
+sans ADN perd le texte du programme) tombe si l'ARN le porte lui-même.
+
+**L'ARNc**, une cinquième isoforme (`arnc`) : l'ARN sûr (la coiffe, les mots, les trois témoins) qui porte aussi tous
+les introns : les isotopes, le texte du programme, la signature du compilateur, l'épigénome s'il y en a un.
+- `lugus arnc PROG.vtx [PROG.arn]` : le programme compilé (vtxc128) devient un ARNc, par le lecteur en vtx ; **aucun
+  fichier d'ADN n'est écrit** ;
+- `lugus PROG.arn` le lance (sous la patrouille, comme un ARN sûr) ;
+- `lugus retrotranscrire PROG.arn` rend **l'ADN entier** : celui que `lugus ranger PROG.vtx` aurait écrit, octet pour
+  octet ;
+- `lugus transcrire PROG.adn PROG.arn --isoforme arnc` : l'aller, sans perte ; ADN → ARNc → ADN redonne le même fichier.
+
+Dit honnêtement : un ARNc contient tout ce que contient l'ADN ; ce qui les distingue est le brin (le travail, ou le
+fixé), pas le contenu. Les isoformes rapide, sur, memoire et complet restent des ARN épissés (sans le texte).
+
+**Le tour entier, dans l'ordre du créateur**, descend la chaîne jusqu'au cube puis la remonte station par station :
+vtx → ARNc → ADNc → hex → cube → hex → ADN → ARN. Le test précédent sautait le hex au retour (cube → ADN, un raccourci
+permis, gardé comme contrôle à part).
+
+**Vérifié** (`tests/test_adn_deux_sens.py`, 51 contrôles) : sur trois programmes (dont un isotope lourd), vtx → ARNc
+n'écrit aucun ADN et l'ARNc lancé donne la sortie du programme ; son ADNc est l'ADN de `ranger` et celui de la
+référence Python, octet pour octet ; ADNc → ARNc redonne l'ARNc de départ, et le texte est vérifié vrai ; le tour entier
+dans le nouvel ordre : la même sortie, les mêmes mots, le hex du retour identique à celui de l'aller. Les deux
+compilateurs donnent les mêmes 8951 mots du lecteur ; les suites de l'ADN, du lecteur, de la patrouille et de la
+provenance restent conformes.
+
+**En passant** : les chemins ne s'affichent plus avec le préfixe `\\?\` de Windows (non essayé ici : pas de Windows).

@@ -116,18 +116,47 @@ for p in progs:
                  r.returncode == 0 and octets(f"{p}_{iso}_c.adn") == octets(f"{p}_{iso}_cr.adn") and mots == m0
                  and mots_adn(f"{p}_{iso}_c.adn") == m0, r.stderr)
 
-# le tour entier : vtx → ADN → ARN complet → ADNc → hex → cube → ADN → ARN rapide → lancé
-p = "chute"
-etapes = [("transcrire", "chute.adn", "t1.arn", "--isoforme", "complet"), ("retrotranscrire", "t1.arn", "t2.adn"),
-          ("hex", "t2.adn", "t3.hex"), ("cube", "t3.hex", "330"), ("ranger", "cube128-1-330.cub", "t5.adn"),
-          ("transcrire", "t5.adn", "t6.arn", "--isoforme", "rapide")]
+# l'ARNc (0.6o) : le programme naît en ARN, sans fichier d'ADN ; rétrotranscrit, il rend l'ADN entier
+for p in progs:
+    os.makedirs(os.path.join(d, "ne"), exist_ok=True)
+    shutil.copy(os.path.join(d, p + ".vtx"), os.path.join(d, "ne"))
+    src = os.path.join("ne", p + ".vtx")
+    r = lugus("arnc", src)
+    verifier(f"{p} : vtx → ARNc, aucun ADN écrit ; lancé, la sortie du programme",
+             r.returncode == 0 and sorted(os.listdir(os.path.join(d, "ne"))) == [p + ".arn", p + ".vtx"]
+             and lugus(os.path.join("ne", p + ".arn")).stdout == lugus(p + ".vtx").stdout, r.stderr)
+    r = lugus("retrotranscrire", os.path.join("ne", p + ".arn"))
+    lugus("ranger", src, os.path.join("ne", "ref.adn"))
+    e, mots, mols, t = adn.adnc(os.path.join(d, "ne", p + ".arn"))
+    adn.ecrire_adn(os.path.join(d, "ne", "py.adn"), mots, mols, t)
+    c = octets(os.path.join("ne", p + "-c.adn"))
+    verifier(f"{p} : ARNc → ADNc : l'ADN entier (texte, isotopes, compilateur), celui de ranger et de la référence, octet pour octet",
+             r.returncode == 0 and c == octets(os.path.join("ne", "ref.adn")) and c == octets(os.path.join("ne", "py.adn")),
+             r.stderr)
+    r = lugus("transcrire", os.path.join("ne", p + "-c.adn"), os.path.join("ne", "retour.arn"), "--isoforme", "arnc")
+    verifier(f"{p} : ADNc → ARNc : l'ARNc de départ, octet pour octet ; le texte vérifié : vrai",
+             octets(os.path.join("ne", "retour.arn")) == octets(os.path.join("ne", p + ".arn")) and "le texte : vrai" in r.stderr,
+             r.stderr)
+    shutil.rmtree(os.path.join(d, "ne"))
+
+# le tour entier, dans l'ordre du créateur : la chaîne descendue jusqu'au cube, puis remontée station par station
+#   vtx → ARNc → ADNc → hex → cube → hex → ADN → ARN, lancé
+os.makedirs(os.path.join(d, "tour"), exist_ok=True)
+shutil.copy(os.path.join(d, "chute.vtx"), os.path.join(d, "tour"))
+T = lambda x: os.path.join("tour", x)
+etapes = [("arnc", T("chute.vtx"), T("t1.arn")), ("retrotranscrire", T("t1.arn"), T("t2.adn")),
+          ("hex", T("t2.adn"), T("t3.hex")), ("cube", T("t3.hex"), "330"),
+          ("hex", T("cube128-1-330.cub"), T("t5.hex")), ("ranger", T("t5.hex"), T("t6.adn")),
+          ("transcrire", T("t6.adn"), T("t7.arn"), "--isoforme", "rapide")]
 ok = True
 for e in etapes:
     r = lugus(*e)
     ok = ok and r.returncode == 0
-fin = lugus("t6.arn").stdout
-verifier("le tour entier : vtx → ADN → ARN → ADNc → hex → cube → ADN → ARN, lancé : la sortie du programme",
-         ok and fin == lugus("chute.vtx").stdout and mots_adn("t5.adn") == mots_adn("chute.adn"))
+fin = lugus(T("t7.arn")).stdout
+verifier("le tour entier : vtx → ARNc → ADNc → hex → cube → hex → ADN → ARN, lancé : la sortie du programme ; "
+         "le hex du retour est celui de l'aller",
+         ok and fin == lugus("chute.vtx").stdout and fin != "" and mots_adn(T("t6.adn")) == mots_adn("chute.adn")
+         and octets(T("t3.hex")) == octets(T("t5.hex")))
 
 # les avaries du hex
 m0 = mots_adn("chute.adn")

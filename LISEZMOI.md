@@ -84,7 +84,8 @@ lugus ranger exemples128/chute.vtx                  # l'ADN : chute.adn
 lugus exemples128/chute.adn                         # vérifié, réparé si besoin, lancé sous la patrouille
 lugus apprendre exemples128/alternance.adn          # (après lugus ranger) ses souvenirs gardés dans l'ADN
 lugus transcrire exemples128/chute.adn chute.arn --isoforme sur   # un ARN qui garde ses témoins
-lugus retrotranscrire chute.arn                     # l'ARN rendu à l'ADN : chute-c.adn
+lugus arnc exemples128/chute.vtx                    # le programme né en ARN (l'ARNc), sans fichier d'ADN
+lugus retrotranscrire exemples128/chute.arn         # l'ARN fixé en ADN : chute-c.adn (entier, depuis un ARNc)
 lugus hex exemples128/chute.adn                     # les mots en hex : chute.hex
 lugus cube exemples128/chute.hex                    # dans le cube : cube128-1-440.cub, puis : lugus cube128-1-440.cub
 vtx paillasse exemples128/chute.vtx --valeurs --png chute.png   # la paillasse sans écran, avec les valeurs

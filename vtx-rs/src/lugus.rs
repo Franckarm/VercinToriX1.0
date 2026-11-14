@@ -408,7 +408,8 @@ fn main() {
             std::process::exit(1)
         });
         std::process::exit(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
-    } else if args.len() >= 3 && args[1] == "ranger" {
+    } else if args.len() >= 3 && (args[1] == "ranger" || args[1] == "arnc") {
+        // 0.6o : « arnc » : le programme naît en ARN (l'ARNc : coiffe, témoins, texte), sans fichier d'ADN
         // 0.6n : le rangement est fait par le lecteur d'ADN écrit en vtx (chimie/adn.vtx) ; Lugus ne fait que compiler
         // (par vtxc128, lui aussi en vtx) et lui passer les fichiers
         let source = std::fs::read_to_string(&args[2]).unwrap_or_else(|e| {
@@ -420,7 +421,8 @@ fn main() {
                 eprint!("{}", e);
                 std::process::exit(1)
             });
-        let sortie = if args.len() > 3 { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension("adn").to_string_lossy().into_owned() };
+        let arnc = args[1] == "arnc";
+        let sortie = if args.len() > 3 { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension(if arnc { "arn" } else { "adn" }).to_string_lossy().into_owned() };
         let travail = std::env::temp_dir().join(format!("vtx-ranger-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&travail);
         let f_mots = travail.join("code.mots");
@@ -429,7 +431,7 @@ fn main() {
         let f_iso = travail.join("code.iso");
         let iso_txt: String = isotopes.iter().map(|(n, a)| format!("{}|{}\n", n, a)).collect();
         let _ = std::fs::write(&f_iso, iso_txt);
-        let entrees = vec![f_mots.to_string_lossy().into_owned(), machine128::chemin_absolu(&sortie), "ranger".into(),
+        let entrees = vec![f_mots.to_string_lossy().into_owned(), machine128::chemin_absolu(&sortie), args[1].clone(),
                            machine128::chemin_absolu(&args[2]),
                            if isotopes.is_empty() { String::new() } else { f_iso.to_string_lossy().into_owned() },
                            machine128::signature_compilateur().to_string()];
@@ -588,7 +590,7 @@ fn main() {
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-1-F.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-1-F.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
         std::process::exit(2);
     }
 }
