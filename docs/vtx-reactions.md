@@ -2485,7 +2485,7 @@ d'une molécule abîmée (réparée) ; la paillasse d'Ogmios (une fonction, une 
 **Décidé avec le créateur**, après un avis demandé sur la nature du langage (une avancée : les quatre valeurs natives et
 un programme qui se décrit et se prouve lui-même ; un risque : l'accumulation des couches et du vocabulaire, et un cœur
 du langage en retard sur ce qui l'entoure) : suivre la piste, faire des faces des promesses vérifiées, et graver le
-fonctionnement de vtx (`docs/vtx-fondements.md`).
+fonctionnement de vtx (le carnet, `docs/vtx-carnet.md`, section 1 bis).
 
 **La promesse.** Après la dernière parenthèse de l'en-tête (et le type du résultat) :
 

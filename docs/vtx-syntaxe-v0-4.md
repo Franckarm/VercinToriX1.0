@@ -184,7 +184,7 @@ reaction moyenne(a, b) -> m touche rien { … }
 La carte du programme (le lecteur d'ADN en vtx) juge la promesse sur ce que les mots touchent vraiment ; une promesse
 rompue arrête la compilation et le rangement, avec le chemin qui la rompt (« par parler → afficher »). Une fonction qui
 promet n'est pas recopiée en ligne. À ne pas confondre avec `touche()`, la fonction du clavier : la promesse ne peut
-venir qu'après la parenthèse d'un en-tête. Voir `docs/vtx-fondements.md` et `docs/vtx-reactions.md`, section 53.
+venir qu'après la parenthèse d'un en-tête. Voir `docs/vtx-carnet.md` (section 1 bis) et `docs/vtx-reactions.md`, section 53.
 
 L'indice d'un tableau rangé ne doit pas appeler de fonction ; un tableau rangé ne peut pas être cumulé, et des segments qui y écrivent sont joués l'un après l'autre (deux éléments voisins partagent un mot).
 

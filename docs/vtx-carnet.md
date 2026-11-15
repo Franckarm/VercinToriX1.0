@@ -2,9 +2,11 @@
 
 *Carnet vivant de Vercintorix (vtx) : ce qu'est le projet, toutes les solutions et technologies imaginées depuis le
 début, ce qui est fait et vérifié, ce qui est resté sur le papier, et les innovations nouvelles ou améliorées.
-Refait le 23 octobre 2026, version 0.5 le 24 octobre (vtx 0.5 : le SPU-32 et le SPU-64, vtx64 et vtxc64). La première partie est la synthèse ;
-le journal d'origine (versions 0.1 à 0.4) est gardé tel quel en annexe, et le journal de l'autonomie (0.5 à SPU-64)
-est dans `vtx-0-5-autonomie.md`.*
+Refait le 23 octobre 2026, version 0.5 le 24 octobre (vtx 0.5 : le SPU-32 et le SPU-64, vtx64 et vtxc64) ; complété le
+15 novembre 2026 (vtx 0.6r : Lugus, la chimie, Belenos, l'ADN vivant, la carte et les promesses), et les fondements y sont
+gravés (section 1 bis). La première partie est la synthèse ; le journal d'origine (versions 0.1 à 0.4) est gardé tel quel
+en annexe ; le journal de l'autonomie (0.5 à SPU-64) est dans `vtx-0-5-autonomie.md`, celui des réactions, de Belenos et
+de la 0.6 dans `vtx-reactions.md` (sections 1 à 53).*
 
 > Vercintorix est l'œuvre de son créateur. « Pas touche, ou contactez le créateur, qui sera ravi de poser ses conditions
 > pour faire avancer la science. » (`AUTEUR.md`)
@@ -32,6 +34,58 @@ SPU. Le créateur l'a dit lui-même : il n'aura peut-être jamais le matériel ;
 Une nouveauté qui ne respecte pas ces trois lectures n'entre pas. S'y ajoutent, dans le **noyau immuable** du
 langage, la **logique à quatre valeurs** de Belnap (inconnu, faux, vrai, variable) et la **partition par
 fréquences** (accords, mesures, segments).
+
+**Aujourd'hui (15 novembre 2026)**, la machine de vtx est **Lugus** (SPU-128, mots de 128 bits) ; Dunon (SPU-64) fait le
+même travail à 64 bits ; Senos (SPU-32) est gelé. Lugus est traduit en x86-64 au lancement de ses exécutables, sans Rust
+ni Python chez l'utilisateur. Le programme est une **chimie** (des atomes qui réagissent, des liaisons qui portent les
+données) ; il se range en **ADN** qui se vérifie et se répare lui-même, se transcrit en **ARN**, porte sa **carte** (six
+faces par molécule) et ses **promesses**. **Belenos** est son moteur graphique, **Taranis** sa porte vers la carte
+graphique, **Ogmios** son atelier.
+
+---
+
+## 1 bis. Les fondements (gravés le 15 novembre 2026)
+
+*À la demande du créateur : « inscrire le fonctionnement de vtx dans le marbre, dans son innovation et son efficacité ».
+Ce qui suit ne change que par une décision du créateur ; le reste du langage s'y conforme. Chaque règle dit pourquoi.*
+
+1. **Les quatre valeurs.** Inconnu 0 (aucune preuve), faux 1, vrai 2, variable 3 (le oui et le non à la fois) : deux bits
+   de preuve. Trois valeurs portent une preuve, la quatrième est l'indicateur de son absence. On ne les réduit jamais à
+   deux : un logique ne sert pas de condition de `si`, on écrit `selon`, qui traite les quatre cas (le compilateur refuse
+   une branche qui ne peut jamais servir). Pourquoi : savoir qu'on ne sait pas, et savoir qu'on est contredit, sont ce
+   qu'un programme binaire efface ; mesuré (le duel, le combat) : les mêmes décisions qu'un binaire juste, avec bien
+   moins d'instructions.
+2. **Le quaternaire dans la machine.** Le quit (deux bits) est l'unité ; un mot de Lugus a 64 quits. **L'étage d'une
+   adresse est un quit** (`adr >> 62`) : quatre étages, pas un de plus (l'étage 0 porte le code et la pile, le 1 les
+   cubes, le 2 le travail, le 3 le tas, les souvenirs et la provenance). Au-dessus, le langage peut offrir des plans
+   virtuels (une table de correspondance) ; le quaternaire reste dans l'adresse de la machine.
+3. **Deux compilateurs, les mêmes mots.** Pour chaque machine, la référence en Python et le compilateur écrit en vtx
+   (vtx128.py et vtxc128 pour Lugus, vtx64.py et vtxc64 pour Dunon) donnent exactement les mêmes mots ; tout ajout se fait
+   dans les deux. Pourquoi : deux compilateurs écrits différemment qui s'accordent au mot près, c'est une preuve.
+4. **Le chemin et les brins.** Un programme **naît en ARN** (U, le travail : `lugus arnc`) et **se fixe en ADN** (T, le
+   gardé : `lugus retrotranscrire`). Les stations, vtx → ARNc ⇄ ADN ⇄ hex ⇄ cube, rendent les mêmes mots dans les deux
+   sens. Le chemin est fait en vtx, par le lecteur d'ADN (`chimie/adn.vtx`).
+5. **Les témoins : aucune erreur muette.** La signature de chaque molécule, l'ombre (Reed-Solomon sur des colonnes
+   entrelacées) et les neutrons (quaternaires, sur GF(4)) se recoupent ; une réparation n'est gardée que si deux témoins
+   l'appuient (la triangulation) ; au-delà, la molécule est gardée telle quelle, pour la preuve. Le texte gardé et la
+   signature du compilateur donnent la rétrotranscription : vrai, faux (retouché), inconnu (le compilateur a changé).
+6. **La carte : six faces et un centre**, comme un dé, en trois paires opposées : ce qu'elle est et ce qu'elle touche
+   (rien, lit la mémoire, écrit la mémoire, le monde) ; ses racines (qui l'appelle) et ses branches (ce qu'elle appelle) ;
+   ses promesses et sa mémoire (l'empreinte de son texte, son histoire d'un rangement à l'autre). Le centre est son état
+   de Belnap **à chaque lecture**.
+7. **Les promesses : la carte constate, la promesse engage.** `touche rien | lecture | memoire | monde`, `exige`,
+   `garantit`, `exemple`, les unités physiques, `lourd` : le programmeur promet, la machine vérifie, une promesse rompue
+   arrête la compilation et le rangement avec ce qui la rompt. Pourquoi : ce qui est promis et vérifié, une IA ou un
+   humain peut s'y fier sans relire le code ; c'est ce qui rend vtx natif pour l'IA.
+8. **Le doute ne se comble pas.** Ce qui n'est pas su est dit inconnu, jamais deviné ; quand il faut choisir sans savoir,
+   le doute va du côté prudent. La grammaire n'a pas d'ambiguïté (un texte ne se lit que d'une façon) : l'ambiguïté vit
+   dans le sens (les quatre valeurs, et bientôt les lectures, `supposons … parmi`).
+9. **Le crible.** Chaque ajout vient avec son essai chiffré ; ce qui ne sert pas se retire (trois couches qui servent,
+   plutôt que vingt) ; la vitesse ne passe jamais avant le fonctionnement natif (le chemin, l'épissage, les atomes et les
+   molécules, Belenos), et les écarts avec C et Rust sont dits tels qu'ils sont mesurés.
+10. **Comment on ajoute** : les deux compilateurs (et le lecteur en vtx s'il est touché) ; la référence en Python quand il
+    y en a une, octet pour octet ; un test joué par `verifier.py` ; la documentation ; un essai sur le PC du créateur par
+    un `.bat`.
 
 ---
 
@@ -219,6 +273,8 @@ fonction principal() {
 | 0.4 | 20 octobre | flottants binary32, longs, débogueur au niveau du source, partition des tâches, segments, cumulants, V6, logique de Belnap, QEGAL et COMPTE, tableaux de quits, réécriture en 16 éléments d'un coup |
 | 0.5 (autonomie, paquet `vtx-0.5` le 24 octobre) | 20-24 octobre | texte, tas, références, canaux de fichiers ; **vtxc se compile lui-même** ; `vtx.exe` sans Python ; code natif ; atelier ; tableaux dynamiques, dictionnaires, ScoR ; ramasse-miettes ; flottants de 64 bits, entiers de 128 bits, `flottant_petuar` ; variables en registres, épissage, LDQ/STQ, Belnap en instructions ; **SPU-64**, vtx64.py et vtxc64 (point fixe, embarqué dans `vtx64.exe`), atelier sur la SPU-64, tables dans les cubes, expansion en ligne, règle échange |
 | SPU-64 | 23 octobre | la machine 64 bits (point profond, adresse longue, brin, flottants quaternaires) ; `vtx64.py` ; **vtxc64 se compile lui-même** sur le SPU-64 |
+| Lugus (0.5, suite) | 25 octobre – 10 novembre | le SPU-128 (point de matière, deux instructions par mot), vtx128.py et **vtxc128** (point fixe), la forge de Lugus ; les réactions (atomes, liaisons, vagues, contrats, unités, exemples, souvenirs, provenance) ; l'ADN fiable (trois témoins) et vivant (isoformes, épigénome, patrouille) ; **Belenos** (le fluide, le tableau de l'Auvergne, les cylindres) et **Taranis** (SPIR-V) ; les .exe Windows sans Rust ; Lugus traduit en x86-64 |
+| 0.6 | 10 – 15 novembre | les flottants traduits, les quatre valeurs aux bords du monde, `logique[]`, Dunon au niveau de Lugus ; le codon et le gène, `selon` sur plusieurs lectures ; la vitesse (2,9 à 4 fois le C) ; le chemin de l'ADN tout en vtx, dans les deux sens, l'ARNc ; la carte à six faces et son centre ; les promesses `touche` |
 
 ---
 
@@ -230,6 +286,8 @@ fonction principal() {
 | `vtxc` (`vtxc.vtx`) | vtx | SPU-32 | se compile lui-même (point fixe), embarqué dans `vtx.exe` |
 | `vtx64.py` | Python | SPU-64 | la référence 64 bits |
 | `vtxc64` (`vtxc64.vtx`, 8 000 lignes) | vtx | SPU-64 | se compile lui-même sur le SPU-64 (point fixe M0 = M1 = M2) |
+| `vtx128.py` | Python | Lugus (SPU-128) | la référence de Lugus, la machine de vtx |
+| `vtxc128` (`vtxc128.vtx`, plus de 13 000 lignes) | vtx | Lugus | se compile lui-même (point fixe, 182 681 mots) ; embarqué dans `lugus`, Ogmios et les .exe |
 
 **La règle d'or** : les deux compilateurs d'une même machine produisent **exactement les mêmes mots**, vérifié sur
 des milliers de programmes aléatoires, la suite de tests, les programmes du paquet et le compilateur lui-même.
@@ -272,6 +330,20 @@ compilateur sans Python.
   sauvegarder le fond ; le GIF n'écrit que la différence d'une image à l'autre, les points inchangés étant *inconnus*
   (transparents). Les scénarios de gestes (`--scenario`) rejouent un programme interactif sans écran :
   `tests/test_gobatix.py`, même GIF octet pour octet sur le SPU-32 et le SPU-64.
+- **Lugus** (SPU-128, la machine de vtx depuis le 25 octobre) : la machine Rust (`lugus`, `spu128.rs`) et sa référence en
+  Python ; les cubes en pages (seize cases, l'annuaire, la table : l'ombre « en nuances », section 6 bis) ; les services
+  (fichiers, octets, voix, toile, machine fille, compteur d'instructions). **La traduction en x86-64** (`natif128.rs`) :
+  au lancement d'un .exe de Lugus, ses mots deviennent des instructions du processeur (les opérations de 64 et 128 bits,
+  les flottants quaternaires, la mémoire sans appel quand la page est en cache, les drapeaux morts sautés) ; le même
+  texte et le même compte d'instructions que Lugus seul. Mesuré (le banc de la section 39 de `vtx-reactions.md`) : 2,9
+  fois le temps du C à 128 bits, 4,0 fois à 64 bits ; 9 fois plus rapide que Java à 128 bits.
+- **Les .exe de Lugus** (`vtx exe128`, Ctrl+E dans Ogmios) : la machine, le programme compilé et ses fichiers dans un
+  seul exécutable Windows ; une vitrine (fenêtre) quand il est lancé d'un double clic. Ni Rust ni Python chez
+  l'utilisateur. Senos a aussi son .exe, écrit directement en x86-64 par `natif.py` (PE32+, KERNEL32 seul).
+- **Ogmios** (l'atelier, `atelier.exe`) : le texte, **la paillasse au centre** (les atomes d'une réaction en cases, les
+  liaisons en courbes, dans les deux sens avec le texte ; la carte du programme), le cube, la visionneuse (images, sons,
+  exécutables), le débogueur par les noms ; F5 sur Lugus compile, range l'ADN avec sa carte, puis lance ; la fenêtre des
+  explications montre les six faces et le centre de la fonction choisie.
 - **Le miroir et l'opposé** (24 octobre) : idée du créateur, un RAID à double cube en miroir et un retour
   d'information simultané. Le miroir et l'opposé réunis donnent le double rail, c'est-à-dire Belnap bit par bit.
   Réalisé : **les cubes sur disque en miroir inversé** (le cube et son anti-cube, `etat_disque()`, réparation d'une
@@ -284,6 +356,74 @@ compilateur sans Python.
   **L'abîme en mode commun résolu** : l'anti-cube est rangé par symétrie centrale (le mot #RRGGBB à
   #(FF-RR)(FF-GG)(FF-BB), valeurs complémentées) ; la même place des deux fichiers porte deux mots différents, donc le
   même bit inversé ou la même page effacée dans les deux devient deux erreurs distinctes, rectifiées par l'ombre.
+
+---
+
+## 6 bis. Belenos : le moteur graphique, la forge sur les cœurs, Taranis (7 – 8 novembre)
+
+*Le détail est dans `vtx-reactions.md`, sections 13 à 26 ; ici, ce qui reste.*
+
+- **Le fluide et le tapis roulant** (`belenos/`) : la méthode de Boltzmann sur réseau, en entiers à virgule fixe de 24
+  bits (les mêmes nombres partout). L'idée du créateur, les Hex qui descendent vers l'ombre en boucle sans fin : on ne
+  déplace pas les données, on déplace le repère ; un seul tampon. Forgé : **deux fois plus vite** que la copie, la moitié
+  de la mémoire. Les tourbillons de Kelvin-Helmholtz se forment au bout de 2 500 pas. Décidé : le tapis roulant est la
+  voie principale.
+- **L'ombre en nuances** (l'idée du créateur : l'ombre va du plus noir au plus blanc, seulement si le nombre de caches
+  l'exige) : les pages de Lugus en seize cases (noire), un annuaire par étage (grise), la table et le disque (blanche).
+  Les grandes grilles 22 à 25 fois plus vite, les petites inchangées.
+- **Les tuiles** (une ombre par étage, côte à côte : le rendu par tuiles des cartes de téléphone) : justes et
+  parallélisables, plus lentes sur le processeur ; gardées pour la carte graphique. **L'accordéon** (les meurtrières des
+  bunkers) : le même nombre de cases par étage, chaque étage deux fois plus étendu, le centre net ; fait pour le relief du
+  tableau (trois étages), avec une limite mesurée (un sol vu en rasant demande des étages en √2).
+- **Le tableau, « Les puys au soir »** (`belenos/auvergne.vtx`, vtx seul) : le relief de 1 024 × 1 024, treize puys, le
+  lac et ses vrais reflets, les ombres depuis le soleil peint, les arbres, un buron et des vaches Salers, le PNG écrit par
+  le programme ; 2K et 4K, la même image octet pour octet sur Lugus et forgée. **L'anticube de l'image** (idée du
+  créateur) : un état de Belnap par point (ciel inconnu, terre fausse, eau vraie, rive variable) ne garde que ce qui doit
+  renvoyer le reflet : 70 % des reflets économisés. **Le rendu différé** (les reflets et les ombres à la toute fin, pour
+  tout ce qui est dans l'image) : un bosquet et un buron posés sur la rive ont leur reflet sans une ligne pour eux.
+- **Les cylindres** (la forge sur les cœurs) : une boucle `en segments` dont le corps ne touche que le cube est jouée par
+  plusieurs cylindres, chacun sur son propre cube (copie à l'écriture), fondus ensuite mot à mot avec un état de Belnap
+  par mot (inconnu : intact, vrai : un seul l'a changé, variable : deux l'ont changé différemment) ; une dépendance vue,
+  tout est rejoué en ordre. Le résultat est toujours celui de Lugus. Sur 24 cœurs, chez le créateur : 2K de 1,67 s à
+  **0,68 s**.
+- **Taranis, la carte graphique** : vtx écrit lui-même son SPIR-V (`taranis/spirv.py`) et parle à Vulkan sans
+  bibliothèque (`taranis.rs`) ; sur la RTX 3070, accepté du premier coup, les mêmes mots que le processeur ; 16 millions
+  de nombres brassés : **0,9 ms** de calcul sur la carte, contre 170 ms pour le C sur 24 cœurs. La forge écrit le noyau
+  d'une boucle vtx (`noyau_vtx.py`) : 104 boucles tirées au hasard, les mêmes mots que Lugus, sur SwiftShader et sur la
+  carte. La règle apprise : les données restent dans la carte, seul ce qui doit sortir redescend.
+- **Les propositions pour dépasser DirectX** (section 18) : les mêmes nombres sur toutes les cartes (vérifiables par
+  l'empreinte), les barrières déduites des dépendances, l'ADN sur la carte, la même source pour Vulkan et DirectX par
+  SPIR-V. Honnêtement : battre DirectX en vitesse brute n'est pas à portée ; la même image partout, oui.
+- **L'autonomie** (8 novembre) : vtx fait ses .exe Windows lui-même (le socle Windows de `natif/`, puis les .exe de
+  Lugus), sans Rust chez l'utilisateur.
+
+## 6 ter. La chimie du programme et l'ADN vivant (31 octobre – 15 novembre)
+
+*Le détail est dans `vtx-reactions.md` (sections 1 à 12, puis 40 à 53).*
+
+- **Les réactions** : les atomes sont le code, les liaisons sont les données ; l'élément d'un atome (H, O, N, C) est
+  déduit de sa valence ; l'ordre des lignes ne compte pas, le compilateur range les atomes par vagues (ce qui n'est pas
+  lié réagit ensemble, sur plusieurs cœurs une fois forgé). Les contrats (`exige`, `garantit`), les unités physiques, les
+  exemples vérifiés, les erreurs en Belnap (une division par zéro porte variable), les tableaux, plusieurs résultats,
+  `selon`. Les deux compilateurs, les mêmes mots.
+- **Les souvenirs** (le calcul incrémental) : un atome lourd et pur garde ses dernières réactions, seize places rangées
+  comme Fischer ; la scène rappelée 60 fois, 10 fois moins d'instructions. **La provenance** : « pourquoi cette valeur
+  vaut 42 ? », l'arbre des liaisons jusqu'aux constantes (`lugus pourquoi`, Ctrl+P dans Ogmios).
+- **L'ADN fiable** : trois témoins, la triangulation, version 4 aux neutrons quaternaires ; zéro erreur muette dans tous
+  les essais. **L'ADN vivant** : les introns signalés (GU…AG), les isotopes lourds, le texte gardé et la
+  rétrotranscription, l'épigénome (ce qui est appris, gardé : 995 389 instructions, puis 5 181), l'épissage alternatif
+  (les isoformes rapide, sur, memoire, complet, arnc), la patrouille et l'apoptose (éteintes par défaut : trois couches,
+  pas vingt).
+- **Le codon et le gène** : trois lectures lues ensemble, 20 situations sans ordre, 40 avec ordre ; la contradiction
+  gardée en suspens avec un délai ; le gène, une chaîne de codons qui situe la famille qui se contredit (le compte de tous
+  décide mieux : Condorcet ; le gène sert à localiser). `selon (a, b, c)` et `selon {a, b, c}` sur plusieurs lectures.
+  Le combat : un garde à quatre réactions gagne 499 combats sur 500 ; face à un adversaire qui apprend, le hasard
+  devant la contradiction passe devant la réaction fixe.
+- **Le chemin en vtx, dans les deux sens** : le lecteur d'ADN écrit en vtx range, relit, transcrit, rétrotranscrit,
+  écrit le hex et le cube, et vérifie le texte gardé (vtxc128 sur une machine fille). L'ADN est à environ 92 % écrit en
+  vtx ; vtx en tout, environ 49 %.
+- **La carte et les promesses** (sections 1 bis, 6 et 7) : le contexte d'un programme rangé avec lui ; un brin sans carte
+  dit ses noms et ses promesses inconnus.
 
 ---
 
@@ -380,6 +520,21 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
     l'anti-cube.
 13. **La correction d'erreur diamant**, dont l'état est un logique de Belnap.
 14. **Les tables du compilateur dans des cubes jetables**, rangées par rôle et durée de vie, hachées en Robin Hood.
+15. **Le programme en chimie** : des atomes à l'élément déduit de la valence, des liaisons, des vagues ; les contrats,
+    les unités, les exemples et les erreurs en Belnap dans la réaction.
+16. **L'ADN qui se répare et se prouve** : trois témoins et la triangulation, les neutrons quaternaires sur GF(4), le
+    texte gardé et la signature du compilateur (vrai, faux, inconnu à la rétrotranscription).
+17. **L'ADN vivant** : les isoformes d'un même ADN, l'épigénome (ce qui est appris, gardé), la patrouille et
+    l'apoptose d'un isotope lourd (aucun résultat faux rendu sans le dire).
+18. **Le chemin dans les deux sens** : vtx → ARNc ⇄ ADN ⇄ hex ⇄ cube, chaque station rend les mêmes mots ; le programme
+    naît en ARN et se fixe en ADN.
+19. **La carte à six faces et son centre**, rangée avec le programme, et **les promesses** qu'elle juge.
+20. **Le codon et le gène** : la contradiction gardée en suspens, lue comme un codon ; `selon` sur plusieurs lectures.
+21. **Le tapis roulant** (le repère qui avance au lieu des données), **l'ombre en nuances**, **l'anticube de l'image**
+    (ne calculer le reflet que là où il le faut), **l'accordéon** et le rendu différé de Belenos.
+22. **Les cylindres fondus en Belnap** : chaque cœur sur son cube, la fusion mot à mot dit inconnu, vrai ou variable ;
+    le résultat est toujours celui de la machine.
+23. **Le SPIR-V écrit par vtx**, sans HLSL ni GLSL, juste du premier coup sur une vraie carte.
 
 ### 9.2 Améliorées (techniques connues, adaptées au cube)
 
@@ -400,7 +555,12 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 - **Corrigé** : les gains « sur N canaux » des cylindres (trop beaux) ; les sauts limités à 65 536 mots ; la mémoire
   qui dure (un texte écrit dans le programme, rangé dans le tas, changeait à la recompilation) ; le premier flottant
   de 128 bits (binary128 de l'IEEE) remplacé par un format quaternaire ; un `.bat` livré en fins de ligne Unix.
-- **En pause** : le ScoR (v1 faite) ; le jeu ; la traduction native (`natif/`, mise de côté).
+- **Écarté aussi (15 novembre)** : T comme indicateur à côté de U, pour jouer sur deux plans (« c'est une connerie »,
+  le créateur) ; le miroir ternaire ; six étages (l'étage d'une adresse est un quit : on reste quaternaire).
+- **Corrigé aussi** : l'annonce que la troisième lettre du codon serait la moins sensible (c'était la plus sensible) ; la
+  première règle du gène (une famille partagée bloquait tout) ; la machine qui coupait à 4 096 caractères un texte en
+  mémoire ; Lugus qui lisait le dernier nombre de son compilateur pour un 0.
+- **En pause** : le ScoR (v1 faite) ; le jeu ; Senos (gelé : il se lit, il ne reçoit plus rien).
 - **Retiré** : la machine Java ; les machines JavaScript ne sont pas portées au SPU-64.
 
 ---
@@ -413,21 +573,28 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 - **Corriger honnêtement** : une erreur trouvée est écrite dans ce carnet, avec sa correction.
 - Les `.bat` livrés sont en **CRLF et ASCII** ; le créateur les lance lui-même.
 - Le SPU-32 et ses programmes restent tels quels : le SPU-64 vit à côté.
+- **Le crible** : une idée, un essai chiffré ; ce qui ne sert pas se retire (section 1 bis, point 9).
+- **Le doute ne se comble pas** : ce qui n'est pas su est dit inconnu (section 1 bis, point 8).
+- Chaque livraison a un nom neuf ; le créateur lance lui-même les `.bat` déposés dans `Claude outputs` ; l'œuvre est
+  protégée (`AUTEUR.md`) et ne se diffuse pas hors de ses dossiers.
 
 ---
 
 ## 11. Feuille de route
 
-1. **Fait** : SPU-64 (machines Python et Rust), vtx64.py, vtxc64 et son point fixe, les tables dans les cubes.
-2. **Fait (23 octobre)** : vtxc64 embarqué dans **vtx64.exe** (sans Python) et l'atelier Rust sur la SPU-64.
-   **Fait (24 octobre)** : l'expansion en ligne des petites fonctions (vtx64.py et vtxc64 ensemble).
-   **Ensuite** : le générateur natif (x86-64 et PE écrits en vtx) pour l'autonomie complète.
-3. **L'atelier sur le SPU-64 écrit en vtx**, à la façon de VS Code (une couche mince de la machine pour la fenêtre,
-   les événements, les dossiers et le presse-papiers) ; le brin posé automatiquement.
-4. **Gobatix** : la zone de modélisation dans un cube vide, remplir, creuser, peindre, en xyz hexadécimal.
-5. Plus tard : des instructions petuar si la vitesse gêne ; la vitesse en général ; le ScoR v2 ; le recuit simulé
-   (un vrai algorithme à température) pour l'allocation des registres, si les deux compilateurs l'appliquent avec le
-   même hasard déterministe.
+*Mise à jour le 15 novembre 2026 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
+
+1. **Les lectures** : `supposons x parmi [a, b, c] { … }` et `retenir` : plusieurs interprétations ouvertes (U), les
+   contrats qui en éliminent, une retenue (T) avec la raison du choix ; la carte donne le contexte qui tranche. Ce qui
+   rapproche vtx du langage humain (le doute, l'homophone, l'interprétation), et le rend natif pour une IA.
+2. **Le cœur du langage** : les fonctions passées en valeur, les modules désignés par leur empreinte (un module est un
+   ADN signé, chaque usage une transcription).
+3. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
+   le travail, l'ADN pour le gardé, et moins de formats de fichiers.
+4. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine
+   pendant qu'elle tourne (le registre tridimensionnel).
+5. **Belenos** : le tapis roulant dans chaque tuile, le fluide dans la toile, puis sur la carte (Taranis) ; **Gobatix**
+   (le modeleur) dans le cube vide.
 6. Le but lointain : le SPU spectral (section 2), d'abord sur un banc d'essai à une liaison et des LED adressables.
 
 ---
@@ -449,6 +616,10 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 | SPU-64 | *dunon* | forteresse, enceinte | attesté (Lugdunum, Verdun) ; proposé |
 | SPU-128 | *Lugus* | dieu de la lumière et de tous les arts | attesté ; proposé (Lugdunum : Lugus bâti sur Dunon) |
 | SPU-256 | *albios* | monde lumineux, blanc | attesté (Albiorix) ; proposé, pour plus tard |
+| l'atelier | *Ogmios* | dieu de l'éloquence, qui entraîne les hommes par la langue | attesté (Lucien) ; adopté |
+| le moteur graphique | *Belenos* | dieu brillant, de la lumière et du soleil | attesté ; adopté |
+| la carte graphique | *Taranis* | dieu du tonnerre, à la roue | attesté ; adopté |
+| la forge écrite en vtx | *Gobannos* | le dieu forgeron | attesté ; prévu |
 
 ## 13. Glossaire
 
@@ -459,13 +630,32 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 - **accord, mesure, note, segment, cylindre** : la partition des tâches.
 - **point fixe** : un compilateur qui se recompile à l'identique.
 - **SPU** : le processeur du cube. **SPRAM** : sa RAM spectrale étagée. **MAR** : le registre d'adresse à 8 lasers.
+- **étage, dans Lugus** : 0 le code et la pile, 1 les cubes, 2 le travail, 3 le tas, les souvenirs et la provenance
+  (dans le SPU rêvé : CPU, GPU, partagé, disque).
+- **molécule** : une fonction ou une réaction compilée ; **atome** : une ligne d'une réaction ; **liaison** : une donnée
+  qui va d'un atome à un autre ; **vague** : les atomes qui réagissent ensemble.
+- **ADN** : le programme rangé pour durer (ses mots, ses témoins, son texte, sa carte). **ARN, ARNc** : une copie de
+  travail ; l'ARNc porte tout et se rétrotranscrit en ADN entier. **isoforme** : une sorte d'ARN (rapide, sur, memoire,
+  complet, arnc). **intron** : une section que le lecteur garde sans la comprendre. **coiffe** : la signature des mots
+  d'un ARN, vérifiée avant de le lancer.
+- **signature, ombre, neutrons** : les trois témoins de l'ADN ; **triangulation** : une réparation gardée seulement si
+  deux témoins l'appuient.
+- **isotope lourd** : une réaction marquée `lourd`, surveillée à l'entrée et à la sortie ; **patrouille, apoptose** : la
+  relecture du code pendant qu'il tourne ; l'arrêt plutôt qu'un résultat incertain. **épigénome** : les souvenirs
+  appris, gardés dans l'ADN.
+- **codon, gène** : trois lectures lues ensemble ; une chaîne de codons. **hex, cube** : les mots écrits à la main de
+  l'homme, chacun à sa place ; les mots rangés dans la mémoire en cube.
+- **carte, faces, centre** : le contexte de chaque molécule rangé avec le programme (section 1 bis, point 6) ;
+  **promesse** : ce que le programmeur promet et que la machine vérifie (point 7).
+- **tapis roulant, accordéon, tuile, cylindre** : les techniques de Belenos (section 6 bis).
 
 ---
 
 # Annexe : le journal d'origine (versions 0.1 à 0.4)
 
 *Gardé tel quel : la trace de ce qui a été imaginé, mesuré et corrigé, programme après programme, jusqu'au
-20 octobre 2026. La suite (autonomie, SPU-64) est dans `vtx-0-5-autonomie.md`.*
+20 octobre 2026 (puis quelques entrées jusqu'au 31 octobre). La suite est dans `vtx-0-5-autonomie.md` (l'autonomie, le
+SPU-64) et dans `vtx-reactions.md` (les réactions, Belenos, la 0.6).*
 
 Carnet vivant : à chaque programme écrit, on note ce qui manquait au langage. Dernière mise à jour : 20 octobre 2026, vtx 0.4 (flottants binary32, entiers de 64 bits, débogueur au niveau du source, partition automatique des tâches) et « Labyrinthe du cube » version 3. Référence complète du langage : `vtx-syntaxe-v0-4.md`.
 
