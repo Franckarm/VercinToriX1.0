@@ -2526,3 +2526,49 @@ l'ARNc refusés ; les mêmes messages que la référence ; le chemin, elle-même
 paillasse montrent la promesse tenue ; `touche partout` refusé par les deux compilateurs. vtxc128 renouvelé (point
 fixe) ; les suites des compilateurs, de l'ADN, de la carte, du chemin, de la patrouille, de la provenance et de la
 paillasse restent conformes.
+
+## 54. Supposons : essayer, écarter, noter, retenir (15 novembre, 0.6s)
+
+Le doute devient une instruction. Un humain qui cherche dit « supposons que ce soit celui-ci… non, il ne tient pas ;
+celui-là, il vaut 8 ; je retiens le meilleur » : c'est une écriture faite pour explorer plusieurs raisonnements et garder
+le résultat, avec **la façon dont il a été obtenu**.
+
+```
+supposons x parmi [3, 8, 5, 12] {
+    @3[100] = x;                   // défait après chaque lecture
+    si x > 10 { ecarter; }
+    noter x;
+} retenir r;                       // x = 8, r = vrai, @3[100] inchangé
+```
+
+- **Chaque candidat est calculé une fois**, puis lu à tour de rôle dans `x`. La lecture peut **écarter** le candidat
+  (`ecarter;` ou `écarter;`) ou le **noter** (`noter E;`, un entier, comparé signé ; la plus grande note gagne).
+- **Ce que la lecture écrit en mémoire est défait** après elle : elle est jouée dans une hypothèse (§ hypothèse), mais
+  seulement si elle écrit. Une lecture qui ne fait que lire ne coûte pas de journal, et une fonction `touche rien` peut
+  supposer : sa promesse tient (vérifié par le juge de la carte).
+- **Le verdict est un logique de Belnap**, et c'est là le cœur : `retenir r` dit **faux** si aucun ne survit, **vrai** si
+  un seul survit ou si une note est seule en tête, **inconnu** si plusieurs survivent sans que rien ne les départage (le
+  manque d'information), **variable** si plusieurs sont ex aequo (l'excès : deux réponses aussi bonnes). Le choix lui-même
+  est toujours défini (le premier candidat, le premier survivant ou le premier des meilleurs), mais le programme sait
+  **s'il peut s'y fier** : `selon r { vrai { … } inconnu { … } variable { … } faux { … } }`.
+- **Rendu en instructions ordinaires** par les deux compilateurs, exactement les mêmes : des variables cachées
+  `__supN_…` (les candidats, le meilleur, la meilleure note, les ex aequo, les survivants), une boucle sur les candidats,
+  une chaîne de `si` pour poser `x`, la lecture dans une boucle à un tour (écarter = noter l'écart, puis `arrêter`), et
+  l'hypothèse si la lecture écrit. Aucune instruction nouvelle de la machine : Lugus et sa traduction x86-64 n'ont rien
+  à apprendre.
+- `supposons`, `parmi`, `ecarter`, `noter`, `retenir` ne sont pas réservés : ils ne comptent qu'à leur place (une
+  fonction utilisateur peut s'appeler `noter`, hors d'une lecture).
+
+**Limites, dites.** Les lectures sont jouées l'une après l'autre, pas en parallèle (les cylindres le pourraient : piste
+ouverte, car une lecture qui n'écrit pas est indépendante des autres). Comme l'hypothèse, les variables locales et les
+écritures faites par les fonctions appelées ne sont pas défaites ; ce qui est affiché reste affiché. La note est un
+entier (pas un flottant). `retour`, `arrêter` et `continuer` ne sortent pas d'une lecture ; `ecarter` dans une boucle de
+la lecture ne sort que de cette boucle (le candidat est quand même écarté). Au plus 64 candidats. Seulement sur Lugus
+(vtx128.py et vtxc128) ; Dunon et Senos ne l'ont pas.
+
+**Vérifié** (`tests/test_supposons.py`, 10 contrôles) : l'exemple `exemples128/supposons.vtx` et un mélange (textes,
+flottants, boucles, supposons dans supposons, hypothèse dans la lecture, 12 candidats, une fonction nommée `noter`)
+donnent les mêmes mots par les deux compilateurs et affichent ce qu'ils doivent ; les quatre verdicts ; la mémoire
+défaite ; une fonction `touche rien` qui suppose tient sa promesse ; cinq refus, les mêmes des deux côtés. vtxc128
+renouvelé (point fixe 184 211 mots).
+

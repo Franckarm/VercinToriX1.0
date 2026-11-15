@@ -2466,6 +2466,8 @@ class Analyseur:
                 self.fin()
                 if self.ctx and self.ctx[-1][0] == "hyp":
                     raise VtxError(f"ligne {l} : « {v} » ne peut pas sortir d'une hypothèse : utilisez annuler ou valider")
+                if self.ctx and self.ctx[-1][0] == "sup":
+                    raise VtxError(f"ligne {l} : « {v} » ne peut pas sortir d'une lecture de « supposons » : utilisez écarter")
                 return ("arreter" if v == "arrêter" else "continuer", l)
             if v == "hypothèse":
                 if any(c[0] == "segment" for c in self.ctx):
@@ -2484,10 +2486,28 @@ class Analyseur:
             if v == "retour":
                 if any(c[0] == "hyp" for c in self.ctx):
                     raise VtxError(f"ligne {l} : « retour » interdit dans une hypothèse : validez ou annulez d'abord")
+                if any(c[0] == "sup" for c in self.ctx):
+                    raise VtxError(f"ligne {l} : « retour » interdit dans « supposons » : la supposition doit finir")
                 e = None if self.fin_possible() else self.expr()
                 self.fin()
                 return ("retour", e, l)
             raise VtxError(f"ligne {l} : « {v} » inattendu ici")
+        if k == "id" and v == "supposons" and self.regard(1)[0] == "id" and self.regard(2)[:2] == ("id", "parmi"):
+            self.suivant()
+            return self.supposons(l)
+        if k == "id" and v in ("ecarter", "écarter") and self.regard(1)[:2] == ("op", ";"):
+            ns = next((c[1] for c in reversed(self.ctx) if c[0] == "sup"), None)
+            if ns is None:
+                raise VtxError(f"ligne {l} : « écarter » n'a de sens que dans une lecture de « supposons »")
+            self.suivant()
+            self.fin()
+            return [("affecter", f"__sup{ns}_e", ("nombre", 1), l), ("arreter", l)]
+        if k == "id" and v == "noter" and any(c[0] == "sup" for c in self.ctx) and self.regard(1)[:2] != ("op", "="):
+            ns = next(c[1] for c in reversed(self.ctx) if c[0] == "sup")
+            self.suivant()
+            e = self.expr()
+            self.fin()
+            return [("affecter", f"__sup{ns}_n", e, l), ("affecter", f"__sup{ns}_o", ("nombre", 1), l)]
         if k == "id" and v == "tableau" and self.regard(1)[0] == "id" and self.regard(2)[:2] == ("op", "["):
             # tableau t[n]; dans une fonction : un tableau dynamique de n cases (sur le tas)
             self.suivant()
@@ -2573,6 +2593,95 @@ class Analyseur:
         declarees(corps)
         internes.discard(var)
         verifier(corps, 0)
+
+    def supposons(self, l):
+        """supposons X parmi [E1, …, En] { CORPS } [retenir R;] : chaque candidat est essayé à tour de rôle dans X ; le
+        corps le lit dans une hypothèse (ce qu'il écrit en mémoire est défait), et peut l'écarter (écarter;) ou lui
+        donner une note (noter E;). Après : X garde le candidat retenu, et R (un logique) dit comment : faux aucun
+        survivant, vrai un seul (ou une meilleure note unique), inconnu plusieurs sans note, variable des ex aequo.
+        Rendu en instructions ordinaires, les mêmes que vtxc128."""
+        if any(c[0] == "segment" for c in self.ctx):
+            raise VtxError(f"ligne {l} : pas de « supposons » dans une boucle en segments")
+        x = self.nom_variable()
+        self.suivant()                      # parmi
+        self.attendre("[")
+        cands = [self.expr()]
+        while self.est_op(","):
+            self.suivant()
+            cands.append(self.expr())
+        self.attendre("]")
+        if len(cands) > 64:
+            raise VtxError(f"ligne {l} : « supposons » essaie au plus 64 candidats")
+        self.nsup = getattr(self, "nsup", 0) + 1
+        ns = self.nsup
+        self.nhyp += 1
+        nh = self.nhyp
+        self.ctx.append(("sup", ns))
+        corps = self.bloc()
+        self.ctx.pop()
+        retenu = None
+        if self.regard()[:2] == ("id", "retenir"):
+            self.suivant()
+            retenu = self.nom_variable()
+            self.fin()
+        h = lambda s_: f"__sup{ns}_{s_}"
+        V = lambda s_: ("var", h(s_), l)
+        N = lambda v_: ("nombre", v_)
+        aff = lambda s_, e_: ("affecter", h(s_), e_, l)
+        eq = lambda a_, b_: ("bin", "==", a_, b_)
+        n = len(cands)
+
+        def choisir(idx):
+            # X = le candidat d'indice idx (une expression) : une chaîne de si sur l'indice
+            ch = None
+            for i in reversed(range(n)):
+                br = [("affecter", x, V(f"c{i}"), l)]
+                ch = ("si", eq(idx, N(i)), br, None if ch is None else [ch], l)
+            return ch
+
+        out = [("soit", h(f"c{i}"), c, l, None) for i, c in enumerate(cands)]
+        out.append(("soit", x, V("c0"), l, None))
+        for s_ in ("m", "max", "eg", "s", "f", "e", "o", "n"):
+            out.append(("soit", h(s_), N(0), l, None))
+        if retenu is not None:
+            out.append(("soit", retenu, ("qnombre", 0), l, "q"))
+        meilleur = [aff("m", ("bin", "+", V("k"), N(1))), aff("max", V("n")), aff("eg", N(1))]
+        noter = ("si", eq(V("m"), N(0)), list(meilleur),
+                 [("si", ("bin", ".>", V("n"), V("max")), list(meilleur),
+                   [("si", eq(V("n"), V("max")), [aff("eg", ("bin", "+", V("eg"), N(1)))], None, l)], l)], l)
+        survit = [aff("s", ("bin", "+", V("s"), N(1))),
+                  ("si", eq(V("s"), N(1)), [aff("f", V("k"))], None, l),
+                  ("si", eq(V("o"), N(1)), [noter], None, l)]
+        def ecrit(bloc):
+            # une écriture en mémoire que l'hypothèse noterait (même parcours que abaisser_hypothese)
+            for st in bloc:
+                g = st[0]
+                if g == "ecrire":
+                    return True
+                if g == "si" and (ecrit(st[2]) or (st[3] is not None and ecrit(st[3]))):
+                    return True
+                if (g == "tantque" and ecrit(st[2])) or (g == "pour" and ecrit(st[4])):
+                    return True
+            return False
+        lire = self.abaisser([("pour", h("t"), N(0), N(1), corps, l, 1)])
+        if ecrit(lire):
+            # la lecture écrit en mémoire : elle est jouée dans une hypothèse, qui défait ces écritures
+            lecture = self.abaisser_hypothese(nh, lire + [("annuler", l)], l)
+        else:
+            lecture = lire[0]
+        tour = [choisir(V("k")), aff("e", N(0)), aff("o", N(0)), aff("n", N(0)), lecture,
+                ("si", eq(V("e"), N(0)), survit, None, l)]
+        out.append(("pour", h("k"), N(0), N(n), tour, l, 1))
+
+        def verdict(q):
+            return [("affecter", retenu, ("qnombre", q), l)] if retenu is not None else []
+        fin = ("si", eq(V("s"), N(0)), [choisir(N(0))] + verdict(1),
+               [("si", eq(V("s"), N(1)), [choisir(V("f"))] + verdict(2),
+                 [("si", eq(V("m"), N(0)), [choisir(V("f"))] + verdict(0),
+                   [("si", eq(V("eg"), N(1)), [choisir(("bin", "-", V("m"), N(1)))] + verdict(2),
+                     [choisir(("bin", "-", V("m"), N(1)))] + verdict(3), l)], l)], l)], l)
+        out.append(fin)
+        return out
 
     def abaisser_hypothese(self, n, corps, l):
         """Bloc d'hypothèse -> boucle à un tour. Les écritures mémoire écrites dans le bloc sont journalisées :

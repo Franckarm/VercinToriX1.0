@@ -134,6 +134,7 @@ pour i dans 0..4096 en segments cumulant histo { histo[g] = histo[g] + 1; }  // 
 arrêter;  continuer;
 retour v;
 hypothèse { …  annuler;  …  valider; … }
+supposons x parmi [a, b, c] { …  ecarter;  …  noter n; … } retenir r;
 ```
 
 **Appels en série** (0.5) : une suite d'appels à la même fonction s'écrit une fois. Le nom et les premiers arguments, puis « : » et les valeurs, séparées par des virgules ; le « ; » ferme la série.
@@ -148,6 +149,26 @@ ecrire_texte(c): "x = ", texte(x),
 C'est une écriture, pas une nouvelle instruction : les deux compilateurs de chaque machine réécrivent la série en appels ordinaires dès la lecture, avant tout le reste ; le code produit est celui des appels écrits à la main, mot pour mot (`tests/test_serie.py`). Chaque appel garde la ligne de sa valeur (le pas à pas s'y arrête). Une valeur peut contenir des virgules entre parenthèses, crochets ou accolades (`P { x: 1, y: 2 }`).
 
 **Hypothèse** : les écritures mémoire écrites dans le bloc sont notées dans un journal ; `annuler;` les défait et sort du bloc ; `valider;` ou la fin du bloc les garde. Les blocs s'imbriquent. Les variables locales et les écritures faites par les fonctions appelées ne sont pas défaites ; `retour`, `arrêter` et `continuer` ne peuvent pas sortir d'une hypothèse ; l'étage 0 y est interdit.
+
+**Supposons** (Lugus, 0.6s) : essayer des candidats l'un après l'autre et garder le meilleur.
+
+```
+supposons x parmi [3, 8, 5, 12] {
+    si x > 10 { ecarter; }         // ce candidat ne survit pas (écarter s'écrit aussi avec l'accent)
+    noter x;                       // sa note : un entier, comparé signé ; la plus grande gagne
+} retenir r;                       // facultatif : r, un logique, dit comment le choix s'est fait
+```
+
+Chaque candidat est calculé une fois, avant les lectures ; à chaque lecture, `x` vaut le candidat. Après, `x` garde le
+retenu et `r` dit comment : **faux** aucun survivant (`x` = le premier candidat), **vrai** un seul survivant ou une
+meilleure note unique, **inconnu** plusieurs survivants sans note (`x` = le premier survivant), **variable** des ex
+aequo (`x` = le premier des meilleurs). Ce que la lecture écrit en mémoire est **défait** après elle (elle est jouée dans
+une hypothèse, seulement si elle écrit : une fonction `touche rien` peut supposer) ; ce qu'elle affiche reste. Comme pour
+l'hypothèse, les variables locales et les écritures des fonctions appelées ne sont pas défaites. `retour`, `arrêter` et
+`continuer` ne sortent pas d'une lecture (on écarte) ; `ecarter;` dans une boucle de la lecture écarte le candidat mais ne
+sort que de cette boucle. Au plus 64 candidats ; pas dans une boucle en segments. `supposons`, `parmi`, `ecarter`,
+`noter` et `retenir` ne sont pas des mots réservés : ils ne comptent qu'à leur place. Voir `docs/vtx-reactions.md`,
+section 54, et `exemples128/supposons.vtx`.
 
 ## 6. Déclarations
 

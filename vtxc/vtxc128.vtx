@@ -236,6 +236,7 @@ structure Ctx {
     pile: Liste,        // contexte d'analyse : 1 boucle, 2 boucle en segments, 3 hypothèse
     nseg,
     nhyp,
+    nsup,               // compteur des « supposons » (variables cachées __supN_…)
     cumul_utilise,
     lex_genre,
     lex_val,
@@ -2816,6 +2817,9 @@ fonction instruction(c: Ctx): Noeud {
             si elem(c.pile, kr) == 3 {
                 erreur(c, l, "« retour » interdit dans une hypothèse : validez ou annulez d'abord");
             }
+            si elem(c.pile, kr) >= 100 {
+                erreur(c, l, "« retour » interdit dans « supposons » : la supposition doit finir");
+            }
         }
         avancer(c);
         soit s5 = noeud(N_RETOUR, l);
@@ -2835,7 +2839,34 @@ fonction instruction(c: Ctx): Noeud {
         si c.pile.n > 0 && elem(c.pile, c.pile.n - 1) == 3 {
             erreur(c, l, "« arrêter » ou « continuer » ne peut pas sortir d'une hypothèse : utilisez annuler ou valider");
         }
+        si c.pile.n > 0 && elem(c.pile, c.pile.n - 1) >= 100 {
+            erreur(c, l, "« arrêter » ou « continuer » ne peut pas sortir d'une lecture de « supposons » : utilisez écarter");
+        }
         retour noeud(ga, l);
+    }
+    si est_id(c, "supposons") && c.tok.suivant.genre == 1 && c.tok.suivant.suivant.genre == 1
+        && egal(c.tok.suivant.suivant.texte, "parmi") {
+        avancer(c);
+        retour analyse_supposons(c, l);
+    }
+    si (est_id(c, "ecarter") || est_id(c, "écarter")) && c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, ";") {
+        soit nse = sup_courant(c);
+        si nse == 0 {
+            erreur(c, l, "« écarter » n'a de sens que dans une lecture de « supposons »");
+        }
+        avancer(c);
+        fin_instr(c);
+        soit se = Noeud { genre: N_AFFECTER, nom: nom_sup(nse, "e"), a: nombre(1, l), ligne: l };
+        se.suivant = noeud(N_ARRETER, l);
+        retour se;
+    }
+    si est_id(c, "noter") && sup_courant(c) != 0 && !(c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "=")) {
+        soit nsn = sup_courant(c);
+        avancer(c);
+        soit sn = Noeud { genre: N_AFFECTER, nom: nom_sup(nsn, "n"), a: expr(c, 0), ligne: l };
+        fin_instr(c);
+        sn.suivant = Noeud { genre: N_AFFECTER, nom: nom_sup(nsn, "o"), a: nombre(1, l), ligne: l };
+        retour sn;
     }
     si est_id(c, "tableau") && c.tok.suivant.genre == 1 && c.tok.suivant.suivant.genre == 4
         && egal(c.tok.suivant.suivant.texte, "[") {
@@ -3792,6 +3823,190 @@ fonction nom_cache2(n, k) {
         ajouter(l, elem(d, i));
     }
     retour texte_de(l, 0, l.n);
+}
+
+// --------------------------------------------------------------------------------------------- supposons
+// supposons X parmi [E1, …, En] { CORPS } [retenir R;] : comme vtx128.py (Analyseur.supposons), les mêmes instructions.
+// Chaque candidat est essayé dans X ; le corps le lit dans une hypothèse (ses écritures en mémoire sont défaites), peut
+// l'écarter ou le noter ; X garde le retenu, R dit comment (faux aucun, vrai un seul ou une meilleure note unique,
+// inconnu plusieurs sans note, variable des ex aequo). Dans la pile d'analyse, une lecture vaut 100 + son numéro.
+fonction sup_courant(c: Ctx) {
+    soit k = c.pile.n;
+    tantque k > 0 {
+        k = k - 1;
+        si elem(c.pile, k) >= 100 {
+            retour elem(c.pile, k) - 100;
+        }
+    }
+    retour 0;
+}
+
+fonction nom_sup(n, suffixe) {
+    soit l = liste();
+    ajouter_texte(l, nom_cache("__sup", n));
+    ajouter(l, '_');
+    ajouter_texte(l, suffixe);
+    retour texte_de(l, 0, l.n);
+}
+
+fonction sup_var(ns, s, l): Noeud {
+    retour var_n(nom_sup(ns, s), l);
+}
+
+fonction sup_aff(ns, s, a: Noeud, l): Noeud {
+    retour Noeud { genre: N_AFFECTER, nom: nom_sup(ns, s), a: a, ligne: l };
+}
+
+fonction sup_si(cond: Noeud, alors: Noeud, autre_: Noeud, l): Noeud {
+    soit r = Noeud { genre: N_SI, a: cond, premier: alors, ligne: l };
+    si autre_ != nul {
+        r.val = 1;
+        r.deuxieme = autre_;
+    }
+    retour r;
+}
+
+// X = le candidat d'indice idx : une chaîne de si sur l'indice (idx est refait à chaque comparaison)
+fonction sup_choisir(ns, x, n, idx, l): Noeud {
+    soit ch: Noeud = nul;
+    soit i = n;
+    tantque i > 0 {
+        i = i - 1;
+        soit br = Noeud { genre: N_AFFECTER, nom: x, a: sup_var(ns, nom_cache("c", i), l), ligne: l };
+        ch = sup_si(bin("==", sup_indice(ns, idx, l), nombre(i, l), l), br, ch, l);
+    }
+    retour ch;
+}
+
+// l'indice : 0 le premier candidat, 1 __supN_k, 2 __supN_f, 3 __supN_m - 1
+fonction sup_indice(ns, idx, l): Noeud {
+    si idx == 0 {
+        retour nombre(0, l);
+    }
+    si idx == 1 {
+        retour sup_var(ns, "k", l);
+    }
+    si idx == 2 {
+        retour sup_var(ns, "f", l);
+    }
+    retour bin("-", sup_var(ns, "m", l), nombre(1, l), l);
+}
+
+fonction sup_meilleur(ns, l): Noeud {
+    soit a = sup_aff(ns, "m", bin("+", sup_var(ns, "k", l), nombre(1, l), l), l);
+    soit b = sup_aff(ns, "max", sup_var(ns, "n", l), l);
+    a.suivant = b;
+    b.suivant = sup_aff(ns, "eg", nombre(1, l), l);
+    retour a;
+}
+
+fonction sup_verdict(retenu, q, l): Noeud {
+    si egal(retenu, "") {
+        retour nul;
+    }
+    retour Noeud { genre: N_AFFECTER, nom: retenu, a: Noeud { genre: N_QNOMBRE, val: q, ligne: l }, ligne: l };
+}
+
+// une écriture en mémoire que l'hypothèse noterait (même parcours que journaliser)
+fonction sup_ecrit(s: Noeud) {
+    tantque s != nul {
+        si s.genre == N_ECRIRE {
+            retour 1;
+        }
+        si (s.genre == N_SI || s.genre == N_TANTQUE || s.genre == N_POUR) && s.op == 0 {
+            si sup_ecrit(s.premier) {
+                retour 1;
+            }
+            si s.genre == N_SI && s.val == 1 && sup_ecrit(s.deuxieme) {
+                retour 1;
+            }
+        }
+        s = s.suivant;
+    }
+    retour 0;
+}
+
+fonction analyse_supposons(c: Ctx, l): Noeud {
+    pour k dans 0..c.pile.n {
+        si elem(c.pile, k) == 2 {
+            erreur(c, l, "pas de « supposons » dans une boucle en segments");
+        }
+    }
+    soit x = nom_variable(c);
+    avancer(c);                         // parmi
+    attendre(c, "[");
+    soit cands = liste();
+    ajouter(cands, bits(expr(c, 0)));
+    tantque c.erreur == 0 && est_op(c, ",") {
+        avancer(c);
+        ajouter(cands, bits(expr(c, 0)));
+    }
+    attendre(c, "]");
+    soit n = cands.n;
+    si c.erreur == 0 && n > 64 {
+        erreur(c, l, "« supposons » essaie au plus 64 candidats");
+    }
+    c.nsup = c.nsup + 1;
+    soit ns = c.nsup;
+    c.nhyp = c.nhyp + 1;
+    soit nh = c.nhyp;
+    ajouter(c.pile, 100 + ns);
+    soit corps = bloc(c);
+    c.pile.n = c.pile.n - 1;
+    soit retenu = "";
+    si est_id(c, "retenir") {
+        avancer(c);
+        retenu = nom_variable(c);
+        fin_instr(c);
+    }
+    soit out: Noeud = nul;
+    pour i dans 0..n {
+        out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, nom_cache("c", i)), a: elem_noeud(cands, i), ligne: l });
+    }
+    out = chainer(out, Noeud { genre: N_SOIT, nom: x, a: sup_var(ns, "c0", l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "m"), a: nombre(0, l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "max"), a: nombre(0, l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "eg"), a: nombre(0, l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "s"), a: nombre(0, l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "f"), a: nombre(0, l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "e"), a: nombre(0, l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "o"), a: nombre(0, l), ligne: l });
+    out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "n"), a: nombre(0, l), ligne: l });
+    si !egal(retenu, "") {
+        out = chainer(out, Noeud { genre: N_SOIT, nom: retenu, val: T_LOG, a: Noeud { genre: N_QNOMBRE, val: 0, ligne: l },
+                                   ligne: l });
+    }
+    // la note : une nouvelle meilleure (aucune encore, ou plus grande, signée), ou un ex aequo
+    soit plus = sup_aff(ns, "eg", bin("+", sup_var(ns, "eg", l), nombre(1, l), l), l);
+    soit egale = sup_si(bin("==", sup_var(ns, "n", l), sup_var(ns, "max", l), l), plus, nul, l);
+    soit grande = sup_si(bin(".>", sup_var(ns, "n", l), sup_var(ns, "max", l), l), sup_meilleur(ns, l), egale, l);
+    soit noter = sup_si(bin("==", sup_var(ns, "m", l), nombre(0, l), l), sup_meilleur(ns, l), grande, l);
+    soit survit = sup_aff(ns, "s", bin("+", sup_var(ns, "s", l), nombre(1, l), l), l);
+    soit premier_survivant = sup_si(bin("==", sup_var(ns, "s", l), nombre(1, l), l), sup_aff(ns, "f", sup_var(ns, "k", l), l), nul, l);
+    survit.suivant = premier_survivant;
+    premier_survivant.suivant = sup_si(bin("==", sup_var(ns, "o", l), nombre(1, l), l), noter, nul, l);
+    // la lecture : pour __supN_t dans 0..1 { CORPS } annuler; dans une hypothèse
+    soit lecture = abaisser_liste(c, Noeud { genre: N_POUR, nom: nom_sup(ns, "t"), a: nombre(0, l), b: nombre(1, l), val: 1,
+                                             premier: corps, ligne: l });
+    si sup_ecrit(lecture) {
+        // la lecture écrit en mémoire : elle est jouée dans une hypothèse, qui défait ces écritures
+        lecture.suivant = noeud(N_ANNULER, l);
+        lecture = bloc_hypothese(c, nh, lecture, l);
+    }
+    soit tour = sup_choisir(ns, x, n, 1, l);
+    tour = chainer(tour, sup_aff(ns, "e", nombre(0, l), l));
+    tour = chainer(tour, sup_aff(ns, "o", nombre(0, l), l));
+    tour = chainer(tour, sup_aff(ns, "n", nombre(0, l), l));
+    tour = chainer(tour, lecture);
+    tour = chainer(tour, sup_si(bin("==", sup_var(ns, "e", l), nombre(0, l), l), survit, nul, l));
+    out = chainer(out, Noeud { genre: N_POUR, nom: nom_sup(ns, "k"), a: nombre(0, l), b: nombre(n, l), val: 1, premier: tour, ligne: l });
+    // le verdict
+    soit v4 = chainer(sup_choisir(ns, x, n, 3, l), sup_verdict(retenu, 3, l));
+    soit v3 = sup_si(bin("==", sup_var(ns, "eg", l), nombre(1, l), l), chainer(sup_choisir(ns, x, n, 3, l), sup_verdict(retenu, 2, l)), v4, l);
+    soit v2 = sup_si(bin("==", sup_var(ns, "m", l), nombre(0, l), l), chainer(sup_choisir(ns, x, n, 2, l), sup_verdict(retenu, 0, l)), v3, l);
+    soit v1 = sup_si(bin("==", sup_var(ns, "s", l), nombre(1, l), l), chainer(sup_choisir(ns, x, n, 2, l), sup_verdict(retenu, 2, l)), v2, l);
+    soit v0 = sup_si(bin("==", sup_var(ns, "s", l), nombre(0, l), l), chainer(sup_choisir(ns, x, n, 0, l), sup_verdict(retenu, 1, l)), v1, l);
+    retour chainer(out, v0);
 }
 
 // Bloc d'hypothèse -> boucle à un tour : annuler défait les écritures notées, valider (ou la fin du bloc) les garde

@@ -79,7 +79,7 @@ Ce qui suit ne change que par une décision du créateur ; le reste du langage s
    humain peut s'y fier sans relire le code ; c'est ce qui rend vtx natif pour l'IA.
 8. **Le doute ne se comble pas.** Ce qui n'est pas su est dit inconnu, jamais deviné ; quand il faut choisir sans savoir,
    le doute va du côté prudent. La grammaire n'a pas d'ambiguïté (un texte ne se lit que d'une façon) : l'ambiguïté vit
-   dans le sens (les quatre valeurs, et bientôt les lectures, `supposons … parmi`).
+   dans le sens (les quatre valeurs, et les lectures : `supposons … parmi … retenir`, 0.6s).
 9. **Le crible.** Chaque ajout vient avec son essai chiffré ; ce qui ne sert pas se retire (trois couches qui servent,
    plutôt que vingt) ; la vitesse ne passe jamais avant le fonctionnement natif (le chemin, l'épissage, les atomes et les
    molécules, Belenos), et les écarts avec C et Rust sont dits tels qu'ils sont mesurés.
@@ -535,6 +535,9 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 22. **Les cylindres fondus en Belnap** : chaque cœur sur son cube, la fusion mot à mot dit inconnu, vrai ou variable ;
     le résultat est toujours celui de la machine.
 23. **Le SPIR-V écrit par vtx**, sans HLSL ni GLSL, juste du premier coup sur une vraie carte.
+24. **Supposons** : essayer des candidats, en écarter, en noter, et retenir le meilleur avec **un verdict de Belnap**
+    (faux aucun, vrai un seul, inconnu rien ne les départage, variable des ex aequo) ; la mémoire écrite par une lecture
+    est défaite. Le doute écrit comme on le pense, rendu en instructions ordinaires.
 
 ### 9.2 Améliorées (techniques connues, adaptées au cube)
 
@@ -584,9 +587,10 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 
 *Mise à jour le 15 novembre 2026 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
 
-1. **Les lectures** : `supposons x parmi [a, b, c] { … }` et `retenir` : plusieurs interprétations ouvertes (U), les
-   contrats qui en éliminent, une retenue (T) avec la raison du choix ; la carte donne le contexte qui tranche. Ce qui
-   rapproche vtx du langage humain (le doute, l'homophone, l'interprétation), et le rend natif pour une IA.
+1. **Les lectures** : `supposons x parmi [a, b, c] { … } retenir r;` est fait (0.6s : écarter, noter, le verdict à
+   quatre valeurs). Reste : jouer les lectures qui n'écrivent pas **ensemble sur les cylindres** ; laisser les contrats
+   (`exige`) écarter d'eux-mêmes ; montrer dans la carte d'où vient le choix. Ce qui rapproche vtx du langage humain (le
+   doute, l'interprétation), et le rend natif pour une IA.
 2. **Le cœur du langage** : les fonctions passées en valeur, les modules désignés par leur empreinte (un module est un
    ADN signé, chaque usage une transcription).
 3. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour

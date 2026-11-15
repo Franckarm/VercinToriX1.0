@@ -1,0 +1,43 @@
+// supposons … parmi … retenir : essayer chaque candidat, en écarter, en noter, et garder le meilleur.
+// Chaque lecture est jouée dans une hypothèse : ce qu'elle écrit en mémoire est défait après elle.
+fonction cout(t) {
+    soit s = 0;
+    pour i dans 0..longueur(t) { s = s + car(t, i); }
+    retour s;
+}
+
+// le plus petit diviseur propre de n parmi quelques nombres premiers, sans rien toucher
+fonction diviseur(n) touche rien {
+    supposons p parmi [2, 3, 5, 7, 11] {
+        si n % p != 0 { ecarter; }
+        noter 0 - p;
+    } retenir r;
+    selon r {
+        vrai { retour p; }
+        autre { retour 0; }
+    }
+}
+
+fonction principal() {
+    @3[100] = 7;
+    supposons x parmi [3, 8, 5, 12] {
+        @3[100] = x;                 // défait après chaque lecture
+        si x > 10 { ecarter; }
+        noter x;
+    } retenir r;
+    afficher("le meilleur :", x, r, "; la mémoire :", @3[100]);
+
+    supposons mot parmi ["chat", "chien", "loup"] {
+        noter 0 - cout(mot);         // le moins coûteux
+    } retenir rm;
+    afficher(mot, rm);
+
+    supposons z parmi [4, 6] { noter 1; } retenir rz;
+    afficher("ex aequo :", z, rz);
+    supposons w parmi [4, 6] { soit a = w; } retenir rw;
+    afficher("sans note :", w, rw);
+    supposons v parmi [4, 6] { ecarter; } retenir rv;
+    afficher("aucun :", v, rv);
+
+    afficher(diviseur(35), diviseur(13), diviseur(12));
+}

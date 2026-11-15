@@ -125,6 +125,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_carte_arn.py")]))
     etapes.append(("les promesses : touche rien, lecture, memoire, monde ; une promesse rompue arrête la compilation",
                    [sys.executable, os.path.join("tests", "test_promesses.py")]))
+    etapes.append(("supposons … parmi … retenir : essayer chaque candidat, écarter, noter, garder le meilleur",
+                   [sys.executable, os.path.join("tests", "test_supposons.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",
