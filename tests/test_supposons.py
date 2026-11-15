@@ -112,7 +112,46 @@ r = lugus("mele.vtx")
 verifier("le mélange : ce qu'il affiche", r.stdout.split("\n")[:6] == ["5", "chat vrai", "4 variable", "1.5 vrai", "1 1 0", "5"],
          r.stdout + r.stderr)
 
-# 3. les refus, les mêmes des deux côtés
+# 3. les contrats d'une lecture (0.6t) : « exige » écarte le candidat qui ne le tient pas
+CONTRAT = """fonction principal() {
+    supposons n parmi [12, 7, 9, 15, 4] {
+        exige n % 3 == 0;
+        exige n > 5 && n < 14;
+        noter n;
+    } retenir r;
+    afficher(n, r);
+    supposons m parmi [1, 2] { exige m > 5; } retenir rm;
+    afficher(m, rm);
+    soit exige = 3;
+    afficher(exige);
+}
+"""
+ecrire("contrat.vtx", CONTRAT)
+m_l, err = mots_lugus("contrat.vtx")
+verifier("exige dans une lecture : les mêmes mots", m_l is not None and m_l == mots_py(CONTRAT)[0], err)
+r = lugus("contrat.vtx")
+verifier("exige écarte : 12 retenu (9 aussi tient, moins bien noté) ; aucun ne tient : faux ; hors d'une lecture, exige est un nom",
+         r.stdout.split("\n")[:3] == ["12 vrai", "1 faux", "3"], r.stdout + r.stderr)
+
+# 4. la carte parle comme le texte : les rouages de l'hypothèse ne sont pas des branches, l'exige d'une lecture n'est pas
+#    une promesse de la fonction
+r = lugus("carte", "ex.vtx")
+bloc_p = r.stderr[r.stderr.find("principal : une fonction"):].split("\n\n")[0]
+bloc_d = r.stderr[r.stderr.find("diviseur : une fonction"):].split("\n\n")[0]
+verifier("la carte : principal « suppose », sans les rouages __hyp_ dans ses branches",
+         "suppose (supposons ou hypothèse" in bloc_p and "__hyp_" not in bloc_p, bloc_p)
+verifier("la carte : l'exige d'une lecture n'est pas compté dans les promesses de diviseur",
+         "ses promesses     : ne rien toucher (tenue)" in bloc_d, bloc_d)
+VTX = os.path.join(racine, "vtx-rs", "target", "release", "vtx" + X)
+lugus("ranger", "ex.vtx")
+open(os.path.join(d, "g.txt"), "w").write("choisir principal\nexplique\n")
+r = subprocess.run([VTX, "paillasse", os.path.join(d, "ex.vtx"), "--faces", os.path.join(d, "ex.adn"),
+                    "--gestes", os.path.join(d, "g.txt")], capture_output=True, text=True, encoding="utf-8", errors="replace")
+verifier("Ogmios : les branches de principal disent « suppose », sans les rouages",
+         "Ses branches : appelle cout, diviseur" in r.stdout and "suppose (supposons" in r.stdout and "__hyp_" not in r.stdout,
+         r.stdout[-1200:] + r.stderr[-300:])
+
+# 5. les refus, les mêmes des deux côtés
 REFUS = [("ecarter;", "écarter"),
          ("supposons x parmi [1] { arrêter; }", "supposons"),
          ("supposons x parmi [1] { retour; }", "supposons"),

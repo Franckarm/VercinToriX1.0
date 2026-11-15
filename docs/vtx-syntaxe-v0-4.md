@@ -165,7 +165,7 @@ meilleure note unique, **inconnu** plusieurs survivants sans note (`x` = le prem
 aequo (`x` = le premier des meilleurs). Ce que la lecture écrit en mémoire est **défait** après elle (elle est jouée dans
 une hypothèse, seulement si elle écrit : une fonction `touche rien` peut supposer) ; ce qu'elle affiche reste. Comme pour
 l'hypothèse, les variables locales et les écritures des fonctions appelées ne sont pas défaites. `retour`, `arrêter` et
-`continuer` ne sortent pas d'une lecture (on écarte) ; `ecarter;` dans une boucle de la lecture écarte le candidat mais ne
+`continuer` ne sortent pas d'une lecture (on écarte) ; `exige CONDITION;` dans une lecture écarte le candidat qui ne la tient pas (0.6t) ; `ecarter;` dans une boucle de la lecture écarte le candidat mais ne
 sort que de cette boucle. Au plus 64 candidats ; pas dans une boucle en segments. `supposons`, `parmi`, `ecarter`,
 `noter` et `retenir` ne sont pas des mots réservés : ils ne comptent qu'à leur place. Voir `docs/vtx-reactions.md`,
 section 54, et `exemples128/supposons.vtx`.

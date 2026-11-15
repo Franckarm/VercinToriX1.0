@@ -2952,7 +2952,12 @@ fonction lire_entetes() {
         }
         soit ex = 0;
         soit ga = 0;
+        // les contrats d'une réaction (dans une fonction, « exige » ne vit que dans une lecture de « supposons » :
+        // il parle d'un candidat, pas de la fonction)
         pour j dans i..fin + 1 {
+            si genre != 2 {
+                arrêter;
+            }
             si ligne_mot(j, "exige") {
                 ex = ex + 1;
             } sinon si ligne_mot(j, "garantit") {
@@ -3699,6 +3704,42 @@ fonction ecrire_nom_mol(k) {
     }
 }
 
+// un rouage : une molécule du journal des hypothèses (__hyp_…), que « supposons » et « hypothèse » appellent ; la
+// carte la range à part, pour parler comme le texte
+fonction rouage(k) {
+    si k == 4294967295 {
+        retour 0;
+    }
+    soit d = @2[FOFF + 32 * k + 1];
+    si champ_fin(k, 1) - d < 6 {
+        retour 0;
+    }
+    soit p = "__hyp_";
+    pour i dans 0..6 {
+        si @2[CARTEB + d + i] != car(p, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// retire les rouages d'une liste de débuts : rend le nombre restant ; @2[liste + 999] : combien ont été retirés
+fonction sans_rouages(liste, n) {
+    soit r = 0;
+    soit ote = 0;
+    pour i dans 0..n {
+        soit x = @2[liste + i];
+        si rouage(ligne_de_debut(x)) {
+            ote = ote + 1;
+        } sinon {
+            @2[liste + r] = x;
+            r = r + 1;
+        }
+    }
+    @2[liste + 999] = ote;
+    retour r;
+}
+
 fonction mot_touche(n) {
     si n == 0 {
         ecrire_t(1, "rien");
@@ -3893,12 +3934,19 @@ fonction montrer_molecule(k, avec_temoins) {
     ecrire_car(1, 10);
     // ses branches
     ecrire_t(1, "  ses branches      : ");
-    soit na = liste_de(k, 8, CTMP + 1000);
-    si na == 0 {
+    soit na = sans_rouages(CTMP + 1000, liste_de(k, 8, CTMP + 1000));
+    soit rouages = @2[CTMP + 1999];
+    si na == 0 && rouages == 0 {
         ecrire_t(1, "n'appelle rien (une feuille)");
-    } sinon {
+    } sinon si na > 0 {
         ecrire_t(1, "appelle ");
         ecrire_liste_noms(CTMP + 1000, na);
+    }
+    si rouages > 0 {
+        si na > 0 {
+            ecrire_t(1, " ; ");
+        }
+        ecrire_t(1, "suppose (supposons ou hypothèse : le journal qui défait les écritures)");
     }
     ecrire_car(1, 10);
     // ses promesses

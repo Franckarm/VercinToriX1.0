@@ -936,6 +936,7 @@ impl Faces {
     fn liste(&self, champ: &str) -> String {
         let v: Vec<String> = champ.split(',').filter(|x| !x.is_empty())
             .map(|x| x.parse::<usize>().ok().and_then(|d| self.noms.get(&d).cloned()).unwrap_or_else(|| format!("m{}", x)))
+            .filter(|n| !n.starts_with("__hyp_"))
             .collect();
         if v.len() > 8 {
             format!("{} et {} autres", v[..8].join(", "), v.len() - 8)
@@ -985,8 +986,17 @@ impl Faces {
         t.push_str(&format!("Ses racines : {}{}.\r\n",
                             if c[9].is_empty() { "appelée par personne (sinon par elle-même)".to_string() } else { format!("appelée par {}", self.liste(&c[9])) },
                             pr));
-        t.push_str(&format!("Ses branches : {}.\r\n",
-                            if c[8].is_empty() { "n'appelle rien (une feuille)".to_string() } else { format!("appelle {}", self.liste(&c[8])) }));
+        // les rouages du journal des hypothèses (supposons, hypothèse) sont dits à part, comme le texte les écrit
+        let rouages = c[8].split(',').filter_map(|x| x.parse::<usize>().ok())
+            .filter(|d| self.noms.get(d).map_or(false, |n| n.starts_with("__hyp_"))).count();
+        let appels = self.liste(&c[8]);
+        let branches = match (appels.is_empty(), rouages > 0) {
+            (true, false) => "n'appelle rien (une feuille)".to_string(),
+            (true, true) => "suppose (supposons ou hypothèse : le journal qui défait les écritures)".to_string(),
+            (false, false) => format!("appelle {}", appels),
+            (false, true) => format!("appelle {} ; suppose (supposons ou hypothèse : le journal qui défait les écritures)", appels),
+        };
+        t.push_str(&format!("Ses branches : {}.\r\n", branches));
         let mut pm = vec![];
         if n(10).unwrap_or(0) > 0 {
             pm.push(format!("exige {}", c[10]));

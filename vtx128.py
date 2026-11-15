@@ -2502,6 +2502,13 @@ class Analyseur:
             self.suivant()
             self.fin()
             return [("affecter", f"__sup{ns}_e", ("nombre", 1), l), ("arreter", l)]
+        if k == "id" and v == "exige" and any(c[0] == "sup" for c in self.ctx) and self.regard(1)[:2] != ("op", "="):
+            # dans une lecture : un contrat ; s'il ne tient pas pour ce candidat, le candidat est écarté
+            ns = next(c[1] for c in reversed(self.ctx) if c[0] == "sup")
+            self.suivant()
+            e = self.expr()
+            self.fin()
+            return [("si", e, [], [("affecter", f"__sup{ns}_e", ("nombre", 1), l), ("arreter", l)], l)]
         if k == "id" and v == "noter" and any(c[0] == "sup" for c in self.ctx) and self.regard(1)[:2] != ("op", "="):
             ns = next(c[1] for c in reversed(self.ctx) if c[0] == "sup")
             self.suivant()

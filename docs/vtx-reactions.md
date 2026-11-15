@@ -2572,3 +2572,40 @@ donnent les mêmes mots par les deux compilateurs et affichent ce qu'ils doivent
 défaite ; une fonction `touche rien` qui suppose tient sa promesse ; cinq refus, les mêmes des deux côtés. vtxc128
 renouvelé (point fixe 184 211 mots).
 
+## 55. Le contrat écarte, la carte parle comme le texte (15 novembre, 0.6t)
+
+**Le contrat d'une lecture.** Dans une lecture de `supposons`, `exige CONDITION;` dit ce qu'un candidat doit tenir ;
+s'il ne le tient pas, il est écarté, sans écrire `ecarter` : « ça ne peut pas être lui, il ne remplit pas la
+condition ».
+
+```
+supposons n parmi [12, 7, 9, 15, 4] {
+    exige n % 3 == 0;
+    exige n > 5 && n < 14;
+    noter n;
+} retenir r;                       // n = 12, r = vrai (9 tient aussi, moins bien noté)
+```
+
+- Rendu par les deux compilateurs en `si CONDITION { } sinon { écarter }` : les mêmes mots. La condition suit les règles
+  de `si` (un logique n'y sert pas : `selon`, ou `== vrai`).
+- Hors d'une lecture, `exige` reste ce qu'il était : un contrat de réaction, ou un nom ordinaire dans une fonction
+  (`soit exige = 3;`). Dans une lecture, `exige = …` reste une affectation.
+- **La carte ne le compte pas comme une promesse de la fonction** : il parle d'un candidat, pas de ce que la fonction
+  promet. Les contrats comptés dans la face « ses promesses » sont ceux des réactions (`chimie/adn.py` et le lecteur en
+  vtx, les mêmes octets).
+
+**La carte parle comme le texte.** Les molécules du journal des hypothèses (`__hyp_debut`, `__hyp_noter`,
+`__hyp_annuler`, `__hyp_valider`) sont les rouages de `supposons` et `hypothèse`, pas ce que le programmeur a écrit :
+la face « ses branches » ne les nomme plus, elle dit « suppose (supposons ou hypothèse : le journal qui défait les
+écritures) », dans `lugus carte` comme dans Ogmios. La carte rangée ne change pas (les rouages y restent, avec ce qu'ils
+touchent) : seul ce qu'on en lit change. `lugus carte --tout` les montre toujours.
+
+**Ce qui n'est pas fait, dit.** L'écriture défaite par une supposition compte toujours dans « ce qu'elle touche » (le
+journal écrit la mémoire) : une fonction `touche rien` qui suppose en écrivant reste refusée. Ne pas la compter demande
+que le juge reconnaisse le journal ; c'est une décision de fond, laissée au créateur.
+
+**Vérifié** (`tests/test_supposons.py`, 15 contrôles) : `exige` donne les mêmes mots, écarte ce qu'il doit, rend faux
+quand aucun candidat ne le tient, reste un nom hors d'une lecture ; la carte et Ogmios disent « suppose » sans les
+rouages, et ne comptent pas l'exige d'une lecture parmi les promesses. vtxc128 renouvelé (point fixe 184 270 mots) ; le
+lecteur d'ADN, les mêmes 15 475 mots par les deux compilateurs.
+

@@ -635,7 +635,8 @@ def entetes(lignes):
         while fin > i and (lignes[fin].strip(" \t") == "" or lignes[fin].startswith("//")):
             fin -= 1
         ex = ga = 0
-        for x in lignes[i:fin + 1]:
+        # les contrats d'une réaction (dans une fonction, « exige » ne vit que dans une lecture de « supposons »)
+        for x in (lignes[i:fin + 1] if kw == "reaction " else []):
             st = x.lstrip(" \t")
             for mot in ("exige", "garantit"):
                 if st.startswith(mot) and (len(st) == len(mot) or st[len(mot)] in " ("):

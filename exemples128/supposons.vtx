@@ -9,7 +9,7 @@ fonction cout(t) {
 // le plus petit diviseur propre de n parmi quelques nombres premiers, sans rien toucher
 fonction diviseur(n) touche rien {
     supposons p parmi [2, 3, 5, 7, 11] {
-        si n % p != 0 { ecarter; }
+        exige n % p == 0;            // un contrat : le candidat qui ne le tient pas est écarté
         noter 0 - p;
     } retenir r;
     selon r {

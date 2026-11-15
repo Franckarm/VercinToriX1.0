@@ -2860,6 +2860,16 @@ fonction instruction(c: Ctx): Noeud {
         se.suivant = noeud(N_ARRETER, l);
         retour se;
     }
+    si est_id(c, "exige") && sup_courant(c) != 0 && !(c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "=")) {
+        // dans une lecture : un contrat ; s'il ne tient pas pour ce candidat, le candidat est écarté
+        soit nsx = sup_courant(c);
+        avancer(c);
+        soit cx = expr(c, 0);
+        fin_instr(c);
+        soit ecart = Noeud { genre: N_AFFECTER, nom: nom_sup(nsx, "e"), a: nombre(1, l), ligne: l };
+        ecart.suivant = noeud(N_ARRETER, l);
+        retour Noeud { genre: N_SI, a: cx, val: 1, deuxieme: ecart, ligne: l };
+    }
     si est_id(c, "noter") && sup_courant(c) != 0 && !(c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "=")) {
         soit nsn = sup_courant(c);
         avancer(c);
