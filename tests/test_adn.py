@@ -149,7 +149,7 @@ texte = open(f_iso_adn, encoding="utf-8").read()
 noms_sec = [n for n, _ in adn.sections_adn(texte)]
 verifier("le fichier : VTXADN04, chaque section entre GU et AG (mots, molecules, ombres, neutrons, isotopes, source, "
          "compilateur)", texte.startswith("VTXADN04\n")
-         and noms_sec == ["mots", "molecules", "ombres", "neutrons", "isotopes", "source", "compilateur", "carte"], str(noms_sec))
+         and noms_sec == ["mots", "molecules", "ombres", "neutrons", "isotopes", "source", "compilateur", "faces"], str(noms_sec))
 # une section inconnue (d'une version future) est sautée sans être analysée, et gardée telle quelle
 t_x = adn.copie_temoins(t_i)
 t_x["introns"].insert(0, ("avenir", ["GU faux 3", "AG", "n'importe quoi"]))

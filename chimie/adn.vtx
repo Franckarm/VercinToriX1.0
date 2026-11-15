@@ -45,6 +45,7 @@ constante CHEMIN4 = 7197900;     // table CRC2 (jusqu'à 7 197 536) et le brouil
 constante CHEMIN5 = 7198200;
 constante CHEMIN6 = 7198500;
 constante CHEMIN7 = 7198800;
+constante CHEMIN8 = 7199100;     // le brin rangé avant (0.6q : la face de la mémoire)
 constante NPL = 40000000;        // la carte : les noms (la place, le début dans NCAR, la longueur)
 constante NDEB = 40200000;
 constante NLEN = 40400000;
@@ -59,7 +60,13 @@ constante CALLS = 44000000;
 constante CTMP = 44900000;       // les appels d'une molécule, avant le tri
 constante LST = 45000000;        // le début de chaque ligne du texte (dans INTR)
 constante HDR = 46000000;        // les en-têtes : seize cases chacun
-constante FOFF = 47000000;       // la carte lue : le début de chaque champ (seize par ligne), puis la fin de la ligne
+constante FOFF = 75000000;       // la carte lue : le début de chaque champ (trente-deux cases par ligne), puis la fin
+constante ANCK = 80000000;       // les faces d'avant : la clé (adresse, longueur ; 4294967294 : la tête), l'empreinte,
+constante ANCKL = 80200000;      // l'histoire (adresse, longueur)
+constante ANCE = 80400000;
+constante ANCH = 80600000;
+constante ANCHL = 80800000;
+constante ANCT = 85000000;       // le brin d'avant, lu en entier
 constante DEBK = 49000000;       // la carte lue : le début de chaque molécule
 constante CARTEB = 50000000;     // le texte de la carte
 constante CARTEL = 59000000;     // la carte gardée, quand on la compare
@@ -96,6 +103,9 @@ constante G_CL = 19;             // la longueur du texte de la carte (CARTEB)
 constante G_NH = 20;             // le nombre de fonctions et de réactions écrites dans le texte
 constante G_NL = 21;             // le nombre de lignes du texte
 constante G_NK = 22;             // le nombre de lignes de la carte lue (pour la montrer)
+constante G_NA = 23;             // le nombre de lignes des faces d'avant (4294967295 : pas de rangement d'avant)
+constante G_GARDEE = 25;         // la carte montrée est celle que le brin garde (1), ou refaite de ses mots seuls (0)
+constante G_HCOPIE = 24;         // 1 : l'histoire est recopiée des faces gardées (pour les comparer), pas refaite
 
 constante COLONNE = 251;
 constante OMBRE = 4;
@@ -1732,7 +1742,7 @@ fonction faire_temoins(isotopes) {
     }
 }
 
-fonction ranger(mots, adn, source, isotopes, compilateur, noms) {
+fonction ranger(mots, adn, source, isotopes, compilateur, noms, ancien) {
     soit etat = charger(mots);
     si @2[G + G_ERR] != 0 {
         retour;
@@ -1762,7 +1772,7 @@ fonction ranger(mots, adn, source, isotopes, compilateur, noms) {
         garder_source(source);
     }
     garder_compilateur(compilateur);
-    garder_carte(noms);
+    garder_carte(noms, ancien);
     si @2[G + G_ERR] != 0 {
         retour;
     }
@@ -2401,13 +2411,22 @@ fonction trouver_section(nom) {
 
 // la carte gardée, refaite des mots, du texte et des noms que vient de donner le compilateur : la même ?
 fonction verifier_carte() {
-    si trouver_section("carte") == 0 {
-        ecrire_t(1, "la carte : inconnu, cet ADN n'a pas de carte (rangé avant la 0.6p)\n");
+    si trouver_section("faces") == 0 {
+        si trouver_section("carte") == 1 {
+            ecrire_t(1, "la carte : inconnu, elle a quatre faces (rangée en 0.6p) : rangez de nouveau pour les six\n");
+        } sinon {
+            ecrire_t(1, "la carte : inconnu, cet ADN n'a pas de carte (rangé avant la 0.6p)\n");
+        }
         retour;
     }
     soit d = @2[G + G_SDEB];
     soit l = @2[G + G_SFIN] - d;
+    // l'histoire ne se vérifie pas (elle n'est ni dans le texte ni dans les mots) : elle est recopiée
+    anciens_lignes(INTR + d, INTR + d + l + 1);
+    @2[G + G_HCOPIE] = 1;
     faire_carte(1);
+    @2[G + G_HCOPIE] = 0;
+    trouver_section("faces");
     soit cl = @2[G + G_CL];
     soit ligne = 0;
     soit ecart = 4294967295;
@@ -2545,12 +2564,14 @@ fonction verifier_texte(comp_actuel) {
     }
 }
 
-// --------------------------------------------------------------------------------------------- la carte (0.6p)
-// Pour chaque molécule, une ligne, ses quatre faces : ce qu'elle est (son nom, son genre, ses lignes, sa taille, son
-// en-tête), ce qu'elle touche (0 rien, 1 lit la mémoire, 2 écrit la mémoire, 3 le monde ; elle-même, puis avec ses
-// appels), ses racines (sa profondeur depuis la tête, les molécules qu'elle appelle), ses promesses (exige, garantit,
-// les exemples vérifiés, isotope lourd) :
-//   m<début>|nom|genre|L-E|mots|touche|touche avec ses appels|profondeur|appels|exige|garantit|exemples|lourd|en-tête
+// --------------------------------------------------------------------------------------------- la carte (0.6p, 0.6q)
+// Pour chaque molécule, une ligne, les six faces d'un dé en trois paires opposées : ce qu'elle est | ce qu'elle touche
+// (0 rien, 1 lit la mémoire, 2 écrit la mémoire, 3 le monde ; elle-même, puis avec ses appels) ; ses racines (sa
+// profondeur, qui l'appelle) | ses branches (ce qu'elle appelle) ; ses promesses (exige, garantit, les exemples, isotope
+// lourd) | sa mémoire (son empreinte, son histoire d'un rangement à l'autre : ? n c iK). Le centre, son état de Belnap,
+// se lit à chaque lecture du brin :
+//   m<début>|nom|genre|L-E|mots|touche|avec ses appels|profondeur|appelle|appelée par|exige|garantit|exemples|lourd|
+//   empreinte|histoire|en-tête
 // Tirée des mots, du texte gardé et des noms que donne le compilateur ; chimie/adn.py l'écrit de même (faire_carte).
 
 fonction bas_car(c) {
@@ -3014,6 +3035,192 @@ fonction entete_du_nom(k) {
     retour 4294967295;
 }
 
+
+// FNV-1a sur 64 bits, caractère par caractère
+fonction fnv_lignes(a, b) {
+    soit h = 14695981039346656037;
+    pour i dans a..b + 1 {
+        pour k dans ligne_deb(i)..ligne_fin(i) {
+            h = (h ^ @2[INTR + k]) * 1099511628211;
+        }
+        h = (h ^ 10) * 1099511628211;
+    }
+    retour h;
+}
+
+// les faces d'avant, lues dans la mémoire [a, b) (des lignes de la carte) : leur clé, leur empreinte, leur histoire
+fonction anciens_lignes(a, b) {
+    soit n = 0;
+    soit i = a;
+    tantque i < b && n < 199999 {
+        soit ls = i;
+        soit barres = 0;
+        @2[CTMP] = i;
+        tantque i < b && @2[i] != 10 {
+            si @2[i] == '|' && barres < 16 {
+                barres = barres + 1;
+                @2[CTMP + barres] = i + 1;
+            }
+            i = i + 1;
+        }
+        si barres >= 16 {
+            soit f1 = @2[CTMP + 1];
+            soit f2 = @2[CTMP + 2];
+            soit f3 = @2[CTMP + 3];
+            si f2 - f1 > 1 {
+                @2[ANCK + n] = f1;
+                @2[ANCKL + n] = f2 - f1 - 1;
+            } sinon si f3 - f2 - 1 == 4 && @2[f2] == 't' && @2[f2 + 1] == 'e' && @2[f2 + 2] == 't' && @2[f2 + 3] == 'e' {
+                @2[ANCK + n] = 0;
+                @2[ANCKL + n] = 4294967294;
+            } sinon {
+                @2[ANCK + n] = ls;
+                @2[ANCKL + n] = f1 - ls - 1;
+            }
+            soit e = 0;
+            soit j = @2[CTMP + 14];
+            tantque @2[j] >= 48 && @2[j] <= 57 {
+                e = e * 10 + @2[j] - 48;
+                j = j + 1;
+            }
+            @2[ANCE + n] = e;
+            @2[ANCH + n] = @2[CTMP + 15];
+            @2[ANCHL + n] = @2[CTMP + 16] - @2[CTMP + 15] - 1;
+            n = n + 1;
+        }
+        i = i + 1;
+    }
+    @2[G + G_NA] = n;
+}
+
+// le brin rangé avant : ses faces (la section « faces »), s'il en a
+fonction lire_anciens(chemin) {
+    @2[G + G_NA] = 4294967295;
+    si chemin == 0 {
+        retour;
+    }
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        retour;
+    }
+    soit n = 0;
+    tantque fin_de(f) == 0 && n < 14000000 {
+        @2[ANCT + n] = lire_car(f);
+        n = n + 1;
+    }
+    fermer(f);
+    soit tete = "GU faces ";
+    soit i = 0;
+    tantque i < n {
+        soit ok = 1;
+        pour k dans 0..longueur(tete) {
+            si i + k >= n || @2[ANCT + i + k] != car(tete, k) {
+                ok = 0;
+            }
+        }
+        si ok == 1 {
+            soit j = i + longueur(tete);
+            soit nl = 0;
+            tantque j < n && @2[ANCT + j] >= 48 && @2[ANCT + j] <= 57 {
+                nl = nl * 10 + @2[ANCT + j] - 48;
+                j = j + 1;
+            }
+            j = j + 1;
+            soit d = j;
+            soit vues = 0;
+            tantque j < n && vues < nl {
+                si @2[ANCT + j] == 10 {
+                    vues = vues + 1;
+                }
+                j = j + 1;
+            }
+            anciens_lignes(ANCT + d, ANCT + j);
+            retour;
+        }
+        // à la ligne suivante
+        tantque i < n && @2[ANCT + i] != 10 {
+            i = i + 1;
+        }
+        i = i + 1;
+    }
+}
+
+// la ligne d'avant de même clé que celle qui s'écrit (CARTEB : la ligne commence en ls, le nom de f1 à f2 - 1, le
+// genre est « tete » si tete == 1), ou 4294967295
+fonction ancien_de(ls, f1, f2, tete) {
+    soit na = @2[G + G_NA];
+    pour k dans 0..na {
+        soit a = @2[ANCK + k];
+        soit l = @2[ANCKL + k];
+        si f2 - f1 > 1 {
+            si l == f2 - f1 - 1 {
+                soit ok = 1;
+                pour q dans 0..l {
+                    si @2[a + q] != @2[CARTEB + f1 + q] {
+                        ok = 0;
+                    }
+                }
+                si ok == 1 {
+                    retour k;
+                }
+            }
+        } sinon si tete == 1 {
+            si l == 4294967294 {
+                retour k;
+            }
+        } sinon si l == f1 - ls - 1 {
+            soit ok2 = 1;
+            pour q2 dans 0..l {
+                si @2[a + q2] != @2[CARTEB + ls + q2] {
+                    ok2 = 0;
+                }
+            }
+            si ok2 == 1 {
+                retour k;
+            }
+        }
+    }
+    retour 4294967295;
+}
+
+// l'histoire : « ? » rien d'avant, « n » nouvelle, « c » changée, « iK » inchangée depuis K rangements
+fonction carte_histoire(ls, f1, f2, tete, empreinte) {
+    si @2[G + G_NA] == 4294967295 {
+        carte_car('?');
+        retour;
+    }
+    soit k = ancien_de(ls, f1, f2, tete);
+    si k == 4294967295 {
+        si @2[G + G_HCOPIE] == 1 {
+            carte_car('?');
+        } sinon {
+            carte_car('n');
+        }
+        retour;
+    }
+    si @2[G + G_HCOPIE] == 1 {
+        pour q dans 0..@2[ANCHL + k] {
+            carte_car(@2[@2[ANCH + k] + q]);
+        }
+        retour;
+    }
+    si @2[ANCE + k] != empreinte {
+        carte_car('c');
+        retour;
+    }
+    soit h = @2[ANCH + k];
+    si @2[ANCHL + k] >= 2 && @2[h] == 'i' {
+        soit x = 0;
+        pour q3 dans 1..@2[ANCHL + k] {
+            x = x * 10 + @2[h + q3] - 48;
+        }
+        carte_car('i');
+        carte_nombre(x + 1);
+        retour;
+    }
+    carte_texte("i1");
+}
+
 // la carte, écrite dans CARTEB (une ligne par molécule) ; avec_noms : des noms ont été donnés
 fonction faire_carte(avec_noms) {
     @2[G + G_CL] = 0;
@@ -3061,9 +3268,11 @@ fonction faire_carte(avec_noms) {
     pour k4 dans 0..nm {
         soit base = MOL + 8 * k4;
         soit deb = @2[base];
+        soit ls = @2[G + G_CL];
         carte_car('m');
         carte_nombre(deb);
         carte_car('|');
+        soit f1 = @2[G + G_CL];
         soit kn = 4294967295;
         si deb != 0 && avec_noms == 1 {
             kn = nom_de_place(deb);
@@ -3072,30 +3281,36 @@ fonction faire_carte(avec_noms) {
         si kn != 4294967295 {
             h = entete_du_nom(kn);
         }
+        soit empreinte = @2[base + 1] - deb;
         si h != 4294967295 {
             soit bh = HDR + 16 * h;
             pour q3 dans 0..@2[bh + 1] {
                 carte_car(@2[INTR + @2[bh] + q3]);
             }
-            si @2[bh + 2] == 1 {
+            empreinte = fnv_lignes(@2[bh + 3] - 1, @2[bh + 4] - 1);
+        } sinon si kn != 4294967295 {
+            pour q4 dans 0..@2[NLEN + kn] {
+                carte_car(@2[NCAR + @2[NDEB + kn] + q4]);
+            }
+        }
+        soit f2 = @2[G + G_CL] + 1;
+        soit tete = 0;
+        si h != 4294967295 {
+            si @2[HDR + 16 * h + 2] == 1 {
                 carte_texte("|fonction|");
             } sinon {
                 carte_texte("|reaction|");
             }
-            carte_nombre(@2[bh + 3]);
+            carte_nombre(@2[HDR + 16 * h + 3]);
             carte_car('-');
-            carte_nombre(@2[bh + 4]);
+            carte_nombre(@2[HDR + 16 * h + 4]);
+        } sinon si kn != 4294967295 {
+            carte_texte("|empruntee|0-0");
+        } sinon si deb == 0 {
+            carte_texte("|tete|0-0");
+            tete = 1;
         } sinon {
-            si kn != 4294967295 {
-                pour q4 dans 0..@2[NLEN + kn] {
-                    carte_car(@2[NCAR + @2[NDEB + kn] + q4]);
-                }
-                carte_texte("|empruntee|0-0");
-            } sinon si deb == 0 {
-                carte_texte("|tete|0-0");
-            } sinon {
-                carte_texte("|inconnue|0-0");
-            }
+            carte_texte("|inconnue|0-0");
         }
         carte_car('|');
         carte_nombre(@2[base + 1] - deb);
@@ -3117,6 +3332,26 @@ fonction faire_carte(avec_noms) {
             carte_nombre(@2[CALLS + @2[CAD + k4] + c3]);
         }
         carte_car('|');
+        // qui l'appelle (les débuts croissants : les molécules sont dans l'ordre), sans elle-même
+        soit premier = 1;
+        pour j dans 0..nm {
+            si j != k4 {
+                soit vu = 0;
+                pour c4 dans 0..@2[CAN + j] {
+                    si @2[CALLS + @2[CAD + j] + c4] == deb {
+                        vu = 1;
+                    }
+                }
+                si vu == 1 {
+                    si premier == 0 {
+                        carte_car(',');
+                    }
+                    carte_nombre(@2[MOL + 8 * j]);
+                    premier = 0;
+                }
+            }
+        }
+        carte_car('|');
         si h != 4294967295 {
             soit bh2 = HDR + 16 * h;
             carte_nombre(@2[bh2 + 5]);
@@ -3130,6 +3365,10 @@ fonction faire_carte(avec_noms) {
         carte_car('|');
         carte_nombre(@2[base + 3]);
         carte_car('|');
+        carte_nombre(empreinte);
+        carte_car('|');
+        carte_histoire(ls, f1, f2, tete, empreinte);
+        carte_car('|');
         si h != 4294967295 {
             soit bh3 = HDR + 16 * h;
             pour q5 dans 0..@2[bh3 + 9] {
@@ -3141,13 +3380,15 @@ fonction faire_carte(avec_noms) {
 }
 
 // la carte, rangée dans les introns (après le compilateur)
-fonction garder_carte(noms) {
+fonction garder_carte(noms, ancien) {
     si noms == 0 {
         retour;
     }
     lire_noms(noms);
+    lire_anciens(ancien);
+    @2[G + G_HCOPIE] = 0;
     faire_carte(1);
-    intron_texte("GU carte ");
+    intron_texte("GU faces ");
     intron_nombre(@2[G + G_NM]);
     intron_car(10);
     pour i dans 0..@2[G + G_CL] {
@@ -3157,26 +3398,24 @@ fonction garder_carte(noms) {
 }
 
 // --------------------------------------------------------------------------------------------- la carte montrée
-// Les champs de chaque ligne de CARTEB : FOFF + 16 k + f, le début du champ f (0 à 13), FOFF + 16 k + 14, la fin de la
+// Les champs de chaque ligne de CARTEB : FOFF + 32 k + f, le début du champ f (0 à 16), FOFF + 32 k + 31, la fin de la
 // ligne ; DEBK + k, le début de la molécule.
 fonction lire_carte_texte() {
     soit l = @2[G + G_CL];
     soit k = 0;
     soit f = 0;
-    soit i = 0;
     @2[FOFF] = 0;
-    tantque i < l {
+    pour i dans 0..l {
         soit c = @2[CARTEB + i];
         si c == 10 {
-            @2[FOFF + 16 * k + 14] = i;
+            @2[FOFF + 32 * k + 31] = i;
             k = k + 1;
             f = 0;
-            @2[FOFF + 16 * k] = i + 1;
-        } sinon si c == '|' && f < 13 {
+            @2[FOFF + 32 * k] = i + 1;
+        } sinon si c == '|' && f < 16 {
             f = f + 1;
-            @2[FOFF + 16 * k + f] = i + 1;
+            @2[FOFF + 32 * k + f] = i + 1;
         }
-        i = i + 1;
     }
     @2[G + G_NK] = k;
     pour j dans 0..k {
@@ -3185,16 +3424,16 @@ fonction lire_carte_texte() {
 }
 
 fonction champ_fin(k, f) {
-    si f == 13 {
-        retour @2[FOFF + 16 * k + 14];
+    si f == 16 {
+        retour @2[FOFF + 32 * k + 31];
     }
-    retour @2[FOFF + 16 * k + f + 1] - 1;
+    retour @2[FOFF + 32 * k + f + 1] - 1;
 }
 
-// un nombre au début du champ (« m » sauté) ; « - » : 4294967295
+// un nombre au début du champ (« m » ou « i » sauté) ; « - » : 4294967295
 fonction champ_n(k, f) {
-    soit i = @2[FOFF + 16 * k + f];
-    si @2[CARTEB + i] == 'm' {
+    soit i = @2[FOFF + 32 * k + f];
+    si @2[CARTEB + i] == 'm' || @2[CARTEB + i] == 'i' {
         i = i + 1;
     }
     si @2[CARTEB + i] == '-' {
@@ -3209,11 +3448,15 @@ fonction champ_n(k, f) {
 }
 
 fonction champ_vide(k, f) {
-    retour champ_fin(k, f) == @2[FOFF + 16 * k + f];
+    retour champ_fin(k, f) == @2[FOFF + 32 * k + f];
+}
+
+fonction champ_car(k, f) {
+    retour @2[CARTEB + @2[FOFF + 32 * k + f]];
 }
 
 fonction champ_est(k, f, t) {
-    soit d = @2[FOFF + 16 * k + f];
+    soit d = @2[FOFF + 32 * k + f];
     si champ_fin(k, f) - d != longueur(t) {
         retour 0;
     }
@@ -3226,7 +3469,7 @@ fonction champ_est(k, f, t) {
 }
 
 fonction ecrire_champ(c, k, f) {
-    pour i dans @2[FOFF + 16 * k + f]..champ_fin(k, f) {
+    pour i dans @2[FOFF + 32 * k + f]..champ_fin(k, f) {
         ecrire_car(c, @2[CARTEB + i]);
     }
 }
@@ -3272,24 +3515,22 @@ fonction mot_touche(n) {
     }
 }
 
-// les appels de la ligne k : le j-ième début, ou 4294967295
-fonction appel_de(k, j) {
-    soit i = @2[FOFF + 16 * k + 8];
-    soit f = champ_fin(k, 8);
+// la liste de débuts du champ f de la ligne k (« a,b,c »), rangée en liste : son nombre
+fonction liste_de(k, f, liste) {
+    soit i = @2[FOFF + 32 * k + f];
+    soit fin = champ_fin(k, f);
     soit n = 0;
-    tantque i < f {
+    tantque i < fin {
         soit x = 0;
-        tantque i < f && @2[CARTEB + i] != ',' {
+        tantque i < fin && @2[CARTEB + i] != ',' {
             x = x * 10 + @2[CARTEB + i] - 48;
             i = i + 1;
         }
-        si n == j {
-            retour x;
-        }
+        @2[liste + n] = x;
         n = n + 1;
         i = i + 1;
     }
-    retour 4294967295;
+    retour n;
 }
 
 fonction ecrire_liste_noms(liste, n) {
@@ -3316,8 +3557,26 @@ fonction ecrire_liste_noms(liste, n) {
     }
 }
 
-fonction montrer_molecule(k) {
+// le centre : l'état de la molécule à cette lecture du brin (avec_temoins : le brin a ses témoins)
+fonction ecrire_centre(k, avec_temoins) {
+    soit m = molecule_de(@2[DEBK + k]);
+    si avec_temoins == 0 || m == 4294967295 {
+        ecrire_t(1, "inconnu (ce brin n'a pas de témoins pour la vérifier)");
+        retour;
+    }
+    soit e = @2[MOL + 8 * m + 5];
+    si e == E_FAUX {
+        ecrire_t(1, "faux (réparée à cette lecture)");
+    } sinon si e == E_VARIABLE {
+        ecrire_t(1, "variable (abîmée, non réparée)");
+    } sinon {
+        ecrire_t(1, "vrai (intacte à cette lecture)");
+    }
+}
+
+fonction montrer_molecule(k, avec_temoins) {
     ecrire_car(1, 10);
+    // ce qu'elle est
     ecrire_nom_mol(k);
     ecrire_t(1, " : ");
     soit genre_ecrit = champ_est(k, 2, "fonction") || champ_est(k, 2, "reaction");
@@ -3333,7 +3592,7 @@ fonction montrer_molecule(k) {
         ecrire_t(1, "son nom est inconnu (ce brin n'a pas de carte), ");
     }
     si genre_ecrit {
-        soit i = @2[FOFF + 16 * k + 3];
+        soit i = @2[FOFF + 32 * k + 3];
         tantque @2[CARTEB + i] != '-' {
             ecrire_car(1, @2[CARTEB + i]);
             i = i + 1;
@@ -3348,11 +3607,14 @@ fonction montrer_molecule(k) {
     }
     ecrire_u64(1, champ_n(k, 4));
     ecrire_t(1, " mots\n");
-    si !champ_vide(k, 13) {
+    si !champ_vide(k, 16) {
         ecrire_t(1, "    ");
-        ecrire_champ(1, k, 13);
+        ecrire_champ(1, k, 16);
         ecrire_car(1, 10);
     }
+    ecrire_t(1, "  au centre         : ");
+    ecrire_centre(k, avec_temoins);
+    ecrire_car(1, 10);
     // ce qu'elle touche
     soit d = champ_n(k, 5);
     soit t = champ_n(k, 6);
@@ -3373,22 +3635,7 @@ fonction montrer_molecule(k) {
     ecrire_car(1, 10);
     // ses racines
     ecrire_t(1, "  ses racines       : ");
-    soit nk = @2[G + G_NK];
-    soit nc = 0;
-    pour j dans 0..nk {
-        soit q = 0;
-        soit x = appel_de(j, 0);
-        tantque x != 4294967295 {
-            si x == @2[DEBK + k] && j != k {
-                @2[CTMP + nc] = @2[DEBK + j];
-                nc = nc + 1;
-                x = 4294967295;
-            } sinon {
-                q = q + 1;
-                x = appel_de(j, q);
-            }
-        }
-    }
+    soit nc = liste_de(k, 9, CTMP);
     si champ_est(k, 2, "tete") {
         ecrire_t(1, "la racine du programme");
     } sinon si nc == 0 {
@@ -3405,25 +3652,24 @@ fonction montrer_molecule(k) {
         ecrire_u64(1, pr);
         ecrire_t(1, " pas de la tête");
     }
-    soit na = 0;
-    tantque appel_de(k, na) != 4294967295 {
-        @2[CTMP + 1000 + na] = appel_de(k, na);
-        na = na + 1;
-    }
+    ecrire_car(1, 10);
+    // ses branches
+    ecrire_t(1, "  ses branches      : ");
+    soit na = liste_de(k, 8, CTMP + 1000);
     si na == 0 {
-        ecrire_t(1, " ; n'appelle rien");
+        ecrire_t(1, "n'appelle rien (une feuille)");
     } sinon {
-        ecrire_t(1, " ; appelle ");
+        ecrire_t(1, "appelle ");
         ecrire_liste_noms(CTMP + 1000, na);
     }
     ecrire_car(1, 10);
     // ses promesses
     ecrire_t(1, "  ses promesses     : ");
-    soit lourd = champ_n(k, 12) == 1;
+    soit lourd = champ_n(k, 13) == 1;
     si genre_ecrit {
-        soit ex = champ_n(k, 9);
-        soit ga = champ_n(k, 10);
-        soit ee = champ_n(k, 11);
+        soit ex = champ_n(k, 10);
+        soit ga = champ_n(k, 11);
+        soit ee = champ_n(k, 12);
         soit rien = 1;
         si ex > 0 {
             ecrire_t(1, "exige ");
@@ -3473,6 +3719,31 @@ fonction montrer_molecule(k) {
         }
     }
     ecrire_car(1, 10);
+    // sa mémoire
+    ecrire_t(1, "  sa mémoire        : ");
+    soit hc = champ_car(k, 15);
+    si @2[G + G_GARDEE] == 0 || champ_vide(k, 15) {
+        ecrire_t(1, "inconnue (ce brin n'a pas de carte)");
+    } sinon si hc == '?' {
+        ecrire_t(1, "son histoire est inconnue (rien n'était rangé avant)");
+    } sinon si hc == 'n' {
+        ecrire_t(1, "nouvelle à ce rangement");
+    } sinon si hc == 'c' {
+        ecrire_t(1, "changée depuis le rangement d'avant");
+    } sinon {
+        soit kk = champ_n(k, 15);
+        ecrire_t(1, "inchangée depuis ");
+        ecrire_u64(1, kk);
+        si kk == 1 {
+            ecrire_t(1, " rangement");
+        } sinon {
+            ecrire_t(1, " rangements");
+        }
+    }
+    si genre_ecrit {
+        ecrire_t(1, " (l'empreinte de son texte)");
+    }
+    ecrire_car(1, 10);
 }
 
 // montrer la carte d'un brin : celle qu'il garde, ou ce que ses mots seuls en disent
@@ -3481,8 +3752,9 @@ fonction montrer_carte(chemin, tout) {
     si @2[G + G_ERR] != 0 {
         retour etat;
     }
+    soit avec_temoins = @2[G + G_TEM];
     soit gardee = 0;
-    si trouver_section("carte") == 1 {
+    si trouver_section("faces") == 1 {
         gardee = 1;
         soit d = @2[G + G_SDEB];
         soit f = @2[G + G_SFIN];
@@ -3496,9 +3768,13 @@ fonction montrer_carte(chemin, tout) {
             decouper();
         }
         @2[G + G_NN] = 0;
+        @2[G + G_NA] = 4294967295;
+        @2[G + G_HCOPIE] = 0;
         faire_carte(0);
+        // sans carte rangée, la mémoire n'est pas sue : le champ de l'histoire vide
     }
     lire_carte_texte();
+    @2[G + G_GARDEE] = gardee;
     soit nk = @2[G + G_NK];
     soit ne = 0;
     soit nemp = 0;
@@ -3528,13 +3804,13 @@ fonction montrer_carte(chemin, tout) {
         ecrire_t(1, " écrites dans le texte, ");
         ecrire_u64(1, nemp);
         ecrire_t(1, " empruntées (au prélude ou à une bibliothèque), et la tête\n");
-        ecrire_t(1, "(ce qu'une molécule touche : rien, lit la mémoire, écrit la mémoire, ou le monde : sorties, fichiers, services)\n");
+        ecrire_t(1, "six faces par molécule, comme un dé (ce qu'elle est et ce qu'elle touche, ses racines et ses branches, ses promesses et sa mémoire), et au centre son état à cette lecture\n");
     } sinon {
-        ecrire_t(1, "\nce brin n'a pas de carte rangée : ce qui suit vient de ses mots seuls (ce que chaque molécule touche, ses racines) ; ses noms et ses promesses sont inconnus\n");
+        ecrire_t(1, "\nce brin n'a pas de carte rangée : ce qui suit vient de ses mots seuls (ce que chaque molécule touche, ses racines, ses branches) ; ses noms, ses promesses et sa mémoire sont inconnus\n");
     }
     pour k2 dans 0..nk {
         si gardee == 0 || tout == 1 || champ_est(k2, 2, "fonction") || champ_est(k2, 2, "reaction") {
-            montrer_molecule(k2);
+            montrer_molecule(k2, avec_temoins);
         }
     }
     si gardee == 1 {
@@ -3547,7 +3823,7 @@ fonction montrer_carte(chemin, tout) {
             soit vue = 0;
             pour k3 dans 0..nk {
                 si champ_est(k3, 2, "fonction") || champ_est(k3, 2, "reaction") {
-                    soit dd = @2[FOFF + 16 * k3 + 1];
+                    soit dd = @2[FOFF + 32 * k3 + 1];
                     si champ_fin(k3, 1) - dd == @2[bh + 1] {
                         soit ok = 1;
                         pour q dans 0..@2[bh + 1] {
@@ -3579,6 +3855,8 @@ fonction montrer_carte(chemin, tout) {
         si tout == 0 && nemp > 0 {
             ecrire_t(1, "\n(--tout montre aussi les molécules empruntées)\n");
         }
+    } sinon si trouver_section("carte") == 1 {
+        ecrire_t(1, "\n(ce brin a une carte à quatre faces, rangée en 0.6p : rangez de nouveau pour les six)\n");
     }
     retour etat;
 }
@@ -3587,7 +3865,7 @@ fonction montrer_carte(chemin, tout) {
 // Le programme naît en ARN (le travail), sans passer par un fichier d'ADN : ses mots compilés, la coiffe, les trois
 // témoins, et les introns (les isotopes, le texte, la signature du compilateur). La rétrotranscription de cet ARN
 // rend l'ADN entier, celui que « ranger » aurait écrit, octet pour octet.
-fonction faire_arnc(mots, sortie, source, isotopes, compilateur, noms) {
+fonction faire_arnc(mots, sortie, source, isotopes, compilateur, noms, ancien) {
     charger(mots);
     si @2[G + G_ERR] != 0 {
         retour;
@@ -3601,7 +3879,7 @@ fonction faire_arnc(mots, sortie, source, isotopes, compilateur, noms) {
         garder_source(source);
     }
     garder_compilateur(compilateur);
-    garder_carte(noms);
+    garder_carte(noms, ancien);
     si @2[G + G_ERR] != 0 {
         retour;
     }
@@ -3638,7 +3916,8 @@ fonction principal() {
         soit iso = lire_chemin(CHEMIN5);
         soit comp = lire_chemin(CHEMIN6);
         soit noms = lire_chemin(CHEMIN7);
-        ranger(entree, relu, source, iso, comp, noms);
+        soit ancien = lire_chemin(CHEMIN8);
+        ranger(entree, relu, source, iso, comp, noms, ancien);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);
             retour;
@@ -3664,7 +3943,8 @@ fonction principal() {
         soit iso2 = lire_chemin(CHEMIN5);
         soit comp3 = lire_chemin(CHEMIN6);
         soit noms3 = lire_chemin(CHEMIN7);
-        faire_arnc(entree, relu, source2, iso2, comp3, noms3);
+        soit ancien3 = lire_chemin(CHEMIN8);
+        faire_arnc(entree, relu, source2, iso2, comp3, noms3, ancien3);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);
             retour;

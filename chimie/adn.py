@@ -512,8 +512,9 @@ def retrotranscrire(mots, t, dossier):
     return FAUX, f"le texte gardé ne redonne pas ces mots ({ecarts} écart(s))"
 
 
-def ranger_texte(src, dossier):
-    """(les mots, les molécules, les témoins avec leurs introns : les isotopes, le texte, le compilateur, la carte)"""
+def ranger_texte(src, dossier, ancien=None):
+    """(les mots, les molécules, les témoins avec leurs introns : les isotopes, le texte, le compilateur, la carte) ;
+    ancien : le brin rangé avant (son texte), pour la face de la mémoire"""
     mots, molecules, isotopes, noms = molecules_isotopes_noms(src, dossier)
     t = temoins(mots, molecules)
     if isotopes:
@@ -521,16 +522,22 @@ def ranger_texte(src, dossier):
     lignes = src.replace("\r\n", "\n").split("\n")
     t["introns"].append(("source", lignes))
     t["introns"].append(("compilateur", [str(signature_compilateur())]))
-    t["introns"].append(("carte", faire_carte(mots, molecules, noms, lignes)))
+    t["introns"].append(("faces", faire_carte(mots, molecules, noms, lignes, ancien)))
     return mots, molecules, t
 
 
-# ---------------------------------------------------------------------------------------------------- la carte (0.6p)
-# Pour chaque molécule, une ligne, les quatre faces : ce qu'elle est (son nom, son genre, ses lignes, sa taille, son
-# en-tête), ce qu'elle touche (0 rien, 1 lit la mémoire, 2 écrit la mémoire, 3 le monde ; elle-même, puis avec ses
-# appels), ses racines (sa profondeur depuis la tête, les molécules qu'elle appelle), ses promesses (exige, garantit,
-# les exemples vérifiés, isotope lourd). Tirée des mots, du texte et des noms donnés par le compilateur ; le lecteur en
-# vtx (chimie/adn.vtx) l'écrit de même, octet pour octet.
+# ---------------------------------------------------------------------------------------------------- la carte (0.6p, 0.6q)
+# Pour chaque molécule, une ligne, les six faces d'un dé, en trois paires opposées :
+#   ce qu'elle est (nom, genre, lignes, taille, en-tête)  |  ce qu'elle touche (0 rien, 1 lit la mémoire, 2 écrit la
+#   mémoire, 3 le monde ; elle-même, puis avec ses appels)
+#   ses racines (sa profondeur depuis la tête, qui l'appelle)  |  ses branches (ce qu'elle appelle)
+#   ses promesses (exige, garantit, les exemples, isotope lourd)  |  sa mémoire (son empreinte, son histoire d'un
+#   rangement à l'autre : « ? » rien d'avant, « n » nouvelle, « c » changée, « iK » inchangée depuis K rangements)
+# Le centre, son état de Belnap, n'est pas écrit : il se lit à chaque lecture du brin.
+# m<début>|nom|genre|L-E|mots|touche|touche avec ses appels|profondeur|appelle|appelée par|exige|garantit|exemples|
+#   lourd|empreinte|histoire|en-tête
+# Tirée des mots, du texte et des noms donnés par le compilateur ; le lecteur en vtx (chimie/adn.vtx) l'écrit de même,
+# octet pour octet.
 OPS_LIT = {0x20, 0x29, 0x54, 0x38, 0x5F}          # LD LDX LDQ GDOT BRIN
 OPS_ECRIT = {0x21, 0x2A, 0x55, 0x39, 0x5E}        # ST STX STQ GEMV MARQUE
 OPS_MONDE = {0x24, 0x52, 0x23, 0x51}              # OUT SORC IN ENTC
@@ -638,7 +645,49 @@ def touche_et_appels(mots, a, b, plat):
     return niveau, appels
 
 
-def faire_carte(mots, molecules, noms, lignes):
+def fnv(texte):
+    h = 14695981039346656037
+    for c in texte:
+        h = ((h ^ ord(c)) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def cle_carte(champs):
+    """la clé d'une ligne de la carte, d'un rangement à l'autre : son nom, « la tête », ou sa place"""
+    if champs[1]:
+        return champs[1]
+    return "\ttete" if champs[2] == "tete" else champs[0]
+
+
+def anciens_de(texte):
+    """{clé : (empreinte, histoire)} des faces d'un brin rangé avant ; None s'il n'en a pas"""
+    if texte is None:
+        return None
+    lignes = texte.replace("\r\n", "\n").split("\n")
+    for i, l in enumerate(lignes):
+        if l.startswith("GU faces "):
+            r = {}
+            for x in lignes[i + 1:i + 1 + int(l.split()[2])]:
+                c = x.split("|")
+                if len(c) >= 17:
+                    r.setdefault(cle_carte(c), (c[14], c[15]))
+            return r
+    return None
+
+
+def histoire(ancien, cle, empreinte):
+    if ancien is None:
+        return "?"
+    if cle not in ancien:
+        return "n"
+    e, h = ancien[cle]
+    if e != empreinte:
+        return "c"
+    return f"i{int(h[1:]) + 1}" if h.startswith("i") else "i1"
+
+
+def faire_carte(mots, molecules, noms, lignes, ancien=None):
+    ancien = anciens_de(ancien)
     plat = list(demis(mots))
     debuts = {m.debut: k for k, m in enumerate(molecules)}
     faces = [touche_et_appels(mots, m.debut, m.fin, plat) for m in molecules]
@@ -661,9 +710,12 @@ def faire_carte(mots, molecules, noms, lignes):
                     prof[debuts[c]] = prof[k] + 1
                     file.append(debuts[c])
     ecrits = entetes(lignes)
+    appelants = [sorted(molecules[j].debut for j in range(len(molecules)) if j != k and m.debut in appels[j])
+                 for k, m in enumerate(molecules)]
     r = []
     for k, m in enumerate(molecules):
         nom, genre, lg, ex, ga, exe, tete = "", "inconnue", "0-0", 0, 0, 0, ""
+        empreinte = m.fin - m.debut
         if m.debut == 0:
             genre = "tete"
         elif m.debut in noms:
@@ -671,10 +723,13 @@ def faire_carte(mots, molecules, noms, lignes):
             for e in ecrits:
                 if bas(e[0]) == nom:
                     nom, genre, lg, ex, ga, exe, tete = e[0], e[1], f"{e[2]}-{e[3]}", e[4], e[5], e[6], e[7]
+                    empreinte = fnv("".join(x + "\n" for x in lignes[e[2] - 1:e[3]]))
                     break
+        champs = [f"m{m.debut}", nom, genre]
         r.append(f"m{m.debut}|{nom}|{genre}|{lg}|{m.fin - m.debut}|{faces[k][0]}|{tout[k]}|"
-                 f"{'-' if prof[k] is None else prof[k]}|{','.join(map(str, appels[k]))}|{ex}|{ga}|{exe}|"
-                 f"{int(m.isotope)}|{tete}")
+                 f"{'-' if prof[k] is None else prof[k]}|{','.join(map(str, appels[k]))}|"
+                 f"{','.join(map(str, appelants[k]))}|{ex}|{ga}|{exe}|{int(m.isotope)}|{empreinte}|"
+                 f"{histoire(ancien, cle_carte(champs), str(empreinte))}|{tete}")
     return r
 
 

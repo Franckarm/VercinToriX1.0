@@ -2417,3 +2417,65 @@ le code (ce qu'elle est), les étages 1, 2, 3 recevraient ce qu'elle touche, ses
 couleur #RRGGBB, d'un étage à l'autre, lie les quatre faces d'une molécule. Et à la rétrotranscription, un verdict de
 Belnap par face : quatre lettres par molécule, un codon de quatre, qui dirait laquelle a changé (« ses racines ont
 changé, ses promesses tiennent »).
+
+## 52. Six faces, comme un dé, et le centre (15 novembre, 0.6q)
+
+**L'idée du créateur :** six faces comme un dé, en double ternaire ; « trois valeurs et un indicateur ». Étudiée avant de
+continuer (la réponse donnée) :
+- **ce qui vient de la structure** : deux bits de preuve donnent toujours trois valeurs qui ont une preuve (oui, non,
+  variable) et une qui n'en a pas (inconnu, l'indicateur) ; dans GF(4), les trois éléments non nuls forment un cycle de
+  trois, le zéro à part. Un cube a trois axes à deux sens : six faces opposées deux à deux, et le centre ; dans le cube
+  chromatique, les trois primaires et leurs trois complémentaires. Les deux brins de l'ADN se lisent en sens contraires,
+  et le complément de Watson et Crick est, dans notre codage, 3 − x : la négation de Belnap suivie de la conflation ;
+- **ce qui est un hasard** : le 3 des valeurs (2² − 1) et le 3 des axes (l'espace) n'ont pas la même cause ;
+- **décidé** : six faces et le centre, oui ; le miroir ternaire et T comme indicateur à côté de U, non : on reste
+  quaternaire. **Les étages restent quatre** : dans Lugus, l'étage d'une adresse tient sur deux bits (`adr >> 62`), un
+  quit ; six étages sortiraient du quaternaire.
+
+**Les six faces**, en trois paires opposées, et le centre (la section `faces` de l'ADN et de l'ARNc, qui remplace la
+`carte` à quatre faces de la 0.6p) :
+
+| axe | une face | la face opposée |
+|---|---|---|
+| dedans, dehors | ce qu'elle est | ce qu'elle touche |
+| d'où elle vient | ses racines (qui l'appelle, sa profondeur) | ses branches (ce qu'elle appelle) |
+| le temps | ses promesses (exige, garantit, les exemples, l'isotope lourd) | sa mémoire (son empreinte, son histoire) |
+
+- **le centre** n'est pas écrit dans le fichier : c'est l'état de la molécule **à chaque lecture** du brin (vrai :
+  intacte, faux : réparée, variable : abîmée sans réparation, inconnu : le brin n'a pas de témoins). Le cube réagit
+  ainsi à chaque valeur, comme le créateur le demandait ;
+- **sa mémoire** : l'empreinte de son texte (FNV-1a sur ses lignes), et son histoire d'un rangement à l'autre : le
+  rangement relit le brin d'avant et compare les empreintes : « ? » (rien n'était rangé avant), « n » (nouvelle),
+  « c » (changée), « iK » (inchangée depuis K rangements). L'empreinte est celle du texte et non des mots : les mots
+  d'une fonction changent quand une autre grandit (les adresses des appels), son texte non. Une fonction empruntée n'a
+  pas de texte ici : son empreinte est sa taille ;
+- à la rétrotranscription, la carte est refaite et comparée ; l'histoire, qui n'est ni dans le texte ni dans les mots, est
+  recopiée, pas vérifiée (c'est dit).
+
+```
+chute : une réaction, lignes 5 à 12, 48 mots
+    reaction chute(h: flottant m, g: flottant m/s²) -> t: flottant s
+  au centre         : faux (réparée à cette lecture)
+  ce qu'elle touche : rien elle-même ; le monde par ses appels
+  ses racines       : appelée par impact, principal ; à 2 pas de la tête
+  ses branches      : appelle __afficher_t
+  ses promesses     : exige 2, garantit 1, 1 exemple vérifié
+  sa mémoire        : inchangée depuis 2 rangements (l'empreinte de son texte)
+```
+
+**Dans Ogmios.** Après F5 sur Lugus (qui range l'ADN avec sa carte), la fenêtre des explications montre les six faces et
+le centre : pour une fonction, en cliquant sa case sur la carte du programme ; pour une réaction, sur son onglet.
+L'ADN est relu quand il change (sa date), et vérifié pour le centre. Si le texte a été retouché depuis le dernier F5,
+l'explication le dit. `vtx paillasse PROG.vtx --faces PROG.adn --gestes F` (gestes `choisir NOM`, `explique`) fait la
+même chose sans écran.
+
+**Le registre tridimensionnel** (la question du créateur) : au sens d'un registre où l'on inscrit, oui : chaque
+molécule a sa place (une couleur #RRGGBB, trois coordonnées), et à cette place six faces et un centre ; on y lit par la
+place et la face. Au sens d'un registre du processeur, pas encore : il le deviendra quand la machine lira ces faces
+pendant qu'elle tourne (la patrouille, les souvenirs). Le rangement des faces dans le cube est l'étape suivante.
+
+**Vérifié** (`tests/test_carte_arn.py`, 32 contrôles) : la carte à six faces est celle de la référence, octet pour
+octet, sur six programmes, au premier rangement et au second (avec le rangement d'avant) ; l'ARNc la porte ; chaque
+face ; l'histoire (changée, inchangée depuis 1 puis 2 rangements, nouvelle) ; la carte vraie malgré l'histoire ; le centre
+d'une molécule abîmée (réparée) ; la paillasse d'Ogmios (une fonction, une réaction, le texte retouché depuis) ; une carte
+à quatre faces (inconnue). Les deux compilateurs donnent les mêmes mots du lecteur (14 328).

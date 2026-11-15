@@ -354,6 +354,8 @@ struct Atelier {
     pinceau: H,
     echelle: f32,
     fichier: Option<PathBuf>,
+    /// la date de l'ADN dont les faces sont lues (0.6q)
+    faces_date: Option<std::time::SystemTime>,
     mem: Option<Memoire>,
     etage: u32,
     iso: bool,
@@ -1166,6 +1168,9 @@ fn fini() {
     super::toile::installer(None);
     super::hote::FENETRE.store(false, Ordering::Relaxed);
     super::hote::tout_relacher();
+    // F5 a pu ranger l'ADN : les six faces de la carte se relisent (0.6q)
+    charger_faces();
+    maj_explications();
     unsafe {
         // la vue du cube rend la souris si elle la tenait (pas l'éditeur, qui sélectionne peut-être)
         if GetCapture() == at.cube {
@@ -2507,11 +2512,31 @@ unsafe extern "system" fn proc_source(h: H, m: u32, wp: usize, lp: isize) -> isi
 
 // ------------------------------------------------------------------------------------------------ la paillasse
 /// le texte a changé : la paillasse le relit (les valeurs d'une exécution précédente ne valent plus)
+/// les six faces (0.6q) : lues dans PROG.adn, à côté du programme, s'il a été rangé (F5 sur Lugus) ; relues seulement
+/// quand le fichier a changé
+fn charger_faces() {
+    let at = a();
+    let adn_f = match &at.fichier {
+        Some(f) => f.with_extension("adn"),
+        None => {
+            at.pail.faces = None;
+            return;
+        }
+    };
+    let date = std::fs::metadata(&adn_f).and_then(|m| m.modified()).ok();
+    if date.is_some() && date == at.faces_date {
+        return;
+    }
+    at.faces_date = date;
+    at.pail.faces = if date.is_some() { crate::paillasse::Faces::depuis_adn(&adn_f.to_string_lossy()) } else { None };
+}
+
 fn relire_paillasse() {
     let at = a();
     if at.paillasse.is_null() {
         return;
     }
+    charger_faces();
     let t = lire_texte(at.source).replace("\r\n", "\n");
     at.pail.valeurs.clear();
     at.pail.lire(&t);
@@ -3295,7 +3320,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             inst, fen: std::ptr::null_mut(), source: std::ptr::null_mut(), sortie: std::ptr::null_mut(), entrees: std::ptr::null_mut(),
             cube: std::ptr::null_mut(), etat: std::ptr::null_mut(), boutons: Vec::new(), etiquettes: Vec::new(),
             police: std::ptr::null_mut(), police_ui: std::ptr::null_mut(), pinceau: std::ptr::null_mut(), echelle: 1.0,
-            fichier: None, mem: None, etage: 1, iso: true, vue_quits: false, largeur: 64, base: 0, zoom: 1.0, en_cours: false, ancien_proc_source: 0,
+            fichier: None, faces_date: None, mem: None, etage: 1, iso: true, vue_quits: false, largeur: 64, base: 0, zoom: 1.0, en_cours: false, ancien_proc_source: 0,
             term_entree: std::ptr::null_mut(), journal: std::ptr::null_mut(), onglets: [std::ptr::null_mut(); 4], onglet: 1,
             pas: None, symboles: Default::default(), points: HashSet::new(), pas_texte: std::ptr::null_mut(),
             ancien_proc_term: 0, arbre: std::ptr::null_mut(), noeuds: Vec::new(),

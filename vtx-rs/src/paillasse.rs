@@ -880,7 +880,147 @@ pub enum Souris {
     Droit,
 }
 
+/// Les six faces de chaque fonction (0.6q), lues dans l'ADN rangé à côté du programme (la section « faces » écrite par
+/// le lecteur en vtx), et le centre de chacune : son état à la lecture de cet ADN.
+#[derive(Clone, Debug, Default)]
+pub struct Faces {
+    /// le nom -> les dix-sept champs de sa ligne
+    pub lignes: HashMap<String, Vec<String>>,
+    /// le début de chaque molécule -> son nom (ou « la tête », « mN »)
+    pub noms: HashMap<usize, String>,
+    /// le début de chaque molécule -> son état à la lecture (2 vrai, 1 réparée, 3 variable)
+    pub centres: HashMap<usize, u8>,
+    /// le texte gardé dans l'ADN (pour savoir si la carte date d'avant la dernière retouche)
+    pub source: String,
+}
+
+impl Faces {
+    /// lire les faces d'un ADN (et le vérifier, pour le centre) ; None s'il n'a pas de faces
+    pub fn depuis_adn(chemin: &str) -> Option<Faces> {
+        let texte = std::fs::read_to_string(chemin).ok()?.replace("\r\n", "\n");
+        let l: Vec<&str> = texte.split('\n').collect();
+        let section = |nom: &str| -> Option<Vec<String>> {
+            let tete = format!("GU {} ", nom);
+            let i = l.iter().position(|x| x.starts_with(&tete))?;
+            let n: usize = l[i][tete.len()..].trim().parse().ok()?;
+            Some(l.get(i + 1..i + 1 + n)?.iter().map(|x| x.to_string()).collect())
+        };
+        let lignes = section("faces")?;
+        let mut f = Faces { source: section("source").map(|v| v.join("\n")).unwrap_or_default(), ..Default::default() };
+        for x in &lignes {
+            let c: Vec<String> = x.splitn(17, '|').map(|y| y.to_string()).collect();
+            if c.len() < 17 {
+                continue;
+            }
+            let deb: usize = c[0].trim_start_matches('m').parse().unwrap_or(0);
+            let nom = if !c[1].is_empty() { c[1].clone() } else if c[2] == "tete" { "la tête".into() } else { c[0].clone() };
+            f.noms.insert(deb, nom.clone());
+            if !c[1].is_empty() {
+                f.lignes.insert(nom, c);
+            }
+        }
+        if let Ok((mut mots, mols, mut t)) = crate::adn::lire_adn(chemin) {
+            let (_, rapport) = crate::adn::lire(&mut mots, &mols, &mut t);
+            for m in &mols {
+                f.centres.insert(m.debut, crate::adn::VRAI);
+            }
+            for (j, e, _) in rapport {
+                if let Some(m) = mols.get(j) {
+                    f.centres.insert(m.debut, e);
+                }
+            }
+        }
+        Some(f)
+    }
+
+    fn liste(&self, champ: &str) -> String {
+        let v: Vec<String> = champ.split(',').filter(|x| !x.is_empty())
+            .map(|x| x.parse::<usize>().ok().and_then(|d| self.noms.get(&d).cloned()).unwrap_or_else(|| format!("m{}", x)))
+            .collect();
+        if v.len() > 8 {
+            format!("{} et {} autres", v[..8].join(", "), v.len() - 8)
+        } else {
+            v.join(", ")
+        }
+    }
+
+    /// les six faces et le centre d'une fonction, en clair (comme « lugus carte »)
+    pub fn texte(&self, nom: &str) -> Option<String> {
+        let c = self.lignes.get(nom)?;
+        let n = |k: usize| c[k].trim_start_matches('i').parse::<usize>().ok();
+        let mot = |v: Option<usize>| match v {
+            Some(0) => "rien",
+            Some(1) => "lit la mémoire",
+            Some(2) => "écrit la mémoire",
+            _ => "le monde",
+        };
+        let mut t = String::new();
+        let (a, b) = c[3].split_once('-').unwrap_or(("?", "?"));
+        let genre = match c[2].as_str() {
+            "fonction" => format!("une fonction, lignes {} à {}", a, b),
+            "reaction" => format!("une réaction, lignes {} à {}", a, b),
+            _ => "empruntée (au prélude ou à une bibliothèque)".into(),
+        };
+        t.push_str(&format!("{} : {}, {} mots\r\n", nom, genre, c[4]));
+        if !c[16].is_empty() {
+            t.push_str(&format!("    {}\r\n", c[16]));
+        }
+        let deb: usize = c[0].trim_start_matches('m').parse().unwrap_or(0);
+        t.push_str(&format!("Au centre : {}.\r\n", match self.centres.get(&deb) {
+            Some(&e) if e == crate::adn::FAUX => "faux (réparée à cette lecture de l'ADN)",
+            Some(&e) if e == crate::adn::VARIABLE => "variable (abîmée, non réparée)",
+            Some(_) => "vrai (intacte à cette lecture de l'ADN)",
+            None => "inconnu (l'ADN ne se lit pas)",
+        }));
+        t.push_str(&format!("Ce qu'elle touche : {}.\r\n", if c[5] == c[6] {
+            format!("{} ({})", mot(n(5)), if c[8].is_empty() { "elle-même" } else { "elle-même et ses appels" })
+        } else {
+            format!("{} elle-même ; {} par ses appels", mot(n(5)), mot(n(6)))
+        }));
+        let pr = match c[7].as_str() {
+            "-" => " ; hors d'atteinte depuis la tête".to_string(),
+            "0" => String::new(),
+            x => format!(" ; à {} pas de la tête", x),
+        };
+        t.push_str(&format!("Ses racines : {}{}.\r\n",
+                            if c[9].is_empty() { "appelée par personne (sinon par elle-même)".to_string() } else { format!("appelée par {}", self.liste(&c[9])) },
+                            pr));
+        t.push_str(&format!("Ses branches : {}.\r\n",
+                            if c[8].is_empty() { "n'appelle rien (une feuille)".to_string() } else { format!("appelle {}", self.liste(&c[8])) }));
+        let mut pm = vec![];
+        if n(10).unwrap_or(0) > 0 {
+            pm.push(format!("exige {}", c[10]));
+        }
+        if n(11).unwrap_or(0) > 0 {
+            pm.push(format!("garantit {}", c[11]));
+        }
+        match n(12).unwrap_or(0) {
+            0 => {}
+            1 => pm.push("1 exemple vérifié".into()),
+            k => pm.push(format!("{} exemples vérifiés", k)),
+        }
+        if c[13] == "1" {
+            pm.push("isotope lourd (relue à l'entrée et à la sortie)".into());
+        }
+        t.push_str(&format!("Ses promesses : {}.\r\n", if pm.is_empty() { "aucune écrite".to_string() } else { pm.join(", ") }));
+        t.push_str(&format!("Sa mémoire : {}.\r\n", match c[15].chars().next() {
+            Some('?') => "son histoire est inconnue (rien n'était rangé avant)".to_string(),
+            Some('n') => "nouvelle à ce rangement".to_string(),
+            Some('c') => "changée depuis le rangement d'avant".to_string(),
+            Some('i') => {
+                let k = n(15).unwrap_or(1);
+                format!("inchangée depuis {} rangement{}", k, if k > 1 { "s" } else { "" })
+            }
+            _ => "inconnue".to_string(),
+        }));
+        Some(t)
+    }
+}
+
 pub struct Paillasse {
+    /// les six faces des fonctions (0.6q), de l'ADN rangé au dernier F5 ; perimee : le texte a changé depuis
+    pub faces: Option<Faces>,
+    pub perimee: bool,
     pub reactions: Vec<Reaction>,
     pub courante: usize,
     pub choisi: Option<usize>,
@@ -1012,12 +1152,13 @@ pub fn ecrire_textes(im: &mut Image, textes: &[TexteP], car_l: i32, car_h: i32) 
 
 impl Paillasse {
     pub fn nouvelle() -> Paillasse {
-        Paillasse { reactions: vec![], courante: 0, choisi: None, positions: HashMap::new(), valeurs: HashMap::new(), decal: (0, 0),
+        Paillasse { faces: None, perimee: false, reactions: vec![], courante: 0, choisi: None, positions: HashMap::new(), valeurs: HashMap::new(), decal: (0, 0),
                     car_l: 6, car_h: 12, echelle: 1.0, message: None, cases: vec![], colonnes: vec![], onglets: vec![], entrees_r: vec![], geste: None }
     }
 
     /// relire le texte (la réaction montrée et l'atome choisi restent, si on les retrouve)
     pub fn lire(&mut self, source: &str) {
+        self.perimee = self.faces.as_ref().map_or(false, |f| f.source.trim_end() != source.replace("\r\n", "\n").trim_end());
         let nom = self.reactions.get(self.courante).map(|r| r.nom.clone());
         let cle = self.choisi.and_then(|k| self.reaction().and_then(|r| r.atomes.get(k)).map(|a| a.cle()));
         self.reactions = analyser(source);
@@ -1588,6 +1729,13 @@ impl Paillasse {
         let mut t = String::new();
         if r.carte {
             match self.choisi.and_then(|k| r.atomes.get(k)) {
+                Some(a) if self.faces.as_ref().and_then(|f| f.texte(&a.nom)).is_some() => {
+                    // 0.6q : les six faces, de l'ADN rangé au dernier F5
+                    t.push_str(&self.faces.as_ref().and_then(|f| f.texte(&a.nom)).unwrap_or_default());
+                    if self.perimee {
+                        t.push_str("(Ces faces viennent de l'ADN rangé au dernier F5 : le texte a changé depuis ; F5 les refait.)\r\n");
+                    }
+                }
                 Some(a) => {
                     let appelle: Vec<&str> = a.entrees.iter().map(|p| p.nom.as_str()).collect();
                     let appelee: Vec<&str> = r.atomes.iter().filter(|b| b.entrees.iter().any(|p| p.nom == a.nom)).map(|b| b.nom.as_str()).collect();
@@ -1596,6 +1744,8 @@ impl Paillasse {
                                         if appelle.is_empty() { "rien (une feuille)".to_string() } else { appelle.join(", ") },
                                         if appelee.is_empty() { "personne".to_string() } else { appelee.join(", ") }));
                     t.push_str(&format!("Vague {} : la profondeur de ses appels.\r\n", a.vague));
+                    t.push_str("F5 sur Lugus range l'ADN avec la carte : les six faces de la fonction (ce qu'elle est, ce qu'elle \
+                                touche, ses racines, ses branches, ses promesses, sa mémoire) et son état viendront ici.\r\n");
                 }
                 None => {
                     t.push_str(&format!("La carte du programme : {} fonction{}, {} vague{} d'appels. Chaque case est une fonction ; \
@@ -1666,6 +1816,14 @@ impl Paillasse {
                             Suppr : retirer l'atome choisi. Glisser le vide : déplacer la paillasse.\r\n\
                             Ctrl+P : faire réagir avec la provenance ; chaque liaison montre alors sa valeur (vert : arrivée, rouge : \
                             sa branche n'a pas réagi, gris : jamais calculée).\r\n");
+                // 0.6q : la réaction est une molécule : ses six faces, de l'ADN rangé au dernier F5
+                if let Some(f) = self.faces.as_ref().and_then(|f| f.texte(&r.nom)) {
+                    t.push_str("\r\nLes six faces de la réaction, et son état :\r\n");
+                    t.push_str(&f);
+                    if self.perimee {
+                        t.push_str("(Ces faces viennent de l'ADN rangé au dernier F5 : le texte a changé depuis ; F5 les refait.)\r\n");
+                    }
+                }
             }
         }
         for e in &r.erreurs {
@@ -1732,6 +1890,7 @@ pub fn commande(args: &[String]) {
     };
     let (mut png, mut taille, mut gestes, mut ecrire, mut plan, mut valeurs) = (None, (1000usize, 640usize), None, false, false, false);
     let mut analyse = false;
+    let mut faces: Option<String> = None;
     let mut i = 1;
     while i < args.len() {
         match args[i].as_str() {
@@ -1742,6 +1901,7 @@ pub fn commande(args: &[String]) {
                 }
             }
             "--gestes" => gestes = args.get(i + 1).cloned(),
+            "--faces" => faces = args.get(i + 1).cloned(),
             "--ecrire" | "--plan" | "--valeurs" | "--analyse" => {
                 match args[i].as_str() {
                     "--plan" => plan = true,
@@ -1770,6 +1930,12 @@ pub fn commande(args: &[String]) {
     let place = format!("{}.paillasse", fichier.trim_end_matches(".vtx"));
     if let Ok(t) = std::fs::read_to_string(&place) {
         p.lire_positions(&t);
+    }
+    if let Some(f) = &faces {
+        p.faces = Faces::depuis_adn(f);
+        if p.faces.is_none() {
+            println!("message : {} n'a pas de faces (rangez-le de nouveau)", f);
+        }
     }
     p.lire(&source);
     if valeurs {
@@ -1822,6 +1988,22 @@ pub fn commande(args: &[String]) {
                 }
                 "plan" => {
                     print!("{}", p.plan());
+                    Reponse::Rien
+                }
+                // choisir NOM : la case de la fonction NOM sur la carte du programme ; explique : la fenêtre des explications
+                "choisir" => {
+                    // une réaction : son onglet ; sinon la case de la fonction sur la carte
+                    if let Some(k) = p.reactions.iter().position(|r| !r.carte && Some(r.nom.as_str()) == m.get(1).copied()) {
+                        p.courante = k;
+                        p.choisi = None;
+                    } else if let Some(k) = p.reactions.iter().position(|r| r.carte) {
+                        p.courante = k;
+                        p.choisi = p.reactions[k].atomes.iter().position(|a| Some(a.nom.as_str()) == m.get(1).copied());
+                    }
+                    Reponse::Redessiner
+                }
+                "explique" => {
+                    println!("--- explications\n{}", p.explication().replace("\r\n", "\n").trim_end());
                     Reponse::Rien
                 }
                 autre => {

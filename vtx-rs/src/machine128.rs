@@ -170,7 +170,12 @@ pub fn ranger_par_le_lecteur(verbe: &str, mots: &[u128], isotopes: &[(String, us
     let entrees = vec![f_mots.to_string_lossy().into_owned(), chemin_absolu(sortie), verbe.to_string(),
                        chemin_absolu(source),
                        if iso.is_empty() { String::new() } else { f_iso.to_string_lossy().into_owned() },
-                       signature_compilateur().to_string(), f_carte.to_string_lossy().into_owned()];
+                       signature_compilateur().to_string(), f_carte.to_string_lossy().into_owned(),
+                       // 0.6q : le brin rangé avant, pour la face de la mémoire (recopié : la sortie va être réécrite)
+                       {
+                           let f_avant = travail.join("avant");
+                           if std::fs::copy(sortie, &f_avant).is_ok() { f_avant.to_string_lossy().into_owned() } else { String::new() }
+                       }];
     let r = adn_en_vtx(&entrees);
     let _ = std::fs::remove_dir_all(&travail);
     r
