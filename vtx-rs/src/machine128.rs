@@ -41,7 +41,7 @@ pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128
 /// arrête la compilation.
 pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool)
                         -> Result<(Vec<u128>, Vec<u128>, Vec<u128>, String), String> {
-    let (code, prov, ex, _, _) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
+    let (code, prov, ex, _, _, _) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
     if !ex.trim().is_empty() {
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
@@ -56,7 +56,7 @@ pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mo
 /// symboles.rs lit) ; les exemples sont rejoués comme pour compiler128.
 pub fn compiler128_dbg(compilateur: &[u128], source: &str, base: &str, mode: Mode128)
                        -> Result<(Vec<u128>, Vec<u128>, String), String> {
-    let (code, _, ex, _, sym) = passer_vtxc128(compilateur, source, base, mode, true, false, false)?;
+    let (code, _, ex, _, sym, _) = passer_vtxc128(compilateur, source, base, mode, true, false, false)?;
     if !ex.trim().is_empty() {
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
@@ -71,7 +71,13 @@ pub fn compiler128_dbg(compilateur: &[u128], source: &str, base: &str, mode: Mod
 /// vtxc128 écrit dans code.iso pour les réactions qui portent un atome lourd (« -> a lourd »).
 pub fn compiler128_iso(compilateur: &[u128], source: &str, base: &str, mode: Mode128)
                        -> Result<(Vec<u128>, Vec<(String, usize)>), String> {
-    let (code, _, ex, iso, _) = passer_vtxc128(compilateur, source, base, mode, false, false, false)?;
+    compiler128_carte(compilateur, source, base, mode).map(|(m, i, _)| (m, i))
+}
+
+/// les mots, les isotopes, et code.carte (0.6p : « nom|mot » pour chaque fonction gardée)
+pub fn compiler128_carte(compilateur: &[u128], source: &str, base: &str, mode: Mode128)
+                         -> Result<(Vec<u128>, Vec<(String, usize)>, String), String> {
+    let (code, _, ex, iso, _, carte) = passer_vtxc128(compilateur, source, base, mode, false, false, false)?;
     if !ex.trim().is_empty() {
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
@@ -80,7 +86,7 @@ pub fn compiler128_iso(compilateur: &[u128], source: &str, base: &str, mode: Mod
         let (n, a) = l.trim_end_matches('\r').split_once('|')?;
         Some((n.to_string(), a.parse::<usize>().ok()?))
     }).collect();
-    Ok((mots, isotopes))
+    Ok((mots, isotopes, carte.replace('\r', "")))
 }
 
 /// La rétrotranscription : le texte gardé dans l'ADN (son intron « source »), recompilé par vtxc128, redonne-t-il les
@@ -143,14 +149,42 @@ pub fn adn_en_vtx_dans(entrees: &[String], dossier: Option<&std::path::Path>) ->
     Ok(spu.sortie.last().copied().unwrap_or(0) as u8)
 }
 
+/// Ranger un programme compilé par le lecteur d'ADN écrit en vtx (0.6p) : les mots, les isotopes et les noms des
+/// fonctions (code.carte) posés dans un dossier de travail, puis « ranger » (l'ADN) ou « arnc » (l'ARNc) ; le texte
+/// est lu dans `source` (le fichier du programme). Rend l'état du lecteur.
+pub fn ranger_par_le_lecteur(verbe: &str, mots: &[u128], isotopes: &[(String, usize)], carte: &str, source: &str,
+                             sortie: &str) -> Result<u8, String> {
+    let travail = std::env::temp_dir().join(format!("vtx-ranger-{}-{}", std::process::id(),
+                                                     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                                                         .map(|d| d.as_nanos()).unwrap_or(0)));
+    std::fs::create_dir_all(&travail).map_err(|e| e.to_string())?;
+    let f_mots = travail.join("code.mots");
+    let txt: Vec<String> = mots.iter().map(|w| w.to_string()).collect();
+    std::fs::write(&f_mots, format!("{};\n", txt.join(","))).map_err(|e| e.to_string())?;
+    let mut iso = isotopes.to_vec();
+    iso.sort_by_key(|x| x.1);
+    let f_iso = travail.join("code.iso");
+    let _ = std::fs::write(&f_iso, iso.iter().map(|(n, a)| format!("{}|{}\n", n, a)).collect::<String>());
+    let f_carte = travail.join("code.carte");
+    let _ = std::fs::write(&f_carte, carte);
+    let entrees = vec![f_mots.to_string_lossy().into_owned(), chemin_absolu(sortie), verbe.to_string(),
+                       chemin_absolu(source),
+                       if iso.is_empty() { String::new() } else { f_iso.to_string_lossy().into_owned() },
+                       signature_compilateur().to_string(), f_carte.to_string_lossy().into_owned()];
+    let r = adn_en_vtx(&entrees);
+    let _ = std::fs::remove_dir_all(&travail);
+    r
+}
+
 /// Le service 27 du lecteur d'ADN : le texte compilé par vtxc128 (le compilateur de vtx, écrit en vtx, lancé sur une
 /// machine fille), comme « lugus compiler » ; ses mots « a,b,c;\n », ou « ! » suivi de l'erreur.
 pub fn compiler_pour_lecteur(source: &str, dossier: &std::path::Path) -> String {
     // le préfixe « \\?\ » des chemins canoniques de Windows est retiré : les importations se cherchent depuis ce dossier
     let base = dossier.to_string_lossy().into_owned();
     let base = base.strip_prefix(r"\\?\").unwrap_or(&base).to_string();
-    match compiler128_iso(&nombres128(VTXC128), source, &base, COMPLET128) {
-        Ok((m, _)) => format!("{};\n", m.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",")),
+    // 0.6p : après les mots, les noms des fonctions (« nom|mot » par ligne) : la carte se refait et se compare
+    match compiler128_carte(&nombres128(VTXC128), source, &base, COMPLET128) {
+        Ok((m, _, carte)) => format!("{};\n{}", m.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(","), carte),
         Err(e) => format!("!{}", e.trim_end()),
     }
 }
@@ -171,7 +205,7 @@ pub fn chemin_absolu(x: &str) -> String {
 
 /// une passe de vtxc128 dans un dossier de travail : (code.mots, code.prov, code.ex, code.iso), ou les messages d'erreur
 fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool,
-                  exemples: bool) -> Result<(String, String, String, String, String), String> {
+                  exemples: bool) -> Result<(String, String, String, String, String, String), String> {
     let dossier = std::env::temp_dir().join(format!("vtxc128-{}-{}", std::process::id(),
                                                      std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
                                                          .map(|d| d.as_nanos()).unwrap_or(0)));
@@ -191,13 +225,14 @@ fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128,
     let ex = std::fs::read_to_string(dossier.join("code.ex")).unwrap_or_default();
     let iso = std::fs::read_to_string(dossier.join("code.iso")).unwrap_or_default();
     let sym = std::fs::read_to_string(dossier.join("code.sym")).unwrap_or_default();
+    let carte = std::fs::read_to_string(dossier.join("code.carte")).unwrap_or_default();
     let _ = std::fs::remove_dir_all(&dossier);
     let messages: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
     if let Err(e) = r {
         return Err(format!("{}{}\n", messages, e));
     }
     match code {
-        Ok(t) => Ok((t, prov, ex, iso, sym)),
+        Ok(t) => Ok((t, prov, ex, iso, sym, carte)),
         Err(_) => Err(messages),
     }
 }
@@ -213,7 +248,7 @@ fn rejouer_exemples(compilateur: &[u128], source: &str, base: &str, mode: Mode12
         return Ok(());
     }
     let mode_ex = Mode128 { prelude: mode.prelude, optim: mode.optim, partition: false };
-    let (code, _, _, _, _) = passer_vtxc128(compilateur, source, base, mode_ex, false, false, true)?;
+    let (code, _, _, _, _, _) = passer_vtxc128(compilateur, source, base, mode_ex, false, false, true)?;
     let mut m = Spu128::nouveau();
     m.charger(&nombres128(code.split(';').next().unwrap_or("")));
     if let Err(e) = m.executer(50_000_000) {

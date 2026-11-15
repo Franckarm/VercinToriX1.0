@@ -45,6 +45,24 @@ constante CHEMIN4 = 7197900;     // table CRC2 (jusqu'à 7 197 536) et le brouil
 constante CHEMIN5 = 7198200;
 constante CHEMIN6 = 7198500;
 constante CHEMIN7 = 7198800;
+constante NPL = 40000000;        // la carte : les noms (la place, le début dans NCAR, la longueur)
+constante NDEB = 40200000;
+constante NLEN = 40400000;
+constante NCAR = 41000000;
+constante TOUD = 42000000;       // ce que touche chaque molécule, elle-même ; avec ses appels ; sa profondeur ; la file
+constante TOUT = 42200000;
+constante PROF = 42400000;
+constante FILE = 42600000;
+constante CAD = 42800000;        // les appels de chaque molécule : le début dans CALLS, leur nombre
+constante CAN = 43000000;
+constante CALLS = 44000000;
+constante CTMP = 44900000;       // les appels d'une molécule, avant le tri
+constante LST = 45000000;        // le début de chaque ligne du texte (dans INTR)
+constante HDR = 46000000;        // les en-têtes : seize cases chacun
+constante FOFF = 47000000;       // la carte lue : le début de chaque champ (seize par ligne), puis la fin de la ligne
+constante DEBK = 49000000;       // la carte lue : le début de chaque molécule
+constante CARTEB = 50000000;     // le texte de la carte
+constante CARTEL = 59000000;     // la carte gardée, quand on la compare
 constante TEXTE = 30000000;      // le texte gardé, recopié pour le compilateur (une longueur, puis ses caractères)
 constante CRC2 = 7132000;        // le CRC-8 deux octets à la fois (65 536) : CRC2[x | y << 8] = CRC[CRC[x] ^ y]
 constante BROUILLON = 7200000;   // les polynômes du décodage (repris à chaque voie)
@@ -73,6 +91,11 @@ constante G_ARN = 14;            // 1 : le brin lu est un ARN
 constante G_TEM = 15;            // 1 : les trois témoins ont été lus (un ADN, un ARN sûr) ; 0 : les mots seuls
 constante G_SDEB = 16;           // une section des introns trouvée : le début de ses lignes, sa fin (sans le dernier \n)
 constante G_SFIN = 17;
+constante G_NN = 18;             // la carte (0.6p) : le nombre de noms donnés par le compilateur
+constante G_CL = 19;             // la longueur du texte de la carte (CARTEB)
+constante G_NH = 20;             // le nombre de fonctions et de réactions écrites dans le texte
+constante G_NL = 21;             // le nombre de lignes du texte
+constante G_NK = 22;             // le nombre de lignes de la carte lue (pour la montrer)
 
 constante COLONNE = 251;
 constante OMBRE = 4;
@@ -1709,7 +1732,7 @@ fonction faire_temoins(isotopes) {
     }
 }
 
-fonction ranger(mots, adn, source, isotopes, compilateur) {
+fonction ranger(mots, adn, source, isotopes, compilateur, noms) {
     soit etat = charger(mots);
     si @2[G + G_ERR] != 0 {
         retour;
@@ -1739,6 +1762,7 @@ fonction ranger(mots, adn, source, isotopes, compilateur) {
         garder_source(source);
     }
     garder_compilateur(compilateur);
+    garder_carte(noms);
     si @2[G + G_ERR] != 0 {
         retour;
     }
@@ -2375,6 +2399,40 @@ fonction trouver_section(nom) {
     retour 0;
 }
 
+// la carte gardée, refaite des mots, du texte et des noms que vient de donner le compilateur : la même ?
+fonction verifier_carte() {
+    si trouver_section("carte") == 0 {
+        ecrire_t(1, "la carte : inconnu, cet ADN n'a pas de carte (rangé avant la 0.6p)\n");
+        retour;
+    }
+    soit d = @2[G + G_SDEB];
+    soit l = @2[G + G_SFIN] - d;
+    faire_carte(1);
+    soit cl = @2[G + G_CL];
+    soit ligne = 0;
+    soit ecart = 4294967295;
+    pour i dans 0..l {
+        si ecart == 4294967295 && (i >= cl || @2[CARTEB + i] != @2[INTR + d + i]) {
+            ecart = ligne;
+        }
+        si @2[INTR + d + i] == 10 {
+            ligne = ligne + 1;
+        }
+    }
+    si ecart == 4294967295 && cl != l + 1 {
+        ecart = ligne;
+    }
+    si ecart == 4294967295 {
+        ecrire_t(1, "la carte : vrai, elle dit ce que disent le texte et les mots\n");
+    } sinon {
+        ecrire_t(1, "la carte : faux, elle ne dit plus ce que disent le texte et les mots (dès la molécule m");
+        si ecart < @2[G + G_NM] {
+            ecrire_u64(1, @2[MOL + 8 * ecart]);
+        }
+        ecrire_t(1, ")\n");
+    }
+}
+
 fonction verifier_texte(comp_actuel) {
     si trouver_section("source") == 0 {
         retour;
@@ -2437,12 +2495,43 @@ fonction verifier_texte(comp_actuel) {
             avancer();
         }
     }
+    // 0.6p : après les mots, les noms des fonctions, pour refaire la carte
+    si car_courant() == ';' {
+        avancer();
+    }
+    si car_courant() == 10 {
+        avancer();
+    }
+    @2[G + G_NN] = 0;
+    @2[NDEB] = 0;
+    @2[NLEN] = 0;
+    soit place = 0;
+    soit barre = 0;
+    tantque car_courant() != FIN {
+        soit cc = car_courant();
+        si cc == 10 {
+            noms_finir(place, barre);
+            place = 0;
+            barre = 0;
+        } sinon si cc != 13 {
+            si barre == 1 {
+                place = place * 10 + (cc - 48);
+            } sinon si cc == '|' {
+                barre = 1;
+            } sinon {
+                noms_ajouter(cc);
+            }
+        }
+        avancer();
+    }
+    noms_finir(place, barre);
     fermer(f);
     si k2 < n {
         ecarts = ecarts + n - k2;
     }
     si ecarts == 0 {
         ecrire_t(1, "le texte : vrai, le texte gardé redonne les mots, un pour un\n");
+        verifier_carte();
     } sinon si change == 1 {
         ecrire_t(1, "le texte : inconnu, le compilateur a changé depuis le rangement : le texte ne peut pas être vérifié\n");
     } sinon {
@@ -2456,11 +2545,1049 @@ fonction verifier_texte(comp_actuel) {
     }
 }
 
+// --------------------------------------------------------------------------------------------- la carte (0.6p)
+// Pour chaque molécule, une ligne, ses quatre faces : ce qu'elle est (son nom, son genre, ses lignes, sa taille, son
+// en-tête), ce qu'elle touche (0 rien, 1 lit la mémoire, 2 écrit la mémoire, 3 le monde ; elle-même, puis avec ses
+// appels), ses racines (sa profondeur depuis la tête, les molécules qu'elle appelle), ses promesses (exige, garantit,
+// les exemples vérifiés, isotope lourd) :
+//   m<début>|nom|genre|L-E|mots|touche|touche avec ses appels|profondeur|appels|exige|garantit|exemples|lourd|en-tête
+// Tirée des mots, du texte gardé et des noms que donne le compilateur ; chimie/adn.py l'écrit de même (faire_carte).
+
+fonction bas_car(c) {
+    si (c >= 65 && c <= 90) || (c >= 192 && c <= 222 && c != 215) {
+        retour c + 32;
+    }
+    si c == 338 {
+        retour 339;
+    }
+    si c == 376 {
+        retour 255;
+    }
+    retour c;
+}
+
+fonction lettre_nom(c) {
+    retour (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95 || c >= 128;
+}
+
+fonction carte_car(x) {
+    soit l = @2[G + G_CL];
+    si l < CARTEL - CARTEB {
+        @2[CARTEB + l] = x;
+        @2[G + G_CL] = l + 1;
+    }
+}
+
+fonction carte_texte(t) {
+    pour i dans 0..longueur(t) {
+        carte_car(car(t, i));
+    }
+}
+
+fonction carte_nombre(x) {
+    si x >= 10 {
+        carte_nombre(x / 10);
+    }
+    carte_car(48 + x % 10);
+}
+
+// les noms des fonctions, « nom|mot » par ligne (code.carte du compilateur), mis en minuscules
+fonction noms_ajouter(c) {
+    soit k = @2[G + G_NN];
+    soit d = @2[NDEB + k];
+    soit l = @2[NLEN + k];
+    si l < 1000000 {
+        @2[NCAR + d + l] = bas_car(c);
+        @2[NLEN + k] = l + 1;
+    }
+}
+
+// une ligne « nom|place » lue (le nom déjà rangé) : elle compte
+fonction noms_finir(place, vu_barre) {
+    soit k = @2[G + G_NN];
+    si vu_barre == 1 && @2[NLEN + k] > 0 && k < 199999 {
+        @2[NPL + k] = place;
+        @2[G + G_NN] = k + 1;
+        @2[NDEB + k + 1] = @2[NDEB + k] + @2[NLEN + k];
+    }
+    @2[NLEN + @2[G + G_NN]] = 0;
+}
+
+fonction lire_noms(chemin) {
+    @2[G + G_NN] = 0;
+    @2[NDEB] = 0;
+    @2[NLEN] = 0;
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        retour;
+    }
+    soit place = 0;
+    soit barre = 0;
+    tantque fin_de(f) == 0 {
+        soit c = lire_car(f);
+        si c == 13 {
+            continuer;
+        }
+        si c == 10 {
+            noms_finir(place, barre);
+            place = 0;
+            barre = 0;
+        } sinon si barre == 1 {
+            place = place * 10 + (c - 48);
+        } sinon si c == '|' {
+            barre = 1;
+        } sinon {
+            noms_ajouter(c);
+        }
+    }
+    noms_finir(place, barre);
+    fermer(f);
+}
+
+// le nom donné pour la place p : son rang, ou 4294967295
+fonction nom_de_place(p) {
+    pour k dans 0..@2[G + G_NN] {
+        si @2[NPL + k] == p {
+            retour k;
+        }
+    }
+    retour 4294967295;
+}
+
+// le rang de la molécule qui commence à d (les débuts sont croissants), ou 4294967295
+fonction molecule_de(d) {
+    soit a = 0;
+    soit b = @2[G + G_NM];
+    tantque a < b {
+        soit m = (a + b) / 2;
+        soit x = @2[MOL + 8 * m];
+        si x == d {
+            retour m;
+        }
+        si x < d {
+            a = m + 1;
+        } sinon {
+            b = m;
+        }
+    }
+    retour 4294967295;
+}
+
+fonction demi(p) {
+    si p % 2 == 0 {
+        retour @2[MH + p / 2];
+    }
+    retour @2[MB + p / 2];
+}
+
+fonction niveau_service(code, su) {
+    si su == 0 {
+        retour 3;
+    }
+    si code == 10 || code == 13 || code == 26 {
+        retour 2;
+    }
+    si code == 25 {
+        retour 1;
+    }
+    retour 3;
+}
+
+// ce que touche la molécule k elle-même (TOUD), ses appels (triés, sans double : CAD, CAN) ; la propagation des
+// constantes ne sert qu'à reconnaître le numéro d'un service (SYS)
+fonction toucher(k, ncalls) {
+    soit a = @2[MOL + 8 * k];
+    soit b = @2[MOL + 8 * k + 1];
+    soit n2 = 2 * @2[G + G_N];
+    soit niveau = 0;
+    soit nt = 0;
+    // les registres connus : @2[BROUILLON + r] (la valeur), @2[BROUILLON + 16 + r] (1 : connue) ; la pile ensuite
+    pour r dans 0..32 {
+        @2[BROUILLON + r] = 0;
+    }
+    soit sp = 0;
+    pour p dans 2 * a..2 * b {
+        si @2[AH + p] == 1 {
+            soit h = demi(p);
+            soit op = h >> 48;
+            soit d = (h >> 44) & 15;
+            soit s2 = (h >> 40) & 15;
+            soit imm = h & 4294967295;
+            si op == 32 || op == 41 || op == 84 || op == 56 || op == 95 {
+                si niveau < 1 {
+                    niveau = 1;
+                }
+            } sinon si op == 33 || op == 42 || op == 85 || op == 57 || op == 94 {
+                si niveau < 2 {
+                    niveau = 2;
+                }
+            } sinon si op == 36 || op == 82 || op == 35 || op == 81 {
+                niveau = 3;
+            }
+            si op == 24 {
+                si (imm >> 31) == 1 {
+                    @2[BROUILLON + d] = imm | 18446744069414584320;
+                } sinon {
+                    @2[BROUILLON + d] = imm;
+                }
+                @2[BROUILLON + 16 + d] = 1;
+            } sinon si op == 25 {
+                @2[BROUILLON + d] = imm;
+                @2[BROUILLON + 16 + d] = 1;
+            } sinon si op == 10 {
+                si p + 1 < n2 {
+                    @2[BROUILLON + d] = demi(p + 1);
+                    @2[BROUILLON + 16 + d] = 1;
+                } sinon {
+                    @2[BROUILLON + 16 + d] = 0;
+                }
+            } sinon si op == 11 {
+                @2[BROUILLON + d] = @2[BROUILLON + s2];
+                @2[BROUILLON + 16 + d] = @2[BROUILLON + 16 + s2];
+            } sinon si op == 39 {
+                @2[BROUILLON + 32 + 2 * sp] = @2[BROUILLON + s2];
+                @2[BROUILLON + 33 + 2 * sp] = @2[BROUILLON + 16 + s2];
+                si sp < 1000 {
+                    sp = sp + 1;
+                }
+            } sinon si op == 40 {
+                si sp > 0 {
+                    sp = sp - 1;
+                    @2[BROUILLON + d] = @2[BROUILLON + 32 + 2 * sp];
+                    @2[BROUILLON + 16 + d] = @2[BROUILLON + 33 + 2 * sp];
+                } sinon {
+                    @2[BROUILLON + 16 + d] = 0;
+                }
+            } sinon si op == 83 {
+                soit nv = niveau_service(@2[BROUILLON + s2], @2[BROUILLON + 16 + s2]);
+                si nv > niveau {
+                    niveau = nv;
+                }
+                @2[BROUILLON + 16 + d] = 0;
+            } sinon si op == 51 {
+                soit cible = imm / 2;
+                si molecule_de(cible) != 4294967295 {
+                    @2[CTMP + nt] = cible;
+                    nt = nt + 1;
+                }
+                pour r2 dans 0..16 {
+                    @2[BROUILLON + 16 + r2] = 0;
+                }
+            } sinon {
+                @2[BROUILLON + 16 + d] = 0;
+            }
+        }
+    }
+    // trier les appels, sans double
+    pour i dans 1..nt {
+        soit x = @2[CTMP + i];
+        soit j = i;
+        tantque j > 0 && @2[CTMP + j - 1] > x {
+            @2[CTMP + j] = @2[CTMP + j - 1];
+            j = j - 1;
+        }
+        @2[CTMP + j] = x;
+    }
+    @2[CAD + k] = ncalls;
+    soit m = 0;
+    pour i2 dans 0..nt {
+        si i2 == 0 || @2[CTMP + i2] != @2[CTMP + i2 - 1] {
+            @2[CALLS + ncalls + m] = @2[CTMP + i2];
+            m = m + 1;
+        }
+    }
+    @2[CAN + k] = m;
+    @2[TOUD + k] = niveau;
+    retour ncalls + m;
+}
+
+// le texte gardé, en lignes (LST : le début de chaque ligne dans INTR) ; 0 s'il n'y en a pas
+fonction lignes_du_texte() {
+    @2[G + G_NL] = 0;
+    si trouver_section("source") == 0 {
+        retour 0;
+    }
+    soit d = @2[G + G_SDEB];
+    soit f = @2[G + G_SFIN];
+    soit nl = 1;
+    @2[LST] = d;
+    pour i dans d..f {
+        si @2[INTR + i] == 10 {
+            @2[LST + nl] = i + 1;
+            nl = nl + 1;
+        }
+    }
+    @2[LST + nl] = f + 1;
+    @2[G + G_NL] = nl;
+    retour 1;
+}
+
+// la ligne i : son début, sa fin (sans le \n)
+fonction ligne_deb(i) {
+    retour @2[LST + i];
+}
+
+fonction ligne_fin(i) {
+    retour @2[LST + i + 1] - 1;
+}
+
+fonction ligne_commence(i, t) {
+    soit d = ligne_deb(i);
+    si ligne_fin(i) - d < longueur(t) {
+        retour 0;
+    }
+    pour k dans 0..longueur(t) {
+        si @2[INTR + d + k] != car(t, k) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+fonction ligne_haute(i) {
+    retour ligne_commence(i, "fonction ") || ligne_commence(i, "reaction ") || ligne_commence(i, "structure ")
+        || ligne_commence(i, "constante ") || ligne_commence(i, "exemple ") || ligne_commence(i, "importer ");
+}
+
+// une ligne vide (espaces et tabulations) ou un commentaire en début de ligne
+fonction ligne_vide_ou_note(i) {
+    soit d = ligne_deb(i);
+    soit f = ligne_fin(i);
+    si f - d >= 2 && @2[INTR + d] == '/' && @2[INTR + d + 1] == '/' {
+        retour 1;
+    }
+    pour k dans d..f {
+        si @2[INTR + k] != 32 && @2[INTR + k] != 9 {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// le mot « mot » au début de la ligne i (après son retrait), suivi d'un espace, d'une parenthèse ou de rien
+fonction ligne_mot(i, mot) {
+    soit d = ligne_deb(i);
+    soit f = ligne_fin(i);
+    tantque d < f && (@2[INTR + d] == 32 || @2[INTR + d] == 9) {
+        d = d + 1;
+    }
+    si f - d < longueur(mot) {
+        retour 0;
+    }
+    pour k dans 0..longueur(mot) {
+        si @2[INTR + d + k] != car(mot, k) {
+            retour 0;
+        }
+    }
+    soit e = d + longueur(mot);
+    retour e == f || @2[INTR + e] == 32 || @2[INTR + e] == '(';
+}
+
+// les en-têtes des fonctions et réactions écrites : HDR + 16 k : le début et la longueur du nom (dans INTR), le genre
+// (1 fonction, 2 réaction), la ligne, la dernière, exige, garantit, les exemples, le début et la longueur de l'en-tête
+fonction lire_entetes() {
+    @2[G + G_NH] = 0;
+    soit nl = @2[G + G_NL];
+    soit nh = 0;
+    pour i dans 0..nl {
+        soit genre = 0;
+        soit lk = 0;
+        si ligne_commence(i, "fonction ") {
+            genre = 1;
+            lk = 9;
+        } sinon si ligne_commence(i, "reaction ") {
+            genre = 2;
+            lk = 9;
+        }
+        si genre == 0 {
+            continuer;
+        }
+        soit d = ligne_deb(i) + lk;
+        soit f = ligne_fin(i);
+        soit par = d;
+        tantque par < f && @2[INTR + par] != '(' {
+            par = par + 1;
+        }
+        si par >= f {
+            continuer;
+        }
+        soit nd = d;
+        tantque nd < par && (@2[INTR + nd] == 32 || @2[INTR + nd] == 9) {
+            nd = nd + 1;
+        }
+        soit nf = par;
+        tantque nf > nd && (@2[INTR + nf - 1] == 32 || @2[INTR + nf - 1] == 9) {
+            nf = nf - 1;
+        }
+        soit suivant = i + 1;
+        tantque suivant < nl && ligne_haute(suivant) == 0 {
+            suivant = suivant + 1;
+        }
+        soit fin = suivant - 1;
+        tantque fin > i && ligne_vide_ou_note(fin) == 1 {
+            fin = fin - 1;
+        }
+        soit ex = 0;
+        soit ga = 0;
+        pour j dans i..fin + 1 {
+            si ligne_mot(j, "exige") {
+                ex = ex + 1;
+            } sinon si ligne_mot(j, "garantit") {
+                ga = ga + 1;
+            }
+        }
+        soit td = ligne_deb(i);
+        soit tf = f;
+        tantque tf > td && (@2[INTR + tf - 1] == 32 || @2[INTR + tf - 1] == 9) {
+            tf = tf - 1;
+        }
+        si tf > td && @2[INTR + tf - 1] == '{' {
+            tf = tf - 1;
+            tantque tf > td && (@2[INTR + tf - 1] == 32 || @2[INTR + tf - 1] == 9) {
+                tf = tf - 1;
+            }
+        }
+        soit b = HDR + 16 * nh;
+        @2[b] = nd;
+        @2[b + 1] = nf - nd;
+        @2[b + 2] = genre;
+        @2[b + 3] = i + 1;
+        @2[b + 4] = fin + 1;
+        @2[b + 5] = ex;
+        @2[b + 6] = ga;
+        @2[b + 7] = 0;
+        @2[b + 8] = td;
+        @2[b + 9] = tf - td;
+        si nh < 60000 {
+            nh = nh + 1;
+        }
+    }
+    @2[G + G_NH] = nh;
+    // les exemples : une ligne « exemple … » compte une fois pour chaque nom écrit qu'elle appelle
+    pour i2 dans 0..nl {
+        si ligne_commence(i2, "exemple ") == 0 {
+            continuer;
+        }
+        soit d2 = ligne_deb(i2);
+        soit f2 = ligne_fin(i2);
+        pour h dans 0..nh {
+            soit b2 = HDR + 16 * h;
+            soit ln = @2[b2 + 1];
+            soit trouve = 0;
+            soit j2 = d2;
+            tantque trouve == 0 && j2 + ln < f2 {
+                soit ok = 1;
+                pour q dans 0..ln {
+                    si @2[INTR + j2 + q] != @2[INTR + @2[b2] + q] {
+                        ok = 0;
+                    }
+                }
+                si ok == 1 && @2[INTR + j2 + ln] == '(' && (j2 == d2 || lettre_nom(@2[INTR + j2 - 1]) == 0) {
+                    trouve = 1;
+                }
+                j2 = j2 + 1;
+            }
+            si trouve == 1 {
+                @2[b2 + 7] = @2[b2 + 7] + 1;
+            }
+        }
+    }
+}
+
+// l'en-tête dont le nom (en minuscules) est le nom donné k, ou 4294967295
+fonction entete_du_nom(k) {
+    soit ln = @2[NLEN + k];
+    pour h dans 0..@2[G + G_NH] {
+        soit b = HDR + 16 * h;
+        si @2[b + 1] == ln {
+            soit ok = 1;
+            pour q dans 0..ln {
+                si bas_car(@2[INTR + @2[b] + q]) != @2[NCAR + @2[NDEB + k] + q] {
+                    ok = 0;
+                }
+            }
+            si ok == 1 {
+                retour h;
+            }
+        }
+    }
+    retour 4294967295;
+}
+
+// la carte, écrite dans CARTEB (une ligne par molécule) ; avec_noms : des noms ont été donnés
+fonction faire_carte(avec_noms) {
+    @2[G + G_CL] = 0;
+    soit nm = @2[G + G_NM];
+    marquer_instructions(@2[G + G_N]);
+    soit nc = 0;
+    pour k dans 0..nm {
+        nc = toucher(k, nc);
+        @2[TOUT + k] = @2[TOUD + k];
+        @2[PROF + k] = 4294967295;
+    }
+    soit change = 1;
+    tantque change == 1 {
+        change = 0;
+        pour k2 dans 0..nm {
+            pour c dans 0..@2[CAN + k2] {
+                soit m = molecule_de(@2[CALLS + @2[CAD + k2] + c]);
+                si @2[TOUT + m] > @2[TOUT + k2] {
+                    @2[TOUT + k2] = @2[TOUT + m];
+                    change = 1;
+                }
+            }
+        }
+    }
+    si nm > 0 {
+        @2[PROF] = 0;
+        @2[FILE] = 0;
+        soit nf = 1;
+        soit q2 = 0;
+        tantque q2 < nf {
+            soit k3 = @2[FILE + q2];
+            pour c2 dans 0..@2[CAN + k3] {
+                soit m2 = molecule_de(@2[CALLS + @2[CAD + k3] + c2]);
+                si @2[PROF + m2] == 4294967295 {
+                    @2[PROF + m2] = @2[PROF + k3] + 1;
+                    @2[FILE + nf] = m2;
+                    nf = nf + 1;
+                }
+            }
+            q2 = q2 + 1;
+        }
+    }
+    lignes_du_texte();
+    lire_entetes();
+    pour k4 dans 0..nm {
+        soit base = MOL + 8 * k4;
+        soit deb = @2[base];
+        carte_car('m');
+        carte_nombre(deb);
+        carte_car('|');
+        soit kn = 4294967295;
+        si deb != 0 && avec_noms == 1 {
+            kn = nom_de_place(deb);
+        }
+        soit h = 4294967295;
+        si kn != 4294967295 {
+            h = entete_du_nom(kn);
+        }
+        si h != 4294967295 {
+            soit bh = HDR + 16 * h;
+            pour q3 dans 0..@2[bh + 1] {
+                carte_car(@2[INTR + @2[bh] + q3]);
+            }
+            si @2[bh + 2] == 1 {
+                carte_texte("|fonction|");
+            } sinon {
+                carte_texte("|reaction|");
+            }
+            carte_nombre(@2[bh + 3]);
+            carte_car('-');
+            carte_nombre(@2[bh + 4]);
+        } sinon {
+            si kn != 4294967295 {
+                pour q4 dans 0..@2[NLEN + kn] {
+                    carte_car(@2[NCAR + @2[NDEB + kn] + q4]);
+                }
+                carte_texte("|empruntee|0-0");
+            } sinon si deb == 0 {
+                carte_texte("|tete|0-0");
+            } sinon {
+                carte_texte("|inconnue|0-0");
+            }
+        }
+        carte_car('|');
+        carte_nombre(@2[base + 1] - deb);
+        carte_car('|');
+        carte_nombre(@2[TOUD + k4]);
+        carte_car('|');
+        carte_nombre(@2[TOUT + k4]);
+        carte_car('|');
+        si @2[PROF + k4] == 4294967295 {
+            carte_car('-');
+        } sinon {
+            carte_nombre(@2[PROF + k4]);
+        }
+        carte_car('|');
+        pour c3 dans 0..@2[CAN + k4] {
+            si c3 > 0 {
+                carte_car(',');
+            }
+            carte_nombre(@2[CALLS + @2[CAD + k4] + c3]);
+        }
+        carte_car('|');
+        si h != 4294967295 {
+            soit bh2 = HDR + 16 * h;
+            carte_nombre(@2[bh2 + 5]);
+            carte_car('|');
+            carte_nombre(@2[bh2 + 6]);
+            carte_car('|');
+            carte_nombre(@2[bh2 + 7]);
+        } sinon {
+            carte_texte("0|0|0");
+        }
+        carte_car('|');
+        carte_nombre(@2[base + 3]);
+        carte_car('|');
+        si h != 4294967295 {
+            soit bh3 = HDR + 16 * h;
+            pour q5 dans 0..@2[bh3 + 9] {
+                carte_car(@2[INTR + @2[bh3 + 8] + q5]);
+            }
+        }
+        carte_car(10);
+    }
+}
+
+// la carte, rangée dans les introns (après le compilateur)
+fonction garder_carte(noms) {
+    si noms == 0 {
+        retour;
+    }
+    lire_noms(noms);
+    faire_carte(1);
+    intron_texte("GU carte ");
+    intron_nombre(@2[G + G_NM]);
+    intron_car(10);
+    pour i dans 0..@2[G + G_CL] {
+        intron_car(@2[CARTEB + i]);
+    }
+    intron_texte("AG\n");
+}
+
+// --------------------------------------------------------------------------------------------- la carte montrée
+// Les champs de chaque ligne de CARTEB : FOFF + 16 k + f, le début du champ f (0 à 13), FOFF + 16 k + 14, la fin de la
+// ligne ; DEBK + k, le début de la molécule.
+fonction lire_carte_texte() {
+    soit l = @2[G + G_CL];
+    soit k = 0;
+    soit f = 0;
+    soit i = 0;
+    @2[FOFF] = 0;
+    tantque i < l {
+        soit c = @2[CARTEB + i];
+        si c == 10 {
+            @2[FOFF + 16 * k + 14] = i;
+            k = k + 1;
+            f = 0;
+            @2[FOFF + 16 * k] = i + 1;
+        } sinon si c == '|' && f < 13 {
+            f = f + 1;
+            @2[FOFF + 16 * k + f] = i + 1;
+        }
+        i = i + 1;
+    }
+    @2[G + G_NK] = k;
+    pour j dans 0..k {
+        @2[DEBK + j] = champ_n(j, 0);
+    }
+}
+
+fonction champ_fin(k, f) {
+    si f == 13 {
+        retour @2[FOFF + 16 * k + 14];
+    }
+    retour @2[FOFF + 16 * k + f + 1] - 1;
+}
+
+// un nombre au début du champ (« m » sauté) ; « - » : 4294967295
+fonction champ_n(k, f) {
+    soit i = @2[FOFF + 16 * k + f];
+    si @2[CARTEB + i] == 'm' {
+        i = i + 1;
+    }
+    si @2[CARTEB + i] == '-' {
+        retour 4294967295;
+    }
+    soit x = 0;
+    tantque @2[CARTEB + i] >= 48 && @2[CARTEB + i] <= 57 {
+        x = x * 10 + @2[CARTEB + i] - 48;
+        i = i + 1;
+    }
+    retour x;
+}
+
+fonction champ_vide(k, f) {
+    retour champ_fin(k, f) == @2[FOFF + 16 * k + f];
+}
+
+fonction champ_est(k, f, t) {
+    soit d = @2[FOFF + 16 * k + f];
+    si champ_fin(k, f) - d != longueur(t) {
+        retour 0;
+    }
+    pour i dans 0..longueur(t) {
+        si @2[CARTEB + d + i] != car(t, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+fonction ecrire_champ(c, k, f) {
+    pour i dans @2[FOFF + 16 * k + f]..champ_fin(k, f) {
+        ecrire_car(c, @2[CARTEB + i]);
+    }
+}
+
+fonction ligne_de_debut(d) {
+    soit a = 0;
+    soit b = @2[G + G_NK];
+    tantque a < b {
+        soit m = (a + b) / 2;
+        soit x = @2[DEBK + m];
+        si x == d {
+            retour m;
+        }
+        si x < d {
+            a = m + 1;
+        } sinon {
+            b = m;
+        }
+    }
+    retour 4294967295;
+}
+
+fonction ecrire_nom_mol(k) {
+    si champ_est(k, 2, "tete") {
+        ecrire_t(1, "la tête");
+    } sinon si champ_vide(k, 1) {
+        ecrire_car(1, 'm');
+        ecrire_u64(1, @2[DEBK + k]);
+    } sinon {
+        ecrire_champ(1, k, 1);
+    }
+}
+
+fonction mot_touche(n) {
+    si n == 0 {
+        ecrire_t(1, "rien");
+    } sinon si n == 1 {
+        ecrire_t(1, "lit la mémoire");
+    } sinon si n == 2 {
+        ecrire_t(1, "écrit la mémoire");
+    } sinon {
+        ecrire_t(1, "le monde");
+    }
+}
+
+// les appels de la ligne k : le j-ième début, ou 4294967295
+fonction appel_de(k, j) {
+    soit i = @2[FOFF + 16 * k + 8];
+    soit f = champ_fin(k, 8);
+    soit n = 0;
+    tantque i < f {
+        soit x = 0;
+        tantque i < f && @2[CARTEB + i] != ',' {
+            x = x * 10 + @2[CARTEB + i] - 48;
+            i = i + 1;
+        }
+        si n == j {
+            retour x;
+        }
+        n = n + 1;
+        i = i + 1;
+    }
+    retour 4294967295;
+}
+
+fonction ecrire_liste_noms(liste, n) {
+    soit montre = n;
+    si montre > 8 {
+        montre = 8;
+    }
+    pour i dans 0..montre {
+        si i > 0 {
+            ecrire_t(1, ", ");
+        }
+        soit k = ligne_de_debut(@2[liste + i]);
+        si k == 4294967295 {
+            ecrire_car(1, 'm');
+            ecrire_u64(1, @2[liste + i]);
+        } sinon {
+            ecrire_nom_mol(k);
+        }
+    }
+    si n > 8 {
+        ecrire_t(1, " et ");
+        ecrire_u64(1, n - 8);
+        ecrire_t(1, " autres");
+    }
+}
+
+fonction montrer_molecule(k) {
+    ecrire_car(1, 10);
+    ecrire_nom_mol(k);
+    ecrire_t(1, " : ");
+    soit genre_ecrit = champ_est(k, 2, "fonction") || champ_est(k, 2, "reaction");
+    si champ_est(k, 2, "fonction") {
+        ecrire_t(1, "une fonction, lignes ");
+    } sinon si champ_est(k, 2, "reaction") {
+        ecrire_t(1, "une réaction, lignes ");
+    } sinon si champ_est(k, 2, "empruntee") {
+        ecrire_t(1, "empruntée (au prélude ou à une bibliothèque), ");
+    } sinon si champ_est(k, 2, "tete") {
+        ecrire_t(1, "le départ du programme, ");
+    } sinon {
+        ecrire_t(1, "son nom est inconnu (ce brin n'a pas de carte), ");
+    }
+    si genre_ecrit {
+        soit i = @2[FOFF + 16 * k + 3];
+        tantque @2[CARTEB + i] != '-' {
+            ecrire_car(1, @2[CARTEB + i]);
+            i = i + 1;
+        }
+        ecrire_t(1, " à ");
+        i = i + 1;
+        tantque @2[CARTEB + i] != '|' {
+            ecrire_car(1, @2[CARTEB + i]);
+            i = i + 1;
+        }
+        ecrire_t(1, ", ");
+    }
+    ecrire_u64(1, champ_n(k, 4));
+    ecrire_t(1, " mots\n");
+    si !champ_vide(k, 13) {
+        ecrire_t(1, "    ");
+        ecrire_champ(1, k, 13);
+        ecrire_car(1, 10);
+    }
+    // ce qu'elle touche
+    soit d = champ_n(k, 5);
+    soit t = champ_n(k, 6);
+    ecrire_t(1, "  ce qu'elle touche : ");
+    si d == t {
+        mot_touche(d);
+        si champ_vide(k, 8) {
+            ecrire_t(1, " (elle-même)");
+        } sinon {
+            ecrire_t(1, " (elle-même et ses appels)");
+        }
+    } sinon {
+        mot_touche(d);
+        ecrire_t(1, " elle-même ; ");
+        mot_touche(t);
+        ecrire_t(1, " par ses appels");
+    }
+    ecrire_car(1, 10);
+    // ses racines
+    ecrire_t(1, "  ses racines       : ");
+    soit nk = @2[G + G_NK];
+    soit nc = 0;
+    pour j dans 0..nk {
+        soit q = 0;
+        soit x = appel_de(j, 0);
+        tantque x != 4294967295 {
+            si x == @2[DEBK + k] && j != k {
+                @2[CTMP + nc] = @2[DEBK + j];
+                nc = nc + 1;
+                x = 4294967295;
+            } sinon {
+                q = q + 1;
+                x = appel_de(j, q);
+            }
+        }
+    }
+    si champ_est(k, 2, "tete") {
+        ecrire_t(1, "la racine du programme");
+    } sinon si nc == 0 {
+        ecrire_t(1, "appelée par personne (sinon par elle-même)");
+    } sinon {
+        ecrire_t(1, "appelée par ");
+        ecrire_liste_noms(CTMP, nc);
+    }
+    soit pr = champ_n(k, 7);
+    si pr == 4294967295 {
+        ecrire_t(1, " ; hors d'atteinte depuis la tête");
+    } sinon si pr > 0 {
+        ecrire_t(1, " ; à ");
+        ecrire_u64(1, pr);
+        ecrire_t(1, " pas de la tête");
+    }
+    soit na = 0;
+    tantque appel_de(k, na) != 4294967295 {
+        @2[CTMP + 1000 + na] = appel_de(k, na);
+        na = na + 1;
+    }
+    si na == 0 {
+        ecrire_t(1, " ; n'appelle rien");
+    } sinon {
+        ecrire_t(1, " ; appelle ");
+        ecrire_liste_noms(CTMP + 1000, na);
+    }
+    ecrire_car(1, 10);
+    // ses promesses
+    ecrire_t(1, "  ses promesses     : ");
+    soit lourd = champ_n(k, 12) == 1;
+    si genre_ecrit {
+        soit ex = champ_n(k, 9);
+        soit ga = champ_n(k, 10);
+        soit ee = champ_n(k, 11);
+        soit rien = 1;
+        si ex > 0 {
+            ecrire_t(1, "exige ");
+            ecrire_u64(1, ex);
+            rien = 0;
+        }
+        si ga > 0 {
+            si rien == 0 {
+                ecrire_t(1, ", ");
+            }
+            ecrire_t(1, "garantit ");
+            ecrire_u64(1, ga);
+            rien = 0;
+        }
+        si ee > 0 {
+            si rien == 0 {
+                ecrire_t(1, ", ");
+            }
+            ecrire_u64(1, ee);
+            si ee == 1 {
+                ecrire_t(1, " exemple vérifié");
+            } sinon {
+                ecrire_t(1, " exemples vérifiés");
+            }
+            rien = 0;
+        }
+        si lourd {
+            si rien == 0 {
+                ecrire_t(1, ", ");
+            }
+            ecrire_t(1, "isotope lourd (relue à l'entrée et à la sortie)");
+            rien = 0;
+        }
+        si rien == 1 {
+            ecrire_t(1, "aucune écrite");
+        }
+    } sinon si champ_est(k, 2, "tete") {
+        ecrire_t(1, "aucune");
+    } sinon {
+        si lourd {
+            ecrire_t(1, "isotope lourd ; le reste ");
+        }
+        si champ_est(k, 2, "empruntee") {
+            ecrire_t(1, "inconnues (son texte est dans le prélude ou une bibliothèque)");
+        } sinon {
+            ecrire_t(1, "inconnues (ce brin n'a pas son texte)");
+        }
+    }
+    ecrire_car(1, 10);
+}
+
+// montrer la carte d'un brin : celle qu'il garde, ou ce que ses mots seuls en disent
+fonction montrer_carte(chemin, tout) {
+    soit etat = charger(chemin);
+    si @2[G + G_ERR] != 0 {
+        retour etat;
+    }
+    soit gardee = 0;
+    si trouver_section("carte") == 1 {
+        gardee = 1;
+        soit d = @2[G + G_SDEB];
+        soit f = @2[G + G_SFIN];
+        @2[G + G_CL] = 0;
+        pour i dans d..f {
+            carte_car(@2[INTR + i]);
+        }
+        carte_car(10);
+    } sinon {
+        si @2[G + G_TEM] == 0 {
+            decouper();
+        }
+        @2[G + G_NN] = 0;
+        faire_carte(0);
+    }
+    lire_carte_texte();
+    soit nk = @2[G + G_NK];
+    soit ne = 0;
+    soit nemp = 0;
+    pour k dans 0..nk {
+        si champ_est(k, 2, "fonction") || champ_est(k, 2, "reaction") {
+            ne = ne + 1;
+        } sinon si champ_est(k, 2, "empruntee") {
+            nemp = nemp + 1;
+        }
+    }
+    ecrire_t(1, "la carte de ");
+    soit db = 0;
+    pour i2 dans 0..longueur(chemin) {
+        si car(chemin, i2) == '/' || car(chemin, i2) == 92 {
+            db = i2 + 1;
+        }
+    }
+    pour i3 dans db..longueur(chemin) {
+        ecrire_car(1, car(chemin, i3));
+    }
+    ecrire_t(1, " : ");
+    ecrire_u64(1, nk);
+    ecrire_t(1, " molécules");
+    si gardee == 1 {
+        ecrire_t(1, " ; ");
+        ecrire_u64(1, ne);
+        ecrire_t(1, " écrites dans le texte, ");
+        ecrire_u64(1, nemp);
+        ecrire_t(1, " empruntées (au prélude ou à une bibliothèque), et la tête\n");
+        ecrire_t(1, "(ce qu'une molécule touche : rien, lit la mémoire, écrit la mémoire, ou le monde : sorties, fichiers, services)\n");
+    } sinon {
+        ecrire_t(1, "\nce brin n'a pas de carte rangée : ce qui suit vient de ses mots seuls (ce que chaque molécule touche, ses racines) ; ses noms et ses promesses sont inconnus\n");
+    }
+    pour k2 dans 0..nk {
+        si gardee == 0 || tout == 1 || champ_est(k2, 2, "fonction") || champ_est(k2, 2, "reaction") {
+            montrer_molecule(k2);
+        }
+    }
+    si gardee == 1 {
+        // les fonctions écrites qui n'ont pas de molécule à elles : recopiées en ligne là où elles servent
+        lignes_du_texte();
+        lire_entetes();
+        soit premier = 1;
+        pour h dans 0..@2[G + G_NH] {
+            soit bh = HDR + 16 * h;
+            soit vue = 0;
+            pour k3 dans 0..nk {
+                si champ_est(k3, 2, "fonction") || champ_est(k3, 2, "reaction") {
+                    soit dd = @2[FOFF + 16 * k3 + 1];
+                    si champ_fin(k3, 1) - dd == @2[bh + 1] {
+                        soit ok = 1;
+                        pour q dans 0..@2[bh + 1] {
+                            si @2[CARTEB + dd + q] != @2[INTR + @2[bh] + q] {
+                                ok = 0;
+                            }
+                        }
+                        si ok == 1 {
+                            vue = 1;
+                        }
+                    }
+                }
+            }
+            si vue == 0 {
+                si premier == 1 {
+                    ecrire_t(1, "\nécrites, mais sans molécule à elles (recopiées en ligne là où elles servent, ou jamais appelées) : ");
+                    premier = 0;
+                } sinon {
+                    ecrire_t(1, ", ");
+                }
+                pour q2 dans 0..@2[bh + 1] {
+                    ecrire_car(1, @2[INTR + @2[bh] + q2]);
+                }
+            }
+        }
+        si premier == 0 {
+            ecrire_car(1, 10);
+        }
+        si tout == 0 && nemp > 0 {
+            ecrire_t(1, "\n(--tout montre aussi les molécules empruntées)\n");
+        }
+    }
+    retour etat;
+}
+
 // --------------------------------------------------------------------------------------------- l'ARNc (0.6o)
 // Le programme naît en ARN (le travail), sans passer par un fichier d'ADN : ses mots compilés, la coiffe, les trois
 // témoins, et les introns (les isotopes, le texte, la signature du compilateur). La rétrotranscription de cet ARN
 // rend l'ADN entier, celui que « ranger » aurait écrit, octet pour octet.
-fonction faire_arnc(mots, sortie, source, isotopes, compilateur) {
+fonction faire_arnc(mots, sortie, source, isotopes, compilateur, noms) {
     charger(mots);
     si @2[G + G_ERR] != 0 {
         retour;
@@ -2474,6 +3601,7 @@ fonction faire_arnc(mots, sortie, source, isotopes, compilateur) {
         garder_source(source);
     }
     garder_compilateur(compilateur);
+    garder_carte(noms);
     si @2[G + G_ERR] != 0 {
         retour;
     }
@@ -2493,7 +3621,9 @@ fonction faire_arnc(mots, sortie, source, isotopes, compilateur) {
 //   relire     ADN [RELU]
 //   transcrire ADN SORTIE [ISOFORME] [SIGNATURE DU COMPILATEUR : le texte gardé est alors vérifié]
 //   ranger     BRIN ADN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR]   (le brin : .mots, .hex, .cub, .arn, .adn)
-//   arnc       MOTS ARN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR]   (l'ARNc : le programme né en ARN)
+//   arnc       MOTS ARN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR] [NOMS]   (l'ARNc : le programme né en ARN)
+//   carte      BRIN [--tout]             (la carte du programme : ce qu'est chaque molécule, ce qu'elle touche, ses
+//                                         racines, ses promesses)
 //   hex        BRIN HEX
 //   cube       BRIN - [FRÉQUENCE]        (cube128-1-FRÉQUENCE.cub, dans le dossier de la machine ; 440 sinon)
 //   mots       BRIN MOTS                 (les mots seuls, pour les lancer)
@@ -2507,7 +3637,8 @@ fonction principal() {
         soit source = lire_chemin(CHEMIN4);
         soit iso = lire_chemin(CHEMIN5);
         soit comp = lire_chemin(CHEMIN6);
-        ranger(entree, relu, source, iso, comp);
+        soit noms = lire_chemin(CHEMIN7);
+        ranger(entree, relu, source, iso, comp, noms);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);
             retour;
@@ -2515,11 +3646,25 @@ fonction principal() {
         sortie(E_VRAI);
         retour;
     }
+    si verbe != 0 && texte_egal(verbe, "carte") {
+        soit tout = 0;
+        si relu != 0 && texte_egal(relu, "--tout") {
+            tout = 1;
+        }
+        soit e5 = montrer_carte(entree, tout);
+        si @2[G + G_ERR] != 0 {
+            sortie(E_INCONNU);
+            retour;
+        }
+        sortie(e5);
+        retour;
+    }
     si verbe != 0 && texte_egal(verbe, "arnc") {
         soit source2 = lire_chemin(CHEMIN4);
         soit iso2 = lire_chemin(CHEMIN5);
         soit comp3 = lire_chemin(CHEMIN6);
-        faire_arnc(entree, relu, source2, iso2, comp3);
+        soit noms3 = lire_chemin(CHEMIN7);
+        faire_arnc(entree, relu, source2, iso2, comp3, noms3);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);
             retour;

@@ -292,6 +292,11 @@ def molecules_du_programme(src, dossier=None):
 
 
 def molecules_et_isotopes(src, dossier=None):
+    mots, molecules, isotopes, _ = molecules_isotopes_noms(src, dossier)
+    return mots, molecules, isotopes
+
+
+def molecules_isotopes_noms(src, dossier=None):
     """(les mots, les molécules, les isotopes [(nom, mot)]) : les réactions qui portent un atome lourd (« -> a lourd »)
     sont des isotopes lourds ; leur molécule (celle où tombe leur premier mot) garde ses neutrons"""
     import vtx128
@@ -307,7 +312,9 @@ def molecules_et_isotopes(src, dossier=None):
     nom_ecrit = {x.lower(): x for x in lourdes}
     isotopes = sorted(((nom_ecrit[n], a) for a, n in noms.items() if n in nom_ecrit), key=lambda x: x[1])
     marquer_isotopes(molecules, isotopes)
-    return mots, molecules, isotopes
+    # « F_NOM_FIN » est la fin de la fonction NOM, sauf s'il n'y a pas de « F_NOM » (une fonction nommée « …_fin »)
+    return mots, molecules, isotopes, {v // 2: bas(k[2:]) for k, v in etiq.items()
+                                       if k.startswith("F_") and not (k.endswith("_FIN") and k[:-4] in etiq)}
 
 
 def marquer_isotopes(molecules, isotopes):
@@ -506,14 +513,169 @@ def retrotranscrire(mots, t, dossier):
 
 
 def ranger_texte(src, dossier):
-    """(les mots, les molécules, les témoins avec leurs introns : les isotopes, le texte)"""
-    mots, molecules, isotopes = molecules_et_isotopes(src, dossier)
+    """(les mots, les molécules, les témoins avec leurs introns : les isotopes, le texte, le compilateur, la carte)"""
+    mots, molecules, isotopes, noms = molecules_isotopes_noms(src, dossier)
     t = temoins(mots, molecules)
     if isotopes:
         t["introns"].append(("isotopes", [f"{n}|{a}" for n, a in isotopes]))
-    t["introns"].append(("source", src.replace("\r\n", "\n").split("\n")))
+    lignes = src.replace("\r\n", "\n").split("\n")
+    t["introns"].append(("source", lignes))
     t["introns"].append(("compilateur", [str(signature_compilateur())]))
+    t["introns"].append(("carte", faire_carte(mots, molecules, noms, lignes)))
     return mots, molecules, t
+
+
+# ---------------------------------------------------------------------------------------------------- la carte (0.6p)
+# Pour chaque molécule, une ligne, les quatre faces : ce qu'elle est (son nom, son genre, ses lignes, sa taille, son
+# en-tête), ce qu'elle touche (0 rien, 1 lit la mémoire, 2 écrit la mémoire, 3 le monde ; elle-même, puis avec ses
+# appels), ses racines (sa profondeur depuis la tête, les molécules qu'elle appelle), ses promesses (exige, garantit,
+# les exemples vérifiés, isotope lourd). Tirée des mots, du texte et des noms donnés par le compilateur ; le lecteur en
+# vtx (chimie/adn.vtx) l'écrit de même, octet pour octet.
+OPS_LIT = {0x20, 0x29, 0x54, 0x38, 0x5F}          # LD LDX LDQ GDOT BRIN
+OPS_ECRIT = {0x21, 0x2A, 0x55, 0x39, 0x5E}        # ST STX STQ GEMV MARQUE
+OPS_MONDE = {0x24, 0x52, 0x23, 0x51}              # OUT SORC IN ENTC
+SERVICES = {10: 2, 13: 2, 25: 1, 26: 2}           # les autres services touchent le monde (fichiers, cubes, voix…)
+DEBUTS = ("fonction ", "reaction ", "structure ", "constante ", "exemple ", "importer ")
+
+
+def bas(t):
+    """les majuscules latines en minuscules (A-Z, À-Þ, Œ, Ÿ), comme le lecteur en vtx"""
+    r = []
+    for c in t:
+        o = ord(c)
+        if 65 <= o <= 90 or (0xC0 <= o <= 0xDE and o != 0xD7):
+            o += 32
+        elif o == 0x152:
+            o = 0x153
+        elif o == 0x178:
+            o = 0xFF
+        r.append(chr(o))
+    return "".join(r)
+
+
+def lettre_nom(c):
+    o = ord(c)
+    return 48 <= o <= 57 or 65 <= o <= 90 or 97 <= o <= 122 or o == 95 or o >= 128
+
+
+def entetes(lignes):
+    """[(nom, genre, ligne, dernière, exige, garantit, exemples, en-tête)] des fonctions et réactions écrites"""
+    hauts = [i for i, l in enumerate(lignes) if l.startswith(DEBUTS)]
+    r = []
+    for i, l in enumerate(lignes):
+        kw = "fonction " if l.startswith("fonction ") else "reaction " if l.startswith("reaction ") else None
+        if kw is None or "(" not in l[len(kw):]:
+            continue
+        reste = l[len(kw):]
+        nom = reste[:reste.index("(")].strip(" \t")
+        suivant = next((j for j in hauts if j > i), len(lignes))
+        fin = suivant - 1
+        while fin > i and (lignes[fin].strip(" \t") == "" or lignes[fin].startswith("//")):
+            fin -= 1
+        ex = ga = 0
+        for x in lignes[i:fin + 1]:
+            st = x.lstrip(" \t")
+            for mot in ("exige", "garantit"):
+                if st.startswith(mot) and (len(st) == len(mot) or st[len(mot)] in " ("):
+                    if mot == "exige":
+                        ex += 1
+                    else:
+                        ga += 1
+        tete = l.rstrip(" \t")
+        if tete.endswith("{"):
+            tete = tete[:-1].rstrip(" \t")
+        r.append([nom, kw.strip(), i + 1, fin + 1, ex, ga, 0, tete])
+    for l in lignes:
+        if not l.startswith("exemple "):
+            continue
+        for e in r:
+            cle = e[0] + "("
+            j = l.find(cle)
+            while j >= 0:
+                if j == 0 or not lettre_nom(l[j - 1]):
+                    e[6] += 1
+                    break
+                j = l.find(cle, j + 1)
+    return r
+
+
+def touche_et_appels(mots, a, b, plat):
+    """(ce que touche la molécule [a, b) elle-même, les débuts des molécules qu'elle appelle)"""
+    niveau, appels = 0, set()
+    connu, pile = [None] * 16, []
+    for p in range(2 * a, 2 * b):
+        h, lit = plat[p]
+        if lit:
+            continue
+        op, d, s_ = h >> 48, (h >> 44) & 15, (h >> 40) & 15
+        imm = h & 0xFFFFFFFF
+        if op in OPS_LIT:
+            niveau = max(niveau, 1)
+        elif op in OPS_ECRIT:
+            niveau = max(niveau, 2)
+        elif op in OPS_MONDE:
+            niveau = 3
+        if op == 0x18:
+            connu[d] = imm - (1 << 32) if imm >> 31 else imm
+        elif op == 0x19:
+            connu[d] = imm
+        elif op == OP_LDI:
+            connu[d] = plat[p + 1][0] if p + 1 < len(plat) else None
+        elif op == 0x0B:
+            connu[d] = connu[s_]
+        elif op == 0x27:
+            pile.append(connu[s_])
+        elif op == 0x28:
+            connu[d] = pile.pop() if pile else None
+        elif op == 0x53:
+            niveau = max(niveau, SERVICES.get(connu[s_], 3) if connu[s_] is not None else 3)
+            connu[d] = None
+        elif op == OP_CALL:
+            appels.add(imm // 2)
+            connu = [None] * 16
+        else:
+            connu[d] = None
+    return niveau, appels
+
+
+def faire_carte(mots, molecules, noms, lignes):
+    plat = list(demis(mots))
+    debuts = {m.debut: k for k, m in enumerate(molecules)}
+    faces = [touche_et_appels(mots, m.debut, m.fin, plat) for m in molecules]
+    appels = [sorted(x for x in ap if x in debuts) for _, ap in faces]
+    tout = [n for n, _ in faces]
+    change = True
+    while change:
+        change = False
+        for k in range(len(molecules)):
+            for c in appels[k]:
+                if tout[debuts[c]] > tout[k]:
+                    tout[k], change = tout[debuts[c]], True
+    prof = [None] * len(molecules)
+    if molecules:
+        prof[0] = 0
+        file = [0]
+        for k in file:
+            for c in appels[k]:
+                if prof[debuts[c]] is None:
+                    prof[debuts[c]] = prof[k] + 1
+                    file.append(debuts[c])
+    ecrits = entetes(lignes)
+    r = []
+    for k, m in enumerate(molecules):
+        nom, genre, lg, ex, ga, exe, tete = "", "inconnue", "0-0", 0, 0, 0, ""
+        if m.debut == 0:
+            genre = "tete"
+        elif m.debut in noms:
+            nom, genre = noms[m.debut], "empruntee"
+            for e in ecrits:
+                if bas(e[0]) == nom:
+                    nom, genre, lg, ex, ga, exe, tete = e[0], e[1], f"{e[2]}-{e[3]}", e[4], e[5], e[6], e[7]
+                    break
+        r.append(f"m{m.debut}|{nom}|{genre}|{lg}|{m.fin - m.debut}|{faces[k][0]}|{tout[k]}|"
+                 f"{'-' if prof[k] is None else prof[k]}|{','.join(map(str, appels[k]))}|{ex}|{ga}|{exe}|"
+                 f"{int(m.isotope)}|{tete}")
+    return r
 
 
 # ---------------------------------------------------------------------------------------------------- le chemin dans les deux sens (0.6n bis)

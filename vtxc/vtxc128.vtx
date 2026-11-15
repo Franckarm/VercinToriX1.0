@@ -6243,6 +6243,23 @@ fonction ecrire_isotopes(c: Ctx) {
     }
 }
 
+// code.carte (0.6p) : le nom de chaque fonction gardée et la place de son premier mot dans Lugus (« nom|mot ») ; le
+// lecteur d'ADN en fait la carte du programme (ce qu'est chaque molécule, ce qu'elle touche, ses racines, ses promesses)
+fonction ecrire_carte(c: Ctx) {
+    soit s = ouvrir_ecriture("code.carte");
+    soit f = c.fonctions;
+    tantque f != nul {
+        si f.garde {
+            ecrire_texte(s, f.nom);
+            ecrire_car(s, '|');
+            ecrire_nombre(s, elem(c.lugus_place, elem(c.etiq, f.etiq)) / 2);
+            ecrire_car(s, 10);
+        }
+        f = f.suivant;
+    }
+    fermer(s);
+}
+
 // code.sym : ce que le débogueur de l'atelier sait des fonctions (pas à pas seulement). Une ligne par fonction gardée,
 // « F|nom|place du premier mot (demi-mots)|ligne|p (prélude) ou - », puis une par variable de la fonction (prélude excepté),
 // « V|nom|place dans le cadre|sorte » ; sorte : e entier, i entier_32, f flottant, s flottant_32, w entier_petuar,
@@ -12966,6 +12983,9 @@ fonction principal() {
         ecrire_exemples(c);
     }
     ecrire_isotopes(c);
+    si !c.mode_exemples {
+        ecrire_carte(c);
+    }
     si c.lignes_dbg == 1 {
         ecrire_symboles(c);
     }

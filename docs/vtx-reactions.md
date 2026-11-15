@@ -2341,3 +2341,79 @@ compilateurs donnent les mêmes 8951 mots du lecteur ; les suites de l'ADN, du l
 provenance restent conformes.
 
 **En passant** : les chemins ne s'affichent plus avec le préfixe `\\?\` de Windows (non essayé ici : pas de Windows).
+
+## 51. La carte du programme : l'ARN de transfert (15 novembre, 0.6p)
+
+**La direction donnée par le créateur :** Vercintorix doit se rapprocher du langage humain (le doute, les homophones,
+l'interprétation, les figures de style) pour qu'une IA y explore plus facilement d'autres raisonnements ; vtx doit être
+natif pour l'IA, plus simple, plus fonctionnel. Le contexte d'un programme, au moment de l'écrire, tient à la nature
+de ses cases et à leurs racines (dans Ogmios, sur la paillasse). L'ARNc doit accentuer la compréhension du code, et dans
+la nature l'ARN ne fait pas qu'un travail.
+
+**Ce qui a été répondu.** L'ambiguïté vit dans le sens, pas dans la grammaire : un texte qui se lirait de deux façons ne
+se vérifie plus, et les deux compilateurs ne donneraient plus les mêmes mots. U et T disent si une chose est ouverte ou
+fixée, pas quelles lectures sont en jeu : il faudra un troisième axe, les lectures (`supposons … parmi`, puis
+`retenir`), à venir. D'abord la carte : c'est elle qui donne le contexte qui tranchera entre deux lectures.
+
+**L'ARN de transfert.** Dans la cellule, l'ARN messager porte le message, l'épissage en tire plusieurs, et l'ARN de
+transfert est l'adaptateur : il fait le lien entre un codon et ce qu'il veut dire. vtx avait les deux premiers ; les
+mots savaient ce qu'ils font, pas ce qu'ils veulent dire. La carte est cet adaptateur.
+
+**La carte**, un intron de l'ADN et de l'ARNc (`GU carte N`), une ligne par molécule, ses quatre faces (le créateur :
+« quatre valeurs, comme par hasard ») :
+- **ce qu'elle est** : son nom, son genre (fonction, réaction, empruntée au prélude ou à une bibliothèque, la tête),
+  ses lignes dans le texte, sa taille, son en-tête ;
+- **ce qu'elle touche**, sur quatre degrés : rien, lit la mémoire, écrit la mémoire, le monde (sorties, fichiers,
+  services) ; elle-même, puis avec ses appels. Tiré des mots : les instructions qui lisent, écrivent ou sortent ; pour un
+  service (SYS), son numéro est retrouvé en suivant les constantes jusqu'à lui ; un numéro qu'on ne retrouve pas compte
+  pour le monde (le doute va du côté prudent) ;
+- **ses racines** : sa profondeur depuis la tête (principal est à un pas), les molécules qu'elle appelle ; celles qui
+  l'appellent se lisent à l'envers ;
+- **ses promesses** : exige, garantit, les exemples vérifiés qui l'appellent, l'isotope lourd.
+
+```
+m31|moyenne|reaction|29-33|16|0|3|2|535|1|1|1|0|reaction moyenne(a, b) -> m
+```
+
+Les noms viennent du compilateur (vtxc128 écrit `code.carte`, « nom|mot » pour chaque fonction gardée, sans changer
+aucun mot ; vtx128.py les tire de ses étiquettes) ; le reste, des mots et du texte gardé. Le lecteur en vtx l'écrit ;
+`chimie/adn.py` l'écrit de même, octet pour octet.
+
+**Les commandes.**
+- `lugus carte PROG.vtx|PROG.adn|PROG.arn [--tout]` : la carte, en clair. Exemple :
+
+  ```
+  moyenne : une réaction, lignes 29 à 33, 16 mots
+      reaction moyenne(a, b) -> m
+    ce qu'elle touche : rien elle-même ; le monde par ses appels
+    ses racines       : appelée par principal ; à 2 pas de la tête ; appelle __afficher_t
+    ses promesses     : exige 1, garantit 1, 1 exemple vérifié
+  ```
+
+  Elle nomme aussi les fonctions écrites qui n'ont pas de molécule à elles (recopiées en ligne là où elles servent).
+  « Le monde par ses appels » d'une réaction pure vient du message d'un contrat rompu : c'est vrai, et c'est utile à
+  savoir. D'un `.vtx`, l'ARNc est fait à part et rien n'est écrit à côté du programme.
+- Un brin sans carte (un ARN rapide, des mots, un hex, un cube, un ADN d'avant) : ce que touchent les molécules et leurs
+  racines viennent de ses mots seuls ; ses noms et ses promesses sont **inconnus**, et la carte le dit.
+- `lugus transcrire` refait la carte (le compilateur rend les noms avec les mots, service 27) et la compare : « la carte
+  : vrai » ; retouchée, « faux », avec la première molécule où elle ne dit plus ce que disent le texte et les mots ; un
+  ADN d'avant la carte, « inconnu ».
+- Ogmios (F5 sur Lugus) range maintenant l'ADN par le lecteur en vtx, avec sa carte.
+
+**Vérifié** (`tests/test_carte_arn.py`) : sur six programmes (dont un qui importe une bibliothèque, un isotope lourd,
+des noms accentués, des contrats et des exemples), l'ADN avec sa carte est celui de la référence, octet pour octet ;
+l'ARNc la porte, et sa rétrotranscription rend l'ADN entier ; chaque face sur un programme fait pour elles (une somme
+qui ne touche rien, un remplissage qui écrit la mémoire, principal qui touche le monde ; les profondeurs ; exige,
+garantit, un exemple, l'isotope) ; `lugus carte` en clair, `--tout`, sur un `.vtx` ; un ARN rapide ; la carte vraie,
+retouchée, absente. Les deux compilateurs donnent les mêmes mots du lecteur ; vtxc128 renouvelé (point fixe) ; les
+suites de l'ADN, du lecteur, du chemin dans les deux sens, de la patrouille et de la provenance restent conformes.
+
+**Limites, dites.** Ce qu'une molécule touche est lu dans ses instructions, pas suivi à l'exécution : une écriture
+derrière une adresse calculée compte pour « écrit la mémoire » sans dire où. Les noms écrits dans un alphabet autre que
+le latin pourraient être lus autrement par les deux compilateurs (les minuscules ne sont faites que pour le latin).
+
+**Les étages, proposés pour la suite.** Les quatre faces vont aux quatre étages d'une même place du cube : l'étage 0 a
+le code (ce qu'elle est), les étages 1, 2, 3 recevraient ce qu'elle touche, ses racines et ses promesses ; la même
+couleur #RRGGBB, d'un étage à l'autre, lie les quatre faces d'une molécule. Et à la rétrotranscription, un verdict de
+Belnap par face : quatre lettres par molécule, un codon de quatre, qui dirait laquelle a changé (« ses racines ont
+changé, ses promesses tiennent »).

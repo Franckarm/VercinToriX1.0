@@ -13,7 +13,7 @@ use super::spu64::Spu64;
 use super::pas64::{panneau64, table_des_lignes, Moteur, Pas, Vue64};
 use super::spu128::Spu128;
 use super::pas128::{image128, panneau128, presenter128};
-use super::machine128::{compiler128_iso, nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
+use super::machine128::{nombres128, COMPLET128, PAS_A_PAS128, VTXC128};
 use super::adn;
 use super::provenance;
 use super::machine128::compiler128_prov;
@@ -1024,7 +1024,7 @@ fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     let f = fichier.to_string_lossy().into_owned();
     let base = dossier_de(&f);
     let t0 = std::time::Instant::now();
-    let (mots, isotopes) = match compiler128_iso(&nombres128(VTXC128), source, &base, COMPLET128) {
+    let (mots, isotopes, carte) = match crate::machine128::compiler128_carte(&nombres128(VTXC128), source, &base, COMPLET128) {
         Ok(r) => r,
         Err(e) => {
             let (t, ligne) = situer_erreur(&e, &f);
@@ -1039,7 +1039,9 @@ fn executer128(fichier: &Path, source: &str, entrees: &[u64]) -> Fini {
     let (etat_adn, _) = adn::lire(&mut mots, &mols, &mut t);
     let temp = fichier.starts_with(std::env::temp_dir());
     let chemin_adn = fichier.with_extension("adn");
-    let ecrit = !temp && adn::ecrire_adn(&chemin_adn.to_string_lossy(), &mots, &mols, &t).is_ok();
+    // l'ADN écrit par le lecteur en vtx, comme « lugus ranger » : avec la carte du programme (0.6p)
+    let ecrit = !temp && crate::machine128::ranger_par_le_lecteur("ranger", &mots, &isotopes, &carte, &f,
+                                                                  &chemin_adn.to_string_lossy()) == Ok(adn::VRAI);
     let p = adn::place_des_temoins(&mots, &mols);
     let note_adn = format!("ADN {} : {} molécules, {:.1} % de témoins{}", adn::nom_etat(etat_adn), mols.len(),
                            100.0 * p as f64 / mots.len().max(1) as f64,

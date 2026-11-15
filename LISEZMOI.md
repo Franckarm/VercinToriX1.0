@@ -84,6 +84,7 @@ lugus ranger exemples128/chute.vtx                  # l'ADN : chute.adn
 lugus exemples128/chute.adn                         # vérifié, réparé si besoin, lancé sous la patrouille
 lugus apprendre exemples128/alternance.adn          # (après lugus ranger) ses souvenirs gardés dans l'ADN
 lugus transcrire exemples128/chute.adn chute.arn --isoforme sur   # un ARN qui garde ses témoins
+lugus carte exemples128/chute.vtx                   # la carte : ce qu'est chaque fonction, ce qu'elle touche, ses racines, ses promesses
 lugus arnc exemples128/chute.vtx                    # le programme né en ARN (l'ARNc), sans fichier d'ADN
 lugus retrotranscrire exemples128/chute.arn         # l'ARN fixé en ADN : chute-c.adn (entier, depuis un ARNc)
 lugus hex exemples128/chute.adn                     # les mots en hex : chute.hex
