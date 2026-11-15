@@ -57,7 +57,9 @@ constante FILE = 42600000;
 constante CAD = 42800000;        // les appels de chaque molécule : le début dans CALLS, leur nombre
 constante CAN = 43000000;
 constante CALLS = 44000000;
-constante CTMP = 44900000;       // les appels d'une molécule, avant le tri
+constante CTMP = 44900000;
+constante MHD = 43500000;        // l'en-tête de chaque molécule (son rang dans HDR), ou 4294967295
+constante VIS = 43700000;        // les molécules vues, en suivant le chemin d'une promesse rompue       // les appels d'une molécule, avant le tri
 constante LST = 45000000;        // le début de chaque ligne du texte (dans INTR)
 constante HDR = 46000000;        // les en-têtes : seize cases chacun
 constante FOFF = 75000000;       // la carte lue : le début de chaque champ (trente-deux cases par ligne), puis la fin
@@ -2979,6 +2981,7 @@ fonction lire_entetes() {
         @2[b + 7] = 0;
         @2[b + 8] = td;
         @2[b + 9] = tf - td;
+        @2[b + 10] = 0;
         si nh < 60000 {
             nh = nh + 1;
         }
@@ -3282,7 +3285,9 @@ fonction faire_carte(avec_noms) {
             h = entete_du_nom(kn);
         }
         soit empreinte = @2[base + 1] - deb;
+        @2[MHD + k4] = h;
         si h != 4294967295 {
+            @2[HDR + 16 * h + 10] = 1;
             soit bh = HDR + 16 * h;
             pour q3 dans 0..@2[bh + 1] {
                 carte_car(@2[INTR + @2[bh] + q3]);
@@ -3379,6 +3384,193 @@ fonction faire_carte(avec_noms) {
     }
 }
 
+// --------------------------------------------------------------------------------------------- les promesses (0.6r)
+// « touche rien | lecture | memoire | monde » dans l'en-tête, après la dernière parenthèse : ce que la fonction promet
+// de toucher au plus, elle et ses appels. La carte constate ce qu'elle touche ; une promesse rompue est dite, avec le
+// chemin qui la rompt, et le rangement (ou la compilation) est refusé. chimie/adn.py dit les mêmes mots (promesses).
+
+fonction mot_dans(d, f, t) {
+    si f - d != longueur(t) {
+        retour 0;
+    }
+    pour k dans 0..longueur(t) {
+        si @2[INTR + d + k] != car(t, k) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// la promesse de l'en-tête h : 0 à 3, ou 4294967295
+fonction promesse_de(h) {
+    soit d = @2[HDR + 16 * h + 8];
+    soit f = d + @2[HDR + 16 * h + 9];
+    soit i = d;
+    pour k dans d..f {
+        si @2[INTR + k] == ')' {
+            i = k + 1;
+        }
+    }
+    soit cle = " touche ";
+    soit j = i;
+    tantque j + 8 <= f {
+        soit ok = 1;
+        pour q dans 0..8 {
+            si @2[INTR + j + q] != car(cle, q) {
+                ok = 0;
+            }
+        }
+        si ok == 1 {
+            soit m = j + 8;
+            soit e = m;
+            tantque e < f && @2[INTR + e] != 32 && @2[INTR + e] != '{' {
+                e = e + 1;
+            }
+            si mot_dans(m, e, "rien") {
+                retour 0;
+            }
+            si mot_dans(m, e, "lecture") {
+                retour 1;
+            }
+            si mot_dans(m, e, "memoire") || mot_dans(m, e, "mémoire") {
+                retour 2;
+            }
+            si mot_dans(m, e, "monde") {
+                retour 3;
+            }
+            retour 4294967295;
+        }
+        j = j + 1;
+    }
+    retour 4294967295;
+}
+
+fonction ecrire_nom_entete(h) {
+    soit b = HDR + 16 * h;
+    pour q dans 0..@2[b + 1] {
+        ecrire_car(1, @2[INTR + @2[b] + q]);
+    }
+}
+
+// le nom d'une molécule pour un message : celui de son en-tête, sinon celui que donne le compilateur, sinon mN
+fonction ecrire_nom_molecule(k) {
+    si @2[MHD + k] != 4294967295 {
+        ecrire_nom_entete(@2[MHD + k]);
+        retour;
+    }
+    soit kn = nom_de_place(@2[MOL + 8 * k]);
+    si kn != 4294967295 {
+        pour q dans 0..@2[NLEN + kn] {
+            ecrire_car(1, @2[NCAR + @2[NDEB + kn] + q]);
+        }
+        retour;
+    }
+    ecrire_car(1, 'm');
+    ecrire_u64(1, @2[MOL + 8 * k]);
+}
+
+// après faire_carte(1) : rend le nombre de promesses rompues (et les écrit)
+fonction verifier_promesses() {
+    soit nm = @2[G + G_NM];
+    soit rompues = 0;
+    pour k dans 0..nm {
+        soit h = @2[MHD + k];
+        si h == 4294967295 || @2[MOL + 8 * k] == 0 {
+            continuer;
+        }
+        soit p = promesse_de(h);
+        si p == 4294967295 || p >= 3 || @2[TOUT + k] <= p {
+            continuer;
+        }
+        rompues = rompues + 1;
+        ecrire_t(1, "promesse rompue : ");
+        ecrire_nom_entete(h);
+        ecrire_t(1, " (ligne ");
+        ecrire_u64(1, @2[HDR + 16 * h + 3]);
+        ecrire_t(1, ") promet ");
+        si p == 0 {
+            ecrire_t(1, "de ne rien toucher");
+        } sinon si p == 1 {
+            ecrire_t(1, "de lire la mémoire au plus");
+        } sinon {
+            ecrire_t(1, "de ne pas toucher le monde");
+        }
+        ecrire_t(1, ", mais elle ");
+        soit t = @2[TOUT + k];
+        si t == 1 {
+            ecrire_t(1, "lit la mémoire");
+        } sinon si t == 2 {
+            ecrire_t(1, "écrit la mémoire");
+        } sinon {
+            ecrire_t(1, "touche le monde");
+        }
+        ecrire_t(1, " : ");
+        // le chemin : d'appel en appel, jusqu'à celle qui le fait elle-même
+        pour v dans 0..nm {
+            @2[VIS + v] = 0;
+        }
+        @2[VIS + k] = 1;
+        soit x = k;
+        soit n = 0;
+        tantque @2[TOUD + x] <= p {
+            soit c = 4294967295;
+            soit q = 0;
+            tantque c == 4294967295 && q < @2[CAN + x] {
+                soit y = molecule_de(@2[CALLS + @2[CAD + x] + q]);
+                si @2[TOUT + y] > p && @2[VIS + y] == 0 {
+                    c = y;
+                }
+                q = q + 1;
+            }
+            si c == 4294967295 {
+                arreter;
+            }
+            @2[VIS + c] = 1;
+            si n == 0 {
+                ecrire_t(1, "par ");
+            } sinon {
+                ecrire_t(1, " → ");
+            }
+            ecrire_nom_molecule(c);
+            n = n + 1;
+            x = c;
+        }
+        si n == 0 {
+            ecrire_t(1, "elle-même");
+        }
+        ecrire_car(1, 10);
+    }
+    pour h2 dans 0..@2[G + G_NH] {
+        si @2[HDR + 16 * h2 + 10] == 0 && promesse_de(h2) != 4294967295 {
+            ecrire_t(1, "promesse inconnue : ");
+            ecrire_nom_entete(h2);
+            ecrire_t(1, " (ligne ");
+            ecrire_u64(1, @2[HDR + 16 * h2 + 3]);
+            ecrire_t(1, ") est recopiée en ligne là où elle sert : sa promesse se vérifie dans celles qui l'appellent, pas à part\n");
+        }
+    }
+    retour rompues;
+}
+
+// le verbe « promesses » : MOTS NOMS SOURCE ; vrai si toutes sont tenues
+fonction juger_promesses(mots, noms, source) {
+    charger(mots);
+    si @2[G + G_ERR] != 0 {
+        retour E_INCONNU;
+    }
+    decouper();
+    @2[G + G_NI] = 0;
+    garder_source(source);
+    lire_noms(noms);
+    @2[G + G_NA] = 4294967295;
+    @2[G + G_HCOPIE] = 0;
+    faire_carte(1);
+    si verifier_promesses() > 0 {
+        retour E_FAUX;
+    }
+    retour E_VRAI;
+}
+
 // la carte, rangée dans les introns (après le compilateur)
 fonction garder_carte(noms, ancien) {
     si noms == 0 {
@@ -3388,6 +3580,10 @@ fonction garder_carte(noms, ancien) {
     lire_anciens(ancien);
     @2[G + G_HCOPIE] = 0;
     faire_carte(1);
+    si verifier_promesses() > 0 {
+        refuser("rien n'est rangé : une promesse est rompue");
+        retour;
+    }
     intron_texte("GU faces ");
     intron_nombre(@2[G + G_NM]);
     intron_car(10);
@@ -3574,6 +3770,48 @@ fonction ecrire_centre(k, avec_temoins) {
     }
 }
 
+// la promesse « touche … » de l'en-tête de la ligne k de la carte montrée (après sa dernière parenthèse)
+fonction promesse_texte(k) {
+    soit d = @2[FOFF + 32 * k + 16];
+    soit f = champ_fin(k, 16);
+    soit i = d;
+    pour q dans d..f {
+        si @2[CARTEB + q] == ')' {
+            i = q + 1;
+        }
+    }
+    soit cle = " touche ";
+    soit j = i;
+    tantque j + 8 <= f {
+        soit ok = 1;
+        pour q2 dans 0..8 {
+            si @2[CARTEB + j + q2] != car(cle, q2) {
+                ok = 0;
+            }
+        }
+        si ok == 1 {
+            soit m = j + 8;
+            soit c = @2[CARTEB + m];
+            soit c2 = @2[CARTEB + m + 1];
+            si c == 'r' {
+                retour 0;
+            }
+            si c == 'l' {
+                retour 1;
+            }
+            si c == 'm' && c2 == 'o' {
+                retour 3;
+            }
+            si c == 'm' {
+                retour 2;
+            }
+            retour 4294967295;
+        }
+        j = j + 1;
+    }
+    retour 4294967295;
+}
+
 fonction montrer_molecule(k, avec_temoins) {
     ecrire_car(1, 10);
     // ce qu'elle est
@@ -3701,6 +3939,29 @@ fonction montrer_molecule(k, avec_temoins) {
                 ecrire_t(1, ", ");
             }
             ecrire_t(1, "isotope lourd (relue à l'entrée et à la sortie)");
+            rien = 0;
+        }
+        soit pt = promesse_texte(k);
+        si pt != 4294967295 {
+            si rien == 0 {
+                ecrire_t(1, ", ");
+            }
+            si pt == 0 {
+                ecrire_t(1, "ne rien toucher");
+            } sinon si pt == 1 {
+                ecrire_t(1, "lire la mémoire au plus");
+            } sinon si pt == 2 {
+                ecrire_t(1, "ne pas toucher le monde");
+            } sinon {
+                ecrire_t(1, "dit qu'elle touche le monde");
+            }
+            si pt < 3 {
+                si champ_n(k, 6) <= pt {
+                    ecrire_t(1, " (tenue)");
+                } sinon {
+                    ecrire_t(1, " (rompue)");
+                }
+            }
             rien = 0;
         }
         si rien == 1 {
@@ -3900,6 +4161,7 @@ fonction faire_arnc(mots, sortie, source, isotopes, compilateur, noms, ancien) {
 //   transcrire ADN SORTIE [ISOFORME] [SIGNATURE DU COMPILATEUR : le texte gardé est alors vérifié]
 //   ranger     BRIN ADN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR]   (le brin : .mots, .hex, .cub, .arn, .adn)
 //   arnc       MOTS ARN [SOURCE] [ISOTOPES] [SIGNATURE DU COMPILATEUR] [NOMS]   (l'ARNc : le programme né en ARN)
+//   promesses  MOTS NOMS SOURCE          (les promesses « touche … » tenues ? 0.6r)
 //   carte      BRIN [--tout]             (la carte du programme : ce qu'est chaque molécule, ce qu'elle touche, ses
 //                                         racines, ses promesses)
 //   hex        BRIN HEX
@@ -3923,6 +4185,11 @@ fonction principal() {
             retour;
         }
         sortie(E_VRAI);
+        retour;
+    }
+    si verbe != 0 && texte_egal(verbe, "promesses") {
+        soit src = lire_chemin(CHEMIN4);
+        sortie(juger_promesses(entree, relu, src));
         retour;
     }
     si verbe != 0 && texte_egal(verbe, "carte") {

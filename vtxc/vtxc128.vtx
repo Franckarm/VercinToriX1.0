@@ -187,7 +187,7 @@ structure Molecule { nom, params: Param, atomes: Atome, contrats: Contrat, resul
 structure Var { nom, off, type, genre, haut, reg, score, suivant: Var, vdeb, vfin }   // vdeb, vfin : sa période (les vibrations)
 structure Fonction { nom, params: Param, nb, rtype, corps: Noeud, etiq, ligne, garde, suivant: Fonction, suite: Fonction,
                      er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif, mol: Molecule,
-                     dbg_t: Liste, dbg_tt: Liste, dbg_tf: Liste, dbg_v: Var }   // mol : la molécule d'une réaction ; dbg_ : code.sym
+                     dbg_t: Liste, dbg_tt: Liste, dbg_tf: Liste, dbg_v: Var, promet }   // mol : la molécule d'une réaction ; dbg_ : code.sym ; promet : « touche … » (0.6r)
 structure Constante { nom, val, type, haut, suivant: Constante }
 // sorte : 0 tableau d'entiers, 1 de quits, 2 de logiques (64 par mot), 3 de structures (st : son numéro)
 structure Tableau { nom, etage, base, taille, sorte, st, suivant: Tableau }
@@ -6110,6 +6110,21 @@ fonction un_atome(c: Ctx, m: Molecule): Atome {
     retour a;
 }
 
+// « touche rien | lecture | memoire | monde » (0.6r) : ce que la fonction promet de toucher au plus ; le code n'en
+// change pas, la promesse est vérifiée par la carte (le lecteur d'ADN), contre ce que les mots touchent vraiment
+fonction promesse_touche(c: Ctx) {
+    si !est_id(c, "touche") {
+        retour 0;
+    }
+    avancer(c);
+    si est_id(c, "rien") || est_id(c, "lecture") || est_id(c, "memoire") || est_id(c, "mémoire") || est_id(c, "monde") {
+        avancer(c);
+    } sinon {
+        erreur(c, c.tok.ligne, "après « touche », rien, lecture, memoire ou monde est attendu");
+    }
+    retour 1;
+}
+
 fonction une_reaction(c: Ctx, l) {
     soit f = Fonction { nom: identifiant(c), ligne: l };
     attendre(c, "(");
@@ -6149,6 +6164,7 @@ fonction une_reaction(c: Ctx, l) {
             ajouter(m.rtypes, type_et_unite(c));
         }
     }
+    promesse_touche(c);
     f.etiq = nouvelle_etiquette(c);
     attendre(c, "{");
     soit dernier: Atome = nul;
@@ -7110,6 +7126,8 @@ fonction programme(c: Ctx) {
             }
             attendre(c, ")");
             f.rtype = type_opt(c);
+            // une fonction qui promet garde sa molécule (elle n'est pas recopiée en ligne) : sa promesse se vérifie à part
+            f.promet = promesse_touche(c);
             f.etiq = nouvelle_etiquette(c);
             // une fonction du prélude cède la place à celle du programme qui porte le même nom
             soit garder = 1;
@@ -8902,7 +8920,7 @@ fonction el_preparer(c: Ctx) {
             pz.usages = 0;
             pz = pz.suivant;
         }
-        si s != nul && s.suivant == nul && el_types_simples(f) {
+        si s != nul && s.suivant == nul && el_types_simples(f) && f.promet == 0 {
             soit corps: Noeud = nul;
             soit genre = 0;
             si s.genre == N_RETOUR && s.a != nul {

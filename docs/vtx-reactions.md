@@ -2479,3 +2479,50 @@ octet, sur six programmes, au premier rangement et au second (avec le rangement 
 face ; l'histoire (changée, inchangée depuis 1 puis 2 rangements, nouvelle) ; la carte vraie malgré l'histoire ; le centre
 d'une molécule abîmée (réparée) ; la paillasse d'Ogmios (une fonction, une réaction, le texte retouché depuis) ; une carte
 à quatre faces (inconnue). Les deux compilateurs donnent les mêmes mots du lecteur (14 328).
+
+## 53. Les promesses : la carte constate, la promesse engage (15 novembre, 0.6r)
+
+**Décidé avec le créateur**, après un avis demandé sur la nature du langage (une avancée : les quatre valeurs natives et
+un programme qui se décrit et se prouve lui-même ; un risque : l'accumulation des couches et du vocabulaire, et un cœur
+du langage en retard sur ce qui l'entoure) : suivre la piste, faire des faces des promesses vérifiées, et graver le
+fonctionnement de vtx (`docs/vtx-fondements.md`).
+
+**La promesse.** Après la dernière parenthèse de l'en-tête (et le type du résultat) :
+
+```
+fonction somme(n) touche rien { … }               // ni la mémoire, ni le monde
+fonction lire_case(t, i): entier touche lecture { … }
+fonction remplir(t, n) touche memoire { … }        // la mémoire, pas le monde
+reaction moyenne(a, b) -> m touche rien { … }
+fonction principal() touche monde { … }            // le dire
+```
+
+- C'est ce que la fonction touche au plus, **elle et ses appels**. Les deux compilateurs l'acceptent sans changer un mot
+  du code ; une seule différence : une fonction qui promet **n'est plus recopiée en ligne** (elle garde sa molécule),
+  sinon sa promesse ne pourrait pas se vérifier à part. Les programmes sans promesse donnent exactement les mêmes mots
+  qu'avant.
+- **Le juge est le lecteur d'ADN écrit en vtx** : il fait la carte (ce que les mots touchent vraiment), lit la promesse
+  dans l'en-tête, et dit ce qui la rompt, d'appel en appel :
+
+  ```
+  promesse rompue : double (ligne 10) promet de ne rien toucher, mais elle touche le monde : par parler → afficher
+  promesse rompue : remplir (ligne 14) promet de ne rien toucher, mais elle écrit la mémoire : elle-même
+  ```
+
+- **Une promesse rompue arrête la compilation** (toute compilation ordinaire de Lugus : `lugus PROG.vtx`, `lugus
+  compiler`, F5 dans Ogmios, l'exécutable) **et le rangement** (aucun ADN, aucun ARNc n'est écrit). Le juge ne tourne
+  que si le texte porte une promesse : les autres programmes ne paient rien.
+- La face « ses promesses » de la carte la montre : « ne rien toucher (tenue) » ; dans `lugus carte` et dans Ogmios.
+- `chimie/adn.py` (promesses) dit exactement les mêmes mots que le lecteur en vtx.
+
+**Limites, dites.** La promesse est jugée sur les mots ordinaires (pas en pas à pas ni avec la provenance, qui ajoutent
+des écritures). Ce qu'une fonction touche est lu dans ses instructions, pas suivi à l'exécution : c'est une borne sûre
+(le doute compte du côté prudent), pas une mesure fine. vtx128.py accepte la promesse mais ne la juge pas lui-même :
+Lugus, Ogmios et la référence `chimie/adn.py` la jugent.
+
+**Vérifié** (`tests/test_promesses.py`, 15 contrôles) : les promesses tenues (les mêmes mots par les deux compilateurs, le
+programme tourne) ; une fonction qui promet garde sa molécule ; trois promesses rompues (la compilation, le rangement et
+l'ARNc refusés ; les mêmes messages que la référence ; le chemin, elle-même ou d'appel en appel) ; la carte et la
+paillasse montrent la promesse tenue ; `touche partout` refusé par les deux compilateurs. vtxc128 renouvelé (point
+fixe) ; les suites des compilateurs, de l'ADN, de la carte, du chemin, de la patrouille, de la provenance et de la
+paillasse restent conformes.

@@ -123,6 +123,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_adn_deux_sens.py")]))
     etapes.append(("la carte du programme : ce qu'est chaque molécule, ce qu'elle touche, ses racines, ses promesses",
                    [sys.executable, os.path.join("tests", "test_carte_arn.py")]))
+    etapes.append(("les promesses : touche rien, lecture, memoire, monde ; une promesse rompue arrête la compilation",
+                   [sys.executable, os.path.join("tests", "test_promesses.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",

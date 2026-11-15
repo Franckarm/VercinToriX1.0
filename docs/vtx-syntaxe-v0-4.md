@@ -171,6 +171,21 @@ pour i dans 0..4096 { etat[i] = fusion(capteur_a[i], capteur_b[i]); }
 ```
 est réécrite par le compilateur pour traiter un mot entier, donc 16 éléments, à chaque tour, quand trois conditions sont réunies : la boucle avance de 1 en 1 et ne contient que des écritures `T[i] = …` dans des tableaux rangés de même sorte ; chaque valeur ne lit que des éléments d'indice `i` exactement, et des constantes ; elle n'utilise que des opérations quit par quit (`et4`, `ou4`, `non4`, `anti`, `fusion`, `consensus` pour les logiques ; `min4`, `max4`, `addm4`, `cmp3`, `qegal`, `&`, `|`, `^` pour les quits). Les boucles qui comptent (`si a[i] == b[i] { n = n + 1; }`, ou `!=`) et qui somment des quits (`n = n + t[i]`) sont réécrites aussi, avec `qegal` et `nb_bits`, si la valeur de chaque élément tient dans son quit (pas de `cmp3` ni de `qegal` dans une somme ou une comparaison, constantes de 0 à 3). Les éléments du début et de la fin qui ne remplissent pas un mot restent traités un par un. Sinon, la boucle est gardée telle quelle : le résultat est toujours le même. Gain mesuré : environ ×15 sur un tableau ordinaire. Pour compter : ×10,6.
 
+**Les promesses `touche` (Lugus, 0.6r).** Après la parenthèse de l'en-tête (et le type du résultat), une fonction ou une
+réaction peut promettre ce qu'elle touche au plus, elle et ses appels : `touche rien` (ni la mémoire ni le monde),
+`touche lecture` (lit la mémoire), `touche memoire` (la mémoire, pas le monde), `touche monde` (le dire).
+
+```
+fonction somme(n) touche rien { … }
+fonction remplir(t, n) touche memoire { … }
+reaction moyenne(a, b) -> m touche rien { … }
+```
+
+La carte du programme (le lecteur d'ADN en vtx) juge la promesse sur ce que les mots touchent vraiment ; une promesse
+rompue arrête la compilation et le rangement, avec le chemin qui la rompt (« par parler → afficher »). Une fonction qui
+promet n'est pas recopiée en ligne. À ne pas confondre avec `touche()`, la fonction du clavier : la promesse ne peut
+venir qu'après la parenthèse d'un en-tête. Voir `docs/vtx-fondements.md` et `docs/vtx-reactions.md`, section 53.
+
 L'indice d'un tableau rangé ne doit pas appeler de fonction ; un tableau rangé ne peut pas être cumulé, et des segments qui y écrivent sont joués l'un après l'autre (deux éléments voisins partagent un mot).
 
 Les données sont rangées après le code et copiées une seule fois au démarrage. Les champs de structure et les cases de tableau sont des entiers (un mot).

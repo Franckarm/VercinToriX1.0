@@ -41,12 +41,16 @@ pub fn compiler128(compilateur: &[u128], source: &str, base: &str, mode: Mode128
 /// arrête la compilation.
 pub fn compiler128_prov(compilateur: &[u128], source: &str, base: &str, mode: Mode128, lignes: bool, provenance: bool)
                         -> Result<(Vec<u128>, Vec<u128>, Vec<u128>, String), String> {
-    let (code, prov, ex, _, _, _) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
+    let (code, prov, ex, _, _, carte) = passer_vtxc128(compilateur, source, base, mode, lignes, provenance, false)?;
     if !ex.trim().is_empty() {
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
     let mut morceaux = code.split(';');
     let mots = nombres128(morceaux.next().unwrap_or(""));
+    // 0.6r : les promesses « touche … », jugées sur les mots ordinaires (la trace et le pas à pas en ajoutent)
+    if !lignes && !provenance && mode.prelude && mode.optim && mode.partition {
+        juger_promesses(&mots, &carte, source)?;
+    }
     let table = nombres128(morceaux.next().unwrap_or(""));
     let dbg = nombres128(morceaux.next().unwrap_or(""));
     Ok((mots, table, dbg, prov))
@@ -82,6 +86,9 @@ pub fn compiler128_carte(compilateur: &[u128], source: &str, base: &str, mode: M
         rejouer_exemples(compilateur, source, base, mode, &ex)?;
     }
     let mots = nombres128(code.split(';').next().unwrap_or(""));
+    if mode.prelude && mode.optim && mode.partition {
+        juger_promesses(&mots, &carte, source)?;
+    }
     let isotopes = iso.lines().filter_map(|l| {
         let (n, a) = l.trim_end_matches('\r').split_once('|')?;
         Some((n.to_string(), a.parse::<usize>().ok()?))
@@ -134,6 +141,51 @@ pub fn adn_en_vtx(entrees: &[String]) -> Result<u8, String> {
 /// Le lecteur d'ADN dans un dossier : celui où il écrit et relit les cubes, et où le compilateur cherche les
 /// importations du texte gardé (0.6n bis) ; « . » sinon.
 pub fn adn_en_vtx_dans(entrees: &[String], dossier: Option<&std::path::Path>) -> Result<u8, String> {
+    let (e, t) = adn_en_vtx_texte(entrees, dossier)?;
+    eprint!("{}", t);
+    Ok(e)
+}
+
+/// un texte porte-t-il une promesse « touche … » (un en-tête de fonction ou de réaction, après sa dernière parenthèse) ?
+pub fn a_des_promesses(source: &str) -> bool {
+    source.lines().any(|l| (l.starts_with("fonction ") || l.starts_with("reaction "))
+        && l.rfind(')').map(|i| l[i..].contains(" touche ")).unwrap_or(false))
+}
+
+/// Les promesses jugées par le lecteur en vtx (0.6r) : Ok(les notes) si toutes sont tenues, Err(les messages) sinon.
+/// Rien n'est lancé pour un texte sans promesse.
+pub fn juger_promesses(mots: &[u128], carte: &str, source: &str) -> Result<String, String> {
+    if !a_des_promesses(source) {
+        return Ok(String::new());
+    }
+    let travail = std::env::temp_dir().join(format!("vtx-promesses-{}-{}", std::process::id(),
+                                                     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                                                         .map(|d| d.as_nanos()).unwrap_or(0)));
+    std::fs::create_dir_all(&travail).map_err(|e| e.to_string())?;
+    let f_mots = travail.join("code.mots");
+    let txt: Vec<String> = mots.iter().map(|w| w.to_string()).collect();
+    let _ = std::fs::write(&f_mots, format!("{};\n", txt.join(",")));
+    let f_carte = travail.join("code.carte");
+    let _ = std::fs::write(&f_carte, carte);
+    let f_src = travail.join("source.vtx");
+    let _ = std::fs::write(&f_src, source);
+    let entrees = vec![f_mots.to_string_lossy().into_owned(), f_carte.to_string_lossy().into_owned(), "promesses".into(),
+                       f_src.to_string_lossy().into_owned()];
+    let r = adn_en_vtx_texte(&entrees, None);
+    let _ = std::fs::remove_dir_all(&travail);
+    let (e, t) = r?;
+    if e == crate::adn::VRAI {
+        if !t.is_empty() {
+            eprint!("{}", t);
+        }
+        Ok(t)
+    } else {
+        Err(t)
+    }
+}
+
+/// le lecteur d'ADN, ce qu'il écrit rendu au lieu d'être écrit
+pub fn adn_en_vtx_texte(entrees: &[String], dossier: Option<&std::path::Path>) -> Result<(u8, String), String> {
     let mut spu = Spu128::nouveau();
     spu.dossier = Some(dossier.map(|d| d.to_path_buf()).unwrap_or_else(|| std::path::PathBuf::from(".")));
     spu.compilateur = Some(compiler_pour_lecteur);
@@ -144,9 +196,11 @@ pub fn adn_en_vtx_dans(entrees: &[String], dossier: Option<&std::path::Path>) ->
     }
     let r = spu.executer(u64::MAX);
     let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
-    eprint!("{}", t);
-    r.map_err(|e| format!("erreur : {}", e))?;
-    Ok(spu.sortie.last().copied().unwrap_or(0) as u8)
+    if let Err(e) = r {
+        eprint!("{}", t);
+        return Err(format!("erreur : {}", e));
+    }
+    Ok((spu.sortie.last().copied().unwrap_or(0) as u8, t))
 }
 
 /// Ranger un programme compilé par le lecteur d'ADN écrit en vtx (0.6p) : les mots, les isotopes et les noms des

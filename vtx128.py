@@ -1978,10 +1978,12 @@ class Analyseur:
                     self.suivant()
             self.attendre(")")
             rtype = self.type_opt() or "e"
+            touche = self.promesse_touche(l)
             corps = self.bloc()
             if VECTORISER:
                 corps = self.vectoriser(corps)
             fonctions.append(Fonction(nom, params, self.abaisser(corps), l, ptypes, rtype))
+            fonctions[-1].touche = touche
             # un tableau rangé (32 quits par mot) est traduit ici en lectures de mots ; vtxc le traduit à la génération :
             # une telle fonction n'est pas recopiée en ligne (voir ENLIGNE), pour que les deux compilateurs en décident
             # de même
@@ -2012,6 +2014,20 @@ class Analyseur:
     # des lignes ne compte pas, les atomes sont rangés par vagues d'après les liaisons. Premier temps : la réaction est
     # traduite en une fonction ordinaire, ses atomes dans l'ordre des vagues (chaque instruction garde la ligne de son
     # atome : le pas à pas va de vague en vague).
+    # « touche rien », « touche lecture », « touche memoire », « touche monde » (0.6r) : ce que la fonction promet de
+    # toucher au plus, elle et ses appels. Le code n'en change pas ; la promesse est vérifiée par la carte (le lecteur
+    # d'ADN en vtx), contre ce que les mots touchent vraiment. Rend 0 à 3, ou None sans promesse.
+    def promesse_touche(self, l):
+        k, v, _ = self.regard()
+        if not (k == "id" and v == "touche"):
+            return None
+        self.suivant()
+        k, v, l2 = self.suivant()
+        niveaux = {"rien": 0, "lecture": 1, "memoire": 2, "mémoire": 2, "monde": 3}
+        if k != "id" or v not in niveaux:
+            raise VtxError(f"ligne {l2} : après « touche », rien, lecture, memoire ou monde est attendu")
+        return niveaux[v]
+
     def reaction(self, l):
         nom = self.identifiant()
         self.attendre("(")
@@ -2039,6 +2055,7 @@ class Analyseur:
                 resultats.append(self.identifiant())
                 t2, _u2 = self.type_et_unite()
                 rtypes.append(t2 or "e")
+        touche = self.promesse_touche(l)
         self.attendre("{")
         atomes, contrats = [], []
         self.dans_reaction = True
@@ -7542,6 +7559,9 @@ def el_atome(e):
 def el_candidat(f):
     """(genre, expression ou instruction, sans appel, usages des paramètres) si f peut être recopiée, sinon None."""
     if len(f.corps) != 1 or f.rtype in LARGES2 or any(t in LARGES2 for t in f.ptypes) or getattr(f, "rangee", False):
+        return None
+    # 0.6r : une fonction qui promet (« touche … ») garde sa molécule, pour que sa promesse se vérifie à part
+    if getattr(f, "touche", None) is not None:
         return None
     s = f.corps[0]
     if s[0] == "retour" and s[1] is not None:

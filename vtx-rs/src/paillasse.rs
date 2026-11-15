@@ -1002,6 +1002,26 @@ impl Faces {
         if c[13] == "1" {
             pm.push("isotope lourd (relue à l'entrée et à la sortie)".into());
         }
+        // 0.6r : la promesse « touche … » de l'en-tête, et si la carte la tient
+        let tete = &c[16];
+        let apres = tete.rfind(')').map(|i| &tete[i..]).unwrap_or("");
+        if let Some(j) = apres.find(" touche ") {
+            let mot: String = apres[j + 8..].chars().take_while(|&ch| ch != ' ' && ch != '{').collect();
+            let niveau = match mot.as_str() {
+                "rien" => Some((0, "ne rien toucher")),
+                "lecture" => Some((1, "lire la mémoire au plus")),
+                "memoire" | "mémoire" => Some((2, "ne pas toucher le monde")),
+                "monde" => Some((3, "dit qu'elle touche le monde")),
+                _ => None,
+            };
+            if let Some((p, quoi)) = niveau {
+                if p == 3 {
+                    pm.push(quoi.to_string());
+                } else {
+                    pm.push(format!("{} ({})", quoi, if n(6).unwrap_or(3) <= p { "tenue" } else { "rompue" }));
+                }
+            }
+        }
         t.push_str(&format!("Ses promesses : {}.\r\n", if pm.is_empty() { "aucune écrite".to_string() } else { pm.join(", ") }));
         t.push_str(&format!("Sa mémoire : {}.\r\n", match c[15].chars().next() {
             Some('?') => "son histoire est inconnue (rien n'était rangé avant)".to_string(),

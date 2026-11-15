@@ -526,6 +526,61 @@ def ranger_texte(src, dossier, ancien=None):
     return mots, molecules, t
 
 
+# ---------------------------------------------------------------------------------------------------- les promesses (0.6r)
+NIVEAUX = {"rien": 0, "lecture": 1, "memoire": 2, "mémoire": 2, "monde": 3}
+PROMET = {0: "de ne rien toucher", 1: "de lire la mémoire au plus", 2: "de ne pas toucher le monde"}
+FAIT = {1: "lit la mémoire", 2: "écrit la mémoire", 3: "touche le monde"}
+
+
+def promesse_de(tete):
+    """« touche X » après la dernière parenthèse de l'en-tête : 0 à 3, ou None"""
+    i = tete.rfind(")")
+    j = tete.find(" touche ", i + 1 if i >= 0 else 0)
+    if j < 0:
+        return None
+    mot = tete[j + 8:]
+    k = 0
+    while k < len(mot) and mot[k] not in " {":
+        k += 1
+    return NIVEAUX.get(mot[:k])
+
+
+def promesses(mots, molecules, noms, lignes):
+    """les messages : chaque promesse rompue (avec le chemin qui la rompt), et celles qui ne se vérifient pas à part"""
+    debuts, faces, appels, tout, prof = bases_carte(mots, molecules)
+    ecrits = entetes(lignes)
+    vues, r = set(), []
+    nom_de = {}
+    for m in molecules:
+        if m.debut in noms:
+            nom_de[m.debut] = next((e[0] for e in ecrits if bas(e[0]) == noms[m.debut]), noms[m.debut])
+    for k, m in enumerate(molecules):
+        if m.debut == 0 or m.debut not in noms:
+            continue
+        e = next((e for e in ecrits if bas(e[0]) == noms[m.debut]), None)
+        if e is None:
+            continue
+        vues.add(e[0])
+        p = promesse_de(e[7])
+        if p is None or p >= 3 or tout[k] <= p:
+            continue
+        chemin, x, vu = [], k, {k}
+        while faces[x][0] <= p:
+            c = next((debuts[c] for c in appels[x] if tout[debuts[c]] > p and debuts[c] not in vu), None)
+            if c is None:
+                break
+            vu.add(c)
+            chemin.append(nom_de.get(molecules[c].debut, f"m{molecules[c].debut}"))
+            x = c
+        r.append(f"promesse rompue : {e[0]} (ligne {e[2]}) promet {PROMET[p]}, mais elle {FAIT[tout[k]]} : "
+                 + ("elle-même" if not chemin else "par " + " → ".join(chemin)))
+    for e in ecrits:
+        if e[0] not in vues and promesse_de(e[7]) is not None:
+            r.append(f"promesse inconnue : {e[0]} (ligne {e[2]}) est recopiée en ligne là où elle sert : sa promesse "
+                     "se vérifie dans celles qui l'appellent, pas à part")
+    return r
+
+
 # ---------------------------------------------------------------------------------------------------- la carte (0.6p, 0.6q)
 # Pour chaque molécule, une ligne, les six faces d'un dé, en trois paires opposées :
 #   ce qu'elle est (nom, genre, lignes, taille, en-tête)  |  ce qu'elle touche (0 rien, 1 lit la mémoire, 2 écrit la
@@ -686,8 +741,8 @@ def histoire(ancien, cle, empreinte):
     return f"i{int(h[1:]) + 1}" if h.startswith("i") else "i1"
 
 
-def faire_carte(mots, molecules, noms, lignes, ancien=None):
-    ancien = anciens_de(ancien)
+def bases_carte(mots, molecules):
+    """(les débuts, ce que touche chaque molécule elle-même, avec ses appels, ses appels, sa profondeur)"""
     plat = list(demis(mots))
     debuts = {m.debut: k for k, m in enumerate(molecules)}
     faces = [touche_et_appels(mots, m.debut, m.fin, plat) for m in molecules]
@@ -709,6 +764,12 @@ def faire_carte(mots, molecules, noms, lignes, ancien=None):
                 if prof[debuts[c]] is None:
                     prof[debuts[c]] = prof[k] + 1
                     file.append(debuts[c])
+    return debuts, faces, appels, tout, prof
+
+
+def faire_carte(mots, molecules, noms, lignes, ancien=None):
+    ancien = anciens_de(ancien)
+    debuts, faces, appels, tout, prof = bases_carte(mots, molecules)
     ecrits = entetes(lignes)
     appelants = [sorted(molecules[j].debut for j in range(len(molecules)) if j != k and m.debut in appels[j])
                  for k, m in enumerate(molecules)]
