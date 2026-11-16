@@ -1,0 +1,2385 @@
+// machine : lugus
+// Gobannos, le forgeron : les mots de Lugus traduits en code x86-64, et l'exécutable écrit par vtx lui-même (ELF pour
+// Linux, PE pour Windows), sans Rust ni Python. Premier temps (0.6v) : les entiers, la mémoire du cube en pages, la pile,
+// les sauts et les appels, le texte de la console, sortie(), les brins, le service 26 (effacer). Ce qui n'est pas encore
+// traduit (les flottants quaternaires, les fichiers, les autres services…) arrête l'exécutable en le disant, au moment
+// où il y arrive : rien n'est jamais fait de travers en silence.
+//
+// Entrées (une par ligne) : le fichier des mots (« lugus compiler PROG.vtx PROG.mots »), l'exécutable à écrire, le
+// système (linux ou windows). Sortie : 0 si l'exécutable est écrit.
+//
+// Le code produit : rbx porte l'adresse de l'état (les registres de Lugus, 16 octets chacun, les drapeaux z et c, les
+// tampons, la table des pages) ; chaque demi-instruction devient un morceau de x86-64 qui lit et écrit les registres là.
+// La mémoire de Lugus : des pages de 65 536 mots (et leurs brins), prises au système au premier besoin ; une table de
+// 65 536 pages par étage (les indices jusqu'à 2^32).
+
+// ------------------------------------------------------------------------------------------- les places
+constante G = 1000;            // @2 : l'état de Gobannos
+constante G_C = 0;             // les octets du code
+constante G_LAB = 1;           // la place du code de chaque demi-instruction (-1 : pas traduite)
+constante G_FP = 2;            // les corrections : la place du rel32
+constante G_FK = 3;            //   leur sorte : 1 demi-instruction, 2 routine, 3 l'état, 4 un message, 5 une donnée
+constante G_FV = 4;            //   leur valeur
+constante G_ETQ = 5;           // la place de chaque routine
+constante G_MSG = 6;           // les messages : les octets
+constante G_MSGP = 7;          //   la place de chacun
+constante G_WH = 8;            // les mots : la moitié haute
+constante G_WL = 9;            //   la moitié basse
+constante G_VU = 10;           // les demi-instructions atteintes
+constante G_CODE0 = 11;        // la place du code dans la section
+constante G_WIN = 12;          // 1 : Windows
+constante G_NH = 13;           // le nombre de demi-instructions
+constante G_D_MOTS = 14;       // la place des mots dans la section
+constante G_D_TAB = 15;        // la place de la table des retours
+constante G_ERR = 16;
+constante G_PILE = 17;         // les demi-instructions à parcourir
+constante G_NBAD = 18;         // les demi-instructions non traduites (comptées)
+constante G_IMPF = 19;         // la place de chaque fonction importée (Windows : son entrée de l'IAT)
+
+// l'état, au départ de rbx
+constante E_R = 0;
+constante E_Z = 256;
+constante E_CF = 264;
+constante E_HOUT = 272;
+constante E_HERR = 280;
+constante E_HIN = 288;
+constante E_NOUT = 296;
+constante E_TN = 304;
+constante E_IN = 312;
+constante E_IP = 320;
+constante E_EOF = 328;
+constante E_SCR = 336;
+constante E_PC = 400;
+constante E_PAS = 384;      // le compte des instructions jouées (comme Lugus : instructions())
+constante E_TBUF = 1024;
+constante E_IBUF = 5120;
+constante E_DBUF = 9216;
+constante E_TABLE = 16384;
+constante E_OUTS = 2113536;
+constante E_TOTAL = 3162112;
+constante PAGE_OCT = 1114112;  // 65 536 mots de 16 octets, puis 65 536 brins
+
+// les routines
+constante R_LIRE = 0;
+constante R_ECRIRE = 1;
+constante R_PAGE = 2;
+constante R_SORTIR = 3;
+constante R_VIDER = 4;
+constante R_LIRE_CAR = 5;
+constante R_OUT = 6;
+constante R_FIN = 7;
+constante R_TRAP = 8;
+constante R_DEC = 9;
+constante R_OSW = 10;
+constante R_OSR = 11;
+constante R_OSA = 12;
+constante R_OSQ = 13;
+constante R_RET = 14;
+constante R_SYS26 = 15;
+constante R_BRIN_L = 16;
+constante R_BRIN_P = 17;
+constante R_DEBUT = 18;
+constante R_ERRS = 19;
+constante NR = 20;
+
+// les registres de x86-64
+constante RAX = 0;
+constante RCX = 1;
+constante RDX = 2;
+constante RBX = 3;
+constante RSP = 4;
+constante RBP = 5;
+constante RSI = 6;
+constante RDI = 7;
+constante R8 = 8;
+constante R9 = 9;
+constante R10 = 10;
+constante R11 = 11;
+
+// les conditions
+constante CC_B = 2;
+constante CC_AE = 3;
+constante CC_E = 4;
+constante CC_NE = 5;
+constante CC_BE = 6;
+constante CC_A = 7;
+
+constante M48 = 0xFFFFFFFFFFFF;
+constante M56 = 0xFFFFFFFFFFFFFF;
+
+fonction poser_t(k, i, v) {
+    soit t = @2[G + k];
+    t[i] = v;
+}
+
+fonction tab(k) {
+    retour @2[G + k];
+}
+
+// ------------------------------------------------------------------------------------------- l'assembleur
+fonction o(b) {
+    ajouter(@2[G + G_C], b & 255);
+}
+
+fonction o32(v) {
+    o(v);
+    o(v >> 8);
+    o(v >> 16);
+    o(v >> 24);
+}
+
+fonction o64(v) {
+    o32(v);
+    o32(v >> 32);
+}
+
+fonction ici() {
+    retour longueur(@2[G + G_C]);
+}
+
+fonction rex(w, r, b, force) {
+    soit x = 64 | (w << 3) | ((r >> 3) << 2) | (b >> 3);
+    si x != 64 || force {
+        o(x);
+    }
+}
+
+fonction rr(r, m) {
+    o(192 | ((r & 7) << 3) | (m & 7));
+}
+
+// [base + d32] : toujours le déplacement de 32 bits (les tailles ne changent jamais)
+fonction rm(r, base, d) {
+    o(128 | ((r & 7) << 3) | (base & 7));
+    si (base & 7) == 4 {
+        o(36);
+    }
+    o32(d);
+}
+
+fonction mov_rm(r, base, d) {
+    rex(1, r, base, 0);
+    o(0x8B);
+    rm(r, base, d);
+}
+
+fonction mov_mr(base, d, r) {
+    rex(1, r, base, 0);
+    o(0x89);
+    rm(r, base, d);
+}
+
+fonction mov32_rm(r, base, d) {
+    rex(0, r, base, 0);
+    o(0x8B);
+    rm(r, base, d);
+}
+
+fonction mov_rr(dst, src) {
+    rex(1, src, dst, 0);
+    o(0x89);
+    rr(src, dst);
+}
+
+// add 01, or 09, adc 11, sbb 19, and 21, sub 29, xor 31, cmp 39
+fonction op_rr(opc, dst, src) {
+    rex(1, src, dst, 0);
+    o(opc);
+    rr(src, dst);
+}
+
+fonction mov_ri(r, v) {
+    si v < 2147483648 {
+        // mov r32, imm32 (les 32 bits hauts remis à zéro)
+        rex(0, 0, r, 0);
+        o(0xB8 + (r & 7));
+        o32(v);
+    } sinon {
+        rex(1, 0, r, 0);
+        o(0xB8 + (r & 7));
+        o64(v);
+    }
+}
+
+// not 2, neg 3, mul 4, div 6, idiv 7
+fonction f7(ext, r) {
+    rex(1, 0, r, 0);
+    o(0xF7);
+    rr(ext, r);
+}
+
+// shl 4, shr 5, sar 7, par cl
+fonction dec_cl(ext, r) {
+    rex(1, 0, r, 0);
+    o(0xD3);
+    rr(ext, r);
+}
+
+// add 0, or 1, and 4, sub 5, cmp 7 : avec un nombre de 32 bits (étendu par le signe)
+fonction op_ri(ext, r, v) {
+    rex(1, 0, r, 0);
+    o(0x81);
+    rr(ext, r);
+    o32(v);
+}
+
+fonction dec_ri(ext, r, n) {
+    rex(1, 0, r, 0);
+    o(0xC1);
+    rr(ext, r);
+    o(n);
+}
+
+fonction imul_rr(dst, src) {
+    rex(1, dst, src, 0);
+    o(0x0F);
+    o(0xAF);
+    rr(dst, src);
+}
+
+fonction test_rr(a, b) {
+    rex(1, b, a, 0);
+    o(0x85);
+    rr(b, a);
+}
+
+fonction setcc(cc, r) {
+    rex(0, 0, r, r >= 4);
+    o(0x0F);
+    o(0x90 + cc);
+    rr(0, r);
+}
+
+fonction movzx_rr8(dst, src) {
+    rex(0, dst, src, src >= 4);
+    o(0x0F);
+    o(0xB6);
+    rr(dst, src);
+}
+
+fonction mov_m8r(base, d, r) {
+    rex(0, r, base, r >= 4);
+    o(0x88);
+    rm(r, base, d);
+}
+
+fonction movzx_rm8(dst, base, d) {
+    rex(0, dst, base, 0);
+    o(0x0F);
+    o(0xB6);
+    rm(dst, base, d);
+}
+
+fonction mov_mi(base, d, v) {
+    rex(1, 0, base, 0);
+    o(0xC7);
+    rm(0, base, d);
+    o32(v);
+}
+
+fonction popcnt(dst, src) {
+    o(0xF3);
+    rex(1, dst, src, 0);
+    o(0x0F);
+    o(0xB8);
+    rr(dst, src);
+}
+
+fonction push_r(r) {
+    rex(0, 0, r, 0);
+    o(0x50 + (r & 7));
+}
+
+fonction pop_r(r) {
+    rex(0, 0, r, 0);
+    o(0x58 + (r & 7));
+}
+
+fonction ret_() {
+    o(0xC3);
+}
+
+fonction cqo() {
+    o(0x48);
+    o(0x99);
+}
+
+fonction jmp_r(r) {
+    rex(0, 0, r, 0);
+    o(0xFF);
+    rr(4, r);
+}
+
+// une correction : rel32 vers (sorte, valeur)
+fonction corriger(sorte, v) {
+    ajouter(@2[G + G_FP], ici());
+    ajouter(@2[G + G_FK], sorte);
+    ajouter(@2[G + G_FV], v);
+    o32(0);
+}
+
+fonction jmp_pc(p) {
+    o(0xE9);
+    corriger(1, p);
+}
+
+fonction jcc_pc(cc, p) {
+    o(0x0F);
+    o(0x80 + cc);
+    corriger(1, p);
+}
+
+fonction call_r(k) {
+    o(0xE8);
+    corriger(2, k);
+}
+
+fonction jmp_rt(k) {
+    o(0xE9);
+    corriger(2, k);
+}
+
+fonction jcc_rt(cc, k) {
+    o(0x0F);
+    o(0x80 + cc);
+    corriger(2, k);
+}
+
+// lea r, [rip + …]
+fonction lea_rip(r, sorte, v) {
+    rex(1, r, 0, 0);
+    o(0x8D);
+    o(((r & 7) << 3) | 5);
+    corriger(sorte, v);
+}
+
+// call [rip + l'entrée de l'IAT]
+fonction call_iat(k) {
+    o(0xFF);
+    o(0x15);
+    corriger(5, @2[G + G_IMPF][k]);
+}
+
+// les sauts locaux dans une routine : rel32 (les tailles ne dépendent jamais de la distance), corrigés à la main
+fonction jcc8(cc) {
+    o(0x0F);
+    o(0x80 + cc);
+    o32(0);
+    retour ici();
+}
+
+fonction jmp8() {
+    o(0xE9);
+    o32(0);
+    retour ici();
+}
+
+fonction ici8(p) {
+    soit d = ici() - p;
+    soit c = @2[G + G_C];
+    c[p - 4] = d & 255;
+    c[p - 3] = (d >> 8) & 255;
+    c[p - 2] = (d >> 16) & 255;
+    c[p - 1] = (d >> 24) & 255;
+}
+
+// vers une place p déjà écrite (en arrière)
+fonction jcc8_arr(cc, p) {
+    o(0x0F);
+    o(0x80 + cc);
+    o32(p - (ici() + 4));
+}
+
+fonction jmp8_arr(p) {
+    o(0xE9);
+    o32(p - (ici() + 4));
+}
+
+fonction routine(k) {
+    poser_t(G_ETQ, k, ici());
+}
+
+// les registres de Lugus dans l'état
+fonction lo(k) {
+    retour E_R + 16 * k;
+}
+
+fonction hi(k) {
+    retour E_R + 16 * k + 8;
+}
+
+// rax:rdx = le registre k de Lugus
+fonction charger(k, a, b) {
+    si k == 0 {
+        op_rr(0x31, a, a);
+        si b != 255 {
+            op_rr(0x31, b, b);
+        }
+        retour;
+    }
+    mov_rm(a, RBX, lo(k));
+    si b != 255 {
+        mov_rm(b, RBX, hi(k));
+    }
+}
+
+// le registre k de Lugus = a:b (b = 255 : la moitié haute à zéro) ; r0 ne s'écrit pas
+fonction ranger(k, a, b) {
+    si k == 0 {
+        retour;
+    }
+    mov_mr(RBX, lo(k), a);
+    si b == 255 {
+        mov_mi(RBX, hi(k), 0);
+    } sinon {
+        mov_mr(RBX, hi(k), b);
+    }
+}
+
+// z = (a | b) == 0 (b = 255 : a seul) ; c = 0 ; ne touche que r9
+fonction poser_z(a, b) {
+    si b == 255 {
+        test_rr(a, a);
+    } sinon {
+        mov_rr(R9, a);
+        op_rr(0x09, R9, b);
+    }
+    setcc(CC_E, R9);
+    mov_m8r(RBX, E_Z, R9);
+    mov_mi(RBX, E_CF, 0);
+}
+
+// c = le drapeau de retenue de x86 (pris avant tout le reste), puis z
+fonction poser_cz(a, b) {
+    setcc(CC_B, R10);
+    mov_m8r(RBX, E_CF, R10);
+    si b == 255 {
+        test_rr(a, a);
+    } sinon {
+        mov_rr(R9, a);
+        op_rr(0x09, R9, b);
+    }
+    setcc(CC_E, R9);
+    mov_m8r(RBX, E_Z, R9);
+}
+
+fonction message(t: texte) {
+    soit m = @2[G + G_MSG];
+    ajouter(@2[G + G_MSGP], longueur(m));
+    // le message en UTF-8 : sa longueur, puis ses octets
+    soit l = tableau(0);
+    pour i dans 0..longueur(t) {
+        soit c = car(t, i);
+        si c < 128 {
+            ajouter(l, c);
+        } sinon si c < 2048 {
+            ajouter(l, 192 | (c >> 6));
+            ajouter(l, 128 | (c & 63));
+        } sinon {
+            ajouter(l, 224 | (c >> 12));
+            ajouter(l, 128 | ((c >> 6) & 63));
+            ajouter(l, 128 | (c & 63));
+        }
+    }
+    ajouter(m, longueur(l));
+    pour j dans 0..longueur(l) {
+        ajouter(m, l[j]);
+    }
+    retour longueur(@2[G + G_MSGP]) - 1;
+}
+
+// arrêter l'exécutable : « Gobannos : MESSAGE (demi-instruction P) »
+fonction piege(t: texte, p) {
+    soit k = message(t);
+    lea_rip(RSI, 4, k);
+    mov_ri(RCX, p);
+    call_r(R_TRAP);
+}
+
+// ------------------------------------------------------------------------------------------- les mots
+fonction demi(p) {
+    soit w = p >> 1;
+    si w >= longueur(@2[G + G_WH]) {
+        retour 0;
+    }
+    si (p & 1) == 0 {
+        retour @2[G + G_WH][w];
+    }
+    retour @2[G + G_WL][w];
+}
+
+fonction lire_mots(chemin: texte) {
+    soit f = ouvrir_lecture(chemin);
+    si f == 4294967295 || f == 18446744073709551615 {
+        afficher("Gobannos : je ne peux pas lire", chemin);
+        retour 0;
+    }
+    soit x: entier_128 = 0LL;
+    soit dans_nombre = 0;
+    tantque fin_de(f) == 0 {
+        soit c = lire_car(f);
+        si c >= 48 && c <= 57 {
+            x = x * entier_128(10) + entier_128(c - 48);
+            dans_nombre = 1;
+        } sinon {
+            si dans_nombre {
+                ajouter(@2[G + G_WH], haut(x));
+                ajouter(@2[G + G_WL], bas(x));
+                x = 0LL;
+                dans_nombre = 0;
+            }
+            si c == ';' {
+                arrêter;
+            }
+        }
+    }
+    si dans_nombre {
+        ajouter(@2[G + G_WH], haut(x));
+        ajouter(@2[G + G_WL], bas(x));
+    }
+    fermer(f);
+    retour 1;
+}
+
+// ------------------------------------------------------------------------------------------- ce qui est atteint
+fonction marquer(p) {
+    si p >= @2[G + G_NH] {
+        retour;
+    }
+    si @2[G + G_VU][p] == 0 {
+        poser_t(G_VU, p, 1);
+        ajouter(@2[G + G_PILE], p);
+    }
+}
+
+fonction parcourir() {
+    marquer(0);
+    tantque longueur(@2[G + G_PILE]) > 0 {
+        soit p = retirer(@2[G + G_PILE]);
+        soit h = demi(p);
+        soit op = h >> 48;
+        soit cible = h & 0xFFFFFFFF;
+        si op == 0x0A || op == 0x2B {
+            marquer(p + 2);
+        } sinon si op == 0x30 {
+            marquer(cible);
+        } sinon si op == 0x31 || op == 0x32 || op == 0x35 || op == 0x36 || op == 0x33 {
+            marquer(cible);
+            marquer(p + 1);
+        } sinon si op == 0x34 || op == 0x3F {
+            // RET, HALT : rien après
+        } sinon {
+            marquer(p + 1);
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------- les instructions
+// l'adresse rax:rdx += le nombre signé si (la retenue jusqu'en haut)
+fonction ajouter_si(si_) {
+    si si_ == 0 {
+        retour;
+    }
+    mov_ri(RCX, si_);
+    soit h = 0;
+    si si_ >= 9223372036854775808 {
+        h = 18446744073709551615;
+    }
+    mov_ri(R8, h);
+    op_rr(0x01, RAX, RCX);
+    op_rr(0x11, RDX, R8);
+}
+
+fonction masquer_120(r) {
+    mov_ri(R9, M56);
+    op_rr(0x21, r, R9);
+}
+
+// rax:rdx = S, rcx:r8 = T (largeur 64 : les moitiés basses seules)
+fonction traduire_un(p) {
+    soit h = demi(p);
+    soit op = h >> 48;
+    soit d = (h >> 44) & 15;
+    soit s = (h >> 40) & 15;
+    soit t = (h >> 36) & 15;
+    soit wl = (h >> 32) & 15;
+    soit imm = h & 0xFFFFFFFF;
+    soit si_ = imm;
+    si imm >= 2147483648 {
+        si_ = imm | 0xFFFFFFFF00000000;
+    }
+    soit suivant = p + 1;
+    si op == 0x00 {
+        retour suivant;
+    }
+    // les opérations entières à la largeur 64 (et ADD, SUB, CMP, ET, OU, OU exclusif sur tout le mot)
+    si wl == 1 && (op == 0x01 || op == 0x06 || op == 0x02 || op == 0x07 || op == 0x0E || op == 0x0F || op == 0x03
+                   || op == 0x14 || op == 0x15 || op == 0x16 || op == 0x08 || op == 0x09 || op == 0x17 || op == 0x12
+                   || op == 0x0C || op == 0x0D || op == 0x1A || op == 0x1B || op == 0x1C || op == 0x1D
+                   || op == 0x1E || op == 0x4E) {
+        charger(s, RAX, 255);
+        si op == 0x06 || op == 0x07 || op == 0x0F {
+            mov_ri(RCX, si_);
+        } sinon {
+            charger(t, RCX, 255);
+        }
+        si op == 0x01 || op == 0x06 {
+            op_rr(0x01, RAX, RCX);
+            poser_cz(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon si op == 0x02 || op == 0x07 {
+            op_rr(0x29, RAX, RCX);
+            poser_cz(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon si op == 0x0E || op == 0x0F {
+            op_rr(0x29, RAX, RCX);
+            poser_cz(RAX, 255);
+        } sinon si op == 0x03 {
+            imul_rr(RAX, RCX);
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon si op == 0x4E || op == 0x1E {
+            si op == 0x4E {
+                f7(4, RCX);
+            } sinon {
+                f7(5, RCX);
+            }
+            poser_z(RDX, 255);
+            ranger(d, RDX, 255);
+        } sinon si op == 0x14 || op == 0x15 || op == 0x16 {
+            si op == 0x14 {
+                op_rr(0x21, RAX, RCX);
+            } sinon si op == 0x15 {
+                op_rr(0x09, RAX, RCX);
+            } sinon {
+                op_rr(0x31, RAX, RCX);
+            }
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon si op == 0x08 || op == 0x09 || op == 0x17 {
+            // le nombre de places : T & 63 (cl le prend tel quel, sur 6 bits)
+            si op == 0x08 {
+                dec_cl(4, RAX);
+            } sinon si op == 0x09 {
+                dec_cl(5, RAX);
+            } sinon {
+                dec_cl(7, RAX);
+            }
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon si op == 0x12 {
+            f7(2, RAX);
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon si op == 0x1C {
+            ranger(d, RAX, 255);
+            poser_z(RAX, 255);
+        } sinon si op == 0x1D {
+            // SEXT : la valeur signée de 64 bits sur tout le mot
+            mov_rr(RDX, RAX);
+            dec_ri(7, RDX, 63);
+            ranger(d, RAX, RDX);
+            mov_rr(R9, RAX);
+            op_rr(0x09, R9, RDX);
+            setcc(CC_E, R9);
+            mov_m8r(RBX, E_Z, R9);
+            mov_mi(RBX, E_CF, 0);
+        } sinon si op == 0x0C || op == 0x0D {
+            // sans signe ; par zéro : tout à un (le quotient), le dividende (le reste)
+            test_rr(RCX, RCX);
+            soit nz = jcc8(CC_NE);
+            si op == 0x0C {
+                mov_ri(RAX, 18446744073709551615);
+            }
+            soit fin = jmp8();
+            ici8(nz);
+            op_rr(0x31, RDX, RDX);
+            f7(6, RCX);
+            si op == 0x0D {
+                mov_rr(RAX, RDX);
+            }
+            ici8(fin);
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon si op == 0x1A || op == 0x1B {
+            // signés ; par zéro : tout à un, le dividende ; par -1 : l'opposé (sans déborder), le reste 0
+            test_rr(RCX, RCX);
+            soit nz2 = jcc8(CC_NE);
+            si op == 0x1A {
+                mov_ri(RAX, 18446744073709551615);
+            }
+            soit fin2 = jmp8();
+            ici8(nz2);
+            op_ri(7, RCX, 4294967295);
+            soit pas_m1 = jcc8(CC_NE);
+            si op == 0x1A {
+                f7(3, RAX);
+            } sinon {
+                op_rr(0x31, RAX, RAX);
+            }
+            soit fin3 = jmp8();
+            ici8(pas_m1);
+            cqo();
+            f7(7, RCX);
+            si op == 0x1B {
+                mov_rr(RAX, RDX);
+            }
+            ici8(fin2);
+            ici8(fin3);
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        }
+        retour suivant;
+    }
+    si wl == 0 && (op == 0x01 || op == 0x02 || op == 0x0E || op == 0x14 || op == 0x15 || op == 0x16) {
+        charger(s, RAX, RDX);
+        charger(t, RCX, R8);
+        si op == 0x01 {
+            op_rr(0x01, RAX, RCX);
+            op_rr(0x11, RDX, R8);
+            poser_cz(RAX, RDX);
+            ranger(d, RAX, RDX);
+        } sinon si op == 0x02 || op == 0x0E {
+            op_rr(0x29, RAX, RCX);
+            op_rr(0x19, RDX, R8);
+            poser_cz(RAX, RDX);
+            si op == 0x02 {
+                ranger(d, RAX, RDX);
+            }
+        } sinon {
+            si op == 0x14 {
+                op_rr(0x21, RAX, RCX);
+                op_rr(0x21, RDX, R8);
+            } sinon si op == 0x15 {
+                op_rr(0x09, RAX, RCX);
+                op_rr(0x09, RDX, R8);
+            } sinon {
+                op_rr(0x31, RAX, RCX);
+                op_rr(0x31, RDX, R8);
+            }
+            poser_z(RAX, RDX);
+            ranger(d, RAX, RDX);
+        }
+        retour suivant;
+    }
+    // les décalages, le produit et le complément sur tout le mot (128 bits)
+    si wl == 0 && (op == 0x08 || op == 0x09 || op == 0x17) {
+        charger(s, RAX, RDX);
+        charger(t, RCX, 255);
+        op_ri(4, RCX, 127);
+        o(0x48);
+        o(0x83);
+        o(0xF9);
+        o(64);
+        soit grand_ = jcc8(CC_AE);
+        si op == 0x08 {
+            // shld rdx, rax, cl ; shl rax, cl
+            o(0x48);
+            o(0x0F);
+            o(0xA5);
+            rr(RAX, RDX);
+            dec_cl(4, RAX);
+        } sinon {
+            // shrd rax, rdx, cl ; shr (sar) rdx, cl
+            o(0x48);
+            o(0x0F);
+            o(0xAD);
+            rr(RDX, RAX);
+            si op == 0x09 {
+                dec_cl(5, RDX);
+            } sinon {
+                dec_cl(7, RDX);
+            }
+        }
+        soit fd = jmp8();
+        ici8(grand_);
+        op_ri(5, RCX, 64);
+        si op == 0x08 {
+            mov_rr(RDX, RAX);
+            dec_cl(4, RDX);
+            op_rr(0x31, RAX, RAX);
+        } sinon si op == 0x09 {
+            mov_rr(RAX, RDX);
+            dec_cl(5, RAX);
+            op_rr(0x31, RDX, RDX);
+        } sinon {
+            mov_rr(RAX, RDX);
+            dec_cl(7, RAX);
+            dec_ri(7, RDX, 63);
+        }
+        ici8(fd);
+        poser_z(RAX, RDX);
+        ranger(d, RAX, RDX);
+        retour suivant;
+    }
+    si wl == 0 && op == 0x03 {
+        // (a_h:a_l) * (b_h:b_l) : a_l * b_l sur 128 bits, puis a_l * b_h + a_h * b_l dans la moitié haute
+        charger(s, R10, R11);
+        charger(t, RCX, R8);
+        imul_rr(R8, R10);
+        imul_rr(R11, RCX);
+        op_rr(0x01, R8, R11);
+        mov_rr(RAX, R10);
+        f7(4, RCX);
+        op_rr(0x01, RDX, R8);
+        poser_z(RAX, RDX);
+        ranger(d, RAX, RDX);
+        retour suivant;
+    }
+    si wl == 0 && (op == 0x12 || op == 0x1C) {
+        charger(s, RAX, RDX);
+        si op == 0x12 {
+            f7(2, RAX);
+            f7(2, RDX);
+        }
+        poser_z(RAX, RDX);
+        ranger(d, RAX, RDX);
+        retour suivant;
+    }
+    si op == 0x0A || op == 0x2B {
+        soit k = demi(p + 1);
+        mov_ri(RAX, k);
+        si op == 0x0A {
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon {
+            // LDIH : (k << 64) | la moitié basse de D
+            charger(d, RCX, 255);
+            poser_z(RCX, RAX);
+            ranger(d, RCX, RAX);
+        }
+        retour p + 2;
+    }
+    si op == 0x18 || op == 0x19 {
+        soit v = si_;
+        si op == 0x19 {
+            v = imm;
+        }
+        mov_ri(RAX, v);
+        si wl == 0 && op == 0x18 && imm >= 2147483648 {
+            mov_ri(RDX, 18446744073709551615);
+            poser_z(RAX, RDX);
+            ranger(d, RAX, RDX);
+        } sinon si wl == 0 || wl == 1 {
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon {
+            piege("LDIS ou LDIU à 32 bits n'est pas encore traduit", p);
+        }
+        retour suivant;
+    }
+    si op == 0x0B {
+        charger(s, RAX, RDX);
+        ranger(d, RAX, RDX);
+        retour suivant;
+    }
+    si (op == 0x1F || op == 0x22) && wl == 1 {
+        // l'étage dans les bits 63-62 (l'adresse courte)
+        charger(s, RAX, 255);
+        mov_ri(RCX, 0x3FFFFFFFFFFFFFFF);
+        op_rr(0x21, RAX, RCX);
+        si op == 0x1F {
+            mov_ri(RCX, (imm & 3) << 62);
+        } sinon {
+            charger(t, RCX, 255);
+            dec_ri(4, RCX, 62);
+        }
+        op_rr(0x09, RAX, RCX);
+        ranger(d, RAX, 255);
+        retour suivant;
+    }
+    si op == 0x50 {
+        charger(s, RAX, RDX);
+        si wl == 1 {
+            popcnt(RAX, RAX);
+        } sinon si wl == 0 {
+            popcnt(RAX, RAX);
+            popcnt(RDX, RDX);
+            op_rr(0x01, RAX, RDX);
+        } sinon {
+            piege("COMPTE à 32 bits n'est pas encore traduit", p);
+            retour suivant;
+        }
+        poser_z(RAX, 255);
+        ranger(d, RAX, 255);
+        retour suivant;
+    }
+    // --- le quaternaire : ET4, OU4, NON4, ANTI, QEGAL, ADDM4, sur chaque moitié (aucun quit ne passe d'une moitié à
+    // l'autre) ; à la largeur 64, la moitié basse seule
+    si (wl == 0 || wl == 1) && (op == 0x56 || op == 0x57 || op == 0x58 || op == 0x59 || op == 0x4F || op == 0x13) {
+        charger(s, RAX, RDX);
+        charger(t, RCX, R8);
+        quits_moitie(op, RAX, RCX);
+        si wl == 0 {
+            quits_moitie(op, RDX, R8);
+            poser_z(RAX, RDX);
+            ranger(d, RAX, RDX);
+        } sinon {
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        }
+        retour suivant;
+    }
+    // EXQ : le quit T & (nq - 1) de S
+    si op == 0x5A && (wl == 0 || wl == 1) {
+        charger(s, RAX, RDX);
+        charger(t, RCX, 255);
+        quit_de(wl);
+        poser_z(RAX, 255);
+        ranger(d, RAX, 255);
+        retour suivant;
+    }
+    // LDQ, STQ : un quit d'un tableau rangé (nq quits par mot : 64 à la largeur 128, 32 à la largeur 64)
+    si (op == 0x54 || op == 0x55) && (wl == 0 || wl == 1) {
+        soit dq = 5;
+        si wl == 0 {
+            dq = 6;
+        }
+        // rax:rdx = S + T >> dq ; [rbx + E_SCR] = T (pour la place du quit)
+        charger(s, RAX, RDX);
+        charger(t, RCX, 255);
+        mov_mr(RBX, E_SCR + 16, RCX);
+        dec_ri(5, RCX, dq);
+        op_rr(0x01, RAX, RCX);
+        op_ri(2, RDX, 0);
+        mov_mr(RBX, E_SCR + 24, RAX);
+        mov_mr(RBX, E_SCR + 32, RDX);
+        mov_ri(RCX, p);
+        call_r(R_LIRE);
+        mov_rm(RCX, RBX, E_SCR + 16);
+        si op == 0x54 {
+            quit_de(wl);
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon {
+            // le mot, le quit remplacé par D & 3
+            soit cq = 31;
+            si wl == 0 {
+                cq = 63;
+            }
+            op_ri(4, RCX, cq);
+            dec_ri(4, RCX, 1);
+            // rcx = 2 * la place ; le masque 3 << rcx (sur 128 bits : r10:r11)
+            mov_ri(R10, 3);
+            op_rr(0x31, R11, R11);
+            charger(d, R8, 255);
+            op_ri(4, R8, 3);
+            mov_rr(R9, R8);
+            o(0x48);
+            o(0x83);
+            o(0xF9);
+            o(64);
+            soit bas_ = jcc8(CC_B);
+            // la moitié haute
+            op_ri(5, RCX, 64);
+            dec_cl(4, R10);
+            dec_cl(4, R9);
+            f7(2, R10);
+            op_rr(0x21, RDX, R10);
+            op_rr(0x09, RDX, R9);
+            soit fq = jmp8();
+            ici8(bas_);
+            dec_cl(4, R10);
+            dec_cl(4, R9);
+            f7(2, R10);
+            op_rr(0x21, RAX, R10);
+            op_rr(0x09, RAX, R9);
+            ici8(fq);
+            mov_rr(R10, RAX);
+            mov_rr(R11, RDX);
+            mov_rm(RAX, RBX, E_SCR + 24);
+            mov_rm(RDX, RBX, E_SCR + 32);
+            mov_ri(RCX, p);
+            call_r(R_ECRIRE);
+        }
+        retour suivant;
+    }
+    // --- la mémoire
+    si op == 0x20 || op == 0x29 || op == 0x25 {
+        si op == 0x25 {
+            charger(13, RAX, RDX);
+            ajouter_si(si_);
+            masquer_120(RDX);
+        } sinon {
+            charger(s, RAX, RDX);
+            si op == 0x20 {
+                ajouter_si(si_);
+            } sinon {
+                charger(t, RCX, R8);
+                op_rr(0x01, RAX, RCX);
+                op_rr(0x11, RDX, R8);
+            }
+        }
+        mov_ri(RCX, p);
+        call_r(R_LIRE);
+        poser_z(RAX, RDX);
+        ranger(d, RAX, RDX);
+        retour suivant;
+    }
+    si op == 0x21 || op == 0x2A || op == 0x26 {
+        si op == 0x26 {
+            charger(13, RAX, RDX);
+            ajouter_si(si_);
+            masquer_120(RDX);
+            charger(d, R10, R11);
+        } sinon {
+            charger(d, RAX, RDX);
+            si op == 0x21 {
+                ajouter_si(si_);
+            } sinon {
+                charger(t, RCX, R8);
+                op_rr(0x01, RAX, RCX);
+                op_rr(0x11, RDX, R8);
+            }
+            charger(s, R10, R11);
+        }
+        mov_ri(RCX, p);
+        call_r(R_ECRIRE);
+        retour suivant;
+    }
+    si op == 0x27 || op == 0x33 {
+        // PUSH S, ou CALL (la suite dans la pile)
+        charger(14, RAX, RDX);
+        op_ri(5, RAX, 1);
+        op_ri(3, RDX, 0);
+        masquer_120(RDX);
+        mov_mr(RBX, lo(14), RAX);
+        mov_mr(RBX, hi(14), RDX);
+        si op == 0x27 {
+            charger(s, R10, R11);
+        } sinon {
+            mov_ri(R10, suivant);
+            op_rr(0x31, R11, R11);
+        }
+        mov_ri(RCX, p);
+        call_r(R_ECRIRE);
+        si op == 0x33 {
+            jmp_pc(imm);
+        }
+        retour suivant;
+    }
+    si op == 0x28 || op == 0x34 {
+        charger(14, RAX, RDX);
+        mov_ri(RCX, p);
+        call_r(R_LIRE);
+        // r14 + 1
+        mov_rm(RCX, RBX, lo(14));
+        mov_rm(R8, RBX, hi(14));
+        op_ri(0, RCX, 1);
+        op_ri(2, R8, 0);
+        masquer_120(R8);
+        mov_mr(RBX, lo(14), RCX);
+        mov_mr(RBX, hi(14), R8);
+        si op == 0x28 {
+            ranger(d, RAX, RDX);
+        } sinon {
+            masquer_120(RDX);
+            mov_ri(RCX, p);
+            jmp_rt(R_RET);
+        }
+        retour suivant;
+    }
+    si op == 0x30 {
+        jmp_pc(imm);
+        retour suivant;
+    }
+    si op == 0x31 || op == 0x32 || op == 0x35 || op == 0x36 {
+        si op == 0x31 || op == 0x32 {
+            movzx_rm8(RAX, RBX, E_Z);
+        } sinon {
+            movzx_rm8(RAX, RBX, E_CF);
+        }
+        test_rr(RAX, RAX);
+        si op == 0x31 || op == 0x35 {
+            jcc_pc(CC_NE, imm);
+        } sinon {
+            jcc_pc(CC_E, imm);
+        }
+        retour suivant;
+    }
+    // --- les canaux
+    si op == 0x52 {
+        charger(t, RCX, R8);
+        charger(s, RAX, RDX);
+        // canal 1 : la console ; canal 0 : sortie()
+        test_rr(R8, R8);
+        soit autre = jcc8(CC_NE);
+        op_ri(7, RCX, 1);
+        soit pas1 = jcc8(CC_NE);
+        call_r(R_SORTIR);
+        soit fs1 = jmp8();
+        ici8(pas1);
+        test_rr(RCX, RCX);
+        soit pas0 = jcc8(CC_NE);
+        call_r(R_OUT);
+        soit fs2 = jmp8();
+        ici8(autre);
+        ici8(pas0);
+        piege("un canal de fichier (écrire) n'est pas encore traduit", p);
+        ici8(fs1);
+        ici8(fs2);
+        retour suivant;
+    }
+    si op == 0x24 {
+        charger(s, RAX, RDX);
+        call_r(R_OUT);
+        retour suivant;
+    }
+    si op == 0x51 && (wl == 0 || wl == 1) {
+        charger(s, RAX, RDX);
+        test_rr(RDX, RDX);
+        soit autre3 = jcc8(CC_NE);
+        op_ri(7, RAX, 1);
+        soit pas13 = jcc8(CC_NE);
+        call_r(R_LIRE_CAR);
+        // rax = le caractère, ou tout à un (la fin) ; rdx = tout à un aussi à la fin (largeur 128)
+        si wl == 1 {
+            poser_z(RAX, 255);
+            ranger(d, RAX, 255);
+        } sinon {
+            poser_z(RAX, RDX);
+            ranger(d, RAX, RDX);
+        }
+        soit fe3 = jmp8();
+        ici8(autre3);
+        ici8(pas13);
+        piege("un canal de fichier (lire) n'est pas encore traduit", p);
+        ici8(fe3);
+        retour suivant;
+    }
+    si op == 0x53 {
+        charger(s, RAX, RDX);
+        charger(t, R10, R11);
+        test_rr(RDX, RDX);
+        soit autre4 = jcc8(CC_NE);
+        op_ri(7, RAX, 26);
+        soit pas26 = jcc8(CC_NE);
+        mov_ri(RCX, p);
+        call_r(R_SYS26);
+        op_rr(0x31, RAX, RAX);
+        poser_z(RAX, 255);
+        ranger(d, RAX, 255);
+        soit fin4 = jmp8();
+        ici8(pas26);
+        // le service 25 : le nombre d'instructions jouées avant celle-ci
+        op_ri(7, RAX, 25);
+        soit pas25 = jcc8(CC_NE);
+        mov_rm(RAX, RBX, E_PAS);
+        op_ri(5, RAX, 1);
+        poser_z(RAX, 255);
+        ranger(d, RAX, 255);
+        soit fin5 = jmp8();
+        ici8(pas25);
+        ici8(autre4);
+        piege("ce service de la machine n'est pas encore traduit", p);
+        ici8(fin5);
+        ici8(fin4);
+        retour suivant;
+    }
+    // --- les brins
+    si op == 0x5E {
+        // MARQUE : le brin si & 3 sur T mots à partir de S
+        charger(s, RAX, RDX);
+        charger(t, R10, 255);
+        mov_ri(R11, si_ & 3);
+        mov_ri(RCX, p);
+        call_r(R_BRIN_P);
+        retour suivant;
+    }
+    si op == 0x5F {
+        charger(s, RAX, RDX);
+        mov_ri(RCX, p);
+        call_r(R_BRIN_L);
+        poser_z(RAX, 255);
+        ranger(d, RAX, 255);
+        retour suivant;
+    }
+    si op == 0x3F {
+        jmp_rt(R_FIN);
+        retour suivant;
+    }
+    // --- le reste : pas encore
+    @2[G + G_NBAD] = @2[G + G_NBAD] + 1;
+    piege("cette instruction de Lugus n'est pas encore traduite par Gobannos (son code : #" + hexa2(op) + ", largeur "
+          + texte(wl) + ")", p);
+    retour suivant;
+}
+
+fonction hexa2(x): texte {
+    soit c = "0123456789ABCDEF";
+    retour car_texte(car(c, (x >> 4) & 15)) + car_texte(car(c, x & 15));
+}
+
+// une moitié de mot : a = op(a, b) quit par quit (V : le bit fort de chaque quit, la preuve du vrai ; F : le faible)
+constante QV = 0xAAAAAAAAAAAAAAAA;
+constante QF = 0x5555555555555555;
+
+fonction quits_moitie(op, a, b) {
+    mov_ri(R9, QV);
+    mov_ri(R10, QF);
+    si op == 0x56 || op == 0x57 {
+        // ET4 : (a & b) & V | (a | b) & F ; OU4 : (a | b) & V | (a & b) & F
+        mov_rr(R11, a);
+        op_rr(0x21, R11, b);
+        op_rr(0x09, a, b);
+        si op == 0x56 {
+            op_rr(0x21, R11, R9);
+            op_rr(0x21, a, R10);
+        } sinon {
+            op_rr(0x21, R11, R10);
+            op_rr(0x21, a, R9);
+        }
+        op_rr(0x09, a, R11);
+    } sinon si op == 0x58 || op == 0x59 {
+        // NON4 : (a & V) >> 1 | (a & F) << 1 ; ANTI : la même, puis tout inversé
+        mov_rr(R11, a);
+        op_rr(0x21, R11, R9);
+        dec_ri(5, R11, 1);
+        op_rr(0x21, a, R10);
+        dec_ri(4, a, 1);
+        op_rr(0x09, a, R11);
+        si op == 0x59 {
+            f7(2, a);
+        }
+    } sinon si op == 0x4F {
+        // QEGAL : x = a ^ b ; ~(x | x >> 1) & F
+        op_rr(0x31, a, b);
+        mov_rr(R11, a);
+        dec_ri(5, R11, 1);
+        op_rr(0x09, a, R11);
+        f7(2, a);
+        op_rr(0x21, a, R10);
+    } sinon {
+        // ADDM4 : chaque quit (a + b) & 3 : le bit faible a ^ b, le fort a ^ b ^ la retenue du faible
+        mov_rr(R11, a);
+        op_rr(0x21, R11, b);
+        op_rr(0x21, R11, R10);
+        dec_ri(4, R11, 1);
+        op_rr(0x31, a, b);
+        op_rr(0x31, a, R11);
+    }
+}
+
+// rax = le quit n° rcx & (nq - 1) du mot rax:rdx (largeur 0 : 64 quits, 1 : 32, dans rax seul)
+fonction quit_de(wl) {
+    si wl == 0 {
+        op_ri(4, RCX, 63);
+        o(0x48);
+        o(0x83);
+        o(0xF9);
+        o(32);
+        soit b0 = jcc8(CC_B);
+        mov_rr(RAX, RDX);
+        op_ri(5, RCX, 32);
+        ici8(b0);
+    } sinon {
+        op_ri(4, RCX, 31);
+    }
+    dec_ri(4, RCX, 1);
+    dec_cl(5, RAX);
+    op_ri(4, RAX, 3);
+}
+
+// ------------------------------------------------------------------------------------------- les routines
+// la page d'une adresse rax:rdx : rsi = l'adresse de la page (0 si absente et sans créer), rax = l'indice dans la page ;
+// r9 = 1 : la créer si elle manque. rcx : la demi-instruction (pour les pièges). Change rdi, r8, r9.
+fonction routines_memoire() {
+    routine(R_PAGE);
+    // l'adresse longue (les 64 bits hauts non nuls) : seulement si ses bits utiles tiennent dans 32 bits
+    test_rr(RDX, RDX);
+    soit courte = jcc8(CC_E);
+    mov_rr(RDI, RDX);
+    dec_ri(5, RDI, 62);
+    mov_rr(R8, RDX);
+    dec_ri(4, R8, 2);
+    test_rr(R8, R8);
+    soit loin = jcc8(CC_NE);
+    soit suite = jmp8();
+    ici8(courte);
+    mov_rr(RDI, RAX);
+    dec_ri(5, RDI, 62);
+    mov_ri(R8, M48);
+    op_rr(0x21, RAX, R8);
+    ici8(suite);
+    // rdi = l'étage, rax = l'indice ; l'indice doit tenir dans 32 bits
+    mov_rr(R8, RAX);
+    dec_ri(5, R8, 32);
+    test_rr(R8, R8);
+    soit ok = jcc8(CC_E);
+    ici8(loin);
+    lea_rip(RSI, 4, message("une adresse hors des pages traduites (indice de 2^32 ou plus)"));
+    jmp_rt(R_TRAP);
+    ici8(ok);
+    // la clé : étage * 65536 + indice >> 16
+    mov_rr(R8, RDI);
+    dec_ri(4, R8, 16);
+    mov_rr(RDI, RAX);
+    dec_ri(5, RDI, 16);
+    op_rr(0x01, R8, RDI);
+    dec_ri(4, R8, 3);
+    op_rr(0x01, R8, RBX);
+    mov_rm(RSI, R8, E_TABLE);
+    // l'indice dans la page
+    mov_ri(RDI, 65535);
+    op_rr(0x21, RAX, RDI);
+    test_rr(RSI, RSI);
+    soit la = jcc8(CC_NE);
+    test_rr(R9, R9);
+    soit rien = jcc8(CC_E);
+    // créer la page (des zéros)
+    push_r(RAX);
+    push_r(RCX);
+    push_r(R8);
+    push_r(R10);
+    push_r(R11);
+    mov_ri(RDX, PAGE_OCT);
+    call_r(R_OSA);
+    mov_rr(RSI, RAX);
+    pop_r(R11);
+    pop_r(R10);
+    pop_r(R8);
+    pop_r(RCX);
+    pop_r(RAX);
+    mov_mr(R8, E_TABLE, RSI);
+    ici8(la);
+    ici8(rien);
+    ret_();
+
+    // R_LIRE : rax:rdx = le mot à l'adresse rax:rdx (0 si la page n'existe pas)
+    routine(R_LIRE);
+    op_rr(0x31, R9, R9);
+    call_r(R_PAGE);
+    test_rr(RSI, RSI);
+    soit vide = jcc8(CC_E);
+    dec_ri(4, RAX, 4);
+    op_rr(0x01, RSI, RAX);
+    mov_rm(RAX, RSI, 0);
+    mov_rm(RDX, RSI, 8);
+    ret_();
+    ici8(vide);
+    op_rr(0x31, RAX, RAX);
+    op_rr(0x31, RDX, RDX);
+    ret_();
+
+    // R_ECRIRE : le mot r10:r11 à l'adresse rax:rdx (refusé dans un mot ADN)
+    routine(R_ECRIRE);
+    mov_ri(R9, 1);
+    call_r(R_PAGE);
+    movzx_rm8_idx_brin();
+    op_ri(7, RDI, 1);
+    soit pas_adn = jcc8(CC_NE);
+    lea_rip(RSI, 4, message("écriture dans un mot ADN (fixé)"));
+    jmp_rt(R_TRAP);
+    ici8(pas_adn);
+    dec_ri(4, RAX, 4);
+    op_rr(0x01, RSI, RAX);
+    mov_mr(RSI, 0, R10);
+    mov_mr(RSI, 8, R11);
+    ret_();
+
+    // R_BRIN_L : rax = le brin du mot à l'adresse rax:rdx
+    routine(R_BRIN_L);
+    op_rr(0x31, R9, R9);
+    call_r(R_PAGE);
+    test_rr(RSI, RSI);
+    soit vide2 = jcc8(CC_E);
+    movzx_rm8_idx_brin();
+    mov_rr(RAX, RDI);
+    ret_();
+    ici8(vide2);
+    op_rr(0x31, RAX, RAX);
+    ret_();
+
+    // R_BRIN_P : le brin r11 sur r10 mots à partir de rax:rdx
+    routine(R_BRIN_P);
+    soit boucle = ici();
+    test_rr(R10, R10);
+    soit fini = jcc8(CC_E);
+    push_r(RAX);
+    push_r(RDX);
+    mov_ri(R9, 1);
+    call_r(R_PAGE);
+    op_rr(0x01, RAX, RSI);
+    mov_ri(RDI, 1048576);
+    op_rr(0x01, RAX, RDI);
+    mov_m8r(RAX, 0, R11);
+    pop_r(RDX);
+    pop_r(RAX);
+    op_ri(0, RAX, 1);
+    op_ri(2, RDX, 0);
+    op_ri(5, R10, 1);
+    jmp8_arr(boucle);
+    ici8(fini);
+    ret_();
+
+    // R_SYS26 : effacer n mots de l'étage 3 à partir de p (r10 = p + n * 2^24)
+    routine(R_SYS26);
+    mov_rr(R8, R10);
+    dec_ri(5, R8, 24);
+    mov_ri(RDI, 0xFFFFFF);
+    op_rr(0x21, R8, RDI);
+    op_rr(0x21, R10, RDI);
+    mov_ri(RAX, 3 << 62);
+    op_rr(0x01, RAX, R10);
+    op_rr(0x31, RDX, RDX);
+    soit b2 = ici();
+    test_rr(R8, R8);
+    soit f2 = jcc8(CC_E);
+    push_r(RAX);
+    push_r(R8);
+    op_rr(0x31, R10, R10);
+    op_rr(0x31, R11, R11);
+    op_rr(0x31, RDX, RDX);
+    call_r(R_ECRIRE);
+    pop_r(R8);
+    pop_r(RAX);
+    op_ri(0, RAX, 1);
+    op_ri(5, R8, 1);
+    jmp8_arr(b2);
+    ici8(f2);
+    ret_();
+}
+
+// rdi = le brin du mot rax (indice dans la page rsi) : movzx edi, byte [rsi + 1048576 + rax]
+fonction movzx_rm8_idx_brin() {
+    mov_rr(RDI, RSI);
+    op_rr(0x01, RDI, RAX);
+    movzx_rm8(RDI, RDI, 1048576);
+}
+
+// R_RET : rax:rdx = la demi-instruction où revenir ; la table des retours dit où elle est traduite
+fonction routine_ret() {
+    routine(R_RET);
+    test_rr(RDX, RDX);
+    soit loin = jcc8(CC_NE);
+    mov_ri(RDI, @2[G + G_NH]);
+    op_rr(0x39, RAX, RDI);
+    soit loin2 = jcc8(CC_AE);
+    lea_rip(RDI, 6, @2[G + G_D_TAB]);
+    dec_ri(4, RAX, 2);
+    op_rr(0x01, RDI, RAX);
+    mov32_rm(RAX, RDI, 0);
+    test_rr(RAX, RAX);
+    soit nul_ = jcc8(CC_E);
+    lea_rip(RDI, 6, 0);
+    op_rr(0x01, RAX, RDI);
+    jmp_r(RAX);
+    ici8(loin);
+    ici8(loin2);
+    ici8(nul_);
+    lea_rip(RSI, 4, message("un retour vers une place qui n'est pas du code traduit"));
+    jmp_rt(R_TRAP);
+}
+
+// le texte : R_SORTIR (rax = un caractère, écrit en UTF-8 dans le tampon), R_VIDER, R_LIRE_CAR, R_OUT, R_DEC, R_FIN,
+// R_TRAP, R_ERRS (rsi : un message, sa longueur d'abord, sur la sortie des erreurs)
+fonction routines_texte() {
+    routine(R_SORTIR);
+    mov_rm(RDI, RBX, E_TN);
+    op_ri(7, RDI, 4090);
+    soit place = jcc8(CC_B);
+    push_r(RAX);
+    call_r(R_VIDER);
+    pop_r(RAX);
+    mov_rm(RDI, RBX, E_TN);
+    ici8(place);
+    mov_rr(RSI, RBX);
+    op_rr(0x01, RSI, RDI);
+    // un seul octet
+    op_ri(7, RAX, 128);
+    soit deux = jcc8(CC_AE);
+    mov_m8r(RSI, E_TBUF, RAX);
+    op_ri(0, RDI, 1);
+    soit fin = jmp8();
+    ici8(deux);
+    op_ri(7, RAX, 2048);
+    soit trois = jcc8(CC_AE);
+    mov_rr(RCX, RAX);
+    dec_ri(5, RCX, 6);
+    op_ri(1, RCX, 192);
+    mov_m8r(RSI, E_TBUF, RCX);
+    op_ri(4, RAX, 63);
+    op_ri(1, RAX, 128);
+    mov_m8r(RSI, E_TBUF + 1, RAX);
+    op_ri(0, RDI, 2);
+    soit fin2 = jmp8();
+    ici8(trois);
+    op_ri(7, RAX, 65536);
+    soit quatre = jcc8(CC_AE);
+    mov_rr(RCX, RAX);
+    dec_ri(5, RCX, 12);
+    op_ri(1, RCX, 224);
+    mov_m8r(RSI, E_TBUF, RCX);
+    mov_rr(RCX, RAX);
+    dec_ri(5, RCX, 6);
+    op_ri(4, RCX, 63);
+    op_ri(1, RCX, 128);
+    mov_m8r(RSI, E_TBUF + 1, RCX);
+    op_ri(4, RAX, 63);
+    op_ri(1, RAX, 128);
+    mov_m8r(RSI, E_TBUF + 2, RAX);
+    op_ri(0, RDI, 3);
+    soit fin3 = jmp8();
+    ici8(quatre);
+    mov_rr(RCX, RAX);
+    dec_ri(5, RCX, 18);
+    op_ri(4, RCX, 7);
+    op_ri(1, RCX, 240);
+    mov_m8r(RSI, E_TBUF, RCX);
+    mov_rr(RCX, RAX);
+    dec_ri(5, RCX, 12);
+    op_ri(4, RCX, 63);
+    op_ri(1, RCX, 128);
+    mov_m8r(RSI, E_TBUF + 1, RCX);
+    mov_rr(RCX, RAX);
+    dec_ri(5, RCX, 6);
+    op_ri(4, RCX, 63);
+    op_ri(1, RCX, 128);
+    mov_m8r(RSI, E_TBUF + 2, RCX);
+    op_ri(4, RAX, 63);
+    op_ri(1, RAX, 128);
+    mov_m8r(RSI, E_TBUF + 3, RAX);
+    op_ri(0, RDI, 4);
+    ici8(fin);
+    ici8(fin2);
+    ici8(fin3);
+    mov_mr(RBX, E_TN, RDI);
+    // une fin de ligne : tout part (ce qui est écrit paraît aussitôt, comme sur Lugus devant quelqu'un)
+    op_ri(7, RAX, 10);
+    soit pas_ligne = jcc8(CC_NE);
+    call_r(R_VIDER);
+    ici8(pas_ligne);
+    ret_();
+
+    routine(R_VIDER);
+    mov_rm(RDX, RBX, E_TN);
+    test_rr(RDX, RDX);
+    soit vide = jcc8(CC_E);
+    mov_ri(RDI, 1);
+    mov_rr(RSI, RBX);
+    op_ri(0, RSI, E_TBUF);
+    call_r(R_OSW);
+    mov_mi(RBX, E_TN, 0);
+    ici8(vide);
+    ret_();
+
+    // R_LIRE_CAR : rax = le caractère suivant (UTF-8 lu), rdx = 0 ; à la fin : rax = rdx = tout à un ; les \r sont sautés
+    routine(R_LIRE_CAR);
+    push_r(R10);
+    push_r(R11);
+    call_r(R_VIDER);
+    soit encore = ici();
+    call_octet();
+    op_ri(7, RAX, 13);
+    jcc8_arr(CC_E, encore);
+    op_ri(7, RAX, 128);
+    soit ascii = jcc8(CC_B);
+    test_rr(RDX, RDX);
+    soit eof = jcc8(CC_NE);
+    // la suite d'un caractère de plusieurs octets
+    mov_rr(R10, RAX);
+    op_ri(7, RAX, 224);
+    soit t3 = jcc8(CC_AE);
+    op_ri(4, R10, 31);
+    mov_ri(R11, 1);
+    soit suite = jmp8();
+    ici8(t3);
+    op_ri(7, RAX, 240);
+    soit q4 = jcc8(CC_AE);
+    op_ri(4, R10, 15);
+    mov_ri(R11, 2);
+    soit suite2 = jmp8();
+    ici8(q4);
+    op_ri(4, R10, 7);
+    mov_ri(R11, 3);
+    ici8(suite);
+    ici8(suite2);
+    soit autre = ici();
+    test_rr(R11, R11);
+    soit fait = jcc8(CC_E);
+    call_octet();
+    dec_ri(4, R10, 6);
+    op_ri(4, RAX, 63);
+    op_rr(0x09, R10, RAX);
+    op_ri(5, R11, 1);
+    jmp8_arr(autre);
+    ici8(fait);
+    mov_rr(RAX, R10);
+    ici8(ascii);
+    op_rr(0x31, RDX, RDX);
+    ici8(eof);
+    pop_r(R11);
+    pop_r(R10);
+    ret_();
+
+    routine(R_OUT);
+    mov_rm(RDI, RBX, E_NOUT);
+    op_ri(7, RDI, 65536);
+    soit place2 = jcc8(CC_B);
+    lea_rip(RSI, 4, message("plus de 65 536 sorties"));
+    jmp_rt(R_TRAP);
+    ici8(place2);
+    mov_rr(RSI, RDI);
+    dec_ri(4, RSI, 4);
+    op_rr(0x01, RSI, RBX);
+    mov_mr(RSI, E_OUTS, RAX);
+    mov_mr(RSI, E_OUTS + 8, RDX);
+    op_ri(0, RDI, 1);
+    mov_mr(RBX, E_NOUT, RDI);
+    ret_();
+
+    // R_DEC : écrit rax:rdx (sans signe) en décimal sur la sortie des erreurs (r9 = 2) ; change tout sauf rbx
+    routine(R_DEC);
+    mov_rr(R10, RAX);
+    mov_rr(R11, RDX);
+    mov_ri(RDI, 63);
+    mov_ri(RCX, 10);
+    soit chiffre = ici();
+    // (r11:r10) / 10 : la division longue, haut puis bas
+    op_rr(0x31, RDX, RDX);
+    mov_rr(RAX, R11);
+    f7(6, RCX);
+    mov_rr(R11, RAX);
+    mov_rr(RAX, R10);
+    f7(6, RCX);
+    mov_rr(R10, RAX);
+    op_ri(0, RDX, 48);
+    mov_rr(RSI, RBX);
+    op_rr(0x01, RSI, RDI);
+    mov_m8r(RSI, E_DBUF, RDX);
+    op_ri(5, RDI, 1);
+    mov_rr(RAX, R10);
+    op_rr(0x09, RAX, R11);
+    test_rr(RAX, RAX);
+    jcc8_arr(CC_NE, chiffre);
+    // les chiffres de rdi + 1 à 63
+    mov_rr(RSI, RBX);
+    op_rr(0x01, RSI, RDI);
+    op_ri(0, RSI, E_DBUF + 1);
+    mov_ri(RDX, 63);
+    op_rr(0x29, RDX, RDI);
+    mov_rr(RDI, R9);
+    call_r(R_OSW);
+    ret_();
+
+    // R_ERRS : le message rsi (sa longueur sur un octet, puis ses octets) sur la sortie des erreurs
+    routine(R_ERRS);
+    movzx_rm8(RDX, RSI, 0);
+    op_ri(0, RSI, 1);
+    mov_ri(RDI, 2);
+    call_r(R_OSW);
+    ret_();
+
+    // R_TRAP : rsi = le message, rcx = la demi-instruction ; « Gobannos : … (demi-instruction N) », puis la fin (3)
+    routine(R_TRAP);
+    push_r(RCX);
+    push_r(RSI);
+    call_r(R_VIDER);
+    lea_rip(RSI, 4, message("Gobannos : "));
+    call_r(R_ERRS);
+    pop_r(RSI);
+    call_r(R_ERRS);
+    lea_rip(RSI, 4, message(" (demi-instruction "));
+    call_r(R_ERRS);
+    pop_r(RAX);
+    op_rr(0x31, RDX, RDX);
+    mov_ri(R9, 2);
+    call_r(R_DEC);
+    lea_rip(RSI, 4, message(")\n"));
+    call_r(R_ERRS);
+    mov_ri(RDI, 3);
+    call_r(R_OSQ);
+
+    // R_FIN : le texte qui reste, puis les sorties (comme Lugus : « a,b,c », sur la sortie des erreurs), puis 0
+    routine(R_FIN);
+    call_r(R_VIDER);
+    mov_rm(RCX, RBX, E_NOUT);
+    test_rr(RCX, RCX);
+    soit aucune = jcc8(CC_E);
+    op_rr(0x31, R8, R8);
+    soit chaque = ici();
+    push_r(R8);
+    mov_rr(RSI, R8);
+    dec_ri(4, RSI, 4);
+    op_rr(0x01, RSI, RBX);
+    mov_rm(RAX, RSI, E_OUTS);
+    mov_rm(RDX, RSI, E_OUTS + 8);
+    mov_ri(R9, 2);
+    call_r(R_DEC);
+    pop_r(R8);
+    op_ri(0, R8, 1);
+    mov_rm(RCX, RBX, E_NOUT);
+    op_rr(0x39, R8, RCX);
+    soit derniere = jcc8(CC_E);
+    push_r(R8);
+    lea_rip(RSI, 4, message(","));
+    call_r(R_ERRS);
+    pop_r(R8);
+    jmp8_arr(chaque);
+    ici8(derniere);
+    lea_rip(RSI, 4, message("\n"));
+    call_r(R_ERRS);
+    ici8(aucune);
+    op_rr(0x31, RDI, RDI);
+    call_r(R_OSQ);
+}
+
+// un octet de l'entrée : rax (rdx = 0) ; la fin : rax = rdx = tout à un
+fonction call_octet() {
+    mov_rm(RAX, RBX, E_IP);
+    mov_rm(RCX, RBX, E_IN);
+    op_rr(0x39, RAX, RCX);
+    soit dispo = jcc8(CC_B);
+    movzx_rm8(RCX, RBX, E_EOF);
+    test_rr(RCX, RCX);
+    soit fin = jcc8(CC_NE);
+    mov_rr(RSI, RBX);
+    op_ri(0, RSI, E_IBUF);
+    mov_ri(RDX, 4096);
+    call_r(R_OSR);
+    mov_mr(RBX, E_IN, RAX);
+    mov_mi(RBX, E_IP, 0);
+    test_rr(RAX, RAX);
+    soit lu = jcc8(CC_NE);
+    mov_ri(RCX, 1);
+    mov_m8r(RBX, E_EOF, RCX);
+    ici8(fin);
+    mov_ri(RAX, 18446744073709551615);
+    mov_rr(RDX, RAX);
+    soit sortir = jmp8();
+    ici8(lu);
+    op_rr(0x31, RAX, RAX);
+    ici8(dispo);
+    mov_rr(RSI, RBX);
+    op_rr(0x01, RSI, RAX);
+    movzx_rm8(RCX, RSI, E_IBUF);
+    op_ri(0, RAX, 1);
+    mov_mr(RBX, E_IP, RAX);
+    mov_rr(RAX, RCX);
+    op_rr(0x31, RDX, RDX);
+    ici8(sortir);
+}
+
+// ------------------------------------------------------------------------------------------- le socle (le système)
+// R_OSW : écrire rdx octets de rsi sur rdi (1 : la sortie, 2 : les erreurs) ; R_OSR : lire au plus rdx octets dans rsi,
+// rax = le nombre lu (0 : la fin) ; R_OSA : rax = rdx octets à zéro ; R_OSQ : finir, le code rdi. Gardent rbx.
+fonction socle_linux() {
+    routine(R_OSW);
+    push_r(RCX);
+    push_r(R11);
+    mov_ri(RAX, 1);
+    o(0x0F);
+    o(0x05);
+    pop_r(R11);
+    pop_r(RCX);
+    ret_();
+
+    routine(R_OSR);
+    push_r(RCX);
+    push_r(R11);
+    op_rr(0x31, RDI, RDI);
+    op_rr(0x31, RAX, RAX);
+    o(0x0F);
+    o(0x05);
+    // une erreur (négatif) compte comme la fin
+    test_rr(RAX, RAX);
+    soit ok = jcc8(9);
+    op_rr(0x31, RAX, RAX);
+    ici8(ok);
+    pop_r(R11);
+    pop_r(RCX);
+    ret_();
+
+    routine(R_OSA);
+    push_r(RCX);
+    push_r(R11);
+    push_r(R10);
+    push_r(R8);
+    push_r(R9);
+    op_rr(0x31, RDI, RDI);
+    mov_rr(RSI, RDX);
+    mov_ri(RDX, 3);
+    mov_ri(R10, 0x22);
+    mov_ri(R8, 18446744073709551615);
+    op_rr(0x31, R9, R9);
+    mov_ri(RAX, 9);
+    o(0x0F);
+    o(0x05);
+    pop_r(R9);
+    pop_r(R8);
+    pop_r(R10);
+    pop_r(R11);
+    pop_r(RCX);
+    ret_();
+
+    routine(R_OSQ);
+    mov_ri(RAX, 231);
+    o(0x0F);
+    o(0x05);
+
+    routine(R_DEBUT);
+    ret_();
+}
+
+// Windows : par KERNEL32 (la convention de Windows x64 : rcx, rdx, r8, r9, 32 octets réservés, la pile alignée)
+constante K_STD = 0;
+constante K_WRITE = 1;
+constante K_READ = 2;
+constante K_ALLOC = 3;
+constante K_EXIT = 4;
+constante K_CPOUT = 5;
+constante K_CPIN = 6;
+
+fonction appel_debut() {
+    push_r(RBP);
+    mov_rr(RBP, RSP);
+    op_ri(4, RSP, 4294967280);
+    op_ri(5, RSP, 64);
+}
+
+fonction appel_fin() {
+    mov_rr(RSP, RBP);
+    pop_r(RBP);
+}
+
+fonction socle_windows() {
+    routine(R_OSW);
+    push_r(RCX);
+    push_r(R8);
+    push_r(R9);
+    push_r(R10);
+    push_r(R11);
+    appel_debut();
+    // rcx = le handle (la sortie ou les erreurs), rdx = le tampon, r8 = la longueur, r9 = &écrits, [rsp+32] = 0
+    mov_rm(RCX, RBX, E_HOUT);
+    op_ri(7, RDI, 2);
+    soit pas_err = jcc8(CC_NE);
+    mov_rm(RCX, RBX, E_HERR);
+    ici8(pas_err);
+    mov_rr(R8, RDX);
+    mov_rr(RDX, RSI);
+    mov_rr(R9, RBX);
+    op_ri(0, R9, E_SCR);
+    mov_mi(RSP, 32, 0);
+    call_iat(K_WRITE);
+    appel_fin();
+    pop_r(R11);
+    pop_r(R10);
+    pop_r(R9);
+    pop_r(R8);
+    pop_r(RCX);
+    ret_();
+
+    routine(R_OSR);
+    push_r(RCX);
+    push_r(R8);
+    push_r(R9);
+    push_r(R10);
+    push_r(R11);
+    appel_debut();
+    mov_rm(RCX, RBX, E_HIN);
+    mov_rr(R8, RDX);
+    mov_rr(RDX, RSI);
+    mov_rr(R9, RBX);
+    op_ri(0, R9, E_SCR);
+    mov_mi(RSP, 32, 0);
+    mov_mi(RBX, E_SCR, 0);
+    call_iat(K_READ);
+    test_rr(RAX, RAX);
+    soit ok = jcc8(CC_NE);
+    mov_mi(RBX, E_SCR, 0);
+    ici8(ok);
+    mov32_rm(RAX, RBX, E_SCR);
+    appel_fin();
+    pop_r(R11);
+    pop_r(R10);
+    pop_r(R9);
+    pop_r(R8);
+    pop_r(RCX);
+    ret_();
+
+    routine(R_OSA);
+    push_r(RCX);
+    push_r(R8);
+    push_r(R9);
+    push_r(R10);
+    push_r(R11);
+    appel_debut();
+    op_rr(0x31, RCX, RCX);
+    mov_ri(R8, 0x3000);
+    mov_ri(R9, 4);
+    call_iat(K_ALLOC);
+    appel_fin();
+    pop_r(R11);
+    pop_r(R10);
+    pop_r(R9);
+    pop_r(R8);
+    pop_r(RCX);
+    ret_();
+
+    routine(R_OSQ);
+    appel_debut();
+    mov_rr(RCX, RDI);
+    call_iat(K_EXIT);
+
+    // R_DEBUT : les handles, la console en UTF-8
+    routine(R_DEBUT);
+    appel_debut();
+    mov_ri(RCX, 4294967285);
+    o(0x48);
+    o(0x63);
+    o(0xC9);
+    call_iat(K_STD);
+    mov_mr(RBX, E_HOUT, RAX);
+    mov_ri(RCX, 4294967284);
+    o(0x48);
+    o(0x63);
+    o(0xC9);
+    call_iat(K_STD);
+    mov_mr(RBX, E_HERR, RAX);
+    mov_ri(RCX, 4294967286);
+    o(0x48);
+    o(0x63);
+    o(0xC9);
+    call_iat(K_STD);
+    mov_mr(RBX, E_HIN, RAX);
+    mov_ri(RCX, 65001);
+    call_iat(K_CPOUT);
+    mov_ri(RCX, 65001);
+    call_iat(K_CPIN);
+    appel_fin();
+    ret_();
+}
+
+// ------------------------------------------------------------------------------------------- le départ
+// lea rbx, [l'état] ; les handles ; les mots dans l'étage 0 (marqués ADN) ; r14 = la pile ; puis la demi-instruction 0
+fonction depart() {
+    lea_rip(RBX, 3, 0);
+    call_r(R_DEBUT);
+    mov_ri(RAX, 2147483647);
+    mov_mr(RBX, lo(14), RAX);
+    // les mots : rsi parcourt les mots de la section, r8 compte
+    op_rr(0x31, R8, R8);
+    soit boucle = ici();
+    mov_ri(RDI, longueur(@2[G + G_WH]));
+    op_rr(0x39, R8, RDI);
+    soit fini = jcc8(CC_AE);
+    push_r(R8);
+    lea_rip(RSI, 6, @2[G + G_D_MOTS]);
+    mov_rr(RDI, R8);
+    dec_ri(4, RDI, 4);
+    op_rr(0x01, RSI, RDI);
+    mov_rm(R10, RSI, 0);
+    mov_rm(R11, RSI, 8);
+    mov_rr(RAX, R8);
+    op_rr(0x31, RDX, RDX);
+    op_rr(0x31, RCX, RCX);
+    call_r(R_ECRIRE);
+    pop_r(R8);
+    op_ri(0, R8, 1);
+    jmp8_arr(boucle);
+    ici8(fini);
+    // le code est ADN : MARQUE sur tous les mots
+    op_rr(0x31, RAX, RAX);
+    op_rr(0x31, RDX, RDX);
+    mov_ri(R10, longueur(@2[G + G_WH]));
+    mov_ri(R11, 1);
+    call_r(R_BRIN_P);
+    jmp_pc(0);
+}
+
+// ------------------------------------------------------------------------------------------- l'image
+fonction aligner(t, a) {
+    tantque longueur(t) % a != 0 {
+        ajouter(t, 0);
+    }
+}
+
+fonction poser32(t, p, v) {
+    t[p] = v & 255;
+    t[p + 1] = (v >> 8) & 255;
+    t[p + 2] = (v >> 16) & 255;
+    t[p + 3] = (v >> 24) & 255;
+}
+
+fonction ajouter16(t, v) {
+    ajouter(t, v & 255);
+    ajouter(t, (v >> 8) & 255);
+}
+
+fonction ajouter32(t, v) {
+    ajouter16(t, v);
+    ajouter16(t, v >> 16);
+}
+
+fonction ajouter64(t, v) {
+    ajouter32(t, v);
+    ajouter32(t, v >> 32);
+}
+
+fonction ajouter_texte(t, s: texte) {
+    pour i dans 0..longueur(s) {
+        ajouter(t, car(s, i));
+    }
+}
+
+constante SECTION_W = 0x1000;
+constante IMAGE_W = 0x400000;
+constante FICHIER_W = 0x200;
+constante BASE_L = 0x400000;
+constante ENTETE_L = 0x1000;
+
+// la table d'import de KERNEL32 (Windows), au début de la section ; G_IMPF : la place de l'entrée de l'IAT de chacune
+fonction imports(sec) {
+    soit noms = ["GetStdHandle", "WriteFile", "ReadFile", "VirtualAlloc", "ExitProcess", "SetConsoleOutputCP",
+                 "SetConsoleCP"];
+    soit n = longueur(noms);
+    // l'IDT : deux entrées de 20 octets ; puis l'ILT, l'IAT (n + 1 entrées de 8), les noms, la DLL
+    soit p_idt = 0;
+    soit p_ilt = 40;
+    soit p_iat = p_ilt + 8 * (n + 1);
+    soit p_noms = p_iat + 8 * (n + 1);
+    soit places = tableau(0);
+    soit q = p_noms;
+    pour i dans 0..n {
+        ajouter(places, q);
+        q = q + 2 + longueur(noms[i]) + 1;
+        si q % 2 == 1 {
+            q = q + 1;
+        }
+    }
+    soit p_dll = q;
+    // l'IDT
+    ajouter32(sec, SECTION_W + p_ilt);
+    ajouter32(sec, 0);
+    ajouter32(sec, 0);
+    ajouter32(sec, SECTION_W + p_dll);
+    ajouter32(sec, SECTION_W + p_iat);
+    pour z dans 0..5 {
+        ajouter32(sec, 0);
+    }
+    pour i2 dans 0..n {
+        ajouter64(sec, SECTION_W + places[i2]);
+    }
+    ajouter64(sec, 0);
+    pour i3 dans 0..n {
+        poser_t(G_IMPF, i3, p_iat + 8 * i3);
+        ajouter64(sec, SECTION_W + places[i3]);
+    }
+    ajouter64(sec, 0);
+    pour i4 dans 0..n {
+        ajouter16(sec, 0);
+        ajouter_texte(sec, noms[i4]);
+        ajouter(sec, 0);
+        aligner(sec, 2);
+    }
+    ajouter_texte(sec, "KERNEL32.dll");
+    ajouter(sec, 0);
+    aligner(sec, 16);
+    @2[G + 30] = p_iat;
+    @2[G + 31] = 8 * (n + 1);
+    @2[G + 32] = p_idt;
+    @2[G + 33] = 40;
+}
+
+fonction forger(sortie_: texte, win) {
+    soit nh = @2[G + G_NH];
+    soit sec = tableau(0);
+    si win {
+        imports(sec);
+    }
+    // les mots
+    @2[G + G_D_MOTS] = longueur(sec);
+    pour i dans 0..longueur(@2[G + G_WH]) {
+        ajouter64(sec, @2[G + G_WL][i]);
+        ajouter64(sec, @2[G + G_WH][i]);
+    }
+    // la table des retours (remplie après le code)
+    @2[G + G_D_TAB] = longueur(sec);
+    pour j dans 0..nh {
+        ajouter32(sec, 0);
+    }
+    aligner(sec, 16);
+    @2[G + G_CODE0] = longueur(sec);
+    // le code
+    depart();
+    pour p dans 0..nh {
+        si @2[G + G_VU][p] == 0 {
+            continuer;
+        }
+        poser_t(G_LAB, p, ici());
+        // add qword [rbx + E_PAS], 1 : chaque demi-instruction jouée compte, comme dans Lugus
+        o(0x48);
+        o(0x83);
+        rm(0, RBX, E_PAS);
+        o(1);
+        soit suite = traduire_un(p);
+        // la suite n'est pas la demi-instruction suivante traduite : un saut
+        si suite < nh && (@2[G + G_VU][suite] == 1) {
+            soit k = p + 1;
+            tantque k < suite && @2[G + G_VU][k] == 0 {
+                k = k + 1;
+            }
+            si k != suite {
+                jmp_pc(suite);
+            }
+        }
+    }
+    routines_memoire();
+    routine_ret();
+    routines_texte();
+    si win {
+        socle_windows();
+    } sinon {
+        socle_linux();
+    }
+    soit code0 = @2[G + G_CODE0];
+    soit c = @2[G + G_C];
+    // les messages, après le code
+    soit d_msg = code0 + longueur(c);
+    // l'état, après tout : aligné sur une page
+    soit taille = d_msg + longueur(@2[G + G_MSG]);
+    soit d_etat = (taille + 4095) / 4096 * 4096;
+    // les corrections
+    soit fp = @2[G + G_FP];
+    soit fk = @2[G + G_FK];
+    soit fv = @2[G + G_FV];
+    pour k2 dans 0..longueur(fp) {
+        soit cible = 0;
+        soit sorte = fk[k2];
+        soit v = fv[k2];
+        si sorte == 1 {
+            si v >= nh || @2[G + G_LAB][v] == 18446744073709551615 {
+                afficher("Gobannos : un saut vers une demi-instruction non traduite :", v);
+                @2[G + G_ERR] = 1;
+            } sinon {
+                cible = code0 + @2[G + G_LAB][v];
+            }
+        } sinon si sorte == 2 {
+            cible = code0 + @2[G + G_ETQ][v];
+        } sinon si sorte == 3 {
+            cible = d_etat;
+        } sinon si sorte == 4 {
+            cible = d_msg + @2[G + G_MSGP][v];
+        } sinon si sorte == 5 {
+            cible = v;
+        } sinon {
+            cible = v;
+        }
+        poser32(c, fp[k2], cible - (code0 + fp[k2] + 4));
+    }
+    // la table des retours : la place du code de chaque demi-instruction, depuis le début de la section (0 : aucune)
+    pour p2 dans 0..nh {
+        si @2[G + G_VU][p2] == 1 {
+            poser32(sec, @2[G + G_D_TAB] + 4 * p2, code0 + @2[G + G_LAB][p2]);
+        }
+    }
+    pour k3 dans 0..longueur(c) {
+        ajouter(sec, c[k3]);
+    }
+    soit m = @2[G + G_MSG];
+    pour k4 dans 0..longueur(m) {
+        ajouter(sec, m[k4]);
+    }
+    soit entree = code0;
+    soit virtuel = d_etat + E_TOTAL;
+    soit f_ = ouvrir_ecriture("octets:" + sortie_);
+    si f_ == 4294967295 || f_ == 18446744073709551615 {
+        afficher("Gobannos : je ne peux pas écrire", sortie_);
+        retour 0;
+    }
+    soit tete = tableau(0);
+    si win {
+        entete_pe(tete, longueur(sec), virtuel, entree);
+    } sinon {
+        entete_elf(tete, longueur(sec), virtuel, entree);
+    }
+    pour a dans 0..longueur(tete) {
+        ecrire_car(f_, tete[a]);
+    }
+    pour b dans 0..longueur(sec) {
+        ecrire_car(f_, sec[b]);
+    }
+    si win {
+        soit brut = (longueur(sec) + FICHIER_W - 1) / FICHIER_W * FICHIER_W;
+        pour z2 dans longueur(sec)..brut {
+            ecrire_car(f_, 0);
+        }
+    }
+    si fermer(f_) != 0 {
+        afficher("Gobannos : je ne peux pas écrire", sortie_);
+        retour 0;
+    }
+    retour 1;
+}
+
+// ELF64 : un seul segment, lisible, inscriptible et exécutable ; la section à ENTETE_L dans le fichier et en mémoire
+fonction entete_elf(t, taille, virtuel, entree) {
+    ajouter(t, 0x7F);
+    ajouter_texte(t, "ELF");
+    ajouter(t, 2);
+    ajouter(t, 1);
+    ajouter(t, 1);
+    pour i dans 0..9 {
+        ajouter(t, 0);
+    }
+    ajouter16(t, 2);
+    ajouter16(t, 0x3E);
+    ajouter32(t, 1);
+    ajouter64(t, BASE_L + ENTETE_L + entree);
+    ajouter64(t, 64);
+    ajouter64(t, 0);
+    ajouter32(t, 0);
+    ajouter16(t, 64);
+    ajouter16(t, 56);
+    ajouter16(t, 1);
+    ajouter16(t, 64);
+    ajouter16(t, 0);
+    ajouter16(t, 0);
+    // le segment : tout le fichier, de 0 ; en mémoire, la section puis l'état
+    ajouter32(t, 1);
+    ajouter32(t, 7);
+    ajouter64(t, 0);
+    ajouter64(t, BASE_L);
+    ajouter64(t, BASE_L);
+    ajouter64(t, ENTETE_L + taille);
+    ajouter64(t, ENTETE_L + virtuel);
+    ajouter64(t, 0x1000);
+    tantque longueur(t) < ENTETE_L {
+        ajouter(t, 0);
+    }
+}
+
+// PE32+ : les en-têtes DOS, PE, optionnel, une section (comme natif.py, que Windows accepte)
+fonction entete_pe(t, taille, virtuel, entree) {
+    soit brut = (taille + FICHIER_W - 1) / FICHIER_W * FICHIER_W;
+    soit image = (SECTION_W + virtuel + 4095) / 4096 * 4096;
+    ajouter_texte(t, "MZ");
+    pour i dans 0..58 {
+        ajouter(t, 0);
+    }
+    ajouter32(t, 64);
+    ajouter_texte(t, "PE");
+    ajouter16(t, 0);
+    // COFF
+    ajouter16(t, 0x8664);
+    ajouter16(t, 1);
+    ajouter32(t, 0);
+    ajouter32(t, 0);
+    ajouter32(t, 0);
+    ajouter16(t, 240);
+    ajouter16(t, 0x0023);
+    // l'en-tête optionnel
+    ajouter16(t, 0x20B);
+    ajouter(t, 14);
+    ajouter(t, 0);
+    ajouter32(t, brut);
+    ajouter32(t, 0);
+    ajouter32(t, virtuel - taille);
+    ajouter32(t, SECTION_W + entree);
+    ajouter32(t, SECTION_W);
+    ajouter64(t, IMAGE_W);
+    ajouter32(t, SECTION_W);
+    ajouter32(t, FICHIER_W);
+    ajouter16(t, 6);
+    ajouter16(t, 0);
+    ajouter16(t, 0);
+    ajouter16(t, 0);
+    ajouter16(t, 6);
+    ajouter16(t, 0);
+    ajouter32(t, 0);
+    ajouter32(t, image);
+    ajouter32(t, FICHIER_W);
+    ajouter32(t, 0);
+    ajouter16(t, 3);
+    ajouter16(t, 0x8000);
+    ajouter64(t, 0x800000);
+    ajouter64(t, 0x10000);
+    ajouter64(t, 0x100000);
+    ajouter64(t, 0x1000);
+    ajouter32(t, 0);
+    ajouter32(t, 16);
+    // les répertoires : 1 les imports, 12 l'IAT
+    pour k dans 0..16 {
+        si k == 1 {
+            ajouter32(t, SECTION_W + @2[G + 32]);
+            ajouter32(t, @2[G + 33]);
+        } sinon si k == 12 {
+            ajouter32(t, SECTION_W + @2[G + 30]);
+            ajouter32(t, @2[G + 31]);
+        } sinon {
+            ajouter32(t, 0);
+            ajouter32(t, 0);
+        }
+    }
+    // la section
+    ajouter_texte(t, ".vtx");
+    pour z dans 0..4 {
+        ajouter(t, 0);
+    }
+    ajouter32(t, virtuel);
+    ajouter32(t, SECTION_W);
+    ajouter32(t, brut);
+    ajouter32(t, FICHIER_W);
+    ajouter32(t, 0);
+    ajouter32(t, 0);
+    ajouter16(t, 0);
+    ajouter16(t, 0);
+    ajouter32(t, 0xE0000060);
+    tantque longueur(t) < FICHIER_W {
+        ajouter(t, 0);
+    }
+}
+
+// ------------------------------------------------------------------------------------------- principal
+fonction principal() {
+    pour k dans 0..40 {
+        @2[G + k] = 0;
+    }
+    pour k2 dans [G_C, G_FP, G_FK, G_FV, G_MSG, G_MSGP, G_WH, G_WL, G_PILE] {
+        soit t = tableau(0);
+        @2[G + k2] = t;
+        proteger(t);
+    }
+    soit etq = tableau(NR);
+    @2[G + G_ETQ] = etq;
+    proteger(etq);
+    soit impf = tableau(8);
+    @2[G + G_IMPF] = impf;
+    proteger(impf);
+    soit entree_ = nettoyer(lire_ligne());
+    soit sortie_ = nettoyer(lire_ligne());
+    soit systeme = nettoyer(lire_ligne());
+    si lire_mots(entree_) == 0 {
+        sortie(1);
+        retour;
+    }
+    soit nh = 2 * longueur(@2[G + G_WH]);
+    @2[G + G_NH] = nh;
+    soit vu = tableau(nh);
+    @2[G + G_VU] = vu;
+    proteger(vu);
+    soit lab = tableau(nh);
+    @2[G + G_LAB] = lab;
+    proteger(lab);
+    pour p dans 0..nh {
+        lab[p] = 18446744073709551615;
+    }
+    parcourir();
+    soit win = 0;
+    si systeme == "windows" {
+        win = 1;
+    }
+    @2[G + G_WIN] = win;
+    si forger(sortie_, win) == 0 || @2[G + G_ERR] != 0 {
+        sortie(1);
+        retour;
+    }
+    soit n_vus = 0;
+    pour p2 dans 0..nh {
+        n_vus = n_vus + vu[p2];
+    }
+    afficher("Gobannos :", longueur(@2[G + G_WH]), "mots,", n_vus, "demi-instructions traduites,",
+             @2[G + G_NBAD], "laissées au piège ;", longueur(@2[G + G_C]), "octets de code ->", sortie_);
+    sortie(0);
+}

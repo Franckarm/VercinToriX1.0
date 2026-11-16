@@ -2648,3 +2648,64 @@ traduction en x86-64.
 fois pour le retenu, la lecture défaite et l'action gardée ; `sinon` pour des ex aequo ; sans `retenir` ; « alors » reste
 un nom ailleurs. vtxc128 renouvelé (point fixe 184 404 mots).
 
+## 57. Gobannos, le forgeron : vtx écrit ses exécutables lui-même (16 novembre, 0.6v)
+
+**La décision du créateur :** Vercintorix doit être autonome à 100 %, sans Rust ni Python ; dans l'ordre : Gobannos
+(le traducteur écrit en vtx), puis la traduction complète, puis les cylindres dedans ; et penser à finir le langage.
+
+**Ce qui existait, et n'était pas en vtx.** La forge (vtx → texte Rust → rustc : il faut Rust), `natif/` (Senos → .exe,
+écrit en Python), la traduction de Lugus en x86-64 au lancement des .exe (`natif128.rs`, en Rust). Gobannos n'était que
+sur le papier.
+
+**Gobannos, premier temps** (`gobannos/gobannos.vtx`, environ 2 400 lignes de vtx, joué par Lugus) :
+
+```
+lugus compiler PROG.vtx PROG.mots
+lugus gobannos/gobannos.vtx            (trois lignes : PROG.mots, PROG.exe, windows | linux)
+```
+
+- **Il lit les mots** de Lugus (des nombres de 128 bits, lus en `entier_128`), **trouve le code** (de la demi-instruction
+  0, en suivant les sauts, les appels et la suite : les textes et les données rangés après le code ne sont jamais pris
+  pour des instructions), **traduit chaque demi-instruction en x86-64** (un assembleur écrit en vtx : les formes dont il
+  a besoin, toujours de la même taille, les sauts toujours longs), et **écrit l'exécutable** octet par octet par le canal
+  `octets:` : un ELF64 pour Linux (un segment), un PE32+ pour Windows (une section, KERNEL32 seul : GetStdHandle,
+  WriteFile, ReadFile, VirtualAlloc, ExitProcess, SetConsoleOutputCP, SetConsoleCP ; la même disposition que `natif.py`,
+  que Windows accepte déjà).
+- **Le code produit :** rbx porte l'état (les seize registres de Lugus, 16 octets chacun, les drapeaux z et c, le compte
+  des instructions, les tampons) ; la mémoire de Lugus en pages de 65 536 mots et leurs brins, prises au système au
+  premier besoin, une table de 65 536 pages par étage (les indices jusqu'à 2^32) ; les mots du programme posés dans
+  l'étage 0 et marqués ADN au départ ; RET par une table des retours (la place traduite de chaque demi-instruction).
+- **Traduit :** toutes les opérations entières à 64 bits (avec la division par zéro et la division signée par −1 de
+  Lugus), sur tout le mot l'addition, la soustraction, la comparaison, le produit, les décalages, ET, OU, OU exclusif, le
+  complément ; les constantes ; les lectures et écritures de la mémoire, du cadre et de la pile ; les sauts, CALL, RET ;
+  le quaternaire (ET4, OU4, NON4, ANTI, QEGAL, ADDM4, EXQ, LDQ, STQ) ; la console en UTF-8 (écrire, lire au clavier, les
+  \r sautés), `sortie()` ; les brins (MARQUE, BRIN, l'écriture dans un mot ADN refusée) ; les services 25
+  (`instructions()` : **le même compte que Lugus**, chaque demi-instruction comptée) et 26 (effacer) ; HALT.
+- **Pas encore :** les flottants quaternaires, les fichiers, l'entrée de nombres (`entrée()`), les autres services, le
+  point de matière, les voies. Une instruction qui n'est pas traduite **arrête l'exécutable en le disant** au moment où
+  elle est atteinte (« Gobannos : cette instruction de Lugus n'est pas encore traduite… (son code : #48, largeur 0)
+  (demi-instruction 22) », code 3) : rien n'est jamais fait de travers en silence.
+
+**Vérifié** (`tests/test_gobannos.py`, 16 contrôles) : douze exemples de Lugus (alternance, banc_traduction, codon,
+combat, conseil, cylindres, duel, gene, panel, quatre_verites, releves, supposons) donnent **la même sortie que Lugus,
+au caractère près**, et le même compte d'instructions là où ils l'écrivent (duel, codon) ; un programme fait pour les
+bords (la division par zéro, `./` par −1, les décalages de 63, les entiers de 128 bits, les tableaux de quits et de
+logiques, la récursion d'Ackermann, les textes) ; le clavier (des accents, une réponse à quatre valeurs, un nombre, la fin
+de l'entrée) ; un flottant (l'arrêt dit) ; l'exécutable Windows (PE32+, KERNEL32). Les deux compilateurs de Lugus donnent
+les mêmes mots pour Gobannos lui-même (7 898 mots).
+
+**La vitesse** (le banc : un crible, fib(27), trois millions de brassages ; machine de travail) : Lugus seul 2,0 s,
+**Gobannos 0,52 s** (4 fois plus vite), la traduction en Rust 0,26 s (elle garde les registres de Lugus dans ceux du
+processeur et les pages ouvertes : Gobannos les relit en mémoire à chaque instruction ; c'est la suite).
+
+**Ce que cela change pour l'autonomie.** Le chemin vtx → .exe ne passe plus ni par Rust ni par Python : vtxc128 (en vtx)
+compile, Gobannos (en vtx) traduit et écrit l'exécutable. Ce qui reste en Rust : la machine Lugus elle-même, qui joue
+Gobannos et vtxc128 (pour s'en passer, il faudra que Gobannos se traduise lui-même : un Gobannos.exe, puis un vtxc128.exe,
+et le point fixe des exécutables), et la traduction actuelle des .exe (`natif128.rs`), que Gobannos remplacera.
+
+**Les étapes suivantes**, dans l'ordre : (2) les flottants quaternaires, les fichiers et les services, les registres
+gardés dans le processeur, pour égaler puis remplacer la traduction en Rust ; Gobannos traduit lui-même (le point fixe des
+exécutables) ; (3) les cylindres dans Gobannos (un fil par cylindre, son cube copié à l'écriture, la fusion en Belnap ;
+pour `supposons`, le cube jeté) ; et, à côté, finir le langage (les fonctions passées en valeur, les modules désignés par
+leur empreinte).
+

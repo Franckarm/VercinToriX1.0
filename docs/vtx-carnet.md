@@ -538,6 +538,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 24. **Supposons** : essayer des candidats, en écarter, en noter, et retenir le meilleur avec **un verdict de Belnap**
     (faux aucun, vrai un seul, inconnu rien ne les départage, variable des ex aequo) ; la mémoire écrite par une lecture
     est défaite. Le doute écrit comme on le pense, rendu en instructions ordinaires.
+25. **Gobannos** : le traducteur écrit en vtx, qui écrit lui-même l'exécutable (ELF, PE) d'un programme de Lugus, la
+    même sortie et le même compte d'instructions que Lugus ; ce qu'il ne sait pas encore traduire, il le dit.
 
 ### 9.2 Améliorées (techniques connues, adaptées au cube)
 
@@ -592,15 +594,20 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    choix, seulement sur un verdict vrai). Reste : montrer dans la carte d'où vient le choix. Les cylindres pour les
    lectures sont mis de côté (forge seulement ; l'idée est gardée dans `vtx-reactions.md`, section 56). Ce qui rapproche vtx du langage humain (le
    doute, l'interprétation), et le rend natif pour une IA.
-2. **Le cœur du langage** : les fonctions passées en valeur, les modules désignés par leur empreinte (un module est un
+2. **Gobannos, le forgeron écrit en vtx** (commencé le 16 novembre, 0.6v : `gobannos/gobannos.vtx` écrit lui-même
+   l'exécutable, ELF ou PE, des programmes de Lugus en entiers ; douze exemples donnent la sortie de Lugus au caractère
+   près) : puis les flottants, les fichiers et les services, les registres gardés dans le processeur, Gobannos qui se
+   traduit lui-même ; puis **les cylindres** dedans (un fil par cylindre, son cube ; pour `supposons`, le cube jeté).
+   But : 100 % vtx, sans Rust ni Python.
+3. **Finir le langage** : les fonctions passées en valeur, les modules désignés par leur empreinte (un module est un
    ADN signé, chaque usage une transcription).
-3. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
+4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
-4. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine
+5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine
    pendant qu'elle tourne (le registre tridimensionnel).
-5. **Belenos** : le tapis roulant dans chaque tuile, le fluide dans la toile, puis sur la carte (Taranis) ; **Gobatix**
+6. **Belenos** : le tapis roulant dans chaque tuile, le fluide dans la toile, puis sur la carte (Taranis) ; **Gobatix**
    (le modeleur) dans le cube vide.
-6. Le but lointain : le SPU spectral (section 2), d'abord sur un banc d'essai à une liaison et des LED adressables.
+7. Le but lointain : le SPU spectral (section 2), d'abord sur un banc d'essai à une liaison et des LED adressables.
 
 ---
 
@@ -624,7 +631,7 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 | l'atelier | *Ogmios* | dieu de l'éloquence, qui entraîne les hommes par la langue | attesté (Lucien) ; adopté |
 | le moteur graphique | *Belenos* | dieu brillant, de la lumière et du soleil | attesté ; adopté |
 | la carte graphique | *Taranis* | dieu du tonnerre, à la roue | attesté ; adopté |
-| la forge écrite en vtx | *Gobannos* | le dieu forgeron | attesté ; prévu |
+| le traducteur écrit en vtx (les .exe) | *Gobannos* | le dieu forgeron | attesté ; commencé (0.6v) |
 
 ## 13. Glossaire
 

@@ -127,6 +127,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_promesses.py")]))
     etapes.append(("supposons … parmi … retenir : essayer chaque candidat, écarter, noter, garder le meilleur",
                    [sys.executable, os.path.join("tests", "test_supposons.py")]))
+    etapes.append(("Gobannos : les mots de Lugus traduits en exécutable par vtx lui-même (les mêmes sorties que Lugus)",
+                   [sys.executable, os.path.join("tests", "test_gobannos.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",

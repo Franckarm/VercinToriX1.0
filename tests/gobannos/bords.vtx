@@ -1,0 +1,36 @@
+// Gobannos : les bords des entiers, la pile, les tableaux rangés, le quaternaire (comparé à Lugus)
+tableau q[300] de quits @2[1000];
+tableau l[200] de logique @2[2000];
+
+fonction ack(m, n) {
+    si m == 0 { retour n + 1; }
+    si n == 0 { retour ack(m - 1, 1); }
+    retour ack(m - 1, ack(m, n - 1));
+}
+
+fonction principal() {
+    soit z = 0;
+    soit grand = 18446744073709551615;
+    afficher(7 / z, 7 % z, grand / 3, grand % 10);
+    afficher(0 - 7 ./ 2, 0 - 7 .% 2, (0 - 9223372036854775807 - 1) ./ (0 - 1));
+    afficher(1 << 63, (1 << 63) >> 62, (0 - 8) .>> 1, 5 ^ 3, 12 & 10, 12 | 3, ~0);
+    soit a: entier_128 = 0LL;
+    a = entier_128(grand) + entier_128(1);
+    afficher(a, a - entier_128(1), a + a);
+    pour i dans 0..300 { q[i] = (i * 7) % 4; }
+    soit s = 0;
+    pour i2 dans 0..300 { s = s + q[i2]; }
+    afficher(s, q[0], q[1], q[299]);
+    pour j dans 0..200 { l[j] = comme_logique(j % 4); }
+    soit c = 0;
+    pour j2 dans 0..200 { si et4(l[j2], vrai) == vrai { c = c + 1; } }
+    afficher(c, fusion(vrai, faux), anti(inconnu), non4(vrai), ou4(faux, inconnu));
+    afficher(ack(2, 3), ack(3, 3));
+    soit t = [5, 3, 9, 1, 7];
+    trier(t);
+    afficher(t[0], t[4], somme(t), longueur(t));
+    soit mot = "Gaulois";
+    afficher(majuscules(mot), longueur(mot + " é"), position(mot, "lo"));
+    sortie(grand);
+    sortie(3);
+}
