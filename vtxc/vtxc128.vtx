@@ -9467,12 +9467,11 @@ fonction el_classe(c: Ctx, n: Noeud) {
     } sinon si n.genre == N_LIRE || n.genre == N_CHAMP {
         k = 1;
     } sinon si n.genre == N_RLIRE {
-        // vtx64.py traduit t[i] d'un tableau de quits en lecture d'un mot (pur) dès l'analyse, et celui d'un tableau
-        // de logiques en un appel de comme_logique (pas pur) : la même classe ici
-        si tableau_de(c, n.nom).sorte == 2 {
-            retour 0;
-        }
-        k = 1;
+        // 0.6z : sur Lugus, vtx128.py abaisse t[i] d'un tableau rangé (quits ou logiques, 64 par mot) en un calcul à
+        // toute la largeur, qu'il ne déplace jamais : la même classe ici (avant, la règle de Dunon le disait pur, et
+        // vtxc128 recopiait en ligne « t3(q[28], 5) » là où vtx128.py gardait l'appel ; trouvé par les programmes au
+        // hasard)
+        retour 0;
     } sinon si !el_permis(n.genre) {
         retour 0;
     }

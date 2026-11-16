@@ -2866,6 +2866,12 @@ d'instructions que Lugus, partout.
 gardé dans le processeur, la pile se décalait et un retour partait au mauvais endroit (« un retour vers une place qui
 n'est pas du code traduit »). Le test des flottants l'a vu ; corrigé.
 
+*Trouvé aussi, par les programmes tirés au hasard de la vérification complète* (un désaccord ancien, déjà là en 0.6x) :
+vtxc128 recopiait en ligne `t3(q[28], 5)` (q, un tableau de quits rangé) alors que vtx128.py gardait l'appel. Sur Lugus,
+vtx128.py change la lecture d'un tableau rangé (64 quits par mot) en un calcul à toute la largeur, qu'il ne déplace
+jamais ; vtxc128 suivait encore la règle de Dunon, qui la disait pure. vtxc128 suit maintenant la référence : 360
+compilations tirées au hasard sur quatre graines, mêmes mots.
+
 **La porte vers le processeur quaternaire optique.** Le processeur reste celui du PC (le x86-64). Ce qui ne dépend pas de
 lui est mis à part, pour qu'une autre cible n'ait qu'à donner les siennes :
 - **ce qui reste à chaque cible** : `cible_places()` (les registres qu'elle prête : pour le x86-64, RBP, R12, R13, R14),
