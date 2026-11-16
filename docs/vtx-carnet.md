@@ -601,8 +601,9 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 2. **Gobannos, le forgeron écrit en vtx** (commencé le 16 novembre, 0.6v : `gobannos/gobannos.vtx` écrit lui-même
    l'exécutable, ELF ou PE, des programmes de Lugus en entiers ; douze exemples donnent la sortie de Lugus au caractère
    près) ; les flottants (fait, 0.6y : par une bibliothèque écrite en vtx, au bit près, le même compte
-   d'instructions ; plus lents que Lugus seul pour l'instant) : puis les fichiers et les services, les registres gardés
-   dans le processeur, Gobannos qui se
+   d'instructions ; plus lents que Lugus seul pour l'instant) ; les registres gardés dans le processeur, le cache des
+   pages, les drapeaux morts (fait, 0.6z : sur les entiers, aussi vite que la traduction en Rust ; la cible mise à part,
+   porte ouverte au processeur quaternaire optique) : puis les fichiers et les services, Gobannos qui se
    traduit lui-même ; puis **les cylindres** dedans (un fil par cylindre, son cube ; pour `supposons`, le cube jeté).
    But : 100 % vtx, sans Rust ni Python.
 3. **Finir le langage** : les fonctions passées en valeur (fait, 0.6w : `soit f = carre; f(7)`, `plier(t, plus, 0)`,

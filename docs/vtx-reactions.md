@@ -2840,3 +2840,49 @@ le rattrapera : garder les registres de Lugus dans ceux du processeur (l'étape 
 bibliothèque), puis une racine par Newton. Les flottants de l'IEEE (`vers_ieee128`, `de_ieee128`) et les voies de
 flottants restent au piège.
 
+## 61. Gobannos plus vite, la porte vers le processeur quaternaire, et la frontière du binaire (16 novembre, 0.6z)
+
+**Mesurer d'abord** (Valgrind sur l'exécutable du banc, en instructions du processeur) : 55 % dans le code traduit des
+instructions, 29 % dans la recherche de la page à chaque accès mémoire, 12 % dans les routines de lecture et
+d'écriture. Trois changements, chacun mesuré (le banc : un crible, fib(27), trois millions de brassages ; le meilleur de
+neuf lancements, sur une machine de travail bruitée) :
+
+| | temps |
+|---|---|
+| avant (0.6y) | ~250 ms |
+| + le compte des instructions dans un registre du processeur (R15) et les quatre registres de Lugus les plus employés dans RBP, R12, R13, R14 | ~185 ms |
+| + un cache de huit pages, essayé sans appel dans les routines de lecture et d'écriture | ~150 ms |
+| + les drapeaux morts : z et c ne sont plus écrits quand l'instruction suivante les repose sans les lire (la règle de la traduction en Rust) | **135 ms** |
+| la traduction en Rust (`vtx exe128`), pour comparer | 127 ms |
+| Lugus seul | 1 419 ms |
+
+Sur les entiers, l'exécutable écrit par Gobannos (en vtx) va aussi vite que celui de la traduction en Rust. Sur les
+flottants, deux fois plus vite qu'en 0.6y (600 000 opérations : 3,1 s → 1,43 s), mais toujours deux fois plus lent que
+Lugus seul (0,67 s) et seize fois plus que la traduction en Rust (0,09 s), qui appelle l'arithmétique de Rust : chaque
+opération reste un appel de 750 à 6 300 instructions de la bibliothèque écrite en vtx. Même texte, même compte
+d'instructions que Lugus, partout.
+
+*Trouvé en route* : la routine qui empile un argument pour la bibliothèque écrivait encore R14 en mémoire ; avec R14
+gardé dans le processeur, la pile se décalait et un retour partait au mauvais endroit (« un retour vers une place qui
+n'est pas du code traduit »). Le test des flottants l'a vu ; corrigé.
+
+**La porte vers le processeur quaternaire optique.** Le processeur reste celui du PC (le x86-64). Ce qui ne dépend pas de
+lui est mis à part, pour qu'une autre cible n'ait qu'à donner les siennes :
+- **ce qui reste à chaque cible** : `cible_places()` (les registres qu'elle prête : pour le x86-64, RBP, R12, R13, R14),
+  ses façons d'écrire une instruction, son en-tête d'exécutable et son socle (les appels au système) ;
+- **ce qui sert à toutes** : la lecture des mots, le parcours du code atteint, le choix des registres de Lugus les plus
+  employés (`choisir_registres`), les drapeaux morts, la bibliothèque des flottants (écrite en vtx : elle se traduit
+  comme le reste), le cache des pages ;
+- et surtout **les mots de Lugus** eux-mêmes : c'est déjà un jeu d'instructions quaternaire (des quits, des étages en
+  quit, les quatre valeurs en instructions). Sur une machine quaternaire, une bonne part n'aurait rien à traduire.
+  Honnêtement : une cible quaternaire demandera son propre écrivain d'instructions ; la porte est la séparation, pas
+  l'écrivain.
+
+**La frontière du binaire** (`vers_ieee128`, `de_ieee128`, `vers_ieee64`…) : traduite par la bibliothèque, au bit près de
+la machine (et vérifiée aussi sur des bits binaires quelconques : tous les NaN, les sous-normaux). Ce que le binaire
+garde : le signe (un bit, 0 ou 1) et la grandeur, exacte du flottant de 128 bits au binary128 (113 bits). Ce qu'il ne
+sait pas porter : inconnu et variable deviennent tous deux le NaN, qui revient **variable**. Un aller et retour perd
+donc « inconnu ». Proposition, à décider : marquer inconnu par la charge du NaN (un NaN tranquille de charge 1,
+toujours un NaN valide pour le binaire), pour qu'il revienne inconnu ; un changement de la machine, des deux
+compilateurs et de la bibliothèque.
+

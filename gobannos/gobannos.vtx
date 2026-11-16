@@ -43,6 +43,8 @@ constante G_FLOT = 21;         //   la demi-instruction où entre la bibliothèq
 constante G_PSEUDO = 22;       //   la première place de retour des appels à la bibliothèque (une par instruction)
 constante G_NPS = 23;          //   combien sont déjà posées
 constante G_CONT = 24;         //   la place du code où reprend chacune
+constante G_ZM = 26;           // 0.6z : 1 si les drapeaux que pose l'instruction en cours sont morts (rien ne les lit)
+constante G_XR = 25;           // 0.6z : pour chaque registre de Lugus, le registre de la cible qui le porte (AUCUN : l'état)
 
 // l'état, au départ de rbx
 constante E_R = 0;
@@ -66,6 +68,9 @@ constante E_TABLE = 16384;
 constante E_OUTS = 2113536;
 constante E_SAUVE = 3162112;  // 0.6y : les registres, z, c et le compte gardés pendant un appel à la bibliothèque
 constante E_FRES = 3162432;   //   son résultat
+constante E_CP = 3162464;     // 0.6z : le cache des pages, huit places (la clé + 1, l'adresse de la page)
+constante E_CPS = 3162592;    //   la place à remplir après une recherche (0 : aucune)
+constante E_CPK = 3162600;    //   sa clé
 constante E_TOTAL = 3166208;
 constante PAGE_OCT = 1114112;  // 65 536 mots de 16 octets, puis 65 536 brins
 
@@ -109,6 +114,11 @@ constante R8 = 8;
 constante R9 = 9;
 constante R10 = 10;
 constante R11 = 11;
+constante R12 = 12;
+constante R13 = 13;
+constante R14 = 14;
+constante R15 = 15;
+constante AUCUN = 255;
 
 // les conditions
 constante CC_B = 2;
@@ -422,12 +432,83 @@ fonction hi(k) {
     retour E_R + 16 * k + 8;
 }
 
+// ------------------------------------------------------------------------- les registres dans le processeur (0.6z)
+// La cible : les registres du processeur qui portent des registres de Lugus. Pour le x86-64, quatre registres que ni
+// Gobannos ni les systèmes (Linux, KERNEL32) ne touchent : RBP, R12, R13, R14 ; R15 porte le compte des instructions.
+// Le choix des registres de Lugus à y mettre (les plus employés du programme) ne dépend pas de la cible : une autre
+// cible, comme le processeur quaternaire optique, n'a qu'à donner ses places (cible_places) et ses façons d'écrire.
+fonction cible_places() {
+    retour [RBP, R12, R13, R14];
+}
+
+// les registres de Lugus les plus employés (dans D, S ou T des demi-instructions traduites), un par place
+fonction choisir_registres(places) {
+    soit pr = tableau(16);
+    pour k dans 0..16 {
+        pr[k] = AUCUN;
+    }
+    soit poids = tableau(16);
+    soit nh = @2[G + G_NH];
+    pour p dans 0..nh {
+        si @2[G + G_VU][p] == 1 {
+            soit h = demi(p);
+            poids[(h >> 44) & 15] = poids[(h >> 44) & 15] + 1;
+            poids[(h >> 40) & 15] = poids[(h >> 40) & 15] + 1;
+            poids[(h >> 36) & 15] = poids[(h >> 36) & 15] + 1;
+        }
+    }
+    pour i dans 0..longueur(places) {
+        soit meilleur = 0;
+        pour k2 dans 1..16 {
+            si pr[k2] == AUCUN && poids[k2] > 0 && (meilleur == 0 || poids[k2] > poids[meilleur]) {
+                meilleur = k2;
+            }
+        }
+        si meilleur != 0 {
+            pr[meilleur] = places[i];
+        }
+    }
+    @2[G + G_XR] = pr;
+    proteger(pr);
+}
+
+fonction xr(k) {
+    si @2[G + G_XR] == 0 {
+        retour AUCUN;
+    }
+    retour @2[G + G_XR][k];
+}
+
+// les registres portés par le processeur, écrits dans l'état (avant ce qui lit l'état), ou relus
+fonction vider_registres() {
+    pour k dans 1..16 {
+        si xr(k) != AUCUN {
+            mov_mr(RBX, lo(k), xr(k));
+        }
+    }
+}
+
+fonction relire_registres() {
+    pour k dans 1..16 {
+        si xr(k) != AUCUN {
+            mov_rm(xr(k), RBX, lo(k));
+        }
+    }
+}
+
 // rax:rdx = le registre k de Lugus
 fonction charger(k, a, b) {
     si k == 0 {
         op_rr(0x31, a, a);
         si b != 255 {
             op_rr(0x31, b, b);
+        }
+        retour;
+    }
+    si xr(k) != AUCUN {
+        mov_rr(a, xr(k));
+        si b != 255 {
+            mov_rm(b, RBX, hi(k));
         }
         retour;
     }
@@ -442,7 +523,11 @@ fonction ranger(k, a, b) {
     si k == 0 {
         retour;
     }
-    mov_mr(RBX, lo(k), a);
+    si xr(k) != AUCUN {
+        mov_rr(xr(k), a);
+    } sinon {
+        mov_mr(RBX, lo(k), a);
+    }
     si b == 255 {
         mov_mi(RBX, hi(k), 0);
     } sinon {
@@ -450,8 +535,55 @@ fonction ranger(k, a, b) {
     }
 }
 
+// 0.6z : une instruction qui pose z et c sans les lire (comme dans la traduction en Rust, natif128.rs)
+fonction pose_zc(q, op2, wl2) {
+    si wl2 == 1 && (op2 == 0x01 || op2 == 0x06 || op2 == 0x02 || op2 == 0x07 || op2 == 0x0E || op2 == 0x0F
+            || op2 == 0x03 || op2 == 0x14 || op2 == 0x15 || op2 == 0x16 || op2 == 0x08 || op2 == 0x09 || op2 == 0x17
+            || op2 == 0x18 || op2 == 0x19 || op2 == 0x0C || op2 == 0x0D) {
+        retour 1;
+    }
+    si wl2 == 0 && (op2 == 0x20 || op2 == 0x25 || op2 == 0x01 || op2 == 0x06 || op2 == 0x02 || op2 == 0x07
+            || op2 == 0x0E || op2 == 0x0F || op2 == 0x03 || op2 == 0x14 || op2 == 0x15 || op2 == 0x16 || op2 == 0x08
+            || op2 == 0x09 || op2 == 0x17 || op2 == 0x18 || op2 == 0x19) {
+        retour 1;
+    }
+    si wl2 <= 2 && (op2 == 0x0A || op2 == 0x2B) && q + 2 <= @2[G + G_NH] {
+        retour 1;
+    }
+    retour 0;
+}
+
+// les drapeaux que pose p sont morts : sur le seul chemin qui part de p (à travers MOV, ETG et les sauts sans
+// condition), une instruction les pose sans les lire avant toute instruction qui les lit ou qui sort du chemin
+fonction drapeaux_morts(p) {
+    soit n = @2[G + G_NH];
+    soit q = p + 1;
+    soit vus = 0;
+    tantque q < n && vus <= 16 {
+        soit h2 = demi(q);
+        soit op2 = h2 >> 48;
+        soit wl2 = (h2 >> 32) & 15;
+        soit c2 = h2 & 0xFFFFFFFF;
+        si pose_zc(q, op2, wl2) == 1 {
+            retour 1;
+        }
+        si (wl2 == 0 && op2 == 0x0B) || (wl2 == 1 && op2 == 0x1F) {
+            q = q + 1;
+        } sinon si op2 == 0x30 && wl2 <= 2 && c2 < n {
+            q = c2;
+        } sinon {
+            retour 0;
+        }
+        vus = vus + 1;
+    }
+    retour 0;
+}
+
 // z = (a | b) == 0 (b = 255 : a seul) ; c = 0 ; ne touche que r9
 fonction poser_z(a, b) {
+    si @2[G + G_ZM] == 1 {
+        retour;
+    }
     si b == 255 {
         test_rr(a, a);
     } sinon {
@@ -465,6 +597,9 @@ fonction poser_z(a, b) {
 
 // c = le drapeau de retenue de x86 (pris avant tout le reste), puis z
 fonction poser_cz(a, b) {
+    si @2[G + G_ZM] == 1 {
+        retour;
+    }
     setcc(CC_B, R10);
     mov_m8r(RBX, E_CF, R10);
     si b == 255 {
@@ -1061,8 +1196,7 @@ fonction traduire_un(p) {
         op_ri(5, RAX, 1);
         op_ri(3, RDX, 0);
         masquer_120(RDX);
-        mov_mr(RBX, lo(14), RAX);
-        mov_mr(RBX, hi(14), RDX);
+        ranger(14, RAX, RDX);
         si op == 0x27 {
             charger(s, R10, R11);
         } sinon {
@@ -1081,13 +1215,11 @@ fonction traduire_un(p) {
         mov_ri(RCX, p);
         call_r(R_LIRE);
         // r14 + 1
-        mov_rm(RCX, RBX, lo(14));
-        mov_rm(R8, RBX, hi(14));
+        charger(14, RCX, R8);
         op_ri(0, RCX, 1);
         op_ri(2, R8, 0);
         masquer_120(R8);
-        mov_mr(RBX, lo(14), RCX);
-        mov_mr(RBX, hi(14), R8);
+        ranger(14, RCX, R8);
         si op == 0x28 {
             ranger(d, RAX, RDX);
         } sinon {
@@ -1182,7 +1314,7 @@ fonction traduire_un(p) {
         // le service 25 : le nombre d'instructions jouées avant celle-ci
         op_ri(7, RAX, 25);
         soit pas25 = jcc8(CC_NE);
-        mov_rm(RAX, RBX, E_PAS);
+        mov_rr(RAX, R15);
         op_ri(5, RAX, 1);
         poser_z(RAX, 255);
         ranger(d, RAX, 255);
@@ -1267,8 +1399,7 @@ fonction appel_flottant(p, op, d, s, t, wl, imm) {
     empiler_valeur(@2[G + G_PSEUDO] + k, p);
     jmp_pc(@2[G + G_FLOT]);
     ajouter(@2[G + G_CONT], ici());
-    mov_rm(RAX, RBX, lo(1));
-    mov_rm(RDX, RBX, hi(1));
+    charger(1, RAX, RDX);
     mov_mr(RBX, E_FRES, RAX);
     mov_mr(RBX, E_FRES + 8, RDX);
     call_r(R_RENDRE);
@@ -1281,20 +1412,20 @@ fonction appel_flottant(p, op, d, s, t, wl, imm) {
 fonction routines_flottants() {
     // R_SAUVER, R_RENDRE : les registres de Lugus, z et c (34 mots de 8 octets), puis le compte
     routine(R_SAUVER);
+    vider_registres();
     pour i dans 0..34 {
         mov_rm(RAX, RBX, 8 * i);
         mov_mr(RBX, E_SAUVE + 8 * i, RAX);
     }
-    mov_rm(RAX, RBX, E_PAS);
-    mov_mr(RBX, E_SAUVE + 8 * 34, RAX);
+    mov_mr(RBX, E_SAUVE + 8 * 34, R15);
     ret_();
     routine(R_RENDRE);
     pour i2 dans 0..34 {
         mov_rm(RAX, RBX, E_SAUVE + 8 * i2);
         mov_mr(RBX, 8 * i2, RAX);
     }
-    mov_rm(RAX, RBX, E_SAUVE + 8 * 34);
-    mov_mr(RBX, E_PAS, RAX);
+    mov_rm(R15, RBX, E_SAUVE + 8 * 34);
+    relire_registres();
     ret_();
     // R_EMPILER : r10:r11 sur la pile de Lugus (R14 - 1), rcx la demi-instruction (pour une erreur)
     routine(R_EMPILER);
@@ -1302,8 +1433,7 @@ fonction routines_flottants() {
     op_ri(5, RAX, 1);
     op_ri(3, RDX, 0);
     masquer_120(RDX);
-    mov_mr(RBX, lo(14), RAX);
-    mov_mr(RBX, hi(14), RDX);
+    ranger(14, RAX, RDX);
     call_r(R_ECRIRE);
     ret_();
 }
@@ -1440,8 +1570,60 @@ fonction quit_de(wl) {
 // ------------------------------------------------------------------------------------------- les routines
 // la page d'une adresse rax:rdx : rsi = l'adresse de la page (0 si absente et sans créer), rax = l'indice dans la page ;
 // r9 = 1 : la créer si elle manque. rcx : la demi-instruction (pour les pièges). Change rdi, r8, r9.
+fonction cmp_rm(r, base, d) {
+    rex(1, r, base, 0);
+    o(0x3B);
+    rm(r, base, d);
+}
+
+// l'essai du cache des pages, sans appel : trouvée, rsi = la page et rax = l'indice, puis un saut (rendu, à poser
+// après l'appel de R_PAGE) ; sinon on continue vers l'appel. Change rdi, r8.
+fonction essai_cache() {
+    test_rr(RDX, RDX);
+    soit longue = jcc8(CC_NE);
+    mov_rr(R8, RAX);
+    dec_ri(5, R8, 16);
+    op_ri(0, R8, 1);
+    mov_rr(RDI, R8);
+    op_ri(4, RDI, 7);
+    dec_ri(4, RDI, 4);
+    op_rr(0x01, RDI, RBX);
+    cmp_rm(R8, RDI, E_CP);
+    soit manque = jcc8(CC_NE);
+    mov_rm(RSI, RDI, E_CP + 8);
+    mov_ri(RDI, 65535);
+    op_rr(0x21, RAX, RDI);
+    soit trouve = jmp8();
+    ici8(longue);
+    ici8(manque);
+    retour trouve;
+}
+
 fonction routines_memoire() {
     routine(R_PAGE);
+    // 0.6z : le cache des pages (une adresse courte : la page déjà vue rend son adresse sans la chercher)
+    test_rr(RDX, RDX);
+    soit longue = jcc8(CC_NE);
+    mov_rr(R8, RAX);
+    dec_ri(5, R8, 16);
+    op_ri(0, R8, 1);
+    mov_rr(RDI, R8);
+    op_ri(4, RDI, 7);
+    dec_ri(4, RDI, 4);
+    op_rr(0x01, RDI, RBX);
+    cmp_rm(R8, RDI, E_CP);
+    soit manque = jcc8(CC_NE);
+    mov_rm(RSI, RDI, E_CP + 8);
+    mov_ri(RDI, 65535);
+    op_rr(0x21, RAX, RDI);
+    ret_();
+    ici8(manque);
+    mov_mr(RBX, E_CPS, RDI);
+    mov_mr(RBX, E_CPK, R8);
+    soit commun = jmp8();
+    ici8(longue);
+    mov_mi(RBX, E_CPS, 0);
+    ici8(commun);
     // l'adresse longue (les 64 bits hauts non nuls) : seulement si ses bits utiles tiennent dans 32 bits
     test_rr(RDX, RDX);
     soit courte = jcc8(CC_E);
@@ -1500,12 +1682,25 @@ fonction routines_memoire() {
     mov_mr(R8, E_TABLE, RSI);
     ici8(la);
     ici8(rien);
+    // 0.6z : la page trouvée (ou créée) entre dans le cache
+    test_rr(RSI, RSI);
+    soit sans = jcc8(CC_E);
+    mov_rm(RDI, RBX, E_CPS);
+    test_rr(RDI, RDI);
+    soit sans2 = jcc8(CC_E);
+    mov_rm(R8, RBX, E_CPK);
+    mov_mr(RDI, E_CP, R8);
+    mov_mr(RDI, E_CP + 8, RSI);
+    ici8(sans);
+    ici8(sans2);
     ret_();
 
     // R_LIRE : rax:rdx = le mot à l'adresse rax:rdx (0 si la page n'existe pas)
     routine(R_LIRE);
+    soit tr1 = essai_cache();
     op_rr(0x31, R9, R9);
     call_r(R_PAGE);
+    ici8(tr1);
     test_rr(RSI, RSI);
     soit vide = jcc8(CC_E);
     dec_ri(4, RAX, 4);
@@ -1520,8 +1715,10 @@ fonction routines_memoire() {
 
     // R_ECRIRE : le mot r10:r11 à l'adresse rax:rdx (refusé dans un mot ADN)
     routine(R_ECRIRE);
+    soit tr2 = essai_cache();
     mov_ri(R9, 1);
     call_r(R_PAGE);
+    ici8(tr2);
     movzx_rm8_idx_brin();
     op_ri(7, RDI, 1);
     soit pas_adn = jcc8(CC_NE);
@@ -2150,6 +2347,9 @@ fonction depart() {
     mov_ri(R10, @2[G + G_W0]);
     mov_ri(R11, 1);
     call_r(R_BRIN_P);
+    // 0.6z : les registres portés par le processeur partent de l'état ; le compte de zéro
+    relire_registres();
+    op_rr(0x31, R15, R15);
     jmp_pc(0);
 }
 
@@ -2273,12 +2473,14 @@ fonction forger(sortie_: texte, win) {
             continuer;
         }
         poser_t(G_LAB, p, ici());
-        // add qword [rbx + E_PAS], 1 : chaque demi-instruction jouée compte, comme dans Lugus
-        o(0x48);
+        // add r15, 1 : chaque demi-instruction jouée compte, comme dans Lugus (0.6z : le compte vit dans r15)
+        o(0x49);
         o(0x83);
-        rm(0, RBX, E_PAS);
+        o(0xC7);
         o(1);
+        @2[G + G_ZM] = drapeaux_morts(p);
         soit suite = traduire_un(p);
+        @2[G + G_ZM] = 0;
         // la suite n'est pas la demi-instruction suivante traduite : un saut
         si suite < nh && (@2[G + G_VU][suite] == 1) {
             soit k = p + 1;
@@ -2566,6 +2768,7 @@ fonction principal() {
         marquer(@2[G + G_FLOT]);
         parcourir();
     }
+    choisir_registres(cible_places());
     soit win = 0;
     si systeme == "windows" {
         win = 1;
