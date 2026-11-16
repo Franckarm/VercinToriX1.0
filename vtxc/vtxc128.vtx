@@ -266,6 +266,8 @@ structure Ctx {
     exemples: Liste,    // les exemples écrits : l'expression, sa ligne, son texte (trois par exemple)
     mode_exemples,      // 1 : le principal est remplacé par le calcul des exemples (Lugus les rejoue)
     tramp,              // 0.6w : l'étiquette du trampoline des appels par valeur (0 : aucun appel par valeur)
+    tramp_libre,        // 0.6y : 1 si un appel passe par __appeler lui-même
+    tramp0, tramp1, tramp2,   // 0.6y : les trampolines promis (touche rien, lecture, memoire ; 0 : pas employé)
     sigs: Liste,        // 0.6w bis : les types de fonction écrits (chacun : n, les types des paramètres, le résultat)
     erreur
 }
@@ -1540,7 +1542,16 @@ fonction type_opt(c: Ctx) {
         retour 0;
     }
     avancer(c);
-    retour un_type(c);
+    retour un_type(c, 1);
+}
+
+// le type du résultat dans l'en-tête d'une fonction : « touche » après lui est la promesse de la fonction (0.6y)
+fonction type_opt_r(c: Ctx) {
+    si !est_op(c, ":") {
+        retour 0;
+    }
+    avancer(c);
+    retour un_type(c, 0);
 }
 
 // ------------------------------------------------------------------------------------- les types de fonction (0.6w bis)
@@ -1584,12 +1595,12 @@ fonction sig_numero(c: Ctx, l: Liste) {
     retour T_G + c.sigs.n - 1;
 }
 
-// deux types de fonction pareils, une fois normés
+// deux types de fonction pareils, une fois normés (la promesse, le dernier élément, mise à part)
 fonction sig_meme(c: Ctx, a: Liste, b: Liste) {
     si a.n != b.n {
         retour 0;
     }
-    pour i dans 0..a.n {
+    pour i dans 0..a.n - 1 {
         si type_norme(elem(a, i)) != type_norme(elem(b, i)) {
             retour 0;
         }
@@ -1607,7 +1618,27 @@ fonction sig_fonction(f: Fonction): Liste {
         p = p.suivant;
     }
     ajouter(l, f.rtype);
+    ajouter(l, promesse_niveau(f.promet));
     retour l;
+}
+
+// 0.6y : 0 rien, 1 lecture, 2 memoire, 3 monde ou pas de promesse
+fonction promesse_niveau(pr) {
+    si pr == 0 {
+        retour 3;
+    }
+    retour pr - 1;
+}
+
+fonction sig_promesse(l: Liste) {
+    retour elem(l, l.n - 1);
+}
+
+fonction nom_niveau(k): texte {
+    si k == 0 { retour "rien"; }
+    si k == 1 { retour "lecture"; }
+    si k == 2 { retour "memoire"; }
+    retour "monde";
 }
 
 fonction nom_type_sig(c: Ctx, t): texte {
@@ -1648,27 +1679,31 @@ fonction nom_sig(c: Ctx, l: Liste): texte {
     }
     ajouter_texte(r, "): ");
     ajouter_texte(r, nom_type_sig(c, elem(l, 1 + n)));
+    si sig_promesse(l) < 3 {
+        ajouter_texte(r, " touche ");
+        ajouter_texte(r, nom_niveau(sig_promesse(l)));
+    }
     retour texte_de(r, 0, r.n);
 }
 
-fonction un_type(c: Ctx) {
+fonction un_type(c: Ctx, touche_ok) {
     si est_kw(c, "fonction") {
         soit lf = c.tok.ligne;
         avancer(c);
         attendre(c, "(");
         soit ps = liste();
         si !est_op(c, ")") {
-            ajouter(ps, un_type(c));
+            ajouter(ps, un_type(c, 1));
             tantque c.erreur == 0 && est_op(c, ",") {
                 avancer(c);
-                ajouter(ps, un_type(c));
+                ajouter(ps, un_type(c, 1));
             }
         }
         attendre(c, ")");
         soit r = 0;
         si est_op(c, ":") {
             avancer(c);
-            r = un_type(c);
+            r = un_type(c, 1);
         }
         soit l = liste();
         ajouter(l, ps.n);
@@ -1683,6 +1718,12 @@ fonction un_type(c: Ctx) {
         si imbrique {
             erreur(c, lf, "un type de fonction dans un type de fonction : pas encore");
         }
+        // 0.6y : la promesse dans le type ; dans l'en-tête d'une fonction, « touche » après le résultat est la sienne
+        soit pk = 0;
+        si touche_ok {
+            pk = promesse_touche(c);
+        }
+        ajouter(l, promesse_niveau(pk));
         retour sig_numero(c, l);
     }
     soit nom = identifiant(c);
@@ -6524,12 +6565,24 @@ fonction promesse_touche(c: Ctx) {
         retour 0;
     }
     avancer(c);
-    si est_id(c, "rien") || est_id(c, "lecture") || est_id(c, "memoire") || est_id(c, "mémoire") || est_id(c, "monde") {
+    // 0.6y : rend 1 + le niveau (1 rien, 2 lecture, 3 memoire, 4 monde) ; 0 sans promesse
+    soit k = 0;
+    si est_id(c, "rien") {
+        k = 1;
+    } sinon si est_id(c, "lecture") {
+        k = 2;
+    } sinon si est_id(c, "memoire") || est_id(c, "mémoire") {
+        k = 3;
+    } sinon si est_id(c, "monde") {
+        k = 4;
+    }
+    si k != 0 {
         avancer(c);
     } sinon {
         erreur(c, c.tok.ligne, "après « touche », rien, lecture, memoire ou monde est attendu");
+        k = 4;
     }
-    retour 1;
+    retour k;
 }
 
 fonction une_reaction(c: Ctx, l) {
@@ -6666,6 +6719,27 @@ fonction ecrire_isotopes(c: Ctx) {
     }
 }
 
+fonction trampoline_promis(c: Ctx, etq, k) {
+    si etq == 0 {
+        retour;
+    }
+    poser_etiquette(c, etq);
+    ldis(c, 15, k);
+    pousser(c, 1);
+    emettre(c, ins(52, 0, 0, 0, 0));
+}
+
+fonction carte_trampoline(c: Ctx, s, etq, k) {
+    si etq == 0 {
+        retour;
+    }
+    ecrire_texte(s, "__appeler_");
+    ecrire_texte(s, nom_niveau(k));
+    ecrire_car(s, '|');
+    ecrire_nombre(s, elem(c.lugus_place, elem(c.etiq, etq)) / 2);
+    ecrire_car(s, 10);
+}
+
 // code.carte (0.6p) : le nom de chaque fonction gardée et la place de son premier mot dans Lugus (« nom|mot ») ; le
 // lecteur d'ADN en fait la carte du programme (ce qu'est chaque molécule, ce qu'elle touche, ses racines, ses promesses)
 fonction ecrire_carte(c: Ctx) {
@@ -6675,6 +6749,9 @@ fonction ecrire_carte(c: Ctx) {
         ecrire_car(s, '|');
         ecrire_nombre(s, elem(c.lugus_place, elem(c.etiq, c.tramp)) / 2);
         ecrire_car(s, 10);
+        carte_trampoline(c, s, c.tramp0, 0);
+        carte_trampoline(c, s, c.tramp1, 1);
+        carte_trampoline(c, s, c.tramp2, 2);
     }
     soit f = c.fonctions;
     tantque f != nul {
@@ -7538,7 +7615,7 @@ fonction programme(c: Ctx) {
                 }
             }
             attendre(c, ")");
-            f.rtype = type_opt(c);
+            f.rtype = type_opt_r(c);
             // une fonction qui promet garde sa molécule (elle n'est pas recopiée en ligne) : sa promesse se vérifie à part
             f.promet = promesse_touche(c);
             f.etiq = nouvelle_etiquette(c);
@@ -8213,10 +8290,30 @@ fonction conv(c: Ctx, t, voulu, e: Noeud) {
     }
     // 0.6w bis : une valeur de fonction est un entier ; un entier se déclare fonction (une promesse), et une fonction
     // passe là où va un entier ; deux types de fonction différents ne se mélangent pas
-    si est_sig(voulu) && (t == 0 || (est_sig(t) && sig_meme(c, sig_de(c, t), sig_de(c, voulu)))) {
+    si est_sig(voulu) && t == 0 && sig_promesse(sig_de(c, voulu)) < 3 {
+        // 0.6y : un entier ne dit pas ce que touche la fonction qu'il désigne
+        soit m0 = liste();
+        ajouter_texte(m0, "un entier ne va pas là où l'on attend ");
+        ajouter_texte(m0, nom_sig(c, sig_de(c, voulu)));
+        ajouter_texte(m0, " : seule une fonction qui le promet y va");
+        erreur(c, e.ligne, texte_de(m0, 0, m0.n));
+        retour;
+    }
+    si est_sig(voulu) && (t == 0 || (est_sig(t) && sig_meme(c, sig_de(c, t), sig_de(c, voulu))
+            && sig_promesse(sig_de(c, t)) <= sig_promesse(sig_de(c, voulu)))) {
         retour;
     }
     si est_sig(t) && voulu == 0 {
+        retour;
+    }
+    si est_sig(voulu) && est_sig(t) && sig_meme(c, sig_de(c, t), sig_de(c, voulu)) {
+        soit m1 = liste();
+        ajouter_texte(m1, "une valeur de type ");
+        ajouter_texte(m1, nom_sig(c, sig_de(c, t)));
+        ajouter_texte(m1, " ne va pas là où l'on attend ");
+        ajouter_texte(m1, nom_sig(c, sig_de(c, voulu)));
+        ajouter_texte(m1, " : elle promet moins");
+        erreur(c, e.ligne, texte_de(m1, 0, m1.n));
         retour;
     }
     si est_sig(voulu) || est_sig(t) {
@@ -8560,15 +8657,38 @@ fonction gen_v(c: Ctx, e: Noeud, voulu) {
     si e.genre == N_FREF && est_sig(voulu) {
         // une fonction nommée là où l'on attend un type de fonction : sa signature doit être celle-là
         soit ff = fonction_de(c, e.nom);
-        si !sig_meme(c, sig_fonction(ff), sig_de(c, voulu)) {
+        soit sff = sig_fonction(ff);
+        si !sig_meme(c, sff, sig_de(c, voulu)) {
             soit m = liste();
             ajouter_texte(m, "« ");
             ajouter_texte(m, e.nom);
             ajouter_texte(m, " » ne convient pas à ");
             ajouter_texte(m, nom_sig(c, sig_de(c, voulu)));
             ajouter_texte(m, " : elle est ");
-            ajouter_texte(m, nom_sig(c, sig_fonction(ff)));
+            // le type de la fonction, sans sa promesse (comme vtx128.py)
+            soit sans = liste();
+            pour iz dans 0..sff.n - 1 {
+                ajouter(sans, elem(sff, iz));
+            }
+            ajouter(sans, 3);
+            ajouter_texte(m, nom_sig(c, sans));
             erreur(c, e.ligne, texte_de(m, 0, m.n));
+            retour voulu;
+        }
+        si sig_promesse(sff) > sig_promesse(sig_de(c, voulu)) {
+            soit m2 = liste();
+            ajouter_texte(m2, "« ");
+            ajouter_texte(m2, e.nom);
+            ajouter_texte(m2, " » ne convient pas à ");
+            ajouter_texte(m2, nom_sig(c, sig_de(c, voulu)));
+            si ff.promet == 0 {
+                ajouter_texte(m2, " : elle ne promet rien");
+            } sinon {
+                ajouter_texte(m2, " : elle promet seulement « touche ");
+                ajouter_texte(m2, nom_niveau(sig_promesse(sff)));
+                ajouter_texte(m2, " »");
+            }
+            erreur(c, e.ligne, texte_de(m2, 0, m2.n));
             retour voulu;
         }
         expr_e(c, e);
@@ -8840,7 +8960,24 @@ fonction expr_e(c: Ctx, e: Noeud) {
             }
             gen_v(c, e.a, 0);
         }
-        saut(c, 51, c.tramp);
+        // 0.6y : un trampoline par promesse ; il dit dans ses mots ce que promet sa cible, le juge le croit
+        soit tk = 3;
+        si est_sig(tv) {
+            tk = sig_promesse(sig_de(c, tv));
+        }
+        si tk == 0 {
+            si c.tramp0 == 0 { c.tramp0 = nouvelle_etiquette(c); }
+            saut(c, 51, c.tramp0);
+        } sinon si tk == 1 {
+            si c.tramp1 == 0 { c.tramp1 = nouvelle_etiquette(c); }
+            saut(c, 51, c.tramp1);
+        } sinon si tk == 2 {
+            si c.tramp2 == 0 { c.tramp2 = nouvelle_etiquette(c); }
+            saut(c, 51, c.tramp2);
+        } sinon {
+            c.tramp_libre = 1;
+            saut(c, 51, c.tramp);
+        }
         si nv != 0 {
             rri(c, 6, 14, 14, nv);
         }
@@ -12309,10 +12446,18 @@ fonction generer(c: Ctx) {
         fonction_code(c, g);
     }
     si c.tramp != 0 {
+        // 0.6y : les trampolines promis d'abord (LDIS R15 porte la promesse), dans l'ordre rien, lecture, memoire
+        trampoline_promis(c, c.tramp0, 0);
+        trampoline_promis(c, c.tramp1, 1);
+        trampoline_promis(c, c.tramp2, 2);
         // l'appel par valeur : PUSH R1 puis RET saute à la cible, l'adresse de retour de l'appelant restant en place
         poser_etiquette(c, c.tramp);
         pousser(c, 1);
         emettre(c, ins(52, 0, 0, 0, 0));
+        si c.tramp_libre == 0 {
+            // 0.6y : rien n'appelle __appeler lui-même : la table l'appelle, pour qu'il soit une molécule à lui
+            saut(c, 51, c.tramp);
+        }
         // puis, jamais jouée, une table d'appels : chaque fonction passée en valeur y est la cible d'un CALL (le
         // découpage de l'ADN en fait une molécule, la carte et Gobannos la voient, et le juge sait où mène le trampoline)
         soit fv = c.fonctions;

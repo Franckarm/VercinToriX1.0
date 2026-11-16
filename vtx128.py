@@ -1839,14 +1839,14 @@ class Analyseur:
         t = self.type_opt()
         return t, (self.unite_ecrite()[1] if symbole_unite(*self.regard()[:2]) else None)
 
-    def type_opt(self):
+    def type_opt(self, touche_ok=True):
         """Annotation de type facultative : « : flottant », « : long » ou « : entier »."""
         if not self.est_op(":"):
             return None
         self.suivant()
-        return self.un_type()
+        return self.un_type(touche_ok)
 
-    def un_type(self):
+    def un_type(self, touche_ok=True):
         """Un type écrit ; 0.6w bis : « fonction(T1, T2): R », le type d'une fonction passée en valeur (« g:T1,T2>R »)."""
         k, v, l = self.suivant()
         if k == "kw" and v == "fonction":
@@ -1864,7 +1864,10 @@ class Analyseur:
                 r = self.un_type()
             if any(x.startswith("g:") for x in ps + [r]):
                 raise VtxError(f"ligne {l} : un type de fonction dans un type de fonction : pas encore")
-            return "g:" + ",".join(ps) + ">" + r
+            # 0.6y : la promesse dans le type (« fonction(entier): entier touche rien ») ; dans l'en-tête d'une fonction,
+            # « touche » après le type du résultat reste la promesse de la fonction elle-même
+            k = self.promesse_touche(l) if touche_ok else None
+            return "g:" + ",".join(ps) + ">" + r + ("" if k is None or k == 3 else f"!{k}")
         if k == "id" and v in self.structs:
             return "r:" + v                    # référence à une structure : adresse d'un bloc (le tas)
         if k != "id" or v not in TYPES:
@@ -1997,7 +2000,7 @@ class Analyseur:
                 if self.est_op(","):
                     self.suivant()
             self.attendre(")")
-            rtype = self.type_opt() or "e"
+            rtype = self.type_opt(False) or "e"
             touche = self.promesse_touche(l)
             corps = self.bloc()
             if VECTORISER:
@@ -8276,9 +8279,19 @@ class Generateur:
         if getattr(self, "trampoline", 0):
             # l'appel par valeur : la cible dans R1 ; PUSH R1 puis RET y saute, l'adresse de retour de l'appelant restant
             # en place (la cible voit la pile d'un appel ordinaire)
+            for k in sorted(getattr(self, "tramp_promis", ())):
+                # LDIS R15 porte la promesse (R15 ne sert à rien d'autre ici) : PUSH R1 puis RET, comme __appeler
+                self.etiquette(f"F___appeler_{NIVEAUX_TOUCHE[k]}")
+                self.emettre(f"LDIS R15,#{k}")
+                self.emettre("PUSH R1")
+                self.emettre("RET")
             self.etiquette("F___appeler")
             self.emettre("PUSH R1")
             self.emettre("RET")
+            if not getattr(self, "appel_libre", False):
+                # 0.6y : rien n'appelle __appeler lui-même (des appels promis seulement, ou des fonctions passées sans
+                # appel) : la table l'appelle, pour qu'il soit une molécule à lui et ne se fonde pas dans sa voisine
+                self.emettre("CALL F___appeler")
             # puis, jamais jouée, une table d'appels : chaque fonction passée en valeur y est la cible d'un CALL (le découpage
             # de l'ADN en fait une molécule, la carte et Gobannos la voient, et le juge sait où mène le trampoline)
             for f in list(self.fonctions.values()):
@@ -8490,10 +8503,18 @@ class Generateur:
             return
         # 0.6w bis : une valeur de fonction est un entier ; un entier se déclare fonction (une promesse), et une fonction
         # passe là où va un entier ; deux types de fonction différents ne se mélangent pas
-        if est_sig(voulu) and (t == "e" or (est_sig(t) and sig_norm(t) == sig_norm(voulu))):
+        if est_sig(voulu) and t == "e" and sig_promesse(voulu) < 3:
+            # 0.6y : un entier ne dit pas ce que touche la fonction qu'il désigne : il ne va pas là où l'on a promis
+            raise VtxError(f"ligne {ligne} : un entier ne va pas là où l'on attend {nom_sig(voulu)} : seule une "
+                           f"fonction qui le promet y va")
+        if est_sig(voulu) and (t == "e" or (est_sig(t) and sig_base(sig_norm(t)) == sig_base(sig_norm(voulu))
+                                            and sig_promesse(t) <= sig_promesse(voulu))):
             return
         if est_sig(t) and voulu == "e":
             return
+        if est_sig(voulu) and est_sig(t) and sig_base(sig_norm(t)) == sig_base(sig_norm(voulu)):
+            raise VtxError(f"ligne {ligne} : une valeur de type {nom_sig(t)} ne va pas là où l'on attend "
+                           f"{nom_sig(voulu)} : elle promet moins")
         if est_sig(voulu) or est_sig(t):
             raise VtxError(f"ligne {ligne} : une valeur de type {nom_sig(t) if est_sig(t) else NOM_TYPE[t]} ne va pas "
                            f"là où l'on attend {nom_sig(voulu) if est_sig(voulu) else NOM_TYPE[voulu]}")
@@ -9049,10 +9070,14 @@ class Generateur:
         if e[0] == "fref" and est_sig(voulu):
             # une fonction nommée là où l'on attend un type de fonction : sa signature doit être celle-là
             f = self.signature(e[1], e[2])
-            sf = "g:" + ",".join(f.ptypes) + ">" + (f.rtype or "e")
-            if sig_norm(sf) != sig_norm(voulu):
+            kf = getattr(f, "touche", None)
+            sf = "g:" + ",".join(f.ptypes) + ">" + (f.rtype or "e") + ("" if kf is None or kf == 3 else f"!{kf}")
+            if sig_base(sig_norm(sf)) != sig_base(sig_norm(voulu)):
                 raise VtxError(f"ligne {e[2]} : « {e[1]} » ne convient pas à {nom_sig(voulu)} : elle est "
-                               f"{nom_sig(sf)}")
+                               f"{nom_sig(sig_base(sf))}")
+            if (3 if kf is None else kf) > sig_promesse(voulu):
+                dit = "elle ne promet rien" if kf is None else f"elle promet seulement « touche {NIVEAUX_TOUCHE[kf]} »"
+                raise VtxError(f"ligne {e[2]} : « {e[1]} » ne convient pas à {nom_sig(voulu)} : {dit}")
             self.expr_e(e)
             return voulu
         if e[0] == "blit":
@@ -9586,7 +9611,17 @@ class Generateur:
                 self.expr(a, pt)
                 self.emettre("PUSH R1")
             self.expr(e[1], tv)
-            self.emettre("CALL F___appeler")
+            k = sig_promesse(tv)
+            if k < 3:
+                # 0.6y : un trampoline par promesse ; il dit dans ses mots ce que promet sa cible, le juge le croit (le
+                # compilateur n'y laisse entrer qu'une fonction qui le promet, et chacune est jugée à part)
+                if not hasattr(self, "tramp_promis"):
+                    self.tramp_promis = set()
+                self.tramp_promis.add(k)
+                self.emettre(f"CALL F___appeler_{NIVEAUX_TOUCHE[k]}")
+            else:
+                self.appel_libre = True
+                self.emettre("CALL F___appeler")
             if args:
                 self.emettre(f"ADDI R14,R14,#{len(args)}")
             return
@@ -9596,6 +9631,7 @@ class Generateur:
                 raise VtxError(f"ligne {ligne} : un appel par valeur ne passe que des valeurs d'un mot")
             self.emettre("PUSH R1")
         self.expr(e[1], "e")
+        self.appel_libre = True
         self.emettre("CALL F___appeler")
         if args:
             self.emettre(f"ADDI R14,R14,#{len(args)}")
@@ -9871,9 +9907,21 @@ def est_sig(t):
     return isinstance(t, str) and t.startswith("g:")
 
 
+NIVEAUX_TOUCHE = ("rien", "lecture", "memoire", "monde")
+
+
+def sig_promesse(t):
+    """0.6y : ce que promet un type de fonction (0 rien, 1 lecture, 2 memoire ; 3 : il ne promet rien)"""
+    return int(t.split("!")[1]) if "!" in t else 3
+
+
+def sig_base(t):
+    return t.split("!")[0]
+
+
 def sig_parts(t):
     """(les types des paramètres, le type du résultat) d'un type de fonction « g:… »"""
-    a, r = t[2:].split(">", 1)
+    a, r = sig_base(t)[2:].split(">", 1)
     return ([x for x in a.split(",")] if a else []), r
 
 
@@ -9881,13 +9929,16 @@ def sig_norm(t):
     """le type de fonction tel que la génération le voit : les textes et les tableaux sont des entiers (typer_textes)"""
     ps, r = sig_parts(t)
     n = lambda x: "e" if x in ("t", "F", "L") else x
-    return "g:" + ",".join(n(x) for x in ps) + ">" + n(r)
+    k = sig_promesse(t)
+    return "g:" + ",".join(n(x) for x in ps) + ">" + n(r) + ("" if k == 3 else f"!{k}")
 
 
 def nom_sig(t):
     ps, r = sig_parts(t)
     nm = lambda x: x[2:] if x.startswith("r:") else NOMS_SIG.get(x, x)
-    return "fonction(" + ", ".join(nm(x) for x in ps) + "): " + nm(r)
+    k = sig_promesse(t)
+    return "fonction(" + ", ".join(nm(x) for x in ps) + "): " + nm(r) + ("" if k == 3 else " touche " +
+                                                                           NIVEAUX_TOUCHE[k])
 
 
 def resoudre_valeurs(fs):

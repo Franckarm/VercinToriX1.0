@@ -10,6 +10,8 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
+sys.path.insert(0, os.path.join(racine, "chimie"))
+import adn  # noqa: E402
 import vtx128  # noqa: E402
 
 vtx128.COMPAT_64 = False
@@ -90,6 +92,62 @@ open(LIBRE, "w", encoding="utf-8").write("fonction carre(x) { retour x * x; }\nf
 ok, det = memes_mots(LIBRE)
 r = lugus(LIBRE)
 verifier("sans type écrit : l'appel par valeur de 0.6w, inchangé", ok and r.stdout.startswith("36"), det + r.stdout)
+
+# 0.6y : la promesse dans le type
+PT = os.path.join(racine, "exemples128", "promesse_type.vtx")
+ok, det = memes_mots(PT)
+verifier("promesse_type.vtx : les mêmes mots par les deux compilateurs", ok, det)
+r = lugus(PT)
+verifier("des promesses tenues par des fonctions passées en valeur : 49 16 42 16", r.stdout.startswith("49 16 42 16"),
+         r.stdout + r.stderr)
+texte = open(PT, encoding="utf-8").read()
+mts, mols, _, noms = adn.molecules_isotopes_noms(texte, os.path.dirname(PT))
+verifier("le juge de référence (Python) : rien à redire", adn.promesses(mts, mols, noms, texte.split("\n")) == [])
+
+TETE2 = """fonction carre(x) touche rien { retour x * x; }
+fonction lire(i) touche lecture { retour @3[100 + i]; }
+fonction parler(x) { afficher(x); retour x; }
+fonction appliquer(f: fonction(entier): entier touche rien, x) touche rien { retour f(x); }
+fonction principal() {
+"""
+REFUS2 = [
+    ("une fonction qui ne promet rien", "afficher(appliquer(parler, 7));",
+     "ligne 6 : « parler » ne convient pas à fonction(entier): entier touche rien : elle ne promet rien"),
+    ("une fonction qui promet moins", "afficher(appliquer(lire, 7));",
+     "ligne 6 : « lire » ne convient pas à fonction(entier): entier touche rien : elle promet seulement « touche "
+     "lecture »"),
+    ("un entier là où l'on a promis", "soit n = 5; afficher(appliquer(n, 7));",
+     "ligne 6 : un entier ne va pas là où l'on attend fonction(entier): entier touche rien : seule une fonction qui "
+     "le promet y va"),
+    ("une valeur typée qui promet moins", "soit g: fonction(entier): entier touche lecture = lire; afficher(appliquer(g, 1));",
+     "ligne 6 : une valeur de type fonction(entier): entier touche lecture ne va pas là où l'on attend "
+     "fonction(entier): entier touche rien : elle promet moins"),
+]
+for nom, ligne, attendu in REFUS2:
+    chemin = os.path.join(d, "refus2.vtx")
+    open(chemin, "w", encoding="utf-8").write(TETE2 + " " + ligne + "\n}\n")
+    try:
+        vtx128.compiler(open(chemin, encoding="utf-8").read(), dossier=d)
+        mp = "(accepté)"
+    except vtx128.VtxError as e:
+        mp = str(e)
+    rl = lugus("compiler", chemin, os.path.join(d, "x.mots"))
+    verifier(f"refus : {nom} (les deux compilateurs, le même message)",
+             attendu in mp and attendu in rl.stdout + rl.stderr and rl.returncode != 0, mp + " / " + rl.stdout + rl.stderr)
+
+# le juge croit la promesse du type, et pas plus : une fonction qui promet rien ne peut appeler une valeur qui lit
+JUGE = os.path.join(d, "juge.vtx")
+tj = ("fonction lire(i) touche lecture { retour @3[100 + i]; }\n"
+      "fonction voir(f: fonction(entier): entier touche lecture, x) touche rien { retour f(x); }\n"
+      "fonction principal() { afficher(voir(lire, 1)); }\n")
+open(JUGE, "w", encoding="utf-8").write(tj)
+rl = lugus(JUGE)
+msgs = [l for l in (rl.stdout + rl.stderr).split("\n") if l.startswith("promesse")]
+mts, mols, _, noms = adn.molecules_isotopes_noms(tj, d)
+ref = adn.promesses(mts, mols, noms, tj.split("\n"))
+verifier("une promesse plus forte que le type : refusée, « elle lit la mémoire : par __appeler_lecture », comme la "
+         "référence", msgs == ref and len(msgs) == 1 and "elle lit la mémoire : par __appeler_lecture" in msgs[0],
+         repr((msgs, ref)))
 
 import shutil  # noqa: E402
 shutil.rmtree(d, ignore_errors=True)

@@ -670,15 +670,22 @@ def touche_et_appels(mots, a, b, plat):
     niveau, appels = 0, set()
     connu, pile = [None] * 16, []
     avant = 0
+    avant_h, marque = 0, 3
     for p in range(2 * a, 2 * b):
         h, lit = plat[p]
         if lit:
             continue
         op, d, s_ = h >> 48, (h >> 44) & 15, (h >> 40) & 15
         # 0.6w : PUSH puis RET, un saut calculé (le trampoline des appels par valeur) : le monde, par prudence
+        # 0.6y : un trampoline promis porte sa promesse juste avant le PUSH (LDIS R15,#k, k < 3)
+        if op == 0x27:
+            marque = 3
+            if avant_h >> 48 == 0x18 and (avant_h >> 44) & 15 == 15 and avant_h & 0xFFFFFFFF < 3:
+                marque = avant_h & 0xFFFFFFFF
         if op == 0x34 and avant == 0x27:
-            niveau = 3
+            niveau = max(niveau, marque)
         avant = op
+        avant_h = h
         imm = h & 0xFFFFFFFF
         if op in OPS_LIT:
             niveau = max(niveau, 1)

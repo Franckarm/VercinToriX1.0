@@ -2730,16 +2730,29 @@ fonction toucher(k, ncalls) {
     }
     soit sp = 0;
     soit avant = 0;
+    soit avant_h = 0;
+    soit marque = 3;
     pour p dans 2 * a..2 * b {
         si @2[AH + p] == 1 {
             soit h = demi(p);
             soit op = h >> 48;
             // 0.6w : PUSH puis RET, c'est un saut calculé (le trampoline des appels par valeur) : on ne sait pas où il
             // va, donc le monde (le doute du côté prudent)
+            // 0.6y : un trampoline promis porte sa promesse juste avant (LDIS R15,#k, k < 3) : le compilateur n'y laisse
+            // entrer qu'une fonction qui la tient, et chacune est jugée à part
+            si op == 39 {
+                marque = 3;
+                si (avant_h >> 48) == 24 && ((avant_h >> 44) & 15) == 15 && (avant_h & 4294967295) < 3 {
+                    marque = avant_h & 4294967295;
+                }
+            }
             si op == 52 && avant == 39 {
-                niveau = 3;
+                si marque > niveau {
+                    niveau = marque;
+                }
             }
             avant = op;
+            avant_h = h;
             soit d = (h >> 44) & 15;
             soit s2 = (h >> 40) & 15;
             soit imm = h & 4294967295;

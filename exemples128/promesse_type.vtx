@@ -1,0 +1,16 @@
+// 0.6y : la promesse dans le type : une fonction passée en valeur promet ce qu'elle touche, le juge le croit
+fonction carre(x) touche rien { retour x * x; }
+fonction plus(a, b) touche rien { retour a + b; }
+fonction lire(i) touche lecture { retour @3[100 + i]; }
+fonction parler(x) { afficher(x); retour x; }
+fonction appliquer(f: fonction(entier): entier touche rien, x) touche rien { retour f(x); }
+fonction plier(t, f: fonction(entier, entier): entier touche rien, d) touche lecture {
+    soit acc = d;
+    pour v dans t { acc = f(acc, v); }
+    retour acc;
+}
+fonction voir(f: fonction(entier): entier touche lecture, x) touche lecture { retour f(x); }
+fonction principal() {
+    @3[103] = 42;
+    afficher(appliquer(carre, 7), plier([1, 2, 3], plus, 10), voir(lire, 3), voir(carre, 4));
+}
