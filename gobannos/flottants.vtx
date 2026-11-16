@@ -700,6 +700,111 @@ fonction vers_q(g, f, a: entier_128): entier_128 {
     retour depuis(f, s, mant(g, a), expo(g, a), 0);
 }
 
+// ------------------------------------------------------------------------------------------------ le binaire de l'IEEE
+// La frontière avec le binaire (0.6z) : les bits du binary de l'IEEE de même taille (32, 64 ou 128). Le binaire ne garde
+// que ce qu'il sait porter : le signe (un bit, 0 ou 1) et la grandeur ; inconnu et variable deviennent tous deux le NaN
+// tranquille, l'infini reste l'infini. Exact quand c'est possible, arrondi au plus proche pair sinon (Q128 → binary128 :
+// 113 bits, rien ne se perd).
+fonction vers_ieee_q(w, a: entier_128): entier_128 {
+    soit k = f_taille(w);
+    soit pp = 113;
+    soit b: entier_128 = 16383LL;
+    soit emx: entier_128 = 32767LL;
+    si w == 1 {
+        pp = 53;
+        b = 1023LL;
+        emx = 2047LL;
+    } sinon si w == 2 {
+        pp = 24;
+        b = 127LL;
+        emx = 255LL;
+    }
+    si !est_nombre(w, a) {
+        retour (emx << (pp - 1)) | (1LL << (pp - 2));
+    }
+    soit s: entier_128 = 0LL;
+    si negatif(w, a) {
+        s = 1LL << (k - 1);
+    }
+    si est_inf(w, a) {
+        retour (emx << (pp - 1)) | s;
+    }
+    soit m: entier_128 = mant(w, a);
+    soit ex: entier_128 = expo(w, a);
+    si m == 0LL {
+        retour s;
+    }
+    soit e: entier_128 = entier_128(nbits(m)) - 1LL + ex;
+    soit q: entier_128 = e - entier_128(pp - 1);
+    soit qmin: entier_128 = 2LL - b - entier_128(pp);
+    si q < qmin {
+        q = qmin;
+    }
+    soit n: entier_128 = 0LL;
+    si ex >= q {
+        n = m << entier(ex - q);
+    } sinon {
+        soit k2: entier_128 = q - ex;
+        si k2 <= 120LL {
+            soit kk = entier(k2);
+            n = m >> kk;
+            soit bas_: entier_128 = m & ((1LL << kk) - 1LL);
+            soit demi: entier_128 = 1LL << (kk - 1);
+            si bas_ > demi || (bas_ == demi && (n & 1LL) == 1LL) {
+                n = n + 1LL;
+            }
+        }
+    }
+    si n == (1LL << pp) {
+        n = n >> 1;
+        q = q + 1LL;
+    }
+    si n >= (1LL << (pp - 1)) {
+        soit be: entier_128 = q + entier_128(pp - 1) + b;
+        si be >= emx {
+            retour (emx << (pp - 1)) | s;
+        }
+        retour (be << (pp - 1)) | (n - (1LL << (pp - 1))) | s;
+    }
+    retour n | s;
+}
+
+// depuis les bits du binary de l'IEEE de même taille : un NaN donne variable (le binaire ne sait pas dire inconnu)
+fonction de_ieee_q(w, d: entier_128): entier_128 {
+    soit k = f_taille(w);
+    soit pp = 113;
+    soit b: entier_128 = 16383LL;
+    soit emx: entier_128 = 32767LL;
+    si w == 1 {
+        pp = 53;
+        b = 1023LL;
+        emx = 2047LL;
+    } sinon si w == 2 {
+        pp = 24;
+        b = 127LL;
+        emx = 255LL;
+    }
+    soit s = ((d >> (k - 1)) & 1LL) == 1LL;
+    soit e: entier_128 = (d >> (pp - 1)) & emx;
+    soit m: entier_128 = d & ((1LL << (pp - 1)) - 1LL);
+    si e == emx {
+        si m != 0LL {
+            retour q_var(w);
+        }
+        retour infini(w, s);
+    }
+    soit mm: entier_128 = m;
+    soit ex: entier_128 = 2LL - b - entier_128(pp);
+    si e != 0LL {
+        mm = m | (1LL << (pp - 1));
+        ex = e - b - entier_128(pp) + 1LL;
+    }
+    si mm == 0LL {
+        retour signe_de(w, s);
+    }
+    retour depuis(w, s, mm, ex, 0);
+}
+
 // ------------------------------------------------------------------------------------------------ l'entrée
 // Une instruction flottante de Lugus : son code, sa largeur (w : le format), x (imm & 3 : la largeur d'un entier converti,
 // ou le format de départ d'une conversion), les valeurs des registres S et T. Le résultat va dans D.
@@ -734,6 +839,8 @@ fonction __qf(op, w, x, sv: entier_128, tv: entier_128): entier_128 touche rien 
     si op == 0x49 { retour de_entier_q(w, sv, li, 1); }
     si op == 0x4A { retour vers_entier_q(w, a, 0, li); }
     si op == 0x4B { retour vers_entier_q(w, a, 1, li); }
+    si op == 0x6C { retour vers_ieee_q(w, a); }
+    si op == 0x6D { retour de_ieee_q(w, a); }
     // 0x6E : du format x vers le format w
     soit g = x;
     si g != 1 && g != 2 {

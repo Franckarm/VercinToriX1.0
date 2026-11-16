@@ -1233,7 +1233,7 @@ fonction traduire_un(p) {
 // ordinaire de Lugus, la place de retour (une par instruction) aussi ; au retour, tout est rendu, D reçoit le résultat
 // (R1 de la bibliothèque), z suit sa valeur, c est effacé ; le compte n'a pris qu'une instruction, comme dans Lugus.
 fonction est_flottante(op) {
-    retour (op >= 0x40 && op <= 0x4B) || op == 0x5B || op == 0x5C || op == 0x5D || op == 0x6E;
+    retour (op >= 0x40 && op <= 0x4B) || op == 0x5B || op == 0x5C || op == 0x5D || (op >= 0x6C && op <= 0x6E);
 }
 
 fonction empiler_valeur(v, p) {

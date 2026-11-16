@@ -113,7 +113,7 @@ def piege(w, e0, rnd):
 
 def cas(rnd):
     w = rnd.choice([0, 0, 1, 2])
-    op = rnd.choice([0x40, 0x41, 0x42, 0x43, 0x47, 0x44, 0x45, 0x46, 0x5D, 0x5B, 0x5C, 0x48, 0x49, 0x4A, 0x4B, 0x6E,
+    op = rnd.choice([0x40, 0x41, 0x42, 0x43, 0x47, 0x44, 0x45, 0x46, 0x5D, 0x5B, 0x5C, 0x48, 0x49, 0x4A, 0x4B, 0x6E, 0x6C, 0x6D, 0x6C, 0x6D,
                      0x40, 0x42, 0x43, 0x40, 0x41])
     x = rnd.randrange(3)
     p, eb, t = FMT[w]
@@ -135,6 +135,8 @@ def cas(rnd):
     if op == 0x6E:
         g = x if x in (1, 2) else 0
         a = brut(g, rnd) | (rnd.randrange(1 << 128) & ~((1 << FMT[g][2]) - 1) if rnd.random() < 0.3 else 0)
+    elif op == 0x6D and rnd.random() < 0.6:
+        a = rnd.choice([rnd.randrange(1 << t), rnd.randrange(1 << t) | (((1 << {128: 15, 64: 11, 32: 8}[t]) - 1) << (t - 1 - {128: 15, 64: 11, 32: 8}[t])), 0, 1 << (t - 1), 1])
     elif op not in (0x48, 0x49) and rnd.random() < 0.2:
         a |= rnd.randrange(1 << 128) & ~((1 << t) - 1)
     return op, w, x, a, b

@@ -16,6 +16,11 @@ fonction principal() {
     afficher(flottant_64(g), flottant(c), flottant_32(a));
     afficher(1.0 / 0.0, 0.0 / 0.0, racine(0.0 - 1.0));
     afficher(sinus(1.0), exponentielle(1.0), logarithme(10.0), pi());
+    // la frontière avec le binaire de l'IEEE (0.6z) : aller et retour
+    soit ie: entier_128 = vers_ieee128(a / 3.0);
+    afficher(texte_cube(ie), de_ieee128(ie), de_ieee128(vers_ieee128(0.0 / 0.0)));
+    soit i6: flottant_64 = de_ieee64(vers_ieee64(c / d));
+    afficher(i6, vers_ieee64(c));
     soit s = 0.0;
     pour i dans 1..200 {
         s = s + 1.0 / flottant(i * i);
