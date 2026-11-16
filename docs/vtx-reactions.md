@@ -2757,3 +2757,37 @@ boucle en segments à côté) : les mêmes mots par les deux compilateurs, la so
 promesse d'une fonction en une ligne ; la carte ; Gobannos (la même sortie que Lugus). vtxc128 renouvelé (point fixe
 184 695 mots) ; le lecteur d'ADN, les mêmes 15 486 mots par les deux compilateurs.
 
+## 59. Le type d'une fonction : `fonction(entier): entier` (16 novembre, 0.6x)
+
+**La suite annoncée en 0.6w.** Une fonction passée en valeur n'était qu'un entier : le compilateur ne savait ni combien
+d'arguments lui donner, ni ce qu'elle rendait. Trois défauts en sortaient : un mauvais nombre d'arguments défaisait la
+pile sans un mot ; un flottant passé à une fonction de flottants arrivait comme un entier ; un texte rendu s'affichait
+comme un nombre. Le type écrit les règle tous les trois, à la compilation, sans un mot de plus à l'exécution.
+
+```
+fonction plier(t, f: fonction(entier, entier): entier, depart) { … }
+fonction choisir(k): fonction(entier): entier { retour carre; }
+soit g: fonction(flottant): flottant = moitie;     afficher(g(3));         // 1.5 : 3 est converti
+soit c: fonction(texte): texte = crier;            afficher(c("Ho"));      // un texte, affiché comme tel
+```
+
+- **Vérifié où l'on peut l'être** : une fonction nommée là où l'on attend un type doit l'avoir (paramètres et résultat,
+  les textes et les tableaux comptant comme des entiers pour la machine) ; un appel par une variable typée compte ses
+  arguments et convertit chacun. Les deux compilateurs refusent avec les mêmes mots.
+- **Une porte laissée ouverte, exprès** : un entier se range dans une variable typée fonction. C'est par là qu'une table
+  de fonctions lue dans un tableau garde son type ; c'est aussi une promesse que le compilateur ne peut pas vérifier.
+  Deux types de fonction différents, eux, ne se mélangent jamais.
+- **Sans type écrit, rien ne change** : les programmes de 0.6w donnent les mêmes mots.
+- **Dans vtxc128**, un type de fonction est un numéro (2 000 000 + sa place dans une table des signatures, les mêmes
+  types écrits ayant le même numéro) ; dans vtx128.py, une chaîne `g:e,e>e`. La passe des textes suit les variables
+  typées fonction pour savoir qu'un appel rend un texte.
+
+**Limites, dites.** Pas de type de fonction dans un type de fonction (un message clair le dit). Le type ne porte pas ce
+que la fonction touche : `fonction appliquer(f: fonction(entier): entier, x) touche rien` reste refusée (« elle touche le
+monde : par __appeler »). La suite naturelle serait `fonction(entier): entier touche rien`, qui laisserait le juge croire
+la promesse du type et vérifier chaque fonction qu'on y range ; puis les modules désignés par leur empreinte.
+
+**Vérifié** (`tests/test_types_fonction.py`, 7 contrôles) : un programme qui mêle appliquer, plier, un flottant, une
+fonction rendue, un texte et une structure, les mêmes mots par les deux compilateurs et la sortie attendue ; quatre refus,
+le même message des deux côtés ; un appel sans type, inchangé. vtxc128 renouvelé (point fixe 185 590 mots).
+

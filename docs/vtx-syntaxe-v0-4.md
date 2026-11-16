@@ -176,6 +176,28 @@ afficher(f(7), plier([1, 2, 3], plus, 0));
 - **La promesse** : on ne sait pas d'avance qui un appel par valeur appelle ; le juge le compte pour le monde (le doute
   du côté prudent) : une fonction `touche rien` qui appelle par valeur est refusée.
 
+**Le type d'une fonction** (Lugus, 0.6x) : `fonction(T1, T2): R` s'écrit partout où va un type (un paramètre, un `soit`,
+le résultat d'une fonction, un champ). Sans `: R`, le résultat est un entier.
+
+```
+fonction appliquer(f: fonction(entier): entier, x) { retour f(x); }
+fonction choisir(k): fonction(entier): entier { retour carre; }
+soit g: fonction(flottant): flottant = moitie;
+soit c: fonction(texte): texte = crier;
+afficher(g(3), c("Par Toutatis"));          // 1.5 Par Toutatis !
+```
+
+- Une fonction nommée là où l'on attend un type de fonction doit l'avoir : « « plus » ne convient pas à
+  fonction(entier): entier : elle est fonction(entier, entier): entier ».
+- Un appel par une variable typée compte ses arguments (« « g » (fonction(entier): entier) attend 1 argument(s), pas 2 »),
+  convertit chacun à son type (`g(3)` donne 3.0 à une fonction de flottants) et rend le type écrit (un texte reste un
+  texte, à l'affichage aussi).
+- Un entier se range dans une variable typée fonction (c'est une promesse de celui qui l'écrit), et une valeur de
+  fonction va là où va un entier ; deux types de fonction différents ne se mélangent pas.
+- Sans type écrit, rien ne change : l'appel par valeur de 0.6w reste libre.
+- Pas encore : un type de fonction dans un type de fonction (`fonction(fonction(entier)): entier`) ; ce que la fonction
+  touche (le type ne porte pas de promesse : une fonction `touche rien` qui appelle par valeur reste refusée).
+
 **Supposons** (Lugus, 0.6s) : essayer des candidats l'un après l'autre et garder le meilleur.
 
 ```

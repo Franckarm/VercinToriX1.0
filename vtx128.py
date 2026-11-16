@@ -1844,7 +1844,27 @@ class Analyseur:
         if not self.est_op(":"):
             return None
         self.suivant()
+        return self.un_type()
+
+    def un_type(self):
+        """Un type écrit ; 0.6w bis : « fonction(T1, T2): R », le type d'une fonction passée en valeur (« g:T1,T2>R »)."""
         k, v, l = self.suivant()
+        if k == "kw" and v == "fonction":
+            self.attendre("(")
+            ps = []
+            if not self.est_op(")"):
+                ps.append(self.un_type())
+                while self.est_op(","):
+                    self.suivant()
+                    ps.append(self.un_type())
+            self.attendre(")")
+            r = "e"
+            if self.est_op(":"):
+                self.suivant()
+                r = self.un_type()
+            if any(x.startswith("g:") for x in ps + [r]):
+                raise VtxError(f"ligne {l} : un type de fonction dans un type de fonction : pas encore")
+            return "g:" + ",".join(ps) + ">" + r
         if k == "id" and v in self.structs:
             return "r:" + v                    # référence à une structure : adresse d'un bloc (le tas)
         if k != "id" or v not in TYPES:
@@ -8319,7 +8339,10 @@ class Generateur:
         g = e[0]
         if g == "non_log" and self.typ(e[1]) == "q":
             raise VtxError(f"ligne {ligne_de(e)} : « ! » ne s'applique pas à un logique : utilisez non4() ou anti()")
-        if g in ("nombre", "etiq", "lire", "non_log", "blit", "fref", "appelv"):
+        if g == "appelv":
+            tv = self.typ(e[1])
+            return sig_parts(sig_norm(tv))[1] if est_sig(tv) else "e"
+        if g in ("nombre", "etiq", "lire", "non_log", "blit", "fref"):
             return "e"
         if g == "fnombre":
             return "f"
@@ -8465,6 +8488,15 @@ class Generateur:
         """Conversion implicite du résultat (R1, ou R1:R4) de t vers voulu."""
         if t == voulu:
             return
+        # 0.6w bis : une valeur de fonction est un entier ; un entier se déclare fonction (une promesse), et une fonction
+        # passe là où va un entier ; deux types de fonction différents ne se mélangent pas
+        if est_sig(voulu) and (t == "e" or (est_sig(t) and sig_norm(t) == sig_norm(voulu))):
+            return
+        if est_sig(t) and voulu == "e":
+            return
+        if est_sig(voulu) or est_sig(t):
+            raise VtxError(f"ligne {ligne} : une valeur de type {nom_sig(t) if est_sig(t) else NOM_TYPE[t]} ne va pas "
+                           f"là où l'on attend {nom_sig(voulu) if est_sig(voulu) else NOM_TYPE[voulu]}")
         if voulu == "e" and t == "i":
             return                                   # l'entier_32 est déjà rangé sans signe dans 64 bits
         if voulu == "f" and t in ENTIERS:
@@ -9014,6 +9046,15 @@ class Generateur:
 
     def expr(self, e, voulu=None):
         """Émet e ; rend son type. Avec voulu, convertit le résultat."""
+        if e[0] == "fref" and est_sig(voulu):
+            # une fonction nommée là où l'on attend un type de fonction : sa signature doit être celle-là
+            f = self.signature(e[1], e[2])
+            sf = "g:" + ",".join(f.ptypes) + ">" + (f.rtype or "e")
+            if sig_norm(sf) != sig_norm(voulu):
+                raise VtxError(f"ligne {e[2]} : « {e[1]} » ne convient pas à {nom_sig(voulu)} : elle est "
+                               f"{nom_sig(sf)}")
+            self.expr_e(e)
+            return voulu
         if e[0] == "blit":
             e = ("qnombre", e[1]) if voulu == "q" else ("nombre", e[2])
         if est_ref(voulu) and e == ("nombre", 0):
@@ -9067,6 +9108,8 @@ class Generateur:
                 self.charger_l("R1", e[1])
             else:
                 self.expr_e(e)
+        elif est_sig(t):
+            self.expr_e(e)
         if voulu is not None and voulu != t:
             self.conv(t, voulu, ligne_de(e), e)
             return voulu
@@ -9532,6 +9575,21 @@ class Generateur:
         """f(a, b) où f est une valeur (une fonction passée) : les arguments empilés comme pour un appel ordinaire (un
         mot chacun), la cible dans R1, puis CALL F___appeler."""
         args, ligne = e[2], e[3]
+        tv = self.typ(e[1])
+        if est_sig(tv):
+            # 0.6w bis : le type de la fonction est connu : le nombre d'arguments vérifié, chacun converti à son type
+            ps, _r = sig_parts(sig_norm(tv))
+            if len(args) != len(ps):
+                raise VtxError(f"ligne {ligne} : « {e[1][1]} » ({nom_sig(tv)}) attend {len(ps)} argument(s), pas "
+                               f"{len(args)}")
+            for a, pt in zip(args, ps):
+                self.expr(a, pt)
+                self.emettre("PUSH R1")
+            self.expr(e[1], tv)
+            self.emettre("CALL F___appeler")
+            if args:
+                self.emettre(f"ADDI R14,R14,#{len(args)}")
+            return
         for a in args:
             t = self.expr(a)
             if t in LARGES2:
@@ -9805,6 +9863,33 @@ def appels(n, acc):
             appels(x, acc)
 
 
+NOMS_SIG = {"e": "entier", "i": "entier_32", "f": "flottant_64", "s": "flottant_32", "q": "logique", "t": "texte",
+            "w": "entier_128", "x": "flottant", "p": "point", "F": "flottant[]", "L": "logique[]"}
+
+
+def est_sig(t):
+    return isinstance(t, str) and t.startswith("g:")
+
+
+def sig_parts(t):
+    """(les types des paramètres, le type du résultat) d'un type de fonction « g:… »"""
+    a, r = t[2:].split(">", 1)
+    return ([x for x in a.split(",")] if a else []), r
+
+
+def sig_norm(t):
+    """le type de fonction tel que la génération le voit : les textes et les tableaux sont des entiers (typer_textes)"""
+    ps, r = sig_parts(t)
+    n = lambda x: "e" if x in ("t", "F", "L") else x
+    return "g:" + ",".join(n(x) for x in ps) + ">" + n(r)
+
+
+def nom_sig(t):
+    ps, r = sig_parts(t)
+    nm = lambda x: x[2:] if x.startswith("r:") else NOMS_SIG.get(x, x)
+    return "fonction(" + ", ".join(nm(x) for x in ps) + "): " + nm(r)
+
+
 def resoudre_valeurs(fs):
     """0.6w : les fonctions passées en valeur. Un nom de fonction écrit sans parenthèses, là où aucune variable ne porte
     ce nom, devient sa référence (("fref", nom, ligne) : l'adresse de sa molécule) ; un appel f(…) dont le nom est une
@@ -10016,6 +10101,8 @@ def vers_lugus(fs):
 
 def typer_textes(fs, types_champs):
     rtexte = {f.nom for f in fs if f.rtype == "t"}
+    rsig = {f.nom: f.rtype for f in fs if est_sig(f.rtype)}   # 0.6x : les fonctions qui rendent une fonction
+    sigv = {}                                                # 0.6x : les variables d'un type de fonction
     du_prelude = {f.nom for f in fs if getattr(f, "origine", "") == "prélude"}
     champs = {}
     for _st, cs in types_champs.items():
@@ -10129,6 +10216,10 @@ def typer_textes(fs, types_champs):
             return e[2] in champs_texte
         if g == "bin" and e[1] == "+":
             return est_texte(e[2], env) or est_texte(e[3], env)
+        if g == "appelv" and e[1][0] == "var":
+            # 0.6x : l'appel d'une valeur de fonction dont le type dit qu'elle rend un texte
+            sv = sigv.get(e[1][1])
+            return sv is not None and sig_parts(sv)[1] == "t"
         return False
 
     def soits(x, acc):
@@ -10230,9 +10321,16 @@ def typer_textes(fs, types_champs):
         tablog.clear()
         tablog.update(p for p, t in zip(f.params, f.ptypes) if t == "L")
         env = {p: t == "t" for p, t in zip(f.params, f.ptypes)}
+        sigv.clear()
+        sigv.update((p, t) for p, t in zip(f.params, f.ptypes) if est_sig(t))
         if getattr(f, "origine", "") != "prélude":
             liste = []
             soits(f.corps, liste)
+            for st in liste:
+                if len(st) > 4 and est_sig(st[4]):
+                    sigv[st[1]] = st[4]
+                elif isinstance(st[2], tuple) and st[2][0] == "appel" and est_sig(rsig.get(st[2][1])):
+                    sigv[st[1]] = rsig[st[2][1]]
             change = True
             while change:
                 change = False

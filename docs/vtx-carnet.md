@@ -602,8 +602,10 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    traduit lui-même ; puis **les cylindres** dedans (un fil par cylindre, son cube ; pour `supposons`, le cube jeté).
    But : 100 % vtx, sans Rust ni Python.
 3. **Finir le langage** : les fonctions passées en valeur (fait, 0.6w : `soit f = carre; f(7)`, `plier(t, plus, 0)`,
-   sans instruction nouvelle) ; puis un type de fonction vérifié (`fonction(entier): entier`), les modules désignés par
-   leur empreinte (un module est un ADN signé, chaque usage une transcription).
+   sans instruction nouvelle) ; un type de fonction vérifié (fait, 0.6x : `fonction(entier): entier`, le nombre
+   d'arguments et les types vérifiés, les mêmes refus par les deux compilateurs) ; puis la promesse dans le type
+   (`fonction(entier): entier touche rien`), les modules désignés par leur empreinte (un module est un ADN signé,
+   chaque usage une transcription).
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
 5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine

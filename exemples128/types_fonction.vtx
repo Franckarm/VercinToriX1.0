@@ -1,0 +1,26 @@
+// 0.6x : le type d'une fonction passée en valeur
+structure Point { x, y }
+fonction carre(x) { retour x * x; }
+fonction plus(a, b) { retour a + b; }
+fonction moitie(x: flottant): flottant { retour x / 2.0; }
+fonction crier(t: texte): texte { retour t + " !"; }
+fonction abscisse(p: Point) { retour p.x; }
+fonction appliquer(f: fonction(entier): entier, x) { retour f(x); }
+fonction plier(t, f: fonction(entier, entier): entier, depart) {
+    soit acc = depart;
+    pour v dans t { acc = f(acc, v); }
+    retour acc;
+}
+fonction choisir(k): fonction(entier): entier { retour carre; }
+fonction principal() {
+    afficher(appliquer(carre, 7), plier([1, 2, 3], plus, 10));
+    soit g: fonction(flottant): flottant = moitie;
+    afficher(g(3));
+    soit h = choisir(0);
+    afficher(h(5));
+    soit c: fonction(texte): texte = crier;
+    afficher(c("Par Toutatis"));
+    soit a: fonction(Point): entier = abscisse;
+    soit p = Point { x: 4, y: 9 };
+    afficher(a(p));
+}
