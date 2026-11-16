@@ -1,0 +1,18 @@
+fonction principal() {
+    @2[0] = 0;
+    supposons x parmi [3, 8, 5] {
+        @2[0] = x;
+        exige x < 10;
+        noter x;
+    } retenir r alors {
+        @2[0] = x * 10;
+        afficher("fait pour", x);
+    }
+    afficher(@2[0], r);
+    supposons y parmi [4, 6] { noter 1; } retenir r2 alors { afficher("jamais"); } sinon { afficher("pas sûr :", y, r2); }
+    supposons z parmi [7] { } alors { afficher("seul :", z); }
+    soit alors = 2;
+    supposons w parmi [1] { }
+    alors = alors + 1;
+    afficher(alors);
+}

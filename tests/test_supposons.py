@@ -98,8 +98,8 @@ m_l, err = mots_lugus("ex.vtx")
 verifier("exemples128/supposons.vtx : vtxc128 et vtx128.py donnent les mêmes mots", m_l is not None and m_l == mots_py(texte)[0], err)
 r = lugus("ex.vtx")
 attendu = ["le meilleur : 8 vrai ; la mémoire : 7", "chat vrai", "ex aequo : 4 variable", "sans note : 4 inconnu",
-           "aucun : 4 faux", "5 0 2"]
-verifier("l'exemple : le meilleur noté, la mémoire défaite, les quatre verdicts", r.stdout.split("\n")[:6] == attendu,
+           "aucun : 4 faux", "5 0 2", "gardé : 80 vrai", "ex aequo, rien n'est fait : 4 variable"]
+verifier("l'exemple : le meilleur noté, la mémoire défaite, les quatre verdicts", r.stdout.split("\n")[:8] == attendu,
          r.stdout + r.stderr)
 verifier("une fonction « touche rien » qui suppose sans écrire tient sa promesse", "promesse" not in r.stderr, r.stderr)
 
@@ -132,6 +132,16 @@ verifier("exige dans une lecture : les mêmes mots", m_l is not None and m_l == 
 r = lugus("contrat.vtx")
 verifier("exige écarte : 12 retenu (9 aussi tient, moins bien noté) ; aucun ne tient : faux ; hors d'une lecture, exige est un nom",
          r.stdout.split("\n")[:3] == ["12 vrai", "1 faux", "3"], r.stdout + r.stderr)
+
+# 3 bis. retenir r alors { … } sinon { … } (0.6u) : l'action du choix, jouée une fois, si le verdict est vrai
+ALORS = open(os.path.join(ici, "supposons_alors.vtx"), encoding="utf-8").read()
+ecrire("alors.vtx", ALORS)
+m_l, err = mots_lugus("alors.vtx")
+verifier("alors : les mêmes mots", m_l is not None and m_l == mots_py(ALORS)[0], err)
+r = lugus("alors.vtx")
+verifier("alors : joué une fois pour le retenu (la lecture défaite, l'action gardée) ; sinon pour des ex aequo ; "
+         "sans retenir ; « alors » reste un nom ailleurs",
+         r.stdout.split("\n")[:5] == ["fait pour 8", "80 vrai", "pas sûr : 4 variable", "seul : 7", "3"], r.stdout + r.stderr)
 
 # 4. la carte parle comme le texte : les rouages de l'hypothèse ne sont pas des branches, l'exige d'une lecture n'est pas
 #    une promesse de la fonction

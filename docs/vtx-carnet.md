@@ -588,8 +588,9 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 *Mise à jour le 15 novembre 2026 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
 
 1. **Les lectures** : `supposons x parmi [a, b, c] { … } retenir r;` est fait (0.6s : écarter, noter, le verdict à
-   quatre valeurs ; 0.6t : `exige` écarte de lui-même, la carte dit « suppose »). Reste : jouer les lectures qui
-   n'écrivent pas **ensemble sur les cylindres** ; montrer dans la carte d'où vient le choix. Ce qui rapproche vtx du langage humain (le
+   quatre valeurs ; 0.6t : `exige` écarte de lui-même, la carte dit « suppose » ; 0.6u : `retenir r alors { … }`, l'action du
+   choix, seulement sur un verdict vrai). Reste : montrer dans la carte d'où vient le choix. Les cylindres pour les
+   lectures sont mis de côté (forge seulement ; l'idée est gardée dans `vtx-reactions.md`, section 56). Ce qui rapproche vtx du langage humain (le
    doute, l'interprétation), et le rend natif pour une IA.
 2. **Le cœur du langage** : les fonctions passées en valeur, les modules désignés par leur empreinte (un module est un
    ADN signé, chaque usage une transcription).

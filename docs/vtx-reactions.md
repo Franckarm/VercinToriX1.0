@@ -2609,3 +2609,42 @@ quand aucun candidat ne le tient, reste un nom hors d'une lecture ; la carte et 
 rouages, et ne comptent pas l'exige d'une lecture parmi les promesses. vtxc128 renouvelé (point fixe 184 270 mots) ; le
 lecteur d'ADN, les mêmes 15 475 mots par les deux compilateurs.
 
+## 56. Retenir, alors : l'action du choix (16 novembre, 0.6u)
+
+**La question.** Après une supposition, faut-il garder ce que la lecture retenue a construit ? Le créateur : la valeur la
+plus humaine. Un humain réfléchit à chaque possibilité, en choisit une, puis la fait ; il n'agit pas sur un doute.
+
+```
+supposons c parmi [3, 8, 5] {
+    @3[101] = c;                 // la lecture : défaite
+    exige c < 10;
+    noter c;
+} retenir rc alors {
+    @3[101] = c * 10;            // l'action : gardée (80)
+} sinon {
+    afficher("pas de choix sûr :", rc);
+}
+```
+
+- **Les lectures jugent, l'action est écrite à part.** Ce que les lectures écrivent est toujours défait (la règle reste
+  simple) ; le bloc `alors` se joue une seule fois, pour le candidat retenu, et **seulement si le verdict est vrai**.
+  Avec inconnu (rien ne départage), variable (des ex aequo) ou faux (aucun), c'est `sinon` qui se joue, s'il est écrit.
+  Pour agir malgré des ex aequo sous condition, on l'écrit : `selon rc { variable { si … { … } } }`.
+- Rien n'est rejoué : ce qui s'affiche dans une lecture ne s'affiche qu'une fois.
+- `alors` va aussi sans `retenir` (`} alors { … }`). Ce n'est pas un mot réservé : il ne compte qu'après le bloc d'une
+  supposition, suivi d'une accolade (`soit alors = 2;` marche toujours).
+- Les mêmes mots par vtx128.py et vtxc128 : une variable cachée de plus (`__supN_ok`), posée dans les deux branches où le
+  verdict est vrai, puis un `si`. Aucune instruction nouvelle : le .exe traduit en profite.
+
+**Les cylindres, mis de côté pour la supposition** (le créateur ne s'en sert pas : ils ne vivent que dans la forge, et
+la traduction en x86-64 de ses .exe n'en a pas). L'idée, gardée pour plus tard : le cube propre d'un cylindre (copié à
+l'écriture) **est** une hypothèse ; une lecture jouée sur son cylindre n'aurait plus besoin du journal, son cube serait
+jeté au lieu d'être fondu, chaque lecture ne rendrait que son verdict (écartée, notée, sa note) dans une case à elle, le
+choix serait fait dans l'ordre des candidats (le même résultat que Lugus) ; autant de cylindres que de candidats, et un
+seuil pour laisser les petites lectures en ordinaire. Pour que les .exe en profitent, il faudrait des fils dans la
+traduction en x86-64.
+
+**Vérifié** (`tests/test_supposons.py`, 17 contrôles ; `tests/supposons_alors.vtx`) : les mêmes mots ; `alors` joué une
+fois pour le retenu, la lecture défaite et l'action gardée ; `sinon` pour des ex aequo ; sans `retenir` ; « alors » reste
+un nom ailleurs. vtxc128 renouvelé (point fixe 184 404 mots).
+

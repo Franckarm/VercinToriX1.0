@@ -40,4 +40,18 @@ fonction principal() {
     afficher("aucun :", v, rv);
 
     afficher(diviseur(35), diviseur(13), diviseur(12));
+
+    // retenir r alors { … } : ce que le choix construit, joué une fois, pour le retenu, si le verdict est vrai
+    @3[101] = 0;
+    supposons c parmi [3, 8, 5] {
+        @3[101] = c;                 // la lecture : défaite
+        exige c < 10;
+        noter c;
+    } retenir rc alors {
+        @3[101] = c * 10;            // l'action : gardée
+    } sinon {
+        afficher("pas de choix sûr :", rc);
+    }
+    afficher("gardé :", @3[101], rc);
+    supposons e parmi [4, 6] { noter 1; } retenir re alors { @3[101] = 0; } sinon { afficher("ex aequo, rien n'est fait :", e, re); }
 }

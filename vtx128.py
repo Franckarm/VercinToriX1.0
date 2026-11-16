@@ -2627,10 +2627,20 @@ class Analyseur:
         corps = self.bloc()
         self.ctx.pop()
         retenu = None
+        alors = sinon = None
         if self.regard()[:2] == ("id", "retenir"):
             self.suivant()
             retenu = self.nom_variable()
-            self.fin()
+            if not (self.regard()[:2] == ("id", "alors") and self.regard(1)[:2] == ("op", "{")):
+                self.fin()
+        if self.regard()[:2] == ("id", "alors") and self.regard(1)[:2] == ("op", "{"):
+            # alors { … } : ce que le choix construit, joué une fois, pour le retenu, si le verdict est vrai ;
+            # sinon { … } : dans les trois autres cas
+            self.suivant()
+            alors = self.bloc()
+            if self.regard()[:2] == ("kw", "sinon"):
+                self.suivant()
+                sinon = self.bloc()
         h = lambda s_: f"__sup{ns}_{s_}"
         V = lambda s_: ("var", h(s_), l)
         N = lambda v_: ("nombre", v_)
@@ -2652,6 +2662,8 @@ class Analyseur:
             out.append(("soit", h(s_), N(0), l, None))
         if retenu is not None:
             out.append(("soit", retenu, ("qnombre", 0), l, "q"))
+        if alors is not None:
+            out.append(("soit", h("ok"), N(0), l, None))
         meilleur = [aff("m", ("bin", "+", V("k"), N(1))), aff("max", V("n")), aff("eg", N(1))]
         noter = ("si", eq(V("m"), N(0)), list(meilleur),
                  [("si", ("bin", ".>", V("n"), V("max")), list(meilleur),
@@ -2681,13 +2693,18 @@ class Analyseur:
         out.append(("pour", h("k"), N(0), N(n), tour, l, 1))
 
         def verdict(q):
-            return [("affecter", retenu, ("qnombre", q), l)] if retenu is not None else []
+            v = [("affecter", retenu, ("qnombre", q), l)] if retenu is not None else []
+            if alors is not None and q == 2:
+                v.append(aff("ok", N(1)))
+            return v
         fin = ("si", eq(V("s"), N(0)), [choisir(N(0))] + verdict(1),
                [("si", eq(V("s"), N(1)), [choisir(V("f"))] + verdict(2),
                  [("si", eq(V("m"), N(0)), [choisir(V("f"))] + verdict(0),
                    [("si", eq(V("eg"), N(1)), [choisir(("bin", "-", V("m"), N(1)))] + verdict(2),
                      [choisir(("bin", "-", V("m"), N(1)))] + verdict(3), l)], l)], l)], l)
         out.append(fin)
+        if alors is not None:
+            out.append(("si", eq(V("ok"), N(1)), alors, sinon, l))
         return out
 
     def abaisser_hypothese(self, n, corps, l):

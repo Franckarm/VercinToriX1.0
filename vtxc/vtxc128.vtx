@@ -3910,6 +3910,14 @@ fonction sup_meilleur(ns, l): Noeud {
     retour a;
 }
 
+// le verdict est vrai : le bloc « alors » se jouera
+fonction sup_ok(ns, avec_alors, l): Noeud {
+    si avec_alors == 0 {
+        retour nul;
+    }
+    retour sup_aff(ns, "ok", nombre(1, l), l);
+}
+
 fonction sup_verdict(retenu, q, l): Noeud {
     si egal(retenu, "") {
         retour nul;
@@ -3967,7 +3975,23 @@ fonction analyse_supposons(c: Ctx, l): Noeud {
     si est_id(c, "retenir") {
         avancer(c);
         retenu = nom_variable(c);
-        fin_instr(c);
+        si !(est_id(c, "alors") && c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "{")) {
+            fin_instr(c);
+        }
+    }
+    // alors { … } : ce que le choix construit, joué une fois, pour le retenu, si le verdict est vrai ;
+    // sinon { … } : dans les trois autres cas
+    soit avec_alors = 0;
+    soit alors: Noeud = nul;
+    soit autrement: Noeud = nul;
+    si est_id(c, "alors") && c.tok.suivant.genre == 4 && egal(c.tok.suivant.texte, "{") {
+        avancer(c);
+        avec_alors = 1;
+        alors = bloc(c);
+        si est_kw(c, "sinon") {
+            avancer(c);
+            autrement = bloc(c);
+        }
     }
     soit out: Noeud = nul;
     pour i dans 0..n {
@@ -3985,6 +4009,9 @@ fonction analyse_supposons(c: Ctx, l): Noeud {
     si !egal(retenu, "") {
         out = chainer(out, Noeud { genre: N_SOIT, nom: retenu, val: T_LOG, a: Noeud { genre: N_QNOMBRE, val: 0, ligne: l },
                                    ligne: l });
+    }
+    si avec_alors {
+        out = chainer(out, Noeud { genre: N_SOIT, nom: nom_sup(ns, "ok"), a: nombre(0, l), ligne: l });
     }
     // la note : une nouvelle meilleure (aucune encore, ou plus grande, signée), ou un ex aequo
     soit plus = sup_aff(ns, "eg", bin("+", sup_var(ns, "eg", l), nombre(1, l), l), l);
@@ -4012,11 +4039,15 @@ fonction analyse_supposons(c: Ctx, l): Noeud {
     out = chainer(out, Noeud { genre: N_POUR, nom: nom_sup(ns, "k"), a: nombre(0, l), b: nombre(n, l), val: 1, premier: tour, ligne: l });
     // le verdict
     soit v4 = chainer(sup_choisir(ns, x, n, 3, l), sup_verdict(retenu, 3, l));
-    soit v3 = sup_si(bin("==", sup_var(ns, "eg", l), nombre(1, l), l), chainer(sup_choisir(ns, x, n, 3, l), sup_verdict(retenu, 2, l)), v4, l);
+    soit v3 = sup_si(bin("==", sup_var(ns, "eg", l), nombre(1, l), l), chainer(chainer(sup_choisir(ns, x, n, 3, l), sup_verdict(retenu, 2, l)), sup_ok(ns, avec_alors, l)), v4, l);
     soit v2 = sup_si(bin("==", sup_var(ns, "m", l), nombre(0, l), l), chainer(sup_choisir(ns, x, n, 2, l), sup_verdict(retenu, 0, l)), v3, l);
-    soit v1 = sup_si(bin("==", sup_var(ns, "s", l), nombre(1, l), l), chainer(sup_choisir(ns, x, n, 2, l), sup_verdict(retenu, 2, l)), v2, l);
+    soit v1 = sup_si(bin("==", sup_var(ns, "s", l), nombre(1, l), l), chainer(chainer(sup_choisir(ns, x, n, 2, l), sup_verdict(retenu, 2, l)), sup_ok(ns, avec_alors, l)), v2, l);
     soit v0 = sup_si(bin("==", sup_var(ns, "s", l), nombre(0, l), l), chainer(sup_choisir(ns, x, n, 0, l), sup_verdict(retenu, 1, l)), v1, l);
-    retour chainer(out, v0);
+    out = chainer(out, v0);
+    si avec_alors {
+        out = chainer(out, sup_si(bin("==", sup_var(ns, "ok", l), nombre(1, l), l), alors, autrement, l));
+    }
+    retour out;
 }
 
 // Bloc d'hypothèse -> boucle à un tour : annuler défait les écritures notées, valider (ou la fin du bloc) les garde
