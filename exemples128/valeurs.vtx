@@ -1,0 +1,51 @@
+// machine : lugus
+// Les fonctions passées en valeur (0.6w) : une fonction se nomme sans parenthèses, se range dans une variable, un
+// tableau ou une structure, se passe à une autre fonction, et s'appelle par la variable qui la porte.
+structure Outil { nom: texte, faire }
+
+fonction carre(x) { retour x * x; }
+fonction double(x) { retour x + x; }
+fonction plus(a, b) { retour a + b; }
+fonction fois(a, b) { retour a * b; }
+
+// appliquer une fonction à chaque élément : un tableau neuf
+fonction pour_chacun(t, f) {
+    soit r = tableau(0);
+    pour v dans t { ajouter(r, f(v)); }
+    retour r;
+}
+
+// plier : ramener un tableau à une valeur, de gauche à droite
+fonction plier(t, f, depart) {
+    soit acc = depart;
+    pour v dans t { acc = f(acc, v); }
+    retour acc;
+}
+
+// une fonction qui choisit une fonction
+fonction selon_le_signe(n) {
+    si n .< 0 { retour double; }
+    retour carre;
+}
+
+fonction montrer(t) {
+    pour v dans t { ecrire(v); ecrire(" "); }
+    afficher("");
+}
+
+fonction principal() {
+    soit t = [1, 2, 3, 4, 5];
+    montrer(pour_chacun(t, carre));
+    montrer(pour_chacun(t, double));
+    afficher("somme :", plier(t, plus, 0), "; produit :", plier(t, fois, 1));
+    soit f = selon_le_signe(0 - 3);
+    afficher("le choix pour -3 :", f(10));
+    // une structure qui porte une fonction : un outil et ce qu'il fait
+    soit o = Outil { nom: "carré", faire: carre };
+    soit agir = o.faire;
+    afficher(o.nom, "de 7 :", agir(7));
+    o.faire = double;
+    o.nom = "double";
+    agir = o.faire;
+    afficher(o.nom, "de 7 :", agir(7));
+}

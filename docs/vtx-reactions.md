@@ -2709,3 +2709,51 @@ exécutables) ; (3) les cylindres dans Gobannos (un fil par cylindre, son cube c
 pour `supposons`, le cube jeté) ; et, à côté, finir le langage (les fonctions passées en valeur, les modules désignés par
 leur empreinte).
 
+## 58. Finir le langage, premier pas : les fonctions passées en valeur (16 novembre, 0.6w)
+
+**Décidé avec le créateur :** le langage en priorité, Gobannos à côté. Le premier manque du cœur du langage : une
+fonction ne pouvait pas se passer à une autre. C'est ce qui permet d'écrire `pour_chacun(t, carre)`, `plier(t, plus, 0)`,
+une table d'outils, un choix de méthode (et demain `supposons f parmi [methode_a, methode_b]`).
+
+```
+fonction plier(t, f, depart) {
+    soit acc = depart;
+    pour v dans t { acc = f(acc, v); }
+    retour acc;
+}
+afficher(plier([1, 2, 3, 4, 5], plus, 0), plier([1, 2, 3, 4, 5], fois, 1));     // 15 120
+```
+
+- **L'écriture** : un nom de fonction sans parenthèses est sa valeur (si aucune variable ne porte ce nom) ; `f(…)` par
+  une variable qui n'est pas le nom d'une fonction est un appel par valeur. Les programmes déjà écrits donnent les mêmes
+  mots qu'avant (rien de ce qui compilait ne change de sens : un nom inconnu était une erreur).
+- **La machine n'apprend rien.** Lugus n'a pas d'appel indirect ; il n'en faut pas : les arguments sont empilés comme
+  pour un appel ordinaire, la cible va dans R1, puis `CALL __appeler`, et `__appeler` fait `PUSH R1 ; RET` : le RET saute
+  à la cible, l'adresse de retour de l'appelant restant en place. La cible voit exactement la pile d'un appel ordinaire.
+  Un mot de plus par appel ; la traduction en x86-64 et Gobannos le jouent comme le reste.
+- **Derrière le trampoline, une table jamais jouée** : un `CALL` vers chaque fonction passée en valeur. Sans elle, une
+  fonction jamais appelée directement n'avait pas de molécule dans l'ADN (le découpage suit les cibles des CALL) : la
+  carte la fondait dans sa voisine. Avec elle, chaque fonction a sa molécule, « appelée par __appeler », et Gobannos la
+  traduit (il parcourt la table derrière un PUSH-RET).
+- **La promesse reste honnête.** Le lecteur d'ADN (et la référence Python) lit un PUSH suivi d'un RET comme un saut
+  calculé : le monde. Une fonction `touche rien` qui appelle par valeur est refusée : « promesse rompue : appliquer
+  (ligne 2) promet de ne rien toucher, mais elle touche le monde : par __appeler ».
+- **Les analyses** : un appel par valeur est impur (pas de souvenir), et il touche tout pour la partition (rien n'est
+  réordonné autour de lui) ; une fonction passée en valeur n'est jamais recopiée en ligne.
+
+**Trouvé en route, corrigé :** sur une fonction écrite sur une seule ligne (`fonction f(x) touche rien { … f(x) … }`), la
+promesse était cherchée après la dernière parenthèse de toute la ligne, celle du corps : le juge ne la voyait pas, et
+une promesse rompue passait. L'en-tête s'arrête maintenant à la première accolade (le lecteur en vtx, la référence
+Python, et le test de Lugus qui décide s'il y a des promesses à juger).
+
+**Limites, dites.** Le nombre d'arguments d'un appel par valeur n'est pas vérifié (à la compilation, on ne sait pas
+quelle fonction est portée) : un mauvais nombre défait la pile. Le résultat est un entier (une déclaration le convertit).
+Une variable qui porte le nom d'une fonction ne s'appelle pas (le nom de la fonction l'emporte). Pas encore de type
+« fonction(entier): entier » qui vérifierait tout cela : c'est la suite naturelle, avec les modules par empreinte.
+
+**Vérifié** (`tests/test_valeurs.py`, 9 contrôles) : l'exemple `exemples128/valeurs.vtx` et un mélange (une fonction qui
+rend une fonction, la récursion par valeur, une fonction du prélude passée, une structure qui porte une fonction, une
+boucle en segments à côté) : les mêmes mots par les deux compilateurs, la sortie attendue ; la promesse refusée ; la
+promesse d'une fonction en une ligne ; la carte ; Gobannos (la même sortie que Lugus). vtxc128 renouvelé (point fixe
+184 695 mots) ; le lecteur d'ADN, les mêmes 15 486 mots par les deux compilateurs.
+

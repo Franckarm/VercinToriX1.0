@@ -1,0 +1,28 @@
+structure Outil { nom: texte, faire }
+fonction carre(x) { retour x * x; }
+fonction double(x) { retour x + x; }
+fonction fact(n) { si n < 2 { retour 1; } retour n * fact(n - 1); }
+fonction choisir(k) { si k == 0 { retour carre; } retour double; }
+fonction fixe(f, n, x) {
+    // f appliquée n fois, récursivement, par valeur
+    si n == 0 { retour x; }
+    retour fixe(f, n - 1, f(x));
+}
+fonction principal() {
+    soit g = choisir(0);
+    soit h = choisir(1);
+    afficher(g(9), h(9), fixe(double, 10, 1), fixe(carre, 3, 2));
+    soit o = Outil { nom: "factorielle", faire: fact };
+    soit ff = o.faire;
+    afficher(o.nom, ff(10));
+    soit l = longueur;
+    afficher(l("Alésia"));
+    soit carre2 = 5;
+    afficher(carre2, carre(carre2));
+    soit t = tableau(12);
+    pour i dans 0..12 en segments { t[i] = i; }
+    soit total = 0;
+    soit op = double;
+    pour v dans t { total = total + op(v); }
+    afficher(total);
+}

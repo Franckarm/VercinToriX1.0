@@ -534,6 +534,9 @@ FAIT = {1: "lit la mémoire", 2: "écrit la mémoire", 3: "touche le monde"}
 
 def promesse_de(tete):
     """« touche X » après la dernière parenthèse de l'en-tête : 0 à 3, ou None"""
+    # 0.6w : l'en-tête s'arrête à la première accolade (une fonction écrite sur une ligne garde son corps à côté)
+    if "{" in tete:
+        tete = tete[:tete.index("{")]
     i = tete.rfind(")")
     j = tete.find(" touche ", i + 1 if i >= 0 else 0)
     if j < 0:
@@ -666,11 +669,16 @@ def touche_et_appels(mots, a, b, plat):
     """(ce que touche la molécule [a, b) elle-même, les débuts des molécules qu'elle appelle)"""
     niveau, appels = 0, set()
     connu, pile = [None] * 16, []
+    avant = 0
     for p in range(2 * a, 2 * b):
         h, lit = plat[p]
         if lit:
             continue
         op, d, s_ = h >> 48, (h >> 44) & 15, (h >> 40) & 15
+        # 0.6w : PUSH puis RET, un saut calculé (le trampoline des appels par valeur) : le monde, par prudence
+        if op == 0x34 and avant == 0x27:
+            niveau = 3
+        avant = op
         imm = h & 0xFFFFFFFF
         if op in OPS_LIT:
             niveau = max(niveau, 1)

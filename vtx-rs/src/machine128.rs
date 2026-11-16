@@ -148,8 +148,11 @@ pub fn adn_en_vtx_dans(entrees: &[String], dossier: Option<&std::path::Path>) ->
 
 /// un texte porte-t-il une promesse « touche … » (un en-tête de fonction ou de réaction, après sa dernière parenthèse) ?
 pub fn a_des_promesses(source: &str) -> bool {
-    source.lines().any(|l| (l.starts_with("fonction ") || l.starts_with("reaction "))
-        && l.rfind(')').map(|i| l[i..].contains(" touche ")).unwrap_or(false))
+    // 0.6w : l'en-tête s'arrête à la première accolade (une fonction écrite sur une ligne garde son corps à côté)
+    source.lines().any(|l| (l.starts_with("fonction ") || l.starts_with("reaction ")) && {
+        let t = &l[..l.find('{').unwrap_or(l.len())];
+        t.rfind(')').map(|i| t[i..].contains(" touche ")).unwrap_or(false)
+    })
 }
 
 /// Les promesses jugées par le lecteur en vtx (0.6r) : Ok(les notes) si toutes sont tenues, Err(les messages) sinon.

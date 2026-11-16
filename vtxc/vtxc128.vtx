@@ -187,7 +187,7 @@ structure Molecule { nom, params: Param, atomes: Atome, contrats: Contrat, resul
 structure Var { nom, off, type, genre, haut, reg, score, suivant: Var, vdeb, vfin }   // vdeb, vfin : sa période (les vibrations)
 structure Fonction { nom, params: Param, nb, rtype, corps: Noeud, etiq, ligne, garde, suivant: Fonction, suite: Fonction,
                      er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif, mol: Molecule,
-                     dbg_t: Liste, dbg_tt: Liste, dbg_tf: Liste, dbg_v: Var, promet }   // mol : la molécule d'une réaction ; dbg_ : code.sym ; promet : « touche … » (0.6r)
+                     dbg_t: Liste, dbg_tt: Liste, dbg_tf: Liste, dbg_v: Var, promet, vref }   // mol : la molécule d'une réaction ; dbg_ : code.sym ; promet : « touche … » (0.6r)
 structure Constante { nom, val, type, haut, suivant: Constante }
 // sorte : 0 tableau d'entiers, 1 de quits, 2 de logiques (64 par mot), 3 de structures (st : son numéro)
 structure Tableau { nom, etage, base, taille, sorte, st, suivant: Tableau }
@@ -264,6 +264,7 @@ structure Ctx {
     souv_place,         // la prochaine place libre des souvenirs (@3[#F00000..])
     exemples: Liste,    // les exemples écrits : l'expression, sa ligne, son texte (trois par exemple)
     mode_exemples,      // 1 : le principal est remplacé par le calcul des exemples (Lugus les rejoue)
+    tramp,              // 0.6w : l'étiquette du trampoline des appels par valeur (0 : aucun appel par valeur)
     erreur
 }
 
@@ -300,7 +301,9 @@ constante N_ANNULER = 33;
 constante N_ACCORD = 35;     // val = numéro ; premier = les mesures
 constante N_MESURE = 36;     // premier = les tâches
 constante N_BLOC = 37;       // premier = des instructions
-constante N_INFO = 40;       // boucle en segments : val = segments, ligne = numéro, premier = tableaux cumulés
+constante N_INFO = 40;
+constante N_FREF = 70;       // 0.6w : une fonction passée en valeur (nom) : l'adresse de sa molécule
+constante N_APPELV = 71;     // 0.6w : f(…) où f est une valeur : a = la variable, premier = les arguments       // boucle en segments : val = segments, ligne = numéro, premier = tableaux cumulés
 constante CANAUX = 6;
 constante ZONE_TOUT = 4;     // étage inconnu
 constante ZONE_ES = 5;       // entrées et sorties
@@ -4501,7 +4504,7 @@ fonction elem_atome(l: Liste, i): Atome {
 fonction noeud_impur(g) {
     retour g == N_LIRE || g == N_ECRIRE || g == N_CHAMP || g == N_ECRIRE_CHAMP || g == N_ACCORD || g == N_INFO
         || g == N_RLIRE || g == N_RECRIRE || g == N_ETIQ || g == N_CONSTRUIRE || g == N_NOUVEAU || g == N_DONNEES
-        || g == N_ANNULER || g == N_VALIDER;
+        || g == N_ANNULER || g == N_VALIDER || g == N_APPELV;
 }
 
 fonction effet_nomme(nom) {
@@ -6519,6 +6522,12 @@ fonction ecrire_isotopes(c: Ctx) {
 // lecteur d'ADN en fait la carte du programme (ce qu'est chaque molécule, ce qu'elle touche, ses racines, ses promesses)
 fonction ecrire_carte(c: Ctx) {
     soit s = ouvrir_ecriture("code.carte");
+    si c.tramp != 0 {
+        ecrire_texte(s, "__appeler");
+        ecrire_car(s, '|');
+        ecrire_nombre(s, elem(c.lugus_place, elem(c.etiq, c.tramp)) / 2);
+        ecrire_car(s, 10);
+    }
     soit f = c.fonctions;
     tantque f != nul {
         si f.garde {
@@ -7885,7 +7894,7 @@ fonction typ(c: Ctx, e: Noeud) {
     si g == N_NONLOG && typ(c, e.a) == T_LOG {
         erreur(c, e.ligne, "« ! » ne s'applique pas à un logique : utilisez non4() ou anti()");
     }
-    si g == N_NOMBRE || g == N_ETIQ || g == N_LIRE || g == N_NONLOG || g == N_BLIT {
+    si g == N_NOMBRE || g == N_ETIQ || g == N_LIRE || g == N_NONLOG || g == N_BLIT || g == N_FREF || g == N_APPELV {
         retour 0;
     }
     si g == N_FNOMBRE { retour T_F; }
@@ -8603,6 +8612,23 @@ fonction expr_e(c: Ctx, e: Noeud) {
         }
     } sinon si g == N_ETIQ {
         ldi_etiquette(c, 1, etiquette_texte(c, e.nom));
+    } sinon si g == N_FREF {
+        ldi_etiquette(c, 1, fonction_de(c, e.nom).etiq);
+    } sinon si g == N_APPELV {
+        // les arguments empilés (un mot chacun), la cible dans R1, puis l'appel par le trampoline (comme vtx128.py)
+        soit av = e.premier;
+        soit nv = 0;
+        tantque av != nul {
+            gen(c, av);
+            pousser(c, 1);
+            nv = nv + 1;
+            av = av.suivant;
+        }
+        gen_v(c, e.a, 0);
+        saut(c, 51, c.tramp);
+        si nv != 0 {
+            rri(c, 6, 14, 14, nv);
+        }
     } sinon si g == N_NON {
         soit tn = gen(c, e.a);
         rr(c, 18, 1, 1);
@@ -9176,7 +9202,7 @@ fonction el_preparer(c: Ctx) {
             pz.usages = 0;
             pz = pz.suivant;
         }
-        si s != nul && s.suivant == nul && el_types_simples(f) && f.promet == 0 {
+        si s != nul && s.suivant == nul && el_types_simples(f) && f.promet == 0 && f.vref == 0 {
             soit corps: Noeud = nul;
             soit genre = 0;
             si s.genre == N_RETOUR && s.a != nul {
@@ -11421,6 +11447,12 @@ fonction parcourir(c: Ctx, n: Noeud, r: Liste, w: Liste) {
         zone_ajouter(w, 3, COPIES_DEBUT, COPIES_FIN);
     } sinon si g == N_APPEL {
         effets_appel(c, n.nom, r, w);
+    } sinon si g == N_APPELV {
+        // un appel par valeur : on ne sait pas qui est appelé : tout, et le monde
+        es(r);
+        tout(r);
+        es(w);
+        tout(w);
     }
     si g != N_INFO {
         parcourir(c, n.a, r, w);
@@ -11978,7 +12010,7 @@ fonction appels_de(c: Ctx, e: Noeud, noms: Liste) {
     si e == nul {
         retour;
     }
-    si e.genre == N_APPEL {
+    si e.genre == N_APPEL || e.genre == N_FREF {
         ajouter(noms, e.nom);
     }
     si e.genre == N_CONSTRUIRE || e.genre == N_NOUVEAU {
@@ -12060,6 +12092,21 @@ fonction generer(c: Ctx) {
         soit g = c.file_debut;
         c.file_debut = g.suite;
         fonction_code(c, g);
+    }
+    si c.tramp != 0 {
+        // l'appel par valeur : PUSH R1 puis RET saute à la cible, l'adresse de retour de l'appelant restant en place
+        poser_etiquette(c, c.tramp);
+        pousser(c, 1);
+        emettre(c, ins(52, 0, 0, 0, 0));
+        // puis, jamais jouée, une table d'appels : chaque fonction passée en valeur y est la cible d'un CALL (le
+        // découpage de l'ADN en fait une molécule, la carte et Gobannos la voient, et le juge sait où mène le trampoline)
+        soit fv = c.fonctions;
+        tantque fv != nul {
+            si fv.garde == 1 && fv.vref == 1 {
+                saut(c, 51, fv.etiq);
+            }
+            fv = fv.suivant;
+        }
     }
     // blocs de données, puis textes : longueur puis un caractère par mot, dans l'ordre de leur première apparition
     soit debut_donnees = c.code.n;
@@ -13091,6 +13138,64 @@ fonction vers_lugus(c: Ctx) {
     }
 }
 
+// ------------------------------------------------------------------------------------- les fonctions passées en valeur
+// 0.6w, comme resoudre_valeurs de vtx128.py : un nom de fonction écrit sans parenthèses, là où aucune variable ne porte
+// ce nom, devient sa référence (N_FREF) ; un appel dont le nom est une variable et pas une fonction devient un appel par
+// valeur (N_APPELV). Une fonction référencée garde sa molécule (vref : jamais recopiée en ligne).
+fonction locales_de(n: Noeud, l: Liste) {
+    tantque n != nul {
+        si n.genre == N_SOIT || n.genre == N_POUR {
+            ajouter(l, n.nom);
+        }
+        locales_de(n.a, l);
+        locales_de(n.b, l);
+        locales_de(n.c, l);
+        locales_de(n.premier, l);
+        locales_de(n.deuxieme, l);
+        n = n.suivant;
+    }
+}
+
+fonction refaire_valeurs(c: Ctx, n: Noeud, loc: Liste) {
+    tantque n != nul {
+        si n.genre == N_VAR && !dans_noms(loc, n.nom) && fonction_de(c, n.nom) != nul {
+            n.genre = N_FREF;
+            soit fr = fonction_de(c, n.nom);
+            fr.vref = 1;
+            si c.tramp == 0 {
+                c.tramp = nouvelle_etiquette(c);
+            }
+        } sinon si n.genre == N_APPEL && dans_noms(loc, n.nom) && fonction_de(c, n.nom) == nul && !est_integre(n.nom) {
+            n.genre = N_APPELV;
+            n.a = Noeud { genre: N_VAR, nom: n.nom, ligne: n.ligne };
+            si c.tramp == 0 {
+                c.tramp = nouvelle_etiquette(c);
+            }
+        }
+        refaire_valeurs(c, n.a, loc);
+        refaire_valeurs(c, n.b, loc);
+        refaire_valeurs(c, n.c, loc);
+        refaire_valeurs(c, n.premier, loc);
+        refaire_valeurs(c, n.deuxieme, loc);
+        n = n.suivant;
+    }
+}
+
+fonction resoudre_valeurs(c: Ctx) {
+    soit f = c.fonctions;
+    tantque f != nul {
+        soit loc = liste();
+        soit p = f.params;
+        tantque p != nul {
+            ajouter(loc, p.nom);
+            p = p.suivant;
+        }
+        locales_de(f.corps, loc);
+        refaire_valeurs(c, f.corps, loc);
+        f = f.suivant;
+    }
+}
+
 fonction typer_textes(c: Ctx) {
     soit f = c.fonctions;
     tantque f != nul {
@@ -13240,6 +13345,7 @@ fonction principal() {
         c.tableaux = tableaux;
     }
     si c.erreur == 0 {
+        resoudre_valeurs(c);
         typer_textes(c);
         vers_lugus(c);
     }

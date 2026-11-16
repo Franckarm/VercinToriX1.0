@@ -150,6 +150,32 @@ C'est une écriture, pas une nouvelle instruction : les deux compilateurs de cha
 
 **Hypothèse** : les écritures mémoire écrites dans le bloc sont notées dans un journal ; `annuler;` les défait et sort du bloc ; `valider;` ou la fin du bloc les garde. Les blocs s'imbriquent. Les variables locales et les écritures faites par les fonctions appelées ne sont pas défaites ; `retour`, `arrêter` et `continuer` ne peuvent pas sortir d'une hypothèse ; l'étage 0 y est interdit.
 
+**Les fonctions passées en valeur** (Lugus, 0.6w) : une fonction se nomme sans parenthèses ; elle se range dans une
+variable, un tableau ou un champ de structure, se passe à une autre fonction, se rend ; on l'appelle par la variable qui
+la porte.
+
+```
+fonction carre(x) { retour x * x; }
+fonction plier(t, f, depart) {
+    soit acc = depart;
+    pour v dans t { acc = f(acc, v); }     // f est une valeur : l'appel passe par elle
+    retour acc;
+}
+soit f = carre;                           // la valeur de carre
+afficher(f(7), plier([1, 2, 3], plus, 0));
+```
+
+- Une valeur de fonction est un entier (l'adresse de sa molécule) : elle se range partout où va un entier.
+- `f(…)` est un appel par valeur quand `f` est une variable (un paramètre, un soit, une boucle) et pas le nom d'une
+  fonction ; un nom de fonction l'emporte toujours (une variable qui porterait le même nom qu'une fonction ne s'appelle
+  pas : donnez-lui un autre nom). Le nombre d'arguments n'est pas vérifié à la compilation : il doit être celui de la
+  fonction portée. Chaque argument est un mot (entier, texte, logique, flottant…) ; le résultat est un entier (pour un
+  texte : `soit t: texte = f(x);`).
+- Une fonction passée en valeur garde sa molécule (elle n'est pas recopiée en ligne), et la carte la montre « appelée
+  par __appeler » (le trampoline : `PUSH R1` puis `RET`, aucune instruction nouvelle).
+- **La promesse** : on ne sait pas d'avance qui un appel par valeur appelle ; le juge le compte pour le monde (le doute
+  du côté prudent) : une fonction `touche rien` qui appelle par valeur est refusée.
+
 **Supposons** (Lugus, 0.6s) : essayer des candidats l'un après l'autre et garder le meilleur.
 
 ```

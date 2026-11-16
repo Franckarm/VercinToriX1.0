@@ -540,6 +540,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
     est défaite. Le doute écrit comme on le pense, rendu en instructions ordinaires.
 25. **Gobannos** : le traducteur écrit en vtx, qui écrit lui-même l'exécutable (ELF, PE) d'un programme de Lugus, la
     même sortie et le même compte d'instructions que Lugus ; ce qu'il ne sait pas encore traduire, il le dit.
+26. **Les fonctions passées en valeur** sans appel indirect dans la machine : un trampoline (PUSH, RET), une table
+    jamais jouée pour que chaque fonction garde sa molécule, et le juge qui compte l'appel par valeur pour le monde.
 
 ### 9.2 Améliorées (techniques connues, adaptées au cube)
 
@@ -599,8 +601,9 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    près) : puis les flottants, les fichiers et les services, les registres gardés dans le processeur, Gobannos qui se
    traduit lui-même ; puis **les cylindres** dedans (un fil par cylindre, son cube ; pour `supposons`, le cube jeté).
    But : 100 % vtx, sans Rust ni Python.
-3. **Finir le langage** : les fonctions passées en valeur, les modules désignés par leur empreinte (un module est un
-   ADN signé, chaque usage une transcription).
+3. **Finir le langage** : les fonctions passées en valeur (fait, 0.6w : `soit f = carre; f(7)`, `plier(t, plus, 0)`,
+   sans instruction nouvelle) ; puis un type de fonction vérifié (`fonction(entier): entier`), les modules désignés par
+   leur empreinte (un module est un ADN signé, chaque usage une transcription).
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
 5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine

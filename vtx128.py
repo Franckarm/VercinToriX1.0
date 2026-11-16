@@ -501,7 +501,7 @@ TYPES_SOUVENIR = {"e", "i", "f", "s", "x", "w", "p"}
 EFFETS_PURS = {"__rompre", "sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture",
                "ouvrir_ecriture", "fermer", "fin_de", "bruit", "pile", "marquer_adn", "marquer_arn", "liberer_brin", "brin",
                "gemv", "tableau", "nouveau", "nouveau_de", "ecrire", "texte", "presenter", "ecran", "pixel"}
-NOEUDS_IMPURS = {"lire", "ecrire", "mem", "champ_ref", "ecrire_champ", "asm", "accord", "segments", "rangee_lire",
+NOEUDS_IMPURS = {"appelv", "lire", "ecrire", "mem", "champ_ref", "ecrire_champ", "asm", "accord", "segments", "rangee_lire",
                  "rangee_ecrire", "hyp", "etiq"}
 
 
@@ -7696,6 +7696,9 @@ def el_candidat(f):
     # 0.6r : une fonction qui promet (« touche … ») garde sa molécule, pour que sa promesse se vérifie à part
     if getattr(f, "touche", None) is not None:
         return None
+    # 0.6w : une fonction passée en valeur garde sa molécule (son adresse est prise)
+    if getattr(f, "reference", False):
+        return None
     s = f.corps[0]
     if s[0] == "retour" and s[1] is not None:
         corps = s[1]
@@ -8250,6 +8253,17 @@ class Generateur:
             self.fonction(f)
         while self.a_generer:
             self.fonction(self.a_generer.pop(0))
+        if getattr(self, "trampoline", 0):
+            # l'appel par valeur : la cible dans R1 ; PUSH R1 puis RET y saute, l'adresse de retour de l'appelant restant
+            # en place (la cible voit la pile d'un appel ordinaire)
+            self.etiquette("F___appeler")
+            self.emettre("PUSH R1")
+            self.emettre("RET")
+            # puis, jamais jouée, une table d'appels : chaque fonction passée en valeur y est la cible d'un CALL (le découpage
+            # de l'ADN en fait une molécule, la carte et Gobannos la voient, et le juge sait où mène le trampoline)
+            for f in list(self.fonctions.values()):
+                if getattr(f, "reference", False):
+                    self.emettre(f"CALL F_{f.nom}")
         for i, (et, adr, vals) in enumerate(self.blobs):
             self.etiquette(f"DONNEES{i}")
             for k in range(0, len(vals), 8):
@@ -8305,7 +8319,7 @@ class Generateur:
         g = e[0]
         if g == "non_log" and self.typ(e[1]) == "q":
             raise VtxError(f"ligne {ligne_de(e)} : « ! » ne s'applique pas à un logique : utilisez non4() ou anti()")
-        if g in ("nombre", "etiq", "lire", "non_log", "blit"):
+        if g in ("nombre", "etiq", "lire", "non_log", "blit", "fref", "appelv"):
             return "e"
         if g == "fnombre":
             return "f"
@@ -9073,6 +9087,10 @@ class Generateur:
             self.emettre(f"MOV R1,R{self.regs[e[1]]}" if e[1] in self.regs else f"LDF R1,#{off}")
         elif g == "etiq":
             self.emettre(f"LDI R1,{e[1]}")
+        elif g == "fref":
+            self.emettre(f"LDI R1,F_{e[1]}")
+        elif g == "appelv":
+            self.appel_valeur(e)
         elif g == "non":
             t = self.expr(e[1])
             self.emettre("CMP3 R1,R1")
@@ -9510,6 +9528,20 @@ class Generateur:
         if mots:
             self.emettre(f"ADDI R14,R14,#{mots}")
 
+    def appel_valeur(self, e):
+        """f(a, b) où f est une valeur (une fonction passée) : les arguments empilés comme pour un appel ordinaire (un
+        mot chacun), la cible dans R1, puis CALL F___appeler."""
+        args, ligne = e[2], e[3]
+        for a in args:
+            t = self.expr(a)
+            if t in LARGES2:
+                raise VtxError(f"ligne {ligne} : un appel par valeur ne passe que des valeurs d'un mot")
+            self.emettre("PUSH R1")
+        self.expr(e[1], "e")
+        self.emettre("CALL F___appeler")
+        if args:
+            self.emettre(f"ADDI R14,R14,#{len(args)}")
+
     def fonction_point(self, nom, args, ligne):
         """Les points de matière : point(r, v, b) en octets (comme #RRGGBB), point32(r, v, b) en voies de 32 bits,
         matiere(r, v, b, reflet, lumiere, transparence, profondeur, rugosite), comme_point(bits), melanger(a, b, poids),
@@ -9764,13 +9796,72 @@ class Generateur:
 
 def appels(n, acc):
     if isinstance(n, tuple):
-        if len(n) >= 3 and n[0] == "appel":
+        if len(n) >= 3 and n[0] in ("appel", "fref"):
             acc.add(n[1])
         for x in n:
             appels(x, acc)
     elif isinstance(n, list):
         for x in n:
             appels(x, acc)
+
+
+def resoudre_valeurs(fs):
+    """0.6w : les fonctions passées en valeur. Un nom de fonction écrit sans parenthèses, là où aucune variable ne porte
+    ce nom, devient sa référence (("fref", nom, ligne) : l'adresse de sa molécule) ; un appel f(…) dont le nom est une
+    variable (un paramètre, un soit, une boucle) et pas une fonction devient un appel par valeur (("appelv", ("var", f,
+    ligne), args, ligne)), qui passe par le trampoline __appeler. Une fonction référencée garde sa molécule (jamais
+    recopiée en ligne). Rend 1 si un appel par valeur existe (le trampoline est alors écrit)."""
+    noms = {f.nom for f in fs}
+    vu = [0]
+
+    def locales(f):
+        acc = set(f.params)
+
+        def tour(n):
+            if isinstance(n, tuple) and n:
+                if n[0] in ("soit", "pour", "segments") and isinstance(n[1], str):
+                    acc.add(n[1])
+                for x in n[1:]:
+                    tour(x)
+            elif isinstance(n, list):
+                for x in n:
+                    tour(x)
+        tour(f.corps)
+        return acc
+
+    def refaire(n, loc):
+        if isinstance(n, list):
+            return [refaire(x, loc) for x in n]
+        if not isinstance(n, tuple) or not n:
+            return n
+        if n[0] == "var" and len(n) == 3 and n[1] not in loc and n[1] in noms:
+            return ("fref", n[1], n[2])
+        if n[0] == "appel" and len(n) >= 4 and n[1] in loc and n[1] not in noms and n[1] not in INTEGRES:
+            vu[0] = 1
+            return ("appelv", ("var", n[1], n[3]), [refaire(a, loc) for a in n[2]], n[3])
+        return tuple(refaire(x, loc) for x in n)
+
+    refs = set()
+    for f in fs:
+        loc = locales(f)
+        f.corps = refaire(f.corps, loc)
+        acc = set()
+
+        def cherche(n):
+            if isinstance(n, tuple) and n:
+                if n[0] == "fref":
+                    acc.add(n[1])
+                for x in n[1:]:
+                    cherche(x)
+            elif isinstance(n, list):
+                for x in n:
+                    cherche(x)
+        cherche(f.corps)
+        refs |= acc
+    for f in fs:
+        if f.nom in refs:
+            f.reference = True
+    return 1 if vu[0] or refs else 0
 
 
 def elaguer(fs):
@@ -10294,6 +10385,7 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None, rempl
         for f in pre:
             f.origine = "prélude"
         fs = fs + pre
+    trampoline = resoudre_valeurs(fs)
     typer_textes(fs, a.types_champs)
     if not COMPAT_64:
         vers_lugus(fs)
@@ -10304,6 +10396,7 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None, rempl
         DERNIERE_PARTITION["accords"], DERNIERE_PARTITION["notes"] = partitionner(gardees, melange)
     g = Generateur(gardees, optim, a.donnees, reserve)
     g.structs, g.types_champs, g.textes = a.structs, a.types_champs, a.textes
+    g.trampoline = trampoline
     return g.generer()
 
 
@@ -10417,6 +10510,10 @@ class Effets:
             w.add(ZONE_COPIES)
         elif g == "appel":
             self.appel(n[1], r, w)
+        elif g == "appelv":
+            # un appel par valeur : on ne sait pas qui est appelé : tout, et le monde
+            r |= {ES, TOUT}
+            w |= {ES, TOUT}
         for x in n[1:]:
             if isinstance(x, (tuple, list)):
                 self.parcourir(x, r, w)
@@ -10468,7 +10565,7 @@ def segments_independants(eff, st):
                 marche(n[2])
                 marche(n[3])
                 return
-        if n[0] in ("lire", "ecrire", "asm", "appel", "champ_ref", "ecrire_champ", "nouveau_de", "construire"):
+        if n[0] in ("lire", "ecrire", "asm", "appel", "appelv", "champ_ref", "ecrire_champ", "nouveau_de", "construire"):
             eff.parcourir(n, r, w)
             return
         for x in n[1:]:

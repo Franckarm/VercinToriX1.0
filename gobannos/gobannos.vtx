@@ -80,7 +80,8 @@ constante R_BRIN_L = 16;
 constante R_BRIN_P = 17;
 constante R_DEBUT = 18;
 constante R_ERRS = 19;
-constante NR = 20;
+constante R_HORS = 20;
+constante NR = 21;
 
 // les registres de x86-64
 constante RAX = 0;
@@ -565,6 +566,10 @@ fonction parcourir() {
             marquer(cible);
         } sinon si op == 0x31 || op == 0x32 || op == 0x35 || op == 0x36 || op == 0x33 {
             marquer(cible);
+            marquer(p + 1);
+        } sinon si op == 0x34 && p > 0 && (demi(p - 1) >> 48) == 0x27 {
+            // PUSH puis RET : le trampoline des appels par valeur (0.6w) ; derrière lui, la table de ses cibles (des CALL
+            // jamais joués) : elle est parcourue, pour que chaque fonction passée en valeur soit traduite
             marquer(p + 1);
         } sinon si op == 0x34 || op == 0x3F {
             // RET, HALT : rien après
@@ -1447,6 +1452,14 @@ fonction movzx_rm8_idx_brin() {
     movzx_rm8(RDI, RDI, 1048576);
 }
 
+// R_HORS : un saut vers une place qui n'est pas du code traduit
+fonction routine_hors() {
+    routine(R_HORS);
+    op_rr(0x31, RCX, RCX);
+    lea_rip(RSI, 4, message("un saut vers une place qui n'est pas du code traduit"));
+    jmp_rt(R_TRAP);
+}
+
 // R_RET : rax:rdx = la demi-instruction où revenir ; la table des retours dit où elle est traduite
 fonction routine_ret() {
     routine(R_RET);
@@ -2127,6 +2140,7 @@ fonction forger(sortie_: texte, win) {
     }
     routines_memoire();
     routine_ret();
+    routine_hors();
     routines_texte();
     si win {
         socle_windows();
@@ -2150,8 +2164,8 @@ fonction forger(sortie_: texte, win) {
         soit v = fv[k2];
         si sorte == 1 {
             si v >= nh || @2[G + G_LAB][v] == 18446744073709551615 {
-                afficher("Gobannos : un saut vers une demi-instruction non traduite :", v);
-                @2[G + G_ERR] = 1;
+                // un saut hors du code (dans des données lues comme des instructions, jamais jouées) : vers le piège
+                cible = code0 + @2[G + G_ETQ][R_HORS];
             } sinon {
                 cible = code0 + @2[G + G_LAB][v];
             }
