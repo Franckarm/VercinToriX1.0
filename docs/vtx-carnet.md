@@ -542,6 +542,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
     même sortie et le même compte d'instructions que Lugus ; ce qu'il ne sait pas encore traduire, il le dit.
 26. **Les fonctions passées en valeur** sans appel indirect dans la machine : un trampoline (PUSH, RET), une table
     jamais jouée pour que chaque fonction garde sa molécule, et le juge qui compte l'appel par valeur pour le monde.
+27. **Les flottants quaternaires écrits en vtx** avec des entiers seulement, au bit près de la machine, traduits par
+    Gobannos avec le programme : vtx porte sa propre arithmétique.
 
 ### 9.2 Améliorées (techniques connues, adaptées au cube)
 
@@ -598,14 +600,17 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    doute, l'interprétation), et le rend natif pour une IA.
 2. **Gobannos, le forgeron écrit en vtx** (commencé le 16 novembre, 0.6v : `gobannos/gobannos.vtx` écrit lui-même
    l'exécutable, ELF ou PE, des programmes de Lugus en entiers ; douze exemples donnent la sortie de Lugus au caractère
-   près) : puis les flottants, les fichiers et les services, les registres gardés dans le processeur, Gobannos qui se
+   près) ; les flottants (fait, 0.6y : par une bibliothèque écrite en vtx, au bit près, le même compte
+   d'instructions ; plus lents que Lugus seul pour l'instant) : puis les fichiers et les services, les registres gardés
+   dans le processeur, Gobannos qui se
    traduit lui-même ; puis **les cylindres** dedans (un fil par cylindre, son cube ; pour `supposons`, le cube jeté).
    But : 100 % vtx, sans Rust ni Python.
 3. **Finir le langage** : les fonctions passées en valeur (fait, 0.6w : `soit f = carre; f(7)`, `plier(t, plus, 0)`,
    sans instruction nouvelle) ; un type de fonction vérifié (fait, 0.6x : `fonction(entier): entier`, le nombre
-   d'arguments et les types vérifiés, les mêmes refus par les deux compilateurs) ; puis la promesse dans le type
-   (`fonction(entier): entier touche rien`), les modules désignés par leur empreinte (un module est un ADN signé,
-   chaque usage une transcription).
+   d'arguments et les types vérifiés, les mêmes refus par les deux compilateurs) ; la promesse dans le type (fait,
+   0.6y : `fonction(entier): entier touche rien`, crue par le juge) ; puis le vocabulaire des nombres (un mot, tous
+   les types : signe, est_positif, partie_decimale, arrondi à n décimales…), les modules désignés par leur empreinte
+   (un module est un ADN signé, chaque usage une transcription).
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
 5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine

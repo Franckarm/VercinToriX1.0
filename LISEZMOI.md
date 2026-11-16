@@ -88,6 +88,7 @@ lugus carte exemples128/chute.vtx                   # la carte : ce qu'est chaqu
 lugus exemples128/supposons.vtx                    # supposons x parmi [ … ] { ecarter; noter n; } retenir r; : essayer, garder le meilleur
 lugus exemples128/valeurs.vtx                     # les fonctions passées en valeur : pour_chacun(t, carre), plier(t, plus, 0)
 lugus exemples128/types_fonction.vtx              # le type d'une fonction : fonction(entier): entier, vérifié
+lugus exemples128/promesse_type.vtx              # la promesse dans le type : fonction(entier): entier touche rien
 lugus gobannos/gobannos.vtx                       # Gobannos (en vtx) : PROG.mots, PROG.exe, windows -> l'exécutable, sans Rust
 lugus arnc exemples128/chute.vtx                    # le programme né en ARN (l'ARNc), sans fichier d'ADN
 lugus retrotranscrire exemples128/chute.arn         # l'ARN fixé en ADN : chute-c.adn (entier, depuis un ARNc)

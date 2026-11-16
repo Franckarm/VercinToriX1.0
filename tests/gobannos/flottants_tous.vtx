@@ -1,0 +1,24 @@
+// 0.6y : chaque instruction flottante de Lugus, aux trois largeurs, traduite par Gobannos (la bibliothèque des flottants)
+fonction principal() {
+    soit a = 1.5;
+    soit b = 0.0 - 2.25;
+    afficher(a + b, a - b, a * b, a / b, racine(a), 0.0 - a);
+    afficher(a < b, a > b, a <= b, a == 1.5, a != b);
+    soit c: flottant_64 = 3.0D;
+    soit d: flottant_64 = 7.0D;
+    afficher(c / d, c * d, racine(d), c - d, c < d);
+    soit e: flottant_32 = 1.25S;
+    soit f: flottant_32 = 0.1S;
+    afficher(e + f, e * f, e / f, racine(e));
+    soit n = 17;
+    soit g = flottant(n) / 3.0;
+    afficher(g, entier(g), arrondi(g), entier(0.0 - 7.9), arrondi(2.5), arrondi(3.5));
+    afficher(flottant_64(g), flottant(c), flottant_32(a));
+    afficher(1.0 / 0.0, 0.0 / 0.0, racine(0.0 - 1.0));
+    afficher(sinus(1.0), exponentielle(1.0), logarithme(10.0), pi());
+    soit s = 0.0;
+    pour i dans 1..200 {
+        s = s + 1.0 / flottant(i * i);
+    }
+    afficher(s, instructions());
+}

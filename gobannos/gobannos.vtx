@@ -1,12 +1,15 @@
 // machine : lugus
 // Gobannos, le forgeron : les mots de Lugus traduits en code x86-64, et l'exécutable écrit par vtx lui-même (ELF pour
-// Linux, PE pour Windows), sans Rust ni Python. Premier temps (0.6v) : les entiers, la mémoire du cube en pages, la pile,
+// Linux, PE pour Windows), sans Rust ni Python. Les flottants (0.6y) passent par une bibliothèque écrite en vtx avec des
+// entiers seulement (gobannos/flottants.vtx), traduite avec le programme. Premier temps (0.6v) : les entiers, la mémoire du cube en pages, la pile,
 // les sauts et les appels, le texte de la console, sortie(), les brins, le service 26 (effacer). Ce qui n'est pas encore
 // traduit (les flottants quaternaires, les fichiers, les autres services…) arrête l'exécutable en le disant, au moment
 // où il y arrive : rien n'est jamais fait de travers en silence.
 //
 // Entrées (une par ligne) : le fichier des mots (« lugus compiler PROG.vtx PROG.mots »), l'exécutable à écrire, le
-// système (linux ou windows). Sortie : 0 si l'exécutable est écrit.
+// système (linux ou windows), et (0.6y, facultatif) les mots de la bibliothèque des flottants (« lugus compiler
+// gobannos/flottants.vtx flottants.mots ») : sans elle, une instruction flottante arrête l'exécutable en le disant.
+// Sortie : 0 si l'exécutable est écrit.
 //
 // Le code produit : rbx porte l'adresse de l'état (les registres de Lugus, 16 octets chacun, les drapeaux z et c, les
 // tampons, la table des pages) ; chaque demi-instruction devient un morceau de x86-64 qui lit et écrit les registres là.
@@ -35,6 +38,11 @@ constante G_ERR = 16;
 constante G_PILE = 17;         // les demi-instructions à parcourir
 constante G_NBAD = 18;         // les demi-instructions non traduites (comptées)
 constante G_IMPF = 19;         // la place de chaque fonction importée (Windows : son entrée de l'IAT)
+constante G_W0 = 20;           // 0.6y : le nombre de mots du programme (ceux de la bibliothèque des flottants suivent)
+constante G_FLOT = 21;         //   la demi-instruction où entre la bibliothèque (__qf) ; 0 : pas de bibliothèque
+constante G_PSEUDO = 22;       //   la première place de retour des appels à la bibliothèque (une par instruction)
+constante G_NPS = 23;          //   combien sont déjà posées
+constante G_CONT = 24;         //   la place du code où reprend chacune
 
 // l'état, au départ de rbx
 constante E_R = 0;
@@ -56,7 +64,9 @@ constante E_IBUF = 5120;
 constante E_DBUF = 9216;
 constante E_TABLE = 16384;
 constante E_OUTS = 2113536;
-constante E_TOTAL = 3162112;
+constante E_SAUVE = 3162112;  // 0.6y : les registres, z, c et le compte gardés pendant un appel à la bibliothèque
+constante E_FRES = 3162432;   //   son résultat
+constante E_TOTAL = 3166208;
 constante PAGE_OCT = 1114112;  // 65 536 mots de 16 octets, puis 65 536 brins
 
 // les routines
@@ -81,7 +91,10 @@ constante R_BRIN_P = 17;
 constante R_DEBUT = 18;
 constante R_ERRS = 19;
 constante R_HORS = 20;
-constante NR = 21;
+constante R_SAUVER = 21;       // 0.6y : les flottants par la bibliothèque
+constante R_RENDRE = 22;
+constante R_EMPILER = 23;
+constante NR = 24;
 
 // les registres de x86-64
 constante RAX = 0;
@@ -1205,9 +1218,148 @@ fonction traduire_un(p) {
     }
     // --- le reste : pas encore
     @2[G + G_NBAD] = @2[G + G_NBAD] + 1;
+    si @2[G + G_FLOT] != 0 && est_flottante(op) {
+        appel_flottant(p, op, d, s, t, wl, imm);
+        retour suivant;
+    }
     piege("cette instruction de Lugus n'est pas encore traduite par Gobannos (son code : #" + hexa2(op) + ", largeur "
           + texte(wl) + ")", p);
     retour suivant;
+}
+
+// ------------------------------------------------------------------------------------------- les flottants (0.6y)
+// Une instruction flottante devient un appel à la bibliothèque écrite en vtx (gobannos/flottants.vtx, traduite avec le
+// programme) : les registres, z, c et le compte gardés ; op, la largeur, imm & 3, S et T empilés comme pour un appel
+// ordinaire de Lugus, la place de retour (une par instruction) aussi ; au retour, tout est rendu, D reçoit le résultat
+// (R1 de la bibliothèque), z suit sa valeur, c est effacé ; le compte n'a pris qu'une instruction, comme dans Lugus.
+fonction est_flottante(op) {
+    retour (op >= 0x40 && op <= 0x4B) || op == 0x5B || op == 0x5C || op == 0x5D || op == 0x6E;
+}
+
+fonction empiler_valeur(v, p) {
+    mov_ri(R10, v);
+    op_rr(0x31, R11, R11);
+    mov_ri(RCX, p);
+    call_r(R_EMPILER);
+}
+
+// le registre k, tel qu'il était avant l'appel (gardé dans E_SAUVE)
+fonction empiler_garde(k, p) {
+    si k == 0 {
+        empiler_valeur(0, p);
+        retour;
+    }
+    mov_rm(R10, RBX, E_SAUVE + 16 * k);
+    mov_rm(R11, RBX, E_SAUVE + 16 * k + 8);
+    mov_ri(RCX, p);
+    call_r(R_EMPILER);
+}
+
+fonction appel_flottant(p, op, d, s, t, wl, imm) {
+    call_r(R_SAUVER);
+    empiler_valeur(op, p);
+    empiler_valeur(wl, p);
+    empiler_valeur(imm & 3, p);
+    empiler_garde(s, p);
+    empiler_garde(t, p);
+    soit k = @2[G + G_NPS];
+    @2[G + G_NPS] = k + 1;
+    empiler_valeur(@2[G + G_PSEUDO] + k, p);
+    jmp_pc(@2[G + G_FLOT]);
+    ajouter(@2[G + G_CONT], ici());
+    mov_rm(RAX, RBX, lo(1));
+    mov_rm(RDX, RBX, hi(1));
+    mov_mr(RBX, E_FRES, RAX);
+    mov_mr(RBX, E_FRES + 8, RDX);
+    call_r(R_RENDRE);
+    mov_rm(RAX, RBX, E_FRES);
+    mov_rm(RDX, RBX, E_FRES + 8);
+    ranger(d, RAX, RDX);
+    poser_z(RAX, RDX);
+}
+
+fonction routines_flottants() {
+    // R_SAUVER, R_RENDRE : les registres de Lugus, z et c (34 mots de 8 octets), puis le compte
+    routine(R_SAUVER);
+    pour i dans 0..34 {
+        mov_rm(RAX, RBX, 8 * i);
+        mov_mr(RBX, E_SAUVE + 8 * i, RAX);
+    }
+    mov_rm(RAX, RBX, E_PAS);
+    mov_mr(RBX, E_SAUVE + 8 * 34, RAX);
+    ret_();
+    routine(R_RENDRE);
+    pour i2 dans 0..34 {
+        mov_rm(RAX, RBX, E_SAUVE + 8 * i2);
+        mov_mr(RBX, 8 * i2, RAX);
+    }
+    mov_rm(RAX, RBX, E_SAUVE + 8 * 34);
+    mov_mr(RBX, E_PAS, RAX);
+    ret_();
+    // R_EMPILER : r10:r11 sur la pile de Lugus (R14 - 1), rcx la demi-instruction (pour une erreur)
+    routine(R_EMPILER);
+    charger(14, RAX, RDX);
+    op_ri(5, RAX, 1);
+    op_ri(3, RDX, 0);
+    masquer_120(RDX);
+    mov_mr(RBX, lo(14), RAX);
+    mov_mr(RBX, hi(14), RDX);
+    call_r(R_ECRIRE);
+    ret_();
+}
+
+// la place du premier CALL à partir de q (n2 : rien trouvé)
+fonction premier_appel(q, n2) {
+    tantque q < n2 && (demi(q) >> 48) != 0x33 {
+        si (demi(q) >> 48) == 0x0A || (demi(q) >> 48) == 0x2B {
+            q = q + 2;
+        } sinon {
+            q = q + 1;
+        }
+    }
+    si q >= n2 {
+        retour n2;
+    }
+    retour q;
+}
+
+// la bibliothèque des flottants : ses mots à la suite de ceux du programme, ses sauts et ses appels relogés
+fonction lire_bibliotheque(chemin: texte) {
+    soit w0 = @2[G + G_W0];
+    si lire_mots(chemin) == 0 {
+        retour 0;
+    }
+    soit n2 = 2 * longueur(@2[G + G_WH]);
+    soit p = 2 * w0;
+    tantque p < n2 {
+        soit h = demi(p);
+        soit op = h >> 48;
+        si op == 0x30 || op == 0x31 || op == 0x32 || op == 0x33 || op == 0x35 || op == 0x36 {
+            soit v = (h & 0xFFFFFFFF00000000) | (((h & 0xFFFFFFFF) + 2 * w0) & 0xFFFFFFFF);
+            si (p & 1) == 0 {
+                poser_t(G_WH, p >> 1, v);
+            } sinon {
+                poser_t(G_WL, p >> 1, v);
+            }
+        }
+        si op == 0x0A || op == 0x2B {
+            p = p + 2;
+        } sinon {
+            p = p + 1;
+        }
+    }
+    // l'entrée : l'en-tête appelle principal, et le premier appel de principal est celui de __qf
+    soit q0 = premier_appel(2 * w0, n2);
+    soit q = n2;
+    si q0 < n2 {
+        q = premier_appel(demi(q0) & 0xFFFFFFFF, n2);
+    }
+    si q >= n2 {
+        afficher("Gobannos : la bibliothèque des flottants n'a pas d'entrée :", chemin);
+        retour 0;
+    }
+    @2[G + G_FLOT] = demi(q) & 0xFFFFFFFF;
+    retour 1;
 }
 
 fonction hexa2(x): texte {
@@ -1974,7 +2126,7 @@ fonction depart() {
     // les mots : rsi parcourt les mots de la section, r8 compte
     op_rr(0x31, R8, R8);
     soit boucle = ici();
-    mov_ri(RDI, longueur(@2[G + G_WH]));
+    mov_ri(RDI, @2[G + G_W0]);
     op_rr(0x39, R8, RDI);
     soit fini = jcc8(CC_AE);
     push_r(R8);
@@ -1995,7 +2147,7 @@ fonction depart() {
     // le code est ADN : MARQUE sur tous les mots
     op_rr(0x31, RAX, RAX);
     op_rr(0x31, RDX, RDX);
-    mov_ri(R10, longueur(@2[G + G_WH]));
+    mov_ri(R10, @2[G + G_W0]);
     mov_ri(R11, 1);
     call_r(R_BRIN_P);
     jmp_pc(0);
@@ -2103,7 +2255,7 @@ fonction forger(sortie_: texte, win) {
     }
     // les mots
     @2[G + G_D_MOTS] = longueur(sec);
-    pour i dans 0..longueur(@2[G + G_WH]) {
+    pour i dans 0..@2[G + G_W0] {
         ajouter64(sec, @2[G + G_WL][i]);
         ajouter64(sec, @2[G + G_WH][i]);
     }
@@ -2139,6 +2291,7 @@ fonction forger(sortie_: texte, win) {
         }
     }
     routines_memoire();
+    routines_flottants();
     routine_ret();
     routine_hors();
     routines_texte();
@@ -2187,6 +2340,9 @@ fonction forger(sortie_: texte, win) {
         si @2[G + G_VU][p2] == 1 {
             poser32(sec, @2[G + G_D_TAB] + 4 * p2, code0 + @2[G + G_LAB][p2]);
         }
+    }
+    pour k5 dans 0..@2[G + G_NPS] {
+        poser32(sec, @2[G + G_D_TAB] + 4 * (@2[G + G_PSEUDO] + k5), code0 + @2[G + G_CONT][k5]);
     }
     pour k3 dans 0..longueur(c) {
         ajouter(sec, c[k3]);
@@ -2364,11 +2520,37 @@ fonction principal() {
     soit entree_ = nettoyer(lire_ligne());
     soit sortie_ = nettoyer(lire_ligne());
     soit systeme = nettoyer(lire_ligne());
+    soit biblio = nettoyer(lire_ligne());
+    soit cont = tableau(0);
+    @2[G + G_CONT] = cont;
+    proteger(cont);
     si lire_mots(entree_) == 0 {
         sortie(1);
         retour;
     }
+    @2[G + G_W0] = longueur(@2[G + G_WH]);
+    // 0.6y : le programme joue-t-il des flottants ? (un premier parcours, sur ses mots seuls)
+    @2[G + G_NH] = 2 * @2[G + G_W0];
+    soit vu0 = tableau(@2[G + G_NH]);
+    @2[G + G_VU] = vu0;
+    parcourir();
+    soit nflot = 0;
+    pour p0 dans 0..@2[G + G_NH] {
+        si vu0[p0] == 1 && est_flottante(demi(p0) >> 48) {
+            nflot = nflot + 1;
+        }
+    }
+    si nflot > 0 && longueur(biblio) > 0 {
+        si lire_bibliotheque(biblio) == 0 {
+            sortie(1);
+            retour;
+        }
+    }
     soit nh = 2 * longueur(@2[G + G_WH]);
+    @2[G + G_PSEUDO] = nh;
+    si @2[G + G_FLOT] != 0 {
+        nh = nh + nflot;
+    }
     @2[G + G_NH] = nh;
     soit vu = tableau(nh);
     @2[G + G_VU] = vu;
@@ -2380,6 +2562,10 @@ fonction principal() {
         lab[p] = 18446744073709551615;
     }
     parcourir();
+    si @2[G + G_FLOT] != 0 {
+        marquer(@2[G + G_FLOT]);
+        parcourir();
+    }
     soit win = 0;
     si systeme == "windows" {
         win = 1;

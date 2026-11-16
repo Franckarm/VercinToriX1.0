@@ -2791,3 +2791,52 @@ la promesse du type et vérifier chaque fonction qu'on y range ; puis les module
 fonction rendue, un texte et une structure, les mêmes mots par les deux compilateurs et la sortie attendue ; quatre refus,
 le même message des deux côtés ; un appel sans type, inchangé. vtxc128 renouvelé (point fixe 185 590 mots).
 
+## 60. La promesse dans le type, et les flottants dans Gobannos (16 novembre, 0.6y)
+
+**La promesse dans le type.** `fonction(entier): entier touche rien` : le type d'une fonction passée en valeur dit aussi
+ce qu'elle touche au plus. La 0.6x laissait une fonction `touche rien` incapable d'appeler une valeur (le juge comptait
+l'appel pour le monde) ; c'est réglé, sans croire personne sur parole :
+- **le compilateur garde l'entrée** : seule une fonction qui tient au moins la promesse du type y entre (sa propre
+  promesse, jugée à part), ou une valeur d'un type qui promet autant ; un entier n'y entre pas. Les mêmes refus, mot pour
+  mot, par les deux compilateurs (quatre messages, dans `tests/test_types_fonction.py`) ;
+- **les mots portent la promesse** : chaque niveau a son trampoline, `__appeler_rien` (ou `_lecture`, `_memoire`), qui
+  commence par `LDIS R15,#k`, puis `PUSH R1 ; RET` comme `__appeler`. Le juge (le lecteur d'ADN en vtx, et la référence
+  Python) lit ce `k` juste avant le PUSH et compte l'appel pour ce niveau au lieu du monde. Rien n'est ajouté à la
+  machine ; la carte nomme le trampoline (« par __appeler_lecture ») ;
+- **le juge reste exact** : une fonction `touche rien` qui appelle une valeur promise `touche lecture` est refusée, « elle
+  lit la mémoire : par __appeler_lecture ».
+
+*Trouvé en route.* La découpe en molécules suit les cibles des CALL. Quand rien n'appelait `__appeler` lui-même (des appels
+promis seulement, ou des fonctions passées sans aucun appel par valeur), `__appeler` et sa table se fondaient dans la
+molécule voisine, qui passait pour toucher le monde. La table l'appelle alors lui-même (un mot de plus, seulement dans ce
+cas) : chacun a sa molécule. Les programmes de 0.6w et 0.6x qui appellent par valeur gardent leurs mots.
+
+**Les flottants dans Gobannos.** Ils étaient l'arrêt le plus fréquent (« cette instruction n'est pas encore traduite,
+#48 »). Plutôt que d'écrire à la main l'arithmétique quaternaire en x86-64, elle est écrite en vtx :
+- **`gobannos/flottants.vtx`**, environ 700 lignes, des entiers seulement : l'addition, la soustraction, le produit, le
+  quotient, la racine, les comparaisons, l'opposé, l'état, les conversions depuis et vers les entiers (tronquées,
+  arrondies, saturées) et d'un format à l'autre, aux trois largeurs (128, 64, 32 bits). Chaque opération donne le
+  résultat exact arrondi une seule fois, par le même arrondi que la machine (`qflot128.rs`) : les mêmes bits. Le produit
+  de deux mantisses de 112 bits se fait en morceaux de 56 bits ; le quotient, une division longue par morceaux de 14 bits
+  dont chaque chiffre est estimé par la division de 64 bits ; la racine, chiffre par chiffre ;
+- **Gobannos la traduit avec le programme** (4e ligne d'entrée : ses mots) : ses mots suivent ceux du programme, ses sauts
+  relogés ; chaque instruction flottante devient un appel : les registres, z, c et le compte gardés, l'opération et ses
+  deux valeurs empilées comme pour un appel ordinaire de Lugus, une place de retour à elle ; au retour tout est rendu, D
+  reçoit le résultat. Le programme traduit garde **le même compte d'instructions que Lugus**. Sans la bibliothèque,
+  l'instruction flottante arrête l'exécutable en le disant, comme avant.
+
+**Vérifié** (`tests/test_gobannos_flottants.py`) : la bibliothèque, jouée par Lugus, contre la machine sur 6 000 calculs
+tirés au hasard (cas limites, milieux d'arrondi, sous-normaux, infinis, inconnu et variable, les trois largeurs) : 0 écart
+(et 60 000 de plus pendant la mise au point) ; un programme qui joue chaque instruction flottante aux trois largeurs et les
+mathématiques du prélude (sinus, exponentielle, logarithme), et quatre exemples (types_fonction, freinage,
+scene_incrementale, chute) : la sortie de Lugus, le même compte d'instructions. Les deux compilateurs donnent les mêmes
+mots pour la bibliothèque (2 771) et pour Gobannos.
+
+**La vitesse, dite sans fard.** Une instruction flottante de Lugus devient de 750 (comparaison) à 3 000 (quotient) et
+6 300 (racine) instructions de la bibliothèque. Un calcul plein de flottants va donc **plus lentement traduit que joué par
+Lugus** : 600 000 opérations, 3,1 s contre 0,8 s (le quotient seul, 9,8 µs par opération). Les programmes surtout entiers
+gagnent toujours à la traduction. `mandel_reaction` (63 millions d'opérations flottantes) prend plusieurs minutes. Ce qui
+le rattrapera : garder les registres de Lugus dans ceux du processeur (l'étape 2 de Gobannos, qui accélère aussi la
+bibliothèque), puis une racine par Newton. Les flottants de l'IEEE (`vers_ieee128`, `de_ieee128`) et les voies de
+flottants restent au piège.
+

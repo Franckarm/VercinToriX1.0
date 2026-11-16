@@ -1,0 +1,782 @@
+// machine : lugus
+// Les flottants quaternaires de Lugus, écrits en vtx avec des entiers seulement (0.6y) : la bibliothèque que Gobannos
+// traduit avec le programme et où il envoie chaque instruction flottante. Les mêmes résultats que la machine
+// (vtx-rs/src/qflot128.rs), au bit près : chaque opération donne le résultat exact arrondi une seule fois au plus
+// proche (pair au milieu), par le même arrondi.
+//
+// Les formats (la largeur de l'instruction) : 0 Q128 (mantisse de 112 bits, exposant de 14, biais 8247), 1 Q64 (52,
+// 10, 537), 2 Q32 (22, 8, 138). Un mot : le quit d'état en haut (0 inconnu, 1 négatif, 2 positif, 3 variable), puis
+// l'exposant E, puis la mantisse ; la valeur : mantisse × 4^(max(E, 1) − biais) ; E au plus haut : l'infini.
+//
+// Les règles d'écriture (ce que Gobannos traduit, et l'entier_128 de Lugus) : les valeurs gardées sous 2^127 (les
+// comparaisons de l'entier_128 sont signées), un décalage toujours de moins de 128 places, ni / ni % sur 128 bits
+// (Gobannos ne les traduit pas), aucune mémoire hors de la pile (la bibliothèque vit à côté du programme).
+
+fonction f_p(w) {
+    si w == 1 { retour 52; }
+    si w == 2 { retour 22; }
+    retour 112;
+}
+
+fonction f_taille(w) {
+    si w == 1 { retour 64; }
+    si w == 2 { retour 32; }
+    retour 128;
+}
+
+fonction f_biais(w): entier_128 {
+    si w == 1 { retour 537LL; }
+    si w == 2 { retour 138LL; }
+    retour 8247LL;
+}
+
+fonction f_emax(w): entier_128 {
+    si w == 1 { retour 1023LL; }
+    si w == 2 { retour 255LL; }
+    retour 16383LL;
+}
+
+fonction masque(w): entier_128 {
+    si w == 1 { retour (1LL << 64) - 1LL; }
+    si w == 2 { retour (1LL << 32) - 1LL; }
+    retour 0LL - 1LL;
+}
+
+fonction q_etat(w, a: entier_128): entier_128 {
+    retour (a >> (f_taille(w) - 2)) & 3LL;
+}
+
+fonction ef(w, a: entier_128): entier_128 {
+    retour (a >> f_p(w)) & f_emax(w);
+}
+
+fonction mant(w, a: entier_128): entier_128 {
+    retour a & ((1LL << f_p(w)) - 1LL);
+}
+
+fonction q_var(w): entier_128 {
+    retour 3LL << (f_taille(w) - 2);
+}
+
+fonction signe_de(w, s): entier_128 {
+    si s != 0 {
+        retour 1LL << (f_taille(w) - 2);
+    }
+    retour 2LL << (f_taille(w) - 2);
+}
+
+fonction infini(w, s): entier_128 {
+    retour signe_de(w, s) | (f_emax(w) << f_p(w));
+}
+
+fonction est_nombre(w, a: entier_128) {
+    soit e = q_etat(w, a);
+    retour e == 1LL || e == 2LL;
+}
+
+fonction est_inf(w, a: entier_128) {
+    retour est_nombre(w, a) && ef(w, a) == f_emax(w);
+}
+
+fonction est_zero(w, a: entier_128) {
+    retour est_nombre(w, a) && ef(w, a) != f_emax(w) && mant(w, a) == 0LL;
+}
+
+fonction negatif(w, a: entier_128) {
+    retour q_etat(w, a) == 1LL;
+}
+
+// l'exposant binaire du bit 0 de la mantisse
+fonction expo(w, a: entier_128): entier_128 {
+    soit e = ef(w, a);
+    si e < 1LL {
+        e = 1LL;
+    }
+    retour 2LL * (e - f_biais(w));
+}
+
+// le nombre de bits de m (0 <= m < 2^127)
+fonction nbits(m: entier_128) {
+    si m == 0LL {
+        retour 0;
+    }
+    soit n = 1;
+    si m >= (1LL << 64) { m = m >> 64; n = n + 64; }
+    si m >= (1LL << 32) { m = m >> 32; n = n + 32; }
+    si m >= (1LL << 16) { m = m >> 16; n = n + 16; }
+    si m >= (1LL << 8) { m = m >> 8; n = n + 8; }
+    si m >= (1LL << 4) { m = m >> 4; n = n + 4; }
+    si m >= (1LL << 2) { m = m >> 2; n = n + 2; }
+    si m >= 2LL { n = n + 1; }
+    retour n;
+}
+
+// m × 2^ex arrondi au plus proche, pair au milieu (m > 0, m < 2^127) : exposant << p | mantisse, sans l'état ;
+// collant : des bits non nuls sous m (ils départagent un milieu). Le même calcul que arrondir_u de qflot128.rs.
+fonction arrondir(w, m: entier_128, ex: entier_128, collant): entier_128 {
+    si m == 0LL {
+        retour 0LL;
+    }
+    soit p = 112;
+    soit biais: entier_128 = 8247LL;
+    soit emax: entier_128 = 16383LL;
+    si w == 1 {
+        p = 52;
+        biais = 537LL;
+        emax = 1023LL;
+    } sinon si w == 2 {
+        p = 22;
+        biais = 138LL;
+        emax = 255LL;
+    }
+    soit k: entier_128 = entier_128(nbits(m)) - entier_128(p);
+    si ((ex + k) & 1LL) != 0LL {
+        k = k + 1LL;
+    }
+    soit qmin: entier_128 = 2LL - 2LL * biais;
+    si ex + k < qmin {
+        k = qmin - ex;
+    }
+    soit q: entier_128 = 0LL;
+    si k > 0LL {
+        si k > 127LL {
+            q = 0LL;
+        } sinon si k == 127LL {
+            soit demi0: entier_128 = 1LL << 126;
+            si m > demi0 || (m == demi0 && collant != 0) {
+                q = 1LL;
+            }
+        } sinon {
+            soit kk = entier(k);
+            q = m >> kk;
+            soit bas_: entier_128 = m & ((1LL << kk) - 1LL);
+            soit demi: entier_128 = 1LL << (kk - 1);
+            si bas_ > demi || (bas_ == demi && (collant != 0 || (q & 1LL) == 1LL)) {
+                q = q + 1LL;
+            }
+        }
+        ex = ex + k;
+        si q == (1LL << p) {
+            q = 1LL << (p - 2);
+            ex = ex + 2LL;
+        }
+    } sinon {
+        q = m << entier(0LL - k);
+        ex = ex + k;
+    }
+    si q < (1LL << (p - 2)) {
+        retour q;
+    }
+    soit e: entier_128 = (ex >> 1) + biais;
+    si e >= emax {
+        retour emax << p;
+    }
+    retour (e << p) | q;
+}
+
+fonction depuis(w, s, m: entier_128, ex: entier_128, collant): entier_128 {
+    si m == 0LL {
+        retour signe_de(w, s);
+    }
+    retour signe_de(w, s) | arrondir(w, m, ex, collant);
+}
+
+fonction neg(w, a: entier_128): entier_128 {
+    si est_nombre(w, a) {
+        retour a ^ (3LL << (f_taille(w) - 2));
+    }
+    retour a;
+}
+
+// ------------------------------------------------------------------------------------------------ l'addition
+fonction ajouter_q(w, a: entier_128, b: entier_128): entier_128 {
+    soit p = 112;
+    soit t2 = 126;
+    soit emax: entier_128 = 16383LL;
+    soit biais: entier_128 = 8247LL;
+    si w == 1 {
+        p = 52;
+        t2 = 62;
+        emax = 1023LL;
+        biais = 537LL;
+    } sinon si w == 2 {
+        p = 22;
+        t2 = 30;
+        emax = 255LL;
+        biais = 138LL;
+    }
+    soit mm: entier_128 = (1LL << p) - 1LL;
+    soit ea: entier_128 = (a >> t2) & 3LL;
+    soit eb: entier_128 = (b >> t2) & 3LL;
+    soit fa: entier_128 = (a >> p) & emax;
+    soit fb: entier_128 = (b >> p) & emax;
+    soit ma: entier_128 = a & mm;
+    soit mb: entier_128 = b & mm;
+    si ea == 3LL || eb == 3LL {
+        retour 3LL << t2;
+    }
+    si ea == 0LL || eb == 0LL {
+        retour 0LL;
+    }
+    soit ia = fa == emax;
+    soit ib = fb == emax;
+    si ia && ib {
+        si ea == eb {
+            retour a;
+        }
+        retour 3LL << t2;
+    }
+    si ia {
+        retour a;
+    }
+    si ib {
+        retour b;
+    }
+    soit sa = ea == 1LL;
+    soit sb = eb == 1LL;
+    si fa < 1LL { fa = 1LL; }
+    si fb < 1LL { fb = 1LL; }
+    soit xa: entier_128 = 2LL * (fa - biais);
+    soit xb: entier_128 = 2LL * (fb - biais);
+    si ma == 0LL && mb == 0LL {
+        retour signe_de(w, sa && sb);
+    }
+    si ma == 0LL {
+        retour depuis(w, sb, mb, xb, 0);
+    }
+    si mb == 0LL {
+        retour depuis(w, sa, ma, xa, 0);
+    }
+    si xa < xb {
+        soit tm: entier_128 = ma;
+        ma = mb;
+        mb = tm;
+        soit tx: entier_128 = xa;
+        xa = xb;
+        xb = tx;
+        soit ts = sa;
+        sa = sb;
+        sb = ts;
+    }
+    soit d: entier_128 = xa - xb;
+    soit nba = nbits(ma);
+    si entier_128(nba) + d <= 126LL {
+        // tout tient dans 127 bits : la somme exacte
+        soit a_: entier_128 = ma << entier(d);
+        soit m: entier_128 = 0LL;
+        soit s = sa;
+        si sa == sb {
+            m = a_ + mb;
+        } sinon si a_ < mb {
+            m = mb - a_;
+            s = sb;
+        } sinon {
+            m = a_ - mb;
+        }
+        si m == 0LL {
+            retour 2LL << t2;
+        }
+        retour signe_de(w, s) | arrondir(w, m, xb, 0);
+    }
+    // b est loin sous a : a reçoit g bits de garde, b décalé, ses bits perdus résumés en un bit collé (le bit 0)
+    soit g = 126 - nba;
+    soit a2: entier_128 = ma << g;
+    soit sh: entier_128 = d - entier_128(g);
+    soit b2: entier_128 = 1LL;
+    si sh < 112LL {
+        soit shk = entier(sh);
+        b2 = mb >> shk;
+        si (mb & ((1LL << shk) - 1LL)) != 0LL {
+            b2 = b2 | 1LL;
+        }
+    }
+    soit m2: entier_128 = a2 - b2;
+    si sa == sb {
+        m2 = a2 + b2;
+    }
+    retour signe_de(w, sa) | arrondir(w, m2, xa - entier_128(g), 0);
+}
+
+// ------------------------------------------------------------------------------------------------ le produit
+fonction produit_q(w, a: entier_128, b: entier_128): entier_128 {
+    soit p = 112;
+    soit t2 = 126;
+    soit emax: entier_128 = 16383LL;
+    soit biais: entier_128 = 8247LL;
+    si w == 1 {
+        p = 52;
+        t2 = 62;
+        emax = 1023LL;
+        biais = 537LL;
+    } sinon si w == 2 {
+        p = 22;
+        t2 = 30;
+        emax = 255LL;
+        biais = 138LL;
+    }
+    soit mm: entier_128 = (1LL << p) - 1LL;
+    soit ea: entier_128 = (a >> t2) & 3LL;
+    soit eb: entier_128 = (b >> t2) & 3LL;
+    soit fa: entier_128 = (a >> p) & emax;
+    soit fb: entier_128 = (b >> p) & emax;
+    soit ma: entier_128 = a & mm;
+    soit mb: entier_128 = b & mm;
+    si ea == 3LL || eb == 3LL {
+        retour 3LL << t2;
+    }
+    si ea == 0LL || eb == 0LL {
+        retour 0LL;
+    }
+    soit s = ea != eb;
+    soit ia = fa == emax;
+    soit ib = fb == emax;
+    si ia || ib {
+        si (!ia && ma == 0LL) || (!ib && mb == 0LL) {
+            retour 3LL << t2;
+        }
+        retour signe_de(w, s) | (emax << p);
+    }
+    si ma == 0LL || mb == 0LL {
+        retour signe_de(w, s);
+    }
+    si fa < 1LL { fa = 1LL; }
+    si fb < 1LL { fb = 1LL; }
+    soit ex: entier_128 = 2LL * (fa - biais) + 2LL * (fb - biais);
+    si w == 1 || w == 2 {
+        // deux mantisses de 52 bits au plus : le produit tient
+        retour signe_de(w, s) | arrondir(w, ma * mb, ex, 0);
+    }
+    // 112 bits par 112 : en morceaux de 56 bits ; le produit vaut haut × 2^112 + bas
+    soit m56: entier_128 = (1LL << 56) - 1LL;
+    soit a1: entier_128 = ma >> 56;
+    soit a0: entier_128 = ma & m56;
+    soit b1: entier_128 = mb >> 56;
+    soit b0: entier_128 = mb & m56;
+    soit milieu: entier_128 = a0 * b1 + a1 * b0;
+    soit bas112: entier_128 = a0 * b0 + ((milieu & m56) << 56);
+    soit bas_: entier_128 = bas112 & mm;
+    soit haut_: entier_128 = a1 * b1 + (milieu >> 56) + (bas112 >> 112);
+    si haut_ == 0LL {
+        retour signe_de(w, s) | arrondir(w, bas_, ex, 0);
+    }
+    soit n = nbits(haut_) + 112;
+    si n <= 126 {
+        retour signe_de(w, s) | arrondir(w, (haut_ << 112) | bas_, ex, 0);
+    }
+    // ramené à 126 bits, les bits perdus collés au bit 0 : le même arrondi
+    soit sh = n - 126;
+    soit q: entier_128 = (haut_ << (112 - sh)) | (bas_ >> sh);
+    si (bas_ & ((1LL << sh) - 1LL)) != 0LL {
+        q = q | 1LL;
+    }
+    retour signe_de(w, s) | arrondir(w, q, ex + entier_128(sh), 0);
+}
+
+// ------------------------------------------------------------------------------------------------ le quotient
+fonction quotient_q(w, a: entier_128, b: entier_128): entier_128 {
+    soit ea = q_etat(w, a);
+    soit eb = q_etat(w, b);
+    si ea == 3LL || eb == 3LL {
+        retour q_var(w);
+    }
+    si ea == 0LL || eb == 0LL {
+        retour 0LL;
+    }
+    soit s = ea != eb;
+    si est_inf(w, a) {
+        si est_inf(w, b) {
+            retour q_var(w);
+        }
+        retour infini(w, s);
+    }
+    si est_inf(w, b) {
+        retour signe_de(w, s);
+    }
+    si est_zero(w, b) {
+        si est_zero(w, a) {
+            retour q_var(w);
+        }
+        retour infini(w, s);
+    }
+    si est_zero(w, a) {
+        retour signe_de(w, s);
+    }
+    soit ma: entier_128 = mant(w, a);
+    soit mb: entier_128 = mant(w, b);
+    // q = (ma × 2^t) / mb, d'environ 125 bits : la division longue par morceaux de 14 bits (r reste sous mb) ; chaque
+    // chiffre estimé par la division de 64 bits sur le haut de r et de mb, puis corrigé (une ou deux fois au plus)
+    soit t = 125 - nbits(ma) + nbits(mb);
+    soit na = nbits(ma);
+    soit nbm = nbits(mb);
+    soit sh = 0;
+    si nbm > 50 {
+        sh = nbm - 50;
+    }
+    soit dd = entier(mb >> sh);
+    si sh > 0 {
+        dd = dd + 1;
+    }
+    soit q: entier_128 = 0LL;
+    soit r: entier_128 = 0LL;
+    soit total = na + t;
+    soit i = (total + 13) / 14 * 14;
+    soit m14: entier_128 = 16383LL;
+    tantque i > 0 {
+        i = i - 14;
+        // les bits i à i + 13 de ma × 2^t
+        soit c14: entier_128 = 0LL;
+        si i >= t {
+            c14 = (ma >> (i - t)) & m14;
+        } sinon si i + 14 > t {
+            c14 = (ma << (t - i)) & m14;
+        }
+        r = (r << 14) | c14;
+        soit chiffre = entier(r >> sh) / dd;
+        r = r - entier_128(chiffre) * mb;
+        tantque r >= mb {
+            r = r - mb;
+            chiffre = chiffre + 1;
+        }
+        q = (q << 14) | entier_128(chiffre);
+    }
+    soit c = 0;
+    si r != 0LL {
+        c = 1;
+    }
+    retour depuis(w, s, q, expo(w, a) - expo(w, b) - entier_128(t), c);
+}
+
+// ------------------------------------------------------------------------------------------------ la racine
+fonction racine_q(w, a: entier_128): entier_128 {
+    si !est_nombre(w, a) || est_zero(w, a) {
+        retour a;
+    }
+    si negatif(w, a) {
+        retour q_var(w);
+    }
+    si est_inf(w, a) {
+        retour a;
+    }
+    soit m: entier_128 = mant(w, a);
+    soit ex: entier_128 = expo(w, a);
+    si (ex & 1LL) != 0LL {
+        m = m << 1;
+        ex = ex - 1LL;
+    }
+    // n = m × 2^(2j), de 243 ou 244 bits ; sa racine, chiffre binaire par chiffre (deux bits de n à la fois)
+    soit j = (244 - nbits(m)) >> 1;
+    soit total = nbits(m) + 2 * j;
+    si (total & 1) != 0 {
+        total = total + 1;
+    }
+    soit r: entier_128 = 0LL;
+    soit reste: entier_128 = 0LL;
+    soit i = total;
+    tantque i > 0 {
+        i = i - 2;
+        // les deux bits i + 1 et i de n
+        soit deux: entier_128 = 0LL;
+        si i >= 2 * j {
+            deux = (m >> (i - 2 * j)) & 3LL;
+        }
+        reste = (reste << 2) | deux;
+        soit essai: entier_128 = (r << 2) | 1LL;
+        si reste >= essai {
+            reste = reste - essai;
+            r = (r << 1) | 1LL;
+        } sinon {
+            r = r << 1;
+        }
+    }
+    soit c = 0;
+    si reste != 0LL {
+        c = 1;
+    }
+    retour depuis(w, 0, r, (ex - entier_128(2 * j)) >> 1, c);
+}
+
+// ------------------------------------------------------------------------------------------------ la comparaison
+// 0 égaux, 1 a < b, 2 a > b, 3 sans ordre
+fonction rang(w, x: entier_128) {
+    si est_inf(w, x) {
+        retour 3;
+    }
+    si est_zero(w, x) {
+        retour 0;
+    }
+    retour 1;
+}
+
+fonction comparer_q(w, a: entier_128, b: entier_128) {
+    soit p = 112;
+    soit t2 = 126;
+    soit emax: entier_128 = 16383LL;
+    soit biais: entier_128 = 8247LL;
+    si w == 1 {
+        p = 52;
+        t2 = 62;
+        emax = 1023LL;
+        biais = 537LL;
+    } sinon si w == 2 {
+        p = 22;
+        t2 = 30;
+        emax = 255LL;
+        biais = 138LL;
+    }
+    soit mm: entier_128 = (1LL << p) - 1LL;
+    soit ea: entier_128 = (a >> t2) & 3LL;
+    soit eb: entier_128 = (b >> t2) & 3LL;
+    soit fa: entier_128 = (a >> p) & emax;
+    soit fb: entier_128 = (b >> p) & emax;
+    soit ma: entier_128 = a & mm;
+    soit mb: entier_128 = b & mm;
+    si ea == 3LL || eb == 3LL || ea == 0LL || eb == 0LL {
+        retour 3;
+    }
+    soit na = ea == 1LL;
+    soit nb = eb == 1LL;
+    // le rang : 0 zéro, 1 un nombre, 3 l'infini
+    soit ra = 1;
+    si fa == emax {
+        ra = 3;
+    } sinon si ma == 0LL {
+        ra = 0;
+    }
+    soit rb = 1;
+    si fb == emax {
+        rb = 3;
+    } sinon si mb == 0LL {
+        rb = 0;
+    }
+    si ra == 0 && rb == 0 {
+        retour 0;
+    }
+    // l'ordre des grandeurs : 0 égales, 1 plus petite, 2 plus grande
+    soit ordre = 0;
+    si ra != rb {
+        si ra < rb {
+            ordre = 1;
+        } sinon {
+            ordre = 2;
+        }
+    } sinon si ra == 1 {
+        si fa < 1LL { fa = 1LL; }
+        si fb < 1LL { fb = 1LL; }
+        soit xa: entier_128 = 2LL * (fa - biais);
+        soit xb: entier_128 = 2LL * (fb - biais);
+        soit ha: entier_128 = entier_128(nbits(ma)) + xa;
+        soit hb: entier_128 = entier_128(nbits(mb)) + xb;
+        si ha != hb {
+            si ha < hb {
+                ordre = 1;
+            } sinon {
+                ordre = 2;
+            }
+        } sinon {
+            soit x: entier_128 = xa;
+            si xb < x {
+                x = xb;
+            }
+            soit pa: entier_128 = ma << entier(xa - x);
+            soit pb: entier_128 = mb << entier(xb - x);
+            si pa < pb {
+                ordre = 1;
+            } sinon si pa > pb {
+                ordre = 2;
+            }
+        }
+    }
+    si na != nb {
+        si na {
+            retour 1;
+        }
+        retour 2;
+    }
+    si ordre == 0 {
+        retour 0;
+    }
+    si (ordre == 1 && !na) || (ordre == 2 && na) {
+        retour 1;
+    }
+    retour 2;
+}
+
+// ------------------------------------------------------------------------------------------------ les conversions
+// un entier de l bits (sans signe, ou signé) vers le format
+fonction de_entier_q(w, v: entier_128, l, signe): entier_128 {
+    si l != 128 {
+        v = v & ((1LL << l) - 1LL);
+    }
+    soit neg_ = 0;
+    si signe != 0 && ((v >> (l - 1)) & 1LL) == 1LL {
+        neg_ = 1;
+    }
+    soit mag: entier_128 = v;
+    si neg_ != 0 {
+        si l != 128 {
+            mag = v | ~((1LL << l) - 1LL);
+        }
+        mag = 0LL - mag;
+    }
+    soit ex: entier_128 = 0LL;
+    si mag < 0LL {
+        // le bit 127 : ramené à 126 bits, les deux bits perdus collés
+        soit perdu = (mag & 3LL) != 0LL;
+        mag = (mag >> 2) & ((1LL << 126) - 1LL);
+        si perdu {
+            mag = mag | 1LL;
+        }
+        ex = 2LL;
+    }
+    retour depuis(w, neg_, mag, ex, 0);
+}
+
+// vers un entier signé de l bits, tronqué ou arrondi au plus proche pair, saturé ; inconnu, variable : 0
+fonction vers_entier_q(w, a: entier_128, arr, l): entier_128 {
+    si !est_nombre(w, a) {
+        retour 0LL;
+    }
+    soit neg_ = negatif(w, a);
+    soit satur: entier_128 = (1LL << (l - 1)) - 1LL;
+    si neg_ {
+        satur = 1LL << (l - 1);
+    }
+    si est_inf(w, a) {
+        retour satur;
+    }
+    soit m: entier_128 = mant(w, a);
+    soit ex: entier_128 = expo(w, a);
+    si m == 0LL {
+        retour 0LL;
+    }
+    soit mag: entier_128 = 0LL;
+    si ex >= 0LL {
+        si entier_128(nbits(m)) + ex >= entier_128(l) {
+            retour satur;
+        }
+        mag = m << entier(ex);
+    } sinon {
+        soit k: entier_128 = 0LL - ex;
+        si k <= 120LL {
+            soit kk = entier(k);
+            mag = m >> kk;
+            si arr != 0 {
+                soit bas_: entier_128 = m & ((1LL << kk) - 1LL);
+                soit demi: entier_128 = 1LL << (kk - 1);
+                si bas_ > demi || (bas_ == demi && (mag & 1LL) == 1LL) {
+                    mag = mag + 1LL;
+                }
+            }
+        }
+        si nbits(mag) >= l {
+            retour satur;
+        }
+    }
+    si neg_ {
+        retour (0LL - mag) & masque_l(l);
+    }
+    retour mag;
+}
+
+fonction masque_l(l): entier_128 {
+    si l == 128 {
+        retour 0LL - 1LL;
+    }
+    retour (1LL << l) - 1LL;
+}
+
+// du format g vers le format f
+fonction vers_q(g, f, a: entier_128): entier_128 {
+    si !est_nombre(g, a) {
+        si q_etat(g, a) == 3LL {
+            retour q_var(f);
+        }
+        retour 0LL;
+    }
+    soit s = negatif(g, a);
+    si est_inf(g, a) {
+        retour infini(f, s);
+    }
+    retour depuis(f, s, mant(g, a), expo(g, a), 0);
+}
+
+// ------------------------------------------------------------------------------------------------ l'entrée
+// Une instruction flottante de Lugus : son code, sa largeur (w : le format), x (imm & 3 : la largeur d'un entier converti,
+// ou le format de départ d'une conversion), les valeurs des registres S et T. Le résultat va dans D.
+fonction __qf(op, w, x, sv: entier_128, tv: entier_128): entier_128 touche rien {
+    si w != 1 && w != 2 {
+        w = 0;
+    }
+    soit a: entier_128 = sv & masque(w);
+    soit b: entier_128 = tv & masque(w);
+    soit li = 128;
+    si x == 1 {
+        li = 64;
+    } sinon si x == 2 {
+        li = 32;
+    }
+    si op == 0x40 { retour ajouter_q(w, a, b); }
+    si op == 0x41 { retour ajouter_q(w, a, neg(w, b)); }
+    si op == 0x42 { retour produit_q(w, a, b); }
+    si op == 0x43 { retour quotient_q(w, a, b); }
+    si op == 0x47 { retour racine_q(w, a); }
+    si op == 0x44 || op == 0x45 || op == 0x46 || op == 0x5D {
+        soit c = comparer_q(w, a, b);
+        si op == 0x5D { retour entier_128(c); }
+        si op == 0x44 && c == 0 { retour 1LL; }
+        si op == 0x45 && c == 1 { retour 1LL; }
+        si op == 0x46 && c < 2 { retour 1LL; }
+        retour 0LL;
+    }
+    si op == 0x5B { retour neg(w, a); }
+    si op == 0x5C { retour q_etat(w, a); }
+    si op == 0x48 { retour de_entier_q(w, sv, li, 0); }
+    si op == 0x49 { retour de_entier_q(w, sv, li, 1); }
+    si op == 0x4A { retour vers_entier_q(w, a, 0, li); }
+    si op == 0x4B { retour vers_entier_q(w, a, 1, li); }
+    // 0x6E : du format x vers le format w
+    soit g = x;
+    si g != 1 && g != 2 {
+        g = 0;
+    }
+    retour vers_q(g, w, sv & masque(g));
+}
+
+fonction principal() {
+    // Gobannos entre par le premier appel d'ici : celui de __qf (il ne joue jamais principal). Sur Lugus, « essai »
+    // en entrée vérifie la bibliothèque contre la machine (tests/test_gobannos_flottants.py).
+    soit z: entier_128 = __qf(0x5C, 0, 0, 0LL, 0LL);
+    si lire_ligne() == "essai" {
+        essai();
+    } sinon {
+        afficher(entier(z));
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ l'essai sur Lugus
+// Chaque ligne d'entrée : op, w, x, sv, tv (en décimal, les deux derniers comme entiers de 128 bits sans signe) ; la
+// sortie : le résultat de la bibliothèque, puis celui de la machine elle-même (le test les compare).
+fonction lire128(t: texte): entier_128 {
+    soit v: entier_128 = 0LL;
+    pour i dans 0..longueur(t) {
+        v = v * 10LL + entier_128(car(t, i) - 48);
+    }
+    retour v;
+}
+
+fonction essai() {
+    soit l = lire_ligne();
+    tantque longueur(l) > 0 {
+        soit c = decouper(l, " ");
+        soit op = nombre(c[0]);
+        soit w = nombre(c[1]);
+        soit x = nombre(c[2]);
+        soit sv: entier_128 = lire128(c[3]);
+        soit tv: entier_128 = lire128(c[4]);
+        soit r: entier_128 = __qf(op, w, x, sv, tv);
+        ecrire_hexa(1, haut(r));
+        ecrire_hexa(1, bas(r));
+        ecrire_car(1, 10);
+        l = lire_ligne();
+    }
+}

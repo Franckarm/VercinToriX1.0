@@ -195,8 +195,23 @@ afficher(g(3), c("Par Toutatis"));          // 1.5 Par Toutatis !
 - Un entier se range dans une variable typée fonction (c'est une promesse de celui qui l'écrit), et une valeur de
   fonction va là où va un entier ; deux types de fonction différents ne se mélangent pas.
 - Sans type écrit, rien ne change : l'appel par valeur de 0.6w reste libre.
-- Pas encore : un type de fonction dans un type de fonction (`fonction(fonction(entier)): entier`) ; ce que la fonction
-  touche (le type ne porte pas de promesse : une fonction `touche rien` qui appelle par valeur reste refusée).
+- Pas encore : un type de fonction dans un type de fonction (`fonction(fonction(entier)): entier`).
+
+**La promesse dans le type** (Lugus, 0.6y) : `fonction(entier): entier touche rien` (ou `lecture`, `memoire`). Seule une
+fonction qui tient au moins cette promesse y entre (« « parler » ne convient pas à fonction(entier): entier touche rien :
+elle ne promet rien »), ou une valeur d'un type qui promet autant ; un entier n'y entre pas (il ne dit pas ce que touche
+la fonction qu'il désigne). En échange, le juge croit la promesse du type : une fonction `touche rien` peut appeler par
+valeur une fonction promise `touche rien`.
+
+```
+fonction appliquer(f: fonction(entier): entier touche rien, x) touche rien { retour f(x); }
+fonction voir(f: fonction(entier): entier touche lecture, x) touche lecture { retour f(x); }
+```
+
+Dans l'en-tête d'une fonction, `touche` après le type du résultat reste la promesse de la fonction elle-même
+(`fonction choisir(k): fonction(entier): entier touche rien` promet que choisir ne touche rien ; le type rendu ne promet
+rien). Dans les mots, chaque promesse a son trampoline (`__appeler_rien`, `__appeler_lecture`, `__appeler_memoire`), qui
+la porte (`LDIS R15,#k` avant `PUSH R1 ; RET`) : la carte et le juge la lisent là.
 
 **Supposons** (Lugus, 0.6s) : essayer des candidats l'un après l'autre et garder le meilleur.
 

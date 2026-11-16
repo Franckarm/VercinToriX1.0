@@ -129,6 +129,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_supposons.py")]))
     etapes.append(("Gobannos : les mots de Lugus traduits en exécutable par vtx lui-même (les mêmes sorties que Lugus)",
                    [sys.executable, os.path.join("tests", "test_gobannos.py")]))
+    etapes.append(("Gobannos : les flottants par la bibliothèque écrite en vtx (au bit près, les mêmes sorties que Lugus)",
+                   [sys.executable, os.path.join("tests", "test_gobannos_flottants.py")]))
     etapes.append(("les fonctions passées en valeur : les mêmes mots, la carte, le juge, Gobannos",
                    [sys.executable, os.path.join("tests", "test_valeurs.py")]))
     etapes.append(("le type d'une fonction passée en valeur : vérifié, les mêmes mots et les mêmes refus",
