@@ -392,6 +392,26 @@ fn main() {
             std::process::exit(1)
         });
         std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
+    } else if args.len() >= 3 && args[1] == "empreinte" {
+        // 0.61 : l'empreinte d'un module, à écrire après « importer "x.vtx" empreinte "…"; » (FNV-1a de 64 bits sur les
+        // caractères, les retours chariot sautés : le calcul de vtx128.py et vtxc128)
+        for f in &args[2..] {
+            match std::fs::read(f) {
+                Ok(o) => {
+                    let mut h: u64 = 0xCBF29CE484222325;
+                    for ch in String::from_utf8_lossy(&o).chars() {
+                        if ch != '\r' {
+                            h = (h ^ ch as u64).wrapping_mul(0x100000001B3);
+                        }
+                    }
+                    println!("{:016x}  {}", h, f);
+                }
+                Err(e) => {
+                    eprintln!("{} : {}", f, e);
+                    std::process::exit(1);
+                }
+            }
+        }
     } else if args.len() >= 3 && args[1] == "carte" {
         // 0.6p : la carte du programme (ce qu'est chaque molécule, ce qu'elle touche, ses racines, ses promesses), lue
         // par le lecteur en vtx dans un ADN ou un ARN ; d'un .vtx, l'ARNc est fait d'abord, à part, puis lu

@@ -147,6 +147,26 @@ fn main() {
             eprintln!("erreur : {}", x);
             std::process::exit(1);
         }
+    } else if args.len() >= 3 && args[1] == "empreinte" {
+        // 0.61 : l'empreinte d'un module, à écrire après « importer "x.vtx" empreinte "…"; » (FNV-1a de 64 bits sur les
+        // caractères, les retours chariot sautés : le calcul de vtx64.py et vtxc64)
+        for f in &args[2..] {
+            match std::fs::read(f) {
+                Ok(o) => {
+                    let mut h: u64 = 0xCBF29CE484222325;
+                    for ch in String::from_utf8_lossy(&o).chars() {
+                        if ch != '\r' {
+                            h = (h ^ ch as u64).wrapping_mul(0x100000001B3);
+                        }
+                    }
+                    println!("{:016x}  {}", h, f);
+                }
+                Err(e) => {
+                    eprintln!("{} : {}", f, e);
+                    std::process::exit(1);
+                }
+            }
+        }
     } else if args.len() >= 3 && args[1] == "compiler" {
         let (mots, table) = compiler_ou_sortir(&nombres64(VTXC64), &args[2], COMPLET64);
         let sortie = args.get(3).cloned().unwrap_or_else(|| args[2].trim_end_matches(".vtx").to_string() + ".mots");

@@ -1,0 +1,3 @@
+// un module : deux outils (0.61, les modules promis par leur empreinte)
+fonction double(x) { retour 2 * x; }
+fonction salut(): texte { retour "Salut, Lugus !"; }

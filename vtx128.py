@@ -11512,7 +11512,32 @@ def injecter_donnees(fs, donnees):
     return fs + [Fonction("__init", [], [("si", cond, corps, None, 0)], 0)]
 
 
-IMPORT = re.compile(r'^[ \t]*importer[ \t]+"([^"]+)"[ \t]*;[ \t]*$', re.M)
+IMPORT = re.compile(r'^[ \t]*importer[ \t]+"([^"]+)"(?:[ \t]+empreinte[ \t]+"([0-9a-fA-F]{16})")?[ \t]*;[ \t]*$',
+                    re.M)
+
+
+def empreinte_texte(texte):
+    """0.61 : l'empreinte d'un module, FNV-1a de 64 bits sur ses caractères (les retours chariot sautés : un fichier en
+    \\r\\n et le même en \\n ont la même). vtxc128, vtxc64, lugus empreinte et vtx64 empreinte font le même calcul."""
+    h = 0xCBF29CE484222325
+    for ch in texte:
+        if ch != "\r":
+            h = ((h ^ ord(ch)) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def lire_module(m, nom, chemin):
+    """Le texte d'un module importé ; s'il est promis par son empreinte, elle est vérifiée."""
+    try:
+        brut = open(chemin, encoding="utf-8", newline="").read()
+    except OSError:
+        raise VtxError(f"importer : fichier introuvable « {nom} »")
+    if m.group(2):
+        h = empreinte_texte(brut)
+        if h != int(m.group(2), 16):
+            raise VtxError(f"importer : le module n'est plus celui promis (empreinte attendue {m.group(2).lower()}, "
+                           f"trouvée {h:016x}) « {nom} »")
+    return brut.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def chemin_import(m, dossier):
@@ -11528,13 +11553,12 @@ def resoudre_imports(src, dossier, vus=None):
 
     def remplace(m):
         nom, chemin = chemin_import(m, dossier)
+        if m.group(2):
+            lire_module(m, nom, chemin)
         if chemin in vus:
             return ""
         vus.add(chemin)
-        try:
-            texte = open(chemin, encoding="utf-8").read()
-        except OSError:
-            raise VtxError(f"importer : fichier introuvable « {nom} »")
+        texte = lire_module(m, nom, chemin)
         return resoudre_imports(texte, os.path.dirname(chemin), vus)
 
     return IMPORT.sub(remplace, src)
@@ -11553,15 +11577,14 @@ def resoudre_carte(src, dossier, nom="programme", vus=None, racine=None):
             carte.append((nom, i))
             continue
         nom_f, chemin = chemin_import(m, dossier)
+        if m.group(2):
+            lire_module(m, nom_f, chemin)
         if chemin in vus:
             lignes.append("")
             carte.append((nom, i))
             continue
         vus.add(chemin)
-        try:
-            texte = open(chemin, encoding="utf-8").read()
-        except OSError:
-            raise VtxError(f"importer : fichier introuvable « {nom_f} »")
+        texte = lire_module(m, nom_f, chemin)
         sl, sc = resoudre_carte(texte, os.path.dirname(chemin), os.path.relpath(chemin, racine), vus, racine)
         lignes += sl
         carte += sc

@@ -2977,3 +2977,29 @@ quaternions, matrices, couleurs, interpolations ; il ne les recopie pas) ; `rest
 prennent une fonction (Dunon n'a pas les fonctions passées en valeur) ; `premier`, `dernier`, `moyenne`, `mediane`…
 lisent des tableaux d'entiers. Le prélude a presque doublé : vtxc128 se compile en 262 047 mots (195 558 avant),
 vtxc64 en 246 187 ; un programme de taille moyenne (combat.vtx) se compile en moins d'une seconde.
+
+## 64. Les modules promis par leur empreinte (17 novembre, 0.61)
+
+**La suite de la feuille de route** : « les modules désignés par leur empreinte (un module est un ADN signé, chaque usage
+une transcription) ». Premier pas, le plus utile tout de suite : qu'un programme sache **avec quel module** il a été
+écrit, et qu'un module changé ne passe plus en silence.
+
+- `importer "bibliotheque/codon.vtx" empreinte "…";` : 16 chiffres hexadécimaux, l'empreinte du texte du module (FNV-1a de
+  64 bits sur ses caractères ; les retours chariot sont sautés, pour qu'un même fichier sous Windows et sous Linux ait la
+  même). Les deux compilateurs de chaque machine la calculent ; s'il a changé, le module est refusé, avec ce qu'on
+  attendait et ce qu'on a trouvé : « importer : le module n'est plus celui promis (empreinte attendue f62defeb8b893235,
+  trouvée 0d7a…) ».
+- `lugus empreinte FICHIER…` et `vtx64 empreinte FICHIER…` la donnent, pour l'écrire.
+- **La chaîne** : un module peut promettre ses propres modules ; une lettre changée tout au fond est vue à la surface. C'est
+  ce que font les sommes de contrôle de Cargo (Cargo.lock), de Go (go.sum) ou les empreintes de Nix, ici dans le langage.
+- La promesse **ne change aucun mot** : un programme promis et le même sans promesse donnent les mêmes mots ; sans
+  promesse, `importer` reste ce qu'il était (les programmes déjà écrits : les mêmes mots, sur les deux machines).
+- Vérifié (`tests/test_modules.py`, 14 contrôles) : la même empreinte par vtx128.py, vtx64.py, `lugus empreinte` et `vtx64
+  empreinte` ; \r\n et \n ; un module promis puis le module qu'il promet, les mêmes mots que sans promesse ; un module
+  changé refusé par les deux compilateurs de chaque machine, l'empreinte trouvée dite ; sans promesse, pris tel quel ; un
+  module promis absent : introuvable. L'exemple : `exemples128/modules.vtx` (le codon promis).
+
+**Ce qui n'y est pas encore, dans l'ordre** : trouver un module **par son empreinte seule**, sans chemin (il faut que la
+machine sache lister un dossier, un service à écrire) ; garder les empreintes des modules dans l'ADN du programme (un
+intron « modules » ; la carte dirait alors de quel module vient chaque molécule) ; un module rangé en ADN, importé depuis
+son ADN (le texte gardé et sa signature : « un module est un ADN signé »).

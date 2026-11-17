@@ -92,6 +92,7 @@ lugus exemples128/promesse_type.vtx              # la promesse dans le type : fo
 lugus exemples128/nombres.vtx                    # le vocabulaire des nombres : un mot pour tous les types, le doute gardé
 lugus exemples128/vocabulaire.vtx                # 0.61 : le vocabulaire étendu (Rust, Arduino, UE5, Blender), en français
 vtx64 exemples128/vocabulaire.vtx                # le même sur Dunon
+lugus exemples128/modules.vtx                    # un module promis par son empreinte (lugus empreinte FICHIER la donne)
 lugus gobannos/gobannos.vtx                       # Gobannos (en vtx) : PROG.mots, PROG.exe, windows -> l'exécutable, sans Rust
 lugus arnc exemples128/chute.vtx                    # le programme né en ARN (l'ARNc), sans fichier d'ADN
 lugus retrotranscrire exemples128/chute.arn         # l'ARN fixé en ADN : chute-c.adn (entier, depuis un ARNc)

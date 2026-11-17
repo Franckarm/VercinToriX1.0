@@ -237,6 +237,7 @@ section 54, et `exemples128/supposons.vtx`.
 
 ```
 importer "bibliotheque/cube.vtx";          // inséré une seule fois
+importer "bibliotheque/codon.vtx" empreinte "3ca0e81674a433bf";   // 0.61 : ce module-là, et pas un autre
 constante N = 16;  constante PI = 3.1415927;  constante GRAND = 5000000000L;
 donnees @1[0] = { 1, 2, #FF0000FF, adn"ACGT", 0.5 };
 structure Point { x; y; }
@@ -271,6 +272,14 @@ promet n'est pas recopiée en ligne. À ne pas confondre avec `touche()`, la fon
 venir qu'après la parenthèse d'un en-tête. Voir `docs/vtx-carnet.md` (section 1 bis) et `docs/vtx-reactions.md`, section 53.
 
 L'indice d'un tableau rangé ne doit pas appeler de fonction ; un tableau rangé ne peut pas être cumulé, et des segments qui y écrivent sont joués l'un après l'autre (deux éléments voisins partagent un mot).
+
+**Les modules promis par leur empreinte (0.61, Lugus et Dunon).** `importer "x.vtx" empreinte "…";` (16 chiffres
+hexadécimaux) : le compilateur calcule l'empreinte du texte du module (FNV-1a de 64 bits sur ses caractères, les retours
+chariot sautés : un fichier en `\r\n` et le même en `\n` ont la même) et le refuse s'il a changé : « importer : le module
+n'est plus celui promis (empreinte attendue …, trouvée …) ». `lugus empreinte FICHIER` (ou `vtx64 empreinte`) la donne. Un
+module peut promettre ses propres modules : la chaîne est vérifiée de bout en bout, comme les sommes de contrôle d'un
+gestionnaire de paquets. La promesse ne change aucun mot du programme ; sans elle, `importer` reste ce qu'il était.
+Pas encore : trouver un module par son empreinte seule (sans chemin), ni le garder dans l'ADN du programme.
 
 Les données sont rangées après le code et copiées une seule fois au démarrage. Les champs de structure et les cases de tableau sont des entiers (un mot).
 

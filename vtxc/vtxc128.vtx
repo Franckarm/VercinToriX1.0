@@ -198,6 +198,7 @@ structure Cumul { nom, suivant: Cumul }
 
 structure Ctx {
     src: Liste,
+    emp_att, emp_vu,
     jetons: Jeton,
     tok: Jeton,
     structs: Struct,
@@ -12852,6 +12853,39 @@ fonction ligne_import(c: Ctx, t: Liste, debut, fin) {
     tantque i < fin && blanc(elem(t, i)) {
         i = i + 1;
     }
+    // 0.61 : « empreinte "16 chiffres hexadécimaux" », facultatif : le module promis
+    c.emp_vu = 0;
+    c.emp_att = 0;
+    si i + 9 < fin && elem(t, i) == 'e' {
+        soit mot = "empreinte";
+        pour k2 dans 0..9 {
+            si elem(t, i + k2) != car(mot, k2) {
+                retour 0;
+            }
+        }
+        i = i + 9;
+        si !blanc(elem(t, i)) {
+            retour 0;
+        }
+        tantque i < fin && blanc(elem(t, i)) {
+            i = i + 1;
+        }
+        si i + 17 >= fin || elem(t, i) != '"' || elem(t, i + 17) != '"' {
+            retour 0;
+        }
+        pour k3 dans 1..17 {
+            soit h = hexa_ou_16(elem(t, i + k3));
+            si h > 15 {
+                retour 0;
+            }
+            c.emp_att = (c.emp_att << 4) | h;
+        }
+        c.emp_vu = 1;
+        i = i + 18;
+        tantque i < fin && blanc(elem(t, i)) {
+            i = i + 1;
+        }
+    }
     si i >= fin || elem(t, i) != ';' {
         retour 0;
     }
@@ -12865,6 +12899,55 @@ fonction ligne_import(c: Ctx, t: Liste, debut, fin) {
     retour nom;
 }
 
+
+
+// 0.61 : la valeur d'un chiffre hexadécimal (16 : ce n'en est pas un)
+fonction hexa_ou_16(x) {
+    si x >= '0' && x <= '9' { retour x - '0'; }
+    si x >= 'a' && x <= 'f' { retour x - 'a' + 10; }
+    si x >= 'A' && x <= 'F' { retour x - 'A' + 10; }
+    retour 16;
+}
+
+// 0.61 : l'empreinte d'un module, FNV-1a de 64 bits sur ses caractères, les retours chariot sautés (comme
+// empreinte_texte de vtx128.py et vtx64.py)
+fonction empreinte_liste(t: Liste) {
+    soit h = 14695981039346656037;
+    pour i dans 0..t.n {
+        soit x = elem(t, i);
+        si x != 13 {
+            h = (h ^ x) * 1099511628211;
+        }
+    }
+    retour h;
+}
+
+fonction ajouter_hexa16(l: Liste, n) {
+    pour i dans 0..16 {
+        soit k = (n >> (60 - 4 * i)) & 15;
+        si k < 10 { ajouter(l, '0' + k); } sinon { ajouter(l, 'a' + k - 10); }
+    }
+}
+
+// un module promis par son empreinte : la vérifier (rend 0 si elle ne tient pas, l'erreur dite)
+fonction verifier_empreinte(c: Ctx, chemin, montre, attendue) {
+    soit t = lire_fichier(chemin);
+    si t == nul {
+        retour 1;
+    }
+    soit h = empreinte_liste(t);
+    si h == attendue {
+        retour 1;
+    }
+    soit l = liste();
+    ajouter_texte(l, "importer : le module n'est plus celui promis (empreinte attendue ");
+    ajouter_hexa16(l, attendue);
+    ajouter_texte(l, ", trouvée ");
+    ajouter_hexa16(l, h);
+    ajouter(l, ')');
+    erreur_nom(c, c.nlignes + 1, texte_de(l, 0, l.n), montre);
+    retour 0;
+}
 
 fonction deja_vu(c: Ctx, chemin) {
     pour i dans 0..c.vus.n {
@@ -12904,12 +12987,15 @@ fonction charger_source(c: Ctx, chemin, affiche, dossier) {
         soit nom = ligne_import(c, t, i, fin);
         si nom != 0 {
             soit ch = normaliser(joindre(dossier, nom));
-            si !deja_vu(c, ch) {
+            soit montre = nom;
+            si affiche != 0 {
+                montre = normaliser(joindre(dossier_de(affiche), nom));
+            }
+            si c.emp_vu {
+                verifier_empreinte(c, ch, montre, c.emp_att);
+            }
+            si !deja_vu(c, ch) && c.erreur == 0 {
                 ajouter(c.vus, ch);
-                soit montre = nom;
-                si affiche != 0 {
-                    montre = normaliser(joindre(dossier_de(affiche), nom));
-                }
                 charger_source(c, ch, montre, dossier_de(ch));
             }
             segment(c, affiche, ligne + 1);

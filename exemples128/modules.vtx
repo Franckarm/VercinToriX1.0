@@ -1,0 +1,8 @@
+// 0.61 : un module promis par son empreinte. Si bibliotheque/codon.vtx change d'une seule lettre, ce programme est
+// refusé (l'empreinte trouvée est dite) : on sait toujours avec quoi il a été écrit. « lugus empreinte FICHIER » la donne.
+importer "../bibliotheque/codon.vtx" empreinte "3ca0e81674a433bf";
+
+fonction principal() {
+    soit d = codon(vrai, vrai, faux);
+    afficher("le codon (vrai, vrai, faux) :", nom_situation(d), "; verdict :", verdict(d));
+}

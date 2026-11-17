@@ -613,7 +613,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    0.6y : `fonction(entier): entier touche rien`, crue par le juge) ; le vocabulaire des nombres (fait, 0.6za, sur Lugus :
    un mot, les cinq types : signe, est_positif, est_su, partie_decimale, entre, ecart, arrondi à n décimales… ; inconnu
    et variable gardés) ; le vocabulaire étendu (fait, 0.61, Lugus et Dunon : 202 mots tirés de Rust, de ses
-   extensions, d'Arduino, d'UE5 et de Blender, en français, par familles ; `docs/vtx-vocabulaire.md`) ; puis les modules désignés par leur empreinte
+   extensions, d'Arduino, d'UE5 et de Blender, en français, par familles ; `docs/vtx-vocabulaire.md`) ; les modules promis par leur empreinte (fait, 0.61 : `importer "x.vtx" empreinte
+   "…";`, la chaîne vérifiée, `lugus empreinte`) ; puis les modules trouvés par leur seule empreinte, gardés dans l'ADN désignés par leur empreinte
    (un module est un ADN signé, chaque usage une transcription).
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
