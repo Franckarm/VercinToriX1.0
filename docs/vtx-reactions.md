@@ -2964,6 +2964,8 @@ machines.
   pendant la génération, puis décide s'il épisse la fonction : un nom qui commence par `__hyp` passait pour le journal des
   hypothèses (`__hyp_debut`…), et l'épissage était sauté. Le repère est maintenant `__hyp_`, dans les quatre
   compilateurs ;
+- le paramètre qui porte la fonction, dans `transformer`, `plier`… s'appelait `f` : un programme qui a sa propre
+  fonction `f` captait l'appel (une variable ne s'appelle pas quand une fonction porte son nom). Il s'appelle `__fv` ;
 - `vers_degres(π)` sur Dunon : 179,99999999999994 avec deux arrondis ; 180,00000000000006 maintenant. Le π du
   flottant de 64 bits de Dunon (52 bits) est trop loin du vrai π pour que 180 tombe juste : c'est le bon arrondi, pas une
   faute.

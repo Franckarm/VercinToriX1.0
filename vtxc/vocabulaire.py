@@ -1301,33 +1301,33 @@ VALEURS_LUGUS = r"""
 // transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :
 // Rust map, filter, fold, all, any, !any, find, position, filter().count(), for_each, retain, sort_by_key (la fonction
 // rend 1 ou 0 pour une question ; ces mots rendent 1 ou 0, ou 18446744073709551615 pour « absent »)
-fonction transformer(t, f) { soit r = tableau(0); pour x dans t { ajouter(r, f(x)); } retour r; }
-fonction filtrer(t, f) { soit r = tableau(0); pour x dans t { si f(x) != 0 { ajouter(r, x); } } retour r; }
-fonction plier(t, f, depart) { soit acc = depart; pour x dans t { acc = f(acc, x); } retour acc; }
-fonction tous(t, f) { pour x dans t { si f(x) == 0 { retour 0; } } retour 1; }
-fonction au_moins_un(t, f) { pour x dans t { si f(x) != 0 { retour 1; } } retour 0; }
-fonction aucun(t, f) { pour x dans t { si f(x) != 0 { retour 0; } } retour 1; }
-fonction trouver_si(t, f) { pour x dans t { si f(x) != 0 { retour x; } } retour 0; }
-fonction rang_si(t, f) {
+fonction transformer(t, __fv) { soit r = tableau(0); pour x dans t { ajouter(r, __fv(x)); } retour r; }
+fonction filtrer(t, __fv) { soit r = tableau(0); pour x dans t { si __fv(x) != 0 { ajouter(r, x); } } retour r; }
+fonction plier(t, __fv, depart) { soit acc = depart; pour x dans t { acc = __fv(acc, x); } retour acc; }
+fonction tous(t, __fv) { pour x dans t { si __fv(x) == 0 { retour 0; } } retour 1; }
+fonction au_moins_un(t, __fv) { pour x dans t { si __fv(x) != 0 { retour 1; } } retour 0; }
+fonction aucun(t, __fv) { pour x dans t { si __fv(x) != 0 { retour 0; } } retour 1; }
+fonction trouver_si(t, __fv) { pour x dans t { si __fv(x) != 0 { retour x; } } retour 0; }
+fonction rang_si(t, __fv) {
     soit n = longueur(t);
-    pour i dans 0..n { si f(t[i]) != 0 { retour i; } }
+    pour i dans 0..n { si __fv(t[i]) != 0 { retour i; } }
     retour 18446744073709551615;
 }
-fonction compter_si(t, f) { soit k = 0; pour x dans t { si f(x) != 0 { k = k + 1; } } retour k; }
-fonction pour_chacun(t, f) { pour x dans t { f(x); } }
-fonction garder_si(t, f) {
+fonction compter_si(t, __fv) { soit k = 0; pour x dans t { si __fv(x) != 0 { k = k + 1; } } retour k; }
+fonction pour_chacun(t, __fv) { pour x dans t { __fv(x); } }
+fonction garder_si(t, __fv) {
     soit w = 0;
     soit n = longueur(t);
-    pour i dans 0..n { si f(t[i]) != 0 { t[w] = t[i]; w = w + 1; } }
+    pour i dans 0..n { si __fv(t[i]) != 0 { t[w] = t[i]; w = w + 1; } }
     tantque longueur(t) > w { retirer(t); }
 }
-fonction trier_par(t, f) {
+fonction trier_par(t, __fv) {
     soit n = longueur(t);
     pour i dans 1..n {
         soit x = t[i];
-        soit kx = f(x);
+        soit kx = __fv(x);
         soit j = i;
-        tantque j > 0 && f(t[j - 1]) .> kx { t[j] = t[j - 1]; j = j - 1; }
+        tantque j > 0 && __fv(t[j - 1]) .> kx { t[j] = t[j - 1]; j = j - 1; }
         t[j] = x;
     }
 }
