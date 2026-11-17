@@ -5221,6 +5221,44 @@ fonction fichier_present(nom: texte): logique {
     fermer(c);
     retour vrai;
 }
+fonction dossier_present(nom: texte): logique {
+    // 0.62 : vrai : un dossier qui se lit ; faux : le nom existe, mais ce n'est pas un dossier ; inconnu : il est absent
+    // (ou la machine n'a pas de dossier où chercher). Le nom part du dossier du programme ; vide : ce dossier lui-même
+    soit c = __service(28, nom);
+    si c == 18446744073709551615 {
+        retour inconnu;
+    }
+    si c == 18446744073709551615 - 1 {
+        retour faux;
+    }
+    fermer(c);
+    retour vrai;
+}
+fonction lister_dossier(nom: texte) {
+    // 0.62 : les noms d'un dossier, triés, un texte chacun (un sous-dossier finit par « / ») ; absent, ou pas un
+    // dossier : un tableau vide (dossier_present dit lequel)
+    soit r = tableau(0);
+    soit c = __service(28, nom);
+    si c == 18446744073709551615 || c == 18446744073709551615 - 1 {
+        retour r;
+    }
+    soit x = lire_car(c);
+    tantque x != 18446744073709551615 {
+        soit t = __verifier(nouveau(257));
+        tantque x != 10 && x != 18446744073709551615 {
+            si longueur(t) < 256 {
+                __mettre(t, x);
+            }
+            x = lire_car(c);
+        }
+        __ajouter(r, __texte_fin(t));
+        si x == 10 {
+            x = lire_car(c);
+        }
+    }
+    fermer(c);
+    retour r;
+}
 fonction temoins(t): logique {
     // un tableau de réponses (0 rien, 1 non, 2 oui, 3 les deux) rassemblées : la fusion de tous les témoignages
     soit des_oui = 0;
@@ -8830,8 +8868,9 @@ def injecter_donnees(fs, donnees):
     return fs + [Fonction("__init", [], [("si", cond, corps, None, 0)], 0)]
 
 
-IMPORT = re.compile(r'^[ \t]*importer[ \t]+"([^"]+)"(?:[ \t]+empreinte[ \t]+"([0-9a-fA-F]{16})")?[ \t]*;[ \t]*$',
-                    re.M)
+IMPORT = re.compile(r'^[ \t]*importer[ \t]+(?:"([^"]+)"(?:[ \t]+empreinte[ \t]+"([0-9a-fA-F]{16})")?'
+                    r'|empreinte[ \t]+"([0-9a-fA-F]{16})")[ \t]*;[ \t]*$', re.M)
+CATALOGUE = "catalogue.vtxcat"
 
 
 def empreinte_texte(texte):
@@ -8844,24 +8883,65 @@ def empreinte_texte(texte):
     return h
 
 
+def empreinte_promise(m):
+    """l'empreinte écrite sur une ligne « importer » (16 chiffres), ou None"""
+    return m.group(2) or m.group(3)
+
+
 def lire_module(m, nom, chemin):
     """Le texte d'un module importé ; s'il est promis par son empreinte, elle est vérifiée."""
     try:
         brut = open(chemin, encoding="utf-8", newline="").read()
     except OSError:
         raise VtxError(f"importer : fichier introuvable « {nom} »")
-    if m.group(2):
+    if empreinte_promise(m):
         h = empreinte_texte(brut)
-        if h != int(m.group(2), 16):
-            raise VtxError(f"importer : le module n'est plus celui promis (empreinte attendue {m.group(2).lower()}, "
-                           f"trouvée {h:016x}) « {nom} »")
+        if h != int(empreinte_promise(m), 16):
+            raise VtxError(f"importer : le module n'est plus celui promis (empreinte attendue "
+                           f"{empreinte_promise(m).lower()}, trouvée {h:016x}) « {nom} »")
     return brut.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def catalogues_de(dossier):
+    """0.62 : les catalogues où chercher un module par sa seule empreinte, dans l'ordre : celui du dossier, puis celui
+    de bibliotheque/ (dans le dossier, ou à côté de lui) ; chacun une fois"""
+    r = []
+    for d in ("", "bibliotheque/", "../bibliotheque/"):
+        x = os.path.normpath(os.path.join(dossier, d + CATALOGUE))
+        if x not in [c for _, c in r]:
+            r.append((d, x))
+    return r
+
+
+def chercher_empreinte(h, dossier):
+    """0.62 : « importer empreinte "…"; » : le module de cette empreinte dans les catalogues ; (le chemin tel qu'il se
+    montre, le chemin complet). Introuvable, ou deux modules différents : refusé et dit."""
+    trouves = []
+    for d, cat in catalogues_de(dossier):
+        try:
+            lignes = open(cat, encoding="utf-8").read().replace("\r", "").split("\n")
+        except OSError:
+            continue
+        for l in lignes:
+            c = l.split("|")
+            if len(c) >= 3 and c[0] == "module" and c[1] and c[2].lower() == h.lower():
+                ch = os.path.normpath(os.path.join(os.path.dirname(cat), c[1]))
+                if ch not in [t[1] for t in trouves]:
+                    trouves.append((d + c[1], ch))
+    if not trouves:
+        raise VtxError(f"importer : aucun catalogue ne connaît l'empreinte « {h.lower()} »")
+    if len(trouves) > 1:
+        raise VtxError(f"importer : deux modules portent l'empreinte {h.lower()} : « {trouves[0][0]} » et "
+                       f"« {trouves[1][0]} »")
+    return trouves[0]
 
 
 def chemin_import(m, dossier):
     """Le fichier d'une ligne « importer » : (chemin tel qu'écrit, chemin complet)."""
     if dossier is None:
         raise VtxError("« importer » exige un dossier de base")
+    if m.group(1) is None:
+        return chercher_empreinte(m.group(3), dossier)
     return m.group(1), os.path.normpath(os.path.join(dossier, m.group(1)))
 
 
@@ -8871,7 +8951,7 @@ def resoudre_imports(src, dossier, vus=None):
 
     def remplace(m):
         nom, chemin = chemin_import(m, dossier)
-        if m.group(2):
+        if empreinte_promise(m):
             lire_module(m, nom, chemin)
         if chemin in vus:
             return ""
@@ -8895,7 +8975,7 @@ def resoudre_carte(src, dossier, nom="programme", vus=None, racine=None):
             carte.append((nom, i))
             continue
         nom_f, chemin = chemin_import(m, dossier)
-        if m.group(2):
+        if empreinte_promise(m):
             lire_module(m, nom_f, chemin)
         if chemin in vus:
             lignes.append("")
@@ -8953,7 +9033,7 @@ def typer_textes(fs, types_champs):
             champs.setdefault(c, set()).add(t == "t")
     champs_texte = {c for c, v in champs.items() if v == {True}}
 
-    TABLEAUX_DE_TEXTES = {"decouper", "cles", "lignes", "mots", "couper_en_deux"}
+    TABLEAUX_DE_TEXTES = {"decouper", "cles", "lignes", "mots", "couper_en_deux", "lister_dossier"}
     TEXTES_RANGES = {"ajouter", "inserer", "ranger", "affirmer", "nier", "__remplir"}   # rangent leurs arguments
     tabtextes = set()
     tabflot = set()
@@ -9247,6 +9327,11 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
             f.origine = "prélude"
         fs = fs + pre
     typer_textes(fs, a.types_champs)
+    # 0.62 : une fonction du programme qui porte le nom d'une fonction intégrée est refusée avant l'élagage, comme
+    # vtxc le fait (même si elle n'est jamais appelée)
+    for f in fs:
+        if getattr(f, "origine", "") != "prélude" and f.nom in INTEGRES:
+            raise VtxError(f"ligne {f.ligne} : fonction « {f.nom} » déjà définie")
     gardees = elaguer(fs) if optim else fs
     reserve = {f.nom: f for f in fs if f not in gardees}
     DERNIERE_PARTITION["accords"], DERNIERE_PARTITION["notes"] = [], {}

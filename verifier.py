@@ -143,6 +143,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_modules.py")]))
     etapes.append(("reste : le reste exact des flottants, au bit près, sur Lugus et Dunon",
                    [sys.executable, os.path.join("tests", "test_reste.py")]))
+    etapes.append(("le catalogue des modules et la vibration des molécules : lister un dossier, importer par l'empreinte seule, la carte",
+                   [sys.executable, os.path.join("tests", "test_catalogue.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",

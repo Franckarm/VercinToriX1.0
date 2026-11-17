@@ -238,6 +238,7 @@ section 54, et `exemples128/supposons.vtx`.
 ```
 importer "bibliotheque/cube.vtx";          // inséré une seule fois
 importer "bibliotheque/codon.vtx" empreinte "3ca0e81674a433bf";   // 0.61 : ce module-là, et pas un autre
+importer empreinte "3ca0e81674a433bf";     // 0.62 : le module de cette empreinte, cherché dans les catalogues
 constante N = 16;  constante PI = 3.1415927;  constante GRAND = 5000000000L;
 donnees @1[0] = { 1, 2, #FF0000FF, adn"ACGT", 0.5 };
 structure Point { x; y; }
@@ -279,7 +280,18 @@ chariot sautés : un fichier en `\r\n` et le même en `\n` ont la même) et le r
 n'est plus celui promis (empreinte attendue …, trouvée …) ». `lugus empreinte FICHIER` (ou `vtx64 empreinte`) la donne. Un
 module peut promettre ses propres modules : la chaîne est vérifiée de bout en bout, comme les sommes de contrôle d'un
 gestionnaire de paquets. La promesse ne change aucun mot du programme ; sans elle, `importer` reste ce qu'il était.
-Pas encore : trouver un module par son empreinte seule (sans chemin), ni le garder dans l'ADN du programme.
+**Les modules trouvés par leur seule empreinte (0.62, Lugus et Dunon).** `importer empreinte "…";`, sans chemin : le
+compilateur cherche le module dans les catalogues, dans l'ordre : `catalogue.vtxcat` du dossier qui importe, puis
+`bibliotheque/catalogue.vtxcat` (dans ce dossier) et `../bibliotheque/catalogue.vtxcat` (à côté de lui), chacun une fois.
+Trouvé, c'est comme `importer "chemin" empreinte "…";` : son texte est vérifié (retouché depuis son catalogue : refusé),
+les mêmes mots que par son chemin. Introuvable : « importer : aucun catalogue ne connaît l'empreinte « … » » ; deux
+modules différents de cette empreinte (deux copies) : « importer : deux modules portent l'empreinte … : « a » et « b » ».
+Le catalogue d'un dossier s'écrit par **`lugus cataloguer DOSSIER`** (le lecteur d'ADN en vtx ; la référence :
+`python3 chimie/adn.py cataloguer DOSSIER`) : pour chaque module (un `.vtx` sans `principal`), une ligne
+`module|nom|empreinte|molécules`, puis une ligne `molecule|nom|masse|atomes|vibration` par fonction compilée. La
+vibration est celle de la carte (`lugus carte` dit d'où vient chaque molécule : `docs/vtx-reactions.md`, section 66) ;
+`lugus morceaux PROG.vtx` montre les morceaux d'un programme et leur vibration. Pas encore : garder les empreintes des
+modules dans l'ADN du programme.
 
 Les données sont rangées après le code et copiées une seule fois au démarrage. Les champs de structure et les cases de tableau sont des entiers (un mot).
 
@@ -419,6 +431,8 @@ changée en « non ».
 | `lire_logique()` | une ligne du clavier comprise ainsi ; la fin de l'entrée : inconnu |
 | `nombre_su(t: texte)` | vrai : un nombre entier ; faux : autre chose ; inconnu : rien d'écrit |
 | `fichier_present(nom: texte)` | vrai : le fichier se lit ; faux : il ne se lit pas |
+| `dossier_present(nom: texte)` | 0.62 : vrai : un dossier qui se lit ; faux : le nom existe, mais ce n'est pas un dossier ; inconnu : il est absent (ou pas de dossier où chercher) | SYS 28 |
+| `lister_dossier(nom: texte)` | 0.62 : les noms du dossier, triés, un texte chacun (un sous-dossier finit par « / ») ; absent ou pas un dossier : vide. Le nom part du dossier du programme ; `""` : ce dossier lui-même | SYS 28 |
 | `temoins(t)` | un tableau de réponses (0 rien, 1 non, 2 oui, 3 les deux) rassemblées en une valeur |
 | `etat_disque()` | l'état des cubes relus (miroir inversé) : vrai, faux (réparé), variable, inconnu | SYS 22 |
 | `anti_couleur(c)`, `pixel_anti(x, y)`, `rectangle_anti(x, y, l, h)` | l'anti-cube des couleurs (255 − c, involutif) | prélude |

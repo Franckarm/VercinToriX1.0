@@ -285,3 +285,23 @@ pub fn image_presentee() {
     };
     appliquer_scenario(image);
 }
+
+/// 0.62 : les noms d'un dossier, triés (l'ordre des caractères), un par ligne, un sous-dossier terminé par « / » ; le
+/// service 28 de Lugus et de Dunon. Err(true) : le nom existe mais n'est pas un dossier ; Err(false) : il est absent.
+pub fn lister_dossier(chemin: &std::path::Path) -> Result<String, bool> {
+    // le dossier d'un programme lancé depuis son propre dossier est le chemin vide : c'est « . »
+    let chemin = if chemin.as_os_str().is_empty() { std::path::Path::new(".") } else { chemin };
+    let lecture = match std::fs::read_dir(chemin) {
+        Ok(l) => l,
+        Err(_) => return Err(chemin.exists()),
+    };
+    let mut noms: Vec<String> = lecture
+        .filter_map(|e| e.ok())
+        .map(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            if e.path().is_dir() { n + "/" } else { n }
+        })
+        .collect();
+    noms.sort();
+    Ok(noms.iter().map(|n| n.clone() + "\n").collect())
+}

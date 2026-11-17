@@ -62,6 +62,18 @@ OPS = {
 NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
 
+
+def lister_dossier(chemin):
+    """0.62 : les noms d'un dossier, triés, un par ligne, un sous-dossier terminé par « / » (le service 28) ; None :
+    absent ; False : le nom existe mais n'est pas un dossier"""
+    chemin = chemin or "."
+    try:
+        noms = os.listdir(chemin)
+    except OSError:
+        return False if os.path.exists(chemin) else None
+    return "".join(n + ("/" if os.path.isdir(os.path.join(chemin, n)) else "") + "\n"
+                   for n in sorted(noms, key=lambda n: (n + ("/" if os.path.isdir(os.path.join(chemin, n)) else "")).encode("utf-8")))
+
 class Erreur(Exception):
     pass
 
@@ -395,6 +407,18 @@ class CPU:
             return self.jeter_cube(arg)
         if code in (16, 17, 20, 21, 23):
             return 0
+        if code == 28:
+            # 0.62 : lister un dossier (le nom depuis le dossier de la machine ; vide : lui-même) ; ses noms se lisent
+            # comme un fichier ; absent : M128 (inconnu) ; pas un dossier : M128 - 1 (faux)
+            if self.dossier is None:
+                return M128
+            nom = self.texte_memoire(arg)
+            r = lister_dossier(os.path.join(self.dossier, nom) if nom else self.dossier)
+            if r is None or r is False:
+                return M128 if r is None else M128 - 1
+            canal = max([1] + list(self.fichiers)) + 1
+            self.fichiers[canal] = ["l", [ord(ch) for ch in r], 0, ""]
+            return canal
         if code == 25:
             # le compte des instructions jouées (instructions() du prélude)
             return self.pas
@@ -418,8 +442,11 @@ class CPU:
                 import vtx128
                 vtx128.COMPAT_64 = False
                 vtx128.REACTIONS.clear()
-                mots, _ = vtx128.assembler(vtx128.compiler(src, dossier=self.dossier), True)
-                rendu = ",".join(map(str, mots)) + ";\n"
+                mots, etiq = vtx128.assembler(vtx128.compiler(src, dossier=self.dossier), True)
+                # 0.62 : après les mots, les noms des fonctions (« nom|mot » par ligne), comme Lugus en Rust
+                rendu = ",".join(map(str, mots)) + ";\n" + "".join(
+                    f"{k[2:].lower()}|{v // 2}\n" for k, v in etiq.items()
+                    if k.startswith("F_") and not (k.endswith("_FIN") and k[:-4] in etiq))
             except Exception as e:      # noqa: BLE001
                 rendu = "!" + str(e).rstrip()
             canal = max([1] + list(self.fichiers)) + 1

@@ -18,6 +18,9 @@
 //   lugus oublier PROG.adn          retire l'épigénome
 //   lugus pourquoi PROG.adn …       la même chose, depuis le texte gardé dans l'ADN (s'il redonne ses mots)
 //   lugus pourquoi PROG.vtx [LIAISON | RÉACTION.LIAISON] [ENTRÉES…]   la provenance : d'où vient chaque valeur
+//   lugus cataloguer DOSSIER        le catalogue des modules du dossier (catalogue.vtxcat : nom, empreinte, molécules et
+//                                   leur vibration), écrit par le lecteur en vtx (0.62) ; « importer empreinte "…"; » y cherche
+//   lugus morceaux PROG.vtx         les morceaux du programme et leur vibration (comme python3 chimie/adn.py morceaux)
 #[allow(dead_code)]
 mod qflot128;
 #[allow(dead_code)]
@@ -412,6 +415,42 @@ fn main() {
                 }
             }
         }
+    } else if args.len() >= 3 && args[1] == "cataloguer" {
+        // 0.62 : le catalogue des modules d'un dossier (DOSSIER/catalogue.vtxcat : leur nom, leur empreinte, leurs
+        // molécules et leur vibration), écrit par le lecteur en vtx ; chaque module compilé par vtxc128 (service 27)
+        let d = std::fs::canonicalize(&args[2]).unwrap_or_else(|e| {
+            eprintln!("{} : {}", args[2], e);
+            std::process::exit(1)
+        });
+        let ds = d.to_string_lossy().trim_start_matches(r"\\?\").to_string();
+        let entrees = vec![ds.clone(), String::new(), "cataloguer".into()];
+        let etat = machine128::adn_en_vtx_dans(&entrees, Some(std::path::Path::new(&ds))).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
+        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
+    } else if args.len() >= 3 && args[1] == "morceaux" {
+        // 0.62 : les morceaux d'un programme et leur vibration (la même liste que « python3 chimie/adn.py morceaux »)
+        let source = std::fs::read_to_string(&args[2]).unwrap_or_else(|e| {
+            eprintln!("lecture de {} impossible : {}", args[2], e);
+            std::process::exit(1)
+        });
+        let (mots, _, _) = machine128::compiler128_carte(&nombres128(VTXC128), &source, &dossier_de128(&args[2]), COMPLET128)
+            .unwrap_or_else(|e| {
+                eprint!("{}", e);
+                std::process::exit(1)
+            });
+        let travail = std::env::temp_dir().join(format!("vtx-morceaux-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&travail);
+        let f = travail.join("code.mots");
+        let _ = std::fs::write(&f, format!("{};\n", mots.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",")));
+        let entrees = vec![f.to_string_lossy().into_owned(), String::new(), "morceaux".into()];
+        let etat = machine128::adn_en_vtx_dans(&entrees, Some(&travail)).unwrap_or_else(|e| {
+            eprintln!("{}", e);
+            std::process::exit(1)
+        });
+        let _ = std::fs::remove_dir_all(&travail);
+        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "carte" {
         // 0.6p : la carte du programme (ce qu'est chaque molécule, ce qu'elle touche, ses racines, ses promesses), lue
         // par le lecteur en vtx dans un ADN ou un ARN ; d'un .vtx, l'ARNc est fait d'abord, à part, puis lu
@@ -435,7 +474,9 @@ fn main() {
                 }
             }
         }
-        let entrees = vec![machine128::chemin_absolu(&brin), if tout { "--tout".into() } else { String::new() }, "carte".into()];
+        // 0.62 : les catalogues où la carte cherche d'où vient chaque molécule (ceux que « importer empreinte » lit)
+        let mut entrees = vec![machine128::chemin_absolu(&brin), if tout { "--tout".into() } else { String::new() }, "carte".into()];
+        entrees.extend(catalogues_de(&machine128::dossier_absolu(&args[2])));
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&brin))).unwrap_or_else(|e| {
             eprintln!("{}", e);
             std::process::exit(1)
@@ -627,7 +668,22 @@ fn main() {
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-1-F.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-1-F.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
         std::process::exit(2);
     }
+}
+
+/// 0.62 : les catalogues d'un dossier, dans l'ordre où « importer empreinte » les lit (le dossier, bibliotheque/,
+/// ../bibliotheque/), ceux qui existent, chacun une fois
+fn catalogues_de(d: &std::path::Path) -> Vec<String> {
+    let mut r: Vec<String> = Vec::new();
+    for c in ["catalogue.vtxcat", "bibliotheque/catalogue.vtxcat", "../bibliotheque/catalogue.vtxcat"] {
+        if let Ok(x) = std::fs::canonicalize(d.join(c)) {
+            let x = x.to_string_lossy().trim_start_matches(r"\\?\").to_string();
+            if !r.contains(&x) {
+                r.push(x);
+            }
+        }
+    }
+    r
 }

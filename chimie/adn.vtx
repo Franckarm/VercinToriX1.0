@@ -4079,6 +4079,7 @@ fonction montrer_molecule(k, avec_temoins) {
     si genre_ecrit {
         ecrire_t(1, " (l'empreinte de son texte)");
     }
+    montrer_origine(k);
     ecrire_car(1, 10);
 }
 
@@ -4111,14 +4112,25 @@ fonction montrer_carte(chemin, tout) {
     }
     lire_carte_texte();
     @2[G + G_GARDEE] = gardee;
+    // 0.62 : les vibrations des morceaux, pour dire d'où vient chaque molécule
+    vib_preparer();
+    vib_morceaux(@2[G + G_N]);
     soit nk = @2[G + G_NK];
     soit ne = 0;
     soit nemp = 0;
+    soit nmod = 0;
+    soit nret = 0;
     pour k dans 0..nk {
         si champ_est(k, 2, "fonction") || champ_est(k, 2, "reaction") {
             ne = ne + 1;
         } sinon si champ_est(k, 2, "empruntee") {
             nemp = nemp + 1;
+            si k_vient(k) {
+                nmod = nmod + 1;
+            }
+            si k_retouchee(k) {
+                nret = nret + 1;
+            }
         }
     }
     ecrire_t(1, "la carte de ");
@@ -4139,13 +4151,25 @@ fonction montrer_carte(chemin, tout) {
         ecrire_u64(1, ne);
         ecrire_t(1, " écrites dans le texte, ");
         ecrire_u64(1, nemp);
-        ecrire_t(1, " empruntées (au prélude ou à une bibliothèque), et la tête\n");
+        ecrire_t(1, " empruntées (au prélude ou à une bibliothèque");
+        si nmod > 0 {
+            ecrire_t(1, " ; ");
+            ecrire_u64(1, nmod);
+            ecrire_t(1, " d'un module catalogué");
+        }
+        si nret > 0 {
+            ecrire_t(1, " ; ");
+            ecrire_u64(1, nret);
+            ecrire_t(1, " retouchée(s) depuis le catalogue");
+        }
+        ecrire_t(1, "), et la tête\n");
         ecrire_t(1, "six faces par molécule, comme un dé (ce qu'elle est et ce qu'elle touche, ses racines et ses branches, ses promesses et sa mémoire), et au centre son état à cette lecture\n");
     } sinon {
         ecrire_t(1, "\nce brin n'a pas de carte rangée : ce qui suit vient de ses mots seuls (ce que chaque molécule touche, ses racines, ses branches) ; ses noms, ses promesses et sa mémoire sont inconnus\n");
     }
     pour k2 dans 0..nk {
-        si gardee == 0 || tout == 1 || champ_est(k2, 2, "fonction") || champ_est(k2, 2, "reaction") {
+        si gardee == 0 || tout == 1 || champ_est(k2, 2, "fonction") || champ_est(k2, 2, "reaction") || k_vient(k2)
+                || k_retouchee(k2) {
             montrer_molecule(k2, avec_temoins);
         }
     }
@@ -4188,7 +4212,7 @@ fonction montrer_carte(chemin, tout) {
         si premier == 0 {
             ecrire_car(1, 10);
         }
-        si tout == 0 && nemp > 0 {
+        si tout == 0 && nemp > nmod + nret {
             ecrire_t(1, "\n(--tout montre aussi les molécules empruntées)\n");
         }
     } sinon si trouver_section("carte") == 1 {
@@ -4243,6 +4267,1114 @@ fonction faire_arnc(mots, sortie, source, isotopes, compilateur, noms, ancien) {
 //   cube       BRIN - [FRÉQUENCE]        (cube128-1-FRÉQUENCE.cub, dans le dossier de la machine ; 440 sinon)
 //   mots       BRIN MOTS                 (les mots seuls, pour les lancer)
 // La sortie : l'état du brin (2 vrai, 1 faux : réparé, 3 variable, 0 : illisible).
+// --------------------------------------------------------------------------------------------- la vibration (0.62)
+// La fréquence de vibration d'une molécule compilée, comme vibration() de chimie/adn.py (docs/vtx-reactions.md,
+// section 66) : les atomes sont les instructions d'un morceau (le code est coupé au début, à la cible de chaque CALL et
+// à chaque prologue, PUSH R13 puis MOV R13,R14) ; les liaisons, celles du code (l'instruction suivante, un saut vers
+// l'intérieur) et celles des registres (une lecture liée à la dernière instruction qui a écrit le registre ; un CALL
+// les écrit tous) ; l'élément suit la valence (H, O, N, C) ; chaque atome vibre de ses chemins fermés de longueur 1 à 6,
+// de son élément et de sa clé (l'instruction sans ce qui dépend du programme autour) ; trois tours de propagation ;
+// deux passes (à la seconde, un CALL porte la première vibration de sa cible). Tout en entiers de 64 bits.
+constante V_LIT = 100000000;     // pour chaque demi-instruction : 1, c'est la constante d'un LDI ou d'un LDIH
+constante V_PREM = 102000000;    // la première vibration du morceau qui commence à cette demi-instruction (sinon 0)
+constante V_RANG = 104000000;    // l'atome de cette demi-instruction dans le morceau lu, plus un (0 : aucun)
+constante V_DEB = 106000000;     // les débuts des morceaux, triés (puis la fin)
+constante V_VIB = 108000000;     // pour chaque morceau : sa vibration, ses atomes, sa masse
+constante V_NAT = 110000000;
+constante V_MAS = 112000000;
+constante V_AT = 114000000;      // le morceau lu : la demi-instruction de chaque atome, sa clé, sa constante, sa masse
+constante V_CLE = 116000000;
+constante V_LV = 118000000;
+constante V_MA = 120000000;
+constante V_DEG = 121000000;     // le nombre de ses voisins
+constante V_EA = 122000000;      // les liaisons, dans les deux sens, avant le tri
+constante V_EB = 132000000;
+constante V_OFF = 142000000;     // les voisins de chaque atome : le début dans V_ADJ
+constante V_ADJ = 144000000;
+constante V_LAB = 154000000;     // les vibrations des atomes (et le tour suivant)
+constante V_LAB2 = 156000000;
+constante V_W = 158000000;       // les chemins depuis un atome : quatre longueurs (0 à 3), puis les atomes touchés
+constante V_T = 166000000;
+constante V_TRI = 174000000;     // les vibrations des voisins, à trier
+constante V_FORME = 175000000;   // les registres de chaque instruction : 1 écrit d, 2 lit d, 4 lit s, 8 lit t
+constante V_ETAT = 175001000;    // 0 : les morceaux ; 1 : la longueur en demi-instructions ; 2, 3 : atomes et masse
+constante V_DER = 175001100;     // le dernier atome (plus un) qui a écrit chaque registre
+constante V_NT = 175001200;      // le nombre d'atomes touchés à chaque longueur
+constante V_PAS = 2000000;
+constante V_M32 = 4294967295;
+constante V_HAUTS = 18446744069414584320;
+constante V_PRO1 = 10991817742876672;   // PUSH R13
+constante V_PRO2 = 3340316325183488;    // MOV R13,R14
+
+fonction vib_preparer() {
+    @2[V_FORME + 1] = 13;
+    @2[V_FORME + 2] = 13;
+    @2[V_FORME + 3] = 13;
+    @2[V_FORME + 4] = 5;
+    @2[V_FORME + 5] = 5;
+    @2[V_FORME + 6] = 5;
+    @2[V_FORME + 7] = 5;
+    @2[V_FORME + 8] = 13;
+    @2[V_FORME + 9] = 13;
+    @2[V_FORME + 10] = 1;
+    @2[V_FORME + 11] = 5;
+    @2[V_FORME + 12] = 13;
+    @2[V_FORME + 13] = 13;
+    @2[V_FORME + 14] = 12;
+    @2[V_FORME + 15] = 4;
+    @2[V_FORME + 16] = 13;
+    @2[V_FORME + 17] = 13;
+    @2[V_FORME + 18] = 5;
+    @2[V_FORME + 19] = 13;
+    @2[V_FORME + 20] = 13;
+    @2[V_FORME + 21] = 13;
+    @2[V_FORME + 22] = 13;
+    @2[V_FORME + 23] = 13;
+    @2[V_FORME + 24] = 1;
+    @2[V_FORME + 25] = 1;
+    @2[V_FORME + 26] = 13;
+    @2[V_FORME + 27] = 13;
+    @2[V_FORME + 28] = 5;
+    @2[V_FORME + 29] = 5;
+    @2[V_FORME + 30] = 13;
+    @2[V_FORME + 31] = 5;
+    @2[V_FORME + 32] = 5;
+    @2[V_FORME + 33] = 6;
+    @2[V_FORME + 34] = 13;
+    @2[V_FORME + 35] = 1;
+    @2[V_FORME + 36] = 4;
+    @2[V_FORME + 37] = 1;
+    @2[V_FORME + 38] = 2;
+    @2[V_FORME + 39] = 4;
+    @2[V_FORME + 40] = 1;
+    @2[V_FORME + 41] = 13;
+    @2[V_FORME + 42] = 14;
+    @2[V_FORME + 43] = 3;
+    @2[V_FORME + 56] = 13;
+    @2[V_FORME + 64] = 13;
+    @2[V_FORME + 65] = 13;
+    @2[V_FORME + 66] = 13;
+    @2[V_FORME + 67] = 13;
+    @2[V_FORME + 68] = 13;
+    @2[V_FORME + 69] = 13;
+    @2[V_FORME + 70] = 13;
+    @2[V_FORME + 71] = 5;
+    @2[V_FORME + 72] = 5;
+    @2[V_FORME + 73] = 5;
+    @2[V_FORME + 74] = 5;
+    @2[V_FORME + 75] = 5;
+    @2[V_FORME + 76] = 13;
+    @2[V_FORME + 77] = 13;
+    @2[V_FORME + 78] = 13;
+    @2[V_FORME + 79] = 13;
+    @2[V_FORME + 80] = 5;
+    @2[V_FORME + 81] = 5;
+    @2[V_FORME + 82] = 13;
+    @2[V_FORME + 83] = 13;
+    @2[V_FORME + 84] = 13;
+    @2[V_FORME + 85] = 14;
+    @2[V_FORME + 86] = 13;
+    @2[V_FORME + 87] = 13;
+    @2[V_FORME + 88] = 5;
+    @2[V_FORME + 89] = 5;
+    @2[V_FORME + 90] = 13;
+    @2[V_FORME + 91] = 5;
+    @2[V_FORME + 92] = 5;
+    @2[V_FORME + 93] = 13;
+    @2[V_FORME + 94] = 12;
+    @2[V_FORME + 95] = 5;
+    @2[V_FORME + 108] = 5;
+    @2[V_FORME + 109] = 5;
+    @2[V_FORME + 110] = 5;
+    @2[V_FORME + 128] = 13;
+    @2[V_FORME + 129] = 13;
+    @2[V_FORME + 130] = 13;
+    @2[V_FORME + 131] = 13;
+    @2[V_FORME + 132] = 13;
+    @2[V_FORME + 133] = 13;
+    @2[V_FORME + 134] = 13;
+    @2[V_FORME + 135] = 13;
+    @2[V_FORME + 136] = 13;
+    @2[V_FORME + 137] = 5;
+    @2[V_FORME + 138] = 13;
+    @2[V_FORME + 139] = 5;
+    @2[V_FORME + 144] = 13;
+    @2[V_FORME + 145] = 13;
+    @2[V_FORME + 146] = 13;
+    @2[V_FORME + 147] = 5;
+}
+
+fonction vib_melanger(h, x) {
+    retour brasser(h ^ x);
+}
+
+fonction vib_saut(op) {
+    retour op == 48 || op == 49 || op == 50 || op == 53 || op == 54;
+}
+
+// une constante (haut, bas) qui est sans doute une adresse : elle change d'un programme à l'autre
+fonction vib_adresse(haut, bas) {
+    si haut == 0 && bas <= V_M32 {
+        retour 1;
+    }
+    retour (haut >> 62) != 0 && (haut & 4611686018427387903) == 0 && bas < 281474976710656;
+}
+
+fonction vib_lier(a, b) {
+    si a != b {
+        soit ne = @2[V_ETAT + 4];
+        @2[V_EA + ne] = a;
+        @2[V_EB + ne] = b;
+        @2[V_EA + ne + 1] = b;
+        @2[V_EB + ne + 1] = a;
+        @2[V_ETAT + 4] = ne + 2;
+    }
+}
+
+// les débuts des morceaux des mots lus (MH, MB : n mots) : 0, la cible de chaque CALL, chaque prologue
+fonction vib_debuts(n) {
+    soit n2 = 2 * n;
+    soit lit = 0;
+    pour p dans 0..n2 {
+        @2[V_LIT + p] = lit;
+        @2[V_RANG + p] = 0;
+        @2[V_PREM + p] = 0;
+        si lit == 1 {
+            lit = 0;
+        } sinon {
+            soit op = demi(p) >> 48;
+            si op == 10 || op == 43 {
+                lit = 1;
+            }
+        }
+    }
+    @2[V_RANG] = 1;
+    pour p2 dans 0..n2 {
+        si @2[V_LIT + p2] == 0 {
+            soit h = demi(p2);
+            si (h >> 48) == 51 && (h & V_M32) < n2 {
+                @2[V_RANG + (h & V_M32)] = 1;
+            }
+            si p2 + 1 < n2 && h == V_PRO1 && @2[V_LIT + p2 + 1] == 0 && demi(p2 + 1) == V_PRO2 {
+                @2[V_RANG + p2] = 1;
+            }
+        }
+    }
+    soit k = 0;
+    pour p3 dans 0..n2 {
+        si @2[V_RANG + p3] == 1 {
+            @2[V_DEB + k] = p3;
+            k = k + 1;
+            @2[V_RANG + p3] = 0;
+        }
+    }
+    @2[V_DEB + k] = n2;
+    @2[V_ETAT] = k;
+    @2[V_ETAT + 1] = n2;
+}
+
+// le morceau [p, q) : rend sa vibration (ses atomes et sa masse dans V_ETAT + 2, + 3) ; passe 2 : un CALL porte la
+// première vibration de sa cible
+fonction vib_morceau(p, q, passe) {
+    soit n2 = @2[V_ETAT + 1];
+    soit n = 0;
+    pour i dans p..q {
+        si @2[V_LIT + i] == 0 {
+            @2[V_AT + n] = i;
+            n = n + 1;
+            @2[V_RANG + i] = n;
+        }
+    }
+    @2[V_ETAT + 4] = 0;
+    pour r dans 0..16 {
+        @2[V_DER + r] = 0;
+    }
+    pour j dans 0..n {
+        soit i2 = @2[V_AT + j];
+        soit h = demi(i2);
+        soit op = h >> 48;
+        soit d = (h >> 44) & 15;
+        soit s = (h >> 40) & 15;
+        soit t = (h >> 36) & 15;
+        soit imm = h & V_M32;
+        soit lit = 0;
+        soit cle = imm;
+        si vib_saut(op) {
+            si imm >= p && imm < q {
+                cle = imm - p;
+            } sinon {
+                cle = V_M32;
+            }
+        } sinon si op == 51 {
+            cle = V_M32;
+            si passe == 2 && imm < n2 {
+                lit = @2[V_PREM + imm];
+            }
+        }
+        si (op == 10 || op == 43) && i2 + 1 < q {
+            soit bas_ = 0;
+            soit haut_ = 0;
+            si op == 10 {
+                bas_ = demi(i2 + 1);
+                si i2 + 3 < q && (demi(i2 + 2) >> 48) == 43 && ((demi(i2 + 2) >> 44) & 15) == d {
+                    haut_ = demi(i2 + 3);
+                }
+            } sinon {
+                haut_ = demi(i2 + 1);
+                si i2 >= p + 2 && (demi(i2 - 2) >> 48) == 10 {
+                    bas_ = demi(i2 - 1);
+                }
+            }
+            si vib_adresse(haut_, bas_) == 0 {
+                lit = demi(i2 + 1);
+            }
+        }
+        @2[V_CLE + j] = (h & V_HAUTS) | cle;
+        @2[V_LV + j] = lit;
+        si j + 1 < n && op != 48 && op != 52 && op != 63 {
+            vib_lier(j, j + 1);
+        }
+        si vib_saut(op) && imm >= p && imm < q && @2[V_RANG + imm] != 0 {
+            vib_lier(j, @2[V_RANG + imm] - 1);
+        }
+        soit f = @2[V_FORME + op];
+        si (f & 2) != 0 && @2[V_DER + d] != 0 {
+            vib_lier(j, @2[V_DER + d] - 1);
+        }
+        si (f & 4) != 0 && @2[V_DER + s] != 0 {
+            vib_lier(j, @2[V_DER + s] - 1);
+        }
+        si (f & 8) != 0 && @2[V_DER + t] != 0 {
+            vib_lier(j, @2[V_DER + t] - 1);
+        }
+        si (f & 1) != 0 {
+            @2[V_DER + d] = j + 1;
+        }
+        si op == 51 {
+            pour r2 dans 0..16 {
+                @2[V_DER + r2] = j + 1;
+            }
+        }
+    }
+    // les voisins de chaque atome, triés, sans double
+    soit ne = @2[V_ETAT + 4];
+    pour a dans 0..n + 1 {
+        @2[V_OFF + a] = 0;
+    }
+    pour e dans 0..ne {
+        @2[V_OFF + @2[V_EA + e] + 1] = @2[V_OFF + @2[V_EA + e] + 1] + 1;
+    }
+    pour a2 dans 0..n {
+        @2[V_OFF + a2 + 1] = @2[V_OFF + a2 + 1] + @2[V_OFF + a2];
+        @2[V_DEG + a2] = 0;
+    }
+    pour e2 dans 0..ne {
+        soit a3 = @2[V_EA + e2];
+        @2[V_ADJ + @2[V_OFF + a3] + @2[V_DEG + a3]] = @2[V_EB + e2];
+        @2[V_DEG + a3] = @2[V_DEG + a3] + 1;
+    }
+    soit masse = 0;
+    soit liaisons = 0;
+    pour a4 dans 0..n {
+        soit o = @2[V_OFF + a4];
+        soit m = @2[V_DEG + a4];
+        pour x dans 1..m {
+            soit y = @2[V_ADJ + o + x];
+            soit z = x;
+            tantque z > 0 && @2[V_ADJ + o + z - 1] > y {
+                @2[V_ADJ + o + z] = @2[V_ADJ + o + z - 1];
+                z = z - 1;
+            }
+            @2[V_ADJ + o + z] = y;
+        }
+        soit u = 0;
+        pour x2 dans 0..m {
+            si u == 0 || @2[V_ADJ + o + x2] != @2[V_ADJ + o + u - 1] {
+                @2[V_ADJ + o + u] = @2[V_ADJ + o + x2];
+                u = u + 1;
+            }
+        }
+        @2[V_DEG + a4] = u;
+        liaisons = liaisons + u;
+        soit ma = 12;
+        si u <= 1 {
+            ma = 1;
+        } sinon si u == 2 {
+            ma = 16;
+        } sinon si u == 3 {
+            ma = 14;
+        }
+        @2[V_MA + a4] = ma;
+        masse = masse + ma;
+    }
+    liaisons = liaisons / 2;
+    // la vibration locale : les chemins fermés de longueur 1 à 6 (ceux de longueur a + b, par les chemins de longueur a
+    // et b depuis l'atome, a et b au plus 3)
+    pour v dans 0..n {
+        @2[V_W + v] = 1;
+        @2[V_T] = v;
+        @2[V_NT] = 1;
+        pour lg dans 1..4 {
+            soit wa = V_W + (lg - 1) * V_PAS;
+            soit ta = V_T + (lg - 1) * V_PAS;
+            soit wb = V_W + lg * V_PAS;
+            soit tb = V_T + lg * V_PAS;
+            soit nb = 0;
+            pour k dans 0..@2[V_NT + lg - 1] {
+                soit u2 = @2[ta + k];
+                soit c = @2[wa + u2];
+                soit o2 = @2[V_OFF + u2];
+                pour x3 dans 0..@2[V_DEG + u2] {
+                    soit y2 = @2[V_ADJ + o2 + x3];
+                    si @2[wb + y2] == 0 {
+                        @2[tb + nb] = y2;
+                        nb = nb + 1;
+                    }
+                    @2[wb + y2] = @2[wb + y2] + c;
+                }
+            }
+            @2[V_NT + lg] = nb;
+        }
+        soit hv = vib_melanger(0, 6);
+        pour k2 dans 1..7 {
+            soit a5 = k2 / 2;
+            soit b5 = k2 - a5;
+            soit wa2 = V_W + a5 * V_PAS;
+            soit wb2 = V_W + b5 * V_PAS;
+            soit ta2 = V_T + a5 * V_PAS;
+            soit somme_c = 0;
+            pour k3 dans 0..@2[V_NT + a5] {
+                soit u3 = @2[ta2 + k3];
+                somme_c = somme_c + @2[wa2 + u3] * @2[wb2 + u3];
+            }
+            hv = vib_melanger(hv, somme_c);
+        }
+        hv = vib_melanger(hv, @2[V_MA + v]);
+        hv = vib_melanger(hv, @2[V_CLE + v]);
+        hv = vib_melanger(hv, @2[V_LV + v]);
+        @2[V_LAB + v] = hv;
+        pour lg2 dans 0..4 {
+            soit w0 = V_W + lg2 * V_PAS;
+            soit t0 = V_T + lg2 * V_PAS;
+            pour k4 dans 0..@2[V_NT + lg2] {
+                @2[w0 + @2[t0 + k4]] = 0;
+            }
+        }
+    }
+    // trois tours : chaque atome prend la vibration de ses voisins, triées
+    pour tour dans 0..3 {
+        pour v2 dans 0..n {
+            soit o3 = @2[V_OFF + v2];
+            soit m3 = @2[V_DEG + v2];
+            pour x4 dans 0..m3 {
+                soit y3 = @2[V_LAB + @2[V_ADJ + o3 + x4]];
+                soit z2 = x4;
+                tantque z2 > 0 && @2[V_TRI + z2 - 1] > y3 {
+                    @2[V_TRI + z2] = @2[V_TRI + z2 - 1];
+                    z2 = z2 - 1;
+                }
+                @2[V_TRI + z2] = y3;
+            }
+            soit h2 = vib_melanger(0, @2[V_LAB + v2]);
+            pour x5 dans 0..m3 {
+                h2 = vib_melanger(h2, @2[V_TRI + x5]);
+            }
+            @2[V_LAB2 + v2] = h2;
+        }
+        pour v3 dans 0..n {
+            @2[V_LAB + v3] = @2[V_LAB2 + v3];
+        }
+    }
+    soit somme = 0;
+    soit oux = 0;
+    pour v4 dans 0..n {
+        somme = somme + @2[V_LAB + v4];
+        oux = oux ^ @2[V_LAB + v4];
+    }
+    pour i3 dans p..q {
+        @2[V_RANG + i3] = 0;
+    }
+    @2[V_ETAT + 2] = n;
+    @2[V_ETAT + 3] = masse;
+    soit hm = vib_melanger(0, n);
+    hm = vib_melanger(hm, liaisons);
+    hm = vib_melanger(hm, masse);
+    hm = vib_melanger(hm, somme);
+    retour vib_melanger(hm, oux);
+}
+
+// tous les morceaux des n mots lus : leurs vibrations (deux passes) dans V_VIB, V_NAT, V_MAS
+fonction vib_morceaux(n) {
+    vib_debuts(n);
+    soit k = @2[V_ETAT];
+    pour i dans 0..k {
+        @2[V_PREM + @2[V_DEB + i]] = vib_morceau(@2[V_DEB + i], @2[V_DEB + i + 1], 1);
+    }
+    pour i2 dans 0..k {
+        @2[V_VIB + i2] = vib_morceau(@2[V_DEB + i2], @2[V_DEB + i2 + 1], 2);
+        @2[V_NAT + i2] = @2[V_ETAT + 2];
+        @2[V_MAS + i2] = @2[V_ETAT + 3];
+    }
+}
+
+// le chiffre hexadécimal en minuscule (comme lugus empreinte)
+fonction vib_hexa(c, x) {
+    pour i dans 0..16 {
+        soit d = (x >> (60 - 4 * i)) & 15;
+        si d < 10 {
+            ecrire_car(c, 48 + d);
+        } sinon {
+            ecrire_car(c, 87 + d);
+        }
+    }
+}
+
+// « lugus morceaux PROG » : les morceaux et leur vibration (comme « python3 chimie/adn.py morceaux »), pour comparer
+fonction montrer_morceaux(chemin) {
+    lire_fichier_mots(chemin);
+    si @2[G + G_ERR] != 0 {
+        retour;
+    }
+    vib_morceaux(@2[G + G_N]);
+    pour i dans 0..@2[V_ETAT] {
+        ecrire_u64(1, @2[V_DEB + i]);
+        ecrire_car(1, ' ');
+        ecrire_u64(1, @2[V_DEB + i + 1]);
+        ecrire_car(1, ' ');
+        ecrire_u64(1, @2[V_NAT + i]);
+        ecrire_car(1, ' ');
+        ecrire_u64(1, @2[V_MAS + i]);
+        ecrire_car(1, ' ');
+        vib_hexa(1, @2[V_VIB + i]);
+        ecrire_car(1, 10);
+    }
+}
+
+// --------------------------------------------------------------------------------------------- le catalogue (0.62)
+// « lugus cataloguer DOSSIER » : DOSSIER/catalogue.vtxcat, comme cataloguer() de chimie/adn.py, octet pour octet. Pour
+// chaque module du dossier (un .vtx sans « principal », dans l'ordre de la liste du dossier, le service 28) : son nom,
+// son empreinte (FNV-1a de ses caractères, les retours chariot sautés : celle de « importer … empreinte »), et ses
+// molécules : chacune compilée par vtxc128 (le service 27) dans une sonde qui prend en valeur les fonctions que le
+// module n'appelle pas lui-même, puis sa masse, ses atomes et sa vibration. Un module qui ne se compile pas seul : « - ».
+constante C_VIDE = 179999990;    // un texte vide (le dossier lui-même)
+constante C_NOMS = 180000000;    // la liste du dossier : les caractères, le début et la longueur de chaque nom
+constante C_ND = 181000000;
+constante C_NL = 181100000;
+constante C_MOD = 182000000;     // le module lu (sans les retours chariot), le début de chaque ligne
+constante C_LD = 186000000;
+constante C_FD = 187000000;      // ses fonctions : le début du nom (dans C_MOD), sa longueur, 1 si le module l'appelle
+constante C_FL = 187100000;
+constante C_FI = 187200000;
+constante C_FM = 187300000;      // ce que le catalogue en dit : le morceau (plus un ; 0 : aucun)
+constante C_TX = 189000000;      // un nom de fichier, en texte (une longueur, puis ses caractères)
+constante C_ETAT = 189100000;    // 0 : les noms ; 1 : les caractères du module ; 2 : ses lignes ; 3 : ses fonctions
+
+fonction cat_texte(debut, n) {
+    // le nom C_NOMS[debut..debut + n] en texte, dans C_TX
+    @2[C_TX] = n;
+    pour i dans 0..n {
+        @2[C_TX + 1 + i] = @2[C_NOMS + debut + i];
+    }
+    retour ETAGE2 + C_TX;
+}
+
+fonction cat_ligne_commence(l, t) {
+    // la ligne l du module commence-t-elle par le texte t ?
+    soit d = @2[C_LD + l];
+    soit f = @2[C_LD + l + 1] - 1;
+    si f - d < longueur(t) {
+        retour 0;
+    }
+    pour i dans 0..longueur(t) {
+        si @2[C_MOD + d + i] != car(t, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// la ligne l commence-t-elle par « fonction NOM( », NOM la fonction k ?
+fonction cat_entete_de(l, k) {
+    si cat_ligne_commence(l, "fonction ") == 0 {
+        retour 0;
+    }
+    soit d = @2[C_LD + l] + 9;
+    soit f = @2[C_LD + l + 1] - 1;
+    soit n = @2[C_FL + k];
+    si f - d < n + 1 {
+        retour 0;
+    }
+    pour i dans 0..n {
+        si @2[C_MOD + d + i] != @2[C_MOD + @2[C_FD + k] + i] {
+            retour 0;
+        }
+    }
+    retour @2[C_MOD + d + n] == '(';
+}
+
+// le nom de la fonction k est-il celui de la ligne « nom|place » i des noms donnés par le compilateur (en minuscules) ?
+fonction cat_meme_nom(k, i) {
+    soit n = @2[C_FL + k];
+    si @2[NLEN + i] != n {
+        retour 0;
+    }
+    pour j dans 0..n {
+        si @2[NCAR + @2[NDEB + i] + j] != bas_car(@2[C_MOD + @2[C_FD + k] + j]) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+fonction cat_ecrire_nom(c, k) {
+    pour i dans 0..@2[C_FL + k] {
+        ecrire_car(c, @2[C_MOD + @2[C_FD + k] + i]);
+    }
+}
+
+// la sonde, dans TEXTE : un texte (ou un nombre) ajouté à la place lg ; rend la nouvelle longueur
+fonction cat_mettre(lg, t) {
+    pour i dans 0..longueur(t) {
+        @2[TEXTE + 1 + lg + i] = car(t, i);
+    }
+    retour lg + longueur(t);
+}
+
+fonction cat_mettre_nombre(lg, x) {
+    soit p = 1;
+    tantque p * 10 <= x {
+        p = p * 10;
+    }
+    soit l = lg;
+    soit y = x;
+    tantque p > 0 {
+        @2[TEXTE + 1 + l] = 48 + y / p;
+        y = y % p;
+        p = p / 10;
+        l = l + 1;
+    }
+    retour l;
+}
+
+// le module (le nom i de la liste) : lu, son empreinte, ses fonctions, sa sonde compilée, ses molécules ; écrit dans c
+fonction cat_module(c, i) {
+    soit nd = @2[C_ND + i];
+    soit nl = @2[C_NL + i];
+    soit f = ouvrir_lecture(cat_texte(nd, nl));
+    si f == 18446744073709551615 {
+        retour;
+    }
+    soit n = 0;
+    soit h = 14695981039346656037;
+    tantque fin_de(f) == 0 {
+        soit x = lire_car(f);
+        si x != 13 {
+            @2[C_MOD + n] = x;
+            n = n + 1;
+            h = (h ^ x) * 1099511628211;
+        }
+    }
+    fermer(f);
+    // les lignes
+    soit nlg = 0;
+    @2[C_LD] = 0;
+    pour j dans 0..n {
+        si @2[C_MOD + j] == 10 {
+            nlg = nlg + 1;
+            @2[C_LD + nlg] = j + 1;
+        }
+    }
+    nlg = nlg + 1;
+    @2[C_LD + nlg] = n + 1;
+    pour l dans 0..nlg {
+        si cat_ligne_commence(l, "fonction principal(") {
+            retour;
+        }
+    }
+    // les fonctions écrites en tête de ligne, dans l'ordre, chacune une fois
+    soit nf = 0;
+    pour l2 dans 0..nlg {
+        si cat_ligne_commence(l2, "fonction ") {
+            soit d = @2[C_LD + l2] + 9;
+            soit fin = @2[C_LD + l2 + 1] - 1;
+            soit p = d;
+            tantque p < fin && @2[C_MOD + p] != '(' {
+                p = p + 1;
+            }
+            si p < fin {
+                soit a = d;
+                soit b = p;
+                tantque a < b && (@2[C_MOD + a] == ' ' || @2[C_MOD + a] == 9) {
+                    a = a + 1;
+                }
+                tantque b > a && (@2[C_MOD + b - 1] == ' ' || @2[C_MOD + b - 1] == 9) {
+                    b = b - 1;
+                }
+                soit double = 0;
+                pour k dans 0..nf {
+                    si @2[C_FL + k] == b - a {
+                        soit meme = 1;
+                        pour q dans 0..b - a {
+                            si @2[C_MOD + @2[C_FD + k] + q] != @2[C_MOD + a + q] {
+                                meme = 0;
+                            }
+                        }
+                        si meme == 1 {
+                            double = 1;
+                        }
+                    }
+                }
+                si b > a && double == 0 {
+                    @2[C_FD + nf] = a;
+                    @2[C_FL + nf] = b - a;
+                    nf = nf + 1;
+                }
+            }
+        }
+    }
+    // celles que le module appelle lui-même (« nom( » ailleurs que dans son en-tête, hors d'une ligne de commentaire)
+    pour k2 dans 0..nf {
+        @2[C_FI + k2] = 0;
+        soit fd = @2[C_FD + k2];
+        soit fl = @2[C_FL + k2];
+        pour l3 dans 0..nlg {
+            soit d3 = @2[C_LD + l3];
+            soit f3 = @2[C_LD + l3 + 1] - 1;
+            soit s3 = d3;
+            tantque s3 < f3 && (@2[C_MOD + s3] == ' ' || @2[C_MOD + s3] == 9) {
+                s3 = s3 + 1;
+            }
+            soit commentaire = s3 + 1 < f3 && @2[C_MOD + s3] == '/' && @2[C_MOD + s3 + 1] == '/';
+            si @2[C_FI + k2] == 0 && cat_entete_de(l3, k2) == 0 && commentaire == 0 {
+                pour j3 dans d3..f3 {
+                    si @2[C_FI + k2] == 0 && j3 + fl < f3 && @2[C_MOD + j3 + fl] == '(' {
+                        soit meme3 = 1;
+                        pour q3 dans 0..fl {
+                            si @2[C_MOD + j3 + q3] != @2[C_MOD + fd + q3] {
+                                meme3 = 0;
+                            }
+                        }
+                        si meme3 == 1 && (j3 == d3 || lettre_nom(@2[C_MOD + j3 - 1]) == 0) {
+                            @2[C_FI + k2] = 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // la sonde : importer le module, prendre en valeur les fonctions qu'il n'appelle pas lui-même
+    soit lg = 0;
+    soit tete = "importer \"";
+    pour q4 dans 0..longueur(tete) {
+        @2[TEXTE + 1 + lg] = car(tete, q4);
+        lg = lg + 1;
+    }
+    pour q5 dans 0..nl {
+        @2[TEXTE + 1 + lg] = @2[C_NOMS + nd + q5];
+        lg = lg + 1;
+    }
+    soit milieu = "\";\nfonction principal() {\n";
+    pour q6 dans 0..longueur(milieu) {
+        @2[TEXTE + 1 + lg] = car(milieu, q6);
+        lg = lg + 1;
+    }
+    // « soit __vK = f; sortie(__vK); » (comme sonde() de chimie/adn.py)
+    soit kv = 0;
+    pour k3 dans 0..nf {
+        si @2[C_FI + k3] == 0 {
+            lg = cat_mettre(lg, "    soit __v");
+            lg = cat_mettre_nombre(lg, kv);
+            lg = cat_mettre(lg, " = ");
+            pour q8 dans 0..@2[C_FL + k3] {
+                @2[TEXTE + 1 + lg] = @2[C_MOD + @2[C_FD + k3] + q8];
+                lg = lg + 1;
+            }
+            lg = cat_mettre(lg, ";\n    sortie(__v");
+            lg = cat_mettre_nombre(lg, kv);
+            lg = cat_mettre(lg, ");\n");
+            kv = kv + 1;
+        }
+    }
+    @2[TEXTE + 1 + lg] = '}';
+    @2[TEXTE + 2 + lg] = 10;
+    @2[TEXTE] = lg + 2;
+    ecrire_t(c, "module|");
+    pour q10 dans 0..nl {
+        ecrire_car(c, @2[C_NOMS + nd + q10]);
+    }
+    ecrire_car(c, '|');
+    vib_hexa(c, h);
+    ecrire_car(c, '|');
+    soit g = __service(27, ETAGE2 + TEXTE);
+    si g == 18446744073709551615 {
+        refuser("cette machine n'a pas de compilateur pour le lecteur");
+        retour;
+    }
+    @2[G + G_CANAL] = g;
+    @2[G + G_COPIE] = 0;
+    avancer();
+    si car_courant() == '!' {
+        fermer(g);
+        ecrire_t(c, "-\n");
+        retour;
+    }
+    soit nm = 0;
+    tantque car_courant() != ';' && car_courant() != FIN {
+        soit bb = lire_nombre();
+        @2[MH + nm] = @2[G + G_HAUT];
+        @2[MB + nm] = bb;
+        nm = nm + 1;
+        si car_courant() == ',' {
+            avancer();
+        }
+    }
+    si car_courant() == ';' {
+        avancer();
+    }
+    si car_courant() == 10 {
+        avancer();
+    }
+    @2[G + G_NN] = 0;
+    @2[NDEB] = 0;
+    @2[NLEN] = 0;
+    soit place = 0;
+    soit barre = 0;
+    tantque car_courant() != FIN {
+        soit cc = car_courant();
+        si cc == 10 {
+            noms_finir(place, barre);
+            place = 0;
+            barre = 0;
+        } sinon si cc != 13 {
+            si barre == 1 {
+                place = place * 10 + (cc - 48);
+            } sinon si cc == '|' {
+                barre = 1;
+            } sinon {
+                noms_ajouter(cc);
+            }
+        }
+        avancer();
+    }
+    noms_finir(place, barre);
+    fermer(g);
+    @2[G + G_N] = nm;
+    vib_morceaux(nm);
+    soit trouvees = 0;
+    pour k4 dans 0..nf {
+        @2[C_FM + k4] = 0;
+        soit w = 18446744073709551615;
+        pour i4 dans 0..@2[G + G_NN] {
+            si w == 18446744073709551615 && cat_meme_nom(k4, i4) {
+                w = @2[NPL + i4];
+            }
+        }
+        si w != 18446744073709551615 {
+            pour m dans 0..@2[V_ETAT] {
+                soit p4 = @2[V_DEB + m];
+                si @2[C_FM + k4] == 0 && p4 / 2 == w && p4 + 1 < 2 * nm && demi(p4) == V_PRO1 && demi(p4 + 1) == V_PRO2 {
+                    @2[C_FM + k4] = m + 1;
+                }
+            }
+        }
+        si @2[C_FM + k4] != 0 {
+            trouvees = trouvees + 1;
+        }
+    }
+    ecrire_u64(c, trouvees);
+    ecrire_car(c, 10);
+    pour k5 dans 0..nf {
+        soit m2 = @2[C_FM + k5];
+        si m2 != 0 {
+            ecrire_t(c, "molecule|");
+            cat_ecrire_nom(c, k5);
+            ecrire_car(c, '|');
+            ecrire_u64(c, @2[V_MAS + m2 - 1]);
+            ecrire_car(c, '|');
+            ecrire_u64(c, @2[V_NAT + m2 - 1]);
+            ecrire_car(c, '|');
+            vib_hexa(c, @2[V_VIB + m2 - 1]);
+            ecrire_car(c, 10);
+        }
+    }
+}
+
+fonction cataloguer() {
+    vib_preparer();
+    @2[C_VIDE] = 0;
+    soit l = __service(28, ETAGE2 + C_VIDE);
+    si l == 18446744073709551615 || l == 18446744073709551614 {
+        refuser("le dossier ne se lit pas");
+        retour;
+    }
+    soit n = 0;
+    soit k = 0;
+    @2[C_ND] = 0;
+    tantque fin_de(l) == 0 {
+        soit x = lire_car(l);
+        si x == 10 {
+            @2[C_NL + k] = n - @2[C_ND + k];
+            k = k + 1;
+            @2[C_ND + k] = n;
+        } sinon {
+            @2[C_NOMS + n] = x;
+            n = n + 1;
+        }
+    }
+    fermer(l);
+    soit fin = "catalogue.vtxcat";
+    @2[C_TX] = longueur(fin);
+    pour i dans 0..longueur(fin) {
+        @2[C_TX + 1 + i] = car(fin, i);
+    }
+    soit c = ouvrir_ecriture(ETAGE2 + C_TX);
+    ecrire_t(c, "VTXCAT01\n// le catalogue des modules de ce dossier (lugus cataloguer) : module|nom|empreinte|molécules, puis molecule|nom|masse|atomes|vibration\n");
+    soit modules = 0;
+    pour i2 dans 0..k {
+        soit d = @2[C_ND + i2];
+        soit lg = @2[C_NL + i2];
+        si lg >= 4 && @2[C_NOMS + d + lg - 4] == '.' && @2[C_NOMS + d + lg - 3] == 'v' && @2[C_NOMS + d + lg - 2] == 't'
+                && @2[C_NOMS + d + lg - 1] == 'x' && @2[G + G_ERR] == 0 {
+            cat_module(c, i2);
+            modules = modules + 1;
+        }
+    }
+    fermer(c);
+    si @2[G + G_ERR] == 0 {
+        ecrire_t(1, "le catalogue : ");
+        ecrire_u64(1, k);
+        ecrire_t(1, " noms dans le dossier -> catalogue.vtxcat\n");
+    }
+}
+
+// --------------------------------------------------------------------------------------------- d'où vient une molécule (0.62)
+// La carte lit les catalogues (ceux que « importer empreinte » lit : le dossier du programme, bibliotheque/,
+// ../bibliotheque/) ; une molécule dont la vibration est celle d'une molécule d'un module catalogué vient de ce module ;
+// une molécule qui porte le nom d'une molécule d'un module, mais pas sa vibration, a été retouchée (ou compilée
+// autrement) : elle se voit.
+constante K_ETAT = 190000000;    // 0 : les modules ; 1 : les molécules ; 2 : les caractères ; 3 : 1, des catalogues lus
+constante K_CAR = 190100000;     // les noms (des modules et des molécules)
+constante K_MD = 191000000;      // les modules : le nom (début, longueur), l'empreinte
+constante K_ML = 191100000;
+constante K_ME = 191200000;
+constante K_VIB = 192000000;     // les molécules : la vibration, le module, le nom (début, longueur)
+constante K_VM = 192100000;
+constante K_FD = 192200000;
+constante K_FL = 192300000;
+constante K_LIGNE = 193000000;   // la ligne lue, et le début de chacun de ses champs
+constante K_CH = 193100000;
+
+fonction k_hexa(d, f) {
+    soit x = 0;
+    pour i dans d..f {
+        soit c = @2[K_LIGNE + i];
+        soit v = 16;
+        si c >= 48 && c <= 57 { v = c - 48; }
+        si c >= 97 && c <= 102 { v = c - 87; }
+        si c >= 65 && c <= 70 { v = c - 55; }
+        si v == 16 {
+            retour 0;
+        }
+        x = (x << 4) | v;
+    }
+    retour x;
+}
+
+fonction k_champ_est(k, t) {
+    soit d = @2[K_CH + k];
+    si @2[K_CH + k + 1] - 1 - d != longueur(t) {
+        retour 0;
+    }
+    pour i dans 0..longueur(t) {
+        si @2[K_LIGNE + d + i] != car(t, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// le champ k de la ligne, recopié dans K_CAR : rend son début
+fonction k_garder(k) {
+    soit n = @2[K_ETAT + 2];
+    soit d = @2[K_CH + k];
+    pour i dans d..@2[K_CH + k + 1] - 1 {
+        @2[K_CAR + n] = @2[K_LIGNE + i];
+        n = n + 1;
+    }
+    @2[K_ETAT + 2] = n;
+    retour n - (@2[K_CH + k + 1] - 1 - d);
+}
+
+fonction k_ligne(n) {
+    // les champs (séparés par « | ») de la ligne K_LIGNE[0..n]
+    soit nc = 1;
+    @2[K_CH] = 0;
+    pour i dans 0..n {
+        si @2[K_LIGNE + i] == '|' && nc < 8 {
+            @2[K_CH + nc] = i + 1;
+            nc = nc + 1;
+        }
+    }
+    @2[K_CH + nc] = n + 1;
+    si nc >= 3 && k_champ_est(0, "module") && @2[K_CH + 2] - 1 > @2[K_CH + 1] && @2[K_ETAT] < 99999 {
+        soit m = @2[K_ETAT];
+        @2[K_MD + m] = k_garder(1);
+        @2[K_ML + m] = @2[K_CH + 2] - 1 - @2[K_CH + 1];
+        @2[K_ME + m] = k_hexa(@2[K_CH + 2], @2[K_CH + 3] - 1);
+        @2[K_ETAT] = m + 1;
+    }
+    si nc >= 5 && k_champ_est(0, "molecule") && @2[K_ETAT] > 0 && @2[K_ETAT + 1] < 99999 {
+        soit j = @2[K_ETAT + 1];
+        @2[K_VIB + j] = k_hexa(@2[K_CH + 4], @2[K_CH + 5] - 1);
+        @2[K_VM + j] = @2[K_ETAT] - 1;
+        @2[K_FD + j] = k_garder(1);
+        @2[K_FL + j] = @2[K_CH + 2] - 1 - @2[K_CH + 1];
+        @2[K_ETAT + 1] = j + 1;
+    }
+}
+
+fonction lire_catalogue(chemin) {
+    si chemin == 0 {
+        retour;
+    }
+    soit f = ouvrir_lecture(chemin);
+    si f == 18446744073709551615 {
+        retour;
+    }
+    @2[K_ETAT + 3] = 1;
+    soit n = 0;
+    tantque fin_de(f) == 0 {
+        soit x = lire_car(f);
+        si x == 10 {
+            k_ligne(n);
+            n = 0;
+        } sinon si x != 13 && n < 99000 {
+            @2[K_LIGNE + n] = x;
+            n = n + 1;
+        }
+    }
+    k_ligne(n);
+    fermer(f);
+}
+
+// la molécule du catalogue qui a cette vibration (plus un ; 0 : aucune)
+fonction k_trouver(v) {
+    pour j dans 0..@2[K_ETAT + 1] {
+        si @2[K_VIB + j] == v {
+            retour j + 1;
+        }
+    }
+    retour 0;
+}
+
+// la molécule du catalogue qui porte le nom de la molécule k de la carte (en minuscules ; plus un ; 0 : aucune)
+fonction k_meme_nom(k) {
+    si champ_vide(k, 1) {
+        retour 0;
+    }
+    soit d = @2[FOFF + 32 * k + 1];
+    soit l = champ_fin(k, 1) - d;
+    pour j dans 0..@2[K_ETAT + 1] {
+        si @2[K_FL + j] == l {
+            soit ok = 1;
+            pour i dans 0..l {
+                si bas_car(@2[K_CAR + @2[K_FD + j] + i]) != bas_car(@2[CARTEB + d + i]) {
+                    ok = 0;
+                }
+            }
+            si ok == 1 {
+                retour j + 1;
+            }
+        }
+    }
+    retour 0;
+}
+
+fonction k_ecrire_module(j) {
+    soit m = @2[K_VM + j];
+    pour i dans 0..@2[K_ML + m] {
+        ecrire_car(1, @2[K_CAR + @2[K_MD + m] + i]);
+    }
+    ecrire_t(1, " (empreinte ");
+    vib_hexa(1, @2[K_ME + m]);
+    ecrire_car(1, ')');
+}
+
+fonction k_ecrire_nom(j) {
+    pour i dans 0..@2[K_FL + j] {
+        ecrire_car(1, @2[K_CAR + @2[K_FD + j] + i]);
+    }
+}
+
+// le premier morceau de la molécule k de la carte (plus un ; 0 : aucun), puis le suivant après lui
+fonction k_premier_morceau(k) {
+    soit a = 2 * @2[DEBK + k];
+    pour m dans 0..@2[V_ETAT] {
+        si @2[V_DEB + m] >= a {
+            si @2[V_DEB + m] < a + 2 * champ_n(k, 4) {
+                retour m + 1;
+            }
+            retour 0;
+        }
+    }
+    retour 0;
+}
+
+// la molécule k vient-elle d'un module catalogué ? (1 : oui)
+fonction k_vient(k) {
+    soit m = k_premier_morceau(k);
+    retour m != 0 && k_trouver(@2[V_VIB + m - 1]) != 0;
+}
+
+// la molécule k porte-t-elle le nom d'une molécule d'un module catalogué, mais pas sa vibration ? (1 : oui)
+fonction k_retouchee(k) {
+    soit m = k_premier_morceau(k);
+    retour m != 0 && k_trouver(@2[V_VIB + m - 1]) == 0 && k_meme_nom(k) != 0;
+}
+
+// la suite de la face « sa mémoire » : sa vibration, et d'où elle vient
+fonction montrer_origine(k) {
+    soit m = k_premier_morceau(k);
+    si m == 0 {
+        retour;
+    }
+    ecrire_t(1, " ; sa vibration ");
+    vib_hexa(1, @2[V_VIB + m - 1]);
+    si @2[K_ETAT + 3] == 0 {
+        retour;
+    }
+    soit j = k_trouver(@2[V_VIB + m - 1]);
+    si j != 0 {
+        ecrire_t(1, " ; elle vient du module ");
+        k_ecrire_module(j - 1);
+        soit jn = k_meme_nom(k);
+        si jn != j {
+            ecrire_t(1, ", sa molécule ");
+            k_ecrire_nom(j - 1);
+        }
+    } sinon {
+        soit j2 = k_meme_nom(k);
+        si j2 != 0 {
+            ecrire_t(1, " ; son nom est celui d'une molécule du module ");
+            k_ecrire_module(j2 - 1);
+            ecrire_t(1, ", mais pas sa vibration : retouchée, ou compilée autrement");
+        }
+    }
+    // les autres morceaux qu'elle porte (des fonctions sans molécule à elles, posées à la suite)
+    soit fin = 2 * (@2[DEBK + k] + champ_n(k, 4));
+    soit q = m;
+    tantque q < @2[V_ETAT] && @2[V_DEB + q] < fin {
+        soit j3 = k_trouver(@2[V_VIB + q]);
+        si j3 != 0 {
+            ecrire_t(1, " ; elle porte aussi ");
+            k_ecrire_nom(j3 - 1);
+            ecrire_t(1, " du module ");
+            k_ecrire_module(j3 - 1);
+        }
+        q = q + 1;
+    }
+}
+
 fonction principal() {
     preparer();
     soit entree = lire_chemin(CHEMIN);
@@ -4262,6 +5394,21 @@ fonction principal() {
         sortie(E_VRAI);
         retour;
     }
+    si verbe != 0 && texte_egal(verbe, "cataloguer") {
+        cataloguer();
+        si @2[G + G_ERR] != 0 {
+            sortie(E_INCONNU);
+            retour;
+        }
+        sortie(E_VRAI);
+        retour;
+    }
+    si verbe != 0 && texte_egal(verbe, "morceaux") {
+        vib_preparer();
+        montrer_morceaux(entree);
+        sortie(E_VRAI);
+        retour;
+    }
     si verbe != 0 && texte_egal(verbe, "promesses") {
         soit src = lire_chemin(CHEMIN4);
         sortie(juger_promesses(entree, relu, src));
@@ -4272,6 +5419,13 @@ fonction principal() {
         si relu != 0 && texte_egal(relu, "--tout") {
             tout = 1;
         }
+        @2[K_ETAT] = 0;
+        @2[K_ETAT + 1] = 0;
+        @2[K_ETAT + 2] = 0;
+        @2[K_ETAT + 3] = 0;
+        lire_catalogue(lire_chemin(CHEMIN4));
+        lire_catalogue(lire_chemin(CHEMIN5));
+        lire_catalogue(lire_chemin(CHEMIN6));
         soit e5 = montrer_carte(entree, tout);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);

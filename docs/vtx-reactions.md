@@ -3025,3 +3025,70 @@ son ADN (le texte gardé et sa signature : « un module est un ADN signé »).
   gardent leurs mots.
 - **Ce qui reste** : `multiplier_ajouter` en un seul arrondi (le même genre de travail, avec un arrondi à la fin) ; `%`
   sur les flottants n'est toujours pas permis dans le langage (on écrit `reste`).
+
+## 66. Le catalogue des modules et la vibration des molécules (17 novembre, 0.62)
+
+**Décidé par le créateur le 17 au soir** : le catalogue des modules, et la reconnaissance des molécules par leur
+fréquence de vibration (l'idée de la section 11).
+
+- **Lister un dossier** : le service 28, sur Lugus et sur Dunon (en Rust et dans leurs références en Python). Il rend
+  les noms d'un dossier, triés (l'ordre des caractères), un par ligne, un sous-dossier terminé par « / » ; le dossier
+  absent : inconnu ; le nom existe mais n'est pas un dossier : faux. Dans le langage : `lister_dossier(nom)` (un tableau
+  de textes) et `dossier_present(nom): logique` (vrai, faux, inconnu : la différence qui manquait à `fichier_present`,
+  gardé tel quel pour que les programmes écrits gardent leurs mots).
+- **Le catalogue** : `lugus cataloguer DOSSIER` écrit `DOSSIER/catalogue.vtxcat`. Il est écrit **en vtx**, par le
+  lecteur d'ADN (`chimie/adn.vtx`, le verbe « cataloguer ») : il liste le dossier (service 28), lit chaque module (un
+  `.vtx` sans `principal`), calcule son empreinte (celle de `importer … empreinte`), le fait compiler par vtxc128 dans
+  une sonde (service 27), et range chaque fonction : son nom, sa masse, ses atomes, sa vibration. La référence,
+  `python3 chimie/adn.py cataloguer DOSSIER`, écrit le même fichier, octet pour octet. Un module qui ne se compile pas
+  seul : « - ».
+- **Importer par l'empreinte seule** : `importer empreinte "16 chiffres";`, dans les deux compilateurs de Lugus et de
+  Dunon. Les catalogues lus : celui du dossier qui importe, puis `bibliotheque/` (dans ce dossier, ou à côté de lui).
+  Trouvé : comme par son chemin (les mêmes mots), et son texte vérifié ; introuvable, ou deux modules différents de
+  cette empreinte : refusé, et dit.
+- **La vibration d'une molécule** (dans le lecteur en vtx, et `chimie/adn.py` au bit près) :
+  - les atomes : les instructions d'un **morceau** ; le code est coupé au début, à la cible de chaque CALL et à chaque
+    prologue (PUSH R13, MOV R13,R14), pour que deux fonctions posées à la suite sans appel entre elles restent deux ;
+  - les liaisons : celles du code (l'instruction suivante, un saut vers l'intérieur) et **celles des registres** (une
+    lecture liée à la dernière instruction qui a écrit le registre ; un CALL les écrit tous) ;
+  - l'élément suit la valence, comme pour les réactions (une liaison H, deux O, trois N, quatre et plus C) ; la masse
+    d'une molécule est la somme ;
+  - chaque atome vibre de ses chemins fermés de longueur 1 à 6, de son élément et de sa clé : l'instruction, sans ce
+    qui dépend du programme autour (la cible d'un appel, un saut vers l'extérieur, une constante qui est une adresse) ;
+    trois tours de propagation ; la vibration de la molécule mêle ses atomes, ses liaisons, sa masse, la somme et le ou
+    exclusif des vibrations finales ;
+  - **ses appels** (la question laissée à la mesure) : les deux. Deux passes : à la seconde, un CALL porte la première
+    vibration de sa cible. Sans elles, deux fonctions qui ne diffèrent que par la fonction qu'elles appellent vibraient
+    pareil.
+- **Mesuré** : sur 32 programmes (les exemples de Lugus, le lecteur, vtxc128, Ogmios), 1 743 morceaux, 1 085 suites
+  d'instructions différentes, 1 153 vibrations différentes (les appels en séparent encore) : **aucune collision**. Les
+  fonctions de `bibliotheque/` dans les programmes qui les importent : **36 sur 36** ont la vibration de leur catalogue.
+  Il a fallu deux corrections pour y arriver, mesurées : garder les constantes d'un LDI qui ne sont pas des adresses
+  (`verdict` et `verdict_ordonne` du codon ne diffèrent que par elles), et ne prendre en valeur dans la sonde que les
+  fonctions que le module n'appelle pas lui-même (une fonction prise en valeur n'est plus recopiée en ligne : le corps
+  de celles qui l'appellent changeait).
+- **La carte dit d'où vient chaque molécule** (face « sa mémoire ») : sa vibration, puis « elle vient du module codon.vtx
+  (empreinte …) », « elle porte aussi … du module … » (une fonction posée à la suite, sans molécule à elle), ou « son nom
+  est celui d'une molécule du module …, mais pas sa vibration : retouchée, ou compilée autrement ». Ces molécules sont
+  montrées sans `--tout`, et comptées en tête. La vibration est calculée à la lecture, des mots : **le format de l'ADN
+  ne change pas** (tous ses tests passent tels quels) ; c'est le catalogue qui la garde.
+- **Trouvé en route, et dit** :
+  - vtxc128 ne finit pas de compiler `sortie(f)` quand `f` est un nom de fonction écrit seul (la mémoire grandit sans
+    fin) ; vtx128.py le compile. La sonde passe par `soit __vK = f; sortie(__vK);`. **À corriger.**
+  - vtx128.py et vtx64.py acceptaient une fonction du programme qui porte le nom d'une fonction intégrée tant qu'elle
+    n'était pas appelée (l'élagage l'ôtait avant le contrôle), quand vtxc la refusait : ils la refusent maintenant
+    avant l'élagage, comme vtxc (les 72 programmes de Lugus et les 52 de Dunon gardent leurs mots). Conséquence, à
+    regarder : `bibliotheque/cube.vtx` définit `melanger`, devenu une fonction intégrée ; il est refusé, et avec lui
+    `bibliotheque/adn.vtx`, `bibliotheque/essai.vtx` et `jeu3/ennemis32.vtx` qui l'importent (vtxc les refusait déjà).
+- **Les limites, honnêtement** : une fonction recopiée en ligne partout n'a pas de molécule à elle (la carte ne peut pas
+  la montrer) ; une constante de moins de 32 bits chargée par un LDI est prise pour une adresse ; les données après la
+  dernière fonction forment un grand morceau ; la vibration reconnaît, elle ne prouve pas (la signature de l'ADN reste la
+  garantie) ; Dunon lit les catalogues pour `importer` mais ne les écrit pas (il n'a pas les fonctions passées en valeur,
+  dont la sonde a besoin).
+- **Vérifié** (`tests/test_catalogue.py`, 25 contrôles) : la liste d'un dossier, la même sur les quatre machines et par
+  les deux compilateurs de chacune ; les morceaux et leur vibration, le lecteur en vtx et chimie/adn.py, ligne pour ligne
+  (jusqu'au lecteur lui-même, 187 morceaux) ; le catalogue, octet pour octet ; importer par l'empreinte, les mêmes mots
+  que par le chemin, sur les deux machines ; introuvable, deux modules, un module retouché : refusés par les quatre
+  compilateurs ; la carte : « vient du module », et la retouche vue.
+- **La suite** : garder les empreintes des modules dans l'ADN du programme (l'intron « modules ») ; l'accroche (deux
+  codes qui partagent des vibrations) ; corriger `sortie(f)` dans vtxc128 ; décider du sort de `bibliotheque/cube.vtx`.

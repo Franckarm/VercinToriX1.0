@@ -903,6 +903,24 @@ impl Spu128 {
                 self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }
+            28 => {
+                // 0.62 : lister un dossier (le nom, depuis le dossier de la machine ; vide : ce dossier lui-même). Ses noms,
+                // triés, un par ligne (un sous-dossier finit par « / »), se lisent comme un fichier ; le dossier absent
+                // (ou pas de dossier où chercher) : u128::MAX (inconnu) ; le nom n'est pas un dossier : u128::MAX - 1 (faux)
+                let d = match &self.dossier {
+                    Some(d) => d.clone(),
+                    None => return Ok(u128::MAX),
+                };
+                let nom = self.texte_memoire(arg);
+                let chemin = if nom.is_empty() { d } else { d.join(nom) };
+                let rendu = match crate::hote::lister_dossier(&chemin) {
+                    Ok(t) => t,
+                    Err(e) => return Ok(if e { u128::MAX - 1 } else { u128::MAX }),
+                };
+                let canal = self.canal_libre();
+                self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
+                Ok(canal)
+            }
             12 => {
                 // l'image présentée : la machine attend l'écran, la patrouille fait une ronde entière
                 self.appeler_patrouille(Ronde::Image)?;

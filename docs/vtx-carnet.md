@@ -593,7 +593,7 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 
 ## 11. Feuille de route
 
-*Mise à jour le 15 novembre 2026 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
+*Mise à jour le 17 novembre 2026, après la 0.62 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
 
 1. **Les lectures** : `supposons x parmi [a, b, c] { … } retenir r;` est fait (0.6s : écarter, noter, le verdict à
    quatre valeurs ; 0.6t : `exige` écarte de lui-même, la carte dit « suppose » ; 0.6u : `retenir r alors { … }`, l'action du
@@ -615,8 +615,10 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    un mot, les cinq types : signe, est_positif, est_su, partie_decimale, entre, ecart, arrondi à n décimales… ; inconnu
    et variable gardés) ; le vocabulaire étendu (fait, 0.61, Lugus et Dunon : 202 mots tirés de Rust, de ses
    extensions, d'Arduino, d'UE5 et de Blender, en français, par familles ; `docs/vtx-vocabulaire.md`) ; les modules promis par leur empreinte (fait, 0.61 : `importer "x.vtx" empreinte
-   "…";`, la chaîne vérifiée, `lugus empreinte`) ; puis les modules trouvés par leur seule empreinte, gardés dans l'ADN désignés par leur empreinte
-   (un module est un ADN signé, chaque usage une transcription).
+   "…";`, la chaîne vérifiée, `lugus empreinte`) ; les modules trouvés par leur seule empreinte (fait, 0.62 :
+   `importer empreinte "…";`, le catalogue `lugus cataloguer`, lister un dossier, la vibration de chaque molécule et la
+   carte qui dit d'où elle vient) ; puis les empreintes des modules gardées dans l'ADN du programme (un module est un
+   ADN signé, chaque usage une transcription).
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
 5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine

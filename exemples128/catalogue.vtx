@@ -1,0 +1,11 @@
+// machine : lugus
+// 0.62 : un module trouvé par sa seule empreinte, sans chemin. Le compilateur le cherche dans les catalogues (celui de
+// ce dossier, puis bibliotheque/ et ../bibliotheque/) : « lugus cataloguer bibliotheque » écrit celui de la
+// bibliothèque. La carte dit ensuite d'où vient chaque molécule : « lugus carte exemples128/catalogue.vtx ».
+importer empreinte "3ca0e81674a433bf";
+
+fonction principal() {
+    soit d = codon(vrai, vrai, faux);
+    afficher("le codon (vrai, vrai, faux) :", nom_situation(d), "; verdict :", verdict(d));
+    afficher("penche :", penche(d));
+}

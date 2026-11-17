@@ -256,6 +256,18 @@ def noter_etat(machine, etat):
     if rang[etat] > rang[getattr(machine, "_etat_disque", 0)]:
         machine._etat_disque = etat
 
+
+def lister_dossier(chemin):
+    """0.62 : les noms d'un dossier, triés, un par ligne, un sous-dossier terminé par « / » (le service 28) ; None :
+    absent ; False : le nom existe mais n'est pas un dossier"""
+    chemin = chemin or "."
+    try:
+        noms = os.listdir(chemin)
+    except OSError:
+        return False if os.path.exists(chemin) else None
+    return "".join(n + ("/" if os.path.isdir(os.path.join(chemin, n)) else "") + "\n"
+                   for n in sorted(noms, key=lambda n: (n + ("/" if os.path.isdir(os.path.join(chemin, n)) else "")).encode("utf-8")))
+
 class Erreur(Exception):
     pass
 
@@ -496,6 +508,18 @@ class CPU:
             return 1 if f is None or f[0] != "l" or f[2] >= len(f[1]) else 0
         if code == 5:
             return int.from_bytes(os.urandom(8), "little")
+        if code == 28:
+            # 0.62 : lister un dossier (le nom depuis le dossier de la machine ; vide : lui-même) ; ses noms se lisent
+            # comme un fichier ; absent : M64 (inconnu) ; pas un dossier : M64 - 1 (faux)
+            if self.dossier is None:
+                return M64
+            nom = self.texte_memoire(arg)
+            r = lister_dossier(os.path.join(self.dossier, nom) if nom else self.dossier)
+            if r is None or r is False:
+                return M64 if r is None else M64 - 1
+            canal = max([1] + list(self.fichiers)) + 1
+            self.fichiers[canal] = ["l", [ord(ch) for ch in r], 0, ""]
+            return canal
         if code == 25:
             # le compte des instructions jouées (instructions() du prélude), comme sur Lugus
             return self.pas

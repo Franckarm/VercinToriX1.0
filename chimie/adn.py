@@ -26,7 +26,9 @@ refait), variable (abîmée au-delà de ses témoins : gardée telle quelle, pou
     python3 chimie/adn.py hex PROG.adn [PROG.hex]         les mots en hex, chacun à sa place du cube (0.6n bis)
     python3 chimie/adn.py retrotranscrire PROG.arn [PROG-c.adn]  l'ARN rendu à l'ADN : l'ADNc (0.6n bis)
     python3 chimie/adn.py abimer PROG.adn [N] [GRAINE]     abîme N mots au hasard (pour essayer la réparation)
-    python3 chimie/adn.py essai [PROG.vtx…]                les avaries mesurées (détection, réparation, place)"""
+    python3 chimie/adn.py essai [PROG.vtx…]                les avaries mesurées (détection, réparation, place)
+    python3 chimie/adn.py cataloguer DOSSIER                le catalogue des modules du dossier (0.62)
+    python3 chimie/adn.py morceaux PROG.vtx                 les morceaux du programme et leur vibration (0.62)"""
 import os
 import random
 import sys
@@ -810,6 +812,246 @@ def faire_carte(mots, molecules, noms, lignes, ancien=None):
     return r
 
 
+# ---------------------------------------------------------------------------------------------------- la vibration (0.62)
+# La fréquence de vibration d'une molécule compilée (docs/vtx-reactions.md, sections 11 et 66) : ses atomes sont ses
+# instructions, ses liaisons celles du code (l'instruction suivante, un saut vers l'intérieur) et celles des registres
+# (une lecture est liée à l'instruction qui a écrit le registre en dernier ; un CALL les écrit tous). L'élément suit la
+# valence (une liaison : H, deux : O, trois : N, quatre et plus : C). Chaque atome vibre de ses chemins fermés de
+# longueur 1 à 6, de son élément et de sa clé (l'instruction, sans ce qui dépend du programme autour : la cible d'un
+# appel, un saut vers l'extérieur, la constante d'un LDI) ; la vibration se propage trois tours le long des liaisons
+# (chimie/essai_vibrations.py) ; la vibration de la molécule mêle le nombre de ses atomes, de ses liaisons, sa masse, la
+# somme et le ou exclusif des vibrations finales. Tout en entiers de 64 bits : la même dans le lecteur en vtx.
+# Les morceaux : le code est coupé au début de chaque fonction (son prologue, PUSH R13 puis MOV R13,R14), à la cible de
+# chaque CALL et au début ; une molécule de la carte (de la cible d'un CALL à la suivante) en porte un ou plusieurs.
+M32 = 0xFFFFFFFF
+PROLOGUE = ((0x27 << 48) | (13 << 40), (0x0B << 48) | (13 << 44) | (14 << 40))
+SAUTS = (0x30, 0x31, 0x32, 0x35, 0x36)
+TOURS_VIB = 3
+CHEMINS_VIB = 6
+
+
+def forme_registres(op):
+    """les registres d'une instruction : 1 écrit d, 2 lit d, 4 lit s, 8 lit t (d'après sa forme, spu128/spu128.py)"""
+    if op in (0x2A, 0x55):                      # STX, STQ
+        return 2 | 4 | 8
+    if op == 0x20:                              # LD
+        return 1 | 4
+    if op == 0x21:                              # ST
+        return 2 | 4
+    if op == 0x25:                              # LDF
+        return 1
+    if op == 0x26:                              # STF
+        return 2
+    if op == 0x0A:                              # LDI
+        return 1
+    if op == 0x2B:                              # LDIH
+        return 1 | 2
+    f = FORMES.get(op)
+    return {"rrr": 13, "rrri": 13, "rri": 5, "rr": 5, "ri": 1, "cmp": 12, "cmpi": 4, "marque": 12, "in": 1,
+            "out": 4}.get(f, 0)
+
+
+def _formes():
+    sys.path.insert(0, os.path.join(racine, "spu128"))
+    import spu128
+    return {code: forme for code, forme in spu128.OPS.values()}
+
+
+FORMES = _formes()
+
+
+def melanger_vib(*xs):
+    h = 0
+    for x in xs:
+        h = melanger(h ^ (x & M64))
+    return h
+
+
+def debuts_morceaux(plat):
+    """les demi-instructions où commence un morceau : 0, la cible de chaque CALL, chaque prologue"""
+    n = len(plat)
+    d = {0}
+    for p, (h, lit) in enumerate(plat):
+        if lit:
+            continue
+        if h >> 48 == OP_CALL and (h & M32) < n:
+            d.add(h & M32)
+        if p + 1 < n and not plat[p + 1][1] and (h, plat[p + 1][0]) == PROLOGUE:
+            d.add(p)
+    return sorted(d)
+
+
+def adresse(v):
+    """une constante qui est sans doute une adresse (une étiquette, un texte, une case d'un étage) : elle change d'un
+    programme à l'autre, la vibration ne la prend pas"""
+    return v < (1 << 32) or (v >> 126 != 0 and v & ((1 << 126) - 1) < (1 << 48))
+
+
+def vibration(plat, p, q, appels=None):
+    """(atomes, masse, vibration) du morceau [p, q) des demi-instructions ; appels : {début d'un morceau : sa première
+    vibration}, ce qu'un CALL porte (sinon, rien)"""
+    atomes = [i for i in range(p, q) if not plat[i][1]]
+    n = len(atomes)
+    rang = {i: j for j, i in enumerate(atomes)}
+    voisins = [set() for _ in range(n)]
+
+    def lier(a, b):
+        if a != b:
+            voisins[a].add(b)
+            voisins[b].add(a)
+    dernier = [None] * 16
+    cles, lits = [], []
+    for j, i in enumerate(atomes):
+        h = plat[i][0]
+        op, d, s, t, imm = h >> 48, (h >> 44) & 15, (h >> 40) & 15, (h >> 36) & 15, h & M32
+        lit = 0
+        if op in SAUTS:
+            cle = imm - p if p <= imm < q else M32
+        elif op == OP_CALL:
+            cle = M32
+            lit = (appels or {}).get(imm, 0)
+        else:
+            cle = imm
+        if op in (OP_LDI, OP_LDIH) and i + 1 < q:
+            # la constante : la paire LDI puis LDIH (sur le même registre) en fait une de 128 bits
+            if op == OP_LDI:
+                bas_, haut = plat[i + 1][0], 0
+                if i + 3 < q and plat[i + 2][0] >> 48 == OP_LDIH and (plat[i + 2][0] >> 44) & 15 == d:
+                    haut = plat[i + 3][0]
+            else:
+                haut = plat[i + 1][0]
+                bas_ = plat[i - 1][0] if i >= p + 2 and plat[i - 2][0] >> 48 == OP_LDI else 0
+            if not adresse((haut << 64) | bas_):
+                lit = plat[i + 1][0]
+        cles.append((h & (M64 ^ M32)) | cle)
+        lits.append(lit)
+        if j + 1 < n and op not in (0x30, 0x34, 0x3F):
+            lier(j, j + 1)
+        if op in SAUTS and imm in rang:
+            lier(j, rang[imm])
+        f = forme_registres(op)
+        for bit, r in ((2, d), (4, s), (8, t)):
+            if f & bit and dernier[r] is not None:
+                lier(j, dernier[r])
+        if f & 1:
+            dernier[d] = j
+        if op == OP_CALL:
+            dernier = [j] * 16
+    masses = [1 if len(v) <= 1 else 16 if len(v) == 2 else 14 if len(v) == 3 else 12 for v in voisins]
+    lab = []
+    for v in range(n):
+        w = [{v: 1}]
+        for _ in range(3):
+            x = {}
+            for u, c in w[-1].items():
+                for y in voisins[u]:
+                    x[y] = x.get(y, 0) + c
+            w.append(x)
+        chemins = []
+        for k in range(1, CHEMINS_VIB + 1):
+            a = k // 2
+            chemins.append(sum(c * w[k - a].get(u, 0) for u, c in w[a].items()) & M64)
+        lab.append(melanger_vib(CHEMINS_VIB, *chemins, masses[v], cles[v], lits[v]))
+    for _ in range(TOURS_VIB):
+        lab = [melanger_vib(lab[v], *sorted(lab[u] for u in voisins[v])) for v in range(n)]
+    somme, ou = 0, 0
+    for x in lab:
+        somme, ou = (somme + x) & M64, ou ^ x
+    liaisons = sum(len(v) for v in voisins) // 2
+    return n, sum(masses), melanger_vib(n, liaisons, sum(masses), somme, ou)
+
+
+def morceaux(mots):
+    """[(début, fin, atomes, masse, vibration)] de tous les morceaux du programme (en demi-instructions) ; deux passes :
+    la première sans ce que portent les appels, la seconde avec (un CALL porte la première vibration de sa cible)"""
+    plat = list(demis(mots))
+    d = debuts_morceaux(plat) + [len(plat)]
+    premiere = {d[k]: vibration(plat, d[k], d[k + 1])[2] for k in range(len(d) - 1)}
+    return [(d[k], d[k + 1]) + vibration(plat, d[k], d[k + 1], premiere) for k in range(len(d) - 1)]
+
+
+# ---------------------------------------------------------------------------------------------------- le catalogue (0.62)
+# « lugus cataloguer DOSSIER » (fait par le lecteur en vtx) écrit DOSSIER/catalogue.vtxcat : pour chaque module du dossier
+# (un .vtx sans « principal »), son nom, son empreinte (celle de « importer … empreinte », FNV-1a des caractères, les
+# retours chariot sautés) et ses molécules (nom, masse, atomes, vibration), chacune compilée comme Lugus la compile, dans
+# une sonde qui la prend en valeur (elle n'est alors ni recopiée en ligne, ni retirée). Un module qui ne se compile pas
+# seul : « - » au lieu de ses molécules. Le même fichier que le lecteur, octet pour octet.
+TETE_CATALOGUE = ("VTXCAT01\n// le catalogue des modules de ce dossier (lugus cataloguer) : module|nom|empreinte|molécules, "
+                  "puis molecule|nom|masse|atomes|vibration\n")
+
+
+def fonctions_ecrites(lignes):
+    """les noms des fonctions écrites en tête de ligne (« fonction nom(… »), dans l'ordre"""
+    r = []
+    for l in lignes:
+        if l.startswith("fonction ") and "(" in l[9:]:
+            nom = l[9:l.index("(", 9)].strip(" \t")
+            if nom and nom not in r:
+                r.append(nom)
+    return r
+
+
+def appelees(lignes, fonctions):
+    """les fonctions que le module appelle lui-même (« nom( » ailleurs que dans son en-tête) : la sonde ne les prend
+    pas en valeur, pour qu'elles restent recopiées en ligne là où le compilateur les recopie d'habitude"""
+    r = set()
+    for f in fonctions:
+        for l in lignes:
+            if l.startswith("fonction " + f + "(") or l.lstrip(" \t").startswith("//"):
+                continue
+            j = l.find(f + "(")
+            while j >= 0:
+                if j == 0 or not lettre_nom(l[j - 1]):
+                    r.add(f)
+                    break
+                j = l.find(f + "(", j + 1)
+    return r
+
+
+def sonde(nom, fonctions):
+    # « soit __vK = f; sortie(__vK); » : vtxc128 refuse encore « sortie(f) » d'une fonction écrite seule (0.62, à
+    # corriger : la compilation ne s'arrête pas)
+    return (f'importer "{nom}";\nfonction principal() {{\n'
+            + "".join(f"    soit __v{k} = {f};\n    sortie(__v{k});\n" for k, f in enumerate(fonctions)) + "}\n")
+
+
+def cataloguer(dossier):
+    """le texte du catalogue du dossier"""
+    def cle(n):
+        return (n + ("/" if os.path.isdir(os.path.join(dossier, n)) else "")).encode("utf-8")
+    r = [TETE_CATALOGUE]
+    for nom in sorted(os.listdir(dossier), key=cle):
+        if not nom.endswith(".vtx") or os.path.isdir(os.path.join(dossier, nom)):
+            continue
+        brut = open(os.path.join(dossier, nom), encoding="utf-8", newline="").read()
+        lignes = brut.replace("\r", "").split("\n")
+        if any(l.startswith("fonction principal(") for l in lignes):
+            continue
+        fonctions = fonctions_ecrites(lignes)
+        h = f"{fnv(brut.replace(chr(13), '')):016x}"
+        internes = appelees(lignes, fonctions)
+        try:
+            mots, _, _, noms = molecules_isotopes_noms(sonde(nom, [f for f in fonctions if f not in internes]), dossier)
+        except Exception:      # noqa: BLE001
+            r.append(f"module|{nom}|{h}|-\n")
+            continue
+        places = {}
+        for w, n in noms.items():
+            places.setdefault(n, w)
+        plat = list(demis(mots))
+        ms = morceaux(mots)
+        mols = []
+        for f in fonctions:
+            w = places.get(bas(f))
+            m = next((m for m in ms if m[0] // 2 == w and m[0] + 1 < len(plat)
+                      and (plat[m[0]][0], plat[m[0] + 1][0]) == PROLOGUE), None) if w is not None else None
+            if m is not None:
+                mols.append(f"molecule|{f}|{m[3]}|{m[2]}|{m[4]:016x}\n")
+        r.append(f"module|{nom}|{h}|{len(mols)}\n")
+        r += mols
+    return "".join(r)
+
+
 # ---------------------------------------------------------------------------------------------------- le chemin dans les deux sens (0.6n bis)
 def ecrire_hex(chemin, mots):
     """le hex : « VTXHEX01 N SIGNATURE », puis une ligne par mot, sa place dans le cube (#RRGGBB) et ses quatre voies
@@ -938,6 +1180,17 @@ def main():
             mots[i] ^= g.getrandbits(128) | 1
         ecrire_adn(sys.argv[2], mots, molecules, t)
         print(f"{n} mot(s) abîmé(s) : {sorted(places)}")
+    elif cmd == "cataloguer":
+        d = sys.argv[2] if len(sys.argv) > 2 else "."
+        t = cataloguer(d)
+        with open(os.path.join(d, "catalogue.vtxcat"), "w", encoding="utf-8", newline="\n") as f:
+            f.write(t)
+        print(f"{t.count(chr(10) + 'module|')} module(s) -> {os.path.join(d, 'catalogue.vtxcat')}")
+    elif cmd == "morceaux":
+        src = sys.argv[2]
+        mots, _, _, noms = molecules_isotopes_noms(open(src, encoding="utf-8").read(), os.path.dirname(os.path.abspath(src)))
+        for p, q, n, masse, v in morceaux(mots):
+            print(f"{p:6d} {q:6d} {noms.get(p // 2, ''):24s} {n:5d} {masse:6d} {v:016x}")
     elif cmd == "essai":
         fichiers = sys.argv[2:] or [os.path.join(racine, "exemples128", f) for f in
                                     ("panel.vtx", "chute.vtx", "scene_incrementale.vtx", "bonjour128.vtx")]

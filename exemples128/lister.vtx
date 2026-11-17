@@ -1,0 +1,20 @@
+// 0.62 : lister un dossier (le service 28 de Lugus et de Dunon). Les noms sont triés ; un sous-dossier finit par « / ».
+// dossier_present dit vrai (un dossier), faux (le nom existe, mais ce n'est pas un dossier) ou inconnu (il est absent).
+fonction dire(nom: texte, l: logique) {
+    selon l {
+        vrai { afficher(nom, ": vrai, un dossier"); }
+        faux { afficher(nom, ": faux, ce n'est pas un dossier"); }
+        inconnu { afficher(nom, ": inconnu, il est absent"); }
+        variable { afficher(nom, ": variable"); }
+    }
+}
+
+fonction principal() {
+    afficher("la bibliothèque :");
+    pour n dans lister_dossier("../bibliotheque") {
+        afficher("   ", n);
+    }
+    dire("../bibliotheque", dossier_present("../bibliotheque"));
+    dire("lister.vtx", dossier_present("lister.vtx"));
+    dire("rien", dossier_present("rien"));
+}

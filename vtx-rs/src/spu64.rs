@@ -390,6 +390,22 @@ impl Spu64 {
             16..=21 | 23 => Ok(crate::hote::service(code, arg, u64::MAX).unwrap_or(0)),
             // 25 : le compte des instructions jouées (instructions() du prélude), comme sur Lugus
             25 => Ok(self.pas),
+            28 => {
+                // 0.62 : lister un dossier, comme Lugus (hote::lister_dossier) : u64::MAX inconnu, u64::MAX - 1 faux
+                let d = match &self.dossier {
+                    Some(d) => d.clone(),
+                    None => return Ok(u64::MAX),
+                };
+                let nom = self.texte_memoire(arg);
+                let chemin = if nom.is_empty() { d } else { d.join(nom) };
+                let rendu = match crate::hote::lister_dossier(&chemin) {
+                    Ok(t) => t,
+                    Err(e) => return Ok(if e { u64::MAX - 1 } else { u64::MAX }),
+                };
+                let canal = self.fichiers.keys().copied().chain(std::iter::once(1)).max().unwrap() + 1;
+                self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u64).collect(), 0, String::new()));
+                Ok(canal)
+            }
             // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé)
             22 => Ok(crate::miroir::prendre_etat() as u64),
             12 => {
