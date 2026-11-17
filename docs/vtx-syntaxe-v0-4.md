@@ -475,7 +475,9 @@ ne se comble pas.
 
 Une fonction du programme qui porte l'un de ces noms garde la main : le vocabulaire ne s'applique qu'aux mots du
 prélude. Les nombres décimaux ne s'écrivent pas tous exactement en base 4 : `partie_decimale(12.4567)` rend
-0.45669999…, comme le ferait le binaire. Pas encore : `reste` sur les flottants. Sur Dunon (0.61) : les mêmes mots,
+0.45669999…, comme le ferait le binaire. `reste(a, b)` (0.61b) : le reste exact, du signe du dividende (le `%` de Rust
+sur les flottants, `fmod` en C) ; `reste(x, 0.0)` et `reste(∞, b)` : variable ; `reste(a, ∞)` : a ; sur les entiers, le
+reste signé (par zéro : x). Sur Dunon (0.61) : les mêmes mots,
 pour ses flottants de 64 et 32 bits et ses entiers de 128, 64 et 32 bits (le flottant de 128 bits de Dunon passe par
 `flottant(x)`).
 
@@ -506,7 +508,7 @@ afficher(transformer([1, 2, 3], carre)[2], plier([1, 2, 3], plus, 0));          
 - **Les vecteurs, quaternions et matrices** sont des tableaux de flottants (`v[0]`…) : un quaternion est (w, x, y, z),
   comme Blender ; une matrice, 16 cases ligne par ligne.
 - **Ce qui n'y est pas** : les broches d'Arduino (Lugus et Dunon n'en ont pas), les bibliothèques entières (le
-  vocabulaire prépare leur branchement, il ne les recopie pas), `reste` exact sur les flottants, `multiplier_ajouter`
+  vocabulaire prépare leur branchement, il ne les recopie pas), `multiplier_ajouter`
   en un seul arrondi, et, sur Dunon, les mots qui prennent une fonction. `premier`, `dernier`, `moyenne`… lisent des
   tableaux d'entiers.
 

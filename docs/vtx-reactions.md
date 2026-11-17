@@ -3003,3 +3003,25 @@ une transcription) ». Premier pas, le plus utile tout de suite : qu'un programm
 machine sache lister un dossier, un service à écrire) ; garder les empreintes des modules dans l'ADN du programme (un
 intron « modules » ; la carte dirait alors de quel module vient chaque molécule) ; un module rangé en ADN, importé depuis
 son ADN (le texte gardé et sa signature : « un module est un ADN signé »).
+
+## 65. Le reste exact (17 novembre, 0.61b)
+
+**Demandé par le créateur** : corriger `reste`, le manque laissé en 0.6za et en 0.61.
+
+- `reste(a, b)` : le reste de a par b, **exact**, du signe du dividende : le `%` de Rust sur les flottants, `fmod` en C,
+  `FMath::Fmod` d'UE. Un mot pour tous les types : sur les entiers, le reste signé (par zéro : x, comme la machine).
+- **Pourquoi c'est exact, et pourquoi en entiers.** Le reste tient toujours dans le format de ses arguments (plus petit
+  que b, et sur la grille de b) : rien à arrondir. Mais le calculer par `a - b * partie_entiere(a / b)` arrondit deux
+  fois et se trompe dès que le quotient dépasse la mantisse. Il est donc fait sur les mantisses, en entiers : la division
+  longue, quit par quit (sept à la fois sur Lugus, cinq sur Dunon), sur tout l'écart des exposants (jusqu'à 16 000 quits
+  pour le flottant de 128 bits). Les variantes de 64 et 32 bits passent par le flottant le plus large et reviennent sans
+  rien perdre (le résultat tient dans leur format).
+- **Belnap** : un inconnu donne inconnu, un variable variable ; reste(∞, b) et reste(a, 0) donnent variable (l'IEEE dit
+  NaN) ; reste(a, ∞) rend a ; reste(−6, 2) rend −0,0.
+- **Vérifié** (`tests/test_reste.py`) : 2 100 restes sur Lugus (128, 64 et 32 bits) et 1 400 sur Dunon (64 et 32), tirés au
+  hasard avec les bords (sous-normaux, exposants proches, très éloignés, multiples exacts, infinis, zéros, inconnu,
+  variable) : **au bit près** d'une référence en fractions exactes ; les mêmes mots par les deux compilateurs de chaque
+  machine ; une fonction du programme nommée `reste` garde la main ; les 71 programmes de Lugus et les 51 de Dunon
+  gardent leurs mots.
+- **Ce qui reste** : `multiplier_ajouter` en un seul arrondi (le même genre de travail, avec un arrondi à la fin) ; `%`
+  sur les flottants n'est toujours pas permis dans le langage (on écrit `reste`).

@@ -37,6 +37,41 @@ fonction __vn_variable(): flottant_petuar { retour variable_petuar(); }
 fonction __vn_hasard(): flottant_petuar { retour flottant_petuar(hasard_flottant()); }
 fonction __vt_lire(t, i): flottant_petuar { retour comme_flottant_petuar(entier_petuar(@3[@3[(t & 16777215) + 2] + i])); }
 fonction __vt_ecrire(t, i, v: flottant_petuar) { @3[@3[(t & 16777215) + 2] + i] = bits(v); }
+fonction __vn_reste(a: flottant_petuar, b: flottant_petuar): flottant_petuar {
+    // le reste exact (0.61b) : la division longue des mantisses, quit par quit (sept à la fois), en entiers
+    soit x: entier_128 = bits(a);
+    soit y: entier_128 = bits(b);
+    soit sa = __pq_etat(x);
+    soit sb = __pq_etat(y);
+    si sa == 3 || sb == 3 { retour variable_petuar(); }
+    si sa == 0 || sb == 0 { retour comme_flottant_petuar(0LL); }
+    soit un: entier_128 = 1LL;
+    soit mq: entier_128 = (un << 112) - un;
+    soit ma: entier_128 = x & mq;
+    soit mb: entier_128 = y & mq;
+    soit ea = __pq_ef(x);
+    soit eb = __pq_ef(y);
+    si ea == 16383 || (eb != 16383 && mb == 0LL) { retour variable_petuar(); }
+    si eb == 16383 || ma == 0LL { retour a; }
+    si ea == 0 { ea = 1; }
+    si eb == 0 { eb = 1; }
+    si ea < eb { retour a; }
+    soit r: entier_128 = ma % mb;
+    soit d = ea - eb;
+    tantque d > 0 {
+        soit k = d;
+        si k > 7 { k = 7; }
+        r = (r << (2 * k)) % mb;
+        d = d - k;
+    }
+    soit s: entier_128 = entier_128(sa) << 126;
+    si r == 0LL { retour comme_flottant_petuar(s); }
+    soit e = eb;
+    soit q55: entier_128 = un << 110;
+    tantque r < q55 && e > 1 { r = r << 2; e = e - 1; }
+    si r < q55 { e = 0; }
+    retour comme_flottant_petuar(s | (entier_128(e) << 112) | r);
+}
 """
 AIDE_DUNON = r"""
 fonction __vn_etat(v: flottant) { retour bits(v) >> 62; }
@@ -48,6 +83,40 @@ fonction __vn_variable(): flottant { retour comme_flottant(13835058055282163712)
 fonction __vn_hasard(): flottant { retour hasard_flottant(); }
 fonction __vt_lire(t, i): flottant { retour comme_flottant(@3[@3[(t & 16777215) + 2] + i]); }
 fonction __vt_ecrire(t, i, v: flottant) { @3[@3[(t & 16777215) + 2] + i] = bits(v); }
+fonction __vn_reste(a: flottant, b: flottant): flottant {
+    // le reste exact (0.61b) : la division longue des mantisses, quit par quit (cinq à la fois), en entiers
+    soit x = bits(a);
+    soit y = bits(b);
+    soit sa = x >> 62;
+    soit sb = y >> 62;
+    si sa == 3 || sb == 3 { retour comme_flottant(13835058055282163712); }
+    si sa == 0 || sb == 0 { retour comme_flottant(0); }
+    soit mq = (1 << 52) - 1;
+    soit ma = x & mq;
+    soit mb = y & mq;
+    soit ea = (x >> 52) & 1023;
+    soit eb = (y >> 52) & 1023;
+    si ea == 1023 || (eb != 1023 && mb == 0) { retour comme_flottant(13835058055282163712); }
+    si eb == 1023 || ma == 0 { retour a; }
+    si ea == 0 { ea = 1; }
+    si eb == 0 { eb = 1; }
+    si ea < eb { retour a; }
+    soit r = ma % mb;
+    soit d = ea - eb;
+    tantque d > 0 {
+        soit k = d;
+        si k > 5 { k = 5; }
+        r = (r << (2 * k)) % mb;
+        d = d - k;
+    }
+    soit s = sa << 62;
+    si r == 0 { retour comme_flottant(s); }
+    soit e = eb;
+    soit q25 = 1 << 50;
+    tantque r < q25 && e > 1 { r = r << 2; e = e - 1; }
+    si r < q25 { e = 0; }
+    retour comme_flottant(s | (e << 52) | r);
+}
 """
 
 # ------------------------------------------------------------------------------------------------ Dunon seul : les nombres de 0.6za
@@ -164,6 +233,12 @@ fonction __est_fini_x(v: flottant_petuar): logique {
 }
 fonction __est_fini_w(x: entier_128): logique { retour vrai; }
 fonction __est_fini_i(x: entier_32): logique { retour vrai; }
+// reste : Rust % sur les flottants et les entiers signés, C fmod, UE FMath::Fmod ; exact, du signe du dividende ;
+// reste(x, 0.0) : variable (un entier par zéro rend x, comme la machine)
+fonction reste(a, b) { retour a .% b; }
+fonction __reste_x(a: flottant_petuar, b: flottant_petuar): flottant_petuar { retour __vn_reste(a, b); }
+fonction __reste_w(a: entier_128, b: entier_128): entier_128 { si b == 0LL { retour a; } retour a % b; }
+fonction __reste_i(a: entier_32, b: entier_32): entier_32 { retour a .% b; }
 
 // -- famille « flottants » (Rust f64, UE FMath, Blender) : le flottant principal, et ses variantes
 // racine_cubique : Rust cbrt
@@ -1486,8 +1561,8 @@ def documenter():
             "- **les bibliothèques entières** (Servo, Wire, les crates, les modules d'UE5 ou de Blender) : le vocabulaire",
             "  prépare le branchement (vecteurs, quaternions, matrices, couleurs, interpolations) ; une extension se branche",
             "  par ses mots, elle n'est pas recopiée.",
-            "- **`reste` sur les flottants** (fmod exact) et **`multiplier_ajouter` fusionné** (un seul arrondi) : il faut",
-            "  une arithmétique exacte plus longue, pas encore écrite ; `multiplier_ajouter` fait deux arrondis, et le dit.",
+            "- **`multiplier_ajouter` fusionné** (un seul arrondi) : il faut une arithmétique exacte plus longue, pas encore",
+            "  écrite ; `multiplier_ajouter` fait deux arrondis, et le dit. (`reste` sur les flottants est exact depuis 0.61b.)",
             "- **les itérateurs paresseux** de Rust (`map` sans tableau au bout) : vtx rend des tableaux.",
             "- **les mots qui prennent une fonction** (`transformer`, `filtrer`…) : sur Lugus seulement (Dunon n'a pas",
             "  encore les fonctions passées en valeur).",

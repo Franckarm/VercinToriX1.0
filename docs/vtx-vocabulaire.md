@@ -27,6 +27,7 @@ une question rend cet état ; une moyenne de rien est inconnue ; un texte qui n'
 | `carre` | Arduino sq |
 | `remapper` | Arduino map, UE FMath::GetMappedRangeValueUnclamped, Blender « Map Range » |
 | `est_fini` | Rust is_finite |
+| `reste` | Rust % sur les flottants et les entiers signés, C fmod, UE FMath::Fmod ; exact, du signe du dividende ; reste(x, 0.0) : variable (un entier par zéro rend x, comme la machine) |
 
 ## « flottants » (Rust f64, UE FMath, Blender) : le flottant principal, et ses variantes
 
@@ -200,7 +201,7 @@ une question rend cet état ; une moyenne de rien est inconnue ; un texte qui n'
 |---|---|
 | `transformer`, `filtrer`, `plier`, `tous`, `au_moins_un`, `aucun`, `trouver_si`, `rang_si`, `compter_si`, `pour_chacun`, `garder_si`, `trier_par` | Rust map, filter, fold, all, any, !any, find, position, filter().count(), for_each, retain, sort_by_key (la fonction rend 1 ou 0 pour une question ; ces mots rendent 1 ou 0, ou 18446744073709551615 pour « absent ») |
 
-*202 mots publics ; et, pour Dunon, le vocabulaire des nombres de 0.6za (signe, est_positif,
+*203 mots publics ; et, pour Dunon, le vocabulaire des nombres de 0.6za (signe, est_positif,
 est_negatif, est_nul, est_entier, est_infini, est_su, partie_entiere, partie_decimale, entre, ecart, borne,
 arrondi à n décimales), qu'il n'avait pas.*
 
@@ -211,8 +212,8 @@ arrondi à n décimales), qu'il n'avait pas.*
 - **les bibliothèques entières** (Servo, Wire, les crates, les modules d'UE5 ou de Blender) : le vocabulaire
   prépare le branchement (vecteurs, quaternions, matrices, couleurs, interpolations) ; une extension se branche
   par ses mots, elle n'est pas recopiée.
-- **`reste` sur les flottants** (fmod exact) et **`multiplier_ajouter` fusionné** (un seul arrondi) : il faut
-  une arithmétique exacte plus longue, pas encore écrite ; `multiplier_ajouter` fait deux arrondis, et le dit.
+- **`multiplier_ajouter` fusionné** (un seul arrondi) : il faut une arithmétique exacte plus longue, pas encore
+  écrite ; `multiplier_ajouter` fait deux arrondis, et le dit. (`reste` sur les flottants est exact depuis 0.61b.)
 - **les itérateurs paresseux** de Rust (`map` sans tableau au bout) : vtx rend des tableaux.
 - **les mots qui prennent une fonction** (`transformer`, `filtrer`…) : sur Lugus seulement (Dunon n'a pas
   encore les fonctions passées en valeur).

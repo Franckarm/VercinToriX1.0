@@ -5251,6 +5251,40 @@ fonction __vn_variable(): flottant { retour comme_flottant(13835058055282163712)
 fonction __vn_hasard(): flottant { retour hasard_flottant(); }
 fonction __vt_lire(t, i): flottant { retour comme_flottant(@3[@3[(t & 16777215) + 2] + i]); }
 fonction __vt_ecrire(t, i, v: flottant) { @3[@3[(t & 16777215) + 2] + i] = bits(v); }
+fonction __vn_reste(a: flottant, b: flottant): flottant {
+    // le reste exact (0.61b) : la division longue des mantisses, quit par quit (cinq à la fois), en entiers
+    soit x = bits(a);
+    soit y = bits(b);
+    soit sa = x >> 62;
+    soit sb = y >> 62;
+    si sa == 3 || sb == 3 { retour comme_flottant(13835058055282163712); }
+    si sa == 0 || sb == 0 { retour comme_flottant(0); }
+    soit mq = (1 << 52) - 1;
+    soit ma = x & mq;
+    soit mb = y & mq;
+    soit ea = (x >> 52) & 1023;
+    soit eb = (y >> 52) & 1023;
+    si ea == 1023 || (eb != 1023 && mb == 0) { retour comme_flottant(13835058055282163712); }
+    si eb == 1023 || ma == 0 { retour a; }
+    si ea == 0 { ea = 1; }
+    si eb == 0 { eb = 1; }
+    si ea < eb { retour a; }
+    soit r = ma % mb;
+    soit d = ea - eb;
+    tantque d > 0 {
+        soit k = d;
+        si k > 5 { k = 5; }
+        r = (r << (2 * k)) % mb;
+        d = d - k;
+    }
+    soit s = sa << 62;
+    si r == 0 { retour comme_flottant(s); }
+    soit e = eb;
+    soit q25 = 1 << 50;
+    tantque r < q25 && e > 1 { r = r << 2; e = e - 1; }
+    si r < q25 { e = 0; }
+    retour comme_flottant(s | (e << 52) | r);
+}
 
 // le vocabulaire des nombres (0.6za, Dunon en 0.61) : un mot pour tous les types ; le doute ne se comble pas
 fonction est_positif(x): logique { retour logique(x .> 0); }
@@ -5360,6 +5394,12 @@ fonction __est_fini_f(v: flottant): logique {
 }
 fonction __est_fini_w(x: entier_128): logique { retour vrai; }
 fonction __est_fini_i(x: entier_32): logique { retour vrai; }
+// reste : Rust % sur les flottants et les entiers signés, C fmod, UE FMath::Fmod ; exact, du signe du dividende ;
+// reste(x, 0.0) : variable (un entier par zéro rend x, comme la machine)
+fonction reste(a, b) { retour a .% b; }
+fonction __reste_f(a: flottant, b: flottant): flottant { retour __vn_reste(a, b); }
+fonction __reste_w(a: entier_128, b: entier_128): entier_128 { si b == 0LL { retour a; } retour a % b; }
+fonction __reste_i(a: entier_32, b: entier_32): entier_32 { retour a .% b; }
 
 // -- famille « flottants » (Rust f64, UE FMath, Blender) : le flottant principal, et ses variantes
 // racine_cubique : Rust cbrt
@@ -6506,6 +6546,7 @@ fonction __arrondi2_s(v: flottant_32, n): flottant_32 { retour flottant_32(__arr
 fonction __carre_s(v: flottant_32): flottant_32 { retour flottant_32(__carre_f(flottant(v))); }
 fonction __remapper_s(v: flottant_32, a1: flottant_32, b1: flottant_32, a2: flottant_32, b2: flottant_32): flottant_32 { retour flottant_32(__remapper_f(flottant(v), flottant(a1), flottant(b1), flottant(a2), flottant(b2))); }
 fonction __est_fini_s(v: flottant_32): logique { retour __est_fini_f(flottant(v)); }
+fonction __reste_s(a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(__reste_f(flottant(a), flottant(b))); }
 fonction __racine_cubique_s(x: flottant_32): flottant_32 { retour flottant_32(racine_cubique(flottant(x))); }
 fonction __hypotenuse_s(a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(hypotenuse(flottant(a), flottant(b))); }
 fonction __inverse_s(x: flottant_32): flottant_32 { retour flottant_32(inverse(flottant(x))); }

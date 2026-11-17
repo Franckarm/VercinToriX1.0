@@ -7474,6 +7474,41 @@ fonction __vn_variable(): flottant_petuar { retour variable_petuar(); }
 fonction __vn_hasard(): flottant_petuar { retour flottant_petuar(hasard_flottant()); }
 fonction __vt_lire(t, i): flottant_petuar { retour comme_flottant_petuar(entier_petuar(@3[@3[(t & 16777215) + 2] + i])); }
 fonction __vt_ecrire(t, i, v: flottant_petuar) { @3[@3[(t & 16777215) + 2] + i] = bits(v); }
+fonction __vn_reste(a: flottant_petuar, b: flottant_petuar): flottant_petuar {
+    // le reste exact (0.61b) : la division longue des mantisses, quit par quit (sept à la fois), en entiers
+    soit x: entier_128 = bits(a);
+    soit y: entier_128 = bits(b);
+    soit sa = __pq_etat(x);
+    soit sb = __pq_etat(y);
+    si sa == 3 || sb == 3 { retour variable_petuar(); }
+    si sa == 0 || sb == 0 { retour comme_flottant_petuar(0LL); }
+    soit un: entier_128 = 1LL;
+    soit mq: entier_128 = (un << 112) - un;
+    soit ma: entier_128 = x & mq;
+    soit mb: entier_128 = y & mq;
+    soit ea = __pq_ef(x);
+    soit eb = __pq_ef(y);
+    si ea == 16383 || (eb != 16383 && mb == 0LL) { retour variable_petuar(); }
+    si eb == 16383 || ma == 0LL { retour a; }
+    si ea == 0 { ea = 1; }
+    si eb == 0 { eb = 1; }
+    si ea < eb { retour a; }
+    soit r: entier_128 = ma % mb;
+    soit d = ea - eb;
+    tantque d > 0 {
+        soit k = d;
+        si k > 7 { k = 7; }
+        r = (r << (2 * k)) % mb;
+        d = d - k;
+    }
+    soit s: entier_128 = entier_128(sa) << 126;
+    si r == 0LL { retour comme_flottant_petuar(s); }
+    soit e = eb;
+    soit q55: entier_128 = un << 110;
+    tantque r < q55 && e > 1 { r = r << 2; e = e - 1; }
+    si r < q55 { e = 0; }
+    retour comme_flottant_petuar(s | (entier_128(e) << 112) | r);
+}
 
 // -- famille « nombres » : un mot pour tous les types (le compilateur choisit la variante)
 // carre : Arduino sq
@@ -7498,6 +7533,12 @@ fonction __est_fini_x(v: flottant_petuar): logique {
 }
 fonction __est_fini_w(x: entier_128): logique { retour vrai; }
 fonction __est_fini_i(x: entier_32): logique { retour vrai; }
+// reste : Rust % sur les flottants et les entiers signés, C fmod, UE FMath::Fmod ; exact, du signe du dividende ;
+// reste(x, 0.0) : variable (un entier par zéro rend x, comme la machine)
+fonction reste(a, b) { retour a .% b; }
+fonction __reste_x(a: flottant_petuar, b: flottant_petuar): flottant_petuar { retour __vn_reste(a, b); }
+fonction __reste_w(a: entier_128, b: entier_128): entier_128 { si b == 0LL { retour a; } retour a % b; }
+fonction __reste_i(a: entier_32, b: entier_32): entier_32 { retour a .% b; }
 
 // -- famille « flottants » (Rust f64, UE FMath, Blender) : le flottant principal, et ses variantes
 // racine_cubique : Rust cbrt
@@ -8669,6 +8710,8 @@ fonction __remapper_f(v: flottant, a1: flottant, b1: flottant, a2: flottant, b2:
 fonction __remapper_s(v: flottant_32, a1: flottant_32, b1: flottant_32, a2: flottant_32, b2: flottant_32): flottant_32 { retour flottant_32(__remapper_x(flottant_petuar(v), flottant_petuar(a1), flottant_petuar(b1), flottant_petuar(a2), flottant_petuar(b2))); }
 fonction __est_fini_f(v: flottant): logique { retour __est_fini_x(flottant_petuar(v)); }
 fonction __est_fini_s(v: flottant_32): logique { retour __est_fini_x(flottant_petuar(v)); }
+fonction __reste_f(a: flottant, b: flottant): flottant { retour flottant_64(__reste_x(flottant_petuar(a), flottant_petuar(b))); }
+fonction __reste_s(a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(__reste_x(flottant_petuar(a), flottant_petuar(b))); }
 fonction __racine_cubique_f(x: flottant): flottant { retour flottant_64(racine_cubique(flottant_petuar(x))); }
 fonction __racine_cubique_s(x: flottant_32): flottant_32 { retour flottant_32(racine_cubique(flottant_petuar(x))); }
 fonction __hypotenuse_f(a: flottant, b: flottant): flottant { retour flottant_64(hypotenuse(flottant_petuar(a), flottant_petuar(b))); }
