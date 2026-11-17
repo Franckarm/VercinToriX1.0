@@ -1,0 +1,10 @@
+tests/
+tests/test_adn.py
+tests/test_adn_chemin.py
+tests/test_adn_deux_sens.py
+tests/test_adn_vtx.py
+tests/test_carte.py
+tests/test_carte_arn.py
+tests/test_paillasse.py
+tests/test_patrouille.py
+tests/test_promesses.py
