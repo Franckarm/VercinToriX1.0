@@ -137,6 +137,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_types_fonction.py")]))
     etapes.append(("le vocabulaire des nombres : un mot pour les cinq types, les mêmes mots, les états gardés",
                    [sys.executable, os.path.join("tests", "test_nombres.py")]))
+    etapes.append(("le vocabulaire étendu (Rust, Arduino, UE5, Blender) : Lugus et Dunon, les mêmes mots, les bonnes valeurs",
+                   [sys.executable, os.path.join("tests", "test_vocabulaire_etendu.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",

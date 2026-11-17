@@ -2919,3 +2919,59 @@ arrondi à moins d'un demi. Zéro faute.
 `tronquer` (c'est `partie_entiere`) ; les cubes et les faces ne sont pas des nombres et restent dans leur bibliothèque
 (`bibliotheque/cube.vtx`) ; et **Dunon** n'a pas encore ce vocabulaire (vtx64.py et vtxc64 : le même travail à refaire).
 
+
+## 63. Le vocabulaire étendu, sur Lugus et sur Dunon (17 novembre, 0.61)
+
+**La demande du créateur** : passer à la 0.61, enrichir le vocabulaire « en utilisant l'ensemble du vocabulaire de
+Rust, celui d'Arduino, et celui des extensions » (précisé : les extensions officielles, et celles d'UE5 et de Blender ;
+« pas recréer les extensions, mais un vocabulaire préparé et capable d'adapter les extensions à Vercintorix ») ; des
+noms français, l'équivalent d'origine en note ; tout réparti en familles, sur Dunon et Lugus.
+
+**Un seul texte pour les deux machines** (`vtxc/vocabulaire.py`). Les mots sont écrits une fois, pour Lugus ; l'outil
+en tire le prélude de Dunon (le flottant principal y est de 64 bits, les mathématiques s'appellent `sinus_64`…), écrit
+lui-même les variantes pour les autres flottants (convertir, appeler, reconvertir) et la table de
+`docs/vtx-vocabulaire.md` à partir des commentaires des mots : la documentation ne peut pas dire autre chose que le code.
+L'outil est en Python, comme `prelude128.py` qui recopie le prélude dans vtxc : ce qu'il écrit est du vtx.
+
+**Ce qu'il y a : 202 mots publics**, en douze familles (nombres, flottants, interpolation, entiers et bits, textes,
+tableaux, hasard, temps, vecteurs-quaternions-matrices, couleurs, cube, codes ADN) et une treizième sur Lugus seul (les
+tableaux avec une fonction : `transformer`, `filtrer`, `plier`, `tous`, `trier_par`…). Dunon reçoit aussi le
+vocabulaire des nombres de 0.6za, qu'il n'avait pas. Les familles « cube » (une place et ses coordonnées, le voisin, le
+code de Morton) et « codes » (le complément, le brin d'en face, la teneur en G et C, les bases qui diffèrent) sont propres
+à vtx. Les faces de la carte ne sont pas des mots : elles vivent dans l'ADN, lues par `lugus carte`.
+
+**Le mécanisme, sans table** : en 0.6za, la liste des mots à variantes était écrite dans les deux compilateurs. Elle ne
+l'est plus : un mot du prélude qui a des variantes `__mot_x`, `_f`, `_s`, `_w`, `_i` dans le prélude en est un, et prend
+celle qui convient aux arguments (sinon le mot lui-même). Les mêmes règles dans vtx128.py, vtx64.py, vtxc128 et vtxc64 ;
+vtx64.py et vtxc64 les reçoivent pour la première fois. vtxc garde pour chaque fonction du prélude s'il a des variantes
+(une case de plus dans sa structure), pour ne pas chercher à chaque appel.
+
+**Vérifié** (`tests/test_vocabulaire_etendu.py`, 13 contrôles) : un programme qui emploie chaque mot (113 lignes) donne
+les mêmes mots par les deux compilateurs de chaque machine ; Lugus rend les valeurs gardées, Dunon les mêmes à 10⁻¹³ près
+(son flottant a 52 bits) ; les flottants (racine cubique, hypoténuse, logarithmes, hyperboliques et leurs réciproques,
+slerp, la courbe sRGB…) comme la bibliothèque `math` de Python ; les variantes de 64 et 32 bits, des entiers de 32 et 128
+bits ; les mots qui prennent une fonction ; une fonction du programme qui s'appelle `carre`, `premier` ou `distance`
+garde son sens. **Rien ne change pour les programmes déjà écrits** : 69 programmes de Lugus et 49 de Dunon, compilés par
+l'ancien compilateur de référence et par le nouveau, donnent les mêmes mots. L'exemple : `exemples128/vocabulaire.vtx`
+(un garde, son capteur, sa tête qui tourne par un quaternion, un message lu, l'ADN de son carnet), le même sur les deux
+machines.
+
+**Trouvé en route, corrigé** :
+- le trampoline des fonctions passées en valeur s'écrivait dès qu'une fonction **du prélude** appelait par valeur,
+  même si le programme ne l'employait pas : 65 programmes sur 69 changeaient de mots. Il ne s'écrit plus que si une
+  fonction gardée en a besoin (vtx128.py et vtxc128, les mêmes mots qu'avant pour tous les programmes) ;
+- Dunon : `hypotenuse(3.0S, 4.0S)` faisait diverger les deux compilateurs. vtxc64 renomme l'appel en `__hypotenuse_s`
+  pendant la génération, puis décide s'il épisse la fonction : un nom qui commence par `__hyp` passait pour le journal des
+  hypothèses (`__hyp_debut`…), et l'épissage était sauté. Le repère est maintenant `__hyp_`, dans les quatre
+  compilateurs ;
+- `vers_degres(π)` sur Dunon : 179,99999999999994 avec deux arrondis ; 180,00000000000006 maintenant. Le π du
+  flottant de 64 bits de Dunon (52 bits) est trop loin du vrai π pour que 180 tombe juste : c'est le bon arrondi, pas une
+  faute.
+
+**Ce qui n'y est pas, honnêtement** : les broches d'Arduino (pas de broches sur Lugus ni Dunon ; elles viendront avec un
+service de la machine, un vrai port) ; les bibliothèques entières (le vocabulaire prépare leur branchement : vecteurs,
+quaternions, matrices, couleurs, interpolations ; il ne les recopie pas) ; `reste` exact sur les flottants ;
+`multiplier_ajouter` en un seul arrondi ; les itérateurs paresseux (vtx rend des tableaux) ; sur Dunon, les mots qui
+prennent une fonction (Dunon n'a pas les fonctions passées en valeur) ; `premier`, `dernier`, `moyenne`, `mediane`…
+lisent des tableaux d'entiers. Le prélude a presque doublé : vtxc128 se compile en 262 047 mots (195 558 avant),
+vtxc64 en 246 187 ; un programme de taille moyenne (combat.vtx) se compile en moins d'une seconde.

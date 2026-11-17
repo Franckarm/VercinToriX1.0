@@ -5240,6 +5240,1324 @@ fonction instructions() {
     // la différence de deux lectures)
     retour __service(25, 0);
 }
+// ---- 0.61 : le vocabulaire étendu (écrit par vtxc/vocabulaire.py : ne pas retoucher à la main)
+
+fonction __vn_etat(v: flottant) { retour bits(v) >> 62; }
+fonction __vn_su(v: flottant) { soit e = bits(v) >> 62; retour e == 1 || e == 2; }
+fonction __vn_doute(v: flottant): logique { si (bits(v) >> 62) == 3 { retour variable; } retour inconnu; }
+fonction __vn_infini(v: flottant) { retour ((bits(v) >> 52) & 1023) == 1023; }
+fonction __vn_inconnu(): flottant { retour comme_flottant(0); }
+fonction __vn_variable(): flottant { retour comme_flottant(13835058055282163712); }
+fonction __vn_hasard(): flottant { retour hasard_flottant(); }
+fonction __vt_lire(t, i): flottant { retour comme_flottant(@3[@3[(t & 16777215) + 2] + i]); }
+fonction __vt_ecrire(t, i, v: flottant) { @3[@3[(t & 16777215) + 2] + i] = bits(v); }
+
+// le vocabulaire des nombres (0.6za, Dunon en 0.61) : un mot pour tous les types ; le doute ne se comble pas
+fonction est_positif(x): logique { retour logique(x .> 0); }
+fonction est_negatif(x): logique { retour logique(x .< 0); }
+fonction est_nul(x): logique { retour logique(x == 0); }
+fonction est_entier(x): logique { retour vrai; }
+fonction est_infini(x): logique { retour faux; }
+fonction est_su(x): logique { retour vrai; }
+fonction partie_entiere(x) { retour x; }
+fonction partie_decimale(x) { retour 0; }
+fonction entre(x, a, b): logique { retour logique(x .>= a && x .<= b); }
+fonction ecart(a, b) { si a .> b { retour a - b; } retour b - a; }
+fonction __arrondi2(x, n) { retour x; }
+fonction __signe_f(v: flottant): flottant {
+    si !__vn_su(v) || v == 0.0 { retour v; }
+    si v < 0.0 { retour 0.0 - 1.0; }
+    retour 1.0;
+}
+fonction __est_positif_f(v: flottant): logique { si !__vn_su(v) { retour __vn_doute(v); } retour logique(v > 0.0); }
+fonction __est_negatif_f(v: flottant): logique { si !__vn_su(v) { retour __vn_doute(v); } retour logique(v < 0.0); }
+fonction __est_nul_f(v: flottant): logique { si !__vn_su(v) { retour __vn_doute(v); } retour logique(v == 0.0); }
+fonction __est_infini_f(v: flottant): logique { si !__vn_su(v) { retour __vn_doute(v); } retour logique(__vn_infini(v)); }
+fonction __est_entier_f(v: flottant): logique {
+    si !__vn_su(v) { retour __vn_doute(v); }
+    si __vn_infini(v) { retour faux; }
+    retour logique(__partie_entiere_f(v) == v);
+}
+fonction __est_su_f(v: flottant): logique { retour logique(__vn_su(v)); }
+fonction __partie_entiere_f(v: flottant): flottant {
+    si v < 0.0 { retour plafond_64(v); }
+    retour plancher_64(v);
+}
+fonction __partie_decimale_f(v: flottant): flottant {
+    si __vn_su(v) && __vn_infini(v) { retour 0.0; }
+    retour v - __partie_entiere_f(v);
+}
+fonction __entre_f(v: flottant, a: flottant, b: flottant): logique {
+    si __vn_su(v) && __vn_su(a) && __vn_su(b) { retour logique(a <= v && v <= b); }
+    si __vn_etat(v) == 3 || __vn_etat(a) == 3 || __vn_etat(b) == 3 { retour variable; }
+    retour inconnu;
+}
+fonction __ecart_f(a: flottant, b: flottant): flottant { retour abs(a - b); }
+fonction __borne_f(v: flottant, a: flottant, b: flottant): flottant {
+    si v < a { retour a; }
+    si v > b { retour b; }
+    retour v;
+}
+fonction __arrondi2_f(v: flottant, n): flottant {
+    si !__vn_su(v) || __vn_infini(v) { retour v; }
+    soit q: flottant = 1.0;
+    soit k = n;
+    si n .< 0 { k = 0 - n; }
+    pour i dans 0..k { q = q * 10.0; }
+    soit m: flottant = abs(v);
+    soit r: flottant = 0.0;
+    si n .< 0 { r = __partie_entiere_f(m / q + 0.5) * q; } sinon { r = __partie_entiere_f(m * q + 0.5) / q; }
+    si v < 0.0 { retour 0.0 - r; }
+    retour r;
+}
+fonction __signe_w(x: entier_128): entier_128 { si x < 0LL { retour 0LL - 1LL; } si x > 0LL { retour 1LL; } retour 0LL; }
+fonction __est_positif_w(x: entier_128): logique { retour logique(x > 0LL); }
+fonction __est_negatif_w(x: entier_128): logique { retour logique(x < 0LL); }
+fonction __est_nul_w(x: entier_128): logique { retour logique(x == 0LL); }
+fonction __est_infini_w(x: entier_128): logique { retour faux; }
+fonction __est_entier_w(x: entier_128): logique { retour vrai; }
+fonction __est_su_w(x: entier_128): logique { retour vrai; }
+fonction __partie_entiere_w(x: entier_128): entier_128 { retour x; }
+fonction __partie_decimale_w(x: entier_128): entier_128 { retour 0LL; }
+fonction __entre_w(x: entier_128, a: entier_128, b: entier_128): logique { retour logique(a <= x && x <= b); }
+fonction __ecart_w(a: entier_128, b: entier_128): entier_128 { si a > b { retour a - b; } retour b - a; }
+fonction __borne_w(x: entier_128, a: entier_128, b: entier_128): entier_128 { si x < a { retour a; } si x > b { retour b; } retour x; }
+fonction __arrondi2_w(x: entier_128, n): entier_128 { retour x; }
+fonction __signe_i(x: entier_32): entier_32 { si x .< 0S { retour 0S - 1S; } si x .> 0S { retour 1S; } retour 0S; }
+fonction __est_positif_i(x: entier_32): logique { retour logique(x .> 0S); }
+fonction __est_negatif_i(x: entier_32): logique { retour logique(x .< 0S); }
+fonction __est_nul_i(x: entier_32): logique { retour logique(x == 0S); }
+fonction __est_infini_i(x: entier_32): logique { retour faux; }
+fonction __est_entier_i(x: entier_32): logique { retour vrai; }
+fonction __est_su_i(x: entier_32): logique { retour vrai; }
+fonction __partie_entiere_i(x: entier_32): entier_32 { retour x; }
+fonction __partie_decimale_i(x: entier_32): entier_32 { retour 0S; }
+fonction __entre_i(x: entier_32, a: entier_32, b: entier_32): logique { retour logique(x .>= a && x .<= b); }
+fonction __ecart_i(a: entier_32, b: entier_32): entier_32 { si a .> b { retour a - b; } retour b - a; }
+fonction __borne_i(x: entier_32, a: entier_32, b: entier_32): entier_32 { si x .< a { retour a; } si x .> b { retour b; } retour x; }
+fonction __arrondi2_i(x: entier_32, n): entier_32 { retour x; }
+
+// -- famille « nombres » : un mot pour tous les types (le compilateur choisit la variante)
+// carre : Arduino sq
+fonction carre(x) { retour x * x; }
+fonction __carre_f(v: flottant): flottant { retour v * v; }
+fonction __carre_w(x: entier_128): entier_128 { retour x * x; }
+fonction __carre_i(x: entier_32): entier_32 { retour x * x; }
+// remapper : Arduino map, UE FMath::GetMappedRangeValueUnclamped, Blender « Map Range »
+fonction remapper(x, a1, b1, a2, b2) {
+    si b1 == a1 { retour a2; }
+    retour (x - a1) * (b2 - a2) ./ (b1 - a1) + a2;
+}
+fonction __remapper_f(v: flottant, a1: flottant, b1: flottant, a2: flottant, b2: flottant): flottant {
+    si b1 == a1 { retour a2; }
+    retour a2 + (v - a1) * (b2 - a2) / (b1 - a1);
+}
+// est_fini : Rust is_finite
+fonction est_fini(x): logique { retour vrai; }
+fonction __est_fini_f(v: flottant): logique {
+    si !__vn_su(v) { retour __vn_doute(v); }
+    retour logique(!__vn_infini(v));
+}
+fonction __est_fini_w(x: entier_128): logique { retour vrai; }
+fonction __est_fini_i(x: entier_32): logique { retour vrai; }
+
+// -- famille « flottants » (Rust f64, UE FMath, Blender) : le flottant principal, et ses variantes
+// racine_cubique : Rust cbrt
+fonction racine_cubique(x: flottant): flottant {
+    si !__vn_su(x) || x == 0.0 || __vn_infini(x) { retour x; }
+    soit a: flottant = abs(x);
+    soit y: flottant = exponentielle_64(logarithme_64(a) / 3.0);
+    pour k dans 0..3 { y = y - (y * y * y - a) / (3.0 * y * y); }
+    si x < 0.0 { retour 0.0 - y; }
+    retour y;
+}
+// hypotenuse : Rust hypot (sans débordement)
+fonction hypotenuse(a: flottant, b: flottant): flottant {
+    si !__vn_su(a) || !__vn_su(b) { retour a + b; }
+    soit m: flottant = abs(a);
+    soit n: flottant = abs(b);
+    si n > m { m = abs(b); n = abs(a); }
+    si m == 0.0 || __vn_infini(m) { retour m; }
+    soit r: flottant = n / m;
+    retour m * racine(1.0 + r * r);
+}
+// inverse : Rust recip
+fonction inverse(x: flottant): flottant { retour 1.0 / x; }
+// vers_degres, vers_radians : Rust to_degrees, to_radians ; UE RadiansToDegrees
+fonction vers_degres(x: flottant): flottant { retour x / (pi_64() / 180.0); }
+fonction vers_radians(x: flottant): flottant { retour x * pi_64() / 180.0; }
+// copier_signe : Rust copysign (un signe inconnu ou contradictoire le reste)
+fonction copier_signe(x: flottant, s: flottant): flottant {
+    si !__vn_su(s) {
+        si __vn_etat(s) == 3 { retour __vn_variable(); }
+        retour __vn_inconnu();
+    }
+    si !__vn_su(x) { retour x; }
+    si __vn_etat(s) == 1 { retour 0.0 - abs(x); }
+    retour abs(x);
+}
+// multiplier_ajouter : Rust mul_add (ici deux arrondis : le produit, puis la somme)
+fonction multiplier_ajouter(a: flottant, b: flottant, c: flottant): flottant { retour a * b + c; }
+fonction __vn_puissance_exacte(b: flottant, k): flottant {
+    // b^k par carrés successifs (k signé) : exact tant que le résultat tient dans la mantisse
+    soit p: flottant = 1.0;
+    soit e = k;
+    si k .< 0 { e = 0 - k; }
+    soit c: flottant = b;
+    tantque e != 0 {
+        si (e & 1) == 1 { p = p * c; }
+        c = c * c;
+        e = e >> 1;
+    }
+    si k .< 0 { retour 1.0 / p; }
+    retour p;
+}
+fonction __vn_log_base(x: flottant, b: flottant): flottant {
+    si !__vn_su(x) { retour x; }
+    soit r: flottant = logarithme_64(x) / logarithme_64(b);
+    si !__vn_su(r) || __vn_infini(r) { retour r; }
+    // une puissance exacte de la base donne l'entier exact
+    soit k: flottant = __arrondi2_f(r, 0);
+    si abs(r - k) < 0.000001 && abs(k) < 4000.0 {
+        soit ki = entier(k);
+        si __vn_puissance_exacte(b, ki) == x { retour k; }
+    }
+    retour r;
+}
+// logarithme2, logarithme10, logarithme_base : Rust log2, log10, log(base)
+fonction logarithme2(x: flottant): flottant { retour __vn_log_base(x, 2.0); }
+fonction logarithme10(x: flottant): flottant { retour __vn_log_base(x, 10.0); }
+fonction logarithme_base(x: flottant, b: flottant): flottant { retour __vn_log_base(x, b); }
+// sinus_hyp, cosinus_hyp, tangente_hyp : Rust sinh, cosh, tanh (en série près de zéro : pas de perte de chiffres)
+fonction sinus_hyp(x: flottant): flottant {
+    si !__vn_su(x) || x == 0.0 { retour x; }
+    si abs(x) < 0.5 {
+        soit s: flottant = x;
+        soit t: flottant = x;
+        soit x2: flottant = x * x;
+        pour k dans 1..30 {
+            soit kk: flottant = flottant(2 * k);
+            t = t * x2 / (kk * (kk + 1.0));
+            s = s + t;
+        }
+        retour s;
+    }
+    soit e: flottant = exponentielle_64(x);
+    retour (e - 1.0 / e) / 2.0;
+}
+fonction cosinus_hyp(x: flottant): flottant {
+    si !__vn_su(x) { retour x; }
+    soit e: flottant = exponentielle_64(abs(x));
+    retour (e + 1.0 / e) / 2.0;
+}
+fonction tangente_hyp(x: flottant): flottant {
+    si !__vn_su(x) || x == 0.0 { retour x; }
+    si x > 40.0 { retour 1.0; }
+    si x < 0.0 - 40.0 { retour 0.0 - 1.0; }
+    retour sinus_hyp(x) / cosinus_hyp(x);
+}
+// argsinus_hyp, argcosinus_hyp, argtangente_hyp : Rust asinh, acosh, atanh (hors du domaine : variable)
+fonction argsinus_hyp(x: flottant): flottant {
+    si !__vn_su(x) || x == 0.0 || __vn_infini(x) { retour x; }
+    soit a: flottant = abs(x);
+    soit r: flottant = 0.0;
+    si a < 0.5 {
+        soit t: flottant = a;
+        soit x2: flottant = a * a;
+        r = a;
+        pour n dans 0..70 {
+            soit u: flottant = flottant(2 * n + 1);
+            t = t * x2 * u * u / ((u + 1.0) * (u + 2.0));
+            si (n & 1) == 0 { r = r - t; } sinon { r = r + t; }
+        }
+    } sinon {
+        r = logarithme_64(a + racine(a * a + 1.0));
+    }
+    si x < 0.0 { retour 0.0 - r; }
+    retour r;
+}
+fonction argcosinus_hyp(x: flottant): flottant {
+    si !__vn_su(x) { retour x; }
+    si x < 1.0 { retour __vn_variable(); }
+    si __vn_infini(x) { retour x; }
+    retour logarithme_64(x + racine(x * x - 1.0));
+}
+fonction argtangente_hyp(x: flottant): flottant {
+    si !__vn_su(x) || x == 0.0 { retour x; }
+    soit a: flottant = abs(x);
+    si a > 1.0 { retour __vn_variable(); }
+    si a == 1.0 { retour x / 0.0; }
+    soit r: flottant = 0.0;
+    si a < 0.5 {
+        soit t: flottant = a;
+        soit x2: flottant = a * a;
+        r = a;
+        pour n dans 1..90 {
+            t = t * x2;
+            r = r + t / flottant(2 * n + 1);
+        }
+    } sinon {
+        r = logarithme_64((1.0 + a) / (1.0 - a)) / 2.0;
+    }
+    si x < 0.0 { retour 0.0 - r; }
+    retour r;
+}
+
+// -- famille « interpolation » (UE FMath, Blender, Godot, Arduino)
+// interpoler : UE Lerp, Blender mix, Rust f64::lerp (nightly)
+fonction interpoler(a: flottant, b: flottant, t: flottant): flottant { retour a + (b - a) * t; }
+// interpolation_inverse : UE GetRangePct, Godot inverse_lerp
+fonction interpolation_inverse(a: flottant, b: flottant, v: flottant): flottant {
+    si b == a { retour 0.0; }
+    retour (v - a) / (b - a);
+}
+// remapper_borne : UE GetMappedRangeValueClamped, Blender « Map Range » (clamp)
+fonction remapper_borne(v: flottant, a1: flottant, b1: flottant, a2: flottant, b2: flottant): flottant {
+    si b1 == a1 { retour a2; }
+    soit t: flottant = __borne_f((v - a1) / (b1 - a1), 0.0, 1.0);
+    retour a2 + (b2 - a2) * t;
+}
+// pas_lisse, pas_plus_lisse : GLSL smoothstep, UE SmoothStep, Blender « Smooth Step », Perlin smootherstep
+fonction pas_lisse(e0: flottant, e1: flottant, x: flottant): flottant {
+    si e1 == e0 { si x < e0 { retour 0.0; } retour 1.0; }
+    soit t: flottant = __borne_f((x - e0) / (e1 - e0), 0.0, 1.0);
+    retour t * t * (3.0 - 2.0 * t);
+}
+fonction pas_plus_lisse(e0: flottant, e1: flottant, x: flottant): flottant {
+    si e1 == e0 { si x < e0 { retour 0.0; } retour 1.0; }
+    soit t: flottant = __borne_f((x - e0) / (e1 - e0), 0.0, 1.0);
+    retour t * t * t * (t * (t * 6.0 - 15.0) + 10.0);
+}
+// rapprocher : UE FInterpConstantTo, Godot move_toward (au plus « pas » à chaque appel)
+fonction rapprocher(c: flottant, cible: flottant, pas: flottant): flottant {
+    soit d: flottant = cible - c;
+    si abs(d) <= pas { retour cible; }
+    si d > 0.0 { retour c + pas; }
+    retour c - pas;
+}
+// amortir : UE FInterpTo (une part du chemin, selon le temps écoulé et la vitesse)
+fonction amortir(c: flottant, cible: flottant, dt: flottant, vitesse: flottant): flottant {
+    si vitesse <= 0.0 { retour cible; }
+    retour c + (cible - c) * __borne_f(dt * vitesse, 0.0, 1.0);
+}
+// presque_egal : UE IsNearlyEqual, Rust (a - b).abs() <= tol ; le doute reste
+fonction presque_egal(a: flottant, b: flottant, tol: flottant): logique {
+    si !__vn_su(a) || !__vn_su(b) || !__vn_su(tol) {
+        si __vn_etat(a) == 3 || __vn_etat(b) == 3 || __vn_etat(tol) == 3 { retour variable; }
+        retour inconnu;
+    }
+    retour logique(abs(a - b) <= tol);
+}
+// enrouler : UE FMath::Wrap, Blender « Wrap », Rust rem_euclid sur un intervalle [a, b)
+fonction enrouler(x: flottant, a: flottant, b: flottant): flottant {
+    soit l: flottant = b - a;
+    si l <= 0.0 { retour a; }
+    retour x - l * plancher_64((x - a) / l);
+}
+// aller_retour : Blender pingpong
+fonction aller_retour(x: flottant, l: flottant): flottant {
+    si l <= 0.0 { retour 0.0; }
+    soit t: flottant = enrouler(x, 0.0, 2.0 * l);
+    si t > l { retour 2.0 * l - t; }
+    retour t;
+}
+// aimanter : UE GridSnap, Blender « Snap », Godot snapped (au multiple le plus proche)
+fonction aimanter(x: flottant, pas: flottant): flottant {
+    si pas == 0.0 { retour x; }
+    retour pas * plancher_64(x / pas + 0.5);
+}
+// entree_douce, sortie_douce, entree_sortie_douce : UE InterpEaseIn/Out (cubiques), easings.net
+fonction entree_douce(t: flottant): flottant { retour t * t * t; }
+fonction sortie_douce(t: flottant): flottant { soit u: flottant = 1.0 - t; retour 1.0 - u * u * u; }
+fonction entree_sortie_douce(t: flottant): flottant {
+    si t < 0.5 { retour 4.0 * t * t * t; }
+    soit u: flottant = 2.0 - 2.0 * t;
+    retour 1.0 - u * u * u / 2.0;
+}
+// lire_flottant : Rust str::parse::<f64>, Arduino toFloat ; rien d'écrit : inconnu ; pas un nombre : variable
+// (la virgule française est comprise ; plus de 34 chiffres : le dernier peut être arrondi deux fois)
+fonction lire_flottant(t): flottant {
+    soit n = longueur(t);
+    soit i = 0;
+    tantque i < n && (car(t, i) == 32 || car(t, i) == 9) { i = i + 1; }
+    soit f = n;
+    tantque f > i && (car(t, f - 1) == 32 || car(t, f - 1) == 9 || car(t, f - 1) == 10 || car(t, f - 1) == 13) { f = f - 1; }
+    si i == f { retour __vn_inconnu(); }
+    soit neg = 0;
+    si car(t, i) == 45 { neg = 1; i = i + 1; } sinon si car(t, i) == 43 { i = i + 1; }
+    soit m: flottant = 0.0;
+    soit chiffres = 0;
+    soit e10 = 0;
+    tantque i < f && car(t, i) >= 48 && car(t, i) <= 57 {
+        m = m * 10.0 + flottant(car(t, i) - 48);
+        chiffres = chiffres + 1;
+        i = i + 1;
+    }
+    si i < f && (car(t, i) == 46 || car(t, i) == 44) {
+        i = i + 1;
+        tantque i < f && car(t, i) >= 48 && car(t, i) <= 57 {
+            m = m * 10.0 + flottant(car(t, i) - 48);
+            chiffres = chiffres + 1;
+            e10 = e10 - 1;
+            i = i + 1;
+        }
+    }
+    si chiffres == 0 { retour __vn_variable(); }
+    si i < f && (car(t, i) == 101 || car(t, i) == 69) {
+        i = i + 1;
+        soit eneg = 0;
+        si i < f && car(t, i) == 45 { eneg = 1; i = i + 1; } sinon si i < f && car(t, i) == 43 { i = i + 1; }
+        soit ev = 0;
+        soit ed = 0;
+        tantque i < f && car(t, i) >= 48 && car(t, i) <= 57 {
+            si ev < 100000 { ev = ev * 10 + car(t, i) - 48; }
+            ed = ed + 1;
+            i = i + 1;
+        }
+        si ed == 0 { retour __vn_variable(); }
+        si eneg == 1 { e10 = e10 - ev; } sinon { e10 = e10 + ev; }
+    }
+    si i != f { retour __vn_variable(); }
+    si e10 .< 0 { m = m / __vn_puissance_exacte(10.0, 0 - e10); } sinon { m = m * __vn_puissance_exacte(10.0, e10); }
+    si neg == 1 { retour 0.0 - m; }
+    retour m;
+}
+
+// -- famille « entiers et bits » (Rust u64, Arduino) : l'entier de 64 bits
+// compter_uns, compter_zeros, zeros_en_tete, zeros_en_queue : Rust count_ones, count_zeros, leading_zeros, trailing_zeros
+fonction compter_uns(x) { retour nb_bits(x); }
+fonction compter_zeros(x) { retour 64 - nb_bits(x); }
+fonction zeros_en_tete(x) {
+    si x == 0 { retour 64; }
+    soit n = 0;
+    soit v = x;
+    tantque (v & 9223372036854775808) == 0 { n = n + 1; v = v << 1; }
+    retour n;
+}
+fonction zeros_en_queue(x) {
+    si x == 0 { retour 64; }
+    soit n = 0;
+    soit v = x;
+    tantque (v & 1) == 0 { n = n + 1; v = v >> 1; }
+    retour n;
+}
+// tourner_gauche, tourner_droite, inverser_bits, echanger_octets : Rust rotate_left, rotate_right, reverse_bits, swap_bytes
+fonction tourner_gauche(x, n) { soit k = n & 63; si k == 0 { retour x; } retour (x << k) | (x >> (64 - k)); }
+fonction tourner_droite(x, n) { soit k = n & 63; si k == 0 { retour x; } retour (x >> k) | (x << (64 - k)); }
+fonction inverser_bits(x) {
+    soit r = 0;
+    soit v = x;
+    pour i dans 0..64 { r = (r << 1) | (v & 1); v = v >> 1; }
+    retour r;
+}
+fonction echanger_octets(x) {
+    soit r = 0;
+    soit v = x;
+    pour i dans 0..8 { r = (r << 8) | (v & 255); v = v >> 8; }
+    retour r;
+}
+// est_puissance_de_deux, puissance_de_deux_suivante : Rust is_power_of_two, next_power_of_two (0 si elle dépasse 64 bits)
+fonction est_puissance_de_deux(x): logique { retour logique(x != 0 && (x & (x - 1)) == 0); }
+fonction puissance_de_deux_suivante(x) {
+    si x <= 1 { retour 1; }
+    soit p = 1;
+    tantque p < x && p != 0 { p = p << 1; }
+    retour p;
+}
+// log2_entier, log10_entier, racine_entiere : Rust ilog2, ilog10, isqrt (log de 0 : 18446744073709551615, comme « absent »)
+fonction log2_entier(x) { si x == 0 { retour 18446744073709551615; } retour 63 - zeros_en_tete(x); }
+fonction log10_entier(x) {
+    si x == 0 { retour 18446744073709551615; }
+    soit n = 0;
+    soit v = x;
+    tantque v >= 10 { v = v / 10; n = n + 1; }
+    retour n;
+}
+fonction racine_entiere(x) {
+    soit r = 0;
+    soit v = x;
+    soit b = 4611686018427387904;
+    tantque b > v { b = b >> 2; }
+    tantque b != 0 {
+        si v >= r + b { v = v - (r + b); r = (r >> 1) + b; } sinon { r = r >> 1; }
+        b = b >> 2;
+    }
+    retour r;
+}
+// reste_euclidien, quotient_euclidien : Rust rem_euclid, div_euclid (signés) ; num-integer mod_floor
+fonction reste_euclidien(a, b) {
+    soit r = a .% b;
+    si r .< 0 { si b .< 0 { r = r - b; } sinon { r = r + b; } }
+    retour r;
+}
+fonction quotient_euclidien(a, b) {
+    soit q = a ./ b;
+    si (a .% b) .< 0 { si b .> 0 { q = q - 1; } sinon { q = q + 1; } }
+    retour q;
+}
+// division_plafond, multiple_suivant, milieu : Rust div_ceil, next_multiple_of, midpoint
+fonction division_plafond(a, b) { soit q = a / b; si a % b != 0 { q = q + 1; } retour q; }
+fonction multiple_suivant(x, m) {
+    si m == 0 { retour x; }
+    soit r = x % m;
+    si r == 0 { retour x; }
+    retour x + (m - r);
+}
+fonction milieu(a, b) { retour (a & b) + ((a ^ b) >> 1); }
+// est_pair, est_impair : num-integer is_even, is_odd
+fonction est_pair(x): logique { retour logique((x & 1) == 0); }
+fonction est_impair(x): logique { retour logique((x & 1) == 1); }
+// addition_saturee, soustraction_saturee, multiplication_saturee, deborde_addition, deborde_multiplication : Rust
+// saturating_add, saturating_sub, saturating_mul (bornés à 0 et au plus grand entier) ; overflowing_add, overflowing_mul (vrai si
+// le calcul déborde)
+fonction addition_saturee(a, b) { soit s = a + b; si s < a { retour 18446744073709551615; } retour s; }
+fonction soustraction_saturee(a, b) { si b > a { retour 0; } retour a - b; }
+fonction multiplication_saturee(a, b) {
+    si a != 0 && b > 18446744073709551615 / a { retour 18446744073709551615; }
+    retour a * b;
+}
+fonction deborde_addition(a, b): logique { retour logique(a + b < a); }
+fonction deborde_multiplication(a, b): logique { retour logique(a != 0 && b > 18446744073709551615 / a); }
+// lire_bit, poser_bit, effacer_bit, ecrire_bit, basculer_bit, masque_bit : Arduino bitRead, bitSet, bitClear, bitWrite, bit()
+fonction lire_bit(x, n) { retour (x >> n) & 1; }
+fonction poser_bit(x, n) { retour x | (1 << n); }
+fonction effacer_bit(x, n) { retour x & ~(1 << n); }
+fonction basculer_bit(x, n) { retour x ^ (1 << n); }
+fonction ecrire_bit(x, n, b) { si b != 0 { retour x | (1 << n); } retour x & ~(1 << n); }
+fonction masque_bit(n) { retour 1 << n; }
+// octet_bas, octet_haut, octet, mot_de : Arduino lowByte, highByte, word(h, l) ; Rust to_le_bytes
+fonction octet_bas(x) { retour x & 255; }
+fonction octet_haut(x) { retour (x >> 8) & 255; }
+fonction octet(x, k) { retour (x >> (8 * k)) & 255; }
+fonction mot_de(h, l) { retour ((h & 255) << 8) | (l & 255); }
+
+// -- famille « textes » (Rust str et char, Arduino String) ; les questions rendent 1 ou 0, comme commence_par
+// est_vide : Rust is_empty, Arduino length() == 0 (un texte ou un tableau)
+fonction est_vide(t) { si longueur(t) == 0 { retour 1; } retour 0; }
+// contient_texte, position_derniere : Rust contains, rfind ; Arduino indexOf, lastIndexOf
+fonction contient_texte(t, m) { si position(t, m) != 18446744073709551615 { retour 1; } retour 0; }
+fonction position_derniere(t, m) {
+    soit n = longueur(t);
+    soit k = longueur(m);
+    si k > n { retour 18446744073709551615; }
+    soit i = n - k + 1;
+    tantque i > 0 {
+        i = i - 1;
+        soit j = 0;
+        tantque j < k && car(t, i + j) == car(m, j) { j = j + 1; }
+        si j == k { retour i; }
+    }
+    retour 18446744073709551615;
+}
+fonction __est_blanc(c) { retour c == 32 || c == 9 || c == 10 || c == 13; }
+// rogner_debut, rogner_fin : Rust trim_start, trim_end (nettoyer : trim)
+fonction rogner_debut(t): texte {
+    soit a = 0;
+    soit n = longueur(t);
+    tantque a < n && __est_blanc(car(t, a)) { a = a + 1; }
+    retour sous_texte(t, a, n);
+}
+fonction rogner_fin(t): texte {
+    soit b = longueur(t);
+    tantque b > 0 && __est_blanc(car(t, b - 1)) { b = b - 1; }
+    retour sous_texte(t, 0, b);
+}
+// sans_prefixe, sans_suffixe : Rust strip_prefix, strip_suffix (le texte tel quel s'il n'y est pas)
+fonction sans_prefixe(t, p): texte {
+    si commence_par(t, p) == 1 { retour sous_texte(t, longueur(p), longueur(t)); }
+    retour sous_texte(t, 0, longueur(t));
+}
+fonction sans_suffixe(t, s): texte {
+    si finit_par(t, s) == 1 { retour sous_texte(t, 0, longueur(t) - longueur(s)); }
+    retour sous_texte(t, 0, longueur(t));
+}
+// remplacer_premier : Rust replacen(a, b, 1)
+fonction remplacer_premier(t, a, b): texte {
+    soit p = position(t, a);
+    si p == 18446744073709551615 || longueur(a) == 0 { retour sous_texte(t, 0, longueur(t)); }
+    retour __texte_plus(__texte_plus(sous_texte(t, 0, p), b), sous_texte(t, p + longueur(a), longueur(t)));
+}
+// lignes, mots, couper_en_deux : Rust lines, split_whitespace, split_once (des tableaux de textes)
+fonction lignes(t) {
+    soit r = tableau(0);
+    soit n = longueur(t);
+    soit d = 0;
+    pour i dans 0..n {
+        si car(t, i) == 10 {
+            soit f = i;
+            si f > d && car(t, f - 1) == 13 { f = f - 1; }
+            __ajouter(r, sous_texte(t, d, f));
+            d = i + 1;
+        }
+    }
+    si d < n {
+        soit g = n;
+        si car(t, n - 1) == 13 { g = n - 1; }
+        __ajouter(r, sous_texte(t, d, g));
+    }
+    retour r;
+}
+fonction mots(t) {
+    soit r = tableau(0);
+    soit n = longueur(t);
+    soit d = 0;
+    soit dedans = 0;
+    pour i dans 0..n {
+        si __est_blanc(car(t, i)) {
+            si dedans == 1 { __ajouter(r, sous_texte(t, d, i)); dedans = 0; }
+        } sinon si dedans == 0 {
+            d = i;
+            dedans = 1;
+        }
+    }
+    si dedans == 1 { __ajouter(r, sous_texte(t, d, n)); }
+    retour r;
+}
+fonction couper_en_deux(t, sep) {
+    soit r = tableau(0);
+    soit p = position(t, sep);
+    si p == 18446744073709551615 { __ajouter(r, sous_texte(t, 0, longueur(t))); retour r; }
+    __ajouter(r, sous_texte(t, 0, p));
+    __ajouter(r, sous_texte(t, p + longueur(sep), longueur(t)));
+    retour r;
+}
+// caracteres, texte_de_caracteres : Rust chars().collect(), String::from_iter
+fonction caracteres(t) {
+    soit r = tableau(0);
+    pour i dans 0..longueur(t) { __ajouter(r, car(t, i)); }
+    retour r;
+}
+fonction texte_de_caracteres(tc): texte {
+    soit n = longueur(tc);
+    soit r = texte_neuf(n);
+    pour i dans 0..n { changer_car(r, i, tc[i]); }
+    retour r;
+}
+fonction __minuscule_car(c) {
+    si c >= 65 && c <= 90 { retour c + 32; }
+    si c >= 192 && c <= 222 && c != 215 { retour c + 32; }
+    retour c;
+}
+// egal_sans_casse, comparer_textes : Rust eq_ignore_ascii_case, Ord::cmp ; Arduino equalsIgnoreCase, compareTo
+fonction egal_sans_casse(a, b) {
+    soit n = longueur(a);
+    si n != longueur(b) { retour 0; }
+    pour i dans 0..n { si __minuscule_car(car(a, i)) != __minuscule_car(car(b, i)) { retour 0; } }
+    retour 1;
+}
+fonction comparer_textes(a, b) {
+    soit na = longueur(a);
+    soit nb = longueur(b);
+    soit n = na;
+    si nb < n { n = nb; }
+    pour i dans 0..n {
+        soit x = car(a, i);
+        soit y = car(b, i);
+        si x < y { retour 18446744073709551615; }
+        si x > y { retour 1; }
+    }
+    si na < nb { retour 18446744073709551615; }
+    si na > nb { retour 1; }
+    retour 0;
+}
+// est_espace, est_majuscule, est_minuscule, est_alphanumerique, est_ponctuation, est_hexadecimal, est_ascii, est_controle :
+// Rust char::is_whitespace…, Arduino isSpace, isUpperCase, isLowerCase, isAlphaNumeric, isPunct, isHexadecimalDigit,
+// isAscii, isControl
+fonction est_espace(c) { si c == 32 || c == 9 || c == 10 || c == 13 || c == 11 || c == 12 || c == 160 { retour 1; } retour 0; }
+fonction est_majuscule(c) { si (c >= 65 && c <= 90) || (c >= 192 && c <= 222 && c != 215) || c == 338 { retour 1; } retour 0; }
+fonction est_minuscule(c) { si (c >= 97 && c <= 122) || (c >= 223 && c <= 255 && c != 247) || c == 339 { retour 1; } retour 0; }
+fonction est_alphanumerique(c) { si est_lettre(c) == 1 || est_chiffre(c) == 1 { retour 1; } retour 0; }
+fonction est_ponctuation(c) {
+    si (c >= 33 && c <= 47) || (c >= 58 && c <= 64) || (c >= 91 && c <= 96) || (c >= 123 && c <= 126) || c == 171 || c == 187 { retour 1; }
+    retour 0;
+}
+fonction est_hexadecimal(c) { si (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102) { retour 1; } retour 0; }
+fonction est_ascii(c) { si c < 128 { retour 1; } retour 0; }
+fonction est_controle(c) { si c < 32 || c == 127 { retour 1; } retour 0; }
+// valeur_chiffre, chiffre_de : Rust char::to_digit, char::from_digit (absent : 18446744073709551615)
+fonction valeur_chiffre(c, base) {
+    soit v = 99;
+    si c >= 48 && c <= 57 { v = c - 48; } sinon si c >= 97 && c <= 122 { v = c - 87; } sinon si c >= 65 && c <= 90 { v = c - 55; }
+    si v >= base { retour 18446744073709551615; }
+    retour v;
+}
+fonction chiffre_de(v, base) {
+    si v >= base || v >= 36 { retour 18446744073709551615; }
+    si v < 10 { retour 48 + v; }
+    retour 87 + v;
+}
+// texte_base, lire_base : Rust format!("{:x}") et from_str_radix, Arduino String(n, HEX) (sans signe, base 2 à 36)
+fonction texte_base(n, base): texte {
+    si base < 2 || base > 36 { retour texte_neuf(0); }
+    si n == 0 { retour car_texte(48); }
+    soit tc = tableau(0);
+    soit v = n;
+    tantque v != 0 { __ajouter(tc, chiffre_de(v % base, base)); v = v / base; }
+    inverser(tc);
+    retour texte_de_caracteres(tc);
+}
+fonction lire_base(t, base) {
+    soit r = 0;
+    pour i dans 0..longueur(t) {
+        soit v = valeur_chiffre(car(t, i), base);
+        si v == 18446744073709551615 { retour r; }
+        r = r * base + v;
+    }
+    retour r;
+}
+// completer_gauche, completer_droite : Rust format!("{:0>8}"), pad_start
+fonction completer_gauche(t, n, c): texte {
+    soit m = longueur(t);
+    si m >= n { retour sous_texte(t, 0, m); }
+    retour __texte_plus(repeter(car_texte(c), n - m), t);
+}
+fonction completer_droite(t, n, c): texte {
+    soit m = longueur(t);
+    si m >= n { retour sous_texte(t, 0, m); }
+    retour __texte_plus(t, repeter(car_texte(c), n - m));
+}
+
+// -- famille « tableaux » (Rust slice et Vec, itertools) : des tableaux d'entiers
+// premier, dernier : Rust first, last (0 pour un tableau vide)
+fonction premier(t) { si longueur(t) == 0 { retour 0; } retour t[0]; }
+fonction dernier(t) { soit n = longueur(t); si n == 0 { retour 0; } retour t[n - 1]; }
+// echanger, remplir : Rust swap, fill
+fonction echanger(t, i, j) { soit x = t[i]; t[i] = t[j]; t[j] = x; }
+fonction remplir(t, v) { pour i dans 0..longueur(t) { t[i] = v; } }
+// tourner_tableau, tourner_tableau_droite : Rust rotate_left, rotate_right
+fonction tourner_tableau(t, k) {
+    soit n = longueur(t);
+    si n == 0 { retour; }
+    soit d = k % n;
+    si d == 0 { retour; }
+    soit c = copie(t);
+    pour i dans 0..n { t[i] = c[(i + d) % n]; }
+}
+fonction tourner_tableau_droite(t, k) {
+    soit n = longueur(t);
+    si n == 0 { retour; }
+    tourner_tableau(t, n - k % n);
+}
+// est_trie, trier_decroissant : Rust is_sorted, sort_by(|a, b| b.cmp(a)) (signés)
+fonction est_trie(t) { pour i dans 1..longueur(t) { si t[i] .< t[i - 1] { retour 0; } } retour 1; }
+fonction trier_decroissant(t) { trier(t); inverser(t); }
+// recherche_dichotomique : Rust binary_search (dans un tableau trié, signé ; absent : 18446744073709551615)
+fonction recherche_dichotomique(t, v) {
+    soit a = 0;
+    soit b = longueur(t);
+    tantque a < b {
+        soit m = (a + b) / 2;
+        si t[m] == v { retour m; }
+        si t[m] .< v { a = m + 1; } sinon { b = m; }
+    }
+    retour 18446744073709551615;
+}
+// produit, moyenne, mediane : Rust iter().product(), statistiques (un tableau vide : la moyenne est inconnue)
+fonction produit(t) { soit p = 1; pour x dans t { p = p * x; } retour p; }
+fonction moyenne(t): flottant {
+    soit n = longueur(t);
+    si n == 0 { retour __vn_inconnu(); }
+    soit s = 0;
+    pour x dans t { s = s + x; }
+    retour flottant_signe(s) / flottant(n);
+}
+fonction mediane(t): flottant {
+    soit n = longueur(t);
+    si n == 0 { retour __vn_inconnu(); }
+    soit c = copie(t);
+    trier(c);
+    si n % 2 == 1 { retour flottant_signe(c[n / 2]); }
+    retour (flottant_signe(c[n / 2 - 1]) + flottant_signe(c[n / 2])) / 2.0;
+}
+// cumul, differences : itertools scan (les sommes au fil), windows(2) (les écarts successifs)
+fonction cumul(t) { soit r = tableau(0); soit s = 0; pour x dans t { s = s + x; ajouter(r, s); } retour r; }
+fonction differences(t) { soit r = tableau(0); pour i dans 1..longueur(t) { ajouter(r, t[i] - t[i - 1]); } retour r; }
+// fenetres, paquets : Rust windows(k), chunks(k) (des tableaux de tableaux)
+fonction fenetres(t, k) {
+    soit r = tableau(0);
+    soit n = longueur(t);
+    si k == 0 || k > n { retour r; }
+    pour i dans 0..n - k + 1 { ajouter(r, tranche(t, i, i + k)); }
+    retour r;
+}
+fonction paquets(t, k) {
+    soit r = tableau(0);
+    soit n = longueur(t);
+    si k == 0 { retour r; }
+    soit i = 0;
+    tantque i < n {
+        soit f = i + k;
+        si f > n { f = n; }
+        ajouter(r, tranche(t, i, f));
+        i = f;
+    }
+    retour r;
+}
+// aplatir, concatener, prolonger : Rust concat (flatten), [a, b].concat(), extend
+fonction aplatir(tt) { soit r = tableau(0); pour u dans tt { pour x dans u { ajouter(r, x); } } retour r; }
+fonction concatener(a, b) { soit r = copie(a); pour x dans b { ajouter(r, x); } retour r; }
+fonction prolonger(a, b) { soit c = copie(b); pour x dans c { ajouter(a, x); } }
+// dedoublonner : Rust dedup (les répétitions qui se suivent ; sans_doublons : toutes)
+fonction dedoublonner(t) {
+    soit n = longueur(t);
+    si n < 2 { retour; }
+    soit w = 1;
+    pour i dans 1..n { si t[i] != t[w - 1] { t[w] = t[i]; w = w + 1; } }
+    tantque longueur(t) > w { retirer(t); }
+}
+// separer : Rust split_at (deux tableaux)
+fonction separer(t, i) {
+    soit r = tableau(0);
+    soit n = longueur(t);
+    soit k = i;
+    si k > n { k = n; }
+    ajouter(r, tranche(t, 0, k));
+    ajouter(r, tranche(t, k, n));
+    retour r;
+}
+// intervalle, intervalle_pas : Rust (a..b).collect(), step_by (signés)
+fonction intervalle(a, b) { soit r = tableau(0); soit i = a; tantque i .< b { ajouter(r, i); i = i + 1; } retour r; }
+fonction intervalle_pas(a, b, p) {
+    soit r = tableau(0);
+    si p == 0 { retour r; }
+    soit i = a;
+    si p .> 0 { tantque i .< b { ajouter(r, i); i = i + p; } } sinon { tantque i .> b { ajouter(r, i); i = i + p; } }
+    retour r;
+}
+// zipper, entrelacer, produit_cartesien : Rust zip, itertools interleave, iproduct!
+fonction zipper(a, b) {
+    soit r = tableau(0);
+    soit n = longueur(a);
+    si longueur(b) < n { n = longueur(b); }
+    pour i dans 0..n { soit p = tableau(0); ajouter(p, a[i]); ajouter(p, b[i]); ajouter(r, p); }
+    retour r;
+}
+fonction entrelacer(a, b) {
+    soit r = tableau(0);
+    soit na = longueur(a);
+    soit nb = longueur(b);
+    soit n = na;
+    si nb > n { n = nb; }
+    pour i dans 0..n {
+        si i < na { ajouter(r, a[i]); }
+        si i < nb { ajouter(r, b[i]); }
+    }
+    retour r;
+}
+fonction produit_cartesien(a, b) {
+    soit r = tableau(0);
+    pour x dans a { pour y dans b { soit p = tableau(0); ajouter(p, x); ajouter(p, y); ajouter(r, p); } }
+    retour r;
+}
+// position_max, position_min, chercher_dernier : itertools position_max, position_min ; Rust rposition
+fonction position_max(t) {
+    soit n = longueur(t);
+    si n == 0 { retour 18446744073709551615; }
+    soit k = 0;
+    pour i dans 1..n { si t[i] .> t[k] { k = i; } }
+    retour k;
+}
+fonction position_min(t) {
+    soit n = longueur(t);
+    si n == 0 { retour 18446744073709551615; }
+    soit k = 0;
+    pour i dans 1..n { si t[i] .< t[k] { k = i; } }
+    retour k;
+}
+fonction chercher_dernier(t, v) {
+    soit i = longueur(t);
+    tantque i > 0 { i = i - 1; si t[i] == v { retour i; } }
+    retour 18446744073709551615;
+}
+// tronquer_tableau, redimensionner, repeter_tableau : Rust truncate, resize, repeat
+fonction tronquer_tableau(t, n) { tantque longueur(t) > n { retirer(t); } }
+fonction redimensionner(t, n, v) {
+    tantque longueur(t) > n { retirer(t); }
+    tantque longueur(t) < n { ajouter(t, v); }
+}
+fonction repeter_tableau(t, k) { soit r = tableau(0); pour j dans 0..k { pour x dans t { ajouter(r, x); } } retour r; }
+// combinaisons, permutations : itertools combinations(k), permutations (dans l'ordre ; prudence : n! tableaux)
+fonction combinaisons(t, k) {
+    soit r = tableau(0);
+    soit n = longueur(t);
+    si k > n { retour r; }
+    soit idx = tableau(0);
+    pour i dans 0..k { ajouter(idx, i); }
+    soit fini = 0;
+    tantque fini == 0 {
+        soit c = tableau(0);
+        pour j dans 0..k { ajouter(c, t[idx[j]]); }
+        ajouter(r, c);
+        soit p = k;
+        soit trouve = 0;
+        tantque p > 0 && trouve == 0 {
+            p = p - 1;
+            si idx[p] != p + n - k { trouve = 1; }
+        }
+        si trouve == 0 {
+            fini = 1;
+        } sinon {
+            idx[p] = idx[p] + 1;
+            pour q dans p + 1..k { idx[q] = idx[q - 1] + 1; }
+        }
+    }
+    retour r;
+}
+fonction permutations(t) {
+    soit r = tableau(0);
+    soit n = longueur(t);
+    soit idx = intervalle(0, n);
+    soit encore = 1;
+    tantque encore == 1 {
+        soit c = tableau(0);
+        pour j dans 0..n { ajouter(c, t[idx[j]]); }
+        ajouter(r, c);
+        si n < 2 {
+            encore = 0;
+        } sinon {
+            soit i = n - 1;
+            tantque i > 0 && idx[i - 1] >= idx[i] { i = i - 1; }
+            si i == 0 {
+                encore = 0;
+            } sinon {
+                soit j2 = n - 1;
+                tantque idx[j2] <= idx[i - 1] { j2 = j2 - 1; }
+                soit tmp = idx[i - 1];
+                idx[i - 1] = idx[j2];
+                idx[j2] = tmp;
+                soit a2 = i;
+                soit b2 = n - 1;
+                tantque a2 < b2 {
+                    soit t2 = idx[a2];
+                    idx[a2] = idx[b2];
+                    idx[b2] = t2;
+                    a2 = a2 + 1;
+                    b2 = b2 - 1;
+                }
+            }
+        }
+    }
+    retour r;
+}
+
+// -- famille « hasard » (rand, Arduino random) : la même suite à chaque lancement, comme hasard()
+// pile_ou_face, hasard_logique : rand gen_bool(0.5), une valeur de Belnap tirée
+fonction pile_ou_face(): logique { si hasard(2) == 0 { retour faux; } retour vrai; }
+fonction hasard_logique(): logique { retour comme_logique(hasard(4)); }
+// hasard_chance : rand gen_bool(p) (1 avec la probabilité p)
+fonction hasard_chance(p: flottant) { si __vn_hasard() < p { retour 1; } retour 0; }
+// hasard_entre_flottant, hasard_normal : rand gen_range(a..b), rand_distr Normal (Box et Muller)
+fonction hasard_entre_flottant(a: flottant, b: flottant): flottant { retour a + (b - a) * __vn_hasard(); }
+fonction hasard_normal(m: flottant, e: flottant): flottant {
+    soit u1: flottant = 1.0 - __vn_hasard();
+    soit u2: flottant = __vn_hasard();
+    retour m + e * racine(0.0 - 2.0 * logarithme_64(u1)) * cosinus_64(2.0 * pi_64() * u2);
+}
+// piocher_plusieurs, tirage_pondere : rand choose_multiple (sans remise), WeightedIndex
+fonction piocher_plusieurs(t, k) { soit c = copie(t); brasser(c); tantque longueur(c) > k { retirer(c); } retour c; }
+fonction tirage_pondere(poids) {
+    soit total = 0;
+    pour w dans poids { total = total + w; }
+    si total == 0 { retour 18446744073709551615; }
+    soit r = hasard(total);
+    soit acc = 0;
+    soit n = longueur(poids);
+    pour i dans 0..n {
+        acc = acc + poids[i];
+        si r < acc { retour i; }
+    }
+    retour n - 1;
+}
+
+// -- famille « temps » (Arduino millis, delay) : horloge() est millis
+// attendre : Arduino delay, std::thread::sleep (la machine compte ses millisecondes)
+fonction attendre(ms) { soit t0 = horloge(); tantque horloge() - t0 < ms { } }
+
+// -- famille « vecteurs, quaternions, matrices » (UE FVector, FQuat, FMatrix ; Blender mathutils ; glam)
+// vecteur : FVector(x, y, z), mathutils.Vector ; un tableau de flottants (v[0], v[1], v[2] ; les autres mots prennent aussi
+// 2 ou 4 cases ; un quaternion : w, x, y, z, comme Blender ; une matrice : 16 cases, ligne par ligne)
+fonction vecteur(x: flottant, y: flottant, z: flottant): flottant[] {
+    soit v = tableau(3);
+    __vt_ecrire(v, 0, x);
+    __vt_ecrire(v, 1, y);
+    __vt_ecrire(v, 2, z);
+    retour v;
+}
+// vecteur_somme, vecteur_difference, vecteur_echelle : +, -, * k
+fonction vecteur_somme(a, b): flottant[] {
+    soit n = longueur(a);
+    soit r = tableau(n);
+    pour i dans 0..n { __vt_ecrire(r, i, __vt_lire(a, i) + __vt_lire(b, i)); }
+    retour r;
+}
+fonction vecteur_difference(a, b): flottant[] {
+    soit n = longueur(a);
+    soit r = tableau(n);
+    pour i dans 0..n { __vt_ecrire(r, i, __vt_lire(a, i) - __vt_lire(b, i)); }
+    retour r;
+}
+fonction vecteur_echelle(a, k: flottant): flottant[] {
+    soit n = longueur(a);
+    soit r = tableau(n);
+    pour i dans 0..n { __vt_ecrire(r, i, __vt_lire(a, i) * k); }
+    retour r;
+}
+// produit_scalaire, produit_vectoriel : FVector::DotProduct, CrossProduct ; mathutils dot, cross
+fonction produit_scalaire(a, b): flottant {
+    soit s: flottant = 0.0;
+    pour i dans 0..longueur(a) { s = s + __vt_lire(a, i) * __vt_lire(b, i); }
+    retour s;
+}
+fonction produit_vectoriel(a, b): flottant[] {
+    soit r = tableau(3);
+    __vt_ecrire(r, 0, __vt_lire(a, 1) * __vt_lire(b, 2) - __vt_lire(a, 2) * __vt_lire(b, 1));
+    __vt_ecrire(r, 1, __vt_lire(a, 2) * __vt_lire(b, 0) - __vt_lire(a, 0) * __vt_lire(b, 2));
+    __vt_ecrire(r, 2, __vt_lire(a, 0) * __vt_lire(b, 1) - __vt_lire(a, 1) * __vt_lire(b, 0));
+    retour r;
+}
+// norme, norme_carree, normaliser, distance : Size, SizeSquared, GetSafeNormal, FVector::Dist ; length, normalized
+fonction norme_carree(a): flottant { retour produit_scalaire(a, a); }
+fonction norme(a): flottant { retour racine(produit_scalaire(a, a)); }
+fonction normaliser(a): flottant[] {
+    soit l: flottant = norme(a);
+    si l == 0.0 { retour vecteur_echelle(a, 1.0); }
+    retour vecteur_echelle(a, 1.0 / l);
+}
+fonction distance(a, b): flottant { retour norme(vecteur_difference(a, b)); }
+// vecteur_interpoler : FMath::Lerp sur des vecteurs, mathutils lerp
+fonction vecteur_interpoler(a, b, t: flottant): flottant[] {
+    soit n = longueur(a);
+    soit r = tableau(n);
+    pour i dans 0..n { __vt_ecrire(r, i, __vt_lire(a, i) + (__vt_lire(b, i) - __vt_lire(a, i)) * t); }
+    retour r;
+}
+// reflechir, projeter, angle_entre : FMath::GetReflectionVector, ProjectOnTo ; mathutils reflect, project, angle
+fonction reflechir(v, nn): flottant[] {
+    soit k: flottant = 2.0 * produit_scalaire(v, nn);
+    soit n = longueur(v);
+    soit r = tableau(n);
+    pour i dans 0..n { __vt_ecrire(r, i, __vt_lire(v, i) - k * __vt_lire(nn, i)); }
+    retour r;
+}
+fonction projeter(v, sur): flottant[] {
+    soit d2: flottant = produit_scalaire(sur, sur);
+    si d2 == 0.0 { retour vecteur_echelle(sur, 0.0); }
+    retour vecteur_echelle(sur, produit_scalaire(v, sur) / d2);
+}
+fonction angle_entre(a, b): flottant {
+    soit d: flottant = norme(a) * norme(b);
+    si d == 0.0 { retour __vn_inconnu(); }
+    retour arccosinus_64(__borne_f(produit_scalaire(a, b) / d, 0.0 - 1.0, 1.0));
+}
+// tourner_vecteur : FVector::RotateAngleAxis (Rodrigues ; l'angle en radians)
+fonction tourner_vecteur(v, axe, angle: flottant): flottant[] {
+    soit k = normaliser(axe);
+    soit c: flottant = cosinus_64(angle);
+    soit s: flottant = sinus_64(angle);
+    soit kv = produit_vectoriel(k, v);
+    soit kd: flottant = produit_scalaire(k, v);
+    soit r = tableau(3);
+    pour i dans 0..3 { __vt_ecrire(r, i, __vt_lire(v, i) * c + __vt_lire(kv, i) * s + __vt_lire(k, i) * kd * (1.0 - c)); }
+    retour r;
+}
+// quaternion, quaternion_axe_angle : mathutils.Quaternion((w, x, y, z)), FQuat(Axis, Angle)
+fonction quaternion(w: flottant, x: flottant, y: flottant, z: flottant): flottant[] {
+    soit q = tableau(4);
+    __vt_ecrire(q, 0, w);
+    __vt_ecrire(q, 1, x);
+    __vt_ecrire(q, 2, y);
+    __vt_ecrire(q, 3, z);
+    retour q;
+}
+fonction quaternion_axe_angle(axe, angle: flottant): flottant[] {
+    soit k = normaliser(axe);
+    soit s: flottant = sinus_64(angle / 2.0);
+    soit q = tableau(4);
+    __vt_ecrire(q, 0, cosinus_64(angle / 2.0));
+    pour i dans 0..3 { __vt_ecrire(q, i + 1, __vt_lire(k, i) * s); }
+    retour q;
+}
+// quaternion_produit, quaternion_conjugue, quaternion_normer : q1 @ q2, conjugated, normalized
+fonction quaternion_produit(a, b): flottant[] {
+    soit aw: flottant = __vt_lire(a, 0);
+    soit ax: flottant = __vt_lire(a, 1);
+    soit ay: flottant = __vt_lire(a, 2);
+    soit az: flottant = __vt_lire(a, 3);
+    soit bw: flottant = __vt_lire(b, 0);
+    soit bx: flottant = __vt_lire(b, 1);
+    soit by: flottant = __vt_lire(b, 2);
+    soit bz: flottant = __vt_lire(b, 3);
+    soit q = tableau(4);
+    __vt_ecrire(q, 0, aw * bw - ax * bx - ay * by - az * bz);
+    __vt_ecrire(q, 1, aw * bx + ax * bw + ay * bz - az * by);
+    __vt_ecrire(q, 2, aw * by - ax * bz + ay * bw + az * bx);
+    __vt_ecrire(q, 3, aw * bz + ax * by - ay * bx + az * bw);
+    retour q;
+}
+fonction quaternion_conjugue(a): flottant[] {
+    soit q = tableau(4);
+    __vt_ecrire(q, 0, __vt_lire(a, 0));
+    pour i dans 1..4 { __vt_ecrire(q, i, 0.0 - __vt_lire(a, i)); }
+    retour q;
+}
+fonction quaternion_normer(a): flottant[] { retour normaliser(a); }
+// quaternion_tourner : FQuat::RotateVector, q @ v
+fonction quaternion_tourner(q, v): flottant[] {
+    soit p = tableau(4);
+    __vt_ecrire(p, 0, 0.0);
+    pour i dans 0..3 { __vt_ecrire(p, i + 1, __vt_lire(v, i)); }
+    soit m = quaternion_produit(quaternion_produit(q, p), quaternion_conjugue(q));
+    soit r = tableau(3);
+    pour j dans 0..3 { __vt_ecrire(r, j, __vt_lire(m, j + 1)); }
+    retour r;
+}
+// quaternion_interpoler : FQuat::Slerp, mathutils slerp (par le plus court chemin)
+fonction quaternion_interpoler(a, b, t: flottant): flottant[] {
+    soit d: flottant = produit_scalaire(a, b);
+    soit sg: flottant = 1.0;
+    si d < 0.0 { sg = 0.0 - 1.0; d = 0.0 - d; }
+    soit s0: flottant = 1.0 - t;
+    soit s1: flottant = t;
+    si d < 0.9995 {
+        soit th0: flottant = arccosinus_64(d);
+        soit sn: flottant = sinus_64(th0);
+        s0 = sinus_64((1.0 - t) * th0) / sn;
+        s1 = sinus_64(t * th0) / sn;
+    }
+    soit q = tableau(4);
+    pour i dans 0..4 { __vt_ecrire(q, i, __vt_lire(a, i) * s0 + __vt_lire(b, i) * sg * s1); }
+    si d < 0.9995 { retour q; }
+    retour normaliser(q);
+}
+// matrice_identite, matrice_produit, matrice_point, matrice_transposee : FMatrix, mathutils.Matrix (4 × 4)
+fonction matrice_identite(): flottant[] {
+    soit m = tableau(16);
+    pour i dans 0..16 { __vt_ecrire(m, i, 0.0); }
+    pour j dans 0..4 { __vt_ecrire(m, 5 * j, 1.0); }
+    retour m;
+}
+fonction matrice_produit(a, b): flottant[] {
+    soit m = tableau(16);
+    pour i dans 0..4 {
+        pour j dans 0..4 {
+            soit s: flottant = 0.0;
+            pour k dans 0..4 { s = s + __vt_lire(a, 4 * i + k) * __vt_lire(b, 4 * k + j); }
+            __vt_ecrire(m, 4 * i + j, s);
+        }
+    }
+    retour m;
+}
+fonction matrice_point(m, v): flottant[] {
+    // un point (x, y, z, 1) transformé, puis divisé par w
+    soit r = tableau(3);
+    soit w: flottant = __vt_lire(m, 12) * __vt_lire(v, 0) + __vt_lire(m, 13) * __vt_lire(v, 1) + __vt_lire(m, 14) * __vt_lire(v, 2) + __vt_lire(m, 15);
+    pour i dans 0..3 {
+        soit s: flottant = __vt_lire(m, 4 * i) * __vt_lire(v, 0) + __vt_lire(m, 4 * i + 1) * __vt_lire(v, 1) + __vt_lire(m, 4 * i + 2) * __vt_lire(v, 2) + __vt_lire(m, 4 * i + 3);
+        si w != 1.0 && w != 0.0 { s = s / w; }
+        __vt_ecrire(r, i, s);
+    }
+    retour r;
+}
+fonction matrice_transposee(a): flottant[] {
+    soit m = tableau(16);
+    pour i dans 0..4 { pour j dans 0..4 { __vt_ecrire(m, 4 * i + j, __vt_lire(a, 4 * j + i)); } }
+    retour m;
+}
+// matrice_translation, matrice_echelle, matrice_rotation : Matrix.Translation, Matrix.Scale, Matrix.Rotation(angle, 4, axe)
+fonction matrice_translation(x: flottant, y: flottant, z: flottant): flottant[] {
+    soit m = matrice_identite();
+    __vt_ecrire(m, 3, x);
+    __vt_ecrire(m, 7, y);
+    __vt_ecrire(m, 11, z);
+    retour m;
+}
+fonction matrice_echelle(x: flottant, y: flottant, z: flottant): flottant[] {
+    soit m = matrice_identite();
+    __vt_ecrire(m, 0, x);
+    __vt_ecrire(m, 5, y);
+    __vt_ecrire(m, 10, z);
+    retour m;
+}
+fonction matrice_rotation(axe, angle: flottant): flottant[] {
+    soit k = normaliser(axe);
+    soit x: flottant = __vt_lire(k, 0);
+    soit y: flottant = __vt_lire(k, 1);
+    soit z: flottant = __vt_lire(k, 2);
+    soit c: flottant = cosinus_64(angle);
+    soit s: flottant = sinus_64(angle);
+    soit u: flottant = 1.0 - c;
+    soit m = matrice_identite();
+    __vt_ecrire(m, 0, c + x * x * u);
+    __vt_ecrire(m, 1, x * y * u - z * s);
+    __vt_ecrire(m, 2, x * z * u + y * s);
+    __vt_ecrire(m, 4, y * x * u + z * s);
+    __vt_ecrire(m, 5, c + y * y * u);
+    __vt_ecrire(m, 6, y * z * u - x * s);
+    __vt_ecrire(m, 8, z * x * u - y * s);
+    __vt_ecrire(m, 9, z * y * u + x * s);
+    __vt_ecrire(m, 10, c + z * z * u);
+    retour m;
+}
+
+// -- famille « couleurs » (Blender, UE FLinearColor, FastLED CHSV)
+// couleur_tsv : Blender « HSV to RGB », FastLED CHSV : teinte (degrés), saturation, valeur (de 0 à 1) vers (r, v, b) de 0 à 1
+fonction couleur_tsv(h: flottant, s: flottant, v: flottant): flottant[] {
+    soit r = tableau(3);
+    soit hh: flottant = enrouler(h, 0.0, 360.0) / 60.0;
+    soit i = entier(plancher_64(hh));
+    soit f: flottant = hh - flottant(i);
+    soit p: flottant = v * (1.0 - s);
+    soit q: flottant = v * (1.0 - s * f);
+    soit t: flottant = v * (1.0 - s * (1.0 - f));
+    soit a: flottant = v;
+    soit b: flottant = t;
+    soit c: flottant = p;
+    si i == 1 { a = q; b = v; c = p; }
+    si i == 2 { a = p; b = v; c = t; }
+    si i == 3 { a = p; b = q; c = v; }
+    si i == 4 { a = t; b = p; c = v; }
+    si i >= 5 { a = v; b = p; c = q; }
+    __vt_ecrire(r, 0, a);
+    __vt_ecrire(r, 1, b);
+    __vt_ecrire(r, 2, c);
+    retour r;
+}
+// tsv_vers_rgb : la même, en couleur de la machine (comme rgb(r, g, b), chaque voie de 0 à 255)
+fonction tsv_vers_rgb(h: flottant, s: flottant, v: flottant) {
+    soit c = couleur_tsv(h, s, v);
+    retour rgb(entier(__vt_lire(c, 0) * 255.0 + 0.5), entier(__vt_lire(c, 1) * 255.0 + 0.5), entier(__vt_lire(c, 2) * 255.0 + 0.5));
+}
+// srgb_vers_lineaire, lineaire_vers_srgb : FLinearColor::FromSRGBColor, Blender (la courbe sRGB de l'IEC 61966-2-1)
+fonction srgb_vers_lineaire(c: flottant): flottant {
+    si c <= 0.04045 { retour c / 12.92; }
+    retour puissance_64((c + 0.055) / 1.055, 2.4);
+}
+fonction lineaire_vers_srgb(c: flottant): flottant {
+    si c <= 0.0031308 { retour c * 12.92; }
+    retour 1.055 * puissance_64(c, 1.0 / 2.4) - 0.055;
+}
+// luminance : Rec. 709 (Blender, UE GetLuminance)
+fonction luminance(r: flottant, g: flottant, b: flottant): flottant { retour 0.2126 * r + 0.7152 * g + 0.0722 * b; }
+
+// -- famille « cube » : les places du cube chromatique (#RRGGBB)
+// adresse_point, coord_x, coord_y, coord_z : la place d'un point et ses trois coordonnées (RR, GG, BB)
+fonction adresse_point(x, y, z) { retour ((x & 255) << 16) | ((y & 255) << 8) | (z & 255); }
+fonction coord_x(a) { retour (a >> 16) & 255; }
+fonction coord_y(a) { retour (a >> 8) & 255; }
+fonction coord_z(a) { retour a & 255; }
+// voisin : le point d'à côté sur un axe (0 : x, 1 : y, 2 : z), dans un sens (1 ou 18446744073709551615), le cube refermé
+fonction voisin(a, axe, sens) {
+    soit d = 1;
+    si sens .< 0 { d = 255; }
+    si axe == 0 { retour adresse_point(coord_x(a) + d, coord_y(a), coord_z(a)); }
+    si axe == 1 { retour adresse_point(coord_x(a), coord_y(a) + d, coord_z(a)); }
+    retour adresse_point(coord_x(a), coord_y(a), coord_z(a) + d);
+}
+// morton, demorton_x, demorton_y, demorton_z : les bits des trois coordonnées entrelacés (deux points proches, deux
+// places proches)
+fonction morton(x, y, z) {
+    soit r = 0;
+    pour i dans 0..8 {
+        r = r | (((x >> i) & 1) << (3 * i + 2)) | (((y >> i) & 1) << (3 * i + 1)) | (((z >> i) & 1) << (3 * i));
+    }
+    retour r;
+}
+fonction __demorton(m, k) {
+    soit r = 0;
+    pour i dans 0..8 { r = r | (((m >> (3 * i + k)) & 1) << i); }
+    retour r;
+}
+fonction demorton_x(m) { retour __demorton(m, 2); }
+fonction demorton_y(m) { retour __demorton(m, 1); }
+fonction demorton_z(m) { retour __demorton(m, 0); }
+// distance_cube : la distance de Manhattan entre deux places (les pas d'un point à son voisin)
+fonction distance_cube(a, b) {
+    retour ecart(coord_x(a), coord_x(b)) + ecart(coord_y(a), coord_y(b)) + ecart(coord_z(a), coord_z(b));
+}
+
+// -- famille « codes » : l'ADN d'un entier de 64 bits (32 bases, A C G T : 0 1 2 3, la première au poids fort)
+// complement_adn, inverser_bases, anti_sens : A↔T, C↔G (3 − q) ; les bases lues à l'envers ; le brin d'en face
+fonction complement_adn(x) { retour ~x; }
+fonction inverser_bases(x) {
+    soit r = 0;
+    soit v = x;
+    pour i dans 0..32 { r = (r << 2) | (v & 3); v = v >> 2; }
+    retour r;
+}
+fonction anti_sens(x) { retour inverser_bases(~x); }
+// compter_base, teneur_gc, ecart_bases : combien de fois une base, les G et les C, les bases qui diffèrent
+fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * 6148914691236517205)); }
+fonction teneur_gc(x) { retour compter_base(x, 1) + compter_base(x, 2); }
+fonction ecart_bases(a, b) { retour 32 - nb_bits(qegal(a, b)); }
+// les variantes pour le flottant de 32 bits
+fonction __signe_s(v: flottant_32): flottant_32 { retour flottant_32(__signe_f(flottant(v))); }
+fonction __est_positif_s(v: flottant_32): logique { retour __est_positif_f(flottant(v)); }
+fonction __est_negatif_s(v: flottant_32): logique { retour __est_negatif_f(flottant(v)); }
+fonction __est_nul_s(v: flottant_32): logique { retour __est_nul_f(flottant(v)); }
+fonction __est_infini_s(v: flottant_32): logique { retour __est_infini_f(flottant(v)); }
+fonction __est_entier_s(v: flottant_32): logique { retour __est_entier_f(flottant(v)); }
+fonction __est_su_s(v: flottant_32): logique { retour __est_su_f(flottant(v)); }
+fonction __partie_entiere_s(v: flottant_32): flottant_32 { retour flottant_32(__partie_entiere_f(flottant(v))); }
+fonction __partie_decimale_s(v: flottant_32): flottant_32 { retour flottant_32(__partie_decimale_f(flottant(v))); }
+fonction __entre_s(v: flottant_32, a: flottant_32, b: flottant_32): logique { retour __entre_f(flottant(v), flottant(a), flottant(b)); }
+fonction __ecart_s(a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(__ecart_f(flottant(a), flottant(b))); }
+fonction __borne_s(v: flottant_32, a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(__borne_f(flottant(v), flottant(a), flottant(b))); }
+fonction __arrondi2_s(v: flottant_32, n): flottant_32 { retour flottant_32(__arrondi2_f(flottant(v), n)); }
+fonction __carre_s(v: flottant_32): flottant_32 { retour flottant_32(__carre_f(flottant(v))); }
+fonction __remapper_s(v: flottant_32, a1: flottant_32, b1: flottant_32, a2: flottant_32, b2: flottant_32): flottant_32 { retour flottant_32(__remapper_f(flottant(v), flottant(a1), flottant(b1), flottant(a2), flottant(b2))); }
+fonction __est_fini_s(v: flottant_32): logique { retour __est_fini_f(flottant(v)); }
+fonction __racine_cubique_s(x: flottant_32): flottant_32 { retour flottant_32(racine_cubique(flottant(x))); }
+fonction __hypotenuse_s(a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(hypotenuse(flottant(a), flottant(b))); }
+fonction __inverse_s(x: flottant_32): flottant_32 { retour flottant_32(inverse(flottant(x))); }
+fonction __vers_degres_s(x: flottant_32): flottant_32 { retour flottant_32(vers_degres(flottant(x))); }
+fonction __vers_radians_s(x: flottant_32): flottant_32 { retour flottant_32(vers_radians(flottant(x))); }
+fonction __copier_signe_s(x: flottant_32, s: flottant_32): flottant_32 { retour flottant_32(copier_signe(flottant(x), flottant(s))); }
+fonction __multiplier_ajouter_s(a: flottant_32, b: flottant_32, c: flottant_32): flottant_32 { retour flottant_32(multiplier_ajouter(flottant(a), flottant(b), flottant(c))); }
+fonction __logarithme2_s(x: flottant_32): flottant_32 { retour flottant_32(logarithme2(flottant(x))); }
+fonction __logarithme10_s(x: flottant_32): flottant_32 { retour flottant_32(logarithme10(flottant(x))); }
+fonction __logarithme_base_s(x: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(logarithme_base(flottant(x), flottant(b))); }
+fonction __sinus_hyp_s(x: flottant_32): flottant_32 { retour flottant_32(sinus_hyp(flottant(x))); }
+fonction __cosinus_hyp_s(x: flottant_32): flottant_32 { retour flottant_32(cosinus_hyp(flottant(x))); }
+fonction __tangente_hyp_s(x: flottant_32): flottant_32 { retour flottant_32(tangente_hyp(flottant(x))); }
+fonction __argsinus_hyp_s(x: flottant_32): flottant_32 { retour flottant_32(argsinus_hyp(flottant(x))); }
+fonction __argcosinus_hyp_s(x: flottant_32): flottant_32 { retour flottant_32(argcosinus_hyp(flottant(x))); }
+fonction __argtangente_hyp_s(x: flottant_32): flottant_32 { retour flottant_32(argtangente_hyp(flottant(x))); }
+fonction __interpoler_s(a: flottant_32, b: flottant_32, t: flottant_32): flottant_32 { retour flottant_32(interpoler(flottant(a), flottant(b), flottant(t))); }
+fonction __interpolation_inverse_s(a: flottant_32, b: flottant_32, v: flottant_32): flottant_32 { retour flottant_32(interpolation_inverse(flottant(a), flottant(b), flottant(v))); }
+fonction __remapper_borne_s(v: flottant_32, a1: flottant_32, b1: flottant_32, a2: flottant_32, b2: flottant_32): flottant_32 { retour flottant_32(remapper_borne(flottant(v), flottant(a1), flottant(b1), flottant(a2), flottant(b2))); }
+fonction __pas_lisse_s(e0: flottant_32, e1: flottant_32, x: flottant_32): flottant_32 { retour flottant_32(pas_lisse(flottant(e0), flottant(e1), flottant(x))); }
+fonction __pas_plus_lisse_s(e0: flottant_32, e1: flottant_32, x: flottant_32): flottant_32 { retour flottant_32(pas_plus_lisse(flottant(e0), flottant(e1), flottant(x))); }
+fonction __rapprocher_s(c: flottant_32, cible: flottant_32, pas: flottant_32): flottant_32 { retour flottant_32(rapprocher(flottant(c), flottant(cible), flottant(pas))); }
+fonction __amortir_s(c: flottant_32, cible: flottant_32, dt: flottant_32, vitesse: flottant_32): flottant_32 { retour flottant_32(amortir(flottant(c), flottant(cible), flottant(dt), flottant(vitesse))); }
+fonction __presque_egal_s(a: flottant_32, b: flottant_32, tol: flottant_32): logique { retour presque_egal(flottant(a), flottant(b), flottant(tol)); }
+fonction __enrouler_s(x: flottant_32, a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(enrouler(flottant(x), flottant(a), flottant(b))); }
+fonction __aller_retour_s(x: flottant_32, l: flottant_32): flottant_32 { retour flottant_32(aller_retour(flottant(x), flottant(l))); }
+fonction __aimanter_s(x: flottant_32, pas: flottant_32): flottant_32 { retour flottant_32(aimanter(flottant(x), flottant(pas))); }
+fonction __entree_douce_s(t: flottant_32): flottant_32 { retour flottant_32(entree_douce(flottant(t))); }
+fonction __sortie_douce_s(t: flottant_32): flottant_32 { retour flottant_32(sortie_douce(flottant(t))); }
+fonction __entree_sortie_douce_s(t: flottant_32): flottant_32 { retour flottant_32(entree_sortie_douce(flottant(t))); }
+fonction __hasard_chance_s(p: flottant_32) { retour hasard_chance(flottant(p)); }
+fonction __hasard_entre_flottant_s(a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(hasard_entre_flottant(flottant(a), flottant(b))); }
+fonction __hasard_normal_s(m: flottant_32, e: flottant_32): flottant_32 { retour flottant_32(hasard_normal(flottant(m), flottant(e))); }
+fonction __vecteur_s(x: flottant_32, y: flottant_32, z: flottant_32): flottant[] { retour vecteur(flottant(x), flottant(y), flottant(z)); }
+fonction __vecteur_echelle_s(a, k: flottant_32): flottant[] { retour vecteur_echelle(a, flottant(k)); }
+fonction __vecteur_interpoler_s(a, b, t: flottant_32): flottant[] { retour vecteur_interpoler(a, b, flottant(t)); }
+fonction __tourner_vecteur_s(v, axe, angle: flottant_32): flottant[] { retour tourner_vecteur(v, axe, flottant(angle)); }
+fonction __quaternion_s(w: flottant_32, x: flottant_32, y: flottant_32, z: flottant_32): flottant[] { retour quaternion(flottant(w), flottant(x), flottant(y), flottant(z)); }
+fonction __quaternion_axe_angle_s(axe, angle: flottant_32): flottant[] { retour quaternion_axe_angle(axe, flottant(angle)); }
+fonction __quaternion_interpoler_s(a, b, t: flottant_32): flottant[] { retour quaternion_interpoler(a, b, flottant(t)); }
+fonction __matrice_translation_s(x: flottant_32, y: flottant_32, z: flottant_32): flottant[] { retour matrice_translation(flottant(x), flottant(y), flottant(z)); }
+fonction __matrice_echelle_s(x: flottant_32, y: flottant_32, z: flottant_32): flottant[] { retour matrice_echelle(flottant(x), flottant(y), flottant(z)); }
+fonction __matrice_rotation_s(axe, angle: flottant_32): flottant[] { retour matrice_rotation(axe, flottant(angle)); }
+fonction __couleur_tsv_s(h: flottant_32, s: flottant_32, v: flottant_32): flottant[] { retour couleur_tsv(flottant(h), flottant(s), flottant(v)); }
+fonction __tsv_vers_rgb_s(h: flottant_32, s: flottant_32, v: flottant_32) { retour tsv_vers_rgb(flottant(h), flottant(s), flottant(v)); }
+fonction __srgb_vers_lineaire_s(c: flottant_32): flottant_32 { retour flottant_32(srgb_vers_lineaire(flottant(c))); }
+fonction __lineaire_vers_srgb_s(c: flottant_32): flottant_32 { retour flottant_32(lineaire_vers_srgb(flottant(c))); }
+fonction __luminance_s(r: flottant_32, g: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(luminance(flottant(r), flottant(g), flottant(b))); }
+// ---- fin du vocabulaire étendu
+// la dernière fonction du prélude : vtxc lit chaque fonction jusqu'à la suivante ; celle-ci n'est jamais appelée
+fonction __fin_du_prelude() {
+}
 """
 
 INTEGRES = {"flottant_petuar": 1, "flottant_128": 1, "comme_flottant_petuar": 1, "vers_ieee128": 1, "de_ieee128": 1,
@@ -5257,6 +6575,9 @@ RETOURS = {"flottant_petuar": "x", "flottant_128": "x", "comme_flottant_petuar":
            "entier_128_de": "w", "entier_petuar_de": "w",
            "flottant": "f", "flottant_64": "f", "flottant_signe": "f", "comme_flottant": "f", "de_ieee64": "f",
            "flottant_32": "s", "comme_flottant_32": "s", "entier_32": "i"}
+# 0.61 : le vocabulaire des nombres (un mot du prélude qui a des variantes __mot_f, _s, _w, _i)
+NON_GENERIQUES = {"afficher", "ecrire", "somme", "texte", "trier"}
+GEN_ORDRE = ("x", "f", "s", "w", "i")
 SURCHARGES = ("abs", "min", "max")
 PQ_DEPUIS = {"e": "__pq_de_e", "i": "__pq_de_e", "f": "__pq_de_f", "s": "__pq_de_s", "w": "__pq_de_w"}
 BINAIRES = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIV", "%": "MOD", "&": "AND", "|": "OR", "^": "XOR",
@@ -5462,7 +6783,7 @@ def sans_registres(x):
         return any(sans_registres(y) for y in x)
     if not isinstance(x, tuple) or not x:
         return False
-    if x[0] in ("accord", "segments") or (x[0] == "appel" and isinstance(x[1], str) and x[1].startswith("__hyp")):
+    if x[0] in ("accord", "segments") or (x[0] == "appel" and isinstance(x[1], str) and x[1].startswith("__hyp_")):
         return True
     return any(sans_registres(y) for y in x[1:] if isinstance(y, (list, tuple)))
 
@@ -6180,6 +7501,10 @@ class Generateur:
                 if nom == "racine":
                     return "s" if t0 == "s" else "f"
                 return "e"
+            ng = self.generique(e)
+            if ng is not None:
+                f0 = self.fonctions.get(ng) or self.reserve.get(ng)
+                return f0.rtype or "e"
             if nom in RETOURS:
                 return RETOURS[nom]
             if nom in INTEGRES:
@@ -7089,7 +8414,37 @@ class Generateur:
                 self.emettre("LDIS R2,#3")
                 self.emettre("XOR R1,R1,R2")
 
+    def generique(self, e):
+        """0.6z, puis 0.61 : un mot du prélude qui a des variantes (__mot_x, _f, _s, _w, _i, écrites dans le prélude)
+        prend celle qui convient aux arguments : le flottant le plus large parmi eux, sinon l'entier le plus large ;
+        sans suffixe, ou si la variante n'existe pas, le mot lui-même. Seulement si le mot vient du prélude (une fonction
+        du programme qui porte ce nom l'emporte). arrondi(x, n) a pour mot __arrondi2."""
+        nom, args = e[1], e[2]
+        if not isinstance(nom, str):
+            return None
+        base = "__arrondi2" if nom == "arrondi" and len(args) == 2 else nom
+        if base in NON_GENERIQUES:
+            return None
+        pf = self.fonctions.get(base) or self.reserve.get(base)
+        if pf is None or getattr(pf, "origine", "") != "prélude" or len(pf.params) != len(args):
+            return None
+        noms = {s: "__" + base.lstrip("_") + "_" + s for s in GEN_ORDRE}
+
+        def du_prelude(n):
+            f = self.fonctions.get(n) or self.reserve.get(n)
+            return f is not None and getattr(f, "origine", "") == "prélude"
+        if not any(du_prelude(n) for n in noms.values()):
+            return None
+        ts = ["q" if a[0] == "blit" else self.typ(a) for a in args]
+        suf = next((t for t in GEN_ORDRE if t in ts and (t != "i" or all(x == "i" for x in ts))), None)
+        if suf is None or not du_prelude(noms[suf]):
+            return base
+        return noms[suf]
+
     def appel(self, e):
+        ng = self.generique(e)
+        if ng is not None and ng != e[1]:
+            e = ("appel", ng) + e[2:]
         nom, args, ligne = e[1], e[2], e[3]
         if nom == "__code_logique":
             ta = "q" if args[0][0] == "blit" else self.typ(args[0])
@@ -7534,7 +8889,7 @@ def typer_textes(fs, types_champs):
             champs.setdefault(c, set()).add(t == "t")
     champs_texte = {c for c, v in champs.items() if v == {True}}
 
-    TABLEAUX_DE_TEXTES = {"decouper", "cles"}
+    TABLEAUX_DE_TEXTES = {"decouper", "cles", "lignes", "mots", "couper_en_deux"}
     TEXTES_RANGES = {"ajouter", "inserer", "ranger", "affirmer", "nier", "__remplir"}   # rangent leurs arguments
     tabtextes = set()
     tabflot = set()

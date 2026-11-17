@@ -275,6 +275,7 @@ fonction principal() {
 | SPU-64 | 23 octobre | la machine 64 bits (point profond, adresse longue, brin, flottants quaternaires) ; `vtx64.py` ; **vtxc64 se compile lui-même** sur le SPU-64 |
 | Lugus (0.5, suite) | 25 octobre – 10 novembre | le SPU-128 (point de matière, deux instructions par mot), vtx128.py et **vtxc128** (point fixe), la forge de Lugus ; les réactions (atomes, liaisons, vagues, contrats, unités, exemples, souvenirs, provenance) ; l'ADN fiable (trois témoins) et vivant (isoformes, épigénome, patrouille) ; **Belenos** (le fluide, le tableau de l'Auvergne, les cylindres) et **Taranis** (SPIR-V) ; les .exe Windows sans Rust ; Lugus traduit en x86-64 |
 | 0.6 | 10 – 15 novembre | les flottants traduits, les quatre valeurs aux bords du monde, `logique[]`, Dunon au niveau de Lugus ; le codon et le gène, `selon` sur plusieurs lectures ; la vitesse (2,9 à 4 fois le C) ; le chemin de l'ADN tout en vtx, dans les deux sens, l'ARNc ; la carte à six faces et son centre ; les promesses `touche` |
+| 0.61 | 17 novembre | le vocabulaire étendu : 202 mots (Rust, ses extensions, Arduino, UE5, Blender), en français, par familles, sur Lugus et Dunon ; un mot pour tous les types, sans table ; Dunon reçoit le vocabulaire des nombres |
 
 ---
 
@@ -611,7 +612,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    d'arguments et les types vérifiés, les mêmes refus par les deux compilateurs) ; la promesse dans le type (fait,
    0.6y : `fonction(entier): entier touche rien`, crue par le juge) ; le vocabulaire des nombres (fait, 0.6za, sur Lugus :
    un mot, les cinq types : signe, est_positif, est_su, partie_decimale, entre, ecart, arrondi à n décimales… ; inconnu
-   et variable gardés ; Dunon à suivre) ; puis les modules désignés par leur empreinte
+   et variable gardés) ; le vocabulaire étendu (fait, 0.61, Lugus et Dunon : 202 mots tirés de Rust, de ses
+   extensions, d'Arduino, d'UE5 et de Blender, en français, par familles ; `docs/vtx-vocabulaire.md`) ; puis les modules désignés par leur empreinte
    (un module est un ADN signé, chaque usage une transcription).
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.

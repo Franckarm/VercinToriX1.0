@@ -1,0 +1,11 @@
+// 0.61 : les variantes : le même mot sur les flottants de 64 et 32 bits, les entiers de 32 et 128 bits (Lugus)
+fonction principal() {
+    soit d: flottant_64 = 27.0D;
+    soit s: flottant_32 = 2.25S;
+    afficher("cubique", racine_cubique(d), racine_cubique(s), hypotenuse(3.0D, 4.0D), hypotenuse(3.0S, 4.0S));
+    afficher("degres", vers_degres(pi()), vers_degres(3.14159265358979D));
+    afficher("interpoler", interpoler(1.0D, 3.0D, 0.5D), interpoler(1.0S, 3.0S, 0.25S), aimanter(7.3D, 0.5D));
+    afficher("carre", carre(1.5D), carre(1.5S), carre(3LL), carre(5S));
+    afficher("remapper", remapper(2.5D, 0.0D, 10.0D, 0.0D, 1.0D), presque_egal(1.0S, 1.0001S, 0.001S));
+    afficher("est_fini", est_fini(1.5D), est_fini(2LL), sinus_hyp(0.5D), argtangente_hyp(0.5S));
+}

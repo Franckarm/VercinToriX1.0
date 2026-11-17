@@ -443,7 +443,7 @@ Rappel : `7 / 2` entre entiers vaut 3 (division entière) ; `7.0 / 2` vaut 3.5 (
 
 `pi()`, `racine(x)`, `plancher(x)`, `plafond(x)`, `sinus(x)`, `cosinus(x)`, `tangente(x)` (en radians), `exponentielle(x)`, `logarithme(x)` (népérien), `puissance(x, y)`, `exp2(x)`, `arctangente(x)`, `arctangente2(y, x)` (l'angle du point (x, y), de −π à π), `arcsinus(x)`, `arccosinus(x)`, et `abs`, `min`, `max`. Erreur mesurée contre la bibliothèque de Python : au plus 6 × 10⁻⁸ en relatif pour l'exponentielle et le logarithme, 2,5 × 10⁻⁷ pour les fonctions trigonométriques (en absolu), 5 × 10⁻⁷ pour la puissance (`maths/test_maths.py`). Pour les angles de plus de 10⁸ radians, `sinus` et `cosinus` rendent `nan`.
 
-### Le vocabulaire des nombres (0.6za, Lugus)
+### Le vocabulaire des nombres (0.6za, Lugus ; 0.61, Dunon aussi)
 
 Un seul mot pour les cinq types de nombres (`entier`, `entier_32`, `entier_128`, `flottant_64`, `flottant_32` et le
 flottant de 128 bits) : le compilateur choisit la variante par le type des arguments (le plus large : flottant de 128
@@ -466,7 +466,40 @@ ne se comble pas.
 
 Une fonction du programme qui porte l'un de ces noms garde la main : le vocabulaire ne s'applique qu'aux mots du
 prélude. Les nombres décimaux ne s'écrivent pas tous exactement en base 4 : `partie_decimale(12.4567)` rend
-0.45669999…, comme le ferait le binaire. Pas encore : `reste` sur les flottants, et ce vocabulaire sur Dunon.
+0.45669999…, comme le ferait le binaire. Pas encore : `reste` sur les flottants. Sur Dunon (0.61) : les mêmes mots,
+pour ses flottants de 64 et 32 bits et ses entiers de 128, 64 et 32 bits (le flottant de 128 bits de Dunon passe par
+`flottant(x)`).
+
+### Le vocabulaire étendu (0.61, Lugus et Dunon)
+
+Plus de deux cents mots, tirés de ce que savent Rust (les entiers, les flottants, les textes, les tranches et les
+itérateurs), ses extensions officielles (num, itertools, rand), Arduino (`map`, `constrain`, `bitRead`, `lowByte`,
+`sq`, `random`, `millis`, `delay`, `String`) et des moteurs que vtx doit pouvoir accueillir (Unreal Engine 5, Blender) :
+des noms français, l'équivalent d'origine en note. Ils sont rangés par familles : nombres, flottants, interpolation,
+entiers et bits, textes, tableaux, hasard, temps, vecteurs-quaternions-matrices, couleurs, cube, codes ADN, et (Lugus
+seul) les tableaux avec une fonction. La table complète, mot par mot : `docs/vtx-vocabulaire.md` (écrite par
+`vtxc/vocabulaire.py` à partir du texte même des mots).
+
+```
+afficher(remapper(742, 0, 1023, 0, 180), lire_bit(742, 3), racine_entiere(99));      // 130 0 9
+soit q = quaternion_axe_angle(vecteur(0.0, 0.0, 1.0), vers_radians(90.0));
+soit vu = quaternion_tourner(q, vecteur(1.0, 0.0, 0.0));                           // (0, 1, 0)
+afficher(lire_flottant("1,5e3"), lire_flottant(""), lire_flottant("beaucoup"));     // 1500.0 inconnu variable
+afficher(moyenne([12, 7, 19]), mediane([5, 1, 3]), combinaisons([1, 2, 3, 4], 2)[5][1]);
+afficher(transformer([1, 2, 3], carre)[2], plier([1, 2, 3], plus, 0));            // Lugus : 9 6
+```
+
+- **Un mot pour tous les types** : un mot qui a des variantes dans le prélude (`__mot_x`, `_f`, `_s`, `_w`, `_i`) prend
+  celle qui convient aux arguments, sinon le mot lui-même ; une fonction du programme qui porte le même nom garde la
+  main.
+- **Le doute ne se comble pas** : une question sur une valeur inconnue ou variable rend cet état (`presque_egal`,
+  `est_fini`…) ; la moyenne d'un tableau vide est inconnue ; un texte qui n'est pas un nombre est variable.
+- **Les vecteurs, quaternions et matrices** sont des tableaux de flottants (`v[0]`…) : un quaternion est (w, x, y, z),
+  comme Blender ; une matrice, 16 cases ligne par ligne.
+- **Ce qui n'y est pas** : les broches d'Arduino (Lugus et Dunon n'en ont pas), les bibliothèques entières (le
+  vocabulaire prépare leur branchement, il ne les recopie pas), `reste` exact sur les flottants, `multiplier_ajouter`
+  en un seul arrondi, et, sur Dunon, les mots qui prennent une fonction. `premier`, `dernier`, `moyenne`… lisent des
+  tableaux d'entiers.
 
 ### Hasard
 

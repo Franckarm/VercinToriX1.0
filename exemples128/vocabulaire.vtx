@@ -1,0 +1,35 @@
+// 0.61 : le vocabulaire étendu, en situation (Lugus et Dunon : « lugus » ou « vtx64 » sur ce même fichier)
+// Un garde gaulois surveille la porte avec un capteur (Arduino), tourne la tête (quaternion d'UE5 ou de Blender),
+// lit un message (Rust), et l'écrit dans son carnet en ADN.
+fonction principal() {
+    // le capteur : une valeur brute de 0 à 1023 (analogRead), ramenée à des degrés, puis bornée
+    soit brut = 742;
+    soit angle_capteur = remapper(brut, 0, 1023, 0, 180);
+    afficher("capteur", brut, "->", angle_capteur, "degrés ; bit 3 :", lire_bit(brut, 3), "; octet bas :", octet_bas(brut));
+    // la tête qui tourne : un quart de tour autour de l'axe vertical, par un quaternion (Blender : w, x, y, z)
+    soit regard = vecteur(1.0, 0.0, 0.0);
+    soit q = quaternion_axe_angle(vecteur(0.0, 0.0, 1.0), vers_radians(90.0));
+    soit vu = quaternion_tourner(q, regard);
+    afficher("regard après un quart de tour :", arrondi(vu[0], 6), arrondi(vu[1], 6), arrondi(vu[2], 6));
+    afficher("à mi-chemin (slerp) :", arrondi(quaternion_tourner(quaternion_interpoler(quaternion(1.0, 0.0, 0.0, 0.0), q, 0.5), regard)[1], 6));
+    // le message : des mots, un nombre écrit à la française, une base 16
+    soit message = "  Légion   vue au gué : 1,5e3 hommes, code ff  ";
+    soit m = mots(message);
+    afficher("le message a", longueur(m), "mots ; le premier :", m[0], "; le nombre :", lire_flottant(m[5]),
+             "; le code :", lire_base(m[8], 16));
+    afficher("rien d'écrit :", lire_flottant(""), "; pas un nombre :", lire_flottant("beaucoup"));
+    // la couleur de l'alerte : une teinte, du vert au rouge selon le danger (TSV, comme FastLED ou Blender)
+    soit danger: flottant = pas_lisse(0.0, 2000.0, 1500.0);
+    soit couleur = couleur_tsv(interpoler(120.0, 0.0, danger), 1.0, 1.0);
+    afficher("danger", arrondi(danger, 3), "-> rouge", arrondi(couleur[0], 3), "vert", arrondi(couleur[1], 3));
+    // le carnet en ADN : 32 bases par entier ; le brin d'en face se lit à l'envers
+    soit note = adn"GATTACAGATTACAGATTACAGATTACAGATT";
+    afficher("ADN : G+C", teneur_gc(note), "sur 32 ; bases qui changent avec son brin d'en face :", ecart_bases(note, anti_sens(note)));
+    // les tableaux : à la manière des itérateurs de Rust et d'itertools
+    soit releves = [12, 7, 19, 7, 3, 25];
+    afficher("relevés : moyenne", moyenne(releves), "médiane", mediane(releves), "le plus haut au rang", position_max(releves));
+    soit paires = combinaisons([1, 2, 3, 4], 2);
+    afficher("deux sentinelles parmi quatre :", longueur(paires), "façons ; la dernière :", paires[5][0], paires[5][1]);
+    // le doute ne se comble pas : une mesure contradictoire n'est ni proche ni loin
+    afficher("presque égal ?", presque_egal(0.0 / 0.0, 1.0, 0.1), "; fini ?", est_fini(1.0 / 0.0));
+}

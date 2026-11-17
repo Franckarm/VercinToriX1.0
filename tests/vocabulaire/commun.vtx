@@ -1,0 +1,182 @@
+// 0.61 : chaque mot du vocabulaire étendu, une ligne par résultat (le même programme sur Lugus et sur Dunon)
+fonction montrer_t(nom: texte, t) {
+    ecrire(nom);
+    pour x dans t { ecrire(" "); ecrire(x); }
+    afficher("");
+}
+fonction montrer_f(nom: texte, t: flottant[]) {
+    ecrire(nom);
+    pour x dans t { ecrire(" "); ecrire(x); }
+    afficher("");
+}
+fonction montrer_tt(nom: texte, tt) {
+    ecrire(nom);
+    pour u dans tt { ecrire(" ["); soit p = 0; pour x dans u { si p == 1 { ecrire(","); } ecrire(x); p = 1; } ecrire("]"); }
+    afficher("");
+}
+fonction principal() {
+    // nombres
+    afficher("carre", carre(7), carre(1.5), carre(0 - 3));
+    afficher("remapper", remapper(5, 0, 10, 0, 100), remapper(0 - 5, 0, 10, 0, 100), remapper(2.5, 0.0, 10.0, 0.0, 1.0));
+    afficher("est_fini", est_fini(3), est_fini(1.5), est_fini(1.0 / 0.0), est_fini(0.0 / 0.0));
+    afficher("signe", signe(0 - 4), signe(2.5), signe(0.0));
+    afficher("entre", entre(5, 1, 9), entre(0.5, 0.0, 1.0), entre(2.0, 0.0, 1.0));
+    afficher("arrondi2", arrondi(3.14159, 2), arrondi(1234.5, 0 - 2));
+    // flottants
+    afficher("racine_cubique", racine_cubique(27.0), racine_cubique(0.0 - 8.0), racine_cubique(2.0));
+    afficher("hypotenuse", hypotenuse(3.0, 4.0), hypotenuse(1.0, 1.0));
+    afficher("inverse", inverse(4.0), inverse(3.0));
+    afficher("degres", vers_degres(pi()), vers_radians(90.0));
+    afficher("copier_signe", copier_signe(2.0, 0.0 - 1.0), copier_signe(0.0 - 3.0, 5.0), copier_signe(2.0, 0.0 / 0.0));
+    afficher("multiplier_ajouter", multiplier_ajouter(2.0, 3.0, 0.5));
+    afficher("logarithmes", logarithme2(8.0), logarithme10(1000.0), logarithme_base(81.0, 3.0), logarithme2(10.0));
+    afficher("hyperboliques", sinus_hyp(1.0), sinus_hyp(0.1), cosinus_hyp(1.0), tangente_hyp(0.5), tangente_hyp(50.0));
+    afficher("arghyp", argsinus_hyp(1.0), argsinus_hyp(0.2), argcosinus_hyp(2.0), argtangente_hyp(0.5), argtangente_hyp(0.25));
+    afficher("domaine", argcosinus_hyp(0.5), argtangente_hyp(2.0));
+    // interpolation
+    afficher("interpoler", interpoler(10.0, 20.0, 0.25), interpolation_inverse(10.0, 20.0, 15.0));
+    afficher("remapper_borne", remapper_borne(15.0, 0.0, 10.0, 0.0, 1.0), remapper_borne(5.0, 0.0, 10.0, 100.0, 200.0));
+    afficher("pas_lisse", pas_lisse(0.0, 1.0, 0.5), pas_lisse(0.0, 1.0, 0.25), pas_plus_lisse(0.0, 1.0, 0.25));
+    afficher("rapprocher", rapprocher(0.0, 10.0, 3.0), rapprocher(9.0, 10.0, 3.0), amortir(0.0, 10.0, 0.1, 2.0));
+    afficher("presque_egal", presque_egal(1.0, 1.0001, 0.001), presque_egal(1.0, 1.1, 0.001), presque_egal(1.0, 0.0 / 0.0, 0.1));
+    afficher("enrouler", enrouler(370.0, 0.0, 360.0), enrouler(0.0 - 10.0, 0.0, 360.0), aller_retour(3.5, 2.0), aimanter(7.3, 0.5));
+    afficher("douceurs", entree_douce(0.5), sortie_douce(0.5), entree_sortie_douce(0.25), entree_sortie_douce(0.75));
+    afficher("lire_flottant", lire_flottant("3.25"), lire_flottant(" -1,5e2 "), lire_flottant(""), lire_flottant("abc"), lire_flottant("2e-3"));
+    // entiers et bits
+    afficher("bits", compter_uns(255), compter_zeros(255), zeros_en_tete(1), zeros_en_queue(8), zeros_en_tete(0));
+    afficher("tourner", tourner_gauche(1, 3), tourner_droite(1, 1), tourner_gauche(9223372036854775808, 1));
+    afficher("inverser", inverser_bits(1), echanger_octets(258));
+    afficher("puissances", est_puissance_de_deux(64), est_puissance_de_deux(65), puissance_de_deux_suivante(65), puissance_de_deux_suivante(1));
+    afficher("logs", log2_entier(1000), log10_entier(1000), log10_entier(999), log2_entier(0), racine_entiere(99), racine_entiere(100));
+    afficher("euclide", reste_euclidien(0 - 7, 3), quotient_euclidien(0 - 7, 3), reste_euclidien(7, 0 - 3), quotient_euclidien(7, 0 - 3));
+    afficher("divisions", division_plafond(7, 2), multiple_suivant(13, 5), multiple_suivant(15, 5), milieu(10, 21));
+    afficher("parite", est_pair(4), est_impair(4), est_pair(7));
+    afficher("saturees", addition_saturee(18446744073709551610, 10), soustraction_saturee(3, 5), multiplication_saturee(4294967296, 4294967296), multiplication_saturee(3, 4));
+    afficher("debordements", deborde_addition(18446744073709551610, 10), deborde_addition(1, 2), deborde_multiplication(4294967296, 4294967296));
+    afficher("arduino", lire_bit(5, 2), poser_bit(0, 4), effacer_bit(15, 0), basculer_bit(5, 1), ecrire_bit(0, 3, 1), masque_bit(10));
+    afficher("octets", octet_bas(4660), octet_haut(4660), octet(16909060, 2), mot_de(18, 52));
+    // textes
+    afficher("est_vide", est_vide(""), est_vide("a"), est_vide([1]), est_vide(tableau(0)));
+    afficher("chercher", contient_texte("Vercingétorix", "géto"), contient_texte("abc", "x"), position_derniere("abcabc", "bc"), position_derniere("abc", "z"));
+    afficher("[" + rogner_debut("  a b  ") + "]", "[" + rogner_fin("  a b  ") + "]");
+    afficher(sans_prefixe("Par Toutatis", "Par "), sans_suffixe("fichier.vtx", ".vtx"), sans_prefixe("abc", "x"));
+    afficher(remplacer_premier("a-b-c", "-", "+"));
+    soit li = lignes("un" + car_texte(13) + "\ndeux\ntrois");
+    ecrire("lignes"); pour m dans li { ecrire(" <" + m + ">"); } afficher("");
+    soit mo = mots("  le   chat noir ");
+    ecrire("mots"); pour m2 dans mo { ecrire(" <" + m2 + ">"); } afficher("");
+    soit cd = couper_en_deux("cle=valeur=x", "=");
+    ecrire("couper"); pour m3 dans cd { ecrire(" <" + m3 + ">"); } afficher("");
+    montrer_t("caracteres", caracteres("Aé"));
+    afficher(texte_de_caracteres([86, 116, 120]));
+    afficher("casse", egal_sans_casse("Éclair", "éCLAIR"), egal_sans_casse("a", "b"), comparer_textes("abc", "abd"), comparer_textes("b", "a"), comparer_textes("ab", "ab"));
+    afficher("classes", est_espace(32), est_majuscule('É'), est_minuscule('é'), est_alphanumerique('_'), est_ponctuation('!'), est_hexadecimal('f'), est_ascii(233), est_controle(10));
+    afficher("chiffres", valeur_chiffre('f', 16), valeur_chiffre('9', 8), chiffre_de(11, 16), chiffre_de(3, 2));
+    afficher(texte_base(255, 16), texte_base(5, 2), texte_base(0, 10), lire_base("ff", 16), lire_base("101", 2));
+    afficher(completer_gauche("42", 5, '0'), completer_droite("ab", 4, '.'));
+    // tableaux
+    soit t = [3, 1, 4, 1, 5, 9, 2, 6];
+    afficher("premier", premier(t), dernier(t), premier(tableau(0)));
+    soit e = [1, 2, 3, 4];
+    echanger(e, 0, 3);
+    montrer_t("echanger", e);
+    remplir(e, 7);
+    montrer_t("remplir", e);
+    soit r = [1, 2, 3, 4, 5];
+    tourner_tableau(r, 2);
+    montrer_t("tourner_tableau", r);
+    tourner_tableau_droite(r, 2);
+    montrer_t("tourner_droite", r);
+    afficher("trie", est_trie([1, 2, 2, 5]), est_trie(t));
+    soit d = copie(t);
+    trier_decroissant(d);
+    montrer_t("decroissant", d);
+    afficher("dichotomie", recherche_dichotomique([1, 3, 5, 7, 9], 7), recherche_dichotomique([1, 3, 5], 4));
+    afficher("statistiques", produit([1, 2, 3, 4]), moyenne([1, 2, 3, 4]), mediane([5, 1, 3]), mediane([4, 1, 3, 2]), moyenne(tableau(0)));
+    montrer_t("cumul", cumul([1, 2, 3, 4]));
+    montrer_t("differences", differences([1, 4, 9, 16]));
+    montrer_tt("fenetres", fenetres([1, 2, 3, 4], 2));
+    montrer_tt("paquets", paquets([1, 2, 3, 4, 5], 2));
+    montrer_t("aplatir", aplatir([[1, 2], [3], [4, 5]]));
+    montrer_t("concatener", concatener([1, 2], [3]));
+    soit pr = [1];
+    prolonger(pr, [2, 3]);
+    montrer_t("prolonger", pr);
+    soit dd = [1, 1, 2, 2, 2, 3, 1];
+    dedoublonner(dd);
+    montrer_t("dedoublonner", dd);
+    montrer_tt("separer", separer([1, 2, 3, 4], 1));
+    montrer_t("intervalle", intervalle(2, 6));
+    montrer_t("intervalle_pas", intervalle_pas(10, 0, 0 - 3));
+    montrer_tt("zipper", zipper([1, 2, 3], [4, 5]));
+    montrer_t("entrelacer", entrelacer([1, 2, 3], [7]));
+    montrer_tt("cartesien", produit_cartesien([1, 2], [3, 4]));
+    afficher("positions", position_max(t), position_min(t), chercher_dernier(t, 1), chercher_dernier(t, 8));
+    soit tr = [1, 2, 3, 4];
+    tronquer_tableau(tr, 2);
+    montrer_t("tronquer", tr);
+    redimensionner(tr, 4, 9);
+    montrer_t("redimensionner", tr);
+    montrer_t("repeter_tableau", repeter_tableau([1, 2], 3));
+    montrer_tt("combinaisons", combinaisons([1, 2, 3, 4], 2));
+    montrer_tt("permutations", permutations([1, 2, 3]));
+    // hasard (la suite de la machine : les mêmes nombres partout)
+    graine(42);
+    soit nb = 0;
+    pour i dans 0..1000 { si pile_ou_face() == vrai { nb = nb + 1; } }
+    afficher("pile", nb > 400 && nb < 600);
+    soit ch = 0;
+    pour i2 dans 0..1000 { ch = ch + hasard_chance(0.25); }
+    afficher("chance", ch > 180 && ch < 320);
+    soit sn: flottant = 0.0;
+    pour i3 dans 0..400 { sn = sn + hasard_normal(10.0, 2.0); }
+    afficher("normal", sn / 400.0 > 9.5 && sn / 400.0 < 10.5);
+    soit he: flottant = hasard_entre_flottant(2.0, 3.0);
+    afficher("entre_flottant", he >= 2.0 && he < 3.0);
+    soit pp = piocher_plusieurs([1, 2, 3, 4, 5], 3);
+    afficher("piocher", longueur(pp), sans_doublons(pp)[2] != 0);
+    soit compte = [0, 0, 0];
+    pour i4 dans 0..600 { soit k = tirage_pondere([1, 0, 3]); compte[k] = compte[k] + 1; }
+    afficher("pondere", compte[1], compte[2] > compte[0]);
+    soit hl = hasard_logique();
+    afficher("logique", hl == inconnu || hl == faux || hl == vrai || hl == variable);
+    attendre(0);
+    // vecteurs, quaternions, matrices
+    soit a = vecteur(1.0, 2.0, 3.0);
+    soit b = vecteur(4.0, 5.0, 6.0);
+    montrer_f("somme", vecteur_somme(a, b));
+    montrer_f("difference", vecteur_difference(b, a));
+    montrer_f("echelle", vecteur_echelle(a, 2.0));
+    afficher("scalaire", produit_scalaire(a, b), norme(vecteur(3.0, 4.0, 0.0)), norme_carree(a), distance(a, b));
+    montrer_f("vectoriel", produit_vectoriel(a, b));
+    montrer_f("normaliser", normaliser(vecteur(0.0, 3.0, 4.0)));
+    montrer_f("interpoler_v", vecteur_interpoler(a, b, 0.5));
+    montrer_f("reflechir", reflechir(vecteur(1.0, 0.0 - 1.0, 0.0), vecteur(0.0, 1.0, 0.0)));
+    montrer_f("projeter", projeter(vecteur(2.0, 3.0, 0.0), vecteur(1.0, 0.0, 0.0)));
+    afficher("angle", angle_entre(vecteur(1.0, 0.0, 0.0), vecteur(0.0, 1.0, 0.0)), angle_entre(vecteur(0.0, 0.0, 0.0), a));
+    montrer_f("tourner_v", tourner_vecteur(vecteur(1.0, 0.0, 0.0), vecteur(0.0, 0.0, 1.0), pi() / 2.0));
+    soit q = quaternion_axe_angle(vecteur(0.0, 0.0, 1.0), pi() / 2.0);
+    montrer_f("quaternion", q);
+    montrer_f("q_tourner", quaternion_tourner(q, vecteur(1.0, 0.0, 0.0)));
+    montrer_f("q_produit", quaternion_produit(q, q));
+    montrer_f("q_conjugue", quaternion_conjugue(quaternion(1.0, 2.0, 3.0, 4.0)));
+    montrer_f("q_normer", quaternion_normer(quaternion(0.0, 3.0, 0.0, 4.0)));
+    montrer_f("q_slerp", quaternion_interpoler(quaternion(1.0, 0.0, 0.0, 0.0), q, 0.5));
+    soit mt = matrice_produit(matrice_translation(1.0, 2.0, 3.0), matrice_echelle(2.0, 2.0, 2.0));
+    montrer_f("m_point", matrice_point(mt, vecteur(1.0, 1.0, 1.0)));
+    montrer_f("m_rotation", matrice_point(matrice_rotation(vecteur(0.0, 0.0, 1.0), pi() / 2.0), vecteur(1.0, 0.0, 0.0)));
+    montrer_f("m_transposee", matrice_transposee(matrice_translation(1.0, 2.0, 3.0)));
+    montrer_f("m_identite", matrice_identite());
+    // couleurs
+    montrer_f("tsv", couleur_tsv(120.0, 1.0, 0.5));
+    afficher("rgb", tsv_vers_rgb(0.0, 1.0, 1.0) == rgb(255, 0, 0), tsv_vers_rgb(240.0, 1.0, 1.0) == rgb(0, 0, 255));
+    afficher("srgb", srgb_vers_lineaire(0.5), lineaire_vers_srgb(0.214041140482232), luminance(1.0, 1.0, 1.0));
+    // cube et codes
+    soit pt = adresse_point(255, 128, 1);
+    afficher("cube", pt, coord_x(pt), coord_y(pt), coord_z(pt), voisin(pt, 0, 1), voisin(pt, 2, 0 - 1));
+    afficher("morton", morton(1, 0, 0), morton(255, 255, 255), demorton_x(morton(200, 17, 3)), demorton_y(morton(200, 17, 3)), demorton_z(morton(200, 17, 3)));
+    afficher("distance_cube", distance_cube(adresse_point(0, 0, 0), adresse_point(3, 4, 5)));
+    soit g = adn"GATTACA";
+    afficher("adn", compter_base(g, 0), compter_base(g, 3), teneur_gc(g), ecart_bases(g, adn"GATTACC"), complement_adn(0) == 18446744073709551615);
+    afficher("anti_sens", anti_sens(adn"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAC") == adn"GTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT", inverser_bases(1) == 4611686018427387904);
+}

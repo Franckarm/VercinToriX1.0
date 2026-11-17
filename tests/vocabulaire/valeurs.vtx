@@ -1,0 +1,21 @@
+// 0.61 : les mots qui prennent une fonction (Lugus) : Rust map, filter, fold, all, any, find, position, retain, sort_by_key
+fonction carre(x) { retour x * x; }
+fonction pair(x) { si x % 2 == 0 { retour 1; } retour 0; }
+fonction plus(a, b) { retour a + b; }
+fonction oppose(x) { retour 0 - x; }
+fonction montrer_t(nom: texte, t) { ecrire(nom); pour x dans t { ecrire(" "); ecrire(x); } afficher(""); }
+fonction principal() {
+    soit t = [5, 2, 8, 1, 4];
+    montrer_t("transformer", transformer(t, carre));
+    montrer_t("filtrer", filtrer(t, pair));
+    afficher("plier", plier(t, plus, 0), tous(t, pair), au_moins_un(t, pair), aucun([1, 3], pair));
+    afficher("trouver", trouver_si(t, pair), rang_si(t, pair), compter_si(t, pair), rang_si([1, 3], pair));
+    soit g = copie(t);
+    garder_si(g, pair);
+    montrer_t("garder_si", g);
+    soit tp = copie(t);
+    trier_par(tp, oppose);
+    montrer_t("trier_par", tp);
+    pour_chacun([1, 2], carre);
+    afficher("fin");
+}

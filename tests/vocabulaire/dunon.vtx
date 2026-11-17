@@ -1,0 +1,12 @@
+// 0.61 : sur Dunon, le vocabulaire des nombres de 0.6za et les variantes de 32 bits
+fonction principal() {
+    soit s: flottant_32 = 0.0S - 2.75S;
+    afficher("nombres", signe(0.0 - 2.5), est_positif(2.5), est_su(0.0 / 0.0), partie_entiere(0.0 - 2.75), partie_decimale(0.0 - 2.75));
+    afficher("32 bits", partie_entiere(s), partie_decimale(s), est_negatif(s), arrondi(2.345S, 1));
+    afficher("entiers", est_negatif(0 - 3), ecart(3, 10), entre(5, 1, 9), borne(42, 0, 10), arrondi(1234.5678, 2));
+    soit w: entier_128 = 0LL - 5LL;
+    afficher("128", signe(w), est_negatif(w), ecart(w, 3LL));
+    soit vide: flottant = comme_flottant(0);
+    afficher("doute", est_positif(vide), est_entier(0.0 / 0.0), entre(0.0 / 0.0, 0.0, 1.0));
+    afficher("variantes", racine_cubique(8.0S), hypotenuse(3.0S, 4.0S), carre(1.5S), vers_degres(pi()));
+}
