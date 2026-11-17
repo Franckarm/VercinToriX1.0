@@ -1,0 +1,26 @@
+// 0.6z : le vocabulaire des nombres. Un mot pour tous les types ; une question rend un logique, et un flottant inconnu
+// ou variable le reste : le doute ne se comble pas.
+fonction decrire(nom: texte, x: flottant) {
+    afficher(nom, ":", signe(x), est_positif(x), est_entier(x), partie_entiere(x), partie_decimale(x));
+}
+fonction principal() {
+    soit prix = 12.4567;
+    afficher("prix arrondi au centime :", arrondi(prix, 2), "; à la dizaine :", arrondi(prix, 0 - 1));
+    afficher("partie entière et décimale :", partie_entiere(prix), partie_decimale(prix));
+    soit temperatures = [0.0 - 3.5, 0.0, 2.25, 0.0 / 0.0];
+    pour t dans temperatures {
+        // la dernière mesure est contradictoire (0/0) : ni « positive », ni « pas positive »
+        afficher("  température", t, ": positive ?", est_positif(t), "gel ?", est_negatif(t), "sue ?", est_su(t),
+                 "dans [-1, 3] ?", entre(t, 0.0 - 1.0, 3.0));
+    }
+    soit vide: flottant = comme_flottant_petuar(0LL);
+    afficher("une case jamais écrite :", vide, "positive ?", est_positif(vide), "sue ?", est_su(vide));
+    afficher("entiers :", signe(0 - 8), est_negatif(0 - 8), ecart(3, 10), borne(42, 0, 10), entre(5, 1, 9));
+    soit grand: entier_128 = 0LL - 170141183460469231731687303715884105727LL;
+    afficher("entier de 128 bits :", signe(grand), est_negatif(grand), ecart(grand, 0LL) > 0LL);
+    soit d: flottant_64 = 0.0D - 7.25D;
+    soit s: flottant_32 = 1.5S;
+    afficher("64 et 32 bits :", partie_entiere(d), partie_decimale(d), arrondi(d, 1), signe(s), est_entier(s));
+    afficher("l'infini :", est_infini(1.0 / 0.0), est_entier(1.0 / 0.0), partie_decimale(1.0 / 0.0));
+    decrire("un tiers", 1.0 / 3.0);
+}

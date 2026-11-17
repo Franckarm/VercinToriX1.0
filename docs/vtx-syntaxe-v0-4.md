@@ -443,6 +443,31 @@ Rappel : `7 / 2` entre entiers vaut 3 (division entière) ; `7.0 / 2` vaut 3.5 (
 
 `pi()`, `racine(x)`, `plancher(x)`, `plafond(x)`, `sinus(x)`, `cosinus(x)`, `tangente(x)` (en radians), `exponentielle(x)`, `logarithme(x)` (népérien), `puissance(x, y)`, `exp2(x)`, `arctangente(x)`, `arctangente2(y, x)` (l'angle du point (x, y), de −π à π), `arcsinus(x)`, `arccosinus(x)`, et `abs`, `min`, `max`. Erreur mesurée contre la bibliothèque de Python : au plus 6 × 10⁻⁸ en relatif pour l'exponentielle et le logarithme, 2,5 × 10⁻⁷ pour les fonctions trigonométriques (en absolu), 5 × 10⁻⁷ pour la puissance (`maths/test_maths.py`). Pour les angles de plus de 10⁸ radians, `sinus` et `cosinus` rendent `nan`.
 
+### Le vocabulaire des nombres (0.6za, Lugus)
+
+Un seul mot pour les cinq types de nombres (`entier`, `entier_32`, `entier_128`, `flottant_64`, `flottant_32` et le
+flottant de 128 bits) : le compilateur choisit la variante par le type des arguments (le plus large : flottant de 128
+bits, puis 64, puis 32, puis `entier_128`, puis entier). Les questions rendent un `logique` ; sur un flottant
+**inconnu** (une case jamais écrite) ou **variable** (une contradiction, comme 0/0), elles rendent cet état : le doute
+ne se comble pas.
+
+| Mot | Rend |
+|---|---|
+| `signe(x)` | −1, 0 ou 1, du type de x |
+| `est_positif(x)`, `est_negatif(x)`, `est_nul(x)` | logique (strict : 0 n'est ni positif ni négatif) |
+| `est_entier(x)` | vrai si x n'a pas de partie décimale (toujours vrai pour un entier ; faux pour l'infini) |
+| `est_infini(x)` | vrai pour ±∞ |
+| `est_su(x)` | vrai si x est un nombre connu (ni inconnu ni variable) ; un entier est toujours su |
+| `partie_entiere(x)`, `partie_decimale(x)` | vers zéro : `partie_entiere(-2.75)` = −2.0, `partie_decimale(-2.75)` = −0.75 ; leur somme refait x |
+| `entre(x, a, b)` | logique : a ≤ x ≤ b (signé pour les entiers) |
+| `ecart(a, b)` | \|a − b\| |
+| `borne(x, a, b)` | x ramené dans [a, b] |
+| `arrondi(x, n)` | au plus proche à n décimales, le milieu loin de zéro ; n négatif : aux dizaines (−1), centaines (−2)… ; `arrondi(x)` à un argument reste l'ancien (vers l'entier) |
+
+Une fonction du programme qui porte l'un de ces noms garde la main : le vocabulaire ne s'applique qu'aux mots du
+prélude. Les nombres décimaux ne s'écrivent pas tous exactement en base 4 : `partie_decimale(12.4567)` rend
+0.45669999…, comme le ferait le binaire. Pas encore : `reste` sur les flottants, et ce vocabulaire sur Dunon.
+
 ### Hasard
 
 `hasard(n)` : un entier de 0 à n − 1 ; `hasard_entre(a, b)` : de a à b compris ; `hasard_flottant()` : de 0 (compris) à 1 (exclu) ; `hasard_mot()` : 32 bits. Générateur xorshift de 32 bits, son état est en `@3[14680057]`. Le hasard de la machine est **reproductible** : sans `graine(n)`, chaque lancement tire la même suite, sur toutes les machines (c'est ce qui permet de tester et de comparer). Pour changer la suite : `graine(entrée())`, ou toute autre valeur.

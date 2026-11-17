@@ -2892,3 +2892,30 @@ donc « inconnu ». Proposition, à décider : marquer inconnu par la charge du 
 toujours un NaN valide pour le binaire), pour qu'il revienne inconnu ; un changement de la machine, des deux
 compilateurs et de la bibliothèque.
 
+## 62. Le vocabulaire des nombres (17 novembre, 0.6za)
+
+**Décision du créateur sur la frontière du binaire** : « laissons le binaire dans son monde » ; la traduction IEEE ne
+sert qu'aux tests et aux programmes d'à côté, de façon temporaire si tout passe en quaternaire. Pas de charge de NaN :
+les conversions restent telles quelles (inconnu revient variable après un aller et retour, et c'est dit).
+
+**Le vocabulaire** (demandé : « un module complet de math. entier flottant réel, negatif, positif, decimale… ») :
+treize mots, un pour tous les types — `signe`, `est_positif`, `est_negatif`, `est_nul`, `est_entier`, `est_infini`,
+`est_su`, `partie_entiere`, `partie_decimale`, `entre`, `ecart`, `borne`, `arrondi(x, n)`. Comment : comme `afficher`
+choisit `__afficher_x`, un mot du prélude devient `__mot_x`, `_f`, `_s`, `_w` ou `_i` selon le type le plus large de
+ses arguments (`_i` seulement si tous sont des `entier_32`) ; le type rendu est celui de la variante. Les variantes
+sont écrites en vtx dans le prélude et ne sont tirées que si le programme emploie le mot (rien ne change pour les
+autres programmes : les mots de 35 exemples, de Gobannos, de la bibliothèque des flottants et de Belenos sont
+identiques avant et après). Les deux compilateurs donnent les mêmes mots (`tests/test_nombres.py`).
+
+**Le doute gardé** : sur un flottant inconnu, `est_positif` rend inconnu ; sur un variable, variable ; `est_su` dit
+lequel. C'est la logique de Belnap appliquée aux nombres : une question sur une valeur qu'on ne connaît pas n'a pas de
+réponse inventée.
+
+**Vérifié par propriétés** (`tests/nombres/proprietes.vtx`) : 161 valeurs de −10 à 10 par huitièmes, les cinq types :
+partie entière + partie décimale = x, signe × |x| = x, est_entier ⇔ partie décimale nulle, entre, ecart, borne,
+arrondi à moins d'un demi. Zéro faute.
+
+**Ce qui n'y est pas, honnêtement** : `reste` sur les flottants (un reste exact demande une division longue, pas faite) ;
+`tronquer` (c'est `partie_entiere`) ; les cubes et les faces ne sont pas des nombres et restent dans leur bibliothèque
+(`bibliotheque/cube.vtx`) ; et **Dunon** n'a pas encore ce vocabulaire (vtx64.py et vtxc64 : le même travail à refaire).
+

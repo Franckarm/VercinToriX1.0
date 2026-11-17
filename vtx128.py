@@ -7335,6 +7335,134 @@ fonction instructions() {
     // la différence de deux lectures ; la même avec ou sans la traduction en x86-64)
     retour __service(25, 0);
 }
+// ---- le vocabulaire des nombres (0.6z) : un mot pour tous les types. Sans suffixe : l'entier (lu signé) ; le
+// compilateur choisit __mot_x, _f, _s (les flottants de 128, 64 et 32 bits), _w, _i (les entiers de 128 et 32 bits)
+// d'après le type des arguments. Une question rend un logique : un flottant inconnu ou variable le reste (le doute ne
+// se comble pas) ; un entier, lui, est toujours su.
+fonction est_positif(x): logique { retour logique(x .> 0); }
+fonction est_negatif(x): logique { retour logique(x .< 0); }
+fonction est_nul(x): logique { retour logique(x == 0); }
+fonction est_entier(x): logique { retour vrai; }
+fonction est_infini(x): logique { retour faux; }
+fonction est_su(x): logique { retour vrai; }
+fonction partie_entiere(x) { retour x; }
+fonction partie_decimale(x) { retour 0; }
+fonction entre(x, a, b): logique { retour logique(x .>= a && x .<= b); }
+fonction ecart(a, b) { si a .> b { retour a - b; } retour b - a; }
+fonction __arrondi2(x, n) { retour x; }
+fonction __pq_su(v: flottant_petuar) { soit e = __pq_etat(bits(v)); retour e == 1 || e == 2; }
+fonction __pq_doute(v: flottant_petuar): logique { si __pq_etat(bits(v)) == 3 { retour variable; } retour inconnu; }
+fonction __signe_x(v: flottant_petuar): flottant_petuar {
+    si !__pq_su(v) || v == 0.0Q { retour v; }
+    si v < 0.0Q { retour 0.0Q - 1.0Q; }
+    retour 1.0Q;
+}
+fonction __est_positif_x(v: flottant_petuar): logique {
+    si !__pq_su(v) { retour __pq_doute(v); }
+    retour logique(v > 0.0Q);
+}
+fonction __est_negatif_x(v: flottant_petuar): logique {
+    si !__pq_su(v) { retour __pq_doute(v); }
+    retour logique(v < 0.0Q);
+}
+fonction __est_nul_x(v: flottant_petuar): logique {
+    si !__pq_su(v) { retour __pq_doute(v); }
+    retour logique(v == 0.0Q);
+}
+fonction __est_infini_x(v: flottant_petuar): logique {
+    si !__pq_su(v) { retour __pq_doute(v); }
+    retour logique(__pq_ef(bits(v)) == 16383);
+}
+fonction __est_entier_x(v: flottant_petuar): logique {
+    si !__pq_su(v) { retour __pq_doute(v); }
+    si __pq_ef(bits(v)) == 16383 { retour faux; }
+    retour logique(__partie_entiere_x(v) == v);
+}
+fonction __est_su_x(v: flottant_petuar): logique { retour logique(__pq_su(v)); }
+fonction __partie_entiere_x(v: flottant_petuar): flottant_petuar {
+    si v < 0.0Q { retour plafond_128(v); }
+    retour plancher_128(v);
+}
+fonction __partie_decimale_x(v: flottant_petuar): flottant_petuar {
+    si __pq_su(v) && __pq_ef(bits(v)) == 16383 { retour 0.0Q; }
+    retour v - __partie_entiere_x(v);
+}
+fonction __entre_x(v: flottant_petuar, a: flottant_petuar, b: flottant_petuar): logique {
+    si __pq_su(v) && __pq_su(a) && __pq_su(b) { retour logique(a <= v && v <= b); }
+    si __pq_etat(bits(v)) == 3 || __pq_etat(bits(a)) == 3 || __pq_etat(bits(b)) == 3 { retour variable; }
+    retour inconnu;
+}
+fonction __ecart_x(a: flottant_petuar, b: flottant_petuar): flottant_petuar { retour abs(a - b); }
+fonction __borne_x(v: flottant_petuar, a: flottant_petuar, b: flottant_petuar): flottant_petuar {
+    si v < a { retour a; }
+    si v > b { retour b; }
+    retour v;
+}
+// arrondi(x, n) : au plus proche, à n décimales (n négatif : aux dizaines, centaines…), le milieu loin de zéro
+fonction __arrondi2_x(v: flottant_petuar, n): flottant_petuar {
+    si !__pq_su(v) || __pq_ef(bits(v)) == 16383 { retour v; }
+    soit q: flottant_petuar = 1.0Q;
+    soit k = n;
+    si n .< 0 { k = 0 - n; }
+    pour i dans 0..k { q = q * 10.0Q; }
+    soit m: flottant_petuar = abs(v);
+    soit r: flottant_petuar = 0.0Q;
+    si n .< 0 { r = __partie_entiere_x(m / q + 0.5Q) * q; } sinon { r = __partie_entiere_x(m * q + 0.5Q) / q; }
+    si v < 0.0Q { retour 0.0Q - r; }
+    retour r;
+}
+fonction __signe_f(v: flottant): flottant { retour flottant_64(__signe_x(flottant_petuar(v))); }
+fonction __est_positif_f(v: flottant): logique { retour __est_positif_x(flottant_petuar(v)); }
+fonction __est_negatif_f(v: flottant): logique { retour __est_negatif_x(flottant_petuar(v)); }
+fonction __est_nul_f(v: flottant): logique { retour __est_nul_x(flottant_petuar(v)); }
+fonction __est_infini_f(v: flottant): logique { retour __est_infini_x(flottant_petuar(v)); }
+fonction __est_entier_f(v: flottant): logique { retour __est_entier_x(flottant_petuar(v)); }
+fonction __est_su_f(v: flottant): logique { retour __est_su_x(flottant_petuar(v)); }
+fonction __partie_entiere_f(v: flottant): flottant { retour flottant_64(__partie_entiere_x(flottant_petuar(v))); }
+fonction __partie_decimale_f(v: flottant): flottant { retour flottant_64(__partie_decimale_x(flottant_petuar(v))); }
+fonction __entre_f(v: flottant, a: flottant, b: flottant): logique { retour __entre_x(flottant_petuar(v), flottant_petuar(a), flottant_petuar(b)); }
+fonction __ecart_f(a: flottant, b: flottant): flottant { retour flottant_64(__ecart_x(flottant_petuar(a), flottant_petuar(b))); }
+fonction __borne_f(v: flottant, a: flottant, b: flottant): flottant { retour flottant_64(__borne_x(flottant_petuar(v), flottant_petuar(a), flottant_petuar(b))); }
+fonction __arrondi2_f(v: flottant, n): flottant { retour flottant_64(__arrondi2_x(flottant_petuar(v), n)); }
+fonction __signe_s(v: flottant_32): flottant_32 { retour flottant_32(__signe_x(flottant_petuar(v))); }
+fonction __est_positif_s(v: flottant_32): logique { retour __est_positif_x(flottant_petuar(v)); }
+fonction __est_negatif_s(v: flottant_32): logique { retour __est_negatif_x(flottant_petuar(v)); }
+fonction __est_nul_s(v: flottant_32): logique { retour __est_nul_x(flottant_petuar(v)); }
+fonction __est_infini_s(v: flottant_32): logique { retour __est_infini_x(flottant_petuar(v)); }
+fonction __est_entier_s(v: flottant_32): logique { retour __est_entier_x(flottant_petuar(v)); }
+fonction __est_su_s(v: flottant_32): logique { retour __est_su_x(flottant_petuar(v)); }
+fonction __partie_entiere_s(v: flottant_32): flottant_32 { retour flottant_32(__partie_entiere_x(flottant_petuar(v))); }
+fonction __partie_decimale_s(v: flottant_32): flottant_32 { retour flottant_32(__partie_decimale_x(flottant_petuar(v))); }
+fonction __entre_s(v: flottant_32, a: flottant_32, b: flottant_32): logique { retour __entre_x(flottant_petuar(v), flottant_petuar(a), flottant_petuar(b)); }
+fonction __ecart_s(a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(__ecart_x(flottant_petuar(a), flottant_petuar(b))); }
+fonction __borne_s(v: flottant_32, a: flottant_32, b: flottant_32): flottant_32 { retour flottant_32(__borne_x(flottant_petuar(v), flottant_petuar(a), flottant_petuar(b))); }
+fonction __arrondi2_s(v: flottant_32, n): flottant_32 { retour flottant_32(__arrondi2_x(flottant_petuar(v), n)); }
+fonction __signe_w(x: entier_128): entier_128 { si x < 0LL { retour 0LL - 1LL; } si x > 0LL { retour 1LL; } retour 0LL; }
+fonction __est_positif_w(x: entier_128): logique { retour logique(x > 0LL); }
+fonction __est_negatif_w(x: entier_128): logique { retour logique(x < 0LL); }
+fonction __est_nul_w(x: entier_128): logique { retour logique(x == 0LL); }
+fonction __est_infini_w(x: entier_128): logique { retour faux; }
+fonction __est_entier_w(x: entier_128): logique { retour vrai; }
+fonction __est_su_w(x: entier_128): logique { retour vrai; }
+fonction __partie_entiere_w(x: entier_128): entier_128 { retour x; }
+fonction __partie_decimale_w(x: entier_128): entier_128 { retour 0LL; }
+fonction __entre_w(x: entier_128, a: entier_128, b: entier_128): logique { retour logique(a <= x && x <= b); }
+fonction __ecart_w(a: entier_128, b: entier_128): entier_128 { si a > b { retour a - b; } retour b - a; }
+fonction __borne_w(x: entier_128, a: entier_128, b: entier_128): entier_128 { si x < a { retour a; } si x > b { retour b; } retour x; }
+fonction __arrondi2_w(x: entier_128, n): entier_128 { retour x; }
+fonction __signe_i(x: entier_32): entier_32 { si x .< 0S { retour 0S - 1S; } si x .> 0S { retour 1S; } retour 0S; }
+fonction __est_positif_i(x: entier_32): logique { retour logique(x .> 0S); }
+fonction __est_negatif_i(x: entier_32): logique { retour logique(x .< 0S); }
+fonction __est_nul_i(x: entier_32): logique { retour logique(x == 0S); }
+fonction __est_infini_i(x: entier_32): logique { retour faux; }
+fonction __est_entier_i(x: entier_32): logique { retour vrai; }
+fonction __est_su_i(x: entier_32): logique { retour vrai; }
+fonction __partie_entiere_i(x: entier_32): entier_32 { retour x; }
+fonction __partie_decimale_i(x: entier_32): entier_32 { retour 0S; }
+fonction __entre_i(x: entier_32, a: entier_32, b: entier_32): logique { retour logique(x .>= a && x .<= b); }
+fonction __ecart_i(a: entier_32, b: entier_32): entier_32 { si a .> b { retour a - b; } retour b - a; }
+fonction __borne_i(x: entier_32, a: entier_32, b: entier_32): entier_32 { si x .< a { retour a; } si x .> b { retour b; } retour x; }
+fonction __arrondi2_i(x: entier_32, n): entier_32 { retour x; }
 // la dernière fonction du prélude : vtxc128 lit chaque fonction jusqu'à la suivante ; celle-ci n'est jamais appelée
 fonction __fin_du_prelude() {
 }
@@ -7360,6 +7488,12 @@ RETOURS = {"flottant_petuar": "x", "flottant_128": "x", "flottant_petuar_signe":
            "point": "p", "point32": "p", "matiere": "p", "comme_point": "p", "melanger": "p", "antipoint": "p",
            **{n: "p" for n in CODONS_AVEC}}
 SURCHARGES = ("abs", "min", "max")
+# 0.6z : le vocabulaire des nombres (le nom, le nombre d'arguments, le nom de base de ses variantes)
+GENERIQUES = {"signe": (1, "signe"), "est_positif": (1, "est_positif"), "est_negatif": (1, "est_negatif"),
+              "est_nul": (1, "est_nul"), "est_entier": (1, "est_entier"), "est_infini": (1, "est_infini"),
+              "est_su": (1, "est_su"), "partie_entiere": (1, "partie_entiere"), "partie_decimale": (1, "partie_decimale"),
+              "entre": (3, "entre"), "ecart": (2, "ecart"), "borne": (3, "borne"), "arrondi": (2, "__arrondi2")}
+GEN_ORDRE = ("x", "f", "s", "w", "i")
 SORTIE_DEUX_MOTS = False   # vrai pour comparer au SPU-64 : sortie(entier_128) en deux mots, le bas d'abord
 # l'entier_128 à toute la largeur ; « / », « % » et « >> » sont signés, comme au SPU-64 (__qdiv, __qsar)
 W_OPS = {"+": "ADD", "-": "SUB", "*": "MUL", "/": "DIVS", "%": "MODS", "./": "DIVS", ".%": "MODS", "<<": "SHL", ">>": "SAR",
@@ -8467,6 +8601,10 @@ class Generateur:
                 if nom == "racine":
                     return "s" if t0 == "s" else "f"
                 return "e"
+            ng = self.generique(e) if nom in GENERIQUES else None
+            if ng is not None:
+                f0 = self.fonctions.get(ng) or self.reserve.get(ng)
+                return f0.rtype or "e"
             if nom in MATHS_128 and any(self.typ(a) == "x" for a in e[2]):
                 return "x"
             if nom in RETOURS:
@@ -9468,7 +9606,27 @@ class Generateur:
                 self.emettre("LDIS R2,#3")
                 self.emettre("XOR R1,R1,R2")
 
+    def generique(self, e):
+        """0.6z : le nom de la variante du vocabulaire des nombres qui convient aux arguments (ou None) : le flottant
+        le plus large parmi eux, sinon l'entier le plus large ; sans suffixe pour l'entier. Seulement si le mot vient du
+        prélude (une fonction du programme qui porte ce nom l'emporte)."""
+        nom, args = e[1], e[2]
+        if nom not in GENERIQUES or len(args) != GENERIQUES[nom][0]:
+            return None
+        base = GENERIQUES[nom][1]
+        pf = self.fonctions.get(base) or self.reserve.get(base)
+        if pf is None or getattr(pf, "origine", "") != "prélude":
+            return None
+        ts = ["q" if a[0] == "blit" else self.typ(a) for a in args]
+        suf = next((t for t in GEN_ORDRE if t in ts and (t != "i" or all(x == "i" for x in ts))), None)
+        return base if suf is None else "__" + base.lstrip("_") + "_" + suf
+
     def appel(self, e):
+        ng = self.generique(e)
+        if ng is not None and ng != e[1]:
+            e = ("appel", ng) + e[2:]
+        elif ng is not None and e[1] == "arrondi":
+            e = ("appel", ng) + e[2:]
         nom, args, ligne = e[1], e[2], e[3]
         if nom == "__code_logique":
             ta = "q" if args[0][0] == "blit" else self.typ(args[0])

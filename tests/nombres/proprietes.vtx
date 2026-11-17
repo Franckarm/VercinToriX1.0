@@ -1,0 +1,33 @@
+// 0.6z : les mots du vocabulaire des nombres, vérifiés par leurs propriétés sur des valeurs des cinq types
+fonction principal() {
+    soit fautes = 0;
+    soit vus = 0;
+    pour i dans 0..161 {
+        soit k = i - 80;
+        soit v: flottant = flottant_petuar_signe(k) / 8.0;
+        vus = vus + 1;
+        si partie_entiere(v) + partie_decimale(v) != v { fautes = fautes + 1; }
+        si (est_entier(v) == vrai) != (partie_decimale(v) == 0.0) { fautes = fautes + 1; }
+        si (est_positif(v) == vrai) != (v > 0.0) || (est_negatif(v) == vrai) != (v < 0.0) { fautes = fautes + 1; }
+        si signe(v) * abs(v) != v { fautes = fautes + 1; }
+        si abs(partie_decimale(v)) >= 1.0 || (partie_decimale(v) != 0.0 && (partie_decimale(v) < 0.0) != (v < 0.0)) { fautes = fautes + 1; }
+        si abs(arrondi(v, 0) - v) > 0.5 || partie_decimale(arrondi(v, 0)) != 0.0 { fautes = fautes + 1; }
+        si (entre(v, 0.0 - 2.0, 3.0) == vrai) != (v >= 0.0 - 2.0 && v <= 3.0) { fautes = fautes + 1; }
+        si ecart(v, 1.0) != abs(v - 1.0) || borne(v, 0.0 - 1.0, 1.0) != max(0.0 - 1.0, min(v, 1.0)) { fautes = fautes + 1; }
+        // les mêmes en 64 et 32 bits, et en entiers
+        soit d: flottant_64 = flottant_64(v);
+        si flottant_petuar(partie_entiere(d)) != partie_entiere(v) || flottant_petuar(partie_decimale(d)) != partie_decimale(v) { fautes = fautes + 1; }
+        soit s: flottant_32 = flottant_32(v);
+        si flottant_petuar(signe(s)) != signe(v) || (est_entier(s) == vrai) != (est_entier(v) == vrai) { fautes = fautes + 1; }
+        soit n = k;
+        si (est_negatif(n) == vrai) != (k .< 0) || ecart(n, 0) != abs(k) || (entre(n, 0 - 5, 5) == vrai) != (k .>= 0 - 5 && k .<= 5) { fautes = fautes + 1; }
+        soit w: entier_128 = entier_128_signe(k);
+        si (est_negatif(w) == vrai) != (k .< 0) || __signe_w(w) * w != ecart(w, 0LL) { fautes = fautes + 1; }
+    }
+    // les états : rien n'est inventé
+    soit inc: flottant = comme_flottant_petuar(0LL);
+    soit var: flottant = 0.0 / 0.0;
+    si est_positif(inc) != inconnu || est_nul(inc) != inconnu || est_entier(var) != variable || est_su(var) != faux { fautes = fautes + 1; }
+    si entre(var, 0.0, 1.0) != variable || entre(0.5, inc, 1.0) != inconnu || est_su(3) != vrai { fautes = fautes + 1; }
+    afficher(vus, "valeurs,", fautes, "faute(s)");
+}
