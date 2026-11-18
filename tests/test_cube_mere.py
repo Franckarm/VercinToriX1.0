@@ -19,6 +19,14 @@ import subprocess
 import sys
 import tempfile
 
+# Windows : les Python lancés par ce test écrivent en UTF-8 (sinon en cp1252 : les accents se perdent, et la comparaison
+# avec la sortie de Lugus, en UTF-8, échoue), et celui-ci aussi
+os.environ["PYTHONUTF8"] = "1"
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
