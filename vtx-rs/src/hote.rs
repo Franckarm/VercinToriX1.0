@@ -305,3 +305,20 @@ pub fn lister_dossier(chemin: &std::path::Path) -> Result<String, bool> {
     noms.sort();
     Ok(noms.iter().map(|n| n.clone() + "\n").collect())
 }
+
+/// 0.62c : l'étage et la fréquence d'un cube rangé de Lugus, d'après son nom (cube128-ÉTAGE-FRÉQUENCE.cub, l'étage de 1
+/// à 3) ; le service 29 de Lugus et de Dunon
+pub fn nom_de_cube128(chemin: &std::path::Path) -> Option<(usize, u64)> {
+    let n = chemin.file_name()?.to_str()?;
+    let r = n.strip_prefix("cube128-")?.strip_suffix(".cub")?;
+    let (e, f) = r.split_once('-')?;
+    if e.len() != 1 || f.is_empty() || !f.bytes().all(|c| c.is_ascii_digit()) || f.len() > 8 {
+        return None;
+    }
+    let e: usize = e.parse().ok()?;
+    let f: u64 = f.parse().ok()?;
+    if !(1..=3).contains(&e) || f > 0xFF_FFFF {
+        return None;
+    }
+    Some((e, f))
+}

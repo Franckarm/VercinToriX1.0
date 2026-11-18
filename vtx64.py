@@ -8870,7 +8870,7 @@ def injecter_donnees(fs, donnees):
 
 IMPORT = re.compile(r'^[ \t]*importer[ \t]+(?:"([^"]+)"(?:[ \t]+empreinte[ \t]+"([0-9a-fA-F]{16})")?'
                     r'|empreinte[ \t]+"([0-9a-fA-F]{16})")[ \t]*;[ \t]*$', re.M)
-CATALOGUE = "catalogue.vtxcat"
+CUBE_CATALOGUE = "cube128-1-392.cub"     # 0.62c : le cube du catalogue (lugus cataloguer)
 
 
 def empreinte_texte(texte):
@@ -8903,33 +8903,71 @@ def lire_module(m, nom, chemin):
 
 
 def catalogues_de(dossier):
-    """0.62 : les catalogues où chercher un module par sa seule empreinte, dans l'ordre : celui du dossier, puis celui
-    de bibliotheque/ (dans le dossier, ou à côté de lui) ; chacun une fois"""
+    """0.62c : les cubes de catalogue où chercher un module par sa seule empreinte, dans l'ordre : celui du dossier, puis
+    celui de bibliotheque/ (dans le dossier, ou à côté de lui) ; chacun une fois"""
     r = []
     for d in ("", "bibliotheque/", "../bibliotheque/"):
-        x = os.path.normpath(os.path.join(dossier, d + CATALOGUE))
+        x = os.path.normpath(os.path.join(dossier, d + CUBE_CATALOGUE))
         if x not in [c for _, c in r]:
             r.append((d, x))
     return r
 
 
+def brasser64(z):
+    """le brassage du cube du catalogue (splitmix64, comme brasser() du lecteur d'ADN et chimie/adn.py)"""
+    z = (z + 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
+    return z ^ (z >> 31)
+
+
+def module_du_cube(chemin, h):
+    """0.62c : le cube du catalogue choisi (cube128-1-392.cub, avec son anti-cube et son ombre), le nom du module
+    d'empreinte h, lu à son adresse : sa colonne vient de l'empreinte (la suivante si elle est à un autre) ; None : le
+    cube est absent, ou ne le connaît pas"""
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "spu64"))
+    from spu64 import lire_double
+    b, _ = lire_double(chemin, b"VTXCU128")
+    if b is None or b[:8] != b"VTXCU128":
+        return None
+    pages = {}
+    taille = 4 + 65536 * 16 + 16384
+    k = 8
+    while k + taille <= len(b):
+        pages[int.from_bytes(b[k:k + 4], "little") & 255] = k + 4
+        k += taille
+
+    def point(place):
+        d = pages.get(place >> 16)
+        return 0 if d is None else int.from_bytes(b[d + 16 * (place & 65535):d + 16 * (place & 65535) + 16], "little")
+
+    def chaine(c, t):
+        return ((((c + t // 256) & 0x7FFF) << 8) | (t & 255))
+    c = brasser64(h) & 0xFF
+    for _ in range(0x8000):
+        w = point(c << 8)
+        if w == 0:
+            return None
+        if (w >> 56) & 255 == 0x4D and w >> 64 == h:
+            ln = (w >> 16) & 255
+            return "".join(chr((point(chaine(c, 1 + i // 4)) >> (32 * (3 - i % 4))) & 0xFFFFFFFF) for i in range(ln))
+        c = (c + 1) & 0x7FFF
+    return None
+
+
 def chercher_empreinte(h, dossier):
-    """0.62 : « importer empreinte "…"; » : le module de cette empreinte dans les catalogues ; (le chemin tel qu'il se
-    montre, le chemin complet). Introuvable, ou deux modules différents : refusé et dit."""
+    """0.62c : « importer empreinte "…"; » : le compilateur choisit le cube du catalogue de chaque dossier, puis y lit le
+    module à l'adresse que donne l'empreinte ; (le chemin tel qu'il se montre, le chemin complet). Introuvable, ou deux
+    modules différents : refusé et dit."""
     trouves = []
     for d, cat in catalogues_de(dossier):
-        try:
-            lignes = open(cat, encoding="utf-8").read().replace("\r", "").split("\n")
-        except OSError:
-            continue
-        for l in lignes:
-            c = l.split("|")
-            if len(c) >= 3 and c[0] == "module" and c[1] and c[2].lower() == h.lower():
-                ch = os.path.normpath(os.path.join(os.path.dirname(cat), c[1]))
-                if ch not in [t[1] for t in trouves]:
-                    trouves.append((d + c[1], ch))
+        nom = module_du_cube(cat, int(h, 16))
+        if nom:
+            ch = os.path.normpath(os.path.join(os.path.dirname(cat), nom))
+            if ch not in [t[1] for t in trouves]:
+                trouves.append((d + nom, ch))
     if not trouves:
-        raise VtxError(f"importer : aucun catalogue ne connaît l'empreinte « {h.lower()} »")
+        raise VtxError(f"importer : aucun cube de catalogue ne connaît l'empreinte « {h.lower()} »")
     if len(trouves) > 1:
         raise VtxError(f"importer : deux modules portent l'empreinte {h.lower()} : « {trouves[0][0]} » et "
                        f"« {trouves[1][0]} »")

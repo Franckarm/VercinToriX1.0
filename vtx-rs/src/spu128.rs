@@ -903,6 +903,54 @@ impl Spu128 {
                 self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }
+            29 => {
+                // 0.62c : choisir un cube par son chemin (cube128-ÉTAGE-FRÉQUENCE.cub, avec son anti-cube et son ombre à
+                // côté : réparé s'il le faut, l'état noté pour etat_disque) : il est accordé, dans son étage, à la
+                // première fréquence libre depuis la sienne, et ses points se lisent à leurs adresses ; rend cette
+                // fréquence. Pas un nom de cube : u128::MAX - 1 (faux) ; absent ou illisible : u128::MAX (inconnu)
+                let nom = self.texte_memoire(arg);
+                let chemin = match &self.dossier {
+                    Some(d) => d.join(&nom),
+                    None => std::path::PathBuf::from(&nom),
+                };
+                let (e, f) = match crate::hote::nom_de_cube128(&chemin) {
+                    Some(x) => x,
+                    None => return Ok(u128::MAX - 1),
+                };
+                let b = match crate::miroir::lire_double(&chemin, ENTETE) {
+                    Some(b) if b.len() >= 8 && &b[..8] == ENTETE => b,
+                    _ => return Ok(u128::MAX),
+                };
+                let mut g = f as u128;
+                while self.pages[e].keys().any(|k| (*k >> 8) == g) {
+                    g = (g + 1) & 0xFF_FFFF;
+                }
+                for p in 0..256u128 {
+                    self.pages_vues.insert((e, (g << 8) | p));
+                }
+                let taille = 4 + PAGE * 16 + PAGE / 4;
+                let mut k = 8;
+                while k + taille <= b.len() {
+                    let p = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u128 & 255;
+                    let mut mots = vec![0u128; PAGE].into_boxed_slice();
+                    for j in 0..PAGE {
+                        mots[j] = u128::from_le_bytes(b[k + 4 + 16 * j..k + 20 + 16 * j].try_into().unwrap());
+                    }
+                    let br = &b[k + 4 + PAGE * 16..k + taille];
+                    let brins = if br.iter().any(|&x| x != 0) {
+                        self.a_des_adn = true;
+                        Some(br.to_vec().into_boxed_slice())
+                    } else {
+                        None
+                    };
+                    self.pages[e].insert((g << 8) | p, Box::new(Page { mots, brins }));
+                    k += taille;
+                }
+                self.annuaire[e].clear();
+                self.cache[e] = [(u128::MAX, std::ptr::null_mut()); 16];
+                self.cache_code = (u128::MAX, std::ptr::null_mut());
+                Ok(g)
+            }
             28 => {
                 // 0.62 : lister un dossier (le nom, depuis le dossier de la machine ; vide : ce dossier lui-même). Ses noms,
                 // triés, un par ligne (un sous-dossier finit par « / »), se lisent comme un fichier ; le dossier absent

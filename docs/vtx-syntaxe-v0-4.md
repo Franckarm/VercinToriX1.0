@@ -280,15 +280,17 @@ chariot sautés : un fichier en `\r\n` et le même en `\n` ont la même) et le r
 n'est plus celui promis (empreinte attendue …, trouvée …) ». `lugus empreinte FICHIER` (ou `vtx64 empreinte`) la donne. Un
 module peut promettre ses propres modules : la chaîne est vérifiée de bout en bout, comme les sommes de contrôle d'un
 gestionnaire de paquets. La promesse ne change aucun mot du programme ; sans elle, `importer` reste ce qu'il était.
-**Les modules trouvés par leur seule empreinte (0.62, Lugus et Dunon).** `importer empreinte "…";`, sans chemin : le
-compilateur cherche le module dans les catalogues, dans l'ordre : `catalogue.vtxcat` du dossier qui importe, puis
-`bibliotheque/catalogue.vtxcat` (dans ce dossier) et `../bibliotheque/catalogue.vtxcat` (à côté de lui), chacun une fois.
+**Les modules trouvés par leur seule empreinte (0.62, Lugus et Dunon ; le cube, 0.62c).** `importer empreinte "…";`,
+sans chemin : le compilateur **choisit le cube du catalogue** (`cube128-1-392.cub`) du dossier qui importe, puis celui
+de `bibliotheque/` (dans ce dossier, ou à côté de lui), chacun une fois, et **lit le module à l'adresse** que donne son
+empreinte (`docs/vtx-reactions.md`, section 67).
 Trouvé, c'est comme `importer "chemin" empreinte "…";` : son texte est vérifié (retouché depuis son catalogue : refusé),
 les mêmes mots que par son chemin. Introuvable : « importer : aucun catalogue ne connaît l'empreinte « … » » ; deux
 modules différents de cette empreinte (deux copies) : « importer : deux modules portent l'empreinte … : « a » et « b » ».
 Le catalogue d'un dossier s'écrit par **`lugus cataloguer DOSSIER`** (le lecteur d'ADN en vtx ; la référence :
-`python3 chimie/adn.py cataloguer DOSSIER`) : pour chaque module (un `.vtx` sans `principal`), une ligne
-`module|nom|empreinte|molécules`, puis une ligne `molecule|nom|masse|atomes|vibration` par fonction compilée. La
+`python3 chimie/adn.py cataloguer DOSSIER`) : d'abord son cube (`cube128-1-392.cub`, avec son anti-cube et son ombre : les
+modules rangés par leur empreinte, l'index des vibrations), puis sa lecture hex, `catalogue.vtxcat` : une ligne
+`module|nom|empreinte|molécules|place`, puis une ligne `molecule|nom|masse|atomes|vibration|place` par fonction compilée. La
 vibration est celle de la carte (`lugus carte` dit d'où vient chaque molécule : `docs/vtx-reactions.md`, section 66) ;
 `lugus morceaux PROG.vtx` montre les morceaux d'un programme et leur vibration. Pas encore : garder les empreintes des
 modules dans l'ADN du programme.
@@ -432,6 +434,7 @@ changée en « non ».
 | `nombre_su(t: texte)` | vrai : un nombre entier ; faux : autre chose ; inconnu : rien d'écrit |
 | `fichier_present(nom: texte)` | vrai : le fichier se lit ; faux : il ne se lit pas |
 | `dossier_present(nom: texte)` | 0.62 : vrai : un dossier qui se lit ; faux : le nom existe, mais ce n'est pas un dossier ; inconnu : il est absent (ou pas de dossier où chercher) | SYS 28 |
+| `__service(29, chemin)` | 0.62c : choisir un cube par son chemin (`cube128-ÉTAGE-FRÉQUENCE.cub`, réparé par son anti-cube et son ombre) : il est accordé dans son étage à la première fréquence libre depuis la sienne, rendue ; ses points se lisent à `cube_adresse(étage, fréquence, place)`. Sur Dunon, le même cube en deux moitiés : la basse à la fréquence rendue, la haute à la suivante. Pas un nom de cube : faux (tout à un moins un) ; absent : inconnu (tout à un) | SYS 29 |
 | `lister_dossier(nom: texte)` | 0.62 : les noms du dossier, triés, un texte chacun (un sous-dossier finit par « / ») ; absent ou pas un dossier : vide. Le nom part du dossier du programme ; `""` : ce dossier lui-même | SYS 28 |
 | `temoins(t)` | un tableau de réponses (0 rien, 1 non, 2 oui, 3 les deux) rassemblées en une valeur |
 | `etat_disque()` | l'état des cubes relus (miroir inversé) : vrai, faux (réparé), variable, inconnu | SYS 22 |

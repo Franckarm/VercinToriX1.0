@@ -976,10 +976,6 @@ def morceaux(mots):
 # retours chariot sautés) et ses molécules (nom, masse, atomes, vibration), chacune compilée comme Lugus la compile, dans
 # une sonde qui la prend en valeur (elle n'est alors ni recopiée en ligne, ni retirée). Un module qui ne se compile pas
 # seul : « - » au lieu de ses molécules. Le même fichier que le lecteur, octet pour octet.
-TETE_CATALOGUE = ("VTXCAT01\n// le catalogue des modules de ce dossier (lugus cataloguer) : module|nom|empreinte|molécules, "
-                  "puis molecule|nom|masse|atomes|vibration\n")
-
-
 def fonctions_ecrites(lignes):
     """les noms des fonctions écrites en tête de ligne (« fonction nom(… »), dans l'ordre"""
     r = []
@@ -1015,11 +1011,12 @@ def sonde(nom, fonctions):
             + "".join(f"    soit __v{k} = {f};\n    sortie(__v{k});\n" for k, f in enumerate(fonctions)) + "}\n")
 
 
-def cataloguer(dossier):
-    """le texte du catalogue du dossier"""
+def modules_du_dossier(dossier):
+    """[(nom, empreinte, molécules ou None)] des modules du dossier (un .vtx sans « principal »), dans l'ordre de la liste
+    du dossier (le service 28) ; une molécule : (nom, masse, atomes, vibration) ; None : le module ne se compile pas seul"""
     def cle(n):
         return (n + ("/" if os.path.isdir(os.path.join(dossier, n)) else "")).encode("utf-8")
-    r = [TETE_CATALOGUE]
+    r = []
     for nom in sorted(os.listdir(dossier), key=cle):
         if not nom.endswith(".vtx") or os.path.isdir(os.path.join(dossier, nom)):
             continue
@@ -1028,12 +1025,12 @@ def cataloguer(dossier):
         if any(l.startswith("fonction principal(") for l in lignes):
             continue
         fonctions = fonctions_ecrites(lignes)
-        h = f"{fnv(brut.replace(chr(13), '')):016x}"
+        h = fnv(brut.replace(chr(13), ""))
         internes = appelees(lignes, fonctions)
         try:
             mots, _, _, noms = molecules_isotopes_noms(sonde(nom, [f for f in fonctions if f not in internes]), dossier)
         except Exception:      # noqa: BLE001
-            r.append(f"module|{nom}|{h}|-\n")
+            r.append((nom, h, None))
             continue
         places = {}
         for w, n in noms.items():
@@ -1046,11 +1043,136 @@ def cataloguer(dossier):
             m = next((m for m in ms if m[0] // 2 == w and m[0] + 1 < len(plat)
                       and (plat[m[0]][0], plat[m[0] + 1][0]) == PROLOGUE), None) if w is not None else None
             if m is not None:
-                mols.append(f"molecule|{f}|{m[3]}|{m[2]}|{m[4]:016x}\n")
-        r.append(f"module|{nom}|{h}|{len(mols)}\n")
-        r += mols
+                mols.append((f, m[3], m[2], m[4]))
+        r.append((nom, h, mols))
+    return r
+
+
+# ---------------------------------------------------------------------------------------------------- le cube du catalogue (0.62c)
+# Le catalogue est d'abord un cube (l'ADN : ce qui dure), cube128-1-392.cub, rangé avec son anti-cube et son ombre ; son
+# hex, catalogue.vtxcat, en est la lecture. La place dit ce qu'est le point (docs/vtx-reactions.md, section 67) :
+# - les modules, dans la moitié basse du cube (RR de 00 à 7F) : la colonne #RRGG d'un module vient de son empreinte (comme
+#   le cube des noms de vtxc64), dans la première page d'abord (la suivante si elle est prise) ; sa chaîne descend la colonne, à la Fischer : la tête (l'empreinte, ses molécules, la
+#   longueur de son nom, ses colonnes), son nom (quatre caractères par point, un par voie), puis chaque molécule (sa
+#   vibration, sa masse, ses atomes, la longueur de son nom) suivie de son nom ; un grand module continue sur la colonne
+#   suivante ;
+# - l'index des vibrations, dans la moitié haute (#800000 à #FEFFFF) : la place vient de la vibration, dans la page #80
+#   d'abord (la suivante si elle est prise) ; le point dit la vibration et où est la molécule (la colonne de son module, son rang dans la chaîne) ;
+# - la coiffe en #FFFFFE (ce que portent tous les points), la queue en #FFFFFF (« VTXCAT », les modules, les molécules).
+FR_CATALOGUE = 392
+TETE_MODULE = 0x4D
+SANS_MOLECULES = 0xFFFFFF
+QUEUE_CATALOGUE = 0x5654584341540001          # « VTXCAT », version 1
+ZONE_VIB, TAILLE_VIB = 0x800000, 0x7F0000
+TETE_CATALOGUE = ("VTXCAT02\n// le catalogue des modules de ce dossier, lu dans son cube (cube128-1-392.cub, avec son "
+                  "anti-cube et son ombre ; lugus cataloguer) : cube|étage|fréquence|coiffe|modules|molécules, puis "
+                  "module|nom|empreinte|molécules|place et molecule|nom|masse|atomes|vibration|place\n")
+
+
+def place_chaine(c, t):
+    return ((((c + t // 256) & 0x7FFF) << 8) | (t & 255))
+
+
+def points_texte(t):
+    """un nom, quatre caractères par point (un par voie de 32 bits), le premier dans la voie haute"""
+    r = []
+    for i in range(0, len(t), 4):
+        w = 0
+        for j in range(4):
+            w = (w << 32) | (ord(t[i + j]) if i + j < len(t) else 0)
+        r.append(w)
+    return r
+
+
+def placer_catalogue(modules):
+    """les points du cube du catalogue : {place : point de 128 bits}"""
+    pts = {}
+    pris = set()
+    vib_prises = set()
+    nmol = 0
+    for nom, h, mols in modules:
+        nom = nom[:255]
+        chaine = [0] + points_texte(nom)
+        rangs = []
+        for f, masse, atomes, v in (mols or []):
+            f = f[:255]
+            rangs.append((len(chaine), v))
+            chaine.append((v << 64) | ((masse & 0xFFFFFF) << 32) | ((atomes & 0xFFFFFF) << 8) | len(f))
+            chaine += points_texte(f)
+        k = (len(chaine) + 255) // 256
+        n = SANS_MOLECULES if mols is None else len(mols)
+        chaine[0] = (h << 64) | (TETE_MODULE << 56) | (n << 32) | (len(nom) << 16) | k
+        c = melanger(h) & 0xFF                # la première page d'abord : un petit catalogue tient en peu de pages
+        while any(((c + j) & 0x7FFF) in pris for j in range(k)):
+            c = (c + 1) & 0x7FFF
+        for j in range(k):
+            pris.add((c + j) & 0x7FFF)
+        for t, w in enumerate(chaine):
+            pts[place_chaine(c, t)] = w
+        for t, v in rangs:
+            s = melanger(v) & 0xFFFF           # la page #80 d'abord
+            while s in vib_prises:
+                s = (s + 1) % TAILLE_VIB
+            vib_prises.add(s)
+            pts[ZONE_VIB + s] = (v << 64) | (c << 32) | t
+            nmol += 1
+    somme, ou = 0, 0
+    for p, w in pts.items():
+        g = melanger(melanger(melanger(p) ^ (w >> 64)) ^ (w & M64))
+        somme, ou = (somme + g) & M64, ou ^ g
+    pts[0xFFFFFE] = melanger_vib(len(pts), somme, ou)
+    pts[0xFFFFFF] = (QUEUE_CATALOGUE << 64) | (len(modules) << 32) | nmol
+    return pts
+
+
+def texte_points(lire, p, n):
+    """n caractères lus dans les points de la chaîne à partir du rang p (lire(t) : le point de rang t)"""
+    r = []
+    for i in range(n):
+        w = lire(p + i // 4)
+        r.append(chr((w >> (32 * (3 - i % 4))) & 0xFFFFFFFF))
     return "".join(r)
 
+
+def hex_du_cube(lire_place):
+    """la lecture hex du cube du catalogue (lire_place(place) : son point)"""
+    q = lire_place(0xFFFFFF)
+    r = [TETE_CATALOGUE, f"cube|1|{FR_CATALOGUE}|{lire_place(0xFFFFFE) & M64:016x}|{(q >> 32) & 0xFFFFFFFF}|"
+                         f"{q & 0xFFFFFFFF}\n"]
+    for c in range(0x8000):
+        tete = lire_place(c << 8)
+        if (tete >> 56) & 255 != TETE_MODULE or tete >> 64 == 0 and tete == 0:
+            continue
+        h, n, ln = tete >> 64, (tete >> 32) & 0xFFFFFF, (tete >> 16) & 255
+
+        def lire(t, c=c):
+            return lire_place(place_chaine(c, t))
+        nom = texte_points(lire, 1, ln)
+        r.append(f"module|{nom}|{h:016x}|{'-' if n == SANS_MOLECULES else n}|#{c << 8:06X}\n")
+        t = 1 + (ln + 3) // 4
+        for _ in range(0 if n == SANS_MOLECULES else n):
+            w = lire(t)
+            lf = w & 255
+            r.append(f"molecule|{texte_points(lire, t + 1, lf)}|{(w >> 32) & 0xFFFFFF}|{(w >> 8) & 0xFFFFFF}|"
+                     f"{w >> 64:016x}|#{place_chaine(c, t):06X}\n")
+            t += 1 + (lf + 3) // 4
+    return "".join(r)
+
+
+def cataloguer(dossier):
+    """range le cube du catalogue du dossier (cube128-1-392.cub, avec son anti-cube et son ombre, par l'écrivain de la
+    machine Python), puis rend sa lecture hex, lue dans le cube relu du disque"""
+    sys.path.insert(0, os.path.join(racine, "spu128"))
+    import spu128
+    pts = placer_catalogue(modules_du_dossier(dossier))
+    cpu = spu128.CPU(dossier=dossier)
+    base = FR_CATALOGUE << 24
+    for p, w in pts.items():
+        cpu.mem[(1, base | p)] = w
+    if cpu.ranger_cube((1 << 62) | base) == spu128.M128:
+        raise OSError("le cube du catalogue ne s'écrit pas")
+    relu = spu128.CPU(dossier=dossier)
+    return hex_du_cube(lambda p: relu.lire((1 << 62) | base | p))
 
 # ---------------------------------------------------------------------------------------------------- le chemin dans les deux sens (0.6n bis)
 def ecrire_hex(chemin, mots):

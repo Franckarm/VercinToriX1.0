@@ -257,6 +257,14 @@ def noter_etat(machine, etat):
         machine._etat_disque = etat
 
 
+
+def nom_de_cube128(chemin):
+    """0.62c : (étage, fréquence) d'un cube rangé de Lugus d'après son nom (cube128-ÉTAGE-FRÉQUENCE.cub), ou None"""
+    m = re.fullmatch(r"cube128-([123])-([0-9]{1,8})\.cub", os.path.basename(chemin))
+    if not m or int(m.group(2)) > 0xFFFFFF:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
 def lister_dossier(chemin):
     """0.62 : les noms d'un dossier, triés, un par ligne, un sous-dossier terminé par « / » (le service 28) ; None :
     absent ; False : le nom existe mais n'est pas un dossier"""
@@ -508,6 +516,37 @@ class CPU:
             return 1 if f is None or f[0] != "l" or f[2] >= len(f[1]) else 0
         if code == 5:
             return int.from_bytes(os.urandom(8), "little")
+        if code == 29:
+            # 0.62c : choisir un cube de Lugus par son chemin : chaque point de 128 bits en deux mots, à la même adresse,
+            # la moitié basse à la fréquence rendue g, la haute à g + 1 (M64 - 1 : pas un nom de cube ; M64 : absent)
+            nom = self.texte_memoire(arg)
+            chemin = os.path.join(self.dossier, nom) if self.dossier is not None else nom
+            ef = nom_de_cube128(chemin)
+            if ef is None:
+                return M64 - 1
+            b, etat = lire_double(chemin, b"VTXCU128")
+            noter_etat(self, etat)
+            if b is None or b[:8] != b"VTXCU128":
+                return M64
+            e, g = ef
+            prises = {j >> 24 for (ee, j) in self.mem if ee == e}
+            while g in prises or g + 1 in prises:
+                g = (g + 1) & 0xFFFFFF
+            for p in range(256):
+                self.pages_vues.add((e, (g << 8) | p))
+                self.pages_vues.add((e, ((g + 1) << 8) | p))
+            taille = 4 + 65536 * 16 + 16384
+            k = 8
+            while k + taille <= len(b):
+                p = int.from_bytes(b[k:k + 4], "little") & 255
+                for j in range(65536):
+                    v = int.from_bytes(b[k + 4 + 16 * j:k + 20 + 16 * j], "little")
+                    if v & M64:
+                        self.mem[(e, (g << 24) | (p << 16) | j)] = v & M64
+                    if v >> 64:
+                        self.mem[(e, ((g + 1) << 24) | (p << 16) | j)] = v >> 64
+                k += taille
+            return g
         if code == 28:
             # 0.62 : lister un dossier (le nom depuis le dossier de la machine ; vide : lui-même) ; ses noms se lisent
             # comme un fichier ; absent : M64 (inconnu) ; pas un dossier : M64 - 1 (faux)

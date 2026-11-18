@@ -12938,9 +12938,67 @@ fonction ajouter_hexa16(l: Liste, n) {
     }
 }
 
-// 0.62 : « importer empreinte "…"; » : le module de cette empreinte, cherché dans les catalogues (catalogue.vtxcat,
-// écrit par « lugus cataloguer ») du dossier, puis de bibliotheque/ (dans le dossier, ou à côté de lui), chacun une
-// fois. Rend son chemin depuis le dossier ; introuvable, ou deux modules différents : l'erreur est dite (rend « * »).
+// 0.62c : « importer empreinte "…"; » : le compilateur choisit le cube du catalogue de chaque dossier
+// (cube128-1-392.cub, écrit par « lugus cataloguer » : celui du dossier, puis de bibliotheque/, dans le dossier ou à
+// côté de lui, chacun une fois ; la machine l'accorde, service 29), puis lit le module à l'adresse que donne son
+// empreinte. Rend son chemin depuis le dossier ; introuvable, ou deux modules différents : l'erreur est dite (rend « * »).
+fonction cat_brasser(z0) {
+    // le brassage du cube du catalogue (splitmix64, comme le lecteur d'ADN et chimie/adn.py)
+    soit z = z0 + 11400714819323198485;
+    z = (z ^ (z >> 30)) * 13787848793156543929;
+    z = (z ^ (z >> 27)) * 10723151780598845931;
+    retour z ^ (z >> 31);
+}
+
+fonction cat_adresse(g, p) {
+    // le point p du cube de fréquence g, à l'étage 1 (l'adresse du cube : l'étage, la fréquence, #RRGGBB)
+    retour (1 << 62) | ((g & 16777215) << 24) | (p & 16777215);
+}
+
+fonction cat_chaine(c, t) {
+    retour (((c + t / 256) & 32767) << 8) | (t & 255);
+}
+
+fonction cat_haut(g, p) {
+    soit w: entier_128 = @[cat_adresse(g, p)];
+    retour haut(w);
+}
+
+fonction cat_bas(g, p) {
+    soit w: entier_128 = @[cat_adresse(g, p)];
+    retour bas(w);
+}
+
+// le nom du module d'empreinte h dans le cube accordé à la fréquence g (0 : il ne le connaît pas) : sa colonne vient de
+// l'empreinte (la suivante si elle est à un autre), sa tête porte l'empreinte, son nom suit, quatre caractères par point
+fonction cat_module_du_cube(g, h) {
+    soit c = cat_brasser(h) & 255;
+    pour q9 dans 0..32768 {
+        soit hi = cat_haut(g, c << 8);
+        soit lo = cat_bas(g, c << 8);
+        si hi == 0 && lo == 0 {
+            retour 0;
+        }
+        si ((lo >> 56) & 255) == 77 && hi == h {
+            soit ln = (lo >> 16) & 255;
+            soit l = liste();
+            pour i dans 0..ln {
+                soit p = cat_chaine(c, 1 + i / 4);
+                soit v = 3 - i % 4;
+                soit x = 0;
+                si v == 3 { x = cat_haut(g, p) >> 32; }
+                si v == 2 { x = cat_haut(g, p) & 4294967295; }
+                si v == 1 { x = cat_bas(g, p) >> 32; }
+                si v == 0 { x = cat_bas(g, p) & 4294967295; }
+                ajouter(l, x);
+            }
+            retour texte_de(l, 0, l.n);
+        }
+        c = (c + 1) & 32767;
+    }
+    retour 0;
+}
+
 fonction chercher_empreinte(c: Ctx, dossier, h) {
     soit lus = liste();
     soit trouve = 0;
@@ -12954,7 +13012,7 @@ fonction chercher_empreinte(c: Ctx, dossier, h) {
         si k == 2 {
             pre = "../bibliotheque/";
         }
-        soit cat = normaliser(joindre(dossier, joindre_textes(pre, "catalogue.vtxcat")));
+        soit cat = normaliser(joindre(dossier, joindre_textes(pre, "cube128-1-392.cub")));
         soit deja = 0;
         pour j dans 0..lus.n {
             si egal(elem(lus, j), cat) {
@@ -12962,65 +13020,25 @@ fonction chercher_empreinte(c: Ctx, dossier, h) {
             }
         }
         ajouter(lus, cat);
-        soit t: Liste = nul;
         si deja == 0 {
-            t = lire_fichier(cat);
-        }
-        si t != nul {
-            soit i = 0;
-            tantque i < t.n {
-                soit f = i;
-                tantque f < t.n && elem(t, f) != 10 {
-                    f = f + 1;
-                }
-                // « module|nom|16 chiffres|… »
-                soit mot = "module|";
-                soit ok = f - i > 7;
-                pour q dans 0..7 {
-                    si ok && elem(t, i + q) != car(mot, q) {
-                        ok = 0;
+            soit g = __service(29, cat);
+            si g <= 16777215 {
+                soit nom = cat_module_du_cube(g, h);
+                si nom != 0 {
+                    soit ch = normaliser(joindre(dossier_de(cat), nom));
+                    si trouve == 0 {
+                        trouve = joindre_textes(pre, nom);
+                        trouve_ch = ch;
+                    } sinon si second == 0 && !egal(ch, trouve_ch) {
+                        second = joindre_textes(pre, nom);
                     }
                 }
-                si ok {
-                    soit d = i + 7;
-                    soit b = d;
-                    tantque b < f && elem(t, b) != '|' {
-                        b = b + 1;
-                    }
-                    soit e = 0;
-                    si b + 17 > f {
-                        ok = 0;
-                    }
-                    pour q dans 1..17 {
-                        si ok {
-                            soit x = hexa_ou_16(elem(t, b + q));
-                            si x > 15 {
-                                ok = 0;
-                            }
-                            e = (e << 4) | (x & 15);
-                        }
-                    }
-                    si ok && b + 17 < f && elem(t, b + 17) != '|' && elem(t, b + 17) != 13 {
-                        ok = 0;
-                    }
-                    si ok && b > d && e == h {
-                        soit nom = texte_de(t, d, b);
-                        soit ch = normaliser(joindre(dossier_de(cat), nom));
-                        si trouve == 0 {
-                            trouve = joindre_textes(pre, nom);
-                            trouve_ch = ch;
-                        } sinon si second == 0 && !egal(ch, trouve_ch) {
-                            second = joindre_textes(pre, nom);
-                        }
-                    }
-                }
-                i = f + 1;
             }
         }
     }
     soit l = liste();
     si trouve == 0 {
-        ajouter_texte(l, "importer : aucun catalogue ne connaît l'empreinte");
+        ajouter_texte(l, "importer : aucun cube de catalogue ne connaît l'empreinte");
         soit lh = liste();
         ajouter_hexa16(lh, h);
         erreur_nom(c, c.nlignes + 1, texte_de(l, 0, l.n), texte_de(lh, 0, lh.n));

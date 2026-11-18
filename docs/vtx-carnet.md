@@ -593,7 +593,7 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 
 ## 11. Feuille de route
 
-*Mise à jour le 17 novembre 2026, après la 0.62 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
+*Mise à jour le 18 novembre 2026, après la 0.62c (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
 
 1. **Les lectures** : `supposons x parmi [a, b, c] { … } retenir r;` est fait (0.6s : écarter, noter, le verdict à
    quatre valeurs ; 0.6t : `exige` écarte de lui-même, la carte dit « suppose » ; 0.6u : `retenir r alors { … }`, l'action du
@@ -617,8 +617,10 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    extensions, d'Arduino, d'UE5 et de Blender, en français, par familles ; `docs/vtx-vocabulaire.md`) ; les modules promis par leur empreinte (fait, 0.61 : `importer "x.vtx" empreinte
    "…";`, la chaîne vérifiée, `lugus empreinte`) ; les modules trouvés par leur seule empreinte (fait, 0.62 :
    `importer empreinte "…";`, le catalogue `lugus cataloguer`, lister un dossier, la vibration de chaque molécule et la
-   carte qui dit d'où elle vient) ; puis les empreintes des modules gardées dans l'ADN du programme (un module est un
-   ADN signé, chaque usage une transcription).
+   carte qui dit d'où elle vient) ; **le cube du catalogue** (fait, 0.62c : les empreintes rangées dans un cube, pas dans
+   l'ADN ; le compilateur choisit le cube, puis lit à l'adresse ; le service 29, Dunon en deux moitiés).
+   **Direction donnée par le créateur (18 novembre)** : la mémoire du cube doit servir à l'IA, pour éviter la coupure
+   entre deux conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
 5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine
@@ -1186,7 +1188,7 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 | Étape | Ce que c'est | Exemples |
 |---|---|---|
 | Cube | tout est un point : une **place** (l'adresse, ses coordonnées dans le cube) et un **contenu** (couleur et matière) ; un compteur est un pas le long d'un axe | `#RRGGBB` d'une adresse ; un pixel ; une valeur |
-| Hex | l'écriture exacte du point, pour l'humain ; aucun coût à l'exécution | `#A000C90F_…` |
+| Hex | l'écriture exacte du point, pour l'humain ; aucun coût à l'exécution ; **une adresse** : une case du cube (le créateur, 18 novembre : « le Hex est une adresse, le cube est l'ensemble de plusieurs adresses ; on choisit le cube, puis on trouve l'information avec l'adresse ») | `#A000C90F_…` |
 | ADN | la forme rangée et transmise, ce qui dure : le programme compilé (les mots), les cubes sur disque avec leur anti-cube et leur ombre | `cube-1-42.cub`, les mots du SPU |
 | ARN | la copie transcrite pour agir, ce qui s'exécute : la forge transcrit l'ADN du programme en ARN natif | le programme forgé |
 | Programme | ce qui agit ; ses résultats redeviennent des points du cube (chemin inverse) | sorties, images, cubes écrits |

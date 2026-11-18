@@ -4,8 +4,11 @@
 1. lister un dossier (le service 28) : lister_dossier et dossier_present, les mêmes sur Lugus et Dunon, en Rust et en
    Python, par les deux compilateurs de chaque machine (les mêmes mots) ;
 2. les morceaux d'un programme et leur vibration : le lecteur en vtx (lugus morceaux) et chimie/adn.py, ligne pour ligne ;
-3. le catalogue : lugus cataloguer (écrit en vtx) et python3 chimie/adn.py cataloguer, octet pour octet ;
-4. « importer empreinte "…"; » : le module trouvé par son empreinte seule (le dossier, bibliotheque/), les mêmes mots
+3. le cube du catalogue (0.62c) : lugus cataloguer (écrit en vtx) et python3 chimie/adn.py cataloguer, le cube, son
+   anti-cube, son ombre et sa lecture hex, octet pour octet ; le service 29 (choisir un cube par son chemin) sur les
+   quatre machines ;
+4. « importer empreinte "…"; » : le compilateur choisit le cube, puis lit le module à l'adresse de son empreinte (le
+   dossier, bibliotheque/), les mêmes mots
    que par son chemin ; introuvable, ou deux modules : refusé par les quatre compilateurs ; retouché : refusé ;
 5. la carte dit d'où vient chaque molécule, et voit une molécule retouchée depuis le catalogue.
 
@@ -118,15 +121,48 @@ bib = os.path.join(monde, "bibliotheque")
 shutil.copytree(os.path.join(racine, "tests", "modules"), bib)
 shutil.copy(os.path.join(racine, "bibliotheque", "codon.vtx"), bib)
 ecrire(os.path.join(bib, "programme.vtx"), "fonction principal() { afficher(1); }\n")   # un programme : pas un module
+CUBES = ("cube128-1-392.cub", "anticube128-1-392.cub", "ombre128-1-392.cub")
+
+
+def fichiers_du_cube(dossier):
+    return [open(os.path.join(dossier, f), "rb").read() if os.path.exists(os.path.join(dossier, f)) else b""
+            for f in CUBES]
+
+
 code, texte = lancer([LUGUS, "cataloguer", bib])
 vtx_cat = open(os.path.join(bib, "catalogue.vtxcat"), encoding="utf-8").read() if code == 0 else ""
+vtx_cubes = fichiers_du_cube(bib)
 ref_cat = adn.cataloguer(bib)
-verifier("le catalogue : lugus cataloguer (en vtx) et chimie/adn.py, octet pour octet", vtx_cat == ref_cat and code == 0,
+ref_cubes = fichiers_du_cube(bib)
+verifier("le cube du catalogue : lugus cataloguer (en vtx) et chimie/adn.py, le cube, son anti-cube et son ombre, "
+         "octet pour octet", code == 0 and all(vtx_cubes) and vtx_cubes == ref_cubes, texte[:200])
+verifier("le cube du catalogue : sa lecture hex (catalogue.vtxcat), la même par les deux", vtx_cat == ref_cat and code == 0,
          texte[:200])
-verifier("le catalogue : trois modules (le programme écarté), leurs empreintes, leurs molécules",
-         vtx_cat.count("\nmodule|") == 3 and "module|outil.vtx|f62defeb8b893235|2\n" in vtx_cat
+verifier("le catalogue : trois modules (le programme écarté), leurs empreintes, leurs molécules, leurs places",
+         vtx_cat.count("\nmodule|") == 3 and "module|outil.vtx|f62defeb8b893235|2|#" in vtx_cat
          and "programme.vtx" not in vtx_cat and "molecule|double|" in vtx_cat, vtx_cat[:300])
 vibs = [l.split("|")[4] for l in vtx_cat.split("\n") if l.startswith("molecule|")]
+# le service 29 : choisir le cube par son chemin, puis lire sa queue à son adresse (Dunon : en deux moitiés)
+cube = os.path.join(bib, "cube128-1-392.cub").replace("\\", "/")
+P29 = {"lugus": f'''fonction principal() {{
+    soit g = __service(29, "{cube}");
+    soit w: entier_128 = @[cube_adresse(1, g, 16777215)];
+    afficher(g, haut(w), bas(w) >> 32, __service(29, "{cube}"), __service(29, "rien.cub"));
+}}
+''', "dunon": f'''fonction principal() {{
+    soit g = __service(29, "{cube}");
+    afficher(g, @[cube_adresse(1, g + 1, 16777215)], @[cube_adresse(1, g, 16777215)] >> 32, __service(29, "{cube}"), __service(29, "rien.cub"));
+}}
+'''}
+for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py")):
+    f29 = ecrire(os.path.join(d, "s29", machine + ".vtx"), P29[machine])
+    _, t1 = lancer([b, f29])
+    _, t2 = lancer([sys.executable, os.path.join(racine, py), "run", f29])
+    t2 = "".join(l + "\n" for l in t2.split("\n") if l and "instructions exécutées" not in l)
+    suivante = "393" if machine == "lugus" else "394"
+    verifier(f"le service 29 sur {machine.capitalize()}, en Rust et en Python : le cube choisi à sa fréquence, sa queue lue "
+             f"à son adresse, le second à la suivante ; pas un cube : faux",
+             t1 == t2 and t1.startswith(f"392 {adn.QUEUE_CATALOGUE} 3 {suivante} -2"), f"{t1!r} / {t2!r}")
 verifier(f"le catalogue : {len(vibs)} molécules, autant de vibrations différentes", len(set(vibs)) == len(vibs))
 h_outil = next(l.split("|")[2] for l in vtx_cat.split("\n") if l.startswith("module|outil.vtx|"))
 
@@ -148,17 +184,17 @@ f_rien = ecrire(os.path.join(prog, "rien.vtx"), 'importer empreinte "0123456789a
 for machine in ("lugus", "dunon"):
     m, ml = mots_ou_refus(machine, f_rien)
     verifier(f"importer empreinte inconnue, {machine.capitalize()} : refusé par les deux compilateurs, et dit",
-             str(m).startswith("refus") and str(ml).startswith("refus") and "aucun catalogue" in str(m) + str(ml),
+             str(m).startswith("refus") and str(ml).startswith("refus") and "aucun cube de catalogue" in str(m) + str(ml),
              f"{m} / {ml}")
 # deux modules de même empreinte (une copie dans le dossier du programme, cataloguée aussi)
 shutil.copy(os.path.join(bib, "outil.vtx"), prog)
-ecrire(os.path.join(prog, "catalogue.vtxcat"), f"VTXCAT01\nmodule|outil.vtx|{h_outil}|0\n")
+lancer([LUGUS, "cataloguer", prog])
 for machine in ("lugus", "dunon"):
     m, ml = mots_ou_refus(machine, f_emp)
     verifier(f"importer empreinte de deux modules, {machine.capitalize()} : refusé par les deux compilateurs, et dit",
              "deux modules" in str(m) and "deux modules" in str(ml), f"{m} / {ml}")
-os.remove(os.path.join(prog, "catalogue.vtxcat"))
-os.remove(os.path.join(prog, "outil.vtx"))
+for f in CUBES + ("catalogue.vtxcat", "outil.vtx"):
+    os.remove(os.path.join(prog, f))
 # le module retouché après son catalogue : sa promesse ne tient plus
 brut = open(os.path.join(bib, "outil.vtx"), encoding="utf-8").read()
 ecrire(os.path.join(bib, "outil.vtx"), brut.replace("2 * x", "3 * x"))
@@ -190,6 +226,20 @@ f_sortie = ecrire(os.path.join(d, "sortie", "sortie_f.vtx"),
 m, ml = mots_ou_refus("lugus", f_sortie)
 verifier("sortie(f) d'une fonction écrite seule : vtxc128 le compile, les mêmes mots que vtx128.py",
          isinstance(m, list) and m == ml, f"{str(m)[:80]} / {str(ml)[:80]}")
+
+# --------------------------------------------------------------------------------------------- 7. le cube abîmé
+# un octet changé dans le cube du catalogue : l'anti-cube et l'ombre le réparent quand il est choisi (le compilateur, la
+# carte), et la carte le dit
+c = os.path.join(bib, "cube128-1-392.cub")
+b = bytearray(open(c, "rb").read())
+b[8 + 4 + 16 * 0x0400 + 9] ^= 0x5A
+open(c, "wb").write(bytes(b))
+code, texte = lancer([LUGUS, "carte", f_carte])
+verifier("le cube abîmé : la carte le dit réparé par son anti-cube et son ombre, et lit encore d'où viennent les molécules",
+         "réparé par son anti-cube et son ombre" in texte and "elle vient du module codon.vtx" in texte, texte[:300])
+m, ml = mots_ou_refus("lugus", f_emp)
+verifier("le cube abîmé : importer empreinte le lit encore (réparé), les mêmes mots", isinstance(m, list) and m == ml,
+         f"{str(m)[:80]} / {str(ml)[:80]}")
 
 shutil.rmtree(d, ignore_errors=True)
 print("le catalogue et la vibration : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))

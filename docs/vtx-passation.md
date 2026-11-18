@@ -1,12 +1,12 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (18 novembre 2026, après la 0.62b)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (18 novembre 2026, après la 0.62c)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
 
 ## 1. Où en est le projet
 
-- Le dépôt : `github.com/Franckarm/vercintorix1.0`, branche **`vtx-0.6`** (dernier état : la 0.62b, vérifiée
-  « Tout est conforme » ; `essai-0.62b.bat` déposé chez le créateur, son essai à lire dans `essai-0.62b.log`). Œuvre protégée (`AUTEUR.md`) : rien hors de ses
+- Le dépôt : `github.com/Franckarm/vercintorix1.0`, branche **`vtx-0.6`** (dernier état : la 0.62c, vérifiée
+  « Tout est conforme » ; `essai-0.62c.bat` déposé chez le créateur, son essai à lire dans `essai-0.62c.log`). Œuvre protégée (`AUTEUR.md`) : rien hors de ses
   dossiers et des artefacts privés.
 - Les machines : **Lugus** (SPU-128, la machine de vtx), **Dunon** (SPU-64, le même travail à 64 bits), Senos (SPU-32,
   gelé). Ogmios l'atelier, Belenos le moteur graphique, Taranis la carte graphique, Gobannos le forgeron (les .exe, écrit
@@ -42,8 +42,9 @@ avec le créateur.*
 - `outils/avant_apres.py 128 ANCIEN_vtx128.py` (ou 64) : tous les programmes, ancien contre nouveau compilateur.
 - `outils/lecteur.sh` (0.62) : recompile le lecteur d'ADN en vtx (`chimie/adn.vtx`) et l'embarque dans Lugus
   (`vtx-rs/lecteur_adn.mots`) ; à lancer après toute retouche du lecteur.
-- `bibliotheque/catalogue.vtxcat` est gardé dans le dépôt : le refaire (`lugus cataloguer bibliotheque`) après toute
-  retouche d'un module de la bibliothèque (sinon `importer empreinte` le refuse, l'empreinte ayant changé).
+- Le cube du catalogue de `bibliotheque/` (`cube128-1-392.cub`, son anti-cube, son ombre, et `catalogue.vtxcat`) est
+  gardé dans le dépôt : le refaire (`lugus cataloguer bibliotheque`) après toute retouche d'un module de la
+  bibliothèque (sinon `importer empreinte` le refuse, l'empreinte ayant changé).
 - `outils/tests_du_paquet.txt` : les tests mis dans le paquet ; la commande du paquet : `git archive --format=zip
   --prefix=vtx-0.6/ -o vtx-0.63.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
   spu128 chimie natif gobannos exemples exemples128 exemples64 bibliotheque docs` suivi de ces tests et de
@@ -55,17 +56,21 @@ avec le créateur.*
   la lancer en arrière-plan et la suivre.
 - La machine : `cd vtx-rs && cargo build --release` (binaires `lugus`, `vtx64`, `vtx`, `atelier`).
 
-## 4. Ce qui reste, à décider avec le créateur (après la 0.62b)
+## 4. Ce qui reste, à décider avec le créateur (après la 0.62c)
 
-La 0.62 a fait le chantier du 17 (`vtx-reactions.md` §66) ; la 0.62b a corrigé `sortie(f)` dans vtxc128 et renommé
-`melanger` de `bibliotheque/cube.vtx` en `brasser` (le choix du créateur).
+La 0.62 a fait le catalogue et la vibration (§66) ; la 0.62b a corrigé `sortie(f)` et renommé `melanger` de cube.vtx en
+`brasser` ; la 0.62c a rangé le catalogue **dans un cube** (§67) : `cube128-1-392.cub` avec son anti-cube et son ombre,
+`catalogue.vtxcat` n'en étant que la lecture hex. Le compilateur choisit le cube (le service 29), puis lit le module à
+l'adresse que donne l'empreinte ; Dunon lit le même cube en deux moitiés.
 
-**Rectifié par le créateur le 18** : les empreintes des modules se gardent **dans un cube, pas dans l'ADN**. Le chemin,
-pour toute chose (`vtx-carnet.md`, « Le chemin, pour toute chose ») : cube (une place et un contenu) → hex (l'écriture,
-sans coût) → ADN (ce qui dure : les mots, les cubes sur disque avec anti-cube et ombre) → ARN (ce qui agit) → programme,
-et retour. Le catalogue d'aujourd'hui (`catalogue.vtxcat`) n'est que l'écriture hex, sans cube derrière : à proposer, le
-cube du catalogue (chaque module et chaque molécule un point, rangés selon Fischer dans les colonnes couleur-matière,
-sur disque avec anti-cube et ombre), dont `catalogue.vtxcat` devient la lecture hex.
+**Le chemin, et le rôle de chaque étape (à garder en tête)** : le cube est l'ensemble des adresses ; le hex est une
+adresse, une case du cube, l'écriture exacte du point ; l'ADN est ce qui dure (les mots, les cubes sur disque avec
+anti-cube et ombre) ; l'ARN est ce qui agit ; tout passe par le cube d'abord, l'ADN vient après
+(`vtx-carnet.md`, « Le chemin, pour toute chose »).
+
+**Direction donnée par le créateur le 18** : la mémoire du cube doit servir à l'IA, pour éviter la coupure entre deux
+conversations. À concevoir avec lui : un cube de mémoire du projet (les fondements, les décisions, ce qui est fait), que
+le lecteur en vtx sait lire et qu'une IA interroge au début de son travail.
 
 Puis : l'accroche (deux codes qui partagent des vibrations) ; un catalogue écrit aussi par Dunon (il lui faut les
 fonctions passées en valeur).

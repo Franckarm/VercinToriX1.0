@@ -4857,7 +4857,7 @@ fonction cat_mettre_nombre(lg, x) {
 }
 
 // le module (le nom i de la liste) : lu, son empreinte, ses fonctions, sa sonde compilée, ses molécules ; écrit dans c
-fonction cat_module(c, i) {
+fonction cat_module(i) {
     soit nd = @2[C_ND + i];
     soit nl = @2[C_NL + i];
     soit f = ouvrir_lecture(cat_texte(nd, nl));
@@ -4998,13 +4998,6 @@ fonction cat_module(c, i) {
     @2[TEXTE + 1 + lg] = '}';
     @2[TEXTE + 2 + lg] = 10;
     @2[TEXTE] = lg + 2;
-    ecrire_t(c, "module|");
-    pour q10 dans 0..nl {
-        ecrire_car(c, @2[C_NOMS + nd + q10]);
-    }
-    ecrire_car(c, '|');
-    vib_hexa(c, h);
-    ecrire_car(c, '|');
     soit g = __service(27, ETAGE2 + TEXTE);
     si g == 18446744073709551615 {
         refuser("cette machine n'a pas de compilateur pour le lecteur");
@@ -5015,7 +5008,7 @@ fonction cat_module(c, i) {
     avancer();
     si car_courant() == '!' {
         fermer(g);
-        ecrire_t(c, "-\n");
+        cat_placer(nd, nl, h, 1, 0);
         retour;
     }
     soit nm = 0;
@@ -5081,20 +5074,197 @@ fonction cat_module(c, i) {
             trouvees = trouvees + 1;
         }
     }
-    ecrire_u64(c, trouvees);
-    ecrire_car(c, 10);
-    pour k5 dans 0..nf {
-        soit m2 = @2[C_FM + k5];
-        si m2 != 0 {
-            ecrire_t(c, "molecule|");
-            cat_ecrire_nom(c, k5);
-            ecrire_car(c, '|');
-            ecrire_u64(c, @2[V_MAS + m2 - 1]);
-            ecrire_car(c, '|');
-            ecrire_u64(c, @2[V_NAT + m2 - 1]);
-            ecrire_car(c, '|');
-            vib_hexa(c, @2[V_VIB + m2 - 1]);
-            ecrire_car(c, 10);
+    cat_placer(nd, nl, h, 0, nf);
+}
+
+// --------------------------------------------------------------------------------------------- le cube du catalogue (0.62c)
+// Le catalogue est d'abord un cube (l'ADN : ce qui dure), cube128-1-392.cub, rangé avec son anti-cube et son ombre ; son
+// hex, catalogue.vtxcat, est écrit en lisant ce cube. Les places, comme placer_catalogue() de chimie/adn.py, au bit près
+// (docs/vtx-reactions.md, section 67) : les modules dans la moitié basse (la colonne #RRGG vient de l'empreinte, la
+// chaîne descend la colonne à la Fischer : la tête, le nom, chaque molécule et son nom) ; l'index des vibrations dans la
+// moitié haute (la place vient de la vibration, le point dit où est la molécule) ; la coiffe en #FFFFFE, la queue en
+// #FFFFFF.
+constante CP_FR = 392;
+constante CP_ETAT = 189200000;   // 0 : les points posés ; 1 : leur somme ; 2 : leur ou exclusif ; 3 : modules ; 4 : molécules
+constante CP_TMP = 189300000;    // un nom, à poser
+constante CP_ZONE = 8388608;     // #800000 : l'index des vibrations
+constante CP_TAILLE = 8323072;   // #800000 à #FEFFFF
+constante CP_QUEUE = 6220694031187574785;   // « VTXCAT », version 1
+
+fonction cp_place(c, t) {
+    retour (((c + t / 256) & 32767) << 8) | (t & 255);
+}
+
+fonction cp_vide(p) {
+    soit w: entier_128 = @[cube_adresse(1, CP_FR, p)];
+    retour haut(w) == 0 && bas(w) == 0;
+}
+
+fonction cp_haut(p) {
+    soit w: entier_128 = @[cube_adresse(1, CP_FR, p)];
+    retour haut(w);
+}
+
+fonction cp_bas(p) {
+    soit w: entier_128 = @[cube_adresse(1, CP_FR, p)];
+    retour bas(w);
+}
+
+fonction cp_poser(p, hi, lo) {
+    @[cube_adresse(1, CP_FR, p)] = entier_128_de(hi, lo);
+    soit g = brasser(brasser(brasser(p) ^ hi) ^ lo);
+    @2[CP_ETAT] = @2[CP_ETAT] + 1;
+    @2[CP_ETAT + 1] = @2[CP_ETAT + 1] + g;
+    @2[CP_ETAT + 2] = @2[CP_ETAT + 2] ^ g;
+}
+
+// le nom CP_TMP[0..ln], quatre caractères par point (un par voie), à partir du rang t de la chaîne c ; rend le rang suivant
+fonction cp_poser_nom(c, t, ln) {
+    soit np = (ln + 3) / 4;
+    pour i dans 0..np {
+        soit q0 = 0;
+        soit q1 = 0;
+        soit q2 = 0;
+        soit q3 = 0;
+        si 4 * i < ln { q0 = @2[CP_TMP + 4 * i]; }
+        si 4 * i + 1 < ln { q1 = @2[CP_TMP + 4 * i + 1]; }
+        si 4 * i + 2 < ln { q2 = @2[CP_TMP + 4 * i + 2]; }
+        si 4 * i + 3 < ln { q3 = @2[CP_TMP + 4 * i + 3]; }
+        cp_poser(cp_place(c, t + i), (q0 << 32) | q1, (q2 << 32) | q3);
+    }
+    retour t + np;
+}
+
+fonction cp_court(n) {
+    si n > 255 {
+        retour 255;
+    }
+    retour n;
+}
+
+// le module (son nom dans C_NOMS[nd..nd + nl], son empreinte h) et ses molécules (C_FM, C_FD, C_FL ; V_MAS, V_NAT, V_VIB)
+// posés dans le cube ; sans : il ne se compile pas seul
+fonction cat_placer(nd, nl, h, sans, nf) {
+    soit lnom = cp_court(nl);
+    soit lg = 1 + (lnom + 3) / 4;
+    soit nmol = 0;
+    si sans == 0 {
+        pour k dans 0..nf {
+            si @2[C_FM + k] != 0 {
+                lg = lg + 1 + (cp_court(@2[C_FL + k]) + 3) / 4;
+                nmol = nmol + 1;
+            }
+        }
+    }
+    soit kc = (lg + 255) / 256;
+    soit c = brasser(h) & 255;
+    soit libre = 0;
+    tantque libre == 0 {
+        libre = 1;
+        pour j dans 0..kc {
+            si cp_vide(((c + j) & 32767) << 8) == 0 {
+                libre = 0;
+            }
+        }
+        si libre == 0 {
+            c = (c + 1) & 32767;
+        }
+    }
+    soit n = nmol;
+    si sans == 1 {
+        n = 16777215;
+    }
+    cp_poser(cp_place(c, 0), h, (77 << 56) | (n << 32) | (lnom << 16) | kc);
+    pour i dans 0..lnom {
+        @2[CP_TMP + i] = @2[C_NOMS + nd + i];
+    }
+    soit t = cp_poser_nom(c, 1, lnom);
+    si sans == 0 {
+        pour k2 dans 0..nf {
+            soit m2 = @2[C_FM + k2];
+            si m2 != 0 {
+                soit lf = cp_court(@2[C_FL + k2]);
+                soit v = @2[V_VIB + m2 - 1];
+                soit tm = t;
+                cp_poser(cp_place(c, t), v, ((@2[V_MAS + m2 - 1] & 16777215) << 32) | ((@2[V_NAT + m2 - 1] & 16777215) << 8) | lf);
+                pour i2 dans 0..lf {
+                    @2[CP_TMP + i2] = @2[C_MOD + @2[C_FD + k2] + i2];
+                }
+                t = cp_poser_nom(c, t + 1, lf);
+                soit sv = brasser(v) & 65535;
+                tantque cp_vide(CP_ZONE + sv) == 0 {
+                    sv = (sv + 1) % CP_TAILLE;
+                }
+                cp_poser(CP_ZONE + sv, v, (c << 32) | tm);
+                @2[CP_ETAT + 4] = @2[CP_ETAT + 4] + 1;
+            }
+        }
+    }
+    @2[CP_ETAT + 3] = @2[CP_ETAT + 3] + 1;
+}
+
+// n caractères de la chaîne c, à partir du rang t, écrits dans le canal f
+fonction cp_ecrire_nom(f, c, t, n) {
+    pour i dans 0..n {
+        soit p = cp_place(c, t + i / 4);
+        soit x = 0;
+        soit v = 3 - i % 4;
+        si v == 3 { x = cp_haut(p) >> 32; }
+        si v == 2 { x = cp_haut(p) & 4294967295; }
+        si v == 1 { x = cp_bas(p) >> 32; }
+        si v == 0 { x = cp_bas(p) & 4294967295; }
+        ecrire_car(f, x);
+    }
+}
+
+// la lecture hex du cube : catalogue.vtxcat
+fonction cp_ecrire_hex(f) {
+    ecrire_t(f, "VTXCAT02\n// le catalogue des modules de ce dossier, lu dans son cube (cube128-1-392.cub, avec son anti-cube et son ombre ; lugus cataloguer) : cube|étage|fréquence|coiffe|modules|molécules, puis module|nom|empreinte|molécules|place et molecule|nom|masse|atomes|vibration|place\n");
+    ecrire_t(f, "cube|1|392|");
+    vib_hexa(f, cp_bas(16777214));
+    ecrire_car(f, '|');
+    ecrire_u64(f, cp_bas(16777215) >> 32);
+    ecrire_car(f, '|');
+    ecrire_u64(f, cp_bas(16777215) & 4294967295);
+    ecrire_car(f, 10);
+    pour c dans 0..32768 {
+        soit lo = cp_bas(c << 8);
+        si ((lo >> 56) & 255) == 77 {
+            soit n = (lo >> 32) & 16777215;
+            soit ln = (lo >> 16) & 255;
+            ecrire_t(f, "module|");
+            cp_ecrire_nom(f, c, 1, ln);
+            ecrire_car(f, '|');
+            vib_hexa(f, cp_haut(c << 8));
+            ecrire_car(f, '|');
+            si n == 16777215 {
+                ecrire_car(f, '-');
+            } sinon {
+                ecrire_u64(f, n);
+            }
+            ecrire_t(f, "|#");
+            ecrire_hex(f, c << 8, 6);
+            ecrire_car(f, 10);
+            soit t = 1 + (ln + 3) / 4;
+            si n != 16777215 {
+                pour j dans 0..n {
+                    soit p = cp_place(c, t);
+                    soit lo2 = cp_bas(p);
+                    soit lf = lo2 & 255;
+                    ecrire_t(f, "molecule|");
+                    cp_ecrire_nom(f, c, t + 1, lf);
+                    ecrire_car(f, '|');
+                    ecrire_u64(f, (lo2 >> 32) & 16777215);
+                    ecrire_car(f, '|');
+                    ecrire_u64(f, (lo2 >> 8) & 16777215);
+                    ecrire_car(f, '|');
+                    vib_hexa(f, cp_haut(p));
+                    ecrire_t(f, "|#");
+                    ecrire_hex(f, p, 6);
+                    ecrire_car(f, 10);
+                    t = t + 1 + (lf + 3) / 4;
+                }
+            }
         }
     }
 }
@@ -5122,34 +5292,55 @@ fonction cataloguer() {
         }
     }
     fermer(l);
-    soit fin = "catalogue.vtxcat";
-    @2[C_TX] = longueur(fin);
-    pour i dans 0..longueur(fin) {
-        @2[C_TX + 1 + i] = car(fin, i);
+    // le cube d'abord : vidé (sans relire le disque), puis chaque module et chaque molécule à sa place
+    jeter_cube(1, CP_FR);
+    pour e dans 0..5 {
+        @2[CP_ETAT + e] = 0;
     }
-    soit c = ouvrir_ecriture(ETAGE2 + C_TX);
-    ecrire_t(c, "VTXCAT01\n// le catalogue des modules de ce dossier (lugus cataloguer) : module|nom|empreinte|molécules, puis molecule|nom|masse|atomes|vibration\n");
     soit modules = 0;
     pour i2 dans 0..k {
         soit d = @2[C_ND + i2];
         soit lg = @2[C_NL + i2];
         si lg >= 4 && @2[C_NOMS + d + lg - 4] == '.' && @2[C_NOMS + d + lg - 3] == 'v' && @2[C_NOMS + d + lg - 2] == 't'
                 && @2[C_NOMS + d + lg - 1] == 'x' && @2[G + G_ERR] == 0 {
-            cat_module(c, i2);
+            cat_module(i2);
             modules = modules + 1;
         }
     }
-    fermer(c);
-    si @2[G + G_ERR] == 0 {
-        ecrire_t(1, "le catalogue : ");
-        ecrire_u64(1, k);
-        ecrire_t(1, " noms dans le dossier -> catalogue.vtxcat\n");
+    si @2[G + G_ERR] != 0 {
+        retour;
     }
+    // la coiffe (ce que portent tous les points) et la queue, puis le cube rangé avec son anti-cube et son ombre
+    soit npts = @2[CP_ETAT];
+    soit coiffe = brasser(brasser(brasser(npts) ^ @2[CP_ETAT + 1]) ^ @2[CP_ETAT + 2]);
+    @[cube_adresse(1, CP_FR, 16777214)] = entier_128_de(0, coiffe);
+    @[cube_adresse(1, CP_FR, 16777215)] = entier_128_de(CP_QUEUE, (@2[CP_ETAT + 3] << 32) | @2[CP_ETAT + 4]);
+    soit pages = ranger_cube(1, CP_FR);
+    si pages == 18446744073709551615 {
+        refuser("le cube du catalogue ne s'écrit pas");
+        retour;
+    }
+    // le hex, lu dans le cube
+    soit fin = "catalogue.vtxcat";
+    @2[C_TX] = longueur(fin);
+    pour i dans 0..longueur(fin) {
+        @2[C_TX + 1 + i] = car(fin, i);
+    }
+    soit c = ouvrir_ecriture(ETAGE2 + C_TX);
+    cp_ecrire_hex(c);
+    fermer(c);
+    ecrire_t(1, "le catalogue : ");
+    ecrire_u64(1, @2[CP_ETAT + 3]);
+    ecrire_t(1, " module(s), ");
+    ecrire_u64(1, @2[CP_ETAT + 4]);
+    ecrire_t(1, " molécule(s) -> cube128-1-392.cub (");
+    ecrire_u64(1, pages);
+    ecrire_t(1, " page(s), avec son anti-cube et son ombre), lu en hex dans catalogue.vtxcat\n");
 }
 
 // --------------------------------------------------------------------------------------------- d'où vient une molécule (0.62)
-// La carte lit les catalogues (ceux que « importer empreinte » lit : le dossier du programme, bibliotheque/,
-// ../bibliotheque/) ; une molécule dont la vibration est celle d'une molécule d'un module catalogué vient de ce module ;
+// La carte lit les cubes des catalogues (0.62c ; ceux des dossiers que « importer empreinte » lit : le dossier du
+// programme, bibliotheque/, ../bibliotheque/ ; chacun choisi par son chemin, service 29) ; une molécule dont la vibration est celle d'une molécule d'un module catalogué vient de ce module ;
 // une molécule qui porte le nom d'une molécule d'un module, mais pas sa vibration, a été retouchée (ou compilée
 // autrement) : elle se voit.
 constante K_ETAT = 190000000;    // 0 : les modules ; 1 : les molécules ; 2 : les caractères ; 3 : 1, des catalogues lus
@@ -5161,107 +5352,102 @@ constante K_VIB = 192000000;     // les molécules : la vibration, le module, le
 constante K_VM = 192100000;
 constante K_FD = 192200000;
 constante K_FL = 192300000;
-constante K_LIGNE = 193000000;   // la ligne lue, et le début de chacun de ses champs
-constante K_CH = 193100000;
+constante K_FRS = 193000000;     // les cubes de catalogue lus : leur fréquence (le nombre dans K_ETAT + 5)
+constante K_PL = 193100000;      // chaque molécule : sa place dans son cube, la fréquence de ce cube
+constante K_FQ = 193200000;
 
-fonction k_hexa(d, f) {
-    soit x = 0;
-    pour i dans d..f {
-        soit c = @2[K_LIGNE + i];
-        soit v = 16;
-        si c >= 48 && c <= 57 { v = c - 48; }
-        si c >= 97 && c <= 102 { v = c - 87; }
-        si c >= 65 && c <= 70 { v = c - 55; }
-        si v == 16 {
-            retour 0;
-        }
-        x = (x << 4) | v;
-    }
-    retour x;
+fonction cq_haut(fr, p) {
+    soit w: entier_128 = @[cube_adresse(1, fr, p)];
+    retour haut(w);
 }
 
-fonction k_champ_est(k, t) {
-    soit d = @2[K_CH + k];
-    si @2[K_CH + k + 1] - 1 - d != longueur(t) {
-        retour 0;
-    }
-    pour i dans 0..longueur(t) {
-        si @2[K_LIGNE + d + i] != car(t, i) {
-            retour 0;
-        }
-    }
-    retour 1;
+fonction cq_bas(fr, p) {
+    soit w: entier_128 = @[cube_adresse(1, fr, p)];
+    retour bas(w);
 }
 
-// le champ k de la ligne, recopié dans K_CAR : rend son début
-fonction k_garder(k) {
-    soit n = @2[K_ETAT + 2];
-    soit d = @2[K_CH + k];
-    pour i dans d..@2[K_CH + k + 1] - 1 {
-        @2[K_CAR + n] = @2[K_LIGNE + i];
-        n = n + 1;
-    }
-    @2[K_ETAT + 2] = n;
-    retour n - (@2[K_CH + k + 1] - 1 - d);
-}
-
-fonction k_ligne(n) {
-    // les champs (séparés par « | ») de la ligne K_LIGNE[0..n]
-    soit nc = 1;
-    @2[K_CH] = 0;
+// n caractères de la chaîne c du cube fr, à partir du rang t, recopiés dans K_CAR : rend leur début
+fonction cq_garder(fr, c, t, n) {
+    soit d = @2[K_ETAT + 2];
     pour i dans 0..n {
-        si @2[K_LIGNE + i] == '|' && nc < 8 {
-            @2[K_CH + nc] = i + 1;
-            nc = nc + 1;
-        }
+        soit p = cp_place(c, t + i / 4);
+        soit v = 3 - i % 4;
+        soit x = 0;
+        si v == 3 { x = cq_haut(fr, p) >> 32; }
+        si v == 2 { x = cq_haut(fr, p) & 4294967295; }
+        si v == 1 { x = cq_bas(fr, p) >> 32; }
+        si v == 0 { x = cq_bas(fr, p) & 4294967295; }
+        @2[K_CAR + d + i] = x;
     }
-    @2[K_CH + nc] = n + 1;
-    si nc >= 3 && k_champ_est(0, "module") && @2[K_CH + 2] - 1 > @2[K_CH + 1] && @2[K_ETAT] < 99999 {
-        soit m = @2[K_ETAT];
-        @2[K_MD + m] = k_garder(1);
-        @2[K_ML + m] = @2[K_CH + 2] - 1 - @2[K_CH + 1];
-        @2[K_ME + m] = k_hexa(@2[K_CH + 2], @2[K_CH + 3] - 1);
-        @2[K_ETAT] = m + 1;
-    }
-    si nc >= 5 && k_champ_est(0, "molecule") && @2[K_ETAT] > 0 && @2[K_ETAT + 1] < 99999 {
-        soit j = @2[K_ETAT + 1];
-        @2[K_VIB + j] = k_hexa(@2[K_CH + 4], @2[K_CH + 5] - 1);
-        @2[K_VM + j] = @2[K_ETAT] - 1;
-        @2[K_FD + j] = k_garder(1);
-        @2[K_FL + j] = @2[K_CH + 2] - 1 - @2[K_CH + 1];
-        @2[K_ETAT + 1] = j + 1;
-    }
+    @2[K_ETAT + 2] = d + n;
+    retour d;
 }
 
-fonction lire_catalogue(chemin) {
-    si chemin == 0 {
-        retour;
-    }
-    soit f = ouvrir_lecture(chemin);
-    si f == 18446744073709551615 {
+// 0.62c : le cube du catalogue de fréquence fr (accordé par la machine : ses pages viennent du disque, réparées s'il le
+// faut par son anti-cube et son ombre) ; ses modules et ses molécules, lus le long de leurs colonnes
+fonction lire_catalogue_cube(fr) {
+    si cq_haut(fr, 16777215) != CP_QUEUE {
         retour;
     }
     @2[K_ETAT + 3] = 1;
-    soit n = 0;
-    tantque fin_de(f) == 0 {
-        soit x = lire_car(f);
-        si x == 10 {
-            k_ligne(n);
-            n = 0;
-        } sinon si x != 13 && n < 99000 {
-            @2[K_LIGNE + n] = x;
-            n = n + 1;
+    @2[K_FRS + @2[K_ETAT + 5]] = fr;
+    @2[K_ETAT + 5] = @2[K_ETAT + 5] + 1;
+    pour c dans 0..32768 {
+        soit lo = cq_bas(fr, c << 8);
+        si ((lo >> 56) & 255) == 77 && @2[K_ETAT] < 99999 {
+            soit m = @2[K_ETAT];
+            soit n = (lo >> 32) & 16777215;
+            soit ln = (lo >> 16) & 255;
+            @2[K_ME + m] = cq_haut(fr, c << 8);
+            @2[K_ML + m] = ln;
+            @2[K_MD + m] = cq_garder(fr, c, 1, ln);
+            @2[K_ETAT] = m + 1;
+            soit t = 1 + (ln + 3) / 4;
+            si n != 16777215 {
+                pour j dans 0..n {
+                    soit p = cp_place(c, t);
+                    soit lf = cq_bas(fr, p) & 255;
+                    soit q = @2[K_ETAT + 1];
+                    si q < 99999 {
+                        @2[K_VIB + q] = cq_haut(fr, p);
+                        @2[K_VM + q] = m;
+                        @2[K_FL + q] = lf;
+                        @2[K_FD + q] = cq_garder(fr, c, t + 1, lf);
+                        @2[K_PL + q] = p;
+                        @2[K_FQ + q] = fr;
+                        @2[K_ETAT + 1] = q + 1;
+                    }
+                    t = t + 1 + (lf + 3) / 4;
+                }
+            }
         }
     }
-    k_ligne(n);
-    fermer(f);
 }
 
-// la molécule du catalogue qui a cette vibration (plus un ; 0 : aucune)
+fonction choisir_catalogue(chemin) {
+    soit g = __service(29, chemin);
+    si g <= 16777215 {
+        lire_catalogue_cube(g);
+    }
+}
+
+// la molécule du catalogue qui a cette vibration (plus un ; 0 : aucune) : cherchée par l'index des vibrations de chaque
+// cube (la place vient de la vibration), puis retrouvée à sa place dans la colonne de son module
 fonction k_trouver(v) {
-    pour j dans 0..@2[K_ETAT + 1] {
-        si @2[K_VIB + j] == v {
-            retour j + 1;
+    pour i dans 0..@2[K_ETAT + 5] {
+        soit fr = @2[K_FRS + i];
+        soit s = brasser(v) & 65535;
+        tantque cq_haut(fr, CP_ZONE + s) != 0 || cq_bas(fr, CP_ZONE + s) != 0 {
+            si cq_haut(fr, CP_ZONE + s) == v {
+                soit lo = cq_bas(fr, CP_ZONE + s);
+                soit p = cp_place(lo >> 32, lo & 4294967295);
+                pour j dans 0..@2[K_ETAT + 1] {
+                    si @2[K_PL + j] == p && @2[K_FQ + j] == fr {
+                        retour j + 1;
+                    }
+                }
+            }
+            s = (s + 1) % CP_TAILLE;
         }
     }
     retour 0;
@@ -5423,9 +5609,21 @@ fonction principal() {
         @2[K_ETAT + 1] = 0;
         @2[K_ETAT + 2] = 0;
         @2[K_ETAT + 3] = 0;
-        lire_catalogue(lire_chemin(CHEMIN4));
-        lire_catalogue(lire_chemin(CHEMIN5));
-        lire_catalogue(lire_chemin(CHEMIN6));
+        @2[K_ETAT + 5] = 0;
+        soit fc1 = lire_chemin(CHEMIN4);
+        soit fc2 = lire_chemin(CHEMIN5);
+        soit fc3 = lire_chemin(CHEMIN6);
+        // chaque cube choisi par son chemin (service 29 : la machine l'accorde, réparé au besoin), puis lu à ses adresses
+        si fc1 != 0 && longueur(fc1) > 0 { choisir_catalogue(fc1); }
+        si fc2 != 0 && longueur(fc2) > 0 { choisir_catalogue(fc2); }
+        si fc3 != 0 && longueur(fc3) > 0 { choisir_catalogue(fc3); }
+        soit dc = etat_disque();
+        selon dc {
+            faux { ecrire_t(1, "un cube de catalogue a été réparé par son anti-cube et son ombre (sa copie ; relancez lugus cataloguer)\n"); }
+            variable { ecrire_t(1, "les copies d'un cube de catalogue se contredisent, au-delà de son ombre\n"); }
+            vrai { }
+            inconnu { }
+        }
         soit e5 = montrer_carte(entree, tout);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);

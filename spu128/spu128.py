@@ -63,6 +63,14 @@ NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
 
 
+
+def nom_de_cube128(chemin):
+    """0.62c : (étage, fréquence) d'un cube rangé de Lugus d'après son nom (cube128-ÉTAGE-FRÉQUENCE.cub), ou None"""
+    m = re.fullmatch(r"cube128-([123])-([0-9]{1,8})\.cub", os.path.basename(chemin))
+    if not m or int(m.group(2)) > 0xFFFFFF:
+        return None
+    return int(m.group(1)), int(m.group(2))
+
 def lister_dossier(chemin):
     """0.62 : les noms d'un dossier, triés, un par ligne, un sous-dossier terminé par « / » (le service 28) ; None :
     absent ; False : le nom existe mais n'est pas un dossier"""
@@ -407,6 +415,39 @@ class CPU:
             return self.jeter_cube(arg)
         if code in (16, 17, 20, 21, 23):
             return 0
+        if code == 29:
+            # 0.62c : choisir un cube par son chemin (avec son anti-cube et son ombre) : accordé dans son étage à la
+            # première fréquence libre depuis la sienne ; rend cette fréquence (M128 - 1 : pas un nom de cube ; M128 :
+            # absent ou illisible), comme Lugus en Rust
+            nom = self.texte_memoire(arg)
+            chemin = os.path.join(self.dossier, nom) if self.dossier is not None else nom
+            ef = nom_de_cube128(chemin)
+            if ef is None:
+                return M128 - 1
+            b, etat = lire_double(chemin, ENTETE)
+            noter_etat(self, etat)
+            if b is None or b[:8] != ENTETE:
+                return M128
+            e, g = ef
+            prises = {j >> 24 for (ee, j) in self.mem if ee == e}
+            while g in prises:
+                g = (g + 1) & 0xFFFFFF
+            for p in range(256):
+                self.pages_vues.add((e, (g << 8) | p))
+            taille = 4 + 65536 * 16 + 16384
+            k = 8
+            while k + taille <= len(b):
+                p = int.from_bytes(b[k:k + 4], "little") & 255
+                base = (g << 24) | (p << 16)
+                for j in range(65536):
+                    v = int.from_bytes(b[k + 4 + 16 * j:k + 20 + 16 * j], "little")
+                    q = (b[k + 4 + 65536 * 16 + j // 4] >> (2 * (j % 4))) & 3
+                    if v:
+                        self.mem[(e, base | j)] = v
+                    if q:
+                        self.brin[(e, base | j)] = q
+                k += taille
+            return g
         if code == 28:
             # 0.62 : lister un dossier (le nom depuis le dossier de la machine ; vide : lui-même) ; ses noms se lisent
             # comme un fichier ; absent : M128 (inconnu) ; pas un dossier : M128 - 1 (faux)

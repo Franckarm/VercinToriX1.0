@@ -390,6 +390,51 @@ impl Spu64 {
             16..=21 | 23 => Ok(crate::hote::service(code, arg, u64::MAX).unwrap_or(0)),
             // 25 : le compte des instructions jouées (instructions() du prélude), comme sur Lugus
             25 => Ok(self.pas),
+            29 => {
+                // 0.62c : choisir un cube de Lugus par son chemin, comme Lugus : chaque point de 128 bits en deux mots
+                // de 64 bits, à la même adresse, la moitié basse à la fréquence rendue g, la haute à g + 1 (les deux
+                // libres) ; u64::MAX - 1 : pas un nom de cube ; u64::MAX : absent ou illisible
+                let nom = self.texte_memoire(arg);
+                let chemin = match &self.dossier {
+                    Some(d) => d.join(&nom),
+                    None => std::path::PathBuf::from(&nom),
+                };
+                let (e, f) = match crate::hote::nom_de_cube128(&chemin) {
+                    Some(x) => x,
+                    None => return Ok(u64::MAX - 1),
+                };
+                let entete: &[u8; 8] = b"VTXCU128";
+                let b = match crate::miroir::lire_double(&chemin, entete) {
+                    Some(b) if b.len() >= 8 && &b[..8] == entete => b,
+                    _ => return Ok(u64::MAX),
+                };
+                let mut g = f;
+                while self.pages[e].keys().any(|k| (*k >> 8) == g || (*k >> 8) == g + 1) {
+                    g = (g + 1) & 0xFF_FFFF;
+                }
+                for p in 0..256u64 {
+                    self.pages_vues.insert((e, (g << 8) | p));
+                    self.pages_vues.insert((e, ((g + 1) << 8) | p));
+                }
+                let taille = 4 + PAGE * 16 + PAGE / 4;
+                let mut k = 8;
+                while k + taille <= b.len() {
+                    let p = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u64 & 255;
+                    let mut bas = vec![0u64; PAGE].into_boxed_slice();
+                    let mut haut = vec![0u64; PAGE].into_boxed_slice();
+                    for j in 0..PAGE {
+                        let w = u128::from_le_bytes(b[k + 4 + 16 * j..k + 20 + 16 * j].try_into().unwrap());
+                        bas[j] = w as u64;
+                        haut[j] = (w >> 64) as u64;
+                    }
+                    self.pages[e].insert((g << 8) | p, Box::new(Page { mots: bas, brins: None }));
+                    self.pages[e].insert(((g + 1) << 8) | p, Box::new(Page { mots: haut, brins: None }));
+                    k += taille;
+                }
+                self.cache[e] = (u64::MAX, std::ptr::null_mut());
+                self.cache_code = (u64::MAX, std::ptr::null_mut());
+                Ok(g)
+            }
             28 => {
                 // 0.62 : lister un dossier, comme Lugus (hote::lister_dossier) : u64::MAX inconnu, u64::MAX - 1 faux
                 let d = match &self.dossier {

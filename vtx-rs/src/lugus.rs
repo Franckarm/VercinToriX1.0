@@ -673,11 +673,11 @@ fn main() {
     }
 }
 
-/// 0.62 : les catalogues d'un dossier, dans l'ordre où « importer empreinte » les lit (le dossier, bibliotheque/,
-/// ../bibliotheque/), ceux qui existent, chacun une fois
+/// 0.62c : les cubes des catalogues d'un dossier (cube128-1-392.cub), dans l'ordre où « importer empreinte » les lit
+/// (le dossier, bibliotheque/, ../bibliotheque/), ceux qui existent, chacun une fois
 fn catalogues_de(d: &std::path::Path) -> Vec<String> {
     let mut r: Vec<String> = Vec::new();
-    for c in ["catalogue.vtxcat", "bibliotheque/catalogue.vtxcat", "../bibliotheque/catalogue.vtxcat"] {
+    for c in ["cube128-1-392.cub", "bibliotheque/cube128-1-392.cub", "../bibliotheque/cube128-1-392.cub"] {
         if let Ok(x) = std::fs::canonicalize(d.join(c)) {
             let x = x.to_string_lossy().trim_start_matches(r"\\?\").to_string();
             if !r.contains(&x) {

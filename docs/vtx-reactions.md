@@ -3099,3 +3099,49 @@ fréquence de vibration (l'idée de la section 11).
   molécule) → hex (l'écriture : ce que `catalogue.vtxcat` montre aujourd'hui sans cube derrière) → ADN (le cube sur
   disque, avec son anti-cube et son ombre) → ARN (le compilateur qui importe). Puis l'accroche (deux codes qui partagent
   des vibrations).
+
+## 67. Le cube du catalogue (18 novembre, 0.62c)
+
+**Rectifié par le créateur le 18** : les empreintes des modules se gardent dans un cube, pas dans l'ADN ni dans un
+texte, et suivent le chemin. Ses mots : « le Hex est une adresse, le cube est l'ensemble de plusieurs adresses ; le
+compilateur doit choisir le cube pour ensuite trouver les informations à l'intérieur avec l'adresse ». Le catalogue de la
+0.62 (`catalogue.vtxcat`) n'était qu'un texte, sans cube derrière : c'est corrigé.
+
+- **Le cube du catalogue** : `cube128-1-392.cub` dans le dossier catalogué (la fréquence 392, le sol ; la 440 est celle du
+  cube d'un programme), rangé avec son anti-cube et son ombre, comme tout cube sur disque. **La place dit ce qu'est le
+  point** :
+  - les modules dans la moitié basse (RR de 00 à 7F) : la colonne #RRGG d'un module vient de son empreinte (la première
+    page d'abord, la colonne suivante si elle est prise : comme le cube des noms de vtxc64) ; sa chaîne descend la
+    colonne, à la Fischer : la tête (l'empreinte, le nombre de molécules, la longueur du nom, les colonnes qu'elle prend),
+    le nom (quatre caractères par point, un par voie de 32 bits), puis chaque molécule (sa vibration, sa masse, ses
+    atomes, la longueur de son nom) suivie de son nom ; un grand module continue sur la colonne suivante ;
+  - l'index des vibrations dans la moitié haute (#800000 à #FEFFFF, la page #80 d'abord) : la place vient de la
+    vibration ; le point dit la vibration et où est la molécule (la colonne de son module, son rang dans la chaîne) ;
+  - la coiffe en #FFFFFE (ce que portent tous les points), la queue en #FFFFFF (« VTXCAT », les modules, les molécules).
+- **Le chemin** : `lugus cataloguer` (le lecteur d'ADN en vtx) range d'abord le cube (l'ADN, ce qui dure), puis le
+  **lit** pour écrire `catalogue.vtxcat`, qui en est la lecture hex : chaque ligne donne la place de son point.
+  `python3 chimie/adn.py cataloguer` fait le même cube, le même anti-cube, la même ombre et le même hex, octet pour octet
+  (par l'écrivain de la machine Python).
+- **Choisir un cube par son chemin : le service 29**, sur Lugus et sur Dunon (en Rust et en Python). Le cube nommé
+  `cube128-ÉTAGE-FRÉQUENCE.cub` est relu avec son anti-cube et son ombre (réparé s'il le faut, l'état noté pour
+  `etat_disque`), et accordé dans son étage à la première fréquence libre depuis la sienne ; il rend cette fréquence (pas
+  un nom de cube : faux ; absent : inconnu). **Dunon lit le même cube en deux moitiés** (le choix du créateur) : chaque
+  point de 128 bits devient deux mots de 64 bits, à la même adresse, la moitié basse à la fréquence rendue, la haute à la
+  suivante. Un seul cube, un seul ADN.
+- **`importer empreinte "…";`** : les quatre compilateurs **choisissent le cube** de chaque dossier (celui du dossier, puis
+  de `bibliotheque/`), puis **lisent à l'adresse** que donne l'empreinte (sa colonne, la suivante si elle est à un
+  autre) : la tête dit l'empreinte, le nom suit. vtxc128 et vtxc64 passent par le service 29 ; vtx128.py et vtx64.py
+  lisent le même fichier avec le même miroir. Le texte `catalogue.vtxcat` n'est plus lu par les compilateurs.
+- **La carte** choisit les mêmes cubes (service 29) et cherche chaque molécule **par l'index des vibrations** : une
+  lecture à une place, pas un parcours. Un cube abîmé est réparé à la lecture, et la carte le dit.
+- **Vérifié** (`tests/test_catalogue.py`, 31 contrôles) : le cube, son anti-cube, son ombre et son hex, octet pour octet
+  entre le lecteur en vtx et la référence ; le service 29 sur les quatre machines ; importer par le cube, les mêmes mots
+  par les quatre compilateurs ; un octet changé dans le cube : réparé, et tout se lit encore.
+- **Les limites, honnêtement** : un catalogue de la 0.62 (le texte seul) n'est plus lu, il faut refaire `lugus
+  cataloguer` ; le cube d'un petit catalogue prend trois pages de 65 536 points (3,2 Mo, et autant pour l'anti-cube) :
+  c'est le prix d'un cube rangé par pages ; Dunon ne lit pas les brins d'un cube de Lugus (le catalogue n'en a pas).
+- **Une direction donnée par le créateur** : que la mémoire du cube serve à l'IA, pour éviter la coupure entre deux
+  conversations (ce qu'une IA a compris d'un projet se perd quand la conversation change). Le cube du catalogue en est
+  le premier pas : une mémoire rangée par la place, durable, vérifiée par son anti-cube et son ombre, qu'on interroge
+  par une adresse. La suite à concevoir : un cube de mémoire du projet (ses décisions, ses fondements, ce qui est fait),
+  que le lecteur en vtx sait lire et qu'une IA interroge au début de son travail.
