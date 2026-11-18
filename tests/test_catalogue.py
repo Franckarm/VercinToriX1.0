@@ -182,6 +182,15 @@ verifier("la carte : une molécule retouchée depuis le catalogue se voit (sa vi
          code == 0 and "retouchée, ou compilée autrement" in texte, texte[:400])
 ecrire(os.path.join(bib, "codon.vtx"), brut)
 
+# --------------------------------------------------------------------------------------------- 6. sortie(f)
+# vtxc128 ne finissait pas de compiler « sortie(f) » d'une fonction écrite seule (est_sig prenait « son propre type »
+# pour un type de fonction) : corrigé en 0.62
+f_sortie = ecrire(os.path.join(d, "sortie", "sortie_f.vtx"),
+                  "fonction f(x) { retour 2 * x; }\nfonction principal() {\n    sortie(f);\n}\n")
+m, ml = mots_ou_refus("lugus", f_sortie)
+verifier("sortie(f) d'une fonction écrite seule : vtxc128 le compile, les mêmes mots que vtx128.py",
+         isinstance(m, list) and m == ml, f"{str(m)[:80]} / {str(ml)[:80]}")
+
 shutil.rmtree(d, ignore_errors=True)
 print("le catalogue et la vibration : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))
 sys.exit(1 if echecs else 0)

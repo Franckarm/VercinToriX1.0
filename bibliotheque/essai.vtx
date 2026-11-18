@@ -13,7 +13,7 @@ fonction principal() {
         sortie(poser_voie(m, 1, x));
         sortie(gris(m));
         sortie(distance2(m, x));
-        sortie(melanger(m, x, 64));
+        sortie(brasser(m, x, 64));
         sortie(centrer(m));
         sortie(adn_voie(m));
         sortie(adn_etat(m));

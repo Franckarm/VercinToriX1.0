@@ -1,6 +1,13 @@
 VTXCAT01
 // le catalogue des modules de ce dossier (lugus cataloguer) : module|nom|empreinte|molécules, puis molecule|nom|masse|atomes|vibration
-module|adn.vtx|7469f079cc77f42f|-
+module|adn.vtx|7469f079cc77f42f|7
+molecule|adn_voie|118|10|d0952041b50eb087
+molecule|adn_etat|90|8|196e96d846e439d9
+molecule|adn_ecrire|246|19|1da1cd6616207d8c
+molecule|transcrire|106|9|e0d2a2f5fff202ba
+molecule|retrotranscrire|90|8|ce87a80115615f57
+molecule|adn_appliquer|458|32|327ca16c674096d6
+molecule|adn_executer|186|14|b894bb7d166424dd
 module|codon.vtx|3ca0e81674a433bf|27
 molecule|codon|238|18|487d04ddb40f4aa4
 molecule|lettre|174|14|67a5f0e7c9e821e1
@@ -29,7 +36,14 @@ molecule|gene_lire|142|11|b088f8b03b5cd00a
 molecule|gene_lire_ordonne|142|11|97aa37934c708fc4
 molecule|gene_plat|1076|74|08bbcf237b045f10
 molecule|gene_suspens|956|66|9d75326268fd4f5c
-module|cube.vtx|6d5120b4365319ee|-
+module|cube.vtx|49e32d22f85d3b98|7
+molecule|voie|206|16|2a23a2cf0b1e457a
+molecule|poser_voie|322|24|d073dcb0408a0b0b
+molecule|gris|642|46|4c60a4b813af15ef
+molecule|ecart|206|16|2aca2c753494ec31
+molecule|distance2|654|46|c9b586ea1e1b55a8
+molecule|brasser|850|60|4927a351bb7ca514
+molecule|centrer|1404|98|94b18f4333080cc8
 module|diamant.vtx|1513be08f91095ab|11
 molecule|__quit|146|12|22e035735e007671
 molecule|__poser_quit|338|25|7fe95e3be382208d

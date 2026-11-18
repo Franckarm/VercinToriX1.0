@@ -1557,7 +1557,9 @@ fonction type_opt_r(c: Ctx) {
 
 // ------------------------------------------------------------------------------------- les types de fonction (0.6w bis)
 fonction est_sig(t) {
-    retour t >= T_G;
+    // 0.62 : « son propre type » (-1, que demande par exemple sortie) n'est pas un type de fonction : sans cette borne,
+    // « sortie(f) » d'une fonction écrite seule lisait une signature hors des bornes et la compilation ne finissait pas
+    retour t >= T_G && t < T_G + 16777216;
 }
 
 fonction sig_de(c: Ctx, t): Liste {

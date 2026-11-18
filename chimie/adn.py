@@ -1009,8 +1009,8 @@ def appelees(lignes, fonctions):
 
 
 def sonde(nom, fonctions):
-    # « soit __vK = f; sortie(__vK); » : vtxc128 refuse encore « sortie(f) » d'une fonction écrite seule (0.62, à
-    # corriger : la compilation ne s'arrête pas)
+    # « soit __vK = f; sortie(__vK); » : la forme d'origine de la sonde (vtxc128 ne finissait pas « sortie(f) » avant la
+    # correction de est_sig, 0.62 ; la sonde est gardée telle quelle pour que les catalogues restent les mêmes)
     return (f'importer "{nom}";\nfonction principal() {{\n'
             + "".join(f"    soit __v{k} = {f};\n    sortie(__v{k});\n" for k, f in enumerate(fonctions)) + "}\n")
 

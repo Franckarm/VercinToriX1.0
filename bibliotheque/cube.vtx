@@ -32,8 +32,9 @@ fonction distance2(a, b) {
     retour s;
 }
 
-// Mélange voie par voie : t de 0 (tout a) à 256 (tout b).
-fonction melanger(a, b, t) {
+// Brassage voie par voie : t de 0 (tout a) à 256 (tout b). (0.62 : « melanger » est devenu une fonction intégrée ;
+// brasser le remplace ici. Il cache le brasser du prélude, le mélange d'un tableau, dans un programme qui importe ce module.)
+fonction brasser(a, b, t) {
     soit r = 0;
     pour v dans 0..4 {
         soit x = (voie(a, v) * (256 - t) + voie(b, v) * t) >> 8;

@@ -1,12 +1,12 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (17 novembre 2026, après la 0.62)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (18 novembre 2026, après la 0.62b)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
 
 ## 1. Où en est le projet
 
-- Le dépôt : `github.com/Franckarm/vercintorix1.0`, branche **`vtx-0.6`** (dernier état : la 0.62, vérifiée
-  « Tout est conforme » ; `essai-0.62.bat` déposé chez le créateur, son essai à lire dans `essai-0.62.log`). Œuvre protégée (`AUTEUR.md`) : rien hors de ses
+- Le dépôt : `github.com/Franckarm/vercintorix1.0`, branche **`vtx-0.6`** (dernier état : la 0.62b, vérifiée
+  « Tout est conforme » ; `essai-0.62b.bat` déposé chez le créateur, son essai à lire dans `essai-0.62b.log`). Œuvre protégée (`AUTEUR.md`) : rien hors de ses
   dossiers et des artefacts privés.
 - Les machines : **Lugus** (SPU-128, la machine de vtx), **Dunon** (SPU-64, le même travail à 64 bits), Senos (SPU-32,
   gelé). Ogmios l'atelier, Belenos le moteur graphique, Taranis la carte graphique, Gobannos le forgeron (les .exe, écrit
@@ -55,21 +55,20 @@ avec le créateur.*
   la lancer en arrière-plan et la suivre.
 - La machine : `cd vtx-rs && cargo build --release` (binaires `lugus`, `vtx64`, `vtx`, `atelier`).
 
-## 4. Ce qui reste, à décider avec le créateur (après la 0.62)
+## 4. Ce qui reste, à décider avec le créateur (après la 0.62b)
 
-La 0.62 a fait tout le chantier décidé le 17 au soir (`vtx-reactions.md` §66). En route, deux défauts trouvés, à régler
-d'abord :
+La 0.62 a fait le chantier du 17 (`vtx-reactions.md` §66) ; la 0.62b a corrigé `sortie(f)` dans vtxc128 et renommé
+`melanger` de `bibliotheque/cube.vtx` en `brasser` (le choix du créateur).
 
-1. **vtxc128 ne finit pas de compiler `sortie(f)`** quand `f` est un nom de fonction écrit seul (la mémoire grandit sans
-   fin ; vtx128.py le compile). `soit v = f; sortie(v);` et `afficher(f)` passent. La sonde du catalogue passe par une
-   variable. À trouver dans vtxc128 (la génération d'un intégré dont l'argument est un N_FREF ?).
-2. **`bibliotheque/cube.vtx` définit `melanger`**, devenu une fonction intégrée : refusé par les quatre compilateurs
-   (vtx128.py et vtx64.py l'acceptaient tant que `melanger` n'était pas appelé : c'est corrigé, ils refusent comme
-   vtxc). Avec lui, `bibliotheque/adn.vtx`, `bibliotheque/essai.vtx` et `jeu3/ennemis32.vtx`. Renommer la fonction de
-   la bibliothèque (le créateur décide), puis refaire le catalogue.
+**Rectifié par le créateur le 18** : les empreintes des modules se gardent **dans un cube, pas dans l'ADN**. Le chemin,
+pour toute chose (`vtx-carnet.md`, « Le chemin, pour toute chose ») : cube (une place et un contenu) → hex (l'écriture,
+sans coût) → ADN (ce qui dure : les mots, les cubes sur disque avec anti-cube et ombre) → ARN (ce qui agit) → programme,
+et retour. Le catalogue d'aujourd'hui (`catalogue.vtxcat`) n'est que l'écriture hex, sans cube derrière : à proposer, le
+cube du catalogue (chaque module et chaque molécule un point, rangés selon Fischer dans les colonnes couleur-matière,
+sur disque avec anti-cube et ombre), dont `catalogue.vtxcat` devient la lecture hex.
 
-Puis, à proposer : garder les empreintes des modules dans l'ADN du programme (l'intron « modules ») ; l'accroche (deux
-codes qui partagent des vibrations) ; un catalogue écrit aussi par Dunon (il lui faut les fonctions passées en valeur).
+Puis : l'accroche (deux codes qui partagent des vibrations) ; un catalogue écrit aussi par Dunon (il lui faut les
+fonctions passées en valeur).
 
 Ce qui reste ouvert ailleurs, à ne pas oublier : `multiplier_ajouter` en un seul arrondi ; Dunon sans fonctions passées en
 valeur ; les broches d'Arduino (un vrai port) ; Gobannos qui se traduit lui-même, puis les cylindres dedans.

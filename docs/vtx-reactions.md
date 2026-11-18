@@ -3073,13 +3073,17 @@ fréquence de vibration (l'idée de la section 11).
   montrées sans `--tout`, et comptées en tête. La vibration est calculée à la lecture, des mots : **le format de l'ADN
   ne change pas** (tous ses tests passent tels quels) ; c'est le catalogue qui la garde.
 - **Trouvé en route, et dit** :
-  - vtxc128 ne finit pas de compiler `sortie(f)` quand `f` est un nom de fonction écrit seul (la mémoire grandit sans
-    fin) ; vtx128.py le compile. La sonde passe par `soit __vK = f; sortie(__vK);`. **À corriger.**
+  - vtxc128 ne finissait pas de compiler `sortie(f)` quand `f` est un nom de fonction écrit seul (la mémoire grandissait
+    sans fin) ; vtx128.py le compilait. **Corrigé (0.62b)** : `est_sig` prenait « son propre type » (-1, ce que demande
+    `sortie`) pour un type de fonction, et le message lisait une signature hors des bornes ; il est borné. La sonde du
+    catalogue garde sa forme (`soit __vK = f; sortie(__vK);`).
   - vtx128.py et vtx64.py acceptaient une fonction du programme qui porte le nom d'une fonction intégrée tant qu'elle
     n'était pas appelée (l'élagage l'ôtait avant le contrôle), quand vtxc la refusait : ils la refusent maintenant
     avant l'élagage, comme vtxc (les 72 programmes de Lugus et les 52 de Dunon gardent leurs mots). Conséquence, à
-    regarder : `bibliotheque/cube.vtx` définit `melanger`, devenu une fonction intégrée ; il est refusé, et avec lui
-    `bibliotheque/adn.vtx`, `bibliotheque/essai.vtx` et `jeu3/ennemis32.vtx` qui l'importent (vtxc les refusait déjà).
+    regarder : `bibliotheque/cube.vtx` définissait `melanger`, devenu une fonction intégrée. **Réglé (0.62b), choix du
+    créateur** : sa fonction s'appelle **`brasser`** (le brassage de deux points, voie par voie). Elle cache, dans un
+    programme qui importe cube.vtx, le `brasser` du prélude (le mélange d'un tableau) ; aucun de ces programmes ne s'en
+    sert. Les programmes de Senos qui importent cube.vtx gardent leurs mots ; cube.vtx est catalogué (7 molécules).
 - **Les limites, honnêtement** : une fonction recopiée en ligne partout n'a pas de molécule à elle (la carte ne peut pas
   la montrer) ; une constante de moins de 32 bits chargée par un LDI est prise pour une adresse ; les données après la
   dernière fonction forment un grand morceau ; la vibration reconnaît, elle ne prouve pas (la signature de l'ADN reste la
@@ -3090,5 +3094,8 @@ fréquence de vibration (l'idée de la section 11).
   (jusqu'au lecteur lui-même, 187 morceaux) ; le catalogue, octet pour octet ; importer par l'empreinte, les mêmes mots
   que par le chemin, sur les deux machines ; introuvable, deux modules, un module retouché : refusés par les quatre
   compilateurs ; la carte : « vient du module », et la retouche vue.
-- **La suite** : garder les empreintes des modules dans l'ADN du programme (l'intron « modules ») ; l'accroche (deux
-  codes qui partagent des vibrations) ; corriger `sortie(f)` dans vtxc128 ; décider du sort de `bibliotheque/cube.vtx`.
+- **La suite** (rectifiée par le créateur le 18) : les empreintes des modules ne vont pas dans un intron de l'ADN, elles
+  se rangent **dans un cube**, et suivent le chemin : cube (la place et le contenu de chaque module et de chaque
+  molécule) → hex (l'écriture : ce que `catalogue.vtxcat` montre aujourd'hui sans cube derrière) → ADN (le cube sur
+  disque, avec son anti-cube et son ombre) → ARN (le compilateur qui importe). Puis l'accroche (deux codes qui partagent
+  des vibrations).
