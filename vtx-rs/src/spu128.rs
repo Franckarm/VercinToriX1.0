@@ -60,6 +60,8 @@ pub struct Spu128 {
     octets_vite: (u128, usize),
     pub dossier: Option<std::path::PathBuf>,
     pages_vues: std::collections::HashSet<(usize, u128)>,
+    /// 0.63 : le nom du cube mère (service 30) : les cubes se rangent et se relisent sous lui
+    pub mere: Option<String>,
     pub pas: u64,
     /// pour la traduction en x86-64 : le mot que natif_lire vient de lire
     pub natif_tampon: [u64; 2],
@@ -330,6 +332,7 @@ impl Spu128 {
             octets_vite: (u128::MAX, 0),
             dossier: None,
             pages_vues: std::collections::HashSet::new(),
+            mere: None,
             pas: 0,
             natif_tampon: [0, 0],
             natif_cache: [u64::MAX; 128],
@@ -392,7 +395,7 @@ impl Spu128 {
         }
         let dossier = self.dossier.clone().unwrap();
         let f = i >> 24;
-        let b = match crate::miroir::lire_double(&dossier.join(format!("cube128-{}-{}.cub", e, f)), ENTETE) {
+        let b = match crate::miroir::lire_double(&dossier.join(self.nom_fichier_cube(e, f as u64)), ENTETE) {
             Some(b) => b,
             None => return,
         };
@@ -903,6 +906,26 @@ impl Spu128 {
                 self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }
+            30 => {
+                // 0.63 : le cube mère (un nom, comme un fichier ; il n'a pas de fréquence) : ensuite ranger_cube écrit
+                // TETE-NOM-ÉTAGE-FRÉQUENCE.cub et met à jour TETE-NOM.cub (le squelette), et les pages se relisent sous
+                // ce nom. Rend l'indicatif (FNV-1a du nom) ; un nom vide : plus de cube mère (0) ; un nom refusé :
+                // tout à un moins un (faux)
+                let nom = self.texte_memoire(arg);
+                if nom.is_empty() {
+                    self.mere = None;
+                    return Ok(0);
+                }
+                if !crate::hote::nom_de_mere_valide(&nom) {
+                    return Ok(u128::MAX - 1);
+                }
+                let h = crate::hote::fnv64_texte(&nom);
+                if self.mere.as_deref() != Some(nom.as_str()) {
+                    self.mere = Some(nom);
+                    self.pages_vues.clear();
+                }
+                Ok(h as u128)
+            }
             29 => {
                 // 0.62c : choisir un cube par son chemin (cube128-ÉTAGE-FRÉQUENCE.cub, avec son anti-cube et son ombre à
                 // côté : réparé s'il le faut, l'état noté pour etat_disque) : il est accordé, dans son étage, à la
@@ -913,8 +936,11 @@ impl Spu128 {
                     Some(d) => d.join(&nom),
                     None => std::path::PathBuf::from(&nom),
                 };
-                let (e, f) = match crate::hote::nom_de_cube128(&chemin) {
-                    Some(x) => x,
+                // 0.63 : un cube simple, un sous-cube (accordé depuis sa fréquence) ou un cube mère (il n'a pas de
+                // fréquence : accordé à l'étage 1, à la plus haute fréquence libre)
+                let (e, f, mere) = match crate::hote::nom_de_cube(&chemin, "cube128") {
+                    Some(crate::hote::NomCube::Simple(e, f)) | Some(crate::hote::NomCube::Sous(_, e, f)) => (e, f, false),
+                    Some(crate::hote::NomCube::Mere(_)) => (1, 0xFF_FFFF, true),
                     None => return Ok(u128::MAX - 1),
                 };
                 let b = match crate::miroir::lire_double(&chemin, ENTETE) {
@@ -923,7 +949,7 @@ impl Spu128 {
                 };
                 let mut g = f as u128;
                 while self.pages[e].keys().any(|k| (*k >> 8) == g) {
-                    g = (g + 1) & 0xFF_FFFF;
+                    g = if mere { g.wrapping_sub(1) & 0xFF_FFFF } else { (g + 1) & 0xFF_FFFF };
                 }
                 for p in 0..256u128 {
                     self.pages_vues.insert((e, (g << 8) | p));
@@ -998,6 +1024,14 @@ impl Spu128 {
         (avant - self.pages[e].len()) as u128
     }
 
+    /// 0.63 : le fichier du cube (e, f) : TETE-NOM-e-f.cub sous un cube mère, TETE-e-f.cub sinon
+    fn nom_fichier_cube(&self, e: usize, f: u64) -> String {
+        match &self.mere {
+            Some(m) => format!("cube128-{}-{}-{}.cub", m, e, f),
+            None => format!("cube128-{}-{}.cub", e, f),
+        }
+    }
+
     fn ranger_cube(&mut self, adr: u128) -> u128 {
         let (e, i) = Self::place(adr);
         let f = i >> 24;
@@ -1023,8 +1057,14 @@ impl Spu128 {
                 None => b.extend(std::iter::repeat(0u8).take(PAGE / 4)),
             }
         }
-        if crate::miroir::ecrire_double(&d.join(format!("cube128-{}-{}.cub", e, f)), &b).is_err() {
+        if crate::miroir::ecrire_double(&d.join(self.nom_fichier_cube(e, f as u64)), &b).is_err() {
             return u128::MAX;
+        }
+        // 0.63 : sous un cube mère, son squelette est mis à jour (le descripteur du sous-cube à l'adresse #f)
+        if let Some(m) = self.mere.clone() {
+            if crate::hote::mere_mettre_a_jour(&d, "cube128", &m, e, f as u64, cles.len() as u64, &b, true).is_err() {
+                return u128::MAX;
+            }
         }
         cles.len() as u128
     }

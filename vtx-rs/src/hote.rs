@@ -306,19 +306,159 @@ pub fn lister_dossier(chemin: &std::path::Path) -> Result<String, bool> {
     Ok(noms.iter().map(|n| n.clone() + "\n").collect())
 }
 
-/// 0.62c : l'étage et la fréquence d'un cube rangé de Lugus, d'après son nom (cube128-ÉTAGE-FRÉQUENCE.cub, l'étage de 1
-/// à 3) ; le service 29 de Lugus et de Dunon
-pub fn nom_de_cube128(chemin: &std::path::Path) -> Option<(usize, u64)> {
+/// 0.63 : un nom de cube mère : de 1 à 64 caractères (lettres, chiffres, « _ », « - », les lettres accentuées du
+/// latin), sans « - » au bord, et dont le dernier morceau après un « - » n'est pas un nombre (sinon le nom d'un sous-cube,
+/// NOM-ÉTAGE-FRÉQUENCE, serait ambigu)
+pub fn car_de_mere_valide(x: char) -> bool {
+    x.is_ascii_alphanumeric() || x == '_' || x == '-' || (('\u{C0}'..='\u{FF}').contains(&x) && x != '\u{D7}' && x != '\u{F7}')
+}
+
+pub fn nom_de_mere_valide(n: &str) -> bool {
+    let c: Vec<char> = n.chars().collect();
+    if c.is_empty() || c.len() > 64 || c[0] == '-' || c[c.len() - 1] == '-' {
+        return false;
+    }
+    if !c.iter().all(|&x| car_de_mere_valide(x)) {
+        return false;
+    }
+    !n.rsplit('-').next().unwrap().chars().all(|x| x.is_ascii_digit())
+}
+
+/// FNV-1a de 64 bits sur des caractères (l'indicatif d'un cube mère, l'empreinte d'un module)
+pub fn fnv64_texte(t: &str) -> u64 {
+    let mut h: u64 = 0xCBF29CE484222325;
+    for c in t.chars() {
+        h = (h ^ c as u64).wrapping_mul(0x100000001B3);
+    }
+    h
+}
+
+pub fn fnv64_octets(b: &[u8]) -> u64 {
+    let mut h: u64 = 0xCBF29CE484222325;
+    for &c in b {
+        h = (h ^ c as u64).wrapping_mul(0x100000001B3);
+    }
+    h
+}
+
+/// le brassage des coiffes de cube (splitmix64, comme brasser() du lecteur d'ADN)
+pub fn brasser64(z0: u64) -> u64 {
+    let mut z = z0.wrapping_add(0x9E3779B97F4A7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+    z ^ (z >> 31)
+}
+
+/// 0.62c, 0.63 : ce qu'un nom de fichier de cube désigne (TETE : « cube128 » ou « cube64 ») : un cube simple
+/// (TETE-ÉTAGE-FRÉQUENCE.cub), un sous-cube d'un cube mère (TETE-NOM-ÉTAGE-FRÉQUENCE.cub) ou un cube mère (TETE-NOM.cub)
+#[derive(Debug, Clone, PartialEq)]
+pub enum NomCube {
+    Simple(usize, u64),
+    Sous(String, usize, u64),
+    Mere(String),
+}
+
+pub fn nom_de_cube(chemin: &std::path::Path, tete: &str) -> Option<NomCube> {
     let n = chemin.file_name()?.to_str()?;
-    let r = n.strip_prefix("cube128-")?.strip_suffix(".cub")?;
-    let (e, f) = r.split_once('-')?;
-    if e.len() != 1 || f.is_empty() || !f.bytes().all(|c| c.is_ascii_digit()) || f.len() > 8 {
-        return None;
+    let r = n.strip_prefix(tete)?.strip_prefix('-')?.strip_suffix(".cub")?;
+    let ef = |e: &str, f: &str| -> Option<(usize, u64)> {
+        if e.len() != 1 || f.is_empty() || f.len() > 8 || !f.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let e: usize = e.parse().ok()?;
+        let f: u64 = f.parse().ok()?;
+        if !(1..=3).contains(&e) || f > 0xFF_FFFF {
+            return None;
+        }
+        Some((e, f))
+    };
+    let morceaux: Vec<&str> = r.rsplitn(3, '-').collect();
+    if morceaux.len() == 2 {
+        if let Some((e, f)) = ef(morceaux[1], morceaux[0]) {
+            return Some(NomCube::Simple(e, f));
+        }
     }
-    let e: usize = e.parse().ok()?;
-    let f: u64 = f.parse().ok()?;
-    if !(1..=3).contains(&e) || f > 0xFF_FFFF {
-        return None;
+    if morceaux.len() == 3 {
+        if let Some((e, f)) = ef(morceaux[1], morceaux[0]) {
+            if nom_de_mere_valide(morceaux[2]) {
+                return Some(NomCube::Sous(morceaux[2].to_string(), e, f));
+            }
+            return None;
+        }
     }
-    Some((e, f))
+    if nom_de_mere_valide(r) {
+        return Some(NomCube::Mere(r.to_string()));
+    }
+    None
+}
+
+/// 0.63 : le cube mère NOM (TETE-NOM.cub, avec son anti-cube et son ombre) mis à jour après le rangement du sous-cube
+/// (e, f) : à l'adresse #f, son descripteur (pour chaque étage e de 1 à 3, 10 bits à 10·(e−1) : présent, 512, plus
+/// ses pages ; 11 bits de coiffe à 30 + 11·(e−1) : l'empreinte FNV-1a de son fichier, ses 11 bits bas) ; sur Lugus, la
+/// moitié haute du point porte l'indicatif (FNV-1a du nom) ; la queue en #FFFFFF (l'indicatif en haut sur Lugus, le
+/// nombre de sous-cubes), la coiffe en #FFFFFE (le brassage de tous les descripteurs). Aucune ancienne version n'est
+/// gardée. large : Lugus (points de 128 bits), sinon Dunon (64)
+pub fn mere_mettre_a_jour(dossier: &std::path::Path, tete: &str, nom: &str, e: usize, f: u64, pages: u64,
+                          fichier: &[u8], large: bool) -> std::io::Result<()> {
+    let entete: &[u8; 8] = if large { b"VTXCU128" } else { b"VTXCUB64" };
+    let ws = if large { 16 } else { 8 };
+    let taille = 4 + 65536 * ws + 16384;
+    let chemin = dossier.join(format!("{}-{}.cub", tete, nom));
+    let mut points: std::collections::BTreeMap<u64, u128> = std::collections::BTreeMap::new();
+    if let Some(b) = crate::miroir::lire_double(&chemin, entete) {
+        if b.len() >= 8 && &b[..8] == entete {
+            let mut k = 8;
+            while k + taille <= b.len() {
+                let p = (u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) & 255) as u64;
+                for j in 0..65536usize {
+                    let o = k + 4 + ws * j;
+                    let v = if large {
+                        u128::from_le_bytes(b[o..o + 16].try_into().unwrap())
+                    } else {
+                        u64::from_le_bytes(b[o..o + 8].try_into().unwrap()) as u128
+                    };
+                    if v != 0 {
+                        points.insert((p << 16) | j as u64, v);
+                    }
+                }
+                k += taille;
+            }
+        }
+    }
+    points.remove(&0xFF_FFFE);
+    points.remove(&0xFF_FFFF);
+    let indicatif = fnv64_texte(nom) as u128;
+    let ancien = points.get(&f).copied().unwrap_or(0) as u64;
+    let s1 = 10 * (e as u64 - 1);
+    let s2 = 30 + 11 * (e as u64 - 1);
+    let mut lo = ancien & !(0x3FF << s1) & !(0x7FF << s2);
+    lo |= (0x200 | (pages & 0x1FF)) << s1;
+    lo |= (fnv64_octets(fichier) & 0x7FF) << s2;
+    points.insert(f, if large { (indicatif << 64) | lo as u128 } else { lo as u128 });
+    let (mut somme, mut ou) = (0u64, 0u64);
+    for (p, w) in &points {
+        let g = brasser64(brasser64(brasser64(*p) ^ (*w >> 64) as u64) ^ *w as u64);
+        somme = somme.wrapping_add(g);
+        ou ^= g;
+    }
+    let n = points.len() as u64;
+    let coiffe = brasser64(brasser64(brasser64(n) ^ somme) ^ ou);
+    points.insert(0xFF_FFFE, coiffe as u128);
+    points.insert(0xFF_FFFF, if large { (indicatif << 64) | n as u128 } else { n as u128 });
+    let mut sortie: Vec<u8> = entete.to_vec();
+    let mut pages_de: Vec<u64> = points.keys().map(|p| p >> 16).collect();
+    pages_de.dedup();
+    for pg in pages_de {
+        sortie.extend_from_slice(&(pg as u32).to_le_bytes());
+        for j in 0..65536u64 {
+            let v = points.get(&((pg << 16) | j)).copied().unwrap_or(0);
+            if large {
+                sortie.extend_from_slice(&v.to_le_bytes());
+            } else {
+                sortie.extend_from_slice(&(v as u64).to_le_bytes());
+            }
+        }
+        sortie.extend(std::iter::repeat(0u8).take(16384));
+    }
+    crate::miroir::ecrire_double(&chemin, &sortie)
 }

@@ -3565,6 +3565,13 @@ fonction etat_disque(): logique {
 fonction jeter_cube(etage, f) {
     retour __service(13, cube_adresse(etage, f, 0));
 }
+fonction cube_mere(nom: texte) {
+    // 0.63 : le cube mère du programme (un nom, comme un fichier ; il n'a pas de fréquence) : ensuite ranger_cube écrit
+    // le sous-cube NOM-ÉTAGE-FRÉQUENCE et met à jour le cube mère NOM (son squelette : à l'adresse de chaque fréquence,
+    // le sous-cube qu'elle porte), et les pages se relisent sous ce nom ; deux programmes ont chacun toutes leurs
+    // fréquences. Rend l'indicatif (l'empreinte du nom) ; un nom vide : plus de cube mère ; un nom refusé : faux
+    retour __service(30, nom);
+}
 fonction parler(t) {
     soit c = ouvrir_ecriture("voix:");
     si c != 18446744073709551615 {

@@ -593,7 +593,7 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 
 ## 11. Feuille de route
 
-*Mise à jour le 18 novembre 2026, après la 0.62c (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
+*Mise à jour le 18 novembre 2026, après la 0.63 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
 
 1. **Les lectures** : `supposons x parmi [a, b, c] { … } retenir r;` est fait (0.6s : écarter, noter, le verdict à
    quatre valeurs ; 0.6t : `exige` écarte de lui-même, la carte dit « suppose » ; 0.6u : `retenir r alors { … }`, l'action du
@@ -619,8 +619,12 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    `importer empreinte "…";`, le catalogue `lugus cataloguer`, lister un dossier, la vibration de chaque molécule et la
    carte qui dit d'où elle vient) ; **le cube du catalogue** (fait, 0.62c : les empreintes rangées dans un cube, pas dans
    l'ADN ; le compilateur choisit le cube, puis lit à l'adresse ; le service 29, Dunon en deux moitiés).
-   **Direction donnée par le créateur (18 novembre)** : la mémoire du cube doit servir à l'IA, pour éviter la coupure
-   entre deux conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
+   **Les cubes mères** (fait, 0.63 : un cube mère nommé comme un fichier, sans fréquence, le squelette du programme ;
+   ses sous-cubes à leurs fréquences, le nom pour indicatif ; `cube_mere(nom)`, le service 30 ; `lugus cube` range
+   sous le cube mère du programme). **Avant l'IA, finir vtx** (le créateur, 18 novembre) : l'autonomie (Gobannos :
+   les fichiers, les services, se traduire lui-même, puis vtxc128 en .exe), la paillasse et Ogmios, la forge, Belenos et
+   Taranis, Gobatix. **Direction pour après** : la mémoire du cube doit servir à l'IA, pour éviter la coupure entre deux
+   conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
 5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine

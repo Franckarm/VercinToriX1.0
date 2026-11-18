@@ -3145,3 +3145,38 @@ compilateur doit choisir le cube pour ensuite trouver les informations à l'int�
   le premier pas : une mémoire rangée par la place, durable, vérifiée par son anti-cube et son ombre, qu'on interroge
   par une adresse. La suite à concevoir : un cube de mémoire du projet (ses décisions, ses fondements, ce qui est fait),
   que le lecteur en vtx sait lire et qu'une IA interroge au début de son travail.
+
+## 68. Les cubes mères (18 novembre, 0.63)
+
+**Décidé par le créateur le 18** : les programmes vont bâtir leurs cubes, et les fréquences seules ne suffisent pas
+(la 440, celle de `lugus cube`, était la même pour tous les programmes d'un dossier : le second écrasait le premier).
+Pas d'anciennes versions gardées. Un cube pour archiver les autres, oui, mais sans fréquence à lui, « sinon on aura une
+limite de nouveau programme » : **comme pour un fichier, un nom de cube mère, et les sous-cubes archivés avec une
+fréquence et un indicatif lié au nom**.
+
+- **Le cube mère** : `cube128-NOM.cub` (Dunon : `cube64-NOM.cub`), avec son anti-cube et son ombre, comme tout cube sur
+  disque. Il n'a pas de fréquence. C'est le squelette du programme : **à l'adresse #F, la place même de la fréquence**, le
+  descripteur du sous-cube de fréquence F (pour chaque étage de 1 à 3 : présent, ses pages, onze bits de coiffe, celle
+  de son fichier). Sur Lugus, la moitié haute de chaque point porte l'indicatif (l'empreinte FNV-1a du nom). La queue
+  (#FFFFFF) dit l'indicatif et le nombre de sous-cubes ; la coiffe (#FFFFFE) brasse tous les descripteurs.
+- **Les sous-cubes** : `cube128-NOM-ÉTAGE-FRÉQUENCE.cub` : le nom est leur indicatif. Chaque programme a toutes les
+  fréquences à lui, et le nombre de programmes n'a pas de limite. Un sous-cube rangé remplace le précédent.
+- **Dans le langage** : `cube_mere("labyrinthe")` (le service 30, sur Lugus et Dunon, en Rust et en Python). Ensuite,
+  `ranger_cube` écrit le sous-cube et met le cube mère à jour, et la machine relit les pages sous ce nom. Il rend
+  l'indicatif ; un nom vide : plus de cube mère ; un nom refusé : faux. Un nom : de 1 à 64 caractères (lettres,
+  chiffres, `_`, `-`, les lettres accentuées du latin), sans `-` au bord, et dont le dernier morceau après un `-` n'est
+  pas un nombre (sinon `jeu-2` serait lu comme un sous-cube). Sans cube mère, rien ne change : les programmes écrits
+  gardent leurs fichiers et leurs mots.
+- **Le service 29** choisit aussi un sous-cube ou un cube mère par son chemin (un cube mère est accordé à la plus haute
+  fréquence libre de l'étage 1, le temps de le lire). Sur Dunon, il accorde aussi ses propres cubes (`cube64-…`), tels
+  quels.
+- **Le chemin** : `lugus cube PROG.adn [FRÉQUENCE]` range le programme dans `cube128-PROG-1-FRÉQUENCE.cub`, sous le cube
+  mère `cube128-PROG.cub` (le nom du fichier du programme, ses caractères refusés changés en `_`). Il se relance par son
+  sous-cube (`lugus cube128-PROG-1-440.cub`) ou par son cube mère (`lugus cube128-PROG.cub` : son programme est dans le
+  sous-cube 1-440). Les anciens cubes simples (`cube128-1-F.cub`) se lisent toujours.
+- **Vérifié** (`tests/test_cube_mere.py`, 16 contrôles) : le cube mère et ses sous-cubes, les mêmes fichiers sur Lugus et
+  Dunon, en Rust et en Python, octet pour octet ; les mêmes mots par les deux compilateurs ; le squelette lu par le
+  service 29 ; les noms refusés ; deux programmes du même dossier, chacun sa fréquence 440, sans se gêner ; le chemin,
+  rangé sous le cube mère et relancé par lui. `tests/test_adn_deux_sens.py` suit les nouveaux noms.
+- **La suite** : le .exe qui embarque les cubes de son programme (le cube mère dit lesquels) ; Gobannos, les fichiers et
+  les services.

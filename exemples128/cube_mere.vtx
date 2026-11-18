@@ -1,0 +1,20 @@
+// machine : lugus
+// 0.63 : le cube mère d'un programme. Il est nommé comme un fichier (cube128-labyrinthe.cub) et n'a pas de fréquence ;
+// ses sous-cubes portent son nom (cube128-labyrinthe-1-440.cub, cube128-labyrinthe-1-7.cub) : un autre programme du
+// même dossier peut avoir lui aussi sa fréquence 440 sans rien écraser. Lancé deux fois : la seconde relit ce que la
+// première a rangé.
+fonction principal() {
+    cube_mere("labyrinthe");
+    si @[cube_adresse(1, 440, 0)] == 0 {
+        afficher("première fois : je range la salle (440) et le trésor (7)");
+        @[cube_adresse(1, 440, 0)] = 12;
+        @[cube_adresse(1, 7, 3)] = 1000;
+        afficher("pages rangées :", ranger_cube(1, 440), ranger_cube(1, 7));
+    } sinon {
+        afficher("relu sous le cube mère : la salle", @[cube_adresse(1, 440, 0)], ", le trésor", @[cube_adresse(1, 7, 3)]);
+    }
+    // le squelette : le cube mère choisi par son chemin, lu à l'adresse de chaque fréquence
+    soit g = __service(29, "cube128-labyrinthe.cub");
+    soit q: entier_128 = @[cube_adresse(1, g, 16777215)];
+    afficher("le cube mère porte", bas(q), "sous-cubes");
+}

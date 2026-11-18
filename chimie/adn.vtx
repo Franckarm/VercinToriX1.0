@@ -2201,7 +2201,38 @@ fonction nombre_dans(t, i) {
     retour x;
 }
 
-// le cube nommé « cube128-ÉTAGE-FRÉQUENCE.cub » : l'étage dans G_SDEB, la fréquence rendue (4294967295 : pas ce nom)
+// 0.63 : un nom (les caractères chemin[d..f]) en texte, dans NOMC ; « 0, 0 » : le texte vide
+constante NOMC = 189500000;
+fonction texte_tranche(chemin, d, f) {
+    @2[NOMC] = f - d;
+    pour i dans d..f {
+        @2[NOMC + 1 + i - d] = car(chemin, i);
+    }
+    retour ETAGE2 + NOMC;
+}
+
+// la fréquence écrite en chemin[d..f] (de 1 à 8 chiffres, au plus 16 777 215), ou 4294967295
+fonction frequence_tranche(chemin, d, f) {
+    si f <= d || f - d > 8 {
+        retour 4294967295;
+    }
+    soit x = 0;
+    pour i dans d..f {
+        soit c = car(chemin, i);
+        si c < 48 || c > 57 {
+            retour 4294967295;
+        }
+        x = x * 10 + c - 48;
+    }
+    si x > 16777215 {
+        retour 4294967295;
+    }
+    retour x;
+}
+
+// le cube nommé : « cube128-ÉTAGE-FRÉQUENCE.cub » (un cube simple), « cube128-NOM-ÉTAGE-FRÉQUENCE.cub » (un sous-cube
+// du cube mère NOM, 0.63) ou « cube128-NOM.cub » (le cube mère : le programme est dans son sous-cube 1-440) ; le cube
+// mère est donné à la machine (service 30) ; l'étage dans G_SDEB, la fréquence rendue (4294967295 : pas un de ces noms)
 fonction cube_du_nom(chemin) {
     soit n = longueur(chemin);
     soit d = 0;
@@ -2216,15 +2247,50 @@ fonction cube_du_nom(chemin) {
             retour 4294967295;
         }
     }
-    soit e = nombre_dans(chemin, d + 8);
-    si e == 4294967295 || e < 1 || e > 3 {
+    si finit_par_texte(chemin, ".cub") == 0 || n < d + 13 {
         retour 4294967295;
     }
-    soit j = @2[G + G_SFIN];
-    si j >= n || car(chemin, j) != '-' {
+    soit a = d + 8;
+    soit z = n - 4;
+    // les deux derniers « - » du nom
+    soit j2 = 0;
+    soit j1 = 0;
+    pour i2 dans a..z {
+        si car(chemin, i2) == '-' {
+            j1 = j2;
+            j2 = i2 + 1;
+        }
+    }
+    soit e = 0;
+    soit fr = 4294967295;
+    soit nom_d = 0;
+    soit nom_f = 0;
+    si j2 != 0 {
+        soit debut_e = a;
+        si j1 != 0 {
+            debut_e = j1;
+        }
+        soit ce = car(chemin, debut_e);
+        si j2 - 1 == debut_e + 1 && ce >= 49 && ce <= 51 {
+            fr = frequence_tranche(chemin, j2, z);
+            e = ce - 48;
+            si j1 != 0 {
+                nom_d = a;
+                nom_f = j1 - 1;
+            }
+        }
+    }
+    si fr == 4294967295 {
+        // le cube mère : son programme est dans le sous-cube 1-440
+        nom_d = a;
+        nom_f = z;
+        e = 1;
+        fr = 440;
+    }
+    soit r = __service(30, texte_tranche(chemin, nom_d, nom_f));
+    si r == 18446744073709551614 {
         retour 4294967295;
     }
-    soit fr = nombre_dans(chemin, j + 1);
     @2[G + G_SDEB] = e;
     retour fr;
 }
@@ -2235,7 +2301,7 @@ fonction cube_du_nom(chemin) {
 fonction lire_cube(chemin) {
     soit fr = cube_du_nom(chemin);
     si fr == 4294967295 {
-        refuser("un cube se nomme cube128-ÉTAGE-FRÉQUENCE.cub");
+        refuser("un cube se nomme cube128-ÉTAGE-FRÉQUENCE.cub, cube128-NOM-ÉTAGE-FRÉQUENCE.cub ou cube128-NOM.cub (son cube mère)");
         retour E_INCONNU;
     }
     soit e = @2[G + G_SDEB];
@@ -2280,11 +2346,23 @@ fonction lire_cube(chemin) {
     retour etat;
 }
 
-fonction ecrire_cube(fr) {
+fonction ecrire_cube(fr, nm) {
     soit n = @2[G + G_N];
     si n > 16777214 {
         refuser("trop de mots pour un cube");
         retour;
+    }
+    // 0.63 : le cube du programme est un sous-cube de son cube mère (le nom du programme) : les fréquences ne sont plus
+    // partagées entre programmes
+    soit avec_mere = nm != 0 && longueur(nm) > 0;
+    si avec_mere {
+        si __service(30, nm) == 18446744073709551614 {
+            refuser("ce nom ne peut pas nommer un cube mère");
+            retour;
+        }
+    } sinon {
+        @2[NOMC] = 0;
+        __service(30, ETAGE2 + NOMC);
     }
     // le cube est d'abord vidé (sans relire le disque), puis chaque mot va à sa place
     jeter_cube(1, fr);
@@ -2304,9 +2382,19 @@ fonction ecrire_cube(fr) {
     ecrire_hex(1, n - 1, 6);
     ecrire_t(1, " de l'étage 1, la coiffe en #FFFFFE, la queue en #FFFFFF, ");
     ecrire_u64(1, pages);
-    ecrire_t(1, " page(s) -> cube128-1-");
-    ecrire_u64(1, fr);
-    ecrire_t(1, ".cub, avec son anti-cube et son ombre\n");
+    si avec_mere {
+        ecrire_t(1, " page(s) -> cube128-");
+        ecrire_t(1, nm);
+        ecrire_t(1, "-1-");
+        ecrire_u64(1, fr);
+        ecrire_t(1, ".cub, avec son anti-cube et son ombre, sous le cube mère cube128-");
+        ecrire_t(1, nm);
+        ecrire_t(1, ".cub\n");
+    } sinon {
+        ecrire_t(1, " page(s) -> cube128-1-");
+        ecrire_u64(1, fr);
+        ecrire_t(1, ".cub, avec son anti-cube et son ombre\n");
+    }
 }
 
 // un brin, quel qu'il soit (selon son nom) : des mots (.mots), un hex, un cube, un ARN, un ADN ; rend son état (un
@@ -4264,7 +4352,8 @@ fonction faire_arnc(mots, sortie, source, isotopes, compilateur, noms, ancien) {
 //   carte      BRIN [--tout]             (la carte du programme : ce qu'est chaque molécule, ce qu'elle touche, ses
 //                                         racines, ses promesses)
 //   hex        BRIN HEX
-//   cube       BRIN - [FRÉQUENCE]        (cube128-1-FRÉQUENCE.cub, dans le dossier de la machine ; 440 sinon)
+//   cube       BRIN - [FRÉQUENCE] [NOM]  (cube128-NOM-1-FRÉQUENCE.cub sous le cube mère cube128-NOM.cub, 0.63 ;
+//                                        cube128-1-FRÉQUENCE.cub sans nom ; 440 sinon)
 //   mots       BRIN MOTS                 (les mots seuls, pour les lancer)
 // La sortie : l'état du brin (2 vrai, 1 faux : réparé, 3 variable, 0 : illisible).
 // --------------------------------------------------------------------------------------------- la vibration (0.62)
@@ -5658,6 +5747,7 @@ fonction principal() {
     }
     si verbe != 0 && (texte_egal(verbe, "hex") || texte_egal(verbe, "cube") || texte_egal(verbe, "mots")) {
         soit fr0 = lire_chemin(CHEMIN4);
+        soit nm0 = lire_chemin(CHEMIN5);
         soit e2 = charger(entree);
         si @2[G + G_ERR] != 0 {
             sortie(E_INCONNU);
@@ -5678,7 +5768,7 @@ fonction principal() {
             si fr > 16777215 {
                 refuser("la fréquence d'un cube est un nombre, de 0 à 16 777 215");
             } sinon {
-                ecrire_cube(fr);
+                ecrire_cube(fr, nm0);
             }
         } sinon {
             ecrire_mots_seuls(relu);

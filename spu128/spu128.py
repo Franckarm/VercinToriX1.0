@@ -17,6 +17,7 @@ ici = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(ici), "spu64"))
 from qflot import Q32, Q64, Q128, vers_ieee, de_ieee  # noqa: E402
 from spu64 import ecrire_double, lire_double, noter_etat  # noqa: E402  (le miroir inversé et l'ombre)
+from spu64 import nom_de_mere_valide, fnv64_texte, nom_de_cube, mere_mettre_a_jour  # noqa: E402  (0.63)
 
 M128 = (1 << 128) - 1
 M120 = (1 << 120) - 1
@@ -63,13 +64,6 @@ NOMS = {code: nom for nom, (code, _) in OPS.items()}
 
 
 
-
-def nom_de_cube128(chemin):
-    """0.62c : (étage, fréquence) d'un cube rangé de Lugus d'après son nom (cube128-ÉTAGE-FRÉQUENCE.cub), ou None"""
-    m = re.fullmatch(r"cube128-([123])-([0-9]{1,8})\.cub", os.path.basename(chemin))
-    if not m or int(m.group(2)) > 0xFFFFFF:
-        return None
-    return int(m.group(1)), int(m.group(2))
 
 def lister_dossier(chemin):
     """0.62 : les noms d'un dossier, triés, un par ligne, un sous-dossier terminé par « / » (le service 28) ; None :
@@ -253,6 +247,7 @@ class CPU:
         self.fichiers = {}
         self.dossier = dossier         # None : ni fichiers ni cubes sur disque (corpus, tests)
         self.pages_vues = set()
+        self.mere = None              # 0.63 : le nom du cube mère (service 30)
         self.pas = 0
         self.presenter = None
 
@@ -278,7 +273,7 @@ class CPU:
             return
         self.pages_vues.add(cle)
         f = i >> 24
-        b, etat = lire_double(os.path.join(self.dossier, f"cube128-{e}-{f}.cub"), ENTETE)
+        b, etat = lire_double(os.path.join(self.dossier, self.nom_fichier_cube(e, f)), ENTETE)
         noter_etat(self, etat)
         if b is None:
             return
@@ -415,15 +410,30 @@ class CPU:
             return self.jeter_cube(arg)
         if code in (16, 17, 20, 21, 23):
             return 0
+        if code == 30:
+            # 0.63 : le cube mère (un nom, comme un fichier) : ranger_cube écrit cube128-NOM-ÉTAGE-FRÉQUENCE.cub et met à
+            # jour cube128-NOM.cub ; rend l'indicatif (FNV-1a du nom) ; vide : plus de cube mère (0) ; refusé : M128 - 1
+            nom = self.texte_memoire(arg)
+            if not nom:
+                self.mere = None
+                return 0
+            if not nom_de_mere_valide(nom):
+                return M128 - 1
+            if self.mere != nom:
+                self.mere = nom
+                self.pages_vues = set()
+            return fnv64_texte(nom)
         if code == 29:
             # 0.62c : choisir un cube par son chemin (avec son anti-cube et son ombre) : accordé dans son étage à la
             # première fréquence libre depuis la sienne ; rend cette fréquence (M128 - 1 : pas un nom de cube ; M128 :
             # absent ou illisible), comme Lugus en Rust
             nom = self.texte_memoire(arg)
             chemin = os.path.join(self.dossier, nom) if self.dossier is not None else nom
-            ef = nom_de_cube128(chemin)
-            if ef is None:
+            q = nom_de_cube(chemin, "cube128")
+            if q is None:
                 return M128 - 1
+            mere = q[0] == "mere"
+            ef = (1, 0xFFFFFF) if mere else q[-2:]
             b, etat = lire_double(chemin, ENTETE)
             noter_etat(self, etat)
             if b is None or b[:8] != ENTETE:
@@ -431,7 +441,7 @@ class CPU:
             e, g = ef
             prises = {j >> 24 for (ee, j) in self.mem if ee == e}
             while g in prises:
-                g = (g + 1) & 0xFFFFFF
+                g = (g - 1) & 0xFFFFFF if mere else (g + 1) & 0xFFFFFF
             for p in range(256):
                 self.pages_vues.add((e, (g << 8) | p))
             taille = 4 + 65536 * 16 + 16384
@@ -517,6 +527,10 @@ class CPU:
             self.pages_vues.add((e, (f << 8) | p))
         return len(pages)
 
+    def nom_fichier_cube(self, e, f):
+        """0.63 : cube128-NOM-e-f.cub sous un cube mère, cube128-e-f.cub sinon"""
+        return f"cube128-{self.mere}-{e}-{f}.cub" if self.mere is not None else f"cube128-{e}-{f}.cub"
+
     def ranger_cube(self, adr):
         e, i = self.place(adr)
         f = i >> 24
@@ -541,7 +555,10 @@ class CPU:
                     br[j // 4] |= q << (2 * (j % 4))
             h.append(bytes(br))
         try:
-            ecrire_double(os.path.join(self.dossier, f"cube128-{e}-{f}.cub"), b"".join(h))
+            ecrire_double(os.path.join(self.dossier, self.nom_fichier_cube(e, f)), b"".join(h))
+            # 0.63 : sous un cube mère, son squelette est mis à jour (le descripteur du sous-cube à l'adresse #f)
+            if self.mere is not None:
+                noter_etat(self, mere_mettre_a_jour(self.dossier, "cube128", self.mere, e, f, len(pages), b"".join(h), True))
         except OSError:
             return M128
         return len(pages)

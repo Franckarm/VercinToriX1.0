@@ -491,9 +491,11 @@ fn main() {
         } else {
             (String::new(), args.get(3).cloned().unwrap_or_default())
         };
+        // 0.63 : le cube d'un programme est un sous-cube de son cube mère, nommé comme le programme
+        let mere = if args[1] == "cube" { mere_de(&args[2]) } else { String::new() };
         let entrees = vec![machine128::chemin_absolu(&args[2]),
                            if sortie.is_empty() { String::new() } else { machine128::chemin_absolu(&sortie) },
-                           args[1].clone(), freq];
+                           args[1].clone(), freq, mere];
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[2]))).unwrap_or_else(|e| {
             eprintln!("{}", e);
             std::process::exit(1)
@@ -668,7 +670,7 @@ fn main() {
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-1-F.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]1-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
         std::process::exit(2);
     }
 }
@@ -686,4 +688,35 @@ fn catalogues_de(d: &std::path::Path) -> Vec<String> {
         }
     }
     r
+}
+
+/// 0.63 : le nom du cube mère d'un programme : celui du cube donné (sous-cube ou cube mère), sinon le nom de son fichier
+/// (sans extension), ses caractères refusés changés en « _ »
+fn mere_de(chemin: &str) -> String {
+    let p = std::path::Path::new(chemin);
+    match vtx_rs_hote_nom(p) {
+        Some(n) => return n,
+        None => {}
+    }
+    let tige = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut n: String = tige
+        .chars()
+        .map(|c| if crate::hote::car_de_mere_valide(c) { c } else { '_' })
+        .take(64)
+        .collect();
+    n = n.trim_matches('-').to_string();
+    if !crate::hote::nom_de_mere_valide(&n) {
+        n.push('_');
+    }
+    if !crate::hote::nom_de_mere_valide(&n) {
+        n = "programme".to_string();
+    }
+    n
+}
+
+fn vtx_rs_hote_nom(p: &std::path::Path) -> Option<String> {
+    match crate::hote::nom_de_cube(p, "cube128")? {
+        crate::hote::NomCube::Sous(n, _, _) | crate::hote::NomCube::Mere(n) => Some(n),
+        crate::hote::NomCube::Simple(_, _) => None,
+    }
 }

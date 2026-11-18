@@ -258,13 +258,6 @@ def noter_etat(machine, etat):
 
 
 
-def nom_de_cube128(chemin):
-    """0.62c : (étage, fréquence) d'un cube rangé de Lugus d'après son nom (cube128-ÉTAGE-FRÉQUENCE.cub), ou None"""
-    m = re.fullmatch(r"cube128-([123])-([0-9]{1,8})\.cub", os.path.basename(chemin))
-    if not m or int(m.group(2)) > 0xFFFFFF:
-        return None
-    return int(m.group(1)), int(m.group(2))
-
 def lister_dossier(chemin):
     """0.62 : les noms d'un dossier, triés, un par ligne, un sous-dossier terminé par « / » (le service 28) ; None :
     absent ; False : le nom existe mais n'est pas un dossier"""
@@ -275,6 +268,105 @@ def lister_dossier(chemin):
         return False if os.path.exists(chemin) else None
     return "".join(n + ("/" if os.path.isdir(os.path.join(chemin, n)) else "") + "\n"
                    for n in sorted(noms, key=lambda n: (n + ("/" if os.path.isdir(os.path.join(chemin, n)) else "")).encode("utf-8")))
+
+
+# ---------------------------------------------------------------------------------------------------- les cubes mères (0.63)
+def nom_de_mere_valide(n):
+    """un nom de cube mère : de 1 à 64 caractères (lettres, chiffres, « _ », « - », les lettres accentuées du latin), sans
+    « - » au bord, le dernier morceau après un « - » n'étant pas un nombre (comme Lugus en Rust, hote.rs)"""
+    if not n or len(n) > 64 or n[0] == "-" or n[-1] == "-":
+        return False
+    for c in n:
+        o = ord(c)
+        if not ((c.isascii() and c.isalnum()) or c in "_-" or (0xC0 <= o <= 0xFF and o not in (0xD7, 0xF7))):
+            return False
+    return not all(c in "0123456789" for c in n.rsplit("-", 1)[-1])
+
+
+def fnv64_texte(t):
+    h = 0xCBF29CE484222325
+    for c in t:
+        h = ((h ^ ord(c)) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def fnv64_octets(b):
+    h = 0xCBF29CE484222325
+    for c in b:
+        h = ((h ^ c) * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
+def brasser64(z):
+    z = (z + 0x9E3779B97F4A7C15) & 0xFFFFFFFFFFFFFFFF
+    z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & 0xFFFFFFFFFFFFFFFF
+    z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & 0xFFFFFFFFFFFFFFFF
+    return z ^ (z >> 31)
+
+
+def nom_de_cube(chemin, tete):
+    """ce que désigne un nom de fichier de cube : ("simple", e, f), ("sous", nom, e, f), ("mere", nom) ou None"""
+    n = os.path.basename(chemin)
+    if not n.startswith(tete + "-") or not n.endswith(".cub"):
+        return None
+    r = n[len(tete) + 1:-4]
+
+    def ef(e, f):
+        if len(e) != 1 or not f or len(f) > 8 or not all(c in "0123456789" for c in f) or e not in "123":
+            return None
+        return (int(e), int(f)) if int(f) <= 0xFFFFFF else None
+    m = r.rsplit("-", 2)
+    if len(m) == 2 and ef(m[0], m[1]):
+        return ("simple",) + ef(m[0], m[1])
+    if len(m) == 3 and ef(m[1], m[2]):
+        return ("sous", m[0]) + ef(m[1], m[2]) if nom_de_mere_valide(m[0]) else None
+    if nom_de_mere_valide(r):
+        return ("mere", r)
+    return None
+
+
+def mere_mettre_a_jour(dossier, tete, nom, e, f, pages, fichier, large):
+    """le cube mère NOM après le rangement du sous-cube (e, f), comme hote::mere_mettre_a_jour de Lugus en Rust ; rend
+    l'état de la relecture du cube mère (à noter pour etat_disque, comme Lugus en Rust le note)"""
+    entete = b"VTXCU128" if large else b"VTXCUB64"
+    ws = 16 if large else 8
+    taille = 4 + 65536 * ws + 16384
+    chemin = os.path.join(dossier, f"{tete}-{nom}.cub")
+    points = {}
+    b, etat = lire_double(chemin, entete)
+    if b is not None and b[:8] == entete:
+        k = 8
+        while k + taille <= len(b):
+            p = int.from_bytes(b[k:k + 4], "little") & 255
+            for j in range(65536):
+                v = int.from_bytes(b[k + 4 + ws * j:k + 4 + ws * j + ws], "little")
+                if v:
+                    points[(p << 16) | j] = v
+            k += taille
+    points.pop(0xFFFFFE, None)
+    points.pop(0xFFFFFF, None)
+    indicatif = fnv64_texte(nom)
+    ancien = points.get(f, 0) & 0xFFFFFFFFFFFFFFFF
+    s1, s2 = 10 * (e - 1), 30 + 11 * (e - 1)
+    lo = ancien & ~(0x3FF << s1) & ~(0x7FF << s2) & 0xFFFFFFFFFFFFFFFF
+    lo |= (0x200 | (pages & 0x1FF)) << s1
+    lo |= (fnv64_octets(fichier) & 0x7FF) << s2
+    points[f] = (indicatif << 64) | lo if large else lo
+    somme, ou = 0, 0
+    for p in sorted(points):
+        w = points[p]
+        g = brasser64(brasser64(brasser64(p) ^ (w >> 64)) ^ (w & 0xFFFFFFFFFFFFFFFF))
+        somme, ou = (somme + g) & 0xFFFFFFFFFFFFFFFF, ou ^ g
+    n = len(points)
+    points[0xFFFFFE] = brasser64(brasser64(brasser64(n) ^ somme) ^ ou)
+    points[0xFFFFFF] = (indicatif << 64) | n if large else n
+    sortie = [entete]
+    for pg in sorted({p >> 16 for p in points}):
+        sortie.append(pg.to_bytes(4, "little"))
+        sortie.append(b"".join(points.get((pg << 16) | j, 0).to_bytes(ws, "little") for j in range(65536)))
+        sortie.append(bytes(16384))
+    ecrire_double(chemin, b"".join(sortie))
+    return etat
 
 class Erreur(Exception):
     pass
@@ -397,6 +489,7 @@ class CPU:
         self.fichiers = {}
         self.dossier = dossier         # None : ni fichiers ni cubes sur disque (corpus, tests)
         self.pages_vues = set()        # (étage, page) déjà cherchées sur disque
+        self.mere = None               # 0.63 : le nom du cube mère (service 30)
         self.pas = 0
         self.presenter = None          # rappel du service 12 (la fenêtre de la toile), ou None
 
@@ -418,7 +511,7 @@ class CPU:
             return
         self.pages_vues.add(cle)
         f = i >> 24
-        chemin = os.path.join(self.dossier, f"cube64-{e}-{f}.cub")
+        chemin = os.path.join(self.dossier, self.nom_fichier_cube(e, f))
         b, etat = lire_double(chemin, b"VTXCUB64")
         noter_etat(self, etat)
         if b is None:
@@ -516,14 +609,34 @@ class CPU:
             return 1 if f is None or f[0] != "l" or f[2] >= len(f[1]) else 0
         if code == 5:
             return int.from_bytes(os.urandom(8), "little")
+        if code == 30:
+            # 0.63 : le cube mère (un nom, comme un fichier) : ranger_cube écrit cube64-NOM-ÉTAGE-FRÉQUENCE.cub et met à
+            # jour cube64-NOM.cub ; rend l'indicatif (FNV-1a du nom) ; vide : plus de cube mère (0) ; refusé : M64 - 1
+            nom = self.texte_memoire(arg)
+            if not nom:
+                self.mere = None
+                return 0
+            if not nom_de_mere_valide(nom):
+                return M64 - 1
+            if self.mere != nom:
+                self.mere = nom
+                self.pages_vues = set()
+            return fnv64_texte(nom)
         if code == 29:
             # 0.62c : choisir un cube de Lugus par son chemin : chaque point de 128 bits en deux mots, à la même adresse,
             # la moitié basse à la fréquence rendue g, la haute à g + 1 (M64 - 1 : pas un nom de cube ; M64 : absent)
             nom = self.texte_memoire(arg)
             chemin = os.path.join(self.dossier, nom) if self.dossier is not None else nom
-            ef = nom_de_cube128(chemin)
-            if ef is None:
+            q = nom_de_cube(chemin, "cube128")
+            large = q is not None
+            if q is None:
+                q = nom_de_cube(chemin, "cube64")
+            if q is None:
                 return M64 - 1
+            mere = q[0] == "mere"
+            ef = (1, 0xFFFFFF) if mere else q[-2:]
+            if not large:
+                return self.accorder_cube64(chemin, ef[0], ef[1], mere)
             b, etat = lire_double(chemin, b"VTXCU128")
             noter_etat(self, etat)
             if b is None or b[:8] != b"VTXCU128":
@@ -531,7 +644,7 @@ class CPU:
             e, g = ef
             prises = {j >> 24 for (ee, j) in self.mem if ee == e}
             while g in prises or g + 1 in prises:
-                g = (g + 1) & 0xFFFFFF
+                g = (g - 1) & 0xFFFFFF if mere else (g + 1) & 0xFFFFFF
             for p in range(256):
                 self.pages_vues.add((e, (g << 8) | p))
                 self.pages_vues.add((e, ((g + 1) << 8) | p))
@@ -619,6 +732,37 @@ class CPU:
             self.pages_vues.add((e, (f << 8) | p))
         return len(pages)
 
+    def nom_fichier_cube(self, e, f):
+        """0.63 : cube64-NOM-e-f.cub sous un cube mère, cube64-e-f.cub sinon"""
+        return f"cube64-{self.mere}-{e}-{f}.cub" if self.mere is not None else f"cube64-{e}-{f}.cub"
+
+    def accorder_cube64(self, chemin, e, f, mere):
+        """0.63 : un cube de Dunon choisi par son chemin, accordé tel quel (comme Lugus en Rust)"""
+        b, etat = lire_double(chemin, b"VTXCUB64")
+        noter_etat(self, etat)
+        if b is None or b[:8] != b"VTXCUB64":
+            return M64
+        prises = {j >> 24 for (ee, j) in self.mem if ee == e}
+        g = f
+        while g in prises:
+            g = (g - 1) & 0xFFFFFF if mere else (g + 1) & 0xFFFFFF
+        for p in range(256):
+            self.pages_vues.add((e, (g << 8) | p))
+        taille = 4 + 65536 * 8 + 16384
+        k = 8
+        while k + taille <= len(b):
+            p = int.from_bytes(b[k:k + 4], "little") & 255
+            base = (g << 24) | (p << 16)
+            for j in range(65536):
+                v = int.from_bytes(b[k + 4 + 8 * j:k + 12 + 8 * j], "little")
+                q = (b[k + 4 + 524288 + j // 4] >> (2 * (j % 4))) & 3
+                if v:
+                    self.mem[(e, base | j)] = v
+                if q:
+                    self.brin[(e, base | j)] = q
+            k += taille
+        return g
+
     def ranger_cube(self, adr):
         e, i = self.place(adr)
         f = i >> 24
@@ -643,7 +787,10 @@ class CPU:
                     br[j // 4] |= q << (2 * (j % 4))
             h.append(bytes(br))
         try:
-            ecrire_double(os.path.join(self.dossier, f"cube64-{e}-{f}.cub"), b"".join(h))
+            ecrire_double(os.path.join(self.dossier, self.nom_fichier_cube(e, f)), b"".join(h))
+            # 0.63 : sous un cube mère, son squelette est mis à jour (le descripteur du sous-cube à l'adresse #f)
+            if self.mere is not None:
+                noter_etat(self, mere_mettre_a_jour(self.dossier, "cube64", self.mere, e, f, len(pages), b"".join(h), False))
         except OSError:
             return M64
         return len(pages)

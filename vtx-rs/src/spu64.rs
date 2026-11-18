@@ -32,6 +32,8 @@ pub struct Spu64 {
     fichiers: HashMap<u64, (bool, Vec<u64>, usize, String)>,
     pub dossier: Option<std::path::PathBuf>,
     pages_vues: std::collections::HashSet<(usize, u64)>,
+    /// 0.63 : le nom du cube mère (service 30) : les cubes se rangent et se relisent sous lui
+    pub mere: Option<String>,
     pub pas: u64,
     pub presenter: Option<Box<dyn FnMut(&Spu64) -> u64>>,
     // la console du programme (canal 1) branchée ailleurs (le terminal de l'atelier, le clavier) ; sinon, texte et
@@ -66,6 +68,7 @@ impl Spu64 {
             fichiers: HashMap::new(),
             dossier: None,
             pages_vues: std::collections::HashSet::new(),
+            mere: None,
             pas: 0,
             presenter: None,
             console_ecrire: None,
@@ -98,7 +101,7 @@ impl Spu64 {
         }
         let f = i >> 24;
         // le cube et son anti-cube (miroir inversé, miroir.rs) : accordés, réparés si l'un manque
-        let b = match crate::miroir::lire_double(&dossier.join(format!("cube64-{}-{}.cub", e, f)), b"VTXCUB64") {
+        let b = match crate::miroir::lire_double(&dossier.join(self.nom_fichier_cube(e, f as u64)), b"VTXCUB64") {
             Some(b) => b,
             None => return,
         };
@@ -390,6 +393,26 @@ impl Spu64 {
             16..=21 | 23 => Ok(crate::hote::service(code, arg, u64::MAX).unwrap_or(0)),
             // 25 : le compte des instructions jouées (instructions() du prélude), comme sur Lugus
             25 => Ok(self.pas),
+            30 => {
+                // 0.63 : le cube mère (un nom, comme un fichier ; il n'a pas de fréquence) : ensuite ranger_cube écrit
+                // TETE-NOM-ÉTAGE-FRÉQUENCE.cub et met à jour TETE-NOM.cub (le squelette), et les pages se relisent sous
+                // ce nom. Rend l'indicatif (FNV-1a du nom) ; un nom vide : plus de cube mère (0) ; un nom refusé :
+                // tout à un moins un (faux)
+                let nom = self.texte_memoire(arg);
+                if nom.is_empty() {
+                    self.mere = None;
+                    return Ok(0);
+                }
+                if !crate::hote::nom_de_mere_valide(&nom) {
+                    return Ok(u64::MAX - 1);
+                }
+                let h = crate::hote::fnv64_texte(&nom);
+                if self.mere.as_deref() != Some(nom.as_str()) {
+                    self.mere = Some(nom);
+                    self.pages_vues.clear();
+                }
+                Ok(h as u64)
+            }
             29 => {
                 // 0.62c : choisir un cube de Lugus par son chemin, comme Lugus : chaque point de 128 bits en deux mots
                 // de 64 bits, à la même adresse, la moitié basse à la fréquence rendue g, la haute à g + 1 (les deux
@@ -399,10 +422,22 @@ impl Spu64 {
                     Some(d) => d.join(&nom),
                     None => std::path::PathBuf::from(&nom),
                 };
-                let (e, f) = match crate::hote::nom_de_cube128(&chemin) {
-                    Some(x) => x,
-                    None => return Ok(u64::MAX - 1),
+                // 0.63 : un cube de Lugus (cube128-…, en deux moitiés) ou de Dunon (cube64-…, tel quel) ; simple, sous-cube
+                // ou cube mère (sans fréquence : accordé à l'étage 1, à la plus haute fréquence libre)
+                let (quoi, large) = match crate::hote::nom_de_cube(&chemin, "cube128") {
+                    Some(q) => (q, true),
+                    None => match crate::hote::nom_de_cube(&chemin, "cube64") {
+                        Some(q) => (q, false),
+                        None => return Ok(u64::MAX - 1),
+                    },
                 };
+                let (e, f, mere) = match quoi {
+                    crate::hote::NomCube::Simple(e, f) | crate::hote::NomCube::Sous(_, e, f) => (e, f, false),
+                    crate::hote::NomCube::Mere(_) => (1, 0xFF_FFFF, true),
+                };
+                if !large {
+                    return Ok(self.accorder_cube64(&chemin, e, f, mere));
+                }
                 let entete: &[u8; 8] = b"VTXCU128";
                 let b = match crate::miroir::lire_double(&chemin, entete) {
                     Some(b) if b.len() >= 8 && &b[..8] == entete => b,
@@ -410,7 +445,7 @@ impl Spu64 {
                 };
                 let mut g = f;
                 while self.pages[e].keys().any(|k| (*k >> 8) == g || (*k >> 8) == g + 1) {
-                    g = (g + 1) & 0xFF_FFFF;
+                    g = if mere { g.wrapping_sub(1) & 0xFF_FFFF } else { (g + 1) & 0xFF_FFFF };
                 }
                 for p in 0..256u64 {
                     self.pages_vues.insert((e, (g << 8) | p));
@@ -480,6 +515,50 @@ impl Spu64 {
         (avant - self.pages[e].len()) as u64
     }
 
+    /// 0.63 : le fichier du cube (e, f) : TETE-NOM-e-f.cub sous un cube mère, TETE-e-f.cub sinon
+fn accorder_cube64(&mut self, chemin: &std::path::Path, e: usize, f: u64, mere: bool) -> u64 {
+        // 0.63 : un cube de Dunon choisi par son chemin, accordé tel quel (comme le service 29 de Lugus)
+        let b = match crate::miroir::lire_double(chemin, b"VTXCUB64") {
+            Some(b) if b.len() >= 8 && &b[..8] == b"VTXCUB64" => b,
+            _ => return u64::MAX,
+        };
+        let mut g = f;
+        while self.pages[e].keys().any(|k| (*k >> 8) == g) {
+            g = if mere { g.wrapping_sub(1) & 0xFF_FFFF } else { (g + 1) & 0xFF_FFFF };
+        }
+        for p in 0..256u64 {
+            self.pages_vues.insert((e, (g << 8) | p));
+        }
+        let taille = 4 + PAGE * 8 + PAGE / 4;
+        let mut k = 8;
+        while k + taille <= b.len() {
+            let p = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u64 & 255;
+            let mut mots = vec![0u64; PAGE].into_boxed_slice();
+            for j in 0..PAGE {
+                mots[j] = u64::from_le_bytes(b[k + 4 + 8 * j..k + 12 + 8 * j].try_into().unwrap());
+            }
+            let br = &b[k + 4 + PAGE * 8..k + taille];
+            let brins = if br.iter().any(|&x| x != 0) {
+                self.a_des_adn = true;
+                Some(br.to_vec().into_boxed_slice())
+            } else {
+                None
+            };
+            self.pages[e].insert((g << 8) | p, Box::new(Page { mots, brins }));
+            k += taille;
+        }
+        self.cache[e] = (u64::MAX, std::ptr::null_mut());
+        self.cache_code = (u64::MAX, std::ptr::null_mut());
+        g
+    }
+
+        fn nom_fichier_cube(&self, e: usize, f: u64) -> String {
+        match &self.mere {
+            Some(m) => format!("cube64-{}-{}-{}.cub", m, e, f),
+            None => format!("cube64-{}-{}.cub", e, f),
+        }
+    }
+
     fn ranger_cube(&mut self, adr: u64) -> u64 {
         let (e, i) = Self::place(adr);
         let f = i >> 24;
@@ -505,8 +584,14 @@ impl Spu64 {
                 None => b.extend(std::iter::repeat(0u8).take(PAGE / 4)),
             }
         }
-        if crate::miroir::ecrire_double(&d.join(format!("cube64-{}-{}.cub", e, f)), &b).is_err() {
+        if crate::miroir::ecrire_double(&d.join(self.nom_fichier_cube(e, f as u64)), &b).is_err() {
             return u64::MAX;
+        }
+        // 0.63 : sous un cube mère, son squelette est mis à jour (le descripteur du sous-cube à l'adresse #f)
+        if let Some(m) = self.mere.clone() {
+            if crate::hote::mere_mettre_a_jour(&d, "cube64", &m, e, f as u64, cles.len() as u64, &b, false).is_err() {
+                return u64::MAX;
+            }
         }
         cles.len() as u64
     }
