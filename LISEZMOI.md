@@ -68,10 +68,11 @@ L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/v
 - **Python 3.9 ou plus récent** : c'est tout pour écrire, compiler, exécuter et déboguer des programmes vtx. `vtx.py` n'utilise que la bibliothèque standard.
 - Facultatif : **numpy** (`pip install numpy`) pour le test des flottants et des longs ; **Node.js** pour les machines JavaScript ; **Rust** (`cargo`) pour la machine Rust : installation pas à pas dans `vtx-rs/LISEZMOI.md`.
 
-Pour commencer simplement : `COMMENCER.md` (vtx.exe et atelier.exe, sans Python). Les tests de développement
-(vérificateur, corpus de conformité, tests de chaque partie) sont passés avant chaque livraison. Pour tout revérifier
-soi-même : `python3 verifier.py` (environ trois quarts d'heure), ou, sous Windows, double-cliquer `verifier.bat` (le
-compte rendu va dans `verifier.log`). Les `.bat` d'essai livrés à côté du paquet, eux, ne mesurent que la nouveauté.
+Pour commencer simplement : `COMMENCER.md` (vtx.exe et Ogmios, sans Python). Les tests de développement (vérificateur,
+corpus de conformité, tests de chaque partie) sont passés avant chaque livraison et restent dans le dépôt ; le paquet
+emporte à leur place **l'épreuve d'Alésia** : `python epreuve/epreuve.py` montre et vérifie en une quinzaine de
+secondes ce que fait Vercintorix (créer, programmer, compter, douter, réagir, se souvenir, se défendre), et dit les
+brèches connues. Les `.bat` d'essai livrés à côté du paquet, eux, ne mesurent que la nouveauté.
 
 ## Premiers pas
 

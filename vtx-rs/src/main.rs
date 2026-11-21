@@ -888,12 +888,24 @@ pub fn installer(poser: bool) -> Result<String, String> {
         extern "system" {
             fn SHChangeNotify(evenement: i32, drapeaux: u32, a: *const core::ffi::c_void, b: *const core::ffi::c_void);
         }
+        // 0.69 : Ogmios a ses raccourcis, sur le Bureau et dans le menu Démarrer (retirés à la désinstallation)
+        let ps = if poser {
+            format!("foreach($d in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFolderPath('Programs'))){{\
+                     $s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'Ogmios.lnk'));$s.TargetPath='{}';\
+                     $s.WorkingDirectory='{}';$s.IconLocation='{}';$s.Description='Ogmios, l atelier de Vercintorix';$s.Save()}}",
+                    atelier.display(), dossier.display(), icone.display())
+        } else {
+            "foreach($d in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFolderPath('Programs'))){\
+             Remove-Item -ErrorAction SilentlyContinue (Join-Path $d 'Ogmios.lnk')}".to_string()
+        };
+        let _ = process::Command::new("powershell").args(["-NoProfile", "-Command", &ps]).creation_flags(0x0800_0000).output();
         unsafe {
             SHChangeNotify(0x0800_0000, 0, std::ptr::null(), std::ptr::null());
         }
         if poser && ok {
-            Ok(format!("Les fichiers .vtx s'ouvrent maintenant dans {} (icône : {}).\nSi Windows propose encore une autre \
-                        application : clic droit sur un .vtx, « Ouvrir avec », atelier.exe, « Toujours ».", atelier.display(), icone.display()))
+            Ok(format!("Les fichiers .vtx s'ouvrent maintenant dans {} (icône : {}) ; Ogmios a ses raccourcis sur le \
+                        Bureau et dans le menu Démarrer.\nSi Windows propose encore une autre application : clic droit sur un .vtx, « Ouvrir avec », \
+                        Ogmios.exe, « Toujours ».", atelier.display(), icone.display()))
         } else if ok {
             Ok("Association des fichiers .vtx retirée.".to_string())
         } else {

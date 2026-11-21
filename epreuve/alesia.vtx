@@ -1,0 +1,100 @@
+// machine : lugus
+// L'épreuve d'Alésia : un seul programme qui montre ce que sait Vercintorix, chapitre par chapitre (programmer, compter,
+// douter, réagir). Lancé seul : lugus epreuve/alesia.vtx ; lancé par epreuve/epreuve.py, chaque ligne est vérifiée,
+// puis le même programme passe par l'ADN, l'ARNc et le cube, et doit redonner les mêmes lignes.
+
+structure Guerrier { nom: texte, force, potion: logique }
+
+fonction nom4(l: logique): texte {
+    retour nommer(l, ["inconnu", "faux", "vrai", "variable"]);
+}
+
+// ------------------------------------------------------------------ programmer
+fonction carre(x) touche rien { retour x * x; }
+fonction plus(a, b) touche rien { retour a + b; }
+
+// une fonction passée en valeur, qui promet de ne rien toucher : le juge le vérifie à la compilation
+fonction plier(t, f: fonction(entier, entier): entier touche rien, depart) touche lecture {
+    soit acc = depart;
+    pour v dans t { acc = f(acc, v); }
+    retour acc;
+}
+
+fonction appliquer(f: fonction(entier): entier touche rien, x) touche rien { retour f(x); }
+
+fonction la_plus_forte(t: texte, a, b): texte {
+    si a > b { retour t + " gagne"; }
+    retour t + " perd";
+}
+
+// ------------------------------------------------------------------ compter
+fonction factorielle(n): entier_128 {
+    soit r: entier_128 = 1LL;
+    pour i dans 1..n + 1 { r = r * entier_petuar(i); }
+    retour r;
+}
+
+fonction fibonacci(n): entier_128 {
+    soit a: entier_128 = 0LL;
+    soit b: entier_128 = 1LL;
+    pour i dans 0..n {
+        soit c: entier_128 = a + b;
+        a = b;
+        b = c;
+    }
+    retour a;
+}
+
+// ------------------------------------------------------------------ réagir : des réactions, pas des boucles
+reaction vague(n) -> s {
+    = somme pour chaque k dans 0..n : k * k   -> s
+}
+
+reaction partage(a, b) -> q {
+    = reparer a / b par 0   -> q
+}
+
+reaction moyenne(a: flottant, b: flottant) -> m: flottant {
+    = (a + b) / 2.0   -> m
+}
+
+fonction principal() {
+    afficher("== programmer");
+    soit gaulois = Guerrier { nom: "Astérix", force: 7, potion: vrai };
+    soit romain = Guerrier { nom: "Caius", force: 5, potion: faux };
+    afficher("structure :", gaulois.nom, gaulois.force, nom4(gaulois.potion));
+    afficher("texte :", la_plus_forte(gaulois.nom, gaulois.force, romain.force), "/", majuscules("alésia"));
+    soit t = [5, 3, 9, 1, 7];
+    trier(t);
+    afficher("tableau trié :", t[0], t[1], t[2], t[3], t[4], "somme", somme(t));
+    afficher("fonction en valeur :", plier(t, plus, 0), appliquer(carre, 12));
+    soit d = dico();
+    ranger(d, "Alésia", 52);
+    ranger(d, "Gergovie", 52);
+    afficher("dictionnaire :", trouver(d, "Alésia"), existe(d, "Rome"));
+
+    afficher("== compter");
+    afficher("30! en 128 bits :", factorielle(30));
+    afficher("fibonacci(150) :", fibonacci(150));
+    afficher("entier de 128 bits, le plus grand :", 170141183460469231731687303715884105727LL);
+    afficher("un tiers en flottant de 128 bits :", 1.0 / 3.0);
+    soit x: flottant_64 = 0.1D;
+    afficher("0.1 en flottant quaternaire de 64 bits :", x, "; plus lui-même :", x + x);
+    afficher("multiplier_ajouter(3, 4, 5) :", multiplier_ajouter(3.0, 4.0, 5.0), "; racine de 2 :", racine(2.0));
+
+    afficher("== douter : la logique de Belnap");
+    soit oui: logique = vrai;
+    soit contre: logique = faux;
+    afficher("fusion(vrai, faux) :", nom4(fusion(oui, contre)), "; fusion(vrai, inconnu) :", nom4(fusion(oui, comme_logique(0))));
+    soit s = dico_ouvert();
+    affirmer(s, "potion", vrai);
+    afficher("savoir potion :", nom4(savoir(s, "potion")), "; savoir sanglier :", nom4(savoir(s, "sanglier")));
+    nier(s, "potion");
+    afficher("puis nier potion :", nom4(savoir(s, "potion")));
+
+    afficher("== réagir");
+    afficher("somme des carrés de 0 à 9999 :", vague(10000));
+    afficher("partage 84 / 2 :", partage(84, 2), "; 84 / 0 réparé :", partage(84, 0));
+    afficher("moyenne de 2.5 et 4.5 :", moyenne(2.5, 4.5));
+    sortie(52);
+}

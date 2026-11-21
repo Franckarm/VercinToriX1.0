@@ -17,7 +17,7 @@ avec le créateur.*
   (service 28, `lister_dossier`, `dossier_present`), `lugus cataloguer DOSSIER` (écrit en vtx, dans le lecteur d'ADN),
   `importer empreinte "16hex";` sans chemin, la vibration de chaque molécule (`lugus morceaux`), et la carte qui dit
   d'où vient chaque molécule (et voit une retouche).
-- Les journaux : `docs/vtx-reactions.md` (sections 1 à 74), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
+- Les journaux : `docs/vtx-reactions.md` (sections 1 à 75), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
   feuille de route, section 11), `docs/vtx-syntaxe-v0-4.md` (la référence du langage).
 
 ## 2. Les règles de travail (à garder)
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.69.zip`, `essai-0.69.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.70.zip`, `essai-0.70.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -46,7 +46,7 @@ avec le créateur.*
   gardé dans le dépôt : le refaire (`lugus cataloguer bibliotheque`) après toute retouche d'un module de la
   bibliothèque (sinon `importer empreinte` le refuse, l'empreinte ayant changé).
 - `outils/tests_du_paquet.txt` : les tests mis dans le paquet ; la commande du paquet : `git archive --format=zip
-  --prefix=vtx-0.6/ -o vtx-0.69.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
+  --prefix=vtx-0.6/ -o vtx-0.70.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
   spu128 chimie natif gobannos exemples exemples128 exemples64 bibliotheque docs` suivi de ces tests et de
   `tests/test_supposons.py tests/supposons_alors.vtx tests/test_gobannos.py tests/gobannos tests/test_valeurs.py
   tests/valeurs_mele.vtx tests/test_types_fonction.py tests/test_gobannos_flottants.py tests/test_nombres.py
@@ -54,7 +54,8 @@ avec le créateur.*
   tests/test_reste.py tests/test_catalogue.py tests/test_cube_mere.py tests/test_faces_cube.py tests/test_valeurs64.py tests/test_fma.py tests/test_glossaire.py` et des nouveaux.
 - La vérification complète : `python3 verifier.py` (environ deux heures ; elle doit finir par « Tout est conforme ») ;
   la lancer en arrière-plan et la suivre.
-- La machine : `cd vtx-rs && cargo build --release` (binaires `lugus`, `vtx64`, `vtx`, `atelier`).
+- La machine : `cd vtx-rs && cargo build --release` (binaires `lugus`, `vtx64`, `vtx`, `atelier`, `ogmios`).
+- L'épreuve d'Alésia : `python3 epreuve/epreuve.py` (une quinzaine de secondes, 41 vérifications) ; la jouer avant chaque livraison.
 
 ## 4. Ce qui reste, décidé avec le créateur (après la 0.64)
 
@@ -72,6 +73,12 @@ routines du socle de Gobannos servent de modèle). Mesuré avant l'arrêt : Goba
 les quatre ARN épissés (rapide, sûr, mémoire, complet) deviennent des façons de lancer l'ARNc (`--rapide`, `--veille`),
 plus des fichiers ; les anciens se lisent toujours ; .mots et .hex restent des vues d'outil. La liste des fichiers du
 paquet : `outils/fichiers_du_paquet.txt` (`git archive … HEAD $(cat outils/fichiers_du_paquet.txt)`).
+
+**0.69 (§75)** : l'épreuve d'Alésia (`python epreuve/epreuve.py`, 41 vérifications : la demande du créateur, un test
+complet et parlant à la place des nombreux tests du paquet) ; Ogmios indépendant (`ogmios.exe`, ses raccourcis Bureau
+et menu Démarrer par `vtx installer`) ; la palette des cases (24 cases, 14 familles d'éléments, le menu Cases). **À
+fermer ensuite, trouvé par l'épreuve** : `t[i]` hors des bornes lit sans rien dire ; `soit m: texte = n` (un entier)
+accepté par les deux compilateurs. Le paquet n'emporte plus les tests (ils restent dans le dépôt).
 
 **Le glossaire** (fait, 0.67, §73). **La fenêtre d'un programme** (fait, 0.68, §74 : l'atelier et `lugus`, sous
 Windows). **Ensuite** : Ogmios en vtx, F5 qui ne fige pas et sa fenêtre (deux fenêtres à la fois dans sortie.rs). **La suite donnée par le créateur le 21** : Ogmios, construit en vtx ; s'assurer

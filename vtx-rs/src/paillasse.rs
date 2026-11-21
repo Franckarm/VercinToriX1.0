@@ -49,6 +49,9 @@ pub struct Atome {
     pub element: String,
     /// l'isotope lourd (« -> a lourd ») : la liaison est critique, la réaction garde ses neutrons dans l'ADN
     pub lourd: bool,
+    /// 0.69 : la famille de la case (S, Si, Fe, Mg…), lue dans ce qu'elle fait ; vide : une case de structure seule.
+    /// L'élément (H, O, N, C, par la valence) reste celui de la molécule de registre
+    pub famille: String,
 }
 
 impl Atome {
@@ -182,6 +185,154 @@ fn mots(l: &str, d: usize, f: usize) -> Vec<(String, usize, usize, char, char)> 
         k += 1;
     }
     v
+}
+
+// ------------------------------------------------------------------------------------------------ la palette des cases
+/// 0.69 : une case de la palette. Les quatre éléments de structure (H, O, N, C) viennent de la valence et composent la
+/// molécule de registre ; les autres éléments nomment la famille de ce que fait la case. Le modèle s'écrit dans la
+/// réaction : « _ » est une entrée libre (on y tire une liaison), « @ » la liaison qu'elle donne, « # » une seconde.
+pub struct CasePalette {
+    pub symbole: &'static str,
+    pub element: &'static str,
+    pub famille: &'static str,
+    pub nom: &'static str,
+    pub modele: &'static str,
+    pub aide: &'static str,
+}
+
+pub const PALETTE: &[CasePalette] = &[
+    CasePalette { symbole: "C", element: "carbone", famille: "calcul", nom: "addition", modele: "= _ + _ -> @",
+                  aide: "additionne deux liaisons (aussi -, *, /, %) ; la case la plus simple" },
+    CasePalette { symbole: "C", element: "carbone", famille: "calcul", nom: "comparaison", modele: "= _ < _ -> @",
+                  aide: "compare deux valeurs : une logique de Belnap, vraie, fausse, inconnue ou variable" },
+    CasePalette { symbole: "S", element: "soufre", famille: "logique", nom: "fusion", modele: "= fusion(_, _) -> @",
+                  aide: "rassemble deux témoignages : deux contraires donnent variable, la contradiction est gardée" },
+    CasePalette { symbole: "S", element: "soufre", famille: "logique", nom: "et4", modele: "= et4(_, _) -> @",
+                  aide: "le et des quatre valeurs : un faux l'emporte, un inconnu reste inconnu" },
+    CasePalette { symbole: "S", element: "soufre", famille: "logique", nom: "anti", modele: "= anti(_) -> @",
+                  aide: "l'antiparticule : vrai et faux s'échangent, inconnu et variable restent" },
+    CasePalette { symbole: "Si", element: "silicium", famille: "condition", nom: "garder", modele: "= si _ alors _ -> @",
+                  aide: "garde la valeur si le test est vrai ; sinon la liaison porte faux et sa branche ne réagit pas" },
+    CasePalette { symbole: "Si", element: "silicium", famille: "condition", nom: "choisir", modele: "= si _ alors _ sinon _ -> @",
+                  aide: "choisit entre deux valeurs selon le test" },
+    CasePalette { symbole: "Fe", element: "fer", famille: "mémoire du cube", nom: "lire_cube", modele: "= @3[_] -> @",
+                  aide: "lit une case du cube (étage 3, l'adresse en entrée) : un pont, l'ordre des lignes y compte" },
+    CasePalette { symbole: "Fe", element: "fer", famille: "mémoire du cube", nom: "ecrire_cube", modele: "@3[_] = _",
+                  aide: "écrit une valeur dans une case du cube : un pont et un bout de chaîne" },
+    CasePalette { symbole: "Mg", element: "magnésium", famille: "vague", nom: "chaque", modele: "= pour chaque v dans _ : v * 2 -> @",
+                  aide: "applique un calcul à chaque élément d'un tableau, tous ensemble, sur plusieurs cœurs" },
+    CasePalette { symbole: "Mg", element: "magnésium", famille: "vague", nom: "somme", modele: "= somme pour chaque v dans _ : v -> @",
+                  aide: "réduit une vague en une valeur (aussi min, max) : un arbre de rendez-vous" },
+    CasePalette { symbole: "Mg", element: "magnésium", famille: "vague", nom: "garder_dans", modele: "= garder v dans _ si v > 0 -> @",
+                  aide: "filtre un tableau : ne garde que les éléments qui passent le test" },
+    CasePalette { symbole: "K", element: "potassium", famille: "rendez-vous", nom: "rendez_vous", modele: "= rendez-vous(_, _) -> @, #",
+                  aide: "attend que toutes ses liaisons soient arrivées, puis les laisse partir ensemble" },
+    CasePalette { symbole: "F", element: "fluor", famille: "conversion", nom: "en_flottant", modele: "= flottant(_) -> @",
+                  aide: "un entier devient flottant (aussi entier(), entier_32(), flottant_32())" },
+    CasePalette { symbole: "F", element: "fluor", famille: "conversion", nom: "en_entier", modele: "= entier(_) -> @",
+                  aide: "un flottant devient entier (la partie entière)" },
+    CasePalette { symbole: "P", element: "phosphore", famille: "mesure", nom: "racine", modele: "= racine(_) -> @",
+                  aide: "la racine carrée d'un flottant (aussi sinus, cosinus, logarithme, puissance)" },
+    CasePalette { symbole: "Au", element: "or", famille: "calcul exact", nom: "fma", modele: "= multiplier_ajouter(_, _, _) -> @",
+                  aide: "a × b + c avec un seul arrondi : le calcul exact, celui des sommes qui ne dérivent pas" },
+    CasePalette { symbole: "Zn", element: "zinc", famille: "réparation", nom: "reparer", modele: "= reparer _ / _ par 0 -> @",
+                  aide: "le zinc protège le fer : une division par zéro (variable) est réparée par la valeur de secours" },
+    CasePalette { symbole: "Ar", element: "argon", famille: "hasard", nom: "hasard", modele: "= hasard(_) -> @",
+                  aide: "un nombre au hasard de 0 à n - 1 (graine(n) le rend reproductible)" },
+    CasePalette { symbole: "Ca", element: "calcium", famille: "temps", nom: "horloge", modele: "= horloge() -> @",
+                  aide: "l'heure de la machine : mesurer la durée d'une vague" },
+    CasePalette { symbole: "Na", element: "sodium", famille: "données", nom: "tableau", modele: "= [1, 2, 3] -> @",
+                  aide: "un tableau écrit, la source d'une vague" },
+    CasePalette { symbole: "Na", element: "sodium", famille: "données", nom: "element", modele: "= _[_] -> @",
+                  aide: "lit un élément d'un tableau" },
+    CasePalette { symbole: "Cl", element: "chlore", famille: "sortie", nom: "afficher", modele: "= afficher(_)",
+                  aide: "montre une valeur à l'écran : un bout de chaîne, il ne donne pas de liaison" },
+    CasePalette { symbole: "Cl", element: "chlore", famille: "sortie", nom: "sortie", modele: "= sortie(_)",
+                  aide: "le résultat du programme" },
+];
+
+/// la famille d'une case, lue dans ce qu'elle fait (le symbole de son élément), vide pour une case de structure seule
+pub fn famille_de(quoi: &str) -> &'static str {
+    let q = quoi.trim().trim_start_matches('=').trim();
+    let debut = |m: &[&str]| m.iter().any(|x| q.starts_with(x));
+    if debut(&["fusion(", "et4(", "ou4(", "anti(", "comme_logique("]) {
+        "S"
+    } else if debut(&["si ", "selon "]) {
+        "Si"
+    } else if q.contains("@3[") || q.contains("@2[") || q.contains("@1[") {
+        "Fe"
+    } else if debut(&["pour chaque", "somme pour", "min pour", "max pour", "garder "]) {
+        "Mg"
+    } else if debut(&["rendez-vous", "rendezvous"]) {
+        "K"
+    } else if debut(&["flottant(", "entier(", "entier_32(", "flottant_32(", "flottant_64(", "entier_petuar(", "flottant_petuar("]) {
+        "F"
+    } else if debut(&["racine(", "sinus(", "cosinus(", "tangente(", "logarithme(", "exponentielle(", "puissance(", "absolu("]) {
+        "P"
+    } else if debut(&["multiplier_ajouter("]) {
+        "Au"
+    } else if debut(&["reparer "]) {
+        "Zn"
+    } else if debut(&["hasard(", "bruit(", "graine("]) {
+        "Ar"
+    } else if debut(&["horloge("]) {
+        "Ca"
+    } else if q.starts_with('[') {
+        "Na"
+    } else if debut(&["afficher(", "sortie(", "ecrire("]) {
+        "Cl"
+    } else {
+        ""
+    }
+}
+
+fn nom_element(e: &str) -> &'static str {
+    match e {
+        "H" => "hydrogène",
+        "O" => "oxygène",
+        "N" => "azote",
+        s if s.starts_with('C') && s.len() <= 3 && s[1..].chars().all(|c| c.is_ascii_digit()) => "carbone",
+        s => PALETTE.iter().find(|c| c.symbole == s).map(|c| c.element).unwrap_or("carbone"),
+    }
+}
+
+/// la palette expliquée : les éléments de structure, puis chaque case, famille par famille
+pub fn texte_palette() -> String {
+    let mut t = String::from("Les cases de la paillasse (menu Cases d'Ogmios, ou « poser NOM »).\r\n\
+        Structure, par la valence (le nombre de liaisons) : H hydrogène 1, O oxygène 2, N azote 3, C carbone 4 ; ce sont \
+        eux qui composent la molécule de registre rangée dans le cube.\r\n\
+        Les familles, par ce que fait la case : « _ » est une entrée libre, on y tire une liaison.\r\n");
+    let mut famille = "";
+    for c in PALETTE {
+        if c.famille != famille {
+            famille = c.famille;
+            t.push_str(&format!("{} {} — {}\r\n", c.symbole, c.element, c.famille));
+        }
+        t.push_str(&format!("    {:<12} {:<38} {}\r\n", c.nom, c.modele, c.aide));
+    }
+    t
+}
+
+/// poser une case de la palette dans une réaction : sa ligne à la fin, ses liaisons nommées lK (et lK+1)
+pub fn poser_modele(source: &str, r: &Reaction, c: &CasePalette) -> (String, usize) {
+    let pris = |n: &str| r.params.iter().any(|p| p == n) || r.atomes.iter().any(|a| a.sorties.iter().any(|s| s == n));
+    let mut k = 1;
+    while pris(&format!("l{}", k)) || pris(&format!("l{}", k + 1)) {
+        k += 1;
+    }
+    let lignes: Vec<&str> = source.split('\n').collect();
+    let retrait = r.atomes.last().map(|a| {
+        let l = lignes[a.ligne];
+        l[..l.len() - l.trim_start().len()].to_string()
+    }).unwrap_or_else(|| "    ".into());
+    let cr = if source.contains("\r\n") { "\r" } else { "" };
+    let mut v: Vec<String> = lignes.iter().map(|s| s.to_string()).collect();
+    let place = r.fin.min(v.len());
+    let ligne = c.modele.replace('#', &format!("l{}", k + 1)).replace('@', &format!("l{}", k));
+    // « @3[ » n'est pas une liaison : le modèle l'écrit tel quel
+    let ligne = ligne.replace(&format!("l{}3[", k), "@3[");
+    v.insert(place, format!("{}{}{}", retrait, ligne, cr));
+    (v.join("\n"), place)
 }
 
 fn element_de(v: usize) -> String {
@@ -357,7 +508,7 @@ fn lire_atome(r: &mut Reaction, l: &str, numero: usize) {
     };
     // les entrées sont trouvées une fois toutes les liaisons connues (relier_et_ranger) : on garde la place de quoi
     r.atomes.push(Atome { ligne: numero, nom, quoi, sorties, entrees: vec![Port { nom: String::new(), places: vec![(q0, q1)] }],
-                          apres, genre, vague: 0, element: String::new(), lourd });
+                          apres, genre, vague: 0, element: String::new(), lourd, famille: String::new() });
 }
 
 /// ce que touche un atome hors de ses liaisons (comme Atome.cibles de vtx128.py) : (genre, étage, adresse)
@@ -504,6 +655,7 @@ fn relier_et_ranger(r: &mut Reaction, lignes: &[&str]) {
         }
         a.entrees = ports;
         a.element = element_de(a.valence());
+        a.famille = famille_de(&a.quoi).to_string();
     }
     // l'ordre : ce que l'atome nomme dans « apres », puis, comme le compilateur, deux atomes qui touchent la même chose
     // (la même case du cube, l'écran, la sortie) : le second attend le premier, dans l'ordre des lignes, sauf si les
@@ -670,7 +822,8 @@ pub fn carte(source: &str) -> Option<Reaction> {
     let mut atomes: Vec<Atome> = fonctions.iter().enumerate().map(|(k, f)| {
         let entrees: Vec<Port> = appels[k].iter().filter(|&&c| c != k).map(|&c| Port { nom: fonctions[c].0.clone(), places: vec![] }).collect();
         let mut a = Atome { ligne: f.2, nom: f.0.clone(), quoi: format!("fonction {}", f.1), sorties: vec![f.0.clone()], entrees,
-                            apres: vec![], genre: Genre::Calcul, vague: 0, element: String::new(), lourd: false };
+                            apres: vec![], genre: Genre::Calcul, vague: 0, element: String::new(), lourd: false,
+                            famille: String::new() };
         a.element = element_de(a.valence());
         a
     }).collect();
@@ -823,6 +976,23 @@ const VARIABLE: u32 = 0xC890E8;
 const BRAISE: u32 = 0xFF7040;
 
 fn couleur_element(e: &str) -> u32 {
+    // 0.69 : les familles de la palette, chacune sa couleur
+    match e {
+        "S" => return 0xE8D040,
+        "Si" => return 0x40B8B0,
+        "Fe" => return 0xC07040,
+        "Mg" => return 0x90D060,
+        "K" => return 0xB070E0,
+        "F" => return 0x70D8E8,
+        "P" => return 0xF09040,
+        "Au" => return OR,
+        "Zn" => return 0x8890A0,
+        "Ar" => return 0x6890E0,
+        "Ca" => return 0xF0E8D0,
+        "Na" => return 0xA8A0F0,
+        "Cl" => return 0x60D060,
+        _ => {}
+    }
     match e.chars().next() {
         Some('H') => 0xE8E8E8,
         Some('O') => 0xE05050,
@@ -1069,6 +1239,9 @@ pub struct Paillasse {
     onglets: Vec<(i32, i32, i32, i32, usize)>,
     entrees_r: Vec<(String, (i32, i32))>,
     geste: Option<Geste>,
+    /// 0.69 : la palette montrée dans les explications ; la dernière case posée depuis la palette
+    pub palette_ouverte: bool,
+    pub derniere_case: Option<usize>,
 }
 
 impl Default for Paillasse {
@@ -1183,7 +1356,8 @@ pub fn ecrire_textes(im: &mut Image, textes: &[TexteP], car_l: i32, car_h: i32) 
 impl Paillasse {
     pub fn nouvelle() -> Paillasse {
         Paillasse { faces: None, perimee: false, reactions: vec![], courante: 0, choisi: None, positions: HashMap::new(), valeurs: HashMap::new(), decal: (0, 0),
-                    car_l: 6, car_h: 12, echelle: 1.0, message: None, cases: vec![], colonnes: vec![], onglets: vec![], entrees_r: vec![], geste: None }
+                    car_l: 6, car_h: 12, echelle: 1.0, message: None, cases: vec![], colonnes: vec![], onglets: vec![], entrees_r: vec![], geste: None,
+                    palette_ouverte: false, derniere_case: None }
     }
 
     /// relire le texte (la réaction montrée et l'atome choisi restent, si on les retrouve)
@@ -1425,18 +1599,23 @@ impl Paillasse {
         // les cases
         for c in self.cases.clone() {
             let a = &r.atomes[c.atome];
-            let coul = couleur_element(&a.element);
+            // 0.69 : une case d'une famille porte son symbole et sa couleur ; la structure (H, O, N, C) suit le titre
+            let symbole = if a.famille.is_empty() { a.element.clone() } else { a.famille.clone() };
+            let coul = couleur_element(&symbole);
             let choisi = self.choisi == Some(c.atome);
             im.plein(c.x, c.y, c.l, c.h, 0x262B35);
             im.plein(c.x, c.y, c.l, ch + self.px(10), 0x303644);
             im.cadre(c.x, c.y, c.l, c.h, if choisi { e2 + e1 } else { e1 }, if choisi { OR } else { coul });
             // l'élément, dans un rond de sa couleur
-            let rx = c.x + self.px(4) + ch / 2;
+            // un symbole de deux lettres (Fe, Mg…) : un rond un peu plus large
+            let rayon = (ch / 2).max(cl * symbole.chars().count() as i32 / 2 + self.px(2));
+            let rx = c.x + self.px(4) + rayon;
             let ry = c.y + (ch + self.px(10)) / 2;
-            im.disque(rx, ry, ch / 2, coul);
-            tx.push(TexteP { x: rx - cl * a.element.chars().count() as i32 / 2, y: ry - ch / 2, texte: a.element.clone(), couleur: 0x1B1E24 });
+            im.disque(rx, ry, rayon, coul);
+            tx.push(TexteP { x: rx - cl * symbole.chars().count() as i32 / 2, y: ry - ch / 2, texte: symbole.clone(), couleur: 0x1B1E24 });
             let titre = if a.nom.is_empty() { format!("ligne {}", a.ligne + 1) } else { a.nom.clone() };
-            tx.push(TexteP { x: rx + ch / 2 + self.px(6), y: c.y + self.px(5), texte: titre, couleur: ENCRE });
+            let titre = if a.famille.is_empty() { titre } else { format!("{} · {}", titre, a.element) };
+            tx.push(TexteP { x: rx + rayon + self.px(6), y: c.y + self.px(5), texte: titre, couleur: ENCRE });
             let q: String = if a.quoi.chars().count() > 40 { a.quoi.chars().take(39).collect::<String>() + "…" } else { a.quoi.clone() };
             tx.push(TexteP { x: c.x + cl, y: c.y + ch + self.px(15), texte: q, couleur: 0xC8C4B8 });
             // les entrées (à gauche, leur nom dans la case) et les sorties (à droite, leur nom et leur valeur dehors)
@@ -1493,6 +1672,9 @@ impl Paillasse {
 
     /// la souris (x, y en pixels de la paillasse) ; source : le texte actuel
     pub fn souris(&mut self, genre: Souris, x: i32, y: i32, source: &str) -> Reponse {
+        if matches!(genre, Souris::Bas | Souris::Droit | Souris::Double) {
+            self.palette_ouverte = false;
+        }
         if self.cases.is_empty() && self.onglets.is_empty() {
             self.dessiner(800, 600);
         }
@@ -1746,7 +1928,47 @@ impl Paillasse {
     }
 
     /// la fenêtre des explications : ce qu'est l'atome choisi, ou comment se servir de la paillasse
+    /// 0.69 : poser la case k de la palette dans la réaction montrée (une réaction neuve s'il n'y en a pas)
+    pub fn poser_case(&mut self, k: usize, source: &str) -> Reponse {
+        let c = match PALETTE.get(k) {
+            Some(c) => c,
+            None => return Reponse::Message(format!("pas de case {} dans la palette", k)),
+        };
+        self.palette_ouverte = false;
+        self.derniere_case = Some(k);
+        self.choisi = None;
+        let r = self.reaction().filter(|r| !r.carte).cloned();
+        let (s, l) = match r {
+            Some(r) => poser_modele(source, &r, c),
+            None => {
+                // une réaction neuve : sa première case est celle-ci
+                let (s, l) = ajouter_reaction(source);
+                let modele = c.modele.replace('#', "l2").replace('@', "l1").replace("l13[", "@3[");
+                let s = editer_ligne(&s, l, &modele);
+                self.lire(&s);
+                if let Some(i) = self.reactions.iter().position(|r| !r.carte && r.ligne + 1 == l) {
+                    self.courante = i;
+                }
+                (s, l)
+            }
+        };
+        Reponse::Texte { source: s, ligne: l }
+    }
+
+    /// les explications : la palette si elle est ouverte, la case posée, puis la case ou la réaction choisie
     pub fn explication(&self) -> String {
+        if self.palette_ouverte {
+            return texte_palette();
+        }
+        let mut t = String::new();
+        if let (None, Some(c)) = (self.choisi, self.derniere_case.and_then(|k| PALETTE.get(k))) {
+            t.push_str(&format!("Case posée : {} {} ({}) — {}\r\nSes « _ » sont des entrées libres : tirez-y une liaison, \
+                                 ou clic droit pour écrire la case.\r\n\r\n", c.symbole, c.nom, c.famille, c.aide));
+        }
+        t + &self.explication_case()
+    }
+
+    fn explication_case(&self) -> String {
         let r = match self.reaction() {
             Some(r) => r,
             None => {
@@ -1790,18 +2012,20 @@ impl Paillasse {
         }
         match self.choisi.and_then(|k| r.atomes.get(k)) {
             Some(a) => {
-                let nom_el = match a.element.chars().next() {
-                    Some('H') => "hydrogène",
-                    Some('O') => "oxygène",
-                    Some('N') => "azote",
-                    _ => "carbone",
-                };
+                let nom_el = nom_element(&a.element);
                 let lues: Vec<&str> = a.entrees.iter().filter(|p| p.nom != "_").map(|p| p.nom.as_str()).collect();
                 let libres = a.entrees.iter().filter(|p| p.nom == "_").count();
                 t.push_str(&format!("{} — ligne {}\r\n", if a.nom.is_empty() { "un atome" } else { &a.nom }, a.ligne + 1));
                 t.push_str(&format!("{} ({}), valence {} : il lit {} et donne {}.\r\n", a.element, nom_el, a.valence(),
                                     if lues.is_empty() { "rien".to_string() } else { lues.join(", ") },
                                     if a.sorties.is_empty() { "rien (un bout de chaîne)".to_string() } else { a.sorties.join(", ") }));
+                if let Some(c) = PALETTE.iter().find(|c| c.symbole == a.famille) {
+                    t.push_str(&format!("Famille {} ({}, {}) : {}\r\n", c.symbole, c.element, c.famille,
+                                        PALETTE.iter().filter(|x| x.symbole == c.symbole)
+                                               .find(|x| a.quoi.trim().starts_with(x.modele.trim_start_matches('=').trim()
+                                                                                 .split(['(', ' ', '_']).next().unwrap_or("")))
+                                               .unwrap_or(c).aide));
+                }
                 t.push_str(&format!("Ce qu'il fait : {}\r\n", a.quoi));
                 t.push_str(&format!("Vague {} : {}\r\n", a.vague, if lues.is_empty() && a.apres.is_empty() {
                     "il réagit tout de suite, avec les autres atomes sans entrée.".to_string()
@@ -2036,6 +2260,15 @@ pub fn commande(args: &[String]) {
                     println!("--- explications\n{}", p.explication().replace("\r\n", "\n").trim_end());
                     Reponse::Rien
                 }
+                // 0.69 : palette : la montrer ; poser NOM : poser la case NOM de la palette dans la réaction montrée
+                "palette" => {
+                    p.palette_ouverte = true;
+                    Reponse::Redessiner
+                }
+                "poser" => match PALETTE.iter().position(|c| Some(c.nom) == m.get(1).copied()) {
+                    Some(k) => p.poser_case(k, &source),
+                    None => Reponse::Message(format!("pas de case « {} » dans la palette", m.get(1).copied().unwrap_or(""))),
+                },
                 autre => {
                     eprintln!("geste inconnu : {}", autre);
                     Reponse::Rien

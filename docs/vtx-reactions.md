@@ -3355,3 +3355,41 @@ ouvre sa propre fenêtre, comme dans un éditeur de code moderne.
 - **La suite** : Ogmios écrit en vtx (`ogmios/ogmios.vtx`) aura la même fenêtre pour le programme lancé par F5, et ne
   figera plus pendant qu'il tourne (la machine fille lancée à côté, son compte rendu lu au fil de l'eau, Échap pour
   l'arrêter) : il faut pour cela que la machine sache tenir deux fenêtres à la fois.
+
+## 75. L'épreuve d'Alésia, Ogmios indépendant, la palette des cases (21 novembre, 0.69)
+
+**Demandé par le créateur le 21** : un test complet et parlant de ce que fait vtx (création, programmation, calcul,
+sécurité) à la place des nombreux tests du paquet ; Ogmios en programme indépendant avec son raccourci ; plus de cases
+à la paillasse, avec les atomes existants, H, O, N et C gardés pour la molécule de registre.
+
+- **L'épreuve** (`epreuve/epreuve.py`, `epreuve/alesia.vtx`, 41 vérifications en une quinzaine de secondes), sept
+  chapitres qui disent ce qu'ils montrent puis le vérifient : I la forge (des cases posées depuis la palette, une
+  réaction complétée qui réagit, les deux compilateurs d'accord sur les 4064 mots d'alesia.vtx) ; II programmer
+  (structures, textes, tableaux, dictionnaires, fonctions en valeur) ; III compter (30!, fibonacci(150), 2^127 - 1,
+  1/3 et racine de 2 sur 34 chiffres, vérifiés par Python ; le flottant quaternaire montré tel qu'il est) ; IV douter
+  (fusion, le savoir ouvert, la contradiction gardée) ; V réagir (une vague de 10 000 carrés, 84 / 0 réparé, la machine
+  Python qui redit les mêmes lignes) ; VI se souvenir (ARNc -> ADN -> hex -> cube -> hex -> ADN -> ARN, chaque forme
+  relancée redit les mêmes lignes, le hex revenu du cube identique octet pour octet) ; VII se défendre (la promesse
+  rompue, le type de fonction, la faute de frappe refusés ; une avarie qui fausse le résultat sans patrouille, réparée
+  sous la patrouille ; neuf mots abîmés : l'apoptose ; l'ARN coiffé vérifié). VIII, montré sans être compté : les
+  brèches que l'épreuve a trouvées.
+- **Les brèches trouvées** (à fermer ensuite) : `t[i]` hors des bornes d'un tableau lit au-delà sans rien dire (0) ;
+  `soit m: texte = n;` avec un entier est accepté par les deux compilateurs, et l'affichage prend l'entier pour
+  l'adresse d'un texte (la machine s'emballe).
+- **Le flottant quaternaire, pas une brèche** : `0.1` (64 bits, base 4) vaut 0.09999999999999998 ; il s'affiche « 0.1 »
+  (le décimal le plus court qui redonne la même valeur) et `0.1 + 0.1` s'affiche 0.19999999999999996. La machine en Rust
+  et la référence en Python sont d'accord : c'est la base 4, comme 0.1 + 0.2 en IEEE.
+- **Ogmios indépendant** : `ogmios.exe` est construit sous son nom (`src/ogmios_exe.rs`, sans console sous Windows).
+  `vtx installer` pose ses raccourcis « Ogmios » sur le Bureau et dans le menu Démarrer (`vtx desinstaller` les
+  retire) ; l'essai le pose dans le dossier fixe `Vercintorix1.0 rust\Ogmios` (un exemple plus récent n'y est pas
+  remplacé).
+- **La palette des cases** (`paillasse::PALETTE`, 24 cases, 14 familles) : la structure reste à la valence (H 1, O 2,
+  N 3, C 4 : la molécule de registre) ; la famille dit ce que fait la case : C calcul, S soufre la logique de Belnap,
+  Si silicium les conditions, Fe fer la mémoire du cube, Mg magnésium les vagues, K potassium le rendez-vous, F fluor
+  les conversions, P phosphore les mesures, Au or le calcul exact, Zn zinc la réparation (le zinc protège le fer),
+  Ar argon le hasard, Ca calcium le temps, Na sodium les données, Cl chlore la sortie. La case porte le symbole et la
+  couleur de sa famille, son élément de structure suit son titre ; les explications disent les deux. Dans Ogmios, le
+  menu **Cases** : « Toutes les cases expliquées », puis une entrée par case, écrite dans la réaction montrée (une
+  réaction neuve s'il n'y en a pas). Dans `vtx paillasse --gestes` : `palette`, `poser NOM`.
+- **Le paquet allégé** : les tests de développement restent dans le dépôt (et `verifier.py`), le paquet n'emporte plus
+  que l'épreuve (`outils/fichiers_du_paquet.txt` : 211 fichiers au lieu de 266).

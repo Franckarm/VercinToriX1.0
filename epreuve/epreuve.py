@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""L'épreuve d'Alésia : un seul passage, parlant, sur tout ce que fait Vercintorix (0.69).
+
+    python epreuve/epreuve.py
+
+Sept chapitres, chacun dit ce qu'il montre puis le vérifie :
+    I.   La forge       : créer une réaction à la paillasse d'Ogmios, case par case ; les deux compilateurs d'accord
+    II.  Programmer     : structures, textes, tableaux, dictionnaires, fonctions passées en valeur
+    III. Compter        : entiers de 128 bits exacts, flottants de 128 bits, le flottant quaternaire, multiplier_ajouter
+    IV.  Douter         : la logique de Belnap (inconnu, faux, vrai, variable), le savoir qui garde la contradiction
+    V.   Réagir         : les réactions (vagues sur plusieurs cœurs, la division par zéro réparée)
+    VI.  Se souvenir    : ARNc -> ADN -> hex -> cube -> hex -> ADN -> ARN, et chaque forme redonne le même programme
+    VII. Se défendre    : le juge des promesses, les types, la patrouille qui répare, l'apoptose qui refuse le faux
+Chaque vérification écrit [ok] ou [!!] ; à la fin, le bilan. Rien n'est écrit hors d'un dossier temporaire."""
+import math
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from decimal import Decimal, getcontext
+
+ici = os.path.dirname(os.path.abspath(__file__))
+racine = os.path.dirname(ici)
+sys.path.insert(0, racine)
+sys.path.insert(0, os.path.join(racine, "chimie"))
+sys.setrecursionlimit(20000)
+X = ".exe" if os.name == "nt" else ""
+BIN = os.path.join(racine, "vtx-rs", "target", "release")
+LUGUS = os.path.join(BIN, "lugus" + X)
+VTX = os.path.join(BIN, "vtx" + X)
+ALESIA = os.path.join(ici, "alesia.vtx")
+d = tempfile.mkdtemp(prefix="epreuve-")
+bilan = []      # (chapitre, réussies, total)
+chapitre = [None, 0, 0]
+debut = time.time()
+
+
+def titre(t, dit):
+    if chapitre[0]:
+        bilan.append(tuple(chapitre))
+    chapitre[:] = [t, 0, 0]
+    print("\n" + "=" * 100)
+    print(t)
+    print("=" * 100)
+    for l in dit.split("\n"):
+        print("  " + l)
+    print(flush=True)
+
+
+def verifier(quoi, ok, detail=""):
+    chapitre[2] += 1
+    chapitre[1] += 1 if ok else 0
+    print(("  [ok] " if ok else "  [!!] ") + quoi + ("" if ok or not detail else "\n       " + detail[-400:]), flush=True)
+    return ok
+
+
+def dire(t):
+    print("       " + t, flush=True)
+
+
+def lugus(*args, env=None, entree=None):
+    e = dict(os.environ)
+    e.pop("LUGUS_AVARIE", None)
+    e.pop("VTX_FENETRE", None)
+    e.update(env or {})
+    r = subprocess.run([LUGUS, *args], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=d, env=e,
+                       input=entree, timeout=900)
+    return r.returncode, r.stdout.replace("\r\n", "\n"), r.stderr.replace("\r\n", "\n")
+
+
+def ecrire(nom, texte):
+    f = os.path.join(d, nom)
+    open(f, "w", encoding="utf-8", newline="\n").write(texte)
+    return f
+
+
+if not os.path.exists(LUGUS):
+    print("lugus n'est pas construit : cd vtx-rs puis cargo build --release ; l'épreuve n'a rien vérifié")
+    sys.exit(1)
+
+import adn     # noqa: E402  (chimie/adn.py : la référence de l'ADN, pour trouver les molécules à abîmer)
+import vtx128  # noqa: E402  (le compilateur de référence, en Python)
+
+# ================================================================================================= I. la forge
+titre("I. LA FORGE : créer un programme, case par case, puis le compiler deux fois",
+      "Ogmios a une paillasse : chaque case est un atome d'une réaction. Les quatre éléments de structure (H, O, N, C)\n"
+      "viennent du nombre de liaisons et composent la molécule de registre ; les autres éléments disent ce que fait la\n"
+      "case (S la logique, Fe la mémoire du cube, Mg les vagues, Zn la réparation…). On pose ici des cases depuis la\n"
+      "palette, comme avec le menu Cases d'Ogmios, puis on vérifie que les deux compilateurs donnent les mêmes mots.")
+src_forge = "reaction principal() {\n    = [4, 8, 15, 16, 23, 42] -> t\n}\n"
+f_forge = ecrire("forge.vtx", src_forge)
+gestes = ecrire("forge.gestes", "poser somme\nposer reparer\nposer fusion\npalette\n")
+r = subprocess.run([VTX, "paillasse", f_forge, "--gestes", gestes, "--analyse"], capture_output=True, text=True,
+                   encoding="utf-8", errors="replace", cwd=d)
+sortie_forge = r.stdout.replace("\r\n", "\n")
+texte = sortie_forge.split("--- le texte\n")[-1] if "--- le texte" in sortie_forge else ""
+verifier("trois cases posées depuis la palette (somme, reparer, fusion) s'écrivent dans la réaction",
+         "= somme pour chaque v dans _ : v -> l1" in texte and "= reparer _ / _ par 0 -> l2" in texte
+         and "= fusion(_, _) -> l3" in texte, sortie_forge)
+familles = [l.split()[0] for l in sortie_forge.split("\n") if " — " in l and l[:1].isupper() and not l.startswith("Case")]
+verifier(f"la palette expliquée : {len(familles)} familles ({' '.join(familles)})", len(familles) >= 12, sortie_forge[-600:])
+for l in texte.strip().split("\n"):
+    dire(l)
+# la réaction complétée à la main (les « _ » deviennent des liaisons) : elle compile et réagit
+src_complete = ("reaction principal() {\n"
+                "    = [4, 8, 15, 16, 23, 42] -> t\n"
+                "    = somme pour chaque v dans t : v -> l1\n"
+                "    = reparer l1 / 6 par 0 -> l2\n"
+                "    = sortie(l2)\n"
+                "}\n")
+f_complete = ecrire("forge2.vtx", src_complete)
+c, s, e = lugus(f_complete)
+verifier("les « _ » reliés (t -> somme -> partage par 6) : la réaction réagit, la moyenne des six nombres vaut 18",
+         c == 0 and s.strip() == "18", s + e)
+src = open(ALESIA, encoding="utf-8").read()
+t0 = time.time()
+ref = vtx128.assembler(vtx128.compiler(src, dossier=ici))
+t_py = time.time() - t0
+f_mots = os.path.join(d, "alesia.mots")
+t0 = time.time()
+lugus("compiler", ALESIA, f_mots)
+t_vtx = time.time() - t0
+mots = [int(x) for x in open(f_mots).read().split(";")[0].split(",") if x.strip()] if os.path.exists(f_mots) else []
+verifier(f"alesia.vtx compilé deux fois : par vtx128.py (Python, {t_py:.1f} s) et par vtxc128 (écrit en vtx, "
+         f"{t_vtx:.1f} s) : les mêmes {len(ref)} mots de 128 bits", ref == mots and len(ref) > 1000,
+         f"{len(ref)} contre {len(mots)}")
+
+# ================================================================================================= II à V
+c, s, e = lugus(ALESIA)
+lignes = [l for l in s.split("\n") if l.strip()]
+if lignes and lignes[0] == "52":       # la sortie du programme vient d'abord
+    lignes = lignes[1:]
+
+
+def ligne(debut):
+    return next((l for l in lignes if l.startswith(debut)), "(absente)")
+
+
+def montrer(debut, attendu, quoi):
+    l = ligne(debut)
+    ok = l == debut + attendu
+    verifier(quoi + (" : " + l[len(debut):].strip() if ok else ""), ok, f"lu : {l!r}\n       attendu : {debut + attendu!r}")
+
+
+getcontext().prec = 60
+fib = [0, 1]
+while len(fib) < 152:
+    fib.append(fib[-1] + fib[-2])
+racine2 = str(Decimal(2).sqrt())[:35]
+
+titre("II. PROGRAMMER : ce qu'écrit un druide",
+      "Le programme epreuve/alesia.vtx est lancé sur Lugus (la machine de 128 bits). Structures, textes accentués,\n"
+      "tableaux, dictionnaires, et des fonctions passées en valeur qui promettent ce qu'elles touchent.")
+verifier("alesia.vtx se lance sur Lugus et rend sa sortie (52)", c == 0 and s.split("\n")[0].strip() == "52", e[-300:])
+montrer("structure :", " Astérix 7 vrai", "une structure Guerrier, son nom, sa force, sa potion (une logique)")
+montrer("texte :", " Astérix gagne / ALÉSIA", "les textes : concaténer, comparer, majuscules accentuées")
+montrer("tableau trié :", " 1 3 5 7 9 somme 25", "un tableau trié et sommé")
+montrer("fonction en valeur :", " 25 144", "plier(t, plus, 0) et appliquer(carre, 12) : des fonctions passées en valeur")
+montrer("dictionnaire :", " 52 0", "un dictionnaire fermé : Alésia y est (52), Rome n'y est pas (0)")
+
+titre("III. COMPTER : exact quand il le faut",
+      "Les entiers de 128 bits ne débordent pas là où ceux de 64 bits débordent ; le flottant de 128 bits donne 34\n"
+      "chiffres ; le flottant quaternaire (base 4) est montré tel qu'il est ; chaque valeur est vérifiée par Python.")
+montrer("30! en 128 bits :", f" {math.factorial(30)}", "30! (33 chiffres, au-delà des 64 bits), vérifié par Python")
+montrer("fibonacci(150) :", f" {fib[150]}", "fibonacci(150), vérifié par Python")
+montrer("entier de 128 bits, le plus grand :", f" {2 ** 127 - 1}", "le plus grand entier de 128 bits : 2^127 - 1")
+montrer("un tiers en flottant de 128 bits :", " 0." + "3" * 34, "1/3 en flottant de 128 bits : 34 chiffres")
+montrer("0.1 en flottant quaternaire de 64 bits :", " 0.1 ; plus lui-même : 0.19999999999999996",
+        "le flottant quaternaire (base 4) de 64 bits")
+dire("0.1 n'a pas d'écriture exacte en base 4 (ni en base 2) : le plus proche s'affiche « 0.1 », et doublé il montre")
+dire("sa vraie valeur, 0.19999999999999996 : la même chose que 0.1 + 0.2 = 0.30000000000000004 en IEEE. Le doute")
+dire("est dit, pas caché ; multiplier_ajouter et le flottant de 128 bits sont là quand il faut plus juste.")
+montrer("multiplier_ajouter(3, 4, 5) :", f" 17.0 ; racine de 2 : {racine2}",
+        "multiplier_ajouter (un seul arrondi) et la racine de 2 sur 34 chiffres, vérifiée par Python")
+
+titre("IV. DOUTER : quatre valeurs, pas deux",
+      "Inconnu (aucune preuve), faux, vrai, variable (des preuves des deux côtés). Deux témoignages contraires ne\n"
+      "s'écrasent pas : ils donnent variable, et le programme le sait.")
+montrer("fusion(vrai, faux) :", " variable ; fusion(vrai, inconnu) : vrai",
+        "fusion : vrai et faux ensemble donnent variable ; vrai et inconnu donnent vrai")
+montrer("savoir potion :", " vrai ; savoir sanglier : inconnu", "un savoir ouvert : ce qu'on n'a jamais dit est inconnu, pas faux")
+montrer("puis nier potion :", " variable", "affirmer puis nier : la contradiction est gardée (variable)")
+
+titre("V. RÉAGIR : des réactions plutôt que des boucles",
+      "Une réaction dit ce qui est indépendant : une vague de 10 000 atomes réduite en une somme, partagée entre les\n"
+      "cœurs ; une division par zéro ne plante pas, elle rend variable, et « reparer … par 0 » la répare.")
+montrer("somme des carrés de 0 à 9999 :", f" {sum(k * k for k in range(10000))}",
+        "une vague de 10 000 carrés réduite en une somme, vérifiée par Python")
+montrer("partage 84 / 2 :", " 42 ; 84 / 0 réparé : 0", "84 / 2 puis 84 / 0 réparé par 0")
+montrer("moyenne de 2.5 et 4.5 :", " 3.5", "une réaction de flottants")
+t0 = time.time()
+rp = subprocess.run([sys.executable, os.path.join(racine, "vtx128.py"), "run", ALESIA], capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", cwd=d, env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+lp = [l for l in rp.stdout.replace("\r\n", "\n").split("\n") if l.strip() and not l.startswith(("52", "4064 mots"))]
+lp = [l for l in lp if "instructions exécutées" not in l and not l.startswith("sortie :")]
+verifier(f"la machine de référence en Python ({time.time() - t0:.1f} s) rend les mêmes {len(lignes)} lignes que Lugus en Rust",
+         lp == lignes, "\n".join(x for x in lp if x not in lignes)[:300])
+
+# ================================================================================================= VI. la mémoire
+titre("VI. SE SOUVENIR : le chemin ARNc -> ADN -> hex -> cube -> hex -> ADN -> ARN",
+      "L'ARNc est le travail (le programme et son texte), l'ADN la mémoire gardée (avec ses témoins, qui réparent),\n"
+      "le hex les adresses, le cube la mémoire vivante (étage Đ, sa coiffe, sa queue, son anti-cube et son ombre).\n"
+      "Le programme fait tout le tour ; à chaque étape on le relance : il doit redire exactement les mêmes lignes.")
+shutil.copy(ALESIA, os.path.join(d, "alesia.vtx"))
+etapes = [("ARNc (le travail)", ["arnc", "alesia.vtx", "alesia.arn"], "alesia.arn"),
+          ("ADN (la mémoire gardée)", ["ranger", "alesia.arn", "alesia.adn"], "alesia.adn"),
+          ("hex (les adresses)", ["hex", "alesia.adn", "alesia.hex"], "alesia.hex"),
+          ("cube (la mémoire vivante)", ["cube", "alesia.hex", "52"], "cube128-alesia-Đ-52.cub"),
+          ("hex relu du cube", ["hex", "cube128-alesia-Đ-52.cub", "retour.hex"], "retour.hex"),
+          ("ADN rangé de nouveau", ["ranger", "retour.hex", "retour.adn"], "retour.adn"),
+          ("ARN transcrit", ["transcrire", "retour.adn", "retour.arn"], "retour.arn")]
+for nom, args, fichier in etapes:
+    c1, s1, e1 = lugus(*args)
+    c2, s2, e2 = lugus(fichier)
+    l2 = [l for l in s2.split("\n") if l.strip()]
+    taille = os.path.getsize(os.path.join(d, fichier)) if os.path.exists(os.path.join(d, fichier)) else 0
+    verifier(f"{nom:<28} {fichier:<26} {taille:>8} octets : relancé, les mêmes lignes",
+             c1 == 0 and c2 == 0 and l2[1:] == lignes and l2[:1] == ["52"], (s1 + e1 + e2)[-300:])
+verifier("le hex revenu du cube est le même, octet pour octet",
+         open(os.path.join(d, "alesia.hex"), "rb").read() == open(os.path.join(d, "retour.hex"), "rb").read())
+pres = [f for f in os.listdir(d) if f.endswith(".cub")]
+verifier(f"le cube est posé avec ses gardiens : {', '.join(sorted(pres))}",
+         any(f.startswith("anticube128") for f in pres) and any(f.startswith("ombre128") for f in pres))
+
+# ================================================================================================= VII. se défendre
+titre("VII. SE DÉFENDRE : refuser ce qui ment, réparer ce qui s'abîme, s'arrêter plutôt que rendre le faux",
+      "Le juge lit les promesses (« touche rien ») et les types avant de compiler ; la patrouille relit l'ADN pendant\n"
+      "qu'il tourne et répare avec ses témoins ; abîmé au-delà de ce qui se répare, le programme meurt (l'apoptose)\n"
+      "plutôt que de rendre un résultat faux. Les avaries sont posées exprès (LUGUS_AVARIE=PAS:MOT:BIT).")
+
+
+def refus(nom, texte, mot, les_deux=True):
+    """lugus refuse (rien ne tourne) ; les_deux : le compilateur de référence en Python refuse aussi"""
+    f = ecrire(nom, texte)
+    c1, s1, e1 = lugus(f)
+    try:
+        vtx128.compiler(texte, dossier=d)
+        py = "accepté"
+    except Exception as x:   # noqa: BLE001
+        py = str(x)
+    return (c1 != 0 and s1.strip() == "" and mot in e1 and (mot in py or not les_deux),
+            (e1.strip().split("\n") or [""])[0], py)
+
+
+ok, m, py = refus("menteur.vtx", "fonction calme(x) touche rien { @3[5] = x; retour x; }\n"
+                                 "fonction principal() { afficher(calme(3)); }\n", "promesse rompue", False)
+verifier("une fonction qui promet « touche rien » mais écrit le cube : refusée par le juge (la carte, écrite en vtx), "
+         "rien ne tourne", ok, m)
+dire(m)
+ok, m, py = refus("passeur.vtx", "fonction ecrit(x) { @3[1] = x; retour x; }\n"
+                                 "fonction appliquer(f: fonction(entier): entier touche rien, x) touche rien { retour f(x); }\n"
+                                 "fonction principal() { afficher(appliquer(ecrit, 3)); }\n", "ne convient pas")
+verifier("une fonction qui écrit, passée là où l'on attend une fonction qui ne touche rien : refusée par les deux "
+         "compilateurs", ok, m + " / " + py)
+dire(m)
+ok, m, py = refus("faute.vtx", "fonction principal() { soit guerrier = 3; afficher(guerier); }\n", "inconnue")
+verifier("une faute de frappe (guerier pour guerrier) : refusée par les deux compilateurs, avant de tourner", ok,
+         m + " / " + py)
+dire(m)
+
+FREIN = """// machine : lugus
+reaction freinage(v: flottant, d: flottant) -> a: flottant {
+    = v * v / (2.0 * d)   -> a lourd
+}
+fonction bilan(s: flottant): flottant {
+    retour s / 1000.0 + 0.5;
+}
+fonction principal() {
+    soit s = 0.0;
+    pour k dans 0..40000 { s = s + freinage(flottant(k % 50), 45.0); }
+    afficher(bilan(s));
+}
+"""
+f_frein = ecrire("freinage.vtx", FREIN)
+lugus("ranger", f_frein, "freinage.adn")
+lugus("transcrire", "freinage.adn", "freinage-rapide.arn")
+f_adn = os.path.join(d, "freinage.adn")
+c, juste, e = lugus(f_adn)
+juste = juste.strip()
+verifier(f"freinage.adn (un isotope lourd : « -> a lourd ») rangé et lancé sous la patrouille : {juste}",
+         c == 0 and juste.startswith("359.83"), e[-300:])
+mots_adn, mols, _t = adn.lire_adn(f_adn)
+lourde = next(m for m in mols if m.isotope)
+froide = next(m for m in mols if m.debut == lourde.fin)
+
+
+def avarie(fichier, av, *args, **env):
+    c, s, e = lugus(fichier, *args, env=dict(env, LUGUS_AVARIE=av))
+    return c, s.strip(), e
+
+
+# une avarie qui fausse vraiment le résultat quand personne ne veille (l'ARN lancé --rapide : ni témoins, ni patrouille)
+fausse = None
+for place in range(froide.debut + 1, froide.fin):
+    for bit in (70, 40, 100, 6):
+        av = f"100000:{place}:{bit}"
+        if avarie("freinage-rapide.arn", av, "--rapide")[1] != juste:
+            fausse = av
+            break
+    if fausse:
+        break
+if verifier(f"une avarie trouvée (pas:mot:bit = {fausse}) qui fausse le résultat quand personne ne veille", fausse is not None):
+    _c, s_sans, _e = avarie(f_adn, fausse, LUGUS_PATROUILLE="0")
+    verifier(f"la même avarie sans la patrouille (LUGUS_PATROUILLE=0) : le résultat n'est plus le bon ({s_sans})",
+             s_sans != juste)
+    c, s_avec, e = avarie(f_adn, fausse)
+    verifier("la même avarie sous la patrouille : la molécule est réparée par ses témoins, le résultat est juste",
+             c == 0 and s_avec == juste and "réparé" in e, e[-300:])
+    rep = next((l for l in e.split("\n") if "réparé" in l), "")
+    dire(rep.strip()[:150])
+neuf = ",".join(f"100000:{i}:{b}" for i in range(froide.debut, froide.debut + 9) for b in (3, 70))
+c, s, e = avarie(f_adn, neuf)
+verifier("neuf mots voisins abîmés, au-delà de ce que les témoins réparent : l'apoptose, aucun résultat rendu",
+         c != 0 and s == "" and "apoptose" in e, (s + e)[-300:])
+dire(next((l for l in e.split("\n") if "apoptose" in l), "").strip()[:150])
+c, s, e = lugus("freinage-rapide.arn", "--veille")
+verifier("l'ARN coiffé est vérifié avant de servir (sa coiffe, ses témoins) : il donne le même résultat",
+         c == 0 and s.strip() == juste, e[-200:])
+
+# ================================================================================================= VIII. les brèches
+bilan.append(tuple(chapitre))
+chapitre[0] = None
+titre("VIII. LES BRÈCHES CONNUES : ce que l'épreuve a trouvé et qui reste à fermer (montré, pas compté)",
+      "Une épreuve honnête dit aussi où le rempart est bas. Ces lignes ne comptent pas dans le bilan ; elles disent\n"
+      "le prochain travail.")
+f = ecrire("hors.vtx", "fonction principal() { soit t = [1, 2, 3]; soit i = 7; afficher(t[i]); }\n")
+c, s, e = lugus(f)
+print(f"  [..] lire t[7] dans un tableau de 3 : Lugus rend « {s.strip()} » sans rien dire (il lit au-delà du tableau) ;")
+print("       écrire au-delà pourrait abîmer le tas. À faire : que t[i] hors des bornes rende inconnu et le dise.")
+print("  [..] « soit m: texte = n; » avec n un entier est accepté par les deux compilateurs : à l'affichage, l'entier est")
+print("       lu comme l'adresse d'un texte et la machine s'emballe (non lancé ici, pour ne pas charger la mémoire).")
+print("       À faire : que le type écrit soit vérifié contre la valeur, dans vtx128.py et dans vtxc128.")
+
+# ================================================================================================= le bilan
+print("\n" + "=" * 100)
+print("BILAN DE L'ÉPREUVE D'ALÉSIA")
+print("=" * 100)
+total = sum(t for _, _, t in bilan)
+reussies = sum(r for _, r, _ in bilan)
+for nom, r, t in bilan:
+    if nom is None:
+        continue
+    print(f"  {'[ok]' if r == t else '[!!]'} {nom.split(':')[0]:<16} {r}/{t}")
+print(f"\n  {reussies}/{total} vérifications réussies en {time.time() - debut:.0f} s.")
+print("  " + ("Tout est conforme : Vercintorix a tenu le siège." if reussies == total else
+              "Des vérifications ont échoué : voir les lignes [!!] plus haut."))
+shutil.rmtree(d, ignore_errors=True)
+sys.exit(0 if reussies == total else 1)

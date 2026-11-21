@@ -329,6 +329,9 @@ const C_GIF: u16 = 1316;
 const C_PNG: u16 = 1317;
 const C_ONGLET_ARBRE: u16 = 1318;
 const C_EXECUTABLE: u16 = 1319;
+/// 0.69 : le menu Cases : la palette expliquée, puis une entrée par case (C_CASE + son rang dans la palette)
+const C_PALETTE: u16 = 1599;
+const C_CASE: u16 = 1600;
 
 const FOND: u32 = 0x001E1E1E; // COLORREF : 0x00BBGGRR
 const TEXTE: u32 = 0x00D4D4D4;
@@ -3057,10 +3060,21 @@ fn menus(fen: H) {
         ajouter(cube, "", 0);
         ajouter(cube, "Enregistrer l'&animation (GIF) : commencer, finir\tCtrl+G", C_GIF);
         ajouter(cube, "&Image du programme en PNG", C_PNG);
+        // 0.69 : les cases de la paillasse, famille par famille ; chacune s'écrit dans la réaction montrée
+        let cases = CreatePopupMenu();
+        ajouter(cases, "Toutes les cases &expliquées", C_PALETTE);
+        let mut famille = "";
+        for (k, c) in super::paillasse::PALETTE.iter().enumerate() {
+            if c.famille != famille {
+                famille = c.famille;
+                ajouter(cases, "", 0);
+            }
+            ajouter(cases, &format!("{}  {} — {}\t{}", c.symbole, c.nom.replace('_', " "), c.famille, c.modele), C_CASE + k as u16);
+        }
         let aide = CreatePopupMenu();
         ajouter(aide, "&Associer les fichiers .vtx à l'atelier", C_ASSOCIER);
         ajouter(aide, "À &propos", C_APROPOS);
-        for (m, t) in [(fichier, "&Fichier"), (edition, "&Édition"), (executer, "E&xécuter"), (cube, "&Cube"), (aide, "&Aide")] {
+        for (m, t) in [(fichier, "&Fichier"), (edition, "&Édition"), (executer, "E&xécuter"), (cube, "&Cube"), (cases, "Ca&ses"), (aide, "&Aide")] {
             AppendMenuW(barre, MF_POPUP, m as usize, w(t).as_ptr());
         }
         SetMenu(fen, barre);
@@ -3180,6 +3194,16 @@ fn commande(c: u16) {
             C_GIF => basculer_enregistrement(),
             C_PNG => image_png(),
             C_EXECUTABLE => faire_executable(),
+            C_PALETTE => {
+                at.pail.palette_ouverte = true;
+                maj_explications();
+                etat("les cases : choisissez-en une dans le menu Cases, elle s'écrit dans la réaction montrée");
+            }
+            k if (C_CASE..C_CASE + 64).contains(&k) => {
+                let source = lire_texte(at.source);
+                let r = at.pail.poser_case((k - C_CASE) as usize, &source);
+                reponse_paillasse(r);
+            }
             C_PAS => avancer(Avance::Pas),
             C_PAS_DESSUS => avancer(Avance::Dessus),
             C_PAS_SORTIR => avancer(Avance::Sortir),
