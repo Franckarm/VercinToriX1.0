@@ -2973,7 +2973,8 @@ fonction niveau_service(code, su) {
     si code == 10 || code == 13 || code == 26 {
         retour 2;
     }
-    si code == 25 {
+    // 0.69b : 32 et 33, t[i] hors des bornes (retenir l'indice, arrêter la machine) : une lecture, rien de plus
+    si code == 25 || code == 32 || code == 33 {
         retour 1;
     }
     retour 3;

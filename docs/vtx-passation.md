@@ -17,7 +17,7 @@ avec le créateur.*
   (service 28, `lister_dossier`, `dossier_present`), `lugus cataloguer DOSSIER` (écrit en vtx, dans le lecteur d'ADN),
   `importer empreinte "16hex";` sans chemin, la vibration de chaque molécule (`lugus morceaux`), et la carte qui dit
   d'où vient chaque molécule (et voit une retouche).
-- Les journaux : `docs/vtx-reactions.md` (sections 1 à 75), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
+- Les journaux : `docs/vtx-reactions.md` (sections 1 à 75 bis), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
   feuille de route, section 11), `docs/vtx-syntaxe-v0-4.md` (la référence du langage).
 
 ## 2. Les règles de travail (à garder)
@@ -78,7 +78,10 @@ paquet : `outils/fichiers_du_paquet.txt` (`git archive … HEAD $(cat outils/fic
 complet et parlant à la place des nombreux tests du paquet) ; Ogmios indépendant (`ogmios.exe`, ses raccourcis Bureau
 et menu Démarrer par `vtx installer`) ; la palette des cases (24 cases, 14 familles d'éléments, le menu Cases). **À
 fermer ensuite, trouvé par l'épreuve** : `t[i]` hors des bornes lit sans rien dire ; `soit m: texte = n` (un entier)
-accepté par les deux compilateurs. Le paquet n'emporte plus les tests (ils restent dans le dépôt).
+accepté par les deux compilateurs. Le paquet n'emporte plus les tests (ils restent dans le dépôt). **0.69b (§75 bis)** : le menu des cases au clic droit, la case de
+fin (Ne) ; les deux brèches fermées sur Lugus (`__borne`, services 32 et 33 ; `nombre_pour_texte`). **Reste** : les
+mêmes deux brèches sur Dunon ; `s.champ[i]` ; le coût de `__borne` (un appel par case : une instruction de
+chargement vérifié, ou une boucle sur `0..longueur(t)` reconnue sûre, le réduiraient).
 
 **Le glossaire** (fait, 0.67, §73). **La fenêtre d'un programme** (fait, 0.68, §74 : l'atelier et `lugus`, sous
 Windows). **Ensuite** : Ogmios en vtx, F5 qui ne fige pas et sa fenêtre (deux fenêtres à la fois dans sortie.rs). **La suite donnée par le créateur le 21** : Ogmios, construit en vtx ; s'assurer

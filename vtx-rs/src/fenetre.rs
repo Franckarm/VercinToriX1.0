@@ -154,6 +154,9 @@ extern "system" {
     fn GetWindowTextLengthW(h: H) -> i32;
     fn CreateMenu() -> H;
     fn CreatePopupMenu() -> H;
+    fn TrackPopupMenu(m: H, drapeaux: u32, x: i32, y: i32, r: i32, h: H, rect: *const core::ffi::c_void) -> i32;
+    fn DestroyMenu(m: H) -> i32;
+    fn ClientToScreen(h: H, p: *mut Point) -> i32;
     fn AppendMenuW(m: H, drapeaux: u32, id: usize, t: *const u16) -> i32;
     fn SetMenu(h: H, m: H) -> i32;
     fn GetMenu(h: H) -> H;
@@ -2636,6 +2639,36 @@ fn reponse_paillasse(r: super::paillasse::Reponse) {
         }
         Reponse::Rien => return,
         Reponse::Redessiner => {}
+        // 0.69b : le clic droit dans le vide : le menu des cases, là où l'on a cliqué ; la case choisie s'y pose
+        Reponse::Palette { x, y } => {
+            let choix = unsafe {
+                let m = CreatePopupMenu();
+                AppendMenuW(m, 0, 1, w("Case vide\t= _ -> l").as_ptr());
+                let mut famille = "";
+                for (k, c) in super::paillasse::PALETTE.iter().enumerate() {
+                    if c.famille != famille {
+                        famille = c.famille;
+                        AppendMenuW(m, MF_SEPARATOR, 0, std::ptr::null());
+                    }
+                    AppendMenuW(m, 0, 2 + k, w(&format!("{}  {} — {}\t{}", c.symbole, c.nom.replace('_', " "), c.famille,
+                                                         c.modele)).as_ptr());
+                }
+                let mut p = Point { x, y };
+                ClientToScreen(at.paillasse, &mut p);
+                // TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON : le choix est rendu ici, sans WM_COMMAND
+                let c = TrackPopupMenu(m, 0x0100 | 0x0080 | 0x0002, p.x, p.y, 0, at.fen, std::ptr::null());
+                DestroyMenu(m);
+                c
+            };
+            if choix <= 0 {
+                at.pail.clic_droit = None;
+                etat("paillasse : aucune case posée");
+                return;
+            }
+            let k = if choix == 1 { None } else { Some(choix as usize - 2) };
+            let r = at.pail.poser_ici(k, &lire_texte(at.source));
+            return reponse_paillasse(r);
+        }
     }
     unsafe {
         InvalidateRect(at.paillasse, std::ptr::null(), 0);

@@ -153,10 +153,10 @@ s_ = paillasse(f, "--ecrire", gestes=[f"droit {cx} {cy}", "ecrire = x + 2 -> a"]
 t2 = open(f, encoding="utf-8").read()
 verifier("clic droit sur une case : sa ligne s'édite (x + 1 devient x + 2, r(3) = 5 + 10 = 15)",
          "édition de la ligne 3 : = x + 1 -> a" in s_ and "\n    = x + 2 -> a\n" in t2 and lancer(f) == "15", s_ + t2)
-s_ = paillasse(f, "--ecrire", gestes=["droit 700 400", "ecrire = a - 1 -> w"])
+s_ = paillasse(f, "--ecrire", gestes=["droit 700 400", "case vide", "ecrire = a - 1 -> w"])
 t2 = open(f, encoding="utf-8").read()
 c2, _ = plan(f)
-verifier("clic droit dans le vide : une case neuve posée là, écrite comme on l'a tapée",
+verifier("clic droit dans le vide : le menu des cases, la case vide posée là, écrite comme on l'a tapée",
          "édition de la ligne 6 : = _ -> l1" in s_ and "    = a - 1 -> w\n}" in t2 and len(c2) == len(c) + 1, s_ + t2)
 s_ = paillasse(f, gestes=["ecrire = rien"])
 verifier("écrire sans clic droit : rien ne change", "pas de case en édition" in s_, s_)

@@ -410,6 +410,17 @@ class CPU:
             return self.jeter_cube(arg)
         if code in (16, 17, 20, 21, 23):
             return 0
+        if code == 32:
+            # 0.69b : t[i] hors des bornes : 32 retient l'indice, 33 arrête la machine (arg = longueur << 24 | ligne)
+            self.borne_indice = arg
+            return 0
+        if code == 33:
+            i = getattr(self, "borne_indice", 0) & ((1 << 64) - 1)
+            indice = i - (1 << 64) if i >= 1 << 63 else i
+            n = arg >> 24
+            raise Erreur(f"ligne {arg & 0xFFFFFF} : t[{indice}] est hors du tableau (sa longueur : {n}, les indices vont "
+                         f"de 0 à {n - 1 if n else 'rien : il est vide'}) ; la machine s'arrête plutôt que de lire ou "
+                         f"d'écrire à côté")
         if code == 31:
             # 0.64 : les faces du programme lancé depuis son cube (Lugus en Rust) ; cette machine n'est pas lancée depuis
             # un cube : rien (inconnu)

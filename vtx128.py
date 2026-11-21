@@ -1558,6 +1558,7 @@ class Molecule:
 class Analyseur:
     def __init__(self, jetons):
         self.t, self.i = jetons, 0
+        self.en_prelude = False      # 0.69b : le prélude ne vérifie pas ses t[i]
         self.consts, self.donnees = {"vrai": 1, "faux": 0, "CPU": 0, "GPU": 1, "PARTAGE": 2, "DISQUE": 3, "nul": 0}, []
         self.textes = {}                  # texte littéral -> numéro de son étiquette
         self.types_champs = {}            # structure -> {champ : type}
@@ -3140,9 +3141,17 @@ class Analyseur:
         while self.est_op(".", "["):
             if self.est_op("["):
                 # t[i] d'un tableau dynamique (tableau(n), [a, b, c]) : la case i de son bloc de données
+                lb = self.regard()[2]
                 self.suivant()
                 i = self.expr()
                 self.attendre("]")
+                # 0.69b : l'indice passe par __borne (hors du tableau : la machine s'arrête et dit la ligne), quand la
+                # poignée se relit sans rien changer (une variable, ou la case d'un tableau : t[i][j]) ; pas dans le
+                # prélude (son code est sûr, et le vérifier ralentirait tout)
+                if not self.en_prelude and (e[0] == "var" or (e[0] == "lire" and len(e) == 3 and e[1] == 3
+                                                              and e[2][0] == "bin" and e[2][1] == "+"
+                                                              and e[2][2][0] == "lire")):
+                    i = ("appel", "__borne", [i, e, ("nombre", lb)], lb)
                 e = self.element(e, i)
                 continue
             self.suivant()
@@ -3444,6 +3453,15 @@ fonction __rendre_suite(h0, h1) {
     @3[14680064 + k] = h0 + 1;
 }
 // le tas est plein : le programme s'arrête avec un message clair (au lieu d'écrire à l'adresse 0)
+// 0.69b : l'indice d'un t[i] : hors du tableau, la machine s'arrête et dit la ligne (le service 32 retient l'indice,
+// le 33 arrête : longueur << 24 | ligne) ; pour le juge, une lecture de l'étage 3, rien de plus
+fonction __borne(i, h, ligne) {
+    si i >= @3[h] {
+        __service(32, i);
+        __service(33, @3[h] * 16777216 + ligne);
+    }
+    retour i;
+}
 fonction __verifier(h) {
     si h == 0 {
         __service(10, 0);
@@ -12037,8 +12055,77 @@ def vers_lugus(fs):
             f.corps = rw(f.corps)
 
 
+OPS_NOMBRE = {"-", "*", "/", "%", "<<", ">>", "&", "|", "^"}
+
+
+def nombre_pour_texte(f, liste, env, ptexte):
+    """0.69b : un nombre sûr (un nombre écrit, un calcul, une variable qui n'en reçoit pas d'autre) ne va pas là où l'on a
+    écrit « texte » (un soit, un paramètre) : la machine prendrait le nombre pour l'adresse d'un texte. La plus petite
+    ligne fautive est dite (vtxc128 dit la même)."""
+    params = set(f.params)
+    defs = {}
+    for st in liste:
+        defs.setdefault(st[1], []).append(st[2])
+
+    def affs(x):
+        if isinstance(x, list):
+            for y in x:
+                affs(y)
+        elif isinstance(x, tuple) and x:
+            if x[0] == "affecter":
+                defs.setdefault(x[1], []).append(x[2])
+            for y in x[1:]:
+                if isinstance(y, (list, tuple)):
+                    affs(y)
+    affs(f.corps)
+    ent = {v for v in defs if v not in params and not env.get(v) and any(st[1] == v for st in liste)}
+
+    def sur(e):
+        if not isinstance(e, tuple) or not e:
+            return False
+        if e[0] == "nombre":
+            return True
+        if e[0] == "bin" and e[1] in OPS_NOMBRE:
+            return True
+        if e[0] == "bin" and e[1] == "+":
+            return sur(e[2]) and sur(e[3])
+        return e[0] == "var" and e[1] in ent
+    change = True
+    while change:
+        change = False
+        for v in sorted(ent):
+            if not all(sur(x) for x in defs[v]):
+                ent.discard(v)
+                change = True
+    fautes = []
+    for st in liste:
+        if len(st) > 4 and st[4] == "t" and sur(st[2]):
+            fautes.append((st[3], f"ligne {st[3]} : « {st[1]} » est un texte : il ne reçoit pas un nombre "
+                                  f"(texte(n) écrit un nombre en texte)"))
+
+    def appels(x):
+        if isinstance(x, list):
+            for y in x:
+                appels(y)
+        elif isinstance(x, tuple) and x:
+            if x[0] == "appel" and x[1] in ptexte:
+                for k, (a, (pn, est)) in enumerate(zip(x[2], ptexte[x[1]])):
+                    if est and sur(a):
+                        fautes.append((x[3], f"ligne {x[3]} : « {x[1]} » attend un texte (son paramètre « {pn} ») : "
+                                             f"il ne reçoit pas un nombre (texte(n) écrit un nombre en texte)"))
+            for y in x[1:]:
+                if isinstance(y, (list, tuple)):
+                    appels(y)
+    appels(f.corps)
+    if fautes:
+        raise VtxError(min(fautes)[1])
+
+
 def typer_textes(fs, types_champs):
     rtexte = {f.nom for f in fs if f.rtype == "t"}
+    # 0.69b : les paramètres déclarés texte, avant que les types de textes deviennent des entiers
+    ptexte = {f.nom: [(p, t == "t") for p, t in zip(f.params, f.ptypes)] for f in fs
+              if getattr(f, "origine", "") != "prélude" and "t" in f.ptypes}
     rsig = {f.nom: f.rtype for f in fs if est_sig(f.rtype)}   # 0.6x : les fonctions qui rendent une fonction
     sigv = {}                                                # 0.6x : les variables d'un type de fonction
     du_prelude = {f.nom for f in fs if getattr(f, "origine", "") == "prélude"}
@@ -12286,6 +12373,7 @@ def typer_textes(fs, types_champs):
                     if st[1] not in tablog and ((len(st) > 4 and st[4] == "L") or tableau_logique(st[2])):
                         tablog.add(st[1])
                         change = True
+            nombre_pour_texte(f, liste, env, ptexte)
             f.corps = rw(f.corps, env)
         # pour la génération du code, un texte (et la poignée d'un tableau de flottants) est un entier
         f.ptypes = ["e" if t in ("t", "F", "L") else t for t in f.ptypes]
@@ -12416,6 +12504,7 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None, rempl
         # le prélude continue la numérotation des textes du programme (un texte écrit dans le prélude a sa propre
         # étiquette, et pas celle d'un texte du programme)
         ap = Analyseur(lexer(PRELUDE, True))
+        ap.en_prelude = True
         ap.textes = a.textes
         pre = [f for f in ap.programme() if f.nom not in noms]
         for f in pre:
@@ -12492,7 +12581,8 @@ def ensembles_conflit(za, zb):
 class Effets:
     """Lectures et écritures (zones) de chaque fonction, appels compris (point fixe)."""
 
-    INTEGRES_EFFETS = {"__rompre": ({ES, TOUT}, {ES, TOUT}), "sortie": ({ES}, {ES}), "entrée": ({ES}, {ES}), "bruit": ({ES}, {ES}), "pile": ({ES}, {ES}), "__service": ({ES, TOUT}, {ES, TOUT}), "gemv": ({(2, 0, 1 << 24)}, {(2, 0, 1 << 24)}),
+    INTEGRES_EFFETS = {"__rompre": ({ES, TOUT}, {ES, TOUT}), "sortie": ({ES}, {ES}), "entrée": ({ES}, {ES}), "bruit": ({ES}, {ES}), "pile": ({ES}, {ES}), "__service": ({ES, TOUT}, {ES, TOUT}),
+                       "__borne": ({(3, 0, 1 << 24)}, set()), "gemv": ({(2, 0, 1 << 24)}, {(2, 0, 1 << 24)}),
                        **{n: ({ES, TOUT}, {ES}) for n in ("lire_car", "ecrire_car", "ouvrir_lecture", "ouvrir_ecriture",
                                                           "fermer", "fin_de")}}
 

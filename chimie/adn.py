@@ -601,7 +601,7 @@ def promesses(mots, molecules, noms, lignes):
 OPS_LIT = {0x20, 0x29, 0x54, 0x38, 0x5F}          # LD LDX LDQ GDOT BRIN
 OPS_ECRIT = {0x21, 0x2A, 0x55, 0x39, 0x5E}        # ST STX STQ GEMV MARQUE
 OPS_MONDE = {0x24, 0x52, 0x23, 0x51}              # OUT SORC IN ENTC
-SERVICES = {10: 2, 13: 2, 25: 1, 26: 2}           # les autres services touchent le monde (fichiers, cubes, voix…)
+SERVICES = {10: 2, 13: 2, 25: 1, 26: 2, 32: 1, 33: 1}         # les autres services touchent le monde (fichiers, cubes, voix…)
 DEBUTS = ("fonction ", "reaction ", "structure ", "constante ", "exemple ", "importer ")
 
 

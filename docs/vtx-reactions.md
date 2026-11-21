@@ -3393,3 +3393,28 @@ sécurité) à la place des nombreux tests du paquet ; Ogmios en programme indé
   réaction neuve s'il n'y en a pas). Dans `vtx paillasse --gestes` : `palette`, `poser NOM`.
 - **Le paquet allégé** : les tests de développement restent dans le dépôt (et `verifier.py`), le paquet n'emporte plus
   que l'épreuve (`outils/fichiers_du_paquet.txt` : 211 fichiers au lieu de 266).
+
+### 75 bis. Le clic droit des cases, la fin, deux brèches fermées (21 novembre, 0.69b)
+
+**Demandé par le créateur le 21, après l'essai 0.69** : le menu des cases sur le clic droit (plus ergonomique), une
+case pour la fin ou le résultat, puis fermer les deux brèches trouvées par l'épreuve.
+
+- **Le clic droit dans le vide** d'une réaction ouvre le menu des cases là où l'on a cliqué (« Case vide », puis la
+  palette famille par famille) ; la case choisie se pose à cet endroit et s'ouvre à l'édition. Le clic droit sur une
+  case l'édite, comme avant. Par les gestes : `droit X Y`, puis `case NOM` (ou `case vide`).
+- **La fin** (Ne, le néon : l'enseigne qui dit que c'est fini) : `= _ -> r` où `r` est le résultat de la réaction, ou
+  `= sortie(_)` si elle ne rend rien ; la case qui donne le résultat d'une réaction porte le néon.
+- **t[i] hors des bornes, fermé sur Lugus** : l'analyseur écrit `t[__borne(i, t, ligne)]` (pour une variable ou
+  `t[i][j]`, pas dans le prélude) ; `__borne` (prélude) compare l'indice à la longueur, et hors du tableau les
+  services 32 (l'indice retenu) et 33 (l'arrêt, `longueur << 24 | ligne`) arrêtent la machine avec le message. Pour le
+  juge et l'analyse des effets, `__borne` ne fait que lire l'étage 3 (une fonction « touche lecture » qui lit t[i] reste
+  tenue ; les vagues se partagent toujours entre les cœurs). vtxc128 lit `__borne` dans le prélude d'office et la sait
+  entière avant de lire le prélude. Coût mesuré : 3,6 millions d'instructions au lieu de 1,1 sur une boucle qui ne fait
+  que lire un tableau de 1000 cases cent fois.
+- **Un nombre pour un texte, fermé** (vtx128.py `nombre_pour_texte`, vtxc128 la même) : un nombre sûr (écrit, un
+  calcul `- * / % << >> & | ^`, un `+` de deux nombres sûrs, une variable dont toutes les valeurs en sont : le plus
+  grand point fixe) ne va ni dans un `soit x: texte`, ni dans un paramètre `texte` ; la plus petite ligne fautive est
+  dite, la même par les deux compilateurs.
+- **Vérifié** : les mêmes mots sur les 47 programmes de Lugus (vtxc128 compris, qui se compile lui-même) ; l'épreuve
+  (47 vérifications) ; le juge en vtx et sa référence en Python (services 32 et 33 : une lecture).
+- **Pas encore** : Dunon (vtx64, vtxc64) a toujours les deux brèches ; `s.champ[i]` n'est pas vérifié.

@@ -245,10 +245,11 @@ pub const PALETTE: &[CasePalette] = &[
                   aide: "un tableau écrit, la source d'une vague" },
     CasePalette { symbole: "Na", element: "sodium", famille: "données", nom: "element", modele: "= _[_] -> @",
                   aide: "lit un élément d'un tableau" },
-    CasePalette { symbole: "Cl", element: "chlore", famille: "sortie", nom: "afficher", modele: "= afficher(_)",
+    CasePalette { symbole: "Cl", element: "chlore", famille: "écran", nom: "afficher", modele: "= afficher(_)",
                   aide: "montre une valeur à l'écran : un bout de chaîne, il ne donne pas de liaison" },
-    CasePalette { symbole: "Cl", element: "chlore", famille: "sortie", nom: "sortie", modele: "= sortie(_)",
-                  aide: "le résultat du programme" },
+    CasePalette { symbole: "Ne", element: "néon", famille: "fin", nom: "fin", modele: "= _ -> !",
+                  aide: "la fin de la réaction : la liaison qu'elle rend (son « -> r »), ou la sortie du programme \
+                         (sortie(_)) si elle ne rend rien ; le néon, l'enseigne qui dit que c'est fini" },
 ];
 
 /// la famille d'une case, lue dans ce qu'elle fait (le symbole de son élément), vide pour une case de structure seule
@@ -279,7 +280,9 @@ pub fn famille_de(quoi: &str) -> &'static str {
         "Ca"
     } else if q.starts_with('[') {
         "Na"
-    } else if debut(&["afficher(", "sortie(", "ecrire("]) {
+    } else if debut(&["sortie("]) {
+        "Ne"
+    } else if debut(&["afficher(", "ecrire("]) {
         "Cl"
     } else {
         ""
@@ -328,11 +331,21 @@ pub fn poser_modele(source: &str, r: &Reaction, c: &CasePalette) -> (String, usi
     let cr = if source.contains("\r\n") { "\r" } else { "" };
     let mut v: Vec<String> = lignes.iter().map(|s| s.to_string()).collect();
     let place = r.fin.min(v.len());
+    v.insert(place, format!("{}{}{}", retrait, ligne_du_modele(c, Some(r), k), cr));
+    (v.join("\n"), place)
+}
+
+/// la ligne d'une case : « @ » la liaison lK, « # » lK+1, « ! » le résultat de la réaction (sans résultat : la sortie)
+pub fn ligne_du_modele(c: &CasePalette, r: Option<&Reaction>, k: usize) -> String {
+    if c.modele.contains('!') {
+        return match r.and_then(|r| r.resultat.clone()) {
+            Some(res) => c.modele.replace('!', &res),
+            None => "= sortie(_)".into(),
+        };
+    }
     let ligne = c.modele.replace('#', &format!("l{}", k + 1)).replace('@', &format!("l{}", k));
     // « @3[ » n'est pas une liaison : le modèle l'écrit tel quel
-    let ligne = ligne.replace(&format!("l{}3[", k), "@3[");
-    v.insert(place, format!("{}{}{}", retrait, ligne, cr));
-    (v.join("\n"), place)
+    ligne.replace(&format!("l{}3[", k), "@3[")
 }
 
 fn element_de(v: usize) -> String {
@@ -636,6 +649,7 @@ fn relier_et_ranger(r: &mut Reaction, lignes: &[&str]) {
         }
     }
     let params = r.params.clone();
+    let resultat = r.resultat.clone();
     for a in r.atomes.iter_mut() {
         let (q0, q1) = a.entrees[0].places[0];
         let l = lignes[a.ligne].trim_end_matches('\r');
@@ -656,6 +670,9 @@ fn relier_et_ranger(r: &mut Reaction, lignes: &[&str]) {
         a.entrees = ports;
         a.element = element_de(a.valence());
         a.famille = famille_de(&a.quoi).to_string();
+        if resultat.as_ref().map_or(false, |res| a.sorties.contains(res)) {
+            a.famille = "Ne".into();     // 0.69b : la case qui donne le résultat de la réaction : la fin
+        }
     }
     // l'ordre : ce que l'atome nomme dans « apres », puis, comme le compilateur, deux atomes qui touchent la même chose
     // (la même case du cube, l'écran, la sortie) : le second attend le premier, dans l'ordre des lignes, sauf si les
@@ -990,6 +1007,7 @@ fn couleur_element(e: &str) -> u32 {
         "Ar" => return 0x6890E0,
         "Ca" => return 0xF0E8D0,
         "Na" => return 0xA8A0F0,
+        "Ne" => return 0xFF5A8C,
         "Cl" => return 0x60D060,
         _ => {}
     }
@@ -1039,6 +1057,8 @@ pub enum Reponse {
     /// le clic droit : écrire le texte d'une case dans une petite boîte posée sur elle (en x, y de la paillasse) ;
     /// source : le texte réécrit d'abord (une case neuve posée là), ligne : la ligne qu'Entrée remplacera
     Editer { source: Option<String>, ligne: usize, texte: String, x: i32, y: i32 },
+    /// 0.69b : le clic droit dans le vide d'une réaction : montrer le menu des cases en (x, y) ; le choix va à poser_ici
+    Palette { x: i32, y: i32 },
 }
 
 pub enum Souris {
@@ -1046,7 +1066,7 @@ pub enum Souris {
     Bouge,
     Haut,
     Double,
-    /// le clic droit : sur une case, l'éditer ; dans le vide, poser une case neuve là et l'éditer
+    /// le clic droit : sur une case, l'éditer ; dans le vide, le menu des cases (Reponse::Palette), puis poser_ici
     Droit,
 }
 
@@ -1242,6 +1262,8 @@ pub struct Paillasse {
     /// 0.69 : la palette montrée dans les explications ; la dernière case posée depuis la palette
     pub palette_ouverte: bool,
     pub derniere_case: Option<usize>,
+    /// 0.69b : où le clic droit a ouvert le menu des cases
+    pub clic_droit: Option<(i32, i32)>,
 }
 
 impl Default for Paillasse {
@@ -1357,7 +1379,7 @@ impl Paillasse {
     pub fn nouvelle() -> Paillasse {
         Paillasse { faces: None, perimee: false, reactions: vec![], courante: 0, choisi: None, positions: HashMap::new(), valeurs: HashMap::new(), decal: (0, 0),
                     car_l: 6, car_h: 12, echelle: 1.0, message: None, cases: vec![], colonnes: vec![], onglets: vec![], entrees_r: vec![], geste: None,
-                    palette_ouverte: false, derniere_case: None }
+                    palette_ouverte: false, derniere_case: None, clic_droit: None }
     }
 
     /// relire le texte (la réaction montrée et l'atome choisi restent, si on les retrouve)
@@ -1865,9 +1887,9 @@ impl Paillasse {
                     let t = source.split('\n').nth(l).unwrap_or("").trim().to_string();
                     return Reponse::Editer { source: None, ligne: l, texte: t, x: c.x, y: c.y };
                 }
-                let (s, l) = self.poser_atome(x, y, source);
-                let t = s.split('\n').nth(l).unwrap_or("").trim().to_string();
-                Reponse::Editer { source: Some(s), ligne: l, texte: t, x, y }
+                // 0.69b : dans le vide, le menu des cases là où l'on a cliqué
+                self.clic_droit = Some((x, y));
+                Reponse::Palette { x, y }
             }
             Souris::Double => {
                 self.geste = None;
@@ -1883,6 +1905,35 @@ impl Paillasse {
                 Reponse::Texte { source: s, ligne: l }
             }
         }
+    }
+
+    /// 0.69b : la case choisie au menu du clic droit (None : la case vide « = _ -> lK »), posée où l'on a cliqué,
+    /// puis ouverte à l'édition
+    pub fn poser_ici(&mut self, k: Option<usize>, source: &str) -> Reponse {
+        let (x, y) = match self.clic_droit.take() {
+            Some(p) => p,
+            None => return Reponse::Rien,
+        };
+        let (s, l) = match k.and_then(|k| PALETTE.get(k).map(|c| (k, c))) {
+            None => self.poser_atome(x, y, source),
+            Some((k, c)) => {
+                let r = match self.reaction().filter(|r| !r.carte) {
+                    Some(r) => r.clone(),
+                    None => return Reponse::Rien,
+                };
+                let (s, l) = poser_modele(source, &r, c);
+                self.derniere_case = Some(k);
+                // la place choisie : celle du clic, sous la clé de l'atome neuf
+                if let Some(a) = analyser(&s).into_iter().find(|q| q.nom == r.nom).and_then(|q| q.atomes.into_iter().find(|a| a.ligne == l)) {
+                    let (ox, oy) = self.origine();
+                    self.positions.insert((r.nom.clone(), a.cle()),
+                                          (((x - ox) as f32 / self.echelle) as i32, ((y - oy) as f32 / self.echelle) as i32));
+                }
+                (s, l)
+            }
+        };
+        let t = s.split('\n').nth(l).unwrap_or("").trim().to_string();
+        Reponse::Editer { source: Some(s), ligne: l, texte: t, x, y }
     }
 
     /// un atome neuf « = _ -> lK » à la fin de la réaction, placé où l'on a cliqué ; rend le texte et sa ligne
@@ -1943,7 +1994,7 @@ impl Paillasse {
             None => {
                 // une réaction neuve : sa première case est celle-ci
                 let (s, l) = ajouter_reaction(source);
-                let modele = c.modele.replace('#', "l2").replace('@', "l1").replace("l13[", "@3[");
+                let modele = ligne_du_modele(c, None, 1);
                 let s = editer_ligne(&s, l, &modele);
                 self.lire(&s);
                 if let Some(i) = self.reactions.iter().position(|r| !r.carte && r.ligne + 1 == l) {
@@ -2066,7 +2117,7 @@ impl Paillasse {
                 t.push_str("Glisser une case : la déplacer. Tirer d'une sortie (à droite d'une case) vers une case : lier (la \
                             liaison remplit son entrée libre « _ », ou l'entrée visée). Tirer une entrée vers le vide : délier.\r\n\
                             Double clic dans le vide : un atome neuf (« = _ -> l1 » s'écrit dans le texte). Clic droit sur une case : \
-                            l'éditer (Entrée écrit, Échap renonce) ; clic droit dans le vide : poser une case là et l'éditer. \
+                            l'éditer (Entrée écrit, Échap renonce) ; clic droit dans le vide : le menu des cases, la case choisie se pose là et s'édite. \
                             Suppr : retirer l'atome choisi. Glisser le vide : déplacer la paillasse.\r\n\
                             Ctrl+P : faire réagir avec la provenance ; chaque liaison montre alors sa valeur (vert : arrivée, rouge : \
                             sa branche n'a pas réagi, gris : jamais calculée).\r\n");
@@ -2265,6 +2316,16 @@ pub fn commande(args: &[String]) {
                     p.palette_ouverte = true;
                     Reponse::Redessiner
                 }
+                // 0.69b : après « droit X Y » dans le vide : case NOM (ou case vide) : la case choisie au menu
+                "case" => {
+                    let nom = m.get(1).copied().unwrap_or("vide");
+                    let k = PALETTE.iter().position(|c| c.nom == nom);
+                    if k.is_none() && nom != "vide" {
+                        Reponse::Message(format!("pas de case « {} » dans la palette", nom))
+                    } else {
+                        p.poser_ici(k, &source)
+                    }
+                }
                 "poser" => match PALETTE.iter().position(|c| Some(c.nom) == m.get(1).copied()) {
                     Some(k) => p.poser_case(k, &source),
                     None => Reponse::Message(format!("pas de case « {} » dans la palette", m.get(1).copied().unwrap_or(""))),
@@ -2281,6 +2342,7 @@ pub fn commande(args: &[String]) {
                     println!("texte réécrit (ligne {})", ligne + 1);
                 }
                 Reponse::Aller(l) => println!("aller à la ligne {}", l + 1),
+                Reponse::Palette { x, y } => println!("le menu des cases, en ({}, {})", x, y),
                 Reponse::Message(m) => println!("message : {}", m),
                 Reponse::Editer { source: s, ligne, texte, .. } => {
                     if let Some(s) = s {

@@ -65,6 +65,8 @@ pub struct Spu128 {
     /// 0.64 : le cube du programme lancé depuis son cube : son code (l'étage Đ), ses faces (les étages 1 à 3, une par
     /// moitié de point), l'état de sa lecture ; lus par le service 31 (face, centre)
     pub cube_programme: Option<crate::hote::CubeProgramme>,
+    /// 0.69b : l'indice d'un t[i] hors des bornes, retenu par le service 32 pour le message du service 33
+    pub borne_indice: u128,
     pub pas: u64,
     /// pour la traduction en x86-64 : le mot que natif_lire vient de lire
     pub natif_tampon: [u64; 2],
@@ -337,6 +339,7 @@ impl Spu128 {
             pages_vues: std::collections::HashSet::new(),
             mere: None,
             cube_programme: None,
+            borne_indice: 0,
             pas: 0,
             natif_tampon: [0, 0],
             natif_cache: [u64::MAX; 128],
@@ -909,6 +912,18 @@ impl Spu128 {
                 let canal = self.canal_libre();
                 self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
+            }
+            // 0.69b : t[i] hors des bornes : 32 retient l'indice, 33 arrête la machine (arg = longueur << 24 | ligne)
+            32 => {
+                self.borne_indice = arg;
+                Ok(0)
+            }
+            33 => {
+                let i = self.borne_indice as u64;
+                let indice = if i >= 1 << 63 { format!("{}", i as i64) } else { i.to_string() };
+                Err(format!("ligne {} : t[{}] est hors du tableau (sa longueur : {}, les indices vont de 0 à {}) ; \
+                             la machine s'arrête plutôt que de lire ou d'écrire à côté", arg & 0xFF_FFFF, indice, arg >> 24,
+                            if arg >> 24 == 0 { "rien : il est vide".to_string() } else { ((arg >> 24) - 1).to_string() }))
             }
             31 => {
                 // 0.64 : une face d'une molécule du programme (arg = k << 32 | sa place, k de 0 à 5), ou son centre (k = 6)

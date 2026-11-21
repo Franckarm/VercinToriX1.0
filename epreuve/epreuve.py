@@ -91,7 +91,7 @@ titre("I. LA FORGE : créer un programme, case par case, puis le compiler deux f
       "palette, comme avec le menu Cases d'Ogmios, puis on vérifie que les deux compilateurs donnent les mêmes mots.")
 src_forge = "reaction principal() {\n    = [4, 8, 15, 16, 23, 42] -> t\n}\n"
 f_forge = ecrire("forge.vtx", src_forge)
-gestes = ecrire("forge.gestes", "poser somme\nposer reparer\nposer fusion\npalette\n")
+gestes = ecrire("forge.gestes", "poser somme\nposer reparer\nposer fusion\ndroit 900 560\ncase fin\npalette\n")
 r = subprocess.run([VTX, "paillasse", f_forge, "--gestes", gestes, "--analyse"], capture_output=True, text=True,
                    encoding="utf-8", errors="replace", cwd=d)
 sortie_forge = r.stdout.replace("\r\n", "\n")
@@ -99,8 +99,10 @@ texte = sortie_forge.split("--- le texte\n")[-1] if "--- le texte" in sortie_for
 verifier("trois cases posées depuis la palette (somme, reparer, fusion) s'écrivent dans la réaction",
          "= somme pour chaque v dans _ : v -> l1" in texte and "= reparer _ / _ par 0 -> l2" in texte
          and "= fusion(_, _) -> l3" in texte, sortie_forge)
+verifier("un clic droit dans le vide ouvre le menu des cases ; la case « fin » choisie s'y pose (la sortie du programme)",
+         "le menu des cases, en (900, 560)" in sortie_forge and "= sortie(_)" in texte, sortie_forge[-500:])
 familles = [l.split()[0] for l in sortie_forge.split("\n") if " — " in l and l[:1].isupper() and not l.startswith("Case")]
-verifier(f"la palette expliquée : {len(familles)} familles ({' '.join(familles)})", len(familles) >= 12, sortie_forge[-600:])
+verifier(f"la palette expliquée : {len(familles)} familles ({' '.join(familles)})", len(familles) >= 15, sortie_forge[-600:])
 for l in texte.strip().split("\n"):
     dire(l)
 # la réaction complétée à la main (les « _ » deviennent des liaisons) : elle compile et réagit
@@ -260,6 +262,31 @@ verifier("une faute de frappe (guerier pour guerrier) : refusée par les deux co
          m + " / " + py)
 dire(m)
 
+# 0.69b : les deux brèches de la 0.69, fermées
+f = ecrire("hors.vtx", "fonction principal() {\n    soit t = [1, 2, 3];\n    soit i = 7;\n    afficher(t[i]);\n}\n")
+c, s, e = lugus(f)
+verifier("lire t[7] dans un tableau de 3 : la machine s'arrête et dit la ligne, l'indice et la longueur ; rien n'est rendu",
+         c != 0 and s.strip() == "" and "ligne 4 : t[7] est hors du tableau (sa longueur : 3" in e, s + e)
+dire(next((l for l in e.split("\n") if "hors du tableau" in l), "").strip()[:150])
+f = ecrire("hors2.vtx", "fonction principal() {\n    soit t = tableau(3);\n    soit k = 0 - 1;\n    t[k] = 5;\n"
+                        "    afficher(t[0]);\n}\n")
+c, s, e = lugus(f)
+verifier("écrire t[-1] : arrêtée aussi, avant d'écrire à côté du tableau", c != 0 and s.strip() == "" and "t[-1]" in e, s + e)
+rp = subprocess.run([sys.executable, os.path.join(racine, "vtx128.py"), "run", os.path.join(d, "hors.vtx")],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=d,
+                    env=dict(os.environ, PYTHONIOENCODING="utf-8"))
+verifier("la machine de référence en Python s'arrête au même endroit, avec le même message",
+         "ligne 4 : t[7] est hors du tableau (sa longueur : 3" in rp.stdout + rp.stderr, (rp.stdout + rp.stderr)[-300:])
+ok, m, py = refus("texte.vtx", "fonction principal() {\n    soit n = 3;\n    n = n + 1;\n    soit m: texte = n;\n"
+                               "    afficher(m);\n}\n", "est un texte")
+verifier("« soit m: texte = n » avec n un entier : refusé par les deux compilateurs (avant, la machine s'emballait)",
+         ok, m + " / " + py)
+dire(m)
+ok, m, py = refus("texte2.vtx", "fonction titre(t: texte): texte { retour t + \"!\"; }\n"
+                                "fonction principal() { afficher(titre(42)); }\n", "attend un texte")
+verifier("un nombre passé là où une fonction attend un texte : refusé par les deux compilateurs", ok, m + " / " + py)
+dire(m)
+
 FREIN = """// machine : lugus
 reaction freinage(v: flottant, d: flottant) -> a: flottant {
     = v * v / (2.0 * d)   -> a lourd
@@ -325,13 +352,13 @@ chapitre[0] = None
 titre("VIII. LES BRÈCHES CONNUES : ce que l'épreuve a trouvé et qui reste à fermer (montré, pas compté)",
       "Une épreuve honnête dit aussi où le rempart est bas. Ces lignes ne comptent pas dans le bilan ; elles disent\n"
       "le prochain travail.")
-f = ecrire("hors.vtx", "fonction principal() { soit t = [1, 2, 3]; soit i = 7; afficher(t[i]); }\n")
+print("  [..] les deux brèches de la 0.69 sont fermées sur Lugus (chapitre VII) ; Dunon, la machine de 64 bits, ne les a")
+print("       pas encore fermées (t[i] hors des bornes y lit sans rien dire, un nombre y passe pour un texte).")
+f = ecrire("champ.vtx", "structure Sac { contenu }\nfonction principal() {\n    soit s = Sac { contenu: [1, 2] };\n"
+                        "    afficher(s.contenu[5]);\n}\n")
 c, s, e = lugus(f)
-print(f"  [..] lire t[7] dans un tableau de 3 : Lugus rend « {s.strip()} » sans rien dire (il lit au-delà du tableau) ;")
-print("       écrire au-delà pourrait abîmer le tas. À faire : que t[i] hors des bornes rende inconnu et le dise.")
-print("  [..] « soit m: texte = n; » avec n un entier est accepté par les deux compilateurs : à l'affichage, l'entier est")
-print("       lu comme l'adresse d'un texte et la machine s'emballe (non lancé ici, pour ne pas charger la mémoire).")
-print("       À faire : que le type écrit soit vérifié contre la valeur, dans vtx128.py et dans vtxc128.")
+print(f"  [..] un tableau rangé dans le champ d'une structure : s.contenu[5] rend « {s.strip() or e.strip()[:60]} » ; la")
+print("       vérification ne couvre encore que t[i] d'une variable et t[i][j]. À faire : les champs.")
 
 # ================================================================================================= le bilan
 print("\n" + "=" * 100)
