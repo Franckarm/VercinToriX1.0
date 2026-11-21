@@ -51,7 +51,7 @@ avec le créateur.*
   `tests/test_supposons.py tests/supposons_alors.vtx tests/test_gobannos.py tests/gobannos tests/test_valeurs.py
   tests/valeurs_mele.vtx tests/test_types_fonction.py tests/test_gobannos_flottants.py tests/test_nombres.py
   tests/nombres tests/test_vocabulaire_etendu.py tests/vocabulaire tests/test_modules.py tests/modules
-  tests/test_reste.py tests/test_catalogue.py tests/test_cube_mere.py tests/test_faces_cube.py tests/test_valeurs64.py` et des nouveaux.
+  tests/test_reste.py tests/test_catalogue.py tests/test_cube_mere.py tests/test_faces_cube.py tests/test_valeurs64.py tests/test_fma.py` et des nouveaux.
 - La vérification complète : `python3 verifier.py` (environ deux heures ; elle doit finir par « Tout est conforme ») ;
   la lancer en arrière-plan et la suivre.
 - La machine : `cd vtx-rs && cargo build --release` (binaires `lugus`, `vtx64`, `vtx`, `atelier`).
@@ -69,7 +69,8 @@ routines du socle de Gobannos servent de modèle). Mesuré avant l'arrêt : Goba
 1 à 4 (les fichiers) et 13 (jeter un cube), en plus du 26.
 
 **L'ordre donné le 21** : les points du langage d'abord (les faces : fait ; les fonctions passées en valeur sur Dunon :
-fait, 0.65, §70 ; puis `multiplier_ajouter` en un seul arrondi, simplifier), puis Ogmios et la paillasse.
+fait, 0.65, §70 ; `multiplier_ajouter` en un seul arrondi : fait, 0.65, §71 ; puis simplifier), puis Ogmios et la
+paillasse.
 
 (Ce qui suit date du 18.)
 

@@ -3267,3 +3267,29 @@ hex, la molécule, l'atome.
   appel par valeur, face et centre ; six refus, le même message des deux côtés.
 - **Les limites, honnêtement** : comme sur Lugus, pas de type de fonction dans un type de fonction ; sans type écrit, le
   nombre d'arguments n'est pas vérifié.
+
+## 71. multiplier_ajouter en un seul arrondi (21 novembre, 0.65)
+
+**Le deuxième point du langage.** `multiplier_ajouter(a, b, c)` (Rust `mul_add`, C `fma`, UE `FMath::FMA`) faisait deux
+arrondis, le produit puis la somme, et le disait. Il est maintenant **exact, arrondi une seule fois**, sur les cinq
+flottants : Lugus 128, 64 et 32 bits, Dunon 64 et 32 bits.
+
+- **Comment** : comme `reste` (0.61b), en entiers. Les mantisses deviennent des grands entiers (les limbes de 16 bits
+  qui servent déjà à écrire les flottants en décimal) ; le produit exact (jusqu'à 224 bits sur Lugus) ; c aligné sur
+  lui ; la somme ou la différence exacte ; puis un seul arrondi au plus proche, pair au milieu, avec les sous-normaux et
+  le débordement, comme la machine (`spu64/qflot.py`). Un terme bien plus petit que l'autre ne compte que par son signe :
+  il devient une miette sous le dernier bit de l'autre, à la même place pour l'arrondi, et la somme reste courte (sans
+  cela, un écart de 16 000 quits sur Lugus ferait un grand entier de 32 000 bits).
+- **Chaque largeur a son propre calcul** (le même cœur, ses bornes à elle) : passer par le flottant le plus large puis
+  revenir aurait fait deux arrondis, le double arrondi que l'on voulait justement ôter.
+- **Belnap** : un inconnu, un variable, un infini ou un zéro parmi les trois : comme `a * b + c` (rien à arrondir de
+  plus) ; sur les entiers, `a * b + c` (les entiers de 32 et 128 bits ont leur variante).
+- **Vérifié** (`tests/test_fma.py`, 12 contrôles) : 138 cas par largeur, tirés au hasard avec les bords (sous-normaux,
+  exposants extrêmes, annulations de a·b par c, milieux d'arrondi, débordements, les états et les infinis) : **au bit
+  près** d'une référence en fractions exactes, sur les cinq flottants ; deux arrondis se seraient trompés de 20 à 38 fois
+  sur 138. Les mêmes mots par les deux compilateurs de chaque machine. Les programmes déjà écrits gardent leurs mots
+  (77 sur Lugus, 58 sur Dunon, comparés à l'ancien compilateur).
+- **Le prix, dit sans fard** : environ 11 000 instructions par appel sur Dunon et 26 000 sur Lugus, contre une
+  multiplication et une addition. C'est le prix de l'exactitude sans instruction de la machine ; une instruction FMA
+  dans Lugus et Dunon (le processeur la fait en un cycle) le rendrait gratuit, et `multiplier_ajouter` l'emploierait
+  sans changer de sens.

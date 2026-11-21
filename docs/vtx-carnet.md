@@ -625,7 +625,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    les fichiers, les services, se traduire lui-même, puis vtxc128 en .exe), la paillasse et Ogmios, la forge, Belenos et
    Taranis, Gobatix. **Direction pour après** : la mémoire du cube doit servir à l'IA, pour éviter la coupure entre deux
    conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
-4. Dunon : les fonctions passées en valeur et leur type (fait, 0.65). **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
+4. Dunon : les fonctions passées en valeur et leur type (fait, 0.65) ; `multiplier_ajouter` exact, un seul arrondi (fait,
+   0.65). **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
 5. **Les faces dans le cube** (fait, 0.64) : à la même fréquence, le code à l'étage Đ (le tau gallicum, l'étage 0), les
    trois axes du dé aux étages 1, 2, 3, chaque molécule à la place de son début ; `face(f, k)` et `centre(f)` lus

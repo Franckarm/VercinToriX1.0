@@ -40,7 +40,8 @@ une question rend cet état ; une moyenne de rien est inconnue ; un texte qui n'
 | `inverse` | Rust recip |
 | `vers_degres`, `vers_radians` | Rust to_degrees, to_radians ; UE RadiansToDegrees |
 | `copier_signe` | Rust copysign (un signe inconnu ou contradictoire le reste) |
-| `multiplier_ajouter` | Rust mul_add (ici deux arrondis : le produit, puis la somme) |
+| `multiplier_ajouter` | Rust mul_add, C fma, UE FMath::FMA ; 0.65 : exact, un seul arrondi (au plus proche, pair au milieu, comme la machine), sur chaque flottant ; sur les entiers, a · b + c |
+| `le multiplier-ajouter exact`, `sur les mantisses (0.65)` | a·b + c calculé sans arrondi, puis arrondi une seule fois au plus proche, pair au milieu (comme la machine) ; sa, sb, sc les états (1 négatif, 2 positif), ma, mb, mc les mantisses (des grands entiers), xa, xb, xc les exposants (max(E, 1)) ; p les bits de mantisse, biais, emax l'exposant de l'infini. Rend [l'état, l'exposant écrit, la mantisse (un grand entier)] |
 | `logarithme2`, `logarithme10`, `logarithme_base` | Rust log2, log10, log(base) |
 | `sinus_hyp`, `cosinus_hyp`, `tangente_hyp` | Rust sinh, cosh, tanh (en série près de zéro : pas de perte de chiffres) |
 | `argsinus_hyp`, `argcosinus_hyp`, `argtangente_hyp` | Rust asinh, acosh, atanh (hors du domaine : variable) |
@@ -212,8 +213,8 @@ arrondi à n décimales), qu'il n'avait pas.*
 - **les bibliothèques entières** (Servo, Wire, les crates, les modules d'UE5 ou de Blender) : le vocabulaire
   prépare le branchement (vecteurs, quaternions, matrices, couleurs, interpolations) ; une extension se branche
   par ses mots, elle n'est pas recopiée.
-- **`multiplier_ajouter` fusionné** (un seul arrondi) : il faut une arithmétique exacte plus longue, pas encore
-  écrite ; `multiplier_ajouter` fait deux arrondis, et le dit. (`reste` sur les flottants est exact depuis 0.61b.)
+- **`multiplier_ajouter` fusionné** (un seul arrondi) : fait en 0.65, exact sur les trois flottants, en entiers
+  (les mantisses en grands entiers, un seul arrondi au plus proche, pair au milieu). (`reste` l'est depuis 0.61b.)
 - **les itérateurs paresseux** de Rust (`map` sans tableau au bout) : vtx rend des tableaux.
 - **les mots qui prennent une fonction** (`transformer`, `filtrer`…) : sur Lugus seulement (Dunon n'a pas
   encore les fonctions passées en valeur).

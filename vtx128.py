@@ -7565,6 +7565,49 @@ fonction __vn_reste(a: flottant_petuar, b: flottant_petuar): flottant_petuar {
     si r < q55 { e = 0; }
     retour comme_flottant_petuar(s | (entier_128(e) << 112) | r);
 }
+fonction __vn_bn128(w: entier_128) {
+    soit r = __bn_neuf(bas(w));
+    soit h = __bn_neuf(haut(w));
+    __bn_decaler(h, 64);
+    __bn_ajouter(r, h);
+    retour r;
+}
+fonction __vn_vers128(a): entier_128 {
+    soit lo = 0;
+    soit hi = 0;
+    pour i dans 0..longueur(a) {
+        si i < 4 {
+            lo = lo | (a[i] << (16 * i));
+        } sinon {
+            hi = hi | (a[i] << (16 * (i - 4)));
+        }
+    }
+    retour entier_128_de(hi, lo);
+}
+fonction __multiplier_ajouter_x(a: flottant_petuar, b: flottant_petuar, c: flottant_petuar): flottant_petuar {
+    // 0.65 : le flottant de 128 bits, exact puis arrondi une seule fois
+    soit x: entier_128 = bits(a);
+    soit y: entier_128 = bits(b);
+    soit z: entier_128 = bits(c);
+    soit un: entier_128 = 1LL;
+    soit q: entier_128 = (un << 112) - un;
+    soit ea = __pq_ef(x);
+    soit eb = __pq_ef(y);
+    soit ec = __pq_ef(z);
+    soit sa = __pq_etat(x);
+    soit sb = __pq_etat(y);
+    soit sc = __pq_etat(z);
+    si sa == 0 || sa == 3 || sb == 0 || sb == 3 || sc == 0 || sc == 3 || ea == 16383 || eb == 16383 || ec == 16383
+            || (x & q) == 0LL || (y & q) == 0LL || (z & q) == 0LL {
+        retour a * b + c;
+    }
+    si ea == 0 { ea = 1; }
+    si eb == 0 { eb = 1; }
+    si ec == 0 { ec = 1; }
+    soit r = __vn_fma_coeur(sa, __vn_bn128(x & q), ea, sb, __vn_bn128(y & q), eb, sc, __vn_bn128(z & q), ec, 112, 8247, 16383);
+    soit m: entier_128 = __vn_vers128(r[2]);
+    retour comme_flottant_petuar((entier_128(r[0]) << 126) | (entier_128(r[1]) << 112) | m);
+}
 
 // -- famille « nombres » : un mot pour tous les types (le compilateur choisit la variante)
 // carre : Arduino sq
@@ -7631,8 +7674,170 @@ fonction copier_signe(x: flottant_petuar, s: flottant_petuar): flottant_petuar {
     si __vn_etat(s) == 1 { retour 0.0Q - abs(x); }
     retour abs(x);
 }
-// multiplier_ajouter : Rust mul_add (ici deux arrondis : le produit, puis la somme)
-fonction multiplier_ajouter(a: flottant_petuar, b: flottant_petuar, c: flottant_petuar): flottant_petuar { retour a * b + c; }
+// multiplier_ajouter : Rust mul_add, C fma, UE FMath::FMA ; 0.65 : exact, un seul arrondi (au plus proche, pair au
+// milieu, comme la machine), sur chaque flottant ; sur les entiers, a · b + c
+fonction multiplier_ajouter(a, b, c) { retour a * b + c; }
+fonction __multiplier_ajouter_w(a: entier_128, b: entier_128, c: entier_128): entier_128 { retour a * b + c; }
+fonction __multiplier_ajouter_i(a: entier_32, b: entier_32, c: entier_32): entier_32 { retour a * b + c; }
+// le produit exact de deux grands entiers (limbes de 16 bits, le plus bas d'abord)
+fonction __bn_produit(a, b) {
+    soit r = __bn_neuf(0);
+    pour i dans 0..longueur(b) {
+        si b[i] != 0 {
+            soit t = __bn_copie(a);
+            __bn_mul(t, b[i]);
+            __bn_decaler(t, 16 * i);
+            __bn_ajouter(r, t);
+        }
+    }
+    retour r;
+}
+// la valeur d'un grand entier qui tient dans 64 bits
+fonction __bn_valeur(a) {
+    soit v = 0;
+    soit i = longueur(a);
+    tantque i > 0 {
+        i = i - 1;
+        v = (v << 16) | a[i];
+    }
+    retour v;
+}
+// le multiplier-ajouter exact, sur les mantisses (0.65) : a·b + c calculé sans arrondi, puis arrondi une seule fois au
+// plus proche, pair au milieu (comme la machine) ; sa, sb, sc les états (1 négatif, 2 positif), ma, mb, mc les mantisses
+// (des grands entiers), xa, xb, xc les exposants (max(E, 1)) ; p les bits de mantisse, biais, emax l'exposant de l'infini.
+// Rend [l'état, l'exposant écrit, la mantisse (un grand entier)]
+fonction __vn_fma_coeur(sa, ma, xa, sb, mb, xb, sc, mc, xc, p, biais, emax) {
+    // le produit : mp × 4^(xp − 2·biais) ; c : mc × 4^(xc' − 2·biais), avec xc' = xc + biais
+    soit mp = __bn_produit(ma, mb);
+    soit xp = xa + xb;
+    soit xq = xc + biais;
+    soit sp = 2;
+    si sa != sb {
+        sp = 1;
+    }
+    soit lp = __bn_bits(mp);
+    soit lc = __bn_bits(mc);
+    // un terme bien plus petit que l'autre ne compte que par son signe : il devient une miette, sous le dernier bit de
+    // l'autre (la même place pour l'arrondi, et une somme qui reste courte)
+    si xp + (lp + 1) / 2 + 2 <= xq {
+        mp = __bn_neuf(1);
+        xp = xq - 3;
+        lp = 1;
+    } sinon si lp >= p + 2 && xq + (lc + 1) / 2 + 2 <= xp {
+        mc = __bn_neuf(1);
+        xq = xp - 3;
+        lc = 1;
+    }
+    // aligner
+    soit x0 = xp;
+    si xq < x0 {
+        x0 = xq;
+    }
+    si xp > x0 {
+        __bn_decaler(mp, 2 * (xp - x0));
+    }
+    si xq > x0 {
+        __bn_decaler(mc, 2 * (xq - x0));
+    }
+    soit s = sp;
+    soit m = mp;
+    si sp == sc {
+        __bn_ajouter(m, mc);
+    } sinon {
+        soit kc = __bn_cmp(mp, mc);
+        si kc == 0 {
+            // une somme nulle exacte : +0
+            retour [2, 0, __bn_neuf(0)];
+        }
+        si kc == 1 {
+            __bn_sub(m, mc);
+        } sinon {
+            m = mc;
+            __bn_sub(m, mp);
+            s = sc;
+        }
+    }
+    // arrondir m × 4^(x0 − 2·biais) à p bits : la mantisse m / 4^k, l'exposant écrit x0 + k − biais, au moins 1 (en
+    // dessous, un sous-normal) ; k peut être négatif (un décalage à gauche, exact)
+    soit l = __bn_bits(m);
+    soit k = 0;
+    si l > p {
+        k = (l - p + 1) / 2;
+    } sinon {
+        k = 0 - (p - l) / 2;
+    }
+    soit kmin = 1 + biais - x0;
+    si kmin .> k {
+        k = kmin;
+    }
+    si k .> 0 {
+        soit demi = __bn_bit(m, 2 * k - 1);
+        soit sous = 1 - __bn_bas_nul(m, 2 * k - 1);
+        __bn_droite(m, 2 * k);
+        si demi == 1 && (sous == 1 || __bn_bit(m, 0) == 1) {
+            __bn_ajouter(m, __bn_neuf(1));
+        }
+    } sinon si k .< 0 {
+        __bn_decaler(m, 2 * (0 - k));
+    }
+    soit ef = x0 + k - biais;
+    si __bn_bits(m) > p {
+        __bn_droite(m, 2);
+        ef = ef + 1;
+    }
+    si ef .>= emax {
+        retour [s, emax, __bn_neuf(0)];
+    }
+    si __bn_bits(m) < p - 1 {
+        ef = 0;
+    }
+    retour [s, ef, m];
+}
+
+fonction __multiplier_ajouter_f(a: flottant, b: flottant, c: flottant): flottant {
+    // 0.65 : le flottant de 64 bits, exact puis arrondi une seule fois
+    soit x = bits(a);
+    soit y = bits(b);
+    soit z = bits(c);
+    soit q = 4503599627370495;
+    soit ea = (x >> 52) & 1023;
+    soit eb = (y >> 52) & 1023;
+    soit ec = (z >> 52) & 1023;
+    soit sa = x >> 62;
+    soit sb = y >> 62;
+    soit sc = z >> 62;
+    si sa == 0 || sa == 3 || sb == 0 || sb == 3 || sc == 0 || sc == 3 || ea == 1023 || eb == 1023 || ec == 1023
+            || (x & q) == 0 || (y & q) == 0 || (z & q) == 0 {
+        retour a * b + c;
+    }
+    si ea == 0 { ea = 1; }
+    si eb == 0 { eb = 1; }
+    si ec == 0 { ec = 1; }
+    soit r = __vn_fma_coeur(sa, __bn_neuf(x & q), ea, sb, __bn_neuf(y & q), eb, sc, __bn_neuf(z & q), ec, 52, 537, 1023);
+    retour comme_flottant((r[0] << 62) | (r[1] << 52) | __bn_valeur(r[2]));
+}
+fonction __multiplier_ajouter_s(a: flottant_32, b: flottant_32, c: flottant_32): flottant_32 {
+    // 0.65 : le flottant de 32 bits, exact puis arrondi une seule fois
+    soit x = bits(a);
+    soit y = bits(b);
+    soit z = bits(c);
+    soit q = 4194303;
+    soit ea = (x >> 22) & 255;
+    soit eb = (y >> 22) & 255;
+    soit ec = (z >> 22) & 255;
+    soit sa = (x >> 30) & 3;
+    soit sb = (y >> 30) & 3;
+    soit sc = (z >> 30) & 3;
+    si sa == 0 || sa == 3 || sb == 0 || sb == 3 || sc == 0 || sc == 3 || ea == 255 || eb == 255 || ec == 255
+            || (x & q) == 0 || (y & q) == 0 || (z & q) == 0 {
+        retour a * b + c;
+    }
+    si ea == 0 { ea = 1; }
+    si eb == 0 { eb = 1; }
+    si ec == 0 { ec = 1; }
+    soit r = __vn_fma_coeur(sa, __bn_neuf(x & q), ea, sb, __bn_neuf(y & q), eb, sc, __bn_neuf(z & q), ec, 22, 138, 255);
+    retour comme_flottant_32((r[0] << 30) | (r[1] << 22) | __bn_valeur(r[2]));
+}
 fonction __vn_puissance_exacte(b: flottant_petuar, k): flottant_petuar {
     // b^k par carrés successifs (k signé) : exact tant que le résultat tient dans la mantisse
     soit p: flottant_petuar = 1.0Q;
@@ -8780,8 +8985,6 @@ fonction __vers_radians_f(x: flottant): flottant { retour flottant_64(vers_radia
 fonction __vers_radians_s(x: flottant_32): flottant_32 { retour flottant_32(vers_radians(flottant_petuar(x))); }
 fonction __copier_signe_f(x: flottant, s: flottant): flottant { retour flottant_64(copier_signe(flottant_petuar(x), flottant_petuar(s))); }
 fonction __copier_signe_s(x: flottant_32, s: flottant_32): flottant_32 { retour flottant_32(copier_signe(flottant_petuar(x), flottant_petuar(s))); }
-fonction __multiplier_ajouter_f(a: flottant, b: flottant, c: flottant): flottant { retour flottant_64(multiplier_ajouter(flottant_petuar(a), flottant_petuar(b), flottant_petuar(c))); }
-fonction __multiplier_ajouter_s(a: flottant_32, b: flottant_32, c: flottant_32): flottant_32 { retour flottant_32(multiplier_ajouter(flottant_petuar(a), flottant_petuar(b), flottant_petuar(c))); }
 fonction __logarithme2_f(x: flottant): flottant { retour flottant_64(logarithme2(flottant_petuar(x))); }
 fonction __logarithme2_s(x: flottant_32): flottant_32 { retour flottant_32(logarithme2(flottant_petuar(x))); }
 fonction __logarithme10_f(x: flottant): flottant { retour flottant_64(logarithme10(flottant_petuar(x))); }

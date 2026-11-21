@@ -151,6 +151,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_faces_cube.py")]))
     etapes.append(("les fonctions passées en valeur sur Dunon : les mêmes mots par vtx64.py et vtxc64, les mêmes refus",
                    [sys.executable, os.path.join("tests", "test_valeurs64.py")]))
+    etapes.append(("multiplier_ajouter exact, un seul arrondi : cinq flottants au bit près, Lugus et Dunon",
+                   [sys.executable, os.path.join("tests", "test_fma.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",
