@@ -22,6 +22,7 @@ s'y ouvrent de toute façon).
 | `codon.vtx` | la contradiction en suspens : trois lectures à quatre valeurs, les 20 situations de trois témoins, les trois sorties (tranché, recoupé, échu), la table du programmeur (`bibliotheque/codon.vtx`) |
 | `combat.vtx` | un garde dont les quatre réactions (parer, attaquer, se garder, chercher) suivent les quatre valeurs, lues par le codon avec ordre (vue, ouïe, flair) ; le même tournoi pour un garde sans codon et deux gardes binaires |
 | `gene.vtx` | le gène : 27 éclaireurs en 9 familles, lus par codons ; où est la contradiction ; et la mesure : pour décider, le compte de tous fait mieux que le gène |
+| `faces.vtx` | 0.64 : les faces dans le cube : rangé par `lugus ranger` puis `lugus cube`, lancé par `lugus cube128-faces.cub`, chaque molécule lit ses six faces et son centre pendant qu'elle tourne |
 
     lugus exemples128/bonjour128.vtx                 compile (vtxc128 embarqué) et lance, sans Python
     python forge/forge128.py exemples128/bonjour128.vtx   l'exécutable natif (forgé)

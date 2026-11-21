@@ -47,6 +47,9 @@ def jouer(exe, interprete, entree=""):
     if interprete:
         env["VTX_INTERPRETE"] = "1"
     print(f"   … {os.path.basename(exe)} {'par Lugus seul' if interprete else 'traduit'}", flush=True)
+    # 0.64 : un programme qui range des cubes (cube_mere.vtx) les relit la fois suivante : chaque jeu part sans cube
+    for f in glob.glob(os.path.join(d, "*.cub")):
+        os.remove(f)
     try:
         r = subprocess.run([exe], input=entree, capture_output=True, text=True, encoding="utf-8", errors="replace",
                            cwd=d, env=env, timeout=120)

@@ -627,8 +627,10 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
 4. **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
    le travail, l'ADN pour le gardé, et moins de formats de fichiers.
-5. **Les faces dans le cube** : les six faces de chaque molécule à sa place, sur les étages 1 à 3, lues par la machine
-   pendant qu'elle tourne (le registre tridimensionnel).
+5. **Les faces dans le cube** (fait, 0.64) : à la même fréquence, le code à l'étage Đ (le tau gallicum, l'étage 0), les
+   trois axes du dé aux étages 1, 2, 3, chaque molécule à la place de son début ; `face(f, k)` et `centre(f)` lus
+   pendant qu'il tourne (le registre tridimensionnel). La hiérarchie du créateur : le cube mère, le cube hex, la
+   molécule, l'atome.
 6. **Belenos** : le tapis roulant dans chaque tuile, le fluide dans la toile, puis sur la carte (Taranis) ; **Gobatix**
    (le modeleur) dans le cube vide.
 7. Le but lointain : le SPU spectral (section 2), d'abord sur un banc d'essai à une liaison et des LED adressables.
@@ -656,6 +658,7 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 | le moteur graphique | *Belenos* | dieu brillant, de la lumière et du soleil | attesté ; adopté |
 | la carte graphique | *Taranis* | dieu du tonnerre, à la roue | attesté ; adopté |
 | le traducteur écrit en vtx (les .exe) | *Gobannos* | le dieu forgeron | attesté ; commencé (0.6v) |
+| l'étage 0 d'un cube, le code (440/Đ) | le tau gallicum, Đ | la lettre propre à l'écriture gauloise | attestée ; adopté (0.64) |
 
 ## 13. Glossaire
 

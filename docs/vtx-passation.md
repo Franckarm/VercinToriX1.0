@@ -1,12 +1,12 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (18 novembre 2026, après la 0.63)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.64)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
 
 ## 1. Où en est le projet
 
-- Le dépôt : `github.com/Franckarm/vercintorix1.0`, branche **`vtx-0.6`** (dernier état : la 0.63, vérifiée
-  « Tout est conforme » ; `essai-0.63.bat` déposé chez le créateur, son essai à lire dans `essai-0.63.log`). Œuvre protégée (`AUTEUR.md`) : rien hors de ses
+- Le dépôt : `github.com/Franckarm/vercintorix1.0`, branche **`vtx-0.6`** (dernier état : la 0.64, vérifiée
+  « Tout est conforme » ; `essai-0.64.bat` déposé chez le créateur, son essai à lire dans `essai-0.64.log`). Œuvre protégée (`AUTEUR.md`) : rien hors de ses
   dossiers et des artefacts privés.
 - Les machines : **Lugus** (SPU-128, la machine de vtx), **Dunon** (SPU-64, le même travail à 64 bits), Senos (SPU-32,
   gelé). Ogmios l'atelier, Belenos le moteur graphique, Taranis la carte graphique, Gobannos le forgeron (les .exe, écrit
@@ -17,7 +17,7 @@ avec le créateur.*
   (service 28, `lister_dossier`, `dossier_present`), `lugus cataloguer DOSSIER` (écrit en vtx, dans le lecteur d'ADN),
   `importer empreinte "16hex";` sans chemin, la vibration de chaque molécule (`lugus morceaux`), et la carte qui dit
   d'où vient chaque molécule (et voit une retouche).
-- Les journaux : `docs/vtx-reactions.md` (sections 1 à 66), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
+- Les journaux : `docs/vtx-reactions.md` (sections 1 à 69), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
   feuille de route, section 11), `docs/vtx-syntaxe-v0-4.md` (la référence du langage).
 
 ## 2. Les règles de travail (à garder)
@@ -56,7 +56,22 @@ avec le créateur.*
   la lancer en arrière-plan et la suivre.
 - La machine : `cd vtx-rs && cargo build --release` (binaires `lugus`, `vtx64`, `vtx`, `atelier`).
 
-## 4. Ce qui reste, décidé avec le créateur (après la 0.63)
+## 4. Ce qui reste, décidé avec le créateur (après la 0.64)
+
+Fait le 21 : la 0.64 (**les faces dans le cube**, §69) : à la même fréquence, le code à l'étage Đ (le tau gallicum,
+l'étage 0, le choix du créateur : 440/Đ), les trois axes du dé aux étages 1, 2, 3, chaque molécule à la place de son
+début ; `face(f, k)`, `centre(f)` (le service 31) ; le descripteur du cube mère à seize bits par étage, de Đ à 3.
+
+**Gobannos, les fichiers dans les .exe : en attente.** Le 18, un filtre de sécurité automatique a arrêté la réponse
+qui écrivait le code machine des appels au système (les fichiers, le chemin du programme, la mémoire) ; ce travail ne
+doit pas être repris sous une autre forme par l'IA. Le créateur l'a signalé à Anthropic, et peut l'écrire lui-même (les
+routines du socle de Gobannos servent de modèle). Mesuré avant l'arrêt : Gobannos et vtxc128 ont besoin des services
+1 à 4 (les fichiers) et 13 (jeter un cube), en plus du 26.
+
+**L'ordre donné le 21** : les points du langage d'abord (les faces : fait ; puis les fonctions passées en valeur sur
+Dunon, `multiplier_ajouter` en un seul arrondi, simplifier), puis Ogmios et la paillasse.
+
+(Ce qui suit date du 18.)
 
 Fait le 18 : la 0.62c (le cube du catalogue, §67) ; la 0.63 (**les cubes mères**, §68) : un cube mère nommé comme un
 fichier (`cube128-NOM.cub`, sans fréquence, le squelette du programme), ses sous-cubes `cube128-NOM-ÉTAGE-FRÉQUENCE.cub`

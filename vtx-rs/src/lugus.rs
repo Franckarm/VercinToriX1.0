@@ -142,6 +142,9 @@ fn reprendre_epigenome(spu: &mut Spu128, t: &adn::Temoins, mots: &[u128]) -> usi
     }
 }
 
+/// 0.64 : le cube du programme lancé depuis son cube (ses faces), donné à la machine qui le joue
+static CUBE_LANCE: std::sync::Mutex<Option<crate::hote::CubeProgramme>> = std::sync::Mutex::new(None);
+
 fn jouer(mots: &[u128], entrees: &[String], dossier: Option<std::path::PathBuf>) {
     jouer_avec(mots, entrees, dossier, None, None);
 }
@@ -258,6 +261,7 @@ fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::Path
               veille: Option<(Vec<adn::Molecule>, adn::Temoins)>) -> Spu128 {
     let mut spu = Spu128::nouveau();
     spu.dossier = dossier;
+    spu.cube_programme = CUBE_LANCE.lock().unwrap().take();
     spu.charger(mots);
     if let Some(t) = t {
         reprendre_epigenome(&mut spu, t, mots);
@@ -654,6 +658,21 @@ fn main() {
             std::process::exit(1);
         }
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
+        // 0.64 : lancé depuis son cube, le programme lit ses faces (le service 31) : le code à l'étage Đ, les faces aux
+        // étages 1 à 3 de la même fréquence
+        if args[1].ends_with(".cub") {
+            let lieu = match crate::hote::nom_de_cube(std::path::Path::new(&args[1]), "cube128") {
+                Some(crate::hote::NomCube::Sous(n, _, f)) => Some((Some(n), f)),
+                Some(crate::hote::NomCube::Mere(n)) => Some((Some(n), 440)),
+                Some(crate::hote::NomCube::Simple(_, f)) => Some((None, f)),
+                None => None,
+            };
+            if let Some((nom, f)) = lieu {
+                let d = dossier.clone().filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| std::path::PathBuf::from("."));
+                let e = if etat == adn::FAUX { 1 } else { 2 };
+                *CUBE_LANCE.lock().unwrap() = crate::hote::CubeProgramme::ouvrir(&d, nom.as_deref(), f, e);
+            }
+        }
         jouer(&mots, &args[2..], dossier);
     } else if args.len() >= 2 && args[1].ends_with(".arn") {
         // l'ARN : sa coiffe vérifiée (un ARN qui ne reconnaît pas ses mots n'est pas lancé)

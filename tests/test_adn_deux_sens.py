@@ -91,9 +91,9 @@ for p in progs:
 
     # ADN → Cube → ADN
     r = lugus("cube", p + ".adn", "262")
-    cube = f"cube128-{p}-1-262.cub"          # 0.63 : un sous-cube du cube mère du programme
+    cube = f"cube128-{p}-Đ-262.cub"          # 0.63 : un sous-cube du cube mère du programme ; 0.64 : à l'étage Đ
     verifier(f"{p} : ADN → cube (cube, anti-cube, ombre, sous le cube mère cube128-{p}.cub)",
-             r.returncode == 0 and all(os.path.exists(os.path.join(d, x + f"128-{p}-1-262.cub")) for x in ("cube", "anticube", "ombre"))
+             r.returncode == 0 and all(os.path.exists(os.path.join(d, x + f"128-{p}-Đ-262.cub")) for x in ("cube", "anticube", "ombre"))
              and os.path.exists(os.path.join(d, f"cube128-{p}.cub")),
              r.stderr)
     r = lugus("ranger", cube, p + "_c.adn")
@@ -147,7 +147,7 @@ shutil.copy(os.path.join(d, "chute.vtx"), os.path.join(d, "tour"))
 T = lambda x: os.path.join("tour", x)
 etapes = [("arnc", T("chute.vtx"), T("t1.arn")), ("retrotranscrire", T("t1.arn"), T("t2.adn")),
           ("hex", T("t2.adn"), T("t3.hex")), ("cube", T("t3.hex"), "330"),
-          ("hex", T("cube128-t3-1-330.cub"), T("t5.hex")), ("ranger", T("t5.hex"), T("t6.adn")),
+          ("hex", T("cube128-t3-Đ-330.cub"), T("t5.hex")), ("ranger", T("t5.hex"), T("t6.adn")),
           ("transcrire", T("t6.adn"), T("t7.arn"), "--isoforme", "rapide")]
 ok = True
 for e in etapes:
@@ -177,15 +177,15 @@ verifier("un hex dont les places ne se suivent pas : refusé, rien n'est écrit"
 
 # les avaries du cube : un mot abîmé dans le cube, puis le cube effacé (l'anti-cube et l'ombre le refont)
 lugus("cube", "chute.adn", "392")
-f = os.path.join(d, "cube128-chute-1-392.cub")
+f = os.path.join(d, "cube128-chute-Đ-392.cub")
 b = bytearray(open(f, "rb").read())
 b[8 + 4 + 16 * 3 + 5] ^= 0x5A
 open(f, "wb").write(bytes(b))
-r = lugus("ranger", "cube128-chute-1-392.cub", "abime.adn")
+r = lugus("ranger", "cube128-chute-Đ-392.cub", "abime.adn")
 verifier("un mot abîmé dans le cube : réparé par l'anti-cube et l'ombre, les mots d'origine",
          r.returncode == 0 and "réparé" in r.stderr and mots_adn("abime.adn") == m0, r.stderr)
 os.remove(f)
-r = lugus("ranger", "cube128-chute-1-392.cub", "efface.adn")
+r = lugus("ranger", "cube128-chute-Đ-392.cub", "efface.adn")
 verifier("le cube effacé : refait depuis son anti-cube, les mots d'origine",
          r.returncode == 0 and mots_adn("efface.adn") == m0 and os.path.exists(f), r.stderr)
 

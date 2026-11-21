@@ -75,13 +75,13 @@ RELIT = {"lugus": """fonction principal() {
     soit g = __service(29, "cube128-labyrinthe.cub");
     soit q: entier_128 = @[cube_adresse(1, g, 16777215)];
     soit d: entier_128 = @[cube_adresse(1, g, 440)];
-    afficher(g, bas(q), bas(d) & 1023, haut(d) == haut(q));
+    afficher(g, bas(q), (bas(d) >> 16) & 1023, haut(d) == haut(q));
 }
 """, "dunon": """fonction principal() {
     cube_mere("labyrinthe");
     afficher(@[cube_adresse(1, 440, 5)], @[cube_adresse(1, 440, 70000)], @[cube_adresse(1, 7, 1)]);
     soit g = __service(29, "cube64-labyrinthe.cub");
-    afficher(g, @[cube_adresse(1, g, 16777215)], @[cube_adresse(1, g, 440)] & 1023);
+    afficher(g, @[cube_adresse(1, g, 16777215)], (@[cube_adresse(1, g, 440)] >> 16) & 1023);
 }
 """}
 
@@ -147,10 +147,10 @@ shutil.copy(os.path.join(racine, "exemples128", "bonjour128.vtx"), ch)
 _, attendu = lancer([LUGUS, "bonjour128.vtx"], ch)
 lancer([LUGUS, "ranger", "bonjour128.vtx"], ch)
 code, texte = lancer([LUGUS, "cube", "bonjour128.adn"], ch)
-verifier("le chemin : lugus cube PROG.adn range le programme dans cube128-PROG-1-440.cub, sous le cube mère cube128-PROG.cub",
-         code == 0 and os.path.exists(os.path.join(ch, "cube128-bonjour128-1-440.cub"))
+verifier("le chemin : lugus cube PROG.adn range le programme dans cube128-PROG-Đ-440.cub, sous le cube mère cube128-PROG.cub",
+         code == 0 and os.path.exists(os.path.join(ch, "cube128-bonjour128-Đ-440.cub"))
          and os.path.exists(os.path.join(ch, "cube128-bonjour128.cub")) and "sous le cube mère" in texte, texte[-300:])
-_, s1 = lancer([LUGUS, "cube128-bonjour128-1-440.cub"], ch)
+_, s1 = lancer([LUGUS, "cube128-bonjour128-Đ-440.cub"], ch)
 _, s2 = lancer([LUGUS, "cube128-bonjour128.cub"], ch)
 fin = attendu.strip().split("\n")[-1]
 verifier("le chemin : relancé par son sous-cube et par son cube mère, la sortie du programme",

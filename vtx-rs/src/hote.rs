@@ -358,16 +358,28 @@ pub enum NomCube {
     Mere(String),
 }
 
+/// 0.64 : l'étage dans le nom d'un cube : Đ (le tau gallicum) pour l'étage 0, le code ; le chiffre pour les autres
+pub fn lettre_etage(e: usize) -> String {
+    if e == 0 { "Đ".to_string() } else { e.to_string() }
+}
+
 pub fn nom_de_cube(chemin: &std::path::Path, tete: &str) -> Option<NomCube> {
     let n = chemin.file_name()?.to_str()?;
     let r = n.strip_prefix(tete)?.strip_prefix('-')?.strip_suffix(".cub")?;
     let ef = |e: &str, f: &str| -> Option<(usize, u64)> {
-        if e.len() != 1 || f.is_empty() || f.len() > 8 || !f.bytes().all(|c| c.is_ascii_digit()) {
+        if f.is_empty() || f.len() > 8 || !f.bytes().all(|c| c.is_ascii_digit()) {
             return None;
         }
-        let e: usize = e.parse().ok()?;
+        // 0.64 : l'étage 0 (le code) se nomme par le tau gallicum, Đ ; les étages 1 à 3 par leur chiffre
+        let e: usize = match e {
+            "Đ" => 0,
+            "1" => 1,
+            "2" => 2,
+            "3" => 3,
+            _ => return None,
+        };
         let f: u64 = f.parse().ok()?;
-        if !(1..=3).contains(&e) || f > 0xFF_FFFF {
+        if f > 0xFF_FFFF {
             return None;
         }
         Some((e, f))
@@ -393,8 +405,8 @@ pub fn nom_de_cube(chemin: &std::path::Path, tete: &str) -> Option<NomCube> {
 }
 
 /// 0.63 : le cube mère NOM (TETE-NOM.cub, avec son anti-cube et son ombre) mis à jour après le rangement du sous-cube
-/// (e, f) : à l'adresse #f, son descripteur (pour chaque étage e de 1 à 3, 10 bits à 10·(e−1) : présent, 512, plus
-/// ses pages ; 11 bits de coiffe à 30 + 11·(e−1) : l'empreinte FNV-1a de son fichier, ses 11 bits bas) ; sur Lugus, la
+/// (e, f) : à l'adresse #f, son descripteur (0.64 : pour chaque étage e de 0 à 3, seize bits à 16·e : présent, 512,
+/// plus ses pages ; puis six bits de coiffe, l'empreinte FNV-1a de son fichier, ses 6 bits bas) ; sur Lugus, la
 /// moitié haute du point porte l'indicatif (FNV-1a du nom) ; la queue en #FFFFFF (l'indicatif en haut sur Lugus, le
 /// nombre de sous-cubes), la coiffe en #FFFFFE (le brassage de tous les descripteurs). Aucune ancienne version n'est
 /// gardée. large : Lugus (points de 128 bits), sinon Dunon (64)
@@ -429,11 +441,10 @@ pub fn mere_mettre_a_jour(dossier: &std::path::Path, tete: &str, nom: &str, e: u
     points.remove(&0xFF_FFFF);
     let indicatif = fnv64_texte(nom) as u128;
     let ancien = points.get(&f).copied().unwrap_or(0) as u64;
-    let s1 = 10 * (e as u64 - 1);
-    let s2 = 30 + 11 * (e as u64 - 1);
-    let mut lo = ancien & !(0x3FF << s1) & !(0x7FF << s2);
-    lo |= (0x200 | (pages & 0x1FF)) << s1;
-    lo |= (fnv64_octets(fichier) & 0x7FF) << s2;
+    // 0.64 : seize bits par étage (de 0 à 3), à 16·e : présent (512) plus ses pages, puis six bits de coiffe
+    let s = 16 * e as u64;
+    let mut lo = ancien & !(0xFFFF << s);
+    lo |= ((0x200 | (pages & 0x1FF)) | ((fnv64_octets(fichier) & 0x3F) << 10)) << s;
     points.insert(f, if large { (indicatif << 64) | lo as u128 } else { lo as u128 });
     let (mut somme, mut ou) = (0u64, 0u64);
     for (p, w) in &points {
@@ -461,4 +472,88 @@ pub fn mere_mettre_a_jour(dossier: &std::path::Path, tete: &str, nom: &str, e: u
         sortie.extend(std::iter::repeat(0u8).take(16384));
     }
     crate::miroir::ecrire_double(&chemin, &sortie)
+}
+
+/// 0.64 : les points d'un cube sur disque (relu par son miroir) : {place : point} des points non nuls ; None : absent
+pub fn lire_points(chemin: &std::path::Path, large: bool) -> Option<std::collections::BTreeMap<u64, u128>> {
+    let entete: &[u8; 8] = if large { b"VTXCU128" } else { b"VTXCUB64" };
+    let ws = if large { 16 } else { 8 };
+    let taille = 4 + 65536 * ws + 16384;
+    let b = crate::miroir::lire_double(chemin, entete)?;
+    if b.len() < 8 || &b[..8] != entete {
+        return None;
+    }
+    let mut points = std::collections::BTreeMap::new();
+    let mut k = 8;
+    while k + taille <= b.len() {
+        let p = (u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) & 255) as u64;
+        for j in 0..65536usize {
+            let o = k + 4 + ws * j;
+            let v = if large {
+                u128::from_le_bytes(b[o..o + 16].try_into().unwrap())
+            } else {
+                u64::from_le_bytes(b[o..o + 8].try_into().unwrap()) as u128
+            };
+            if v != 0 {
+                points.insert((p << 16) | j as u64, v);
+            }
+        }
+        k += taille;
+    }
+    Some(points)
+}
+
+/// 0.64 : le cube d'un programme, lu pour ses faces : le code (l'étage Đ), les trois axes (étages 1, 2, 3 : la face
+/// d'un côté dans la moitié basse du point, la face opposée dans la haute), l'état de la lecture (2 vrai, 1 faux : réparé)
+pub struct CubeProgramme {
+    pub code: std::collections::BTreeMap<u64, u128>,
+    pub axes: [std::collections::BTreeMap<u64, u128>; 3],
+    pub etat: u128,
+}
+
+impl CubeProgramme {
+    /// le cube NOM (un sous-cube : « cube128-NOM-Đ-F.cub » et ses faces « cube128-NOM-1-F.cub »… ; sans nom, un cube
+    /// simple « cube128-Đ-F.cub ») ; None s'il n'a pas de faces
+    pub fn ouvrir(dossier: &std::path::Path, nom: Option<&str>, f: u64, etat: u128) -> Option<CubeProgramme> {
+        let fichier = |e: usize| match nom {
+            Some(m) => dossier.join(format!("cube128-{}-{}-{}.cub", m, lettre_etage(e), f)),
+            None => dossier.join(format!("cube128-{}-{}.cub", lettre_etage(e), f)),
+        };
+        let avant = crate::miroir::prendre_etat();
+        let code = lire_points(&fichier(0), true)?;
+        let mut axes = [std::collections::BTreeMap::new(), std::collections::BTreeMap::new(), std::collections::BTreeMap::new()];
+        for e in 1..=3 {
+            axes[e - 1] = lire_points(&fichier(e), true)?;
+        }
+        // les faces réparées à cette lecture (faux), ou dont les copies se contredisent (variable), l'emportent
+        let lu = crate::miroir::prendre_etat() as u128;
+        crate::miroir::noter(avant);
+        let etat = if lu == 3 { 3 } else if lu == 1 { 1 } else { etat };
+        Some(CubeProgramme { code, axes, etat })
+    }
+
+    /// le nombre de mots de la molécule qui commence à la place p (sa face « ce qu'elle est »), 0 si elle n'est pas connue
+    pub fn mots_de(&self, p: u64) -> u64 {
+        ((self.axes[0].get(&p).copied().unwrap_or(0) as u64) >> 4) & 0xFF_FFFF
+    }
+
+    /// la face k (0 à 5 : ce qu'elle est, ce qu'elle touche, ses racines, ses branches, ses promesses, sa mémoire) de la
+    /// molécule à la place p ; k = 6 : son centre (0 inconnu : pas de faces ; 3 variable : son code n'est plus celui du
+    /// cube ; sinon l'état de la lecture du cube) ; lus : les mots qui tournent, à ses places
+    pub fn face(&self, k: u64, p: u64, lus: &[u128]) -> u128 {
+        if k < 6 {
+            let w = self.axes[(k / 2) as usize].get(&p).copied().unwrap_or(0);
+            return if k % 2 == 0 { w & 0xFFFF_FFFF_FFFF_FFFF } else { w >> 64 };
+        }
+        if k != 6 || p == 0xFF_FFFE || p == 0xFF_FFFF || !self.axes[0].contains_key(&p) {
+            return 0;
+        }
+        let n = self.mots_de(p);
+        for j in 0..n {
+            if lus.get(j as usize).copied() != Some(self.code.get(&(p + j)).copied().unwrap_or(0)) {
+                return 3;
+            }
+        }
+        self.etat
+    }
 }

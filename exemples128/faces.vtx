@@ -1,0 +1,47 @@
+// Les faces dans le cube (0.64, docs/vtx-reactions.md section 69) : une molécule lit ses six faces pendant qu'elle tourne
+//     lugus ranger faces.vtx          (l'ADN, avec sa carte à six faces)
+//     lugus cube faces.adn            (le code à 440/Đ, les faces à 440/1, 440/2, 440/3, sous le cube mère)
+//     lugus cube128-faces.cub         (lancé depuis son cube : il lit ses faces)
+//     lugus faces.vtx                 (lancé depuis son texte : pas de faces, le centre inconnu)
+
+fonction carre(x) { retour x * x; }
+
+/// une somme promise
+reaction somme(a, b) -> s {
+    exige a < 1000
+    = a + b          -> s
+    garantit s >= a
+}
+
+fonction montrer(nom: texte, f) {
+    soit est = face(f, 0);
+    soit genres = ["inconnue", "la tête", "une fonction", "une réaction", "empruntée"];
+    soit g = est & 15;
+    si g > 4 {
+        g = 0;
+    }
+    afficher(nom, ":", genres[g], ",", (est >> 4) & 16777215, "mots, lignes", (est >> 28) & 262143, "à", (est >> 46) & 262143);
+    soit t = face(f, 1);
+    afficher("  ce qu'elle touche : elle-même", t & 3, ", avec ses appels", (t >> 2) & 3);
+    soit r = face(f, 2);
+    afficher("  ses racines : profondeur", r & 65535, ", appelée par", (r >> 16) & 65535);
+    soit b = face(f, 3);
+    afficher("  ses branches : elle en appelle", b & 65535);
+    soit p = face(f, 4);
+    afficher("  ses promesses : exige", p & 65535, ", garantit", (p >> 16) & 65535, ", exemples", (p >> 32) & 65535);
+    ecrire_texte(1, "  sa mémoire : ");
+    ecrire_hexa(1, face(f, 5));
+    ecrire_car(1, 10);
+    selon centre(f) {
+        vrai { afficher("  au centre : vrai (son code est celui du cube)"); }
+        faux { afficher("  au centre : faux (le cube a été réparé en le lisant)"); }
+        variable { afficher("  au centre : variable (son code n'est plus celui du cube)"); }
+        inconnu { afficher("  au centre : inconnu (pas de faces : lancé depuis son texte)"); }
+    }
+}
+
+fonction principal() {
+    montrer("carre", carre);
+    montrer("somme", somme);
+    afficher("carre(7) =", carre(7), ", somme(2, 3) =", somme(2, 3));
+}

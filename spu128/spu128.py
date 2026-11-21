@@ -17,7 +17,7 @@ ici = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(ici), "spu64"))
 from qflot import Q32, Q64, Q128, vers_ieee, de_ieee  # noqa: E402
 from spu64 import ecrire_double, lire_double, noter_etat  # noqa: E402  (le miroir inversé et l'ombre)
-from spu64 import nom_de_mere_valide, fnv64_texte, nom_de_cube, mere_mettre_a_jour  # noqa: E402  (0.63)
+from spu64 import nom_de_mere_valide, fnv64_texte, nom_de_cube, mere_mettre_a_jour, lettre_etage  # noqa: E402  (0.63, 0.64)
 
 M128 = (1 << 128) - 1
 M120 = (1 << 120) - 1
@@ -410,6 +410,10 @@ class CPU:
             return self.jeter_cube(arg)
         if code in (16, 17, 20, 21, 23):
             return 0
+        if code == 31:
+            # 0.64 : les faces du programme lancé depuis son cube (Lugus en Rust) ; cette machine n'est pas lancée depuis
+            # un cube : rien (inconnu)
+            return 0
         if code == 30:
             # 0.63 : le cube mère (un nom, comme un fichier) : ranger_cube écrit cube128-NOM-ÉTAGE-FRÉQUENCE.cub et met à
             # jour cube128-NOM.cub ; rend l'indicatif (FNV-1a du nom) ; vide : plus de cube mère (0) ; refusé : M128 - 1
@@ -529,7 +533,7 @@ class CPU:
 
     def nom_fichier_cube(self, e, f):
         """0.63 : cube128-NOM-e-f.cub sous un cube mère, cube128-e-f.cub sinon"""
-        return f"cube128-{self.mere}-{e}-{f}.cub" if self.mere is not None else f"cube128-{e}-{f}.cub"
+        return f"cube128-{self.mere}-{lettre_etage(e)}-{f}.cub" if self.mere is not None else f"cube128-{lettre_etage(e)}-{f}.cub"
 
     def ranger_cube(self, adr):
         e, i = self.place(adr)

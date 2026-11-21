@@ -3180,3 +3180,50 @@ fréquence et un indicatif lié au nom**.
   rangé sous le cube mère et relancé par lui. `tests/test_adn_deux_sens.py` suit les nouveaux noms.
 - **La suite** : le .exe qui embarque les cubes de son programme (le cube mère dit lesquels) ; Gobannos, les fichiers et
   les services.
+
+## 69. Les faces dans le cube (21 novembre, 0.64)
+
+**Décidé avec le créateur le 21** (point 5 du carnet, section 11) : les six faces de chaque molécule rangées dans le
+cube, lues par la machine pendant qu'elle tourne. Ses choix : **la même fréquence sur les quatre étages**, et **le code
+à l'étage 0, nommé par une lettre gauloise, le tau gallicum Đ** (440/Đ). Sa hiérarchie, notée : le cube mère, le cube
+hex, la molécule, l'atome.
+
+- **Le cube du programme** (`lugus cube PROG.adn [F]`) : à la fréquence F (440 par défaut), sous le cube mère du
+  programme, les quatre étages :
+  - **F/Đ, le code** : chaque mot à sa place, comme dans la machine qui tourne, la coiffe en #FFFFFE, la queue en
+    #FFFFFF (`cube128-PROG-Đ-F.cub`) ;
+  - **F/1, F/2, F/3, les trois axes du dé** : chaque molécule à la place de son début (l'adresse que donne une fonction
+    passée en valeur), un axe par étage, **la face d'un côté dans la moitié basse du point, la face opposée dans la
+    haute** : F/1 ce qu'elle est | ce qu'elle touche ; F/2 ses racines | ses branches ; F/3 ses promesses | sa mémoire.
+    Les faces viennent de la carte rangée dans l'ADN (la section `faces`) ; un brin sans carte à six faces n'en a pas.
+    La queue des cubes des faces dit « VTXFACES » et le nombre de molécules.
+- **Ce que porte chaque face** (64 bits) : ce qu'elle est (le genre, ses mots, ses lignes) ; ce qu'elle touche (deux
+  quits : elle-même, avec ses appels) ; ses racines (sa profondeur, combien l'appellent, la première) ; ses branches
+  (combien elle en appelle, la première, la dernière) ; ses promesses (exige, garantit, les exemples, l'isotope) ; sa
+  mémoire (l'empreinte de son texte). Les noms et les listes entières restent dans la carte de l'ADN.
+- **Le centre n'est pas écrit** : il se lit à chaque lecture. `centre(f)` compare le code qui tourne, mot pour mot, à
+  celui de l'étage Đ : vrai, il est celui du cube ; variable, il a changé (une avarie pendant qu'il tourne) ; faux, le
+  cube a été réparé par son anti-cube et son ombre en le lisant ; inconnu, pas de faces.
+- **Dans le langage** : `face(f, k)` (k de 0 à 5, dans l'ordre du dé) et `centre(f): logique`, le service 31, dans les
+  quatre compilateurs (les mêmes mots deux à deux). Lugus en Rust lit les faces quand le programme est lancé depuis son
+  cube (`lugus cube128-PROG.cub`, ou un sous-cube) ; lancé depuis son texte, ou sur Dunon (qui n'a pas de fonctions
+  passées en valeur, ni de cube de programme), les faces sont à 0 et le centre inconnu.
+- **Le cube mère** : à l'adresse #F, seize bits par étage, de Đ à 3 (présent, ses pages, six bits de coiffe) ; onze bits
+  de coiffe avant (0.63), six maintenant, pour faire place à l'étage Đ.
+- **Les anciens cubes** : un cube de la 0.63 (le programme à l'étage 1) se lance encore par son cube mère ; un cube des
+  faces lancé seul est refusé, et dit pourquoi.
+- **Vérifié** (`tests/test_faces_cube.py`, 13 contrôles) : les six faces lues pendant qu'il tourne, celles de la carte
+  champ pour champ ; le centre vrai, variable (une avarie), faux (le cube des faces abîmé, réparé), inconnu (depuis son
+  texte, sur Dunon) ; les mêmes mots par les deux compilateurs de Lugus et de Dunon ; le descripteur des quatre étages ;
+  un cube de la 0.63 ; un cube des faces seul refusé. `tests/test_cube_mere.py` et `tests/test_adn_deux_sens.py` suivent
+  les nouveaux noms.
+- **Les limites, honnêtement** : une face tient sur 64 bits, alors les listes d'appels sont réduites à leur nombre, leur
+  première et leur dernière ; une molécule recopiée en ligne n'a pas de place à elle ; un programme lancé depuis son
+  cube qui range lui-même un cube à sa propre fréquence sous son propre nom écraserait ses faces ; `afficher` montre une
+  face dont le bit 63 est posé comme un nombre négatif (l'empreinte, souvent), les bits restent justes.
+- **Trouvé en route, et corrigé** : vtx128.py et vtxc128 ne donnaient pas les mêmes mots quand deux fonctions passées
+  en valeur, sans être appelées par valeur, formaient un accord (deux appels à la suite) : la recherche de vtx128.py
+  ne descendait pas dans les tâches d'un accord, et oubliait la table d'appels ; elle y descend (les programmes écrits
+  gardent leurs mots). Et `tests/test_natif128.py` jouait `cube_mere.vtx` deux fois dans le même dossier (la seconde
+  relisait les cubes de la première) : chaque jeu part sans cube.
+- **La suite** : la paillasse et Ogmios montrent ces faces lues dans le cube ; puis les autres points du langage.

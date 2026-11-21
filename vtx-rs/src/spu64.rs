@@ -393,6 +393,8 @@ impl Spu64 {
             16..=21 | 23 => Ok(crate::hote::service(code, arg, u64::MAX).unwrap_or(0)),
             // 25 : le compte des instructions jouées (instructions() du prélude), comme sur Lugus
             25 => Ok(self.pas),
+            // 0.64 : les faces d'un programme : Dunon n'est pas lancé depuis un cube de programme ; rien (inconnu)
+            31 => Ok(0),
             30 => {
                 // 0.63 : le cube mère (un nom, comme un fichier ; il n'a pas de fréquence) : ensuite ranger_cube écrit
                 // TETE-NOM-ÉTAGE-FRÉQUENCE.cub et met à jour TETE-NOM.cub (le squelette), et les pages se relisent sous
@@ -554,8 +556,8 @@ fn accorder_cube64(&mut self, chemin: &std::path::Path, e: usize, f: u64, mere: 
 
         fn nom_fichier_cube(&self, e: usize, f: u64) -> String {
         match &self.mere {
-            Some(m) => format!("cube64-{}-{}-{}.cub", m, e, f),
-            None => format!("cube64-{}-{}.cub", e, f),
+            Some(m) => format!("cube64-{}-{}-{}.cub", m, crate::hote::lettre_etage(e), f),
+            None => format!("cube64-{}-{}.cub", crate::hote::lettre_etage(e), f),
         }
     }
 

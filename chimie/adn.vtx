@@ -77,6 +77,9 @@ constante CRC2 = 7132000;        // le CRC-8 deux octets à la fois (65 536) : C
 constante BROUILLON = 7200000;   // les polynômes du décodage (repris à chaque voie)
 constante INTR = 8000000;        // les introns inconnus, recopiés tels quels
 constante MAXMOTS = 1000000;
+// 0.64 : la queue des cubes des faces (aux étages 1 à 3) : « VTXFACES » dans sa moitié haute, le nombre de molécules
+// dans la basse ; un programme a, lui, son nombre de mots seul
+constante QUEUE_FACES = 6220694044071380307;
 constante MAXINTR = 7900000;
 constante FIN = 4611686018427387904;     // la fin du fichier
 constante ETAGE2 = 9223372036854775808;  // l'adresse longue de l'étage 2
@@ -2231,7 +2234,8 @@ fonction frequence_tranche(chemin, d, f) {
 }
 
 // le cube nommé : « cube128-ÉTAGE-FRÉQUENCE.cub » (un cube simple), « cube128-NOM-ÉTAGE-FRÉQUENCE.cub » (un sous-cube
-// du cube mère NOM, 0.63) ou « cube128-NOM.cub » (le cube mère : le programme est dans son sous-cube 1-440) ; le cube
+// du cube mère NOM, 0.63) ou « cube128-NOM.cub » (le cube mère : le programme est dans son sous-cube Đ-440 ; l'étage
+// Đ, le tau gallicum, est l'étage 0, 0.64) ; le cube
 // mère est donné à la machine (service 30) ; l'étage dans G_SDEB, la fréquence rendue (4294967295 : pas un de ces noms)
 fonction cube_du_nom(chemin) {
     soit n = longueur(chemin);
@@ -2271,9 +2275,13 @@ fonction cube_du_nom(chemin) {
             debut_e = j1;
         }
         soit ce = car(chemin, debut_e);
-        si j2 - 1 == debut_e + 1 && ce >= 49 && ce <= 51 {
+        // 0.64 : l'étage Đ (le tau gallicum) est l'étage 0, le code
+        si j2 - 1 == debut_e + 1 && ((ce >= 49 && ce <= 51) || ce == 272) {
             fr = frequence_tranche(chemin, j2, z);
             e = ce - 48;
+            si ce == 272 {
+                e = 0;
+            }
             si j1 != 0 {
                 nom_d = a;
                 nom_f = j1 - 1;
@@ -2281,10 +2289,10 @@ fonction cube_du_nom(chemin) {
         }
     }
     si fr == 4294967295 {
-        // le cube mère : son programme est dans le sous-cube 1-440
+        // le cube mère : son programme est dans le sous-cube Đ-440 (0.64 ; 1-440 avant, encore lu)
         nom_d = a;
         nom_f = z;
-        e = 1;
+        e = 0;
         fr = 440;
     }
     soit r = __service(30, texte_tranche(chemin, nom_d, nom_f));
@@ -2301,12 +2309,22 @@ fonction cube_du_nom(chemin) {
 fonction lire_cube(chemin) {
     soit fr = cube_du_nom(chemin);
     si fr == 4294967295 {
-        refuser("un cube se nomme cube128-ÉTAGE-FRÉQUENCE.cub, cube128-NOM-ÉTAGE-FRÉQUENCE.cub ou cube128-NOM.cub (son cube mère)");
+        refuser("un cube se nomme cube128-ÉTAGE-FRÉQUENCE.cub, cube128-NOM-ÉTAGE-FRÉQUENCE.cub ou cube128-NOM.cub (son cube mère) ; l'étage du code est Đ");
         retour E_INCONNU;
     }
     soit e = @2[G + G_SDEB];
     soit tout = etat_disque();
     soit n = @[cube_adresse(e, fr, 16777215)];
+    // 0.64 : un cube de la 0.63 a son programme à l'étage 1 ; à l'étage 1, un cube des faces n'est pas un programme
+    si n == 0 && e == 0 {
+        e = 1;
+        n = @[cube_adresse(e, fr, 16777215)];
+    }
+    soit nq: entier_128 = n;
+    si haut(nq) == QUEUE_FACES {
+        refuser("ce cube porte les faces d'un programme, pas ses mots (ils sont à l'étage Đ)");
+        retour E_INCONNU;
+    }
     soit sig = @[cube_adresse(e, fr, 16777214)];
     si n == 0 || n > MAXMOTS {
         refuser("le cube ne porte pas de programme (sa queue, au point #FFFFFF, est vide)");
@@ -2346,6 +2364,129 @@ fonction lire_cube(chemin) {
     retour etat;
 }
 
+// une liste de la carte (le champ f de la ligne k : « 12,30,45 » ou vide) : son nombre d'éléments
+fonction liste_compte(k, f) {
+    si champ_vide(k, f) {
+        retour 0;
+    }
+    soit n = 1;
+    pour i dans @2[FOFF + 32 * k + f]..champ_fin(k, f) {
+        si @2[CARTEB + i] == ',' {
+            n = n + 1;
+        }
+    }
+    retour n;
+}
+
+// son dernier élément (0 si elle est vide)
+fonction liste_dernier(k, f) {
+    si champ_vide(k, f) {
+        retour 0;
+    }
+    soit i = champ_fin(k, f);
+    tantque i > @2[FOFF + 32 * k + f] && @2[CARTEB + i - 1] != ',' {
+        i = i - 1;
+    }
+    soit x = 0;
+    tantque i < champ_fin(k, f) {
+        x = x * 10 + @2[CARTEB + i] - 48;
+        i = i + 1;
+    }
+    retour x;
+}
+
+// la ligne de fin du champ « L-E » (le nombre après le « - »)
+fonction champ_apres_tiret(k, f) {
+    soit i = @2[FOFF + 32 * k + f];
+    tantque i < champ_fin(k, f) && @2[CARTEB + i] != '-' {
+        i = i + 1;
+    }
+    soit x = 0;
+    i = i + 1;
+    tantque i < champ_fin(k, f) && @2[CARTEB + i] >= 48 && @2[CARTEB + i] <= 57 {
+        x = x * 10 + @2[CARTEB + i] - 48;
+        i = i + 1;
+    }
+    retour x;
+}
+
+fonction borne(x, m) {
+    si x > m {
+        retour m;
+    }
+    retour x;
+}
+
+// 0.64 : les faces de chaque molécule, à sa place (l'adresse de son début), aux étages 1 à 3 de la fréquence fr : un
+// étage par axe, la face d'un côté dans la moitié basse du point, la face opposée dans la haute. Rend le nombre de
+// molécules (0 : le brin n'a pas de carte à six faces)
+fonction ecrire_faces(fr) {
+    pour e dans 1..4 {
+        jeter_cube(e, fr);
+    }
+    si trouver_section("faces") == 0 {
+        retour 0;
+    }
+    soit d = @2[G + G_SDEB];
+    soit f = @2[G + G_SFIN];
+    @2[G + G_CL] = 0;
+    pour i dans d..f {
+        carte_car(@2[INTR + i]);
+    }
+    carte_car(10);
+    lire_carte_texte();
+    soit nk = @2[G + G_NK];
+    soit m = 0;
+    pour k dans 0..nk {
+        soit p = @2[DEBK + k];
+        si p >= 16777214 {
+            continuer;
+        }
+        soit genre = 0;
+        si champ_est(k, 2, "tete") {
+            genre = 1;
+        } sinon si champ_est(k, 2, "fonction") {
+            genre = 2;
+        } sinon si champ_est(k, 2, "reaction") {
+            genre = 3;
+        } sinon si champ_est(k, 2, "empruntee") {
+            genre = 4;
+        }
+        // ce qu'elle est : le genre, ses mots, ses lignes ; ce qu'elle touche : elle-même, avec ses appels (deux quits)
+        soit est = genre | (borne(champ_n(k, 4), 16777215) << 4) | (borne(champ_n(k, 3), 262143) << 28)
+                   | (borne(champ_apres_tiret(k, 3), 262143) << 46);
+        soit touche = (champ_n(k, 5) & 3) | ((champ_n(k, 6) & 3) << 2);
+        // ses racines : sa profondeur (65535 : jamais atteinte), combien l'appellent, la première (sa place + 1) ;
+        // ses branches : combien elle en appelle, la première et la dernière (leur place + 1)
+        soit prof = champ_n(k, 7);
+        si prof == 4294967295 {
+            prof = 65535;
+        }
+        soit nr = liste_compte(k, 9);
+        soit racines = borne(prof, 65535) | (borne(nr, 65535) << 16);
+        si nr > 0 {
+            racines = racines | ((borne(champ_n(k, 9), 16777214) + 1) << 32);
+        }
+        soit nb = liste_compte(k, 8);
+        soit branches = borne(nb, 65535);
+        si nb > 0 {
+            branches = branches | ((borne(champ_n(k, 8), 16777214) + 1) << 16) | ((borne(liste_dernier(k, 8), 16777214) + 1) << 40);
+        }
+        // ses promesses : exige, garantit, les exemples, l'isotope lourd ; sa mémoire : l'empreinte de son texte
+        soit promesses = borne(champ_n(k, 10), 65535) | (borne(champ_n(k, 11), 65535) << 16)
+                         | (borne(champ_n(k, 12), 65535) << 32) | ((champ_n(k, 13) & 1) << 48);
+        soit memoire = champ_n(k, 14) & 18446744073709551615;
+        @[cube_adresse(1, fr, p)] = entier_128_de(touche, est);
+        @[cube_adresse(2, fr, p)] = entier_128_de(branches, racines);
+        @[cube_adresse(3, fr, p)] = entier_128_de(memoire, promesses);
+        m = m + 1;
+    }
+    pour e2 dans 1..4 {
+        @[cube_adresse(e2, fr, 16777215)] = entier_128_de(QUEUE_FACES, m);
+    }
+    retour m;
+}
+
 fonction ecrire_cube(fr, nm) {
     soit n = @2[G + G_N];
     si n > 16777214 {
@@ -2364,36 +2505,61 @@ fonction ecrire_cube(fr, nm) {
         @2[NOMC] = 0;
         __service(30, ETAGE2 + NOMC);
     }
-    // le cube est d'abord vidé (sans relire le disque), puis chaque mot va à sa place
-    jeter_cube(1, fr);
+    // 0.64 : le code à l'étage Đ (0), comme dans la machine qui tourne ; le cube est d'abord vidé (sans relire le
+    // disque), puis chaque mot va à sa place
+    jeter_cube(0, fr);
     pour k dans 0..n {
-        @[cube_adresse(1, fr, k)] = entier_128_de(@2[MH + k], @2[MB + k]);
+        @[cube_adresse(0, fr, k)] = entier_128_de(@2[MH + k], @2[MB + k]);
     }
-    @[cube_adresse(1, fr, 16777214)] = signature(0, n);
-    @[cube_adresse(1, fr, 16777215)] = n;
-    soit pages = ranger_cube(1, fr);
+    @[cube_adresse(0, fr, 16777214)] = signature(0, n);
+    @[cube_adresse(0, fr, 16777215)] = n;
+    soit pages = ranger_cube(0, fr);
     si pages == 18446744073709551615 {
         refuser("le cube ne s'écrit pas");
         retour;
+    }
+    // ses faces, aux étages 1 à 3 de la même fréquence
+    soit nf = ecrire_faces(fr);
+    si nf > 0 {
+        pour e dans 1..4 {
+            si ranger_cube(e, fr) == 18446744073709551615 {
+                refuser("le cube des faces ne s'écrit pas");
+                retour;
+            }
+        }
     }
     ecrire_t(1, "le cube : ");
     ecrire_u64(1, n);
     ecrire_t(1, " mots aux points #000000 à #");
     ecrire_hex(1, n - 1, 6);
-    ecrire_t(1, " de l'étage 1, la coiffe en #FFFFFE, la queue en #FFFFFF, ");
+    ecrire_t(1, " de l'étage Đ, la coiffe en #FFFFFE, la queue en #FFFFFF, ");
     ecrire_u64(1, pages);
+    ecrire_t(1, " page(s) -> cube128-");
     si avec_mere {
-        ecrire_t(1, " page(s) -> cube128-");
         ecrire_t(1, nm);
-        ecrire_t(1, "-1-");
+        ecrire_t(1, "-");
+    }
+    ecrire_t(1, "Đ-");
+    ecrire_u64(1, fr);
+    ecrire_t(1, ".cub, avec son anti-cube et son ombre");
+    si avec_mere {
+        ecrire_t(1, ", sous le cube mère cube128-");
+        ecrire_t(1, nm);
+        ecrire_t(1, ".cub");
+    }
+    ecrire_car(1, 10);
+    si nf > 0 {
+        ecrire_t(1, "les faces : ");
+        ecrire_u64(1, nf);
+        ecrire_t(1, " molécules, chacune à la place de son début, aux étages 1 à 3 (");
         ecrire_u64(1, fr);
-        ecrire_t(1, ".cub, avec son anti-cube et son ombre, sous le cube mère cube128-");
-        ecrire_t(1, nm);
-        ecrire_t(1, ".cub\n");
+        ecrire_t(1, "/1 ce qu'elle est | ce qu'elle touche, ");
+        ecrire_u64(1, fr);
+        ecrire_t(1, "/2 ses racines | ses branches, ");
+        ecrire_u64(1, fr);
+        ecrire_t(1, "/3 ses promesses | sa mémoire)\n");
     } sinon {
-        ecrire_t(1, " page(s) -> cube128-1-");
-        ecrire_u64(1, fr);
-        ecrire_t(1, ".cub, avec son anti-cube et son ombre\n");
+        ecrire_t(1, "les faces : aucune (ce brin n'a pas de carte à six faces)\n");
     }
 }
 

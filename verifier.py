@@ -147,6 +147,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_catalogue.py")]))
     etapes.append(("les cubes mères : un nom comme un fichier, ses sous-cubes à leurs fréquences, sur Lugus et Dunon",
                    [sys.executable, os.path.join("tests", "test_cube_mere.py")]))
+    etapes.append(("les faces dans le cube : le code à l'étage Đ, les faces aux étages 1 à 3, lues pendant qu'il tourne",
+                   [sys.executable, os.path.join("tests", "test_faces_cube.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",

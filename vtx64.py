@@ -3572,6 +3572,17 @@ fonction cube_mere(nom: texte) {
     // fréquences. Rend l'indicatif (l'empreinte du nom) ; un nom vide : plus de cube mère ; un nom refusé : faux
     retour __service(30, nom);
 }
+fonction face(f, k) {
+    // 0.64 : une face de la molécule f (une fonction passée en valeur), lue dans le cube du programme pendant qu'il
+    // tourne ; k : 0 ce qu'elle est, 1 ce qu'elle touche, 2 ses racines, 3 ses branches, 4 ses promesses, 5 sa mémoire.
+    // Le programme lancé depuis son cube (le code à l'étage Đ, les faces aux étages 1 à 3) ; sinon 0
+    retour __service(31, (k << 32) | ((f >> 1) & 4294967295));
+}
+fonction centre(f): logique {
+    // 0.64 : le centre de la molécule f, à cette lecture : vrai (son code est celui du cube), faux (le cube a été réparé
+    // en le lisant), variable (son code n'est plus celui du cube), inconnu (pas de faces)
+    retour comme_logique(__service(31, 25769803776 | ((f >> 1) & 4294967295)));
+}
 fonction parler(t) {
     soit c = ouvrir_ecriture("voix:");
     si c != 18446744073709551615 {

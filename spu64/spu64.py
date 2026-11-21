@@ -304,6 +304,11 @@ def brasser64(z):
     return z ^ (z >> 31)
 
 
+def lettre_etage(e):
+    """0.64 : l'étage dans le nom d'un cube : Đ (le tau gallicum) pour l'étage 0, le code ; le chiffre pour les autres"""
+    return "Đ" if e == 0 else str(e)
+
+
 def nom_de_cube(chemin, tete):
     """ce que désigne un nom de fichier de cube : ("simple", e, f), ("sous", nom, e, f), ("mere", nom) ou None"""
     n = os.path.basename(chemin)
@@ -312,9 +317,10 @@ def nom_de_cube(chemin, tete):
     r = n[len(tete) + 1:-4]
 
     def ef(e, f):
-        if len(e) != 1 or not f or len(f) > 8 or not all(c in "0123456789" for c in f) or e not in "123":
+        # 0.64 : l'étage 0 (le code) se nomme par le tau gallicum, Đ ; les étages 1 à 3 par leur chiffre
+        if e not in ("Đ", "1", "2", "3") or not f or len(f) > 8 or not all(c in "0123456789" for c in f):
             return None
-        return (int(e), int(f)) if int(f) <= 0xFFFFFF else None
+        return (0 if e == "Đ" else int(e), int(f)) if int(f) <= 0xFFFFFF else None
     m = r.rsplit("-", 2)
     if len(m) == 2 and ef(m[0], m[1]):
         return ("simple",) + ef(m[0], m[1])
@@ -347,10 +353,10 @@ def mere_mettre_a_jour(dossier, tete, nom, e, f, pages, fichier, large):
     points.pop(0xFFFFFF, None)
     indicatif = fnv64_texte(nom)
     ancien = points.get(f, 0) & 0xFFFFFFFFFFFFFFFF
-    s1, s2 = 10 * (e - 1), 30 + 11 * (e - 1)
-    lo = ancien & ~(0x3FF << s1) & ~(0x7FF << s2) & 0xFFFFFFFFFFFFFFFF
-    lo |= (0x200 | (pages & 0x1FF)) << s1
-    lo |= (fnv64_octets(fichier) & 0x7FF) << s2
+    # 0.64 : seize bits par étage (de 0 à 3), à 16·e : présent (512) plus ses pages, puis six bits de coiffe
+    s = 16 * e
+    lo = ancien & ~(0xFFFF << s) & 0xFFFFFFFFFFFFFFFF
+    lo |= ((0x200 | (pages & 0x1FF)) | ((fnv64_octets(fichier) & 0x3F) << 10)) << s
     points[f] = (indicatif << 64) | lo if large else lo
     somme, ou = 0, 0
     for p in sorted(points):
@@ -609,6 +615,10 @@ class CPU:
             return 1 if f is None or f[0] != "l" or f[2] >= len(f[1]) else 0
         if code == 5:
             return int.from_bytes(os.urandom(8), "little")
+        if code == 31:
+            # 0.64 : les faces du programme lancé depuis son cube (Lugus en Rust) ; cette machine n'est pas lancée depuis
+            # un cube : rien (inconnu)
+            return 0
         if code == 30:
             # 0.63 : le cube mère (un nom, comme un fichier) : ranger_cube écrit cube64-NOM-ÉTAGE-FRÉQUENCE.cub et met à
             # jour cube64-NOM.cub ; rend l'indicatif (FNV-1a du nom) ; vide : plus de cube mère (0) ; refusé : M64 - 1
@@ -734,7 +744,7 @@ class CPU:
 
     def nom_fichier_cube(self, e, f):
         """0.63 : cube64-NOM-e-f.cub sous un cube mère, cube64-e-f.cub sinon"""
-        return f"cube64-{self.mere}-{e}-{f}.cub" if self.mere is not None else f"cube64-{e}-{f}.cub"
+        return f"cube64-{self.mere}-{lettre_etage(e)}-{f}.cub" if self.mere is not None else f"cube64-{lettre_etage(e)}-{f}.cub"
 
     def accorder_cube64(self, chemin, e, f, mere):
         """0.63 : un cube de Dunon choisi par son chemin, accordé tel quel (comme Lugus en Rust)"""

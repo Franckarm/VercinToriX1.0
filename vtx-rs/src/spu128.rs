@@ -62,6 +62,9 @@ pub struct Spu128 {
     pages_vues: std::collections::HashSet<(usize, u128)>,
     /// 0.63 : le nom du cube mère (service 30) : les cubes se rangent et se relisent sous lui
     pub mere: Option<String>,
+    /// 0.64 : le cube du programme lancé depuis son cube : son code (l'étage Đ), ses faces (les étages 1 à 3, une par
+    /// moitié de point), l'état de sa lecture ; lus par le service 31 (face, centre)
+    pub cube_programme: Option<crate::hote::CubeProgramme>,
     pub pas: u64,
     /// pour la traduction en x86-64 : le mot que natif_lire vient de lire
     pub natif_tampon: [u64; 2],
@@ -333,6 +336,7 @@ impl Spu128 {
             dossier: None,
             pages_vues: std::collections::HashSet::new(),
             mere: None,
+            cube_programme: None,
             pas: 0,
             natif_tampon: [0, 0],
             natif_cache: [u64::MAX; 128],
@@ -906,6 +910,23 @@ impl Spu128 {
                 self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }
+            31 => {
+                // 0.64 : une face d'une molécule du programme (arg = k << 32 | sa place, k de 0 à 5), ou son centre (k = 6)
+                let k = (arg >> 32) as u64;
+                let place = (arg & 0xFFFF_FFFF) as u64;
+                let code: Vec<u128> = match &self.cube_programme {
+                    Some(c) if k == 6 => {
+                        let n = c.mots_de(place);
+                        (0..n).map(|j| c.code.get(&(place + j)).copied().unwrap_or(0)).collect()
+                    }
+                    _ => Vec::new(),
+                };
+                let lus: Vec<u128> = (0..code.len() as u128).map(|j| self.lire(place as u128 + j)).collect();
+                Ok(match &self.cube_programme {
+                    None => 0,
+                    Some(c) => c.face(k, place, &lus),
+                })
+            }
             30 => {
                 // 0.63 : le cube mère (un nom, comme un fichier ; il n'a pas de fréquence) : ensuite ranger_cube écrit
                 // TETE-NOM-ÉTAGE-FRÉQUENCE.cub et met à jour TETE-NOM.cub (le squelette), et les pages se relisent sous
@@ -1027,8 +1048,8 @@ impl Spu128 {
     /// 0.63 : le fichier du cube (e, f) : TETE-NOM-e-f.cub sous un cube mère, TETE-e-f.cub sinon
     fn nom_fichier_cube(&self, e: usize, f: u64) -> String {
         match &self.mere {
-            Some(m) => format!("cube128-{}-{}-{}.cub", m, e, f),
-            None => format!("cube128-{}-{}.cub", e, f),
+            Some(m) => format!("cube128-{}-{}-{}.cub", m, crate::hote::lettre_etage(e), f),
+            None => format!("cube128-{}-{}.cub", crate::hote::lettre_etage(e), f),
         }
     }
 
