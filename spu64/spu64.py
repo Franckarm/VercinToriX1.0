@@ -153,7 +153,8 @@ def ecrire_double(chemin, octets):
     mot, suite = _format(octets[:8])
     # l'anti-cube : chaque page à sa place opposée (255 - k), chaque mot à la sienne (#FFFF - GGBB), tout complémenté
     pages = _pages(octets[8:], (mot, suite))
-    corps = b"".join((255 - (k & 255)).to_bytes(4, "little") + _retourner(pg, (mot, suite)) for k, pg in sorted(pages.items(), reverse=True))
+    # 0.64b : les bits au-dessus du 8e (l'étage d'une page d'un cube mère) restent tels quels
+    corps = b"".join(((k & ~255) | (255 - (k & 255))).to_bytes(4, "little") + _retourner(pg, (mot, suite)) for k, pg in sorted(pages.items(), reverse=True))
     with open(_prefixe(chemin, "anti"), "wb") as h:
         h.write(_entete_avec(octets[:8], b"ANS") + bytes(255 - x for x in corps))
     o = [_entete_avec(octets[:8], b"OMB")]
@@ -191,7 +192,7 @@ def lire_double(chemin, entete):
     pa = {}
     if a is not None:
         # l'anti-cube relu : complémenté, puis chaque page et chaque mot remis à leur place
-        pa = {255 - (k & 255): _retourner(pg, fmt) for k, pg in _pages(bytes(255 - x for x in a[8:]), fmt).items()}
+        pa = {(k & ~255) | (255 - (k & 255)): _retourner(pg, fmt) for k, pg in _pages(bytes(255 - x for x in a[8:]), fmt).items()}
     rang = {0: 0, 2: 1, 1: 2, 3: 3}
     etat = 2
     ombre_fausse = ombres is None and p is not None and a is not None
@@ -331,9 +332,13 @@ def nom_de_cube(chemin, tete):
     return None
 
 
+MARQUE_MERE = 0x5654584D45524532   # 0.64b : « VTXMERE2 », le format des cubes mères à quatre étages
+
+
 def mere_mettre_a_jour(dossier, tete, nom, e, f, pages, fichier, large):
-    """le cube mère NOM après le rangement du sous-cube (e, f), comme hote::mere_mettre_a_jour de Lugus en Rust ; rend
-    l'état de la relecture du cube mère (à noter pour etat_disque, comme Lugus en Rust le note)"""
+    """le cube mère NOM après le rangement du sous-cube (e, f), comme hote::mere_mettre_a_jour de Lugus en Rust (0.64b :
+    ses quatre étages, le descripteur de l'étage e à son étage e, sur 64 bits) ; rend l'état de la relecture du cube
+    mère (à noter pour etat_disque, comme Lugus en Rust le note)"""
     entete = b"VTXCU128" if large else b"VTXCUB64"
     ws = 16 if large else 8
     taille = 4 + 65536 * ws + 16384
@@ -343,27 +348,27 @@ def mere_mettre_a_jour(dossier, tete, nom, e, f, pages, fichier, large):
     if b is not None and b[:8] == entete:
         k = 8
         while k + taille <= len(b):
-            p = int.from_bytes(b[k:k + 4], "little") & 255
+            hp = int.from_bytes(b[k:k + 4], "little")
+            base = (((hp >> 8) & 3) << 24) | ((hp & 255) << 16)
             for j in range(65536):
                 v = int.from_bytes(b[k + 4 + ws * j:k + 4 + ws * j + ws], "little")
                 if v:
-                    points[(p << 16) | j] = v
+                    points[base | j] = v
             k += taille
+    if points.get(0xFFFFFD, 0) & 0xFFFFFFFFFFFFFFFF != MARQUE_MERE:
+        points = {}
     points.pop(0xFFFFFE, None)
     points.pop(0xFFFFFF, None)
     indicatif = fnv64_texte(nom)
-    ancien = points.get(f, 0) & 0xFFFFFFFFFFFFFFFF
-    # 0.64 : seize bits par étage (de 0 à 3), à 16·e : présent (512) plus ses pages, puis six bits de coiffe
-    s = 16 * e
-    lo = ancien & ~(0xFFFF << s) & 0xFFFFFFFFFFFFFFFF
-    lo |= ((0x200 | (pages & 0x1FF)) | ((fnv64_octets(fichier) & 0x3F) << 10)) << s
-    points[f] = (indicatif << 64) | lo if large else lo
+    lo = (0x200 | (pages & 0x1FF)) | ((fnv64_octets(fichier) & ((1 << 54) - 1)) << 10)
+    points[(e << 24) | f] = (indicatif << 64) | lo if large else lo
+    points[0xFFFFFD] = MARQUE_MERE
     somme, ou = 0, 0
     for p in sorted(points):
         w = points[p]
         g = brasser64(brasser64(brasser64(p) ^ (w >> 64)) ^ (w & 0xFFFFFFFFFFFFFFFF))
         somme, ou = (somme + g) & 0xFFFFFFFFFFFFFFFF, ou ^ g
-    n = len(points)
+    n = len(points) - 1
     points[0xFFFFFE] = brasser64(brasser64(brasser64(n) ^ somme) ^ ou)
     points[0xFFFFFF] = (indicatif << 64) | n if large else n
     sortie = [entete]
@@ -652,22 +657,27 @@ class CPU:
             if b is None or b[:8] != b"VTXCU128":
                 return M64
             e, g = ef
-            prises = {j >> 24 for (ee, j) in self.mem if ee == e}
+            # 0.64b : un cube mère porte ses quatre étages : la fréquence (et la suivante) libres dans chacun
+            etages = range(4) if mere else [e]
+            prises = {j >> 24 for (ee, j) in self.mem if ee in etages}
             while g in prises or g + 1 in prises:
                 g = (g - 1) & 0xFFFFFF if mere else (g + 1) & 0xFFFFFF
-            for p in range(256):
-                self.pages_vues.add((e, (g << 8) | p))
-                self.pages_vues.add((e, ((g + 1) << 8) | p))
+            for x in etages:
+                for p in range(256):
+                    self.pages_vues.add((x, (g << 8) | p))
+                    self.pages_vues.add((x, ((g + 1) << 8) | p))
             taille = 4 + 65536 * 16 + 16384
             k = 8
             while k + taille <= len(b):
-                p = int.from_bytes(b[k:k + 4], "little") & 255
+                hp = int.from_bytes(b[k:k + 4], "little")
+                p = hp & 255
+                ep = (hp >> 8) & 3 if mere else e
                 for j in range(65536):
                     v = int.from_bytes(b[k + 4 + 16 * j:k + 20 + 16 * j], "little")
                     if v & M64:
-                        self.mem[(e, (g << 24) | (p << 16) | j)] = v & M64
+                        self.mem[(ep, (g << 24) | (p << 16) | j)] = v & M64
                     if v >> 64:
-                        self.mem[(e, ((g + 1) << 24) | (p << 16) | j)] = v >> 64
+                        self.mem[(ep, ((g + 1) << 24) | (p << 16) | j)] = v >> 64
                 k += taille
             return g
         if code == 28:
@@ -752,24 +762,28 @@ class CPU:
         noter_etat(self, etat)
         if b is None or b[:8] != b"VTXCUB64":
             return M64
-        prises = {j >> 24 for (ee, j) in self.mem if ee == e}
+        etages = range(4) if mere else [e]
+        prises = {j >> 24 for (ee, j) in self.mem if ee in etages}
         g = f
         while g in prises:
             g = (g - 1) & 0xFFFFFF if mere else (g + 1) & 0xFFFFFF
-        for p in range(256):
-            self.pages_vues.add((e, (g << 8) | p))
+        for x in etages:
+            for p in range(256):
+                self.pages_vues.add((x, (g << 8) | p))
         taille = 4 + 65536 * 8 + 16384
         k = 8
         while k + taille <= len(b):
-            p = int.from_bytes(b[k:k + 4], "little") & 255
+            hp = int.from_bytes(b[k:k + 4], "little")
+            p = hp & 255
+            ep = (hp >> 8) & 3 if mere else e
             base = (g << 24) | (p << 16)
             for j in range(65536):
                 v = int.from_bytes(b[k + 4 + 8 * j:k + 12 + 8 * j], "little")
                 q = (b[k + 4 + 524288 + j // 4] >> (2 * (j % 4))) & 3
                 if v:
-                    self.mem[(e, base | j)] = v
+                    self.mem[(ep, base | j)] = v
                 if q:
-                    self.brin[(e, base | j)] = q
+                    self.brin[(ep, base | j)] = q
             k += taille
         return g
 

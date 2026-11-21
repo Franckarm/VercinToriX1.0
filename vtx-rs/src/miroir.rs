@@ -223,7 +223,8 @@ pub fn ecrire_double(chemin: &Path, octets: &[u8]) -> std::io::Result<()> {
     let mut corps_anti: Vec<u8> = Vec::new();
     let pages = pages_de(&octets[8.min(octets.len())..], f);
     for (k, p) in pages.iter().rev() {
-        corps_anti.extend_from_slice(&(255 - (*k & 255)).to_le_bytes());
+        // 0.64b : les bits au-dessus du 8e (l'étage d'une page d'un cube mère) restent tels quels
+        corps_anti.extend_from_slice(&((*k & !255) | (255 - (*k & 255))).to_le_bytes());
         corps_anti.extend_from_slice(&retourner(p, f));
     }
     let mut a = entete_avec(entete, b"ANS");
@@ -274,7 +275,7 @@ pub fn lire_double(chemin: &Path, entete: &[u8]) -> Option<Vec<u8>> {
     // l'anti-cube relu : complémenté, puis chaque page et chaque mot remis à leur place (l'opposée de l'opposée)
     let pa: BTreeMap<u32, Vec<u8>> = a.as_ref()
         .map(|b| pages_de(&b[8..].iter().map(|x| !x).collect::<Vec<u8>>(), f).into_iter()
-            .map(|(k, p)| (255 - (k & 255), retourner(&p, f))).collect())
+            .map(|(k, p)| ((k & !255) | (255 - (k & 255)), retourner(&p, f))).collect())
         .unwrap_or_default();
     let mut etat = VRAI;
     let mut ombre_fausse = ombres.is_none() && p.is_some() && a.is_some();

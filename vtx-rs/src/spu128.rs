@@ -968,17 +968,24 @@ impl Spu128 {
                     Some(b) if b.len() >= 8 && &b[..8] == ENTETE => b,
                     _ => return Ok(u128::MAX),
                 };
+                // 0.64b : un cube mère porte ses quatre étages (le descripteur de l'étage x d'un sous-cube à son étage x) :
+                // la fréquence doit être libre dans chacun
+                let etages: Vec<usize> = if mere { (0..4).collect() } else { vec![e] };
                 let mut g = f as u128;
-                while self.pages[e].keys().any(|k| (*k >> 8) == g) {
+                while etages.iter().any(|&x| self.pages[x].keys().any(|k| (*k >> 8) == g)) {
                     g = if mere { g.wrapping_sub(1) & 0xFF_FFFF } else { (g + 1) & 0xFF_FFFF };
                 }
-                for p in 0..256u128 {
-                    self.pages_vues.insert((e, (g << 8) | p));
+                for &x in &etages {
+                    for p in 0..256u128 {
+                        self.pages_vues.insert((x, (g << 8) | p));
+                    }
                 }
                 let taille = 4 + PAGE * 16 + PAGE / 4;
                 let mut k = 8;
                 while k + taille <= b.len() {
-                    let p = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u128 & 255;
+                    let hp = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u128;
+                    let p = hp & 255;
+                    let ep = if mere { ((hp >> 8) & 3) as usize } else { e };
                     let mut mots = vec![0u128; PAGE].into_boxed_slice();
                     for j in 0..PAGE {
                         mots[j] = u128::from_le_bytes(b[k + 4 + 16 * j..k + 20 + 16 * j].try_into().unwrap());
@@ -990,11 +997,13 @@ impl Spu128 {
                     } else {
                         None
                     };
-                    self.pages[e].insert((g << 8) | p, Box::new(Page { mots, brins }));
+                    self.pages[ep].insert((g << 8) | p, Box::new(Page { mots, brins }));
                     k += taille;
                 }
-                self.annuaire[e].clear();
-                self.cache[e] = [(u128::MAX, std::ptr::null_mut()); 16];
+                for &x in &etages {
+                    self.annuaire[x].clear();
+                    self.cache[x] = [(u128::MAX, std::ptr::null_mut()); 16];
+                }
                 self.cache_code = (u128::MAX, std::ptr::null_mut());
                 Ok(g)
             }

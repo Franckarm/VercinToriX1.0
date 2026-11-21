@@ -443,23 +443,28 @@ class CPU:
             if b is None or b[:8] != ENTETE:
                 return M128
             e, g = ef
-            prises = {j >> 24 for (ee, j) in self.mem if ee == e}
+            # 0.64b : un cube mère porte ses quatre étages : la fréquence libre dans chacun
+            etages = range(4) if mere else [e]
+            prises = {j >> 24 for (ee, j) in self.mem if ee in etages}
             while g in prises:
                 g = (g - 1) & 0xFFFFFF if mere else (g + 1) & 0xFFFFFF
-            for p in range(256):
-                self.pages_vues.add((e, (g << 8) | p))
+            for x in etages:
+                for p in range(256):
+                    self.pages_vues.add((x, (g << 8) | p))
             taille = 4 + 65536 * 16 + 16384
             k = 8
             while k + taille <= len(b):
-                p = int.from_bytes(b[k:k + 4], "little") & 255
+                hp = int.from_bytes(b[k:k + 4], "little")
+                p = hp & 255
+                ep = (hp >> 8) & 3 if mere else e
                 base = (g << 24) | (p << 16)
                 for j in range(65536):
                     v = int.from_bytes(b[k + 4 + 16 * j:k + 20 + 16 * j], "little")
                     q = (b[k + 4 + 65536 * 16 + j // 4] >> (2 * (j % 4))) & 3
                     if v:
-                        self.mem[(e, base | j)] = v
+                        self.mem[(ep, base | j)] = v
                     if q:
-                        self.brin[(e, base | j)] = q
+                        self.brin[(ep, base | j)] = q
                 k += taille
             return g
         if code == 28:

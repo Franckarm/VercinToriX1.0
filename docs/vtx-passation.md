@@ -60,7 +60,7 @@ avec le créateur.*
 
 Fait le 21 : la 0.64 (**les faces dans le cube**, §69) : à la même fréquence, le code à l'étage Đ (le tau gallicum,
 l'étage 0, le choix du créateur : 440/Đ), les trois axes du dé aux étages 1, 2, 3, chaque molécule à la place de son
-début ; `face(f, k)`, `centre(f)` (le service 31) ; le descripteur du cube mère à seize bits par étage, de Đ à 3.
+début ; `face(f, k)`, `centre(f)` (le service 31) ; le cube mère sur ses quatre étages, 64 bits par étage (0.64b, la demande du créateur).
 
 **Gobannos, les fichiers dans les .exe : en attente.** Le 18, un filtre de sécurité automatique a arrêté la réponse
 qui écrivait le code machine des appels au système (les fichiers, le chemin du programme, la mémoire) ; ce travail ne

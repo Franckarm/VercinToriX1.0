@@ -404,24 +404,31 @@ pub fn nom_de_cube(chemin: &std::path::Path, tete: &str) -> Option<NomCube> {
     None
 }
 
+/// 0.64b : la marque du format des cubes mères à quatre étages, à l'étage Đ, au point #FFFFFD (« VTXMERE2 »)
+pub const MARQUE_MERE: u64 = 0x5654_584D_4552_4532;
+
 /// 0.63 : le cube mère NOM (TETE-NOM.cub, avec son anti-cube et son ombre) mis à jour après le rangement du sous-cube
-/// (e, f) : à l'adresse #f, son descripteur (0.64 : pour chaque étage e de 0 à 3, seize bits à 16·e : présent, 512,
-/// plus ses pages ; puis six bits de coiffe, l'empreinte FNV-1a de son fichier, ses 6 bits bas) ; sur Lugus, la
-/// moitié haute du point porte l'indicatif (FNV-1a du nom) ; la queue en #FFFFFF (l'indicatif en haut sur Lugus, le
-/// nombre de sous-cubes), la coiffe en #FFFFFE (le brassage de tous les descripteurs). Aucune ancienne version n'est
-/// gardée. large : Lugus (points de 128 bits), sinon Dunon (64)
+/// (e, f). 0.64b : le cube mère porte ses quatre étages, comme ses sous-cubes : le descripteur de l'étage e du sous-cube
+/// de fréquence f est à son étage e, à l'adresse #f, sur 64 bits (présent, 512, plus ses pages ; puis 54 bits de
+/// coiffe, l'empreinte FNV-1a de son fichier) ; sur Lugus, la moitié haute du point porte l'indicatif (FNV-1a du nom).
+/// À l'étage Đ : la marque du format en #FFFFFD, la coiffe en #FFFFFE (le brassage de tous les points), la queue en
+/// #FFFFFF (l'indicatif en haut sur Lugus, le nombre de descripteurs). Une page du fichier dit son étage (bits 8 et 9
+/// de son numéro). Un cube mère d'avant (sans la marque) est refait. Aucune ancienne version n'est gardée.
+/// large : Lugus (points de 128 bits), sinon Dunon (64)
 pub fn mere_mettre_a_jour(dossier: &std::path::Path, tete: &str, nom: &str, e: usize, f: u64, pages: u64,
                           fichier: &[u8], large: bool) -> std::io::Result<()> {
     let entete: &[u8; 8] = if large { b"VTXCU128" } else { b"VTXCUB64" };
     let ws = if large { 16 } else { 8 };
     let taille = 4 + 65536 * ws + 16384;
     let chemin = dossier.join(format!("{}-{}.cub", tete, nom));
+    // les points, par (étage << 24) | adresse
     let mut points: std::collections::BTreeMap<u64, u128> = std::collections::BTreeMap::new();
     if let Some(b) = crate::miroir::lire_double(&chemin, entete) {
         if b.len() >= 8 && &b[..8] == entete {
             let mut k = 8;
             while k + taille <= b.len() {
-                let p = (u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) & 255) as u64;
+                let hp = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u64;
+                let base = (((hp >> 8) & 3) << 24) | ((hp & 255) << 16);
                 for j in 0..65536usize {
                     let o = k + 4 + ws * j;
                     let v = if large {
@@ -430,29 +437,30 @@ pub fn mere_mettre_a_jour(dossier: &std::path::Path, tete: &str, nom: &str, e: u
                         u64::from_le_bytes(b[o..o + 8].try_into().unwrap()) as u128
                     };
                     if v != 0 {
-                        points.insert((p << 16) | j as u64, v);
+                        points.insert(base | j as u64, v);
                     }
                 }
                 k += taille;
             }
         }
     }
+    if points.get(&0xFF_FFFD).map(|v| *v as u64) != Some(MARQUE_MERE) {
+        points.clear();
+    }
     points.remove(&0xFF_FFFE);
     points.remove(&0xFF_FFFF);
     let indicatif = fnv64_texte(nom) as u128;
-    let ancien = points.get(&f).copied().unwrap_or(0) as u64;
-    // 0.64 : seize bits par étage (de 0 à 3), à 16·e : présent (512) plus ses pages, puis six bits de coiffe
-    let s = 16 * e as u64;
-    let mut lo = ancien & !(0xFFFF << s);
-    lo |= ((0x200 | (pages & 0x1FF)) | ((fnv64_octets(fichier) & 0x3F) << 10)) << s;
-    points.insert(f, if large { (indicatif << 64) | lo as u128 } else { lo as u128 });
+    let lo = (0x200 | (pages & 0x1FF)) | ((fnv64_octets(fichier) & ((1u64 << 54) - 1)) << 10);
+    points.insert(((e as u64) << 24) | f, if large { (indicatif << 64) | lo as u128 } else { lo as u128 });
+    points.insert(0xFF_FFFD, MARQUE_MERE as u128);
     let (mut somme, mut ou) = (0u64, 0u64);
     for (p, w) in &points {
         let g = brasser64(brasser64(brasser64(*p) ^ (*w >> 64) as u64) ^ *w as u64);
         somme = somme.wrapping_add(g);
         ou ^= g;
     }
-    let n = points.len() as u64;
+    // le nombre de descripteurs (la marque n'en est pas un)
+    let n = points.len() as u64 - 1;
     let coiffe = brasser64(brasser64(brasser64(n) ^ somme) ^ ou);
     points.insert(0xFF_FFFE, coiffe as u128);
     points.insert(0xFF_FFFF, if large { (indicatif << 64) | n as u128 } else { n as u128 });
@@ -460,7 +468,8 @@ pub fn mere_mettre_a_jour(dossier: &std::path::Path, tete: &str, nom: &str, e: u
     let mut pages_de: Vec<u64> = points.keys().map(|p| p >> 16).collect();
     pages_de.dedup();
     for pg in pages_de {
-        sortie.extend_from_slice(&(pg as u32).to_le_bytes());
+        // le numéro de la page : son étage en bits 8 et 9, sa page dans l'étage en bits 0 à 7
+        sortie.extend_from_slice(&((((pg >> 8) & 3) << 8 | (pg & 255)) as u32).to_le_bytes());
         for j in 0..65536u64 {
             let v = points.get(&((pg << 16) | j)).copied().unwrap_or(0);
             if large {

@@ -9,7 +9,7 @@ point, la face opposée dans la haute). Lancé depuis son cube, le programme lit
 2. le centre : vrai (son code est celui du cube), variable (une avarie pendant qu'il tourne), faux (le cube des faces
    réparé en le lisant), inconnu (lancé depuis son texte, sans cube) ;
 3. les mêmes mots par les deux compilateurs de Lugus, et de Dunon ;
-4. le cube mère : à l'adresse de la fréquence, le descripteur des quatre étages (Đ, 1, 2, 3) ;
+4. le cube mère : à l'adresse de la fréquence, sur chacun de ses quatre étages (Đ, 1, 2, 3), le descripteur de cet étage ;
 5. un cube de la 0.63 (le programme à l'étage 1) se lance encore ; un cube des faces seul n'est pas un programme.
 
     python3 tests/test_faces_cube.py"""
@@ -140,9 +140,9 @@ verifier("le cube des faces abîmé : réparé en le lisant, les mêmes faces, l
 # le cube mère : le descripteur des quatre étages à l'adresse 440
 SQ = """fonction principal() {
     soit g = __service(29, "cube128-faces.cub");
-    soit d: entier_128 = @[cube_adresse(1, g, 440)];
     pour e dans 0..4 {
-        afficher((bas(d) >> (16 * e)) & 1023);
+        soit d: entier_128 = @[cube_adresse(e, g, 440)];
+        afficher(bas(d) & 1023);
     }
 }
 """

@@ -73,15 +73,15 @@ RELIT = {"lugus": """fonction principal() {
     cube_mere("labyrinthe");
     afficher(@[cube_adresse(1, 440, 5)], @[cube_adresse(1, 440, 70000)], @[cube_adresse(1, 7, 1)]);
     soit g = __service(29, "cube128-labyrinthe.cub");
-    soit q: entier_128 = @[cube_adresse(1, g, 16777215)];
+    soit q: entier_128 = @[cube_adresse(0, g, 16777215)];
     soit d: entier_128 = @[cube_adresse(1, g, 440)];
-    afficher(g, bas(q), (bas(d) >> 16) & 1023, haut(d) == haut(q));
+    afficher(g, bas(q), bas(d) & 1023, haut(d) == haut(q));
 }
 """, "dunon": """fonction principal() {
     cube_mere("labyrinthe");
     afficher(@[cube_adresse(1, 440, 5)], @[cube_adresse(1, 440, 70000)], @[cube_adresse(1, 7, 1)]);
     soit g = __service(29, "cube64-labyrinthe.cub");
-    afficher(g, @[cube_adresse(1, g, 16777215)], (@[cube_adresse(1, g, 440)] >> 16) & 1023);
+    afficher(g, @[cube_adresse(0, g, 16777215)], @[cube_adresse(1, g, 440)] & 1023);
 }
 """}
 

@@ -445,18 +445,24 @@ impl Spu64 {
                     Some(b) if b.len() >= 8 && &b[..8] == entete => b,
                     _ => return Ok(u64::MAX),
                 };
+                // 0.64b : un cube mère porte ses quatre étages : la fréquence (et la suivante) libres dans chacun
+                let etages: Vec<usize> = if mere { (0..4).collect() } else { vec![e] };
                 let mut g = f;
-                while self.pages[e].keys().any(|k| (*k >> 8) == g || (*k >> 8) == g + 1) {
+                while etages.iter().any(|&x| self.pages[x].keys().any(|k| (*k >> 8) == g || (*k >> 8) == g + 1)) {
                     g = if mere { g.wrapping_sub(1) & 0xFF_FFFF } else { (g + 1) & 0xFF_FFFF };
                 }
-                for p in 0..256u64 {
-                    self.pages_vues.insert((e, (g << 8) | p));
-                    self.pages_vues.insert((e, ((g + 1) << 8) | p));
+                for &x in &etages {
+                    for p in 0..256u64 {
+                        self.pages_vues.insert((x, (g << 8) | p));
+                        self.pages_vues.insert((x, ((g + 1) << 8) | p));
+                    }
                 }
                 let taille = 4 + PAGE * 16 + PAGE / 4;
                 let mut k = 8;
                 while k + taille <= b.len() {
-                    let p = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u64 & 255;
+                    let hp = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u64;
+                    let p = hp & 255;
+                    let ep = if mere { ((hp >> 8) & 3) as usize } else { e };
                     let mut bas = vec![0u64; PAGE].into_boxed_slice();
                     let mut haut = vec![0u64; PAGE].into_boxed_slice();
                     for j in 0..PAGE {
@@ -464,11 +470,13 @@ impl Spu64 {
                         bas[j] = w as u64;
                         haut[j] = (w >> 64) as u64;
                     }
-                    self.pages[e].insert((g << 8) | p, Box::new(Page { mots: bas, brins: None }));
-                    self.pages[e].insert(((g + 1) << 8) | p, Box::new(Page { mots: haut, brins: None }));
+                    self.pages[ep].insert((g << 8) | p, Box::new(Page { mots: bas, brins: None }));
+                    self.pages[ep].insert(((g + 1) << 8) | p, Box::new(Page { mots: haut, brins: None }));
                     k += taille;
                 }
-                self.cache[e] = (u64::MAX, std::ptr::null_mut());
+                for &x in &etages {
+                    self.cache[x] = (u64::MAX, std::ptr::null_mut());
+                }
                 self.cache_code = (u64::MAX, std::ptr::null_mut());
                 Ok(g)
             }
@@ -524,17 +532,22 @@ fn accorder_cube64(&mut self, chemin: &std::path::Path, e: usize, f: u64, mere: 
             Some(b) if b.len() >= 8 && &b[..8] == b"VTXCUB64" => b,
             _ => return u64::MAX,
         };
+        let etages: Vec<usize> = if mere { (0..4).collect() } else { vec![e] };
         let mut g = f;
-        while self.pages[e].keys().any(|k| (*k >> 8) == g) {
+        while etages.iter().any(|&x| self.pages[x].keys().any(|k| (*k >> 8) == g)) {
             g = if mere { g.wrapping_sub(1) & 0xFF_FFFF } else { (g + 1) & 0xFF_FFFF };
         }
-        for p in 0..256u64 {
-            self.pages_vues.insert((e, (g << 8) | p));
+        for &x in &etages {
+            for p in 0..256u64 {
+                self.pages_vues.insert((x, (g << 8) | p));
+            }
         }
         let taille = 4 + PAGE * 8 + PAGE / 4;
         let mut k = 8;
         while k + taille <= b.len() {
-            let p = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u64 & 255;
+            let hp = u32::from_le_bytes(b[k..k + 4].try_into().unwrap()) as u64;
+            let p = hp & 255;
+            let ep = if mere { ((hp >> 8) & 3) as usize } else { e };
             let mut mots = vec![0u64; PAGE].into_boxed_slice();
             for j in 0..PAGE {
                 mots[j] = u64::from_le_bytes(b[k + 4 + 8 * j..k + 12 + 8 * j].try_into().unwrap());
@@ -546,10 +559,12 @@ fn accorder_cube64(&mut self, chemin: &std::path::Path, e: usize, f: u64, mere: 
             } else {
                 None
             };
-            self.pages[e].insert((g << 8) | p, Box::new(Page { mots, brins }));
+            self.pages[ep].insert((g << 8) | p, Box::new(Page { mots, brins }));
             k += taille;
         }
-        self.cache[e] = (u64::MAX, std::ptr::null_mut());
+        for &x in &etages {
+            self.cache[x] = (u64::MAX, std::ptr::null_mut());
+        }
         self.cache_code = (u64::MAX, std::ptr::null_mut());
         g
     }

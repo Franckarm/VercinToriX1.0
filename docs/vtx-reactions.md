@@ -3208,13 +3208,20 @@ hex, la molécule, l'atome.
   quatre compilateurs (les mêmes mots deux à deux). Lugus en Rust lit les faces quand le programme est lancé depuis son
   cube (`lugus cube128-PROG.cub`, ou un sous-cube) ; lancé depuis son texte, ou sur Dunon (qui n'a pas de fonctions
   passées en valeur, ni de cube de programme), les faces sont à 0 et le centre inconnu.
-- **Le cube mère** : à l'adresse #F, seize bits par étage, de Đ à 3 (présent, ses pages, six bits de coiffe) ; onze bits
-  de coiffe avant (0.63), six maintenant, pour faire place à l'étage Đ.
+- **Le cube mère, 0.64b (la demande du créateur : 32 ou 64 bits par étage)** : 64 bits par étage. Le cube mère porte
+  maintenant ses quatre étages, comme ses sous-cubes : **le descripteur de l'étage e du sous-cube de fréquence F est à
+  l'étage e du cube mère, à l'adresse #F** (présent, ses pages, puis 54 bits de coiffe : l'empreinte de son fichier) ;
+  sur Lugus, la moitié haute du point garde l'indicatif. Un mot entier de Dunon, une moitié de point de Lugus. La
+  dimension du cube ne change pas (trois axes, une adresse #RRGGBB de 24 bits) : c'est la profondeur du point qui
+  grandit, et les étages du cube mère qui servent. À l'étage Đ : la marque du format (« VTXMERE2 ») en #FFFFFD, la
+  coiffe en #FFFFFE, la queue en #FFFFFF. Une page du fichier dit son étage (bits 8 et 9 de son numéro) ; l'anti-cube
+  garde ces bits (le miroir de Lugus et de Dunon, en Rust et en Python). Le service 29 relit un cube mère sur ses quatre
+  étages, à une fréquence libre dans chacun. Un cube mère d'avant (sans la marque) est refait au prochain rangement.
 - **Les anciens cubes** : un cube de la 0.63 (le programme à l'étage 1) se lance encore par son cube mère ; un cube des
   faces lancé seul est refusé, et dit pourquoi.
 - **Vérifié** (`tests/test_faces_cube.py`, 13 contrôles) : les six faces lues pendant qu'il tourne, celles de la carte
   champ pour champ ; le centre vrai, variable (une avarie), faux (le cube des faces abîmé, réparé), inconnu (depuis son
-  texte, sur Dunon) ; les mêmes mots par les deux compilateurs de Lugus et de Dunon ; le descripteur des quatre étages ;
+  texte, sur Dunon) ; les mêmes mots par les deux compilateurs de Lugus et de Dunon ; le descripteur de chaque étage, à son étage du cube mère ;
   un cube de la 0.63 ; un cube des faces seul refusé. `tests/test_cube_mere.py` et `tests/test_adn_deux_sens.py` suivent
   les nouveaux noms.
 - **Les limites, honnêtement** : une face tient sur 64 bits, alors les listes d'appels sont réduites à leur nombre, leur
