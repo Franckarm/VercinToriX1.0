@@ -628,8 +628,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
 4. Dunon : les fonctions passées en valeur et leur type (fait, 0.65) ; `multiplier_ajouter` exact, un seul arrondi (fait,
    0.65). **Simplifier** (fait en partie, 0.66) : trois formes seulement, l'ADN pour le gardé, l'ARNc pour le travail, le cube
-   pour la mémoire ; les isoformes épissées deviennent des façons de lancer l'ARNc ; reste un glossaire d'une ligne
-   par mot dans les messages.
+   pour la mémoire ; les isoformes épissées deviennent des façons de lancer l'ARNc ; le glossaire d'une ligne par
+   mot à la fin des messages de Lugus (fait, 0.67).
 5. **Les faces dans le cube** (fait, 0.64) : à la même fréquence, le code à l'étage Đ (le tau gallicum, l'étage 0), les
    trois axes du dé aux étages 1, 2, 3, chaque molécule à la place de son début ; `face(f, k)` et `centre(f)` lus
    pendant qu'il tourne (le registre tridimensionnel). La hiérarchie du créateur : le cube mère, le cube hex, la

@@ -3323,3 +3323,16 @@ lui-même.
   d'un ancien ARN rapide).
 - **Ce qui reste de « simplifier »** : un glossaire d'une ligne par mot dans les messages (que « molécule », « brin »,
   « coiffe » s'expliquent là où ils paraissent).
+
+## 73. Le glossaire d'une ligne par mot (21 novembre, 0.67)
+
+**Le dernier morceau de « simplifier ».** Les messages de Lugus parlent la langue de vtx : molécule, coiffe, brin,
+cube, étage Đ, ADNc, patrouille… Ils s'expliquent maintenant eux-mêmes.
+
+- **À la fin des messages**, les mots propres à vtx qui y ont paru, **une ligne chacun, une seule fois**, dans l'ordre
+  du glossaire (40 mots, ceux du carnet, section 13). Rien n'est changé aux messages eux-mêmes.
+- **Pour qui** : montré quand les messages vont à quelqu'un (la console), ou avec `VTX_GLOSSAIRE=1` ; `VTX_GLOSSAIRE=0`
+  le tait. Lus par un tube (les tests, les outils), les messages restent tels quels, octet pour octet.
+- **Où** : tous les messages de `lugus`, ceux du lecteur d'ADN en vtx compris. Dunon et l'atelier pas encore.
+- **Vérifié** (`tests/test_glossaire.py`, 4 contrôles) : les mots parus, chacun une fois, et pas les autres ; rien par
+  un tube ni avec `VTX_GLOSSAIRE=0` ; un message sans mot propre à vtx, pas de glossaire.

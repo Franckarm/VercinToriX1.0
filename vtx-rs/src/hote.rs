@@ -566,3 +566,113 @@ impl CubeProgramme {
         self.etat
     }
 }
+
+// ------------------------------------------------------------------------------------------------ le glossaire (0.67)
+/// Le glossaire d'une ligne par mot : les mots propres à vtx qui paraissent dans les messages de Lugus sont expliqués
+/// à la fin, une ligne chacun, une seule fois. Montré quand les messages vont à un humain (la console), ou si
+/// VTX_GLOSSAIRE=1 ; VTX_GLOSSAIRE=0 le tait toujours. Les tests, qui lisent les messages par un tube, ne le voient pas.
+pub const GLOSSAIRE: &[(&str, &str)] = &[
+    ("molécule", "une fonction ou une réaction compilée : un morceau du programme qui se range, se vérifie et se répare seul"),
+    ("atome", "une ligne d'une réaction"),
+    ("liaison", "une donnée qui va d'un atome à un autre"),
+    ("vague", "les atomes d'une réaction qui réagissent ensemble"),
+    ("brin", "l'état de chaque mot de la mémoire : libre, ADN (fixé, en lecture seule) ou ARN (le travail)"),
+    ("ADN", "le programme rangé pour durer : ses mots, ses témoins, son texte, sa carte ; il se répare à la lecture"),
+    ("ARNc", "l'ARN qui porte tout (la coiffe, les mots, les témoins, le texte, la carte, les souvenirs) : le travail"),
+    ("ARN", "la copie de travail du programme ; elle se lance, et se rétrotranscrit en ADN"),
+    ("ADNc", "l'ADN refait depuis un ARN (la rétrotranscription)"),
+    ("coiffe", "la signature des mots d'un ARN ou d'un cube, vérifiée avant de le lancer"),
+    ("intron", "une section de l'ADN que le lecteur garde telle quelle (le texte, la carte, les souvenirs…)"),
+    ("témoins", "la signature, l'ombre et les neutrons : de quoi vérifier les mots, et les réparer"),
+    ("ombre", "un témoin : la somme de chaque colonne de mots, de quoi refaire un mot perdu ; d'un cube : sa projection"),
+    ("neutrons", "un témoin : quelques quits ajoutés aux molécules frontières, de quoi voir une retouche"),
+    ("triangulation", "une réparation gardée seulement si deux témoins l'appuient"),
+    ("épigénome", "les souvenirs appris par le programme (lugus apprendre), gardés dans l'ADN et repris au lancement"),
+    ("patrouille", "la relecture du code pendant qu'il tourne, qui le répare (--veille, ou pour les isotopes lourds)"),
+    ("apoptose", "l'arrêt du programme plutôt qu'un résultat incertain"),
+    ("isotope", "une réaction marquée « lourd » : surveillée à son entrée et à sa sortie"),
+    ("isoforme", "une façon de lancer l'ARNc : tel quel, sous veille (--veille) ou rapide (--rapide)"),
+    ("épissage", "le retrait des introns quand l'ADN devient des mots à jouer"),
+    ("rétrotranscription", "le chemin de l'ARN vers l'ADN (l'ADNc)"),
+    ("cube", "un ensemble d'adresses #RRGGBB (16 777 216 points) dans un étage, à une fréquence ; la mémoire de vtx"),
+    ("anti-cube", "la copie inversée d'un cube sur disque (chaque bit, chaque place à l'opposé) : de quoi le réparer"),
+    ("hex", "les mots écrits à la main de l'homme, chacun à son adresse #RRGGBB : la coordonnée d'un point du cube"),
+    ("étage", "un des quatre niveaux de la mémoire (Đ le code, 1, 2, 3) ; Đ, le tau gallicum, est l'étage 0"),
+    ("fréquence", "le numéro d'un cube dans son étage"),
+    ("carte", "le contexte de chaque molécule, rangé avec le programme : ses six faces et son centre"),
+    ("faces", "les six faces d'une molécule : ce qu'elle est et ce qu'elle touche, ses racines et ses branches, ses promesses et sa mémoire"),
+    ("centre", "l'état d'une molécule à cette lecture : vrai, faux (réparée), variable, inconnu"),
+    ("promesse", "ce que le programmeur promet d'une fonction (touche, exige, garantit) et que la machine vérifie"),
+    ("vibration", "l'empreinte d'une molécule tirée de ses instructions, qui la reconnaît d'un programme à l'autre"),
+    ("empreinte", "un nombre de 64 bits tiré d'un texte ou d'un fichier, qui change dès qu'un caractère change"),
+    ("catalogue", "le cube qui range les modules d'un dossier et les vibrations de leurs molécules"),
+    ("quit", "un chiffre en base 4 (deux bits) : l'unité de vtx"),
+    ("inconnu", "Belnap : il manque une information (rien ne dit vrai, rien ne dit faux)"),
+    ("variable", "Belnap : deux informations se contredisent (vrai et faux à la fois)"),
+    ("accord", "des appels que la partition des tâches peut jouer ensemble, sur plusieurs cœurs"),
+    ("cylindre", "un cœur du processeur qui joue une part d'un accord"),
+];
+
+static GLOSSAIRE_VU: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// un message de Lugus : gardé pour le glossaire
+pub fn glossaire_noter(t: &str) {
+    if let Ok(mut g) = GLOSSAIRE_VU.lock() {
+        if g.len() < 4_000_000 {
+            g.push_str(t);
+            g.push('\n');
+        }
+    }
+}
+
+/// les mots du glossaire qui paraissent dans le texte (en minuscules), dans l'ordre du glossaire
+pub fn glossaire_de(texte: &str) -> Vec<(&'static str, &'static str)> {
+    let bas: Vec<char> = texte.to_lowercase().chars().collect();
+    let lettre = |c: char| c.is_alphabetic() || c == '-';
+    let mut r = Vec::new();
+    for &(mot, sens) in GLOSSAIRE {
+        let m: Vec<char> = mot.to_lowercase().chars().collect();
+        let mut trouve = false;
+        let mut i = 0;
+        while !trouve && i + m.len() <= bas.len() {
+            if bas[i..i + m.len()] == m[..] && (i == 0 || !lettre(bas[i - 1])) {
+                let j = i + m.len();
+                let fin = j >= bas.len() || !lettre(bas[j]) || (bas[j] == 's' && (j + 1 >= bas.len() || !lettre(bas[j + 1])));
+                if fin {
+                    trouve = true;
+                }
+            }
+            i += 1;
+        }
+        if trouve {
+            r.push((mot, sens));
+        }
+    }
+    r
+}
+
+/// à la fin : le glossaire des mots parus, sur la sortie des erreurs (là où vont les messages)
+pub fn glossaire_dire() {
+    use std::io::IsTerminal;
+    let reglage = std::env::var("VTX_GLOSSAIRE").ok();
+    let montrer = match reglage.as_deref() {
+        Some("0") => false,
+        Some("1") => true,
+        _ => std::io::stderr().is_terminal(),
+    };
+    if !montrer {
+        return;
+    }
+    let texte = match GLOSSAIRE_VU.lock() {
+        Ok(mut g) => std::mem::take(&mut *g),
+        Err(_) => return,
+    };
+    let mots = glossaire_de(&texte);
+    if mots.is_empty() {
+        return;
+    }
+    eprintln!("\nle glossaire (les mots de ces messages, une ligne chacun ; VTX_GLOSSAIRE=0 le tait) :");
+    for (mot, sens) in mots {
+        eprintln!("  {} : {}", mot, sens);
+    }
+}

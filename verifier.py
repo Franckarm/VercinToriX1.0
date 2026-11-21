@@ -153,6 +153,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_valeurs64.py")]))
     etapes.append(("multiplier_ajouter exact, un seul arrondi : cinq flottants au bit près, Lugus et Dunon",
                    [sys.executable, os.path.join("tests", "test_fma.py")]))
+    etapes.append(("le glossaire d'une ligne par mot, à la fin des messages de Lugus",
+                   [sys.executable, os.path.join("tests", "test_glossaire.py")]))
     etapes.append(("le gène : plus de trois témoins, lus par codons (Lugus et Dunon)",
                    [sys.executable, os.path.join("tests", "test_gene.py")]))
     etapes.append(("selon sur plusieurs lectures, avec et sans ordre (Lugus et Dunon)",

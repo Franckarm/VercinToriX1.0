@@ -17,7 +17,7 @@ avec le créateur.*
   (service 28, `lister_dossier`, `dossier_present`), `lugus cataloguer DOSSIER` (écrit en vtx, dans le lecteur d'ADN),
   `importer empreinte "16hex";` sans chemin, la vibration de chaque molécule (`lugus morceaux`), et la carte qui dit
   d'où vient chaque molécule (et voit une retouche).
-- Les journaux : `docs/vtx-reactions.md` (sections 1 à 72), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
+- Les journaux : `docs/vtx-reactions.md` (sections 1 à 73), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
   feuille de route, section 11), `docs/vtx-syntaxe-v0-4.md` (la référence du langage).
 
 ## 2. Les règles de travail (à garder)
@@ -51,7 +51,7 @@ avec le créateur.*
   `tests/test_supposons.py tests/supposons_alors.vtx tests/test_gobannos.py tests/gobannos tests/test_valeurs.py
   tests/valeurs_mele.vtx tests/test_types_fonction.py tests/test_gobannos_flottants.py tests/test_nombres.py
   tests/nombres tests/test_vocabulaire_etendu.py tests/vocabulaire tests/test_modules.py tests/modules
-  tests/test_reste.py tests/test_catalogue.py tests/test_cube_mere.py tests/test_faces_cube.py tests/test_valeurs64.py tests/test_fma.py` et des nouveaux.
+  tests/test_reste.py tests/test_catalogue.py tests/test_cube_mere.py tests/test_faces_cube.py tests/test_valeurs64.py tests/test_fma.py tests/test_glossaire.py` et des nouveaux.
 - La vérification complète : `python3 verifier.py` (environ deux heures ; elle doit finir par « Tout est conforme ») ;
   la lancer en arrière-plan et la suivre.
 - La machine : `cd vtx-rs && cargo build --release` (binaires `lugus`, `vtx64`, `vtx`, `atelier`).
@@ -72,6 +72,10 @@ routines du socle de Gobannos servent de modèle). Mesuré avant l'arrêt : Goba
 les quatre ARN épissés (rapide, sûr, mémoire, complet) deviennent des façons de lancer l'ARNc (`--rapide`, `--veille`),
 plus des fichiers ; les anciens se lisent toujours ; .mots et .hex restent des vues d'outil. La liste des fichiers du
 paquet : `outils/fichiers_du_paquet.txt` (`git archive … HEAD $(cat outils/fichiers_du_paquet.txt)`).
+
+**Le glossaire** (fait, 0.67, §73). **La suite donnée par le créateur le 21** : Ogmios, construit en vtx ; s'assurer
+qu'une fenêtre paraît pour un programme qui dessine ; une paillasse plus pratique (un menu pour choisir les cases, avec
+leur explication d'utilisation ; facile à utiliser et à éditer) ; vérifier qu'Ogmios ne fige pas.
 
 **L'ordre donné le 21** : les points du langage d'abord (les faces : fait ; les fonctions passées en valeur sur Dunon :
 fait, 0.65, §70 ; `multiplier_ajouter` en un seul arrondi : fait, 0.65, §71 ; puis simplifier), puis Ogmios et la

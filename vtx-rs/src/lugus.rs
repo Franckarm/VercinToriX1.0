@@ -36,6 +36,21 @@ mod machine128;
 mod adn;
 #[allow(dead_code)]
 mod provenance;
+/// 0.67 : un message de Lugus (sur la sortie des erreurs), gardé pour le glossaire de la fin
+macro_rules! dire {
+    ($($a:tt)*) => {{
+        let __s = format!($($a)*);
+        eprintln!("{}", __s);
+        crate::hote::glossaire_noter(&__s);
+    }};
+}
+
+/// 0.67 : finir, après le glossaire des mots parus dans les messages
+fn sortir(code: i32) -> ! {
+    crate::hote::glossaire_dire();
+    std::process::exit(code)
+}
+
 use machine128::{compiler128, compiler128_prov, dossier_de128, nombres128, COMPILATEUR128, COMPLET128, VTXC128};
 use spu128::Spu128;
 
@@ -43,15 +58,15 @@ fn compiler_ou_sortir(compilateur: &[u128], fichier: &str, mode: machine128::Mod
     let source = match std::fs::read_to_string(fichier) {
         Ok(t) => t,
         Err(e) => {
-            eprintln!("lecture de {} impossible : {}", fichier, e);
-            std::process::exit(1);
+            dire!("lecture de {} impossible : {}", fichier, e);
+            sortir(1);
         }
     };
     match compiler128(compilateur, &source, &dossier_de128(fichier), mode, false) {
         Ok((m, _, _)) => m,
         Err(e) => {
             eprint!("{}", e);
-            std::process::exit(1);
+            sortir(1);
         }
     }
 }
@@ -59,8 +74,8 @@ fn compiler_ou_sortir(compilateur: &[u128], fichier: &str, mode: machine128::Mod
 fn ecrire_mots(chemin: &str, mots: &[u128]) {
     let t = mots.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(",") + ";\n";
     if let Err(e) = std::fs::write(chemin, t) {
-        eprintln!("écriture de {} impossible : {}", chemin, e);
-        std::process::exit(1);
+        dire!("écriture de {} impossible : {}", chemin, e);
+        sortir(1);
     }
 }
 
@@ -132,12 +147,12 @@ fn reprendre_epigenome(spu: &mut Spu128, t: &adn::Temoins, mots: &[u128]) -> usi
             for &(a, w) in &v {
                 let _ = spu.ecrire_mem((3u128 << 126) | a, w);
             }
-            eprintln!("l'épigénome : {} mots de souvenirs repris", v.len());
+            dire!("l'épigénome : {} mots de souvenirs repris", v.len());
             v.len()
         }
         Ok(None) => 0,
         Err(e) => {
-            eprintln!("{}", e);
+            dire!("{}", e);
             0
         }
     }
@@ -284,7 +299,7 @@ fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::Path
         }
         None => {
             if demandee {
-                eprintln!("--veille : sans témoins (un .vtx, ou un ARN rapide ou mémoire), la patrouille ne peut pas veiller");
+                dire!("--veille : sans témoins (un .vtx, ou un ARN rapide ou mémoire), la patrouille ne peut pas veiller");
             }
             None
         }
@@ -300,20 +315,20 @@ fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::Path
     let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
     print!("{}", t);
     if std::env::var("LUGUS_TEMPS").is_ok() {
-        eprintln!("{} instructions en {:.3} s", spu.pas, duree.as_secs_f64());
+        dire!("{} instructions en {:.3} s", spu.pas, duree.as_secs_f64());
     }
     if let Some(p) = &patrouille {
         let p = p.borrow();
         for x in &p.reparations {
-            eprintln!("la patrouille, {}", x);
+            dire!("la patrouille, {}", x);
         }
         if std::env::var("LUGUS_TEMPS").is_ok() || !p.reparations.is_empty() {
-            eprintln!("la patrouille : {} relecture(s), {} réparation(s)", p.relues, p.reparations.len());
+            dire!("la patrouille : {} relecture(s), {} réparation(s)", p.relues, p.reparations.len());
         }
     }
     if let Err(e) = r {
-        eprintln!("erreur : {}", e);
-        std::process::exit(1);
+        dire!("erreur : {}", e);
+        sortir(1);
     }
     spu
 }
@@ -323,6 +338,11 @@ fn lire_nombres(t: &str) -> Vec<u128> {
 }
 
 fn main() {
+    lugus();
+    crate::hote::glossaire_dire();
+}
+
+fn lugus() {
     spu128::garde_plantage();
     let args: Vec<String> = std::env::args().collect();
     if args.len() >= 3 && args[1] == "corpus" {
@@ -363,11 +383,11 @@ fn main() {
         let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
         print!("{}", t);
         if std::env::var("LUGUS_TEMPS").is_ok() {
-            eprintln!("{} instructions en {:.3} s", spu.pas, duree.as_secs_f64());
+            dire!("{} instructions en {:.3} s", spu.pas, duree.as_secs_f64());
         }
         if let Err(e) = r {
-            eprintln!("erreur : {}", e);
-            std::process::exit(1);
+            dire!("erreur : {}", e);
+            sortir(1);
         }
     } else if args.len() >= 3 && args[1] == "compiler" {
         let mots = compiler_ou_sortir(&nombres128(VTXC128), &args[2], COMPLET128);
@@ -379,8 +399,8 @@ fn main() {
         let m1 = compiler_ou_sortir(&nombres128(VTXC128), &args[2], COMPILATEUR128);
         let m2 = compiler_ou_sortir(&m1, &args[2], COMPILATEUR128);
         if m1 != m2 {
-            eprintln!("pas de point fixe : vtxc128.mots n'est pas renouvelé");
-            std::process::exit(1);
+            dire!("pas de point fixe : vtxc128.mots n'est pas renouvelé");
+            sortir(1);
         }
         let chemin = std::path::Path::new(&args[2]).with_extension("mots");
         ecrire_mots(&chemin.to_string_lossy(), &m1);
@@ -396,10 +416,10 @@ fn main() {
         } else { p.with_extension("adn").to_string_lossy().into_owned() };
         let entrees = vec![machine128::chemin_absolu(&args[2]), machine128::chemin_absolu(&sortie), "ranger".into()];
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[2]))).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
-        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
+        sortir(if etat == adn::VRAI { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "empreinte" {
         // 0.61 : l'empreinte d'un module, à écrire après « importer "x.vtx" empreinte "…"; » (FNV-1a de 64 bits sur les
         // caractères, les retours chariot sautés : le calcul de vtx128.py et vtxc128)
@@ -415,8 +435,8 @@ fn main() {
                     println!("{:016x}  {}", h, f);
                 }
                 Err(e) => {
-                    eprintln!("{} : {}", f, e);
-                    std::process::exit(1);
+                    dire!("{} : {}", f, e);
+                    sortir(1);
                 }
             }
         }
@@ -424,26 +444,26 @@ fn main() {
         // 0.62 : le catalogue des modules d'un dossier (DOSSIER/catalogue.vtxcat : leur nom, leur empreinte, leurs
         // molécules et leur vibration), écrit par le lecteur en vtx ; chaque module compilé par vtxc128 (service 27)
         let d = std::fs::canonicalize(&args[2]).unwrap_or_else(|e| {
-            eprintln!("{} : {}", args[2], e);
-            std::process::exit(1)
+            dire!("{} : {}", args[2], e);
+            sortir(1)
         });
         let ds = d.to_string_lossy().trim_start_matches(r"\\?\").to_string();
         let entrees = vec![ds.clone(), String::new(), "cataloguer".into()];
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(std::path::Path::new(&ds))).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
-        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
+        sortir(if etat == adn::VRAI { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "morceaux" {
         // 0.62 : les morceaux d'un programme et leur vibration (la même liste que « python3 chimie/adn.py morceaux »)
         let source = std::fs::read_to_string(&args[2]).unwrap_or_else(|e| {
-            eprintln!("lecture de {} impossible : {}", args[2], e);
-            std::process::exit(1)
+            dire!("lecture de {} impossible : {}", args[2], e);
+            sortir(1)
         });
         let (mots, _, _) = machine128::compiler128_carte(&nombres128(VTXC128), &source, &dossier_de128(&args[2]), COMPLET128)
             .unwrap_or_else(|e| {
                 eprint!("{}", e);
-                std::process::exit(1)
+                sortir(1)
             });
         let travail = std::env::temp_dir().join(format!("vtx-morceaux-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&travail);
@@ -451,11 +471,11 @@ fn main() {
         let _ = std::fs::write(&f, format!("{};\n", mots.iter().map(|w| w.to_string()).collect::<Vec<_>>().join(",")));
         let entrees = vec![f.to_string_lossy().into_owned(), String::new(), "morceaux".into()];
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&travail)).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
         let _ = std::fs::remove_dir_all(&travail);
-        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
+        sortir(if etat == adn::VRAI { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "carte" {
         // 0.6p : la carte du programme (ce qu'est chaque molécule, ce qu'elle touche, ses racines, ses promesses), lue
         // par le lecteur en vtx dans un ADN ou un ARN ; d'un .vtx, l'ARNc est fait d'abord, à part, puis lu
@@ -471,11 +491,11 @@ fn main() {
                 Ok(o) if o.status.success() => brin = a.to_string_lossy().into_owned(),
                 Ok(o) => {
                     eprint!("{}", String::from_utf8_lossy(&o.stderr));
-                    std::process::exit(1)
+                    sortir(1)
                 }
                 Err(e) => {
-                    eprintln!("{}", e);
-                    std::process::exit(1)
+                    dire!("{}", e);
+                    sortir(1)
                 }
             }
         }
@@ -483,11 +503,11 @@ fn main() {
         let mut entrees = vec![machine128::chemin_absolu(&brin), if tout { "--tout".into() } else { String::new() }, "carte".into()];
         entrees.extend(catalogues_de(&machine128::dossier_absolu(&args[2])));
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&brin))).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
         let _ = std::fs::remove_dir_all(&travail);
-        std::process::exit(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
+        sortir(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
     } else if args.len() >= 3 && (args[1] == "hex" || args[1] == "cube") {
         // 0.6n bis : le chemin dans l'autre sens, ADN (ou ARN, mots, hex, cube) → Hex → Cube, par le lecteur en vtx
         let (sortie, freq) = if args[1] == "hex" {
@@ -502,54 +522,54 @@ fn main() {
                            if sortie.is_empty() { String::new() } else { machine128::chemin_absolu(&sortie) },
                            args[1].clone(), freq, mere];
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[2]))).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
-        std::process::exit(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
+        sortir(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
     } else if args.len() >= 3 && (args[1] == "ranger" || args[1] == "arnc") {
         // 0.6o : « arnc » : le programme naît en ARN (l'ARNc : coiffe, témoins, texte), sans fichier d'ADN
         // 0.6n : le rangement est fait par le lecteur d'ADN écrit en vtx (chimie/adn.vtx) ; Lugus ne fait que compiler
         // (par vtxc128, lui aussi en vtx) et lui passer les fichiers
         let source = std::fs::read_to_string(&args[2]).unwrap_or_else(|e| {
-            eprintln!("lecture de {} impossible : {}", args[2], e);
-            std::process::exit(1)
+            dire!("lecture de {} impossible : {}", args[2], e);
+            sortir(1)
         });
         let (mots, isotopes, carte) = machine128::compiler128_carte(&nombres128(VTXC128), &source, &dossier_de128(&args[2]), COMPLET128)
             .unwrap_or_else(|e| {
                 eprint!("{}", e);
-                std::process::exit(1)
+                sortir(1)
             });
         let arnc = args[1] == "arnc";
         let sortie = if args.len() > 3 { args[3].clone() } else { std::path::Path::new(&args[2]).with_extension(if arnc { "arn" } else { "adn" }).to_string_lossy().into_owned() };
         let etat = machine128::ranger_par_le_lecteur(&args[1], &mots, &isotopes, &carte, &args[2], &sortie).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
-        std::process::exit(if etat == adn::VRAI { 0 } else { 1 });
+        sortir(if etat == adn::VRAI { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "pourquoi" {
         // d'un .adn : le texte qu'il garde, s'il redonne bien ses mots (la rétrotranscription)
         let source = if args[2].ends_with(".adn") {
             let (mots_adn, _, t) = adn::transcrire(&args[2], false).unwrap_or_else(|e| {
-                eprintln!("{}", e);
-                std::process::exit(1)
+                dire!("{}", e);
+                sortir(1)
             });
             let (e, quoi) = machine128::retrotranscrire(&t, &mots_adn, &dossier_de128(&args[2]));
             if e != adn::VRAI {
-                eprintln!("le texte : {}, {}", adn::nom_etat(e).split(' ').next().unwrap_or(""), quoi);
-                std::process::exit(1);
+                dire!("le texte : {}, {}", adn::nom_etat(e).split(' ').next().unwrap_or(""), quoi);
+                sortir(1);
             }
             t.intron("source").map(|l| l.join("\n")).unwrap_or_default()
         } else {
             std::fs::read_to_string(&args[2]).unwrap_or_else(|e| {
-                eprintln!("lecture de {} impossible : {}", args[2], e);
-                std::process::exit(1)
+                dire!("lecture de {} impossible : {}", args[2], e);
+                sortir(1)
             })
         };
         let (mots, _, _, prov) = match compiler128_prov(&nombres128(VTXC128), &source, &dossier_de128(&args[2]), COMPLET128, false, true) {
             Ok(r) => r,
             Err(e) => {
                 eprint!("{}", e);
-                std::process::exit(1);
+                sortir(1);
             }
         };
         let quoi = args.get(3).filter(|x| x.parse::<i128>().is_err()).cloned();
@@ -567,7 +587,7 @@ fn main() {
             println!("texte : {}", t.trim_end_matches('\n').replace('\n', " / "));
         }
         if let Err(e) = r {
-            eprintln!("erreur : {}", e);
+            dire!("erreur : {}", e);
         }
         let reactions = provenance::lire(&prov);
         let memoire = provenance::cases(&reactions, |a| spu.lire((3u128 << 62) | a as u128));
@@ -577,8 +597,8 @@ fn main() {
         // apprendre : lancer, puis garder les souvenirs dans l'ADN (l'épigénome) ; oublier : les retirer
         // l'ADN est d'abord vérifié (et réparé, réécrit) ; l'épigénome d'avant est repris pour apprendre encore
         let (mots, _, t0) = adn::transcrire(&args[2], false).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
         let mols = adn::lire_adn(&args[2]).map(|x| x.1).unwrap_or_default();
         let mut t = t0.clone();
@@ -594,13 +614,13 @@ fn main() {
             }
         }
         if let Err(e) = adn::ecrire_adn(&args[2], &mots, &mols, &t) {
-            eprintln!("écriture de {} impossible : {}", args[2], e);
-            std::process::exit(1);
+            dire!("écriture de {} impossible : {}", args[2], e);
+            sortir(1);
         }
         if args[1] == "apprendre" {
-            eprintln!("l'épigénome : {} mots de souvenirs rangés dans {}", n, args[2]);
+            dire!("l'épigénome : {} mots de souvenirs rangés dans {}", n, args[2]);
         } else {
-            eprintln!("l'épigénome est oublié");
+            dire!("l'épigénome est oublié");
         }
     } else if args.len() >= 3 && args[1] == "relire" {
         // le lecteur d'ADN écrit en vtx : les chemins lui sont donnés en entrées (un caractère par entrée, terminés par 0)
@@ -609,10 +629,10 @@ fn main() {
             entrees.push(machine128::chemin_absolu(x));
         }
         let etat = machine128::adn_en_vtx(&entrees).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
-        std::process::exit(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
+        sortir(if etat == adn::VRAI || etat == adn::FAUX { 0 } else { 1 });
     } else if args.len() >= 3 && args[1] == "transcrire" {
         // 0.6n : la transcription (vérifier, réparer, réécrire l'ADN réparé, écrire l'ARN) est faite par le lecteur d'ADN
         // écrit en vtx ; Lugus ne garde que la rétrotranscription, qui recompile le texte (par vtxc128) et compare
@@ -624,11 +644,11 @@ fn main() {
         let entrees = vec![machine128::chemin_absolu(&args[2]), machine128::chemin_absolu(&sortie), "transcrire".into(),
                            isoforme.unwrap_or_default(), machine128::signature_compilateur().to_string()];
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[2]))).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
         if etat != adn::VRAI && etat != adn::FAUX {
-            std::process::exit(1);
+            sortir(1);
         }
     } else if args.len() >= 2 && args[1].ends_with(".adn") {
         // l'ADN est vérifié et réparé avant de tourner : seul un ADN vrai ou réparé est lancé
@@ -640,8 +660,8 @@ fn main() {
                 jouer_avec(&mots, &args[2..], dossier, Some(&t), veille);
             }
             Err(e) => {
-                eprintln!("{}", e);
-                std::process::exit(1);
+                dire!("{}", e);
+                sortir(1);
             }
         }
     } else if args.len() >= 2 && (args[1].ends_with(".hex") || args[1].ends_with(".cub")) {
@@ -650,13 +670,13 @@ fn main() {
         let travail = std::env::temp_dir().join(format!("vtx-brin-{}.mots", std::process::id()));
         let entrees = vec![machine128::chemin_absolu(&args[1]), travail.to_string_lossy().into_owned(), "mots".into()];
         let etat = machine128::adn_en_vtx_dans(&entrees, Some(&machine128::dossier_absolu(&args[1]))).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
         let mots = std::fs::read_to_string(&travail).map(|t| nombres128(t.split(';').next().unwrap_or(""))).unwrap_or_default();
         let _ = std::fs::remove_file(&travail);
         if (etat != adn::VRAI && etat != adn::FAUX) || mots.is_empty() {
-            std::process::exit(1);
+            sortir(1);
         }
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         // 0.64 : lancé depuis son cube, le programme lit ses faces (le service 31) : le code à l'étage Đ, les faces aux
@@ -678,8 +698,8 @@ fn main() {
     } else if args.len() >= 2 && args[1].ends_with(".arn") {
         // l'ARN : sa coiffe vérifiée (un ARN qui ne reconnaît pas ses mots n'est pas lancé)
         let mut arn = adn::lire_arn(&args[1]).unwrap_or_else(|e| {
-            eprintln!("{}", e);
-            std::process::exit(1)
+            dire!("{}", e);
+            sortir(1)
         });
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         // 0.66 : --rapide lance les mots seuls (ni témoins, ni patrouille, ni souvenirs) : ce que faisait l'ARN rapide
@@ -696,8 +716,8 @@ fn main() {
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] [--veille|--rapide] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots|PROG.arn] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]Đ-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
-        std::process::exit(2);
+        dire!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] [--veille|--rapide] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots|PROG.arn] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]Đ-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        sortir(2);
     }
 }
 

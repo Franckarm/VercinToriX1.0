@@ -143,6 +143,7 @@ pub fn adn_en_vtx(entrees: &[String]) -> Result<u8, String> {
 pub fn adn_en_vtx_dans(entrees: &[String], dossier: Option<&std::path::Path>) -> Result<u8, String> {
     let (e, t) = adn_en_vtx_texte(entrees, dossier)?;
     eprint!("{}", t);
+    crate::hote::glossaire_noter(&t);
     Ok(e)
 }
 
@@ -180,6 +181,7 @@ pub fn juger_promesses(mots: &[u128], carte: &str, source: &str) -> Result<Strin
     if e == crate::adn::VRAI {
         if !t.is_empty() {
             eprint!("{}", t);
+    crate::hote::glossaire_noter(&t);
         }
         Ok(t)
     } else {
@@ -201,6 +203,7 @@ pub fn adn_en_vtx_texte(entrees: &[String], dossier: Option<&std::path::Path>) -
     let t: String = spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
     if let Err(e) = r {
         eprint!("{}", t);
+    crate::hote::glossaire_noter(&t);
         return Err(format!("erreur : {}", e));
     }
     Ok((spu.sortie.last().copied().unwrap_or(0) as u8, t))
