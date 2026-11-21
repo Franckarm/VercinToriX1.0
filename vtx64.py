@@ -577,7 +577,28 @@ class Analyseur:
         if not self.est_op(":"):
             return None
         self.suivant()
+        return self.un_type()
+
+    def un_type(self):
+        """Un type écrit ; 0.65 : « fonction(T1, T2): R », le type d'une fonction passée en valeur (« g:T1,T2>R »), comme
+        sur Lugus (sans la promesse « touche » : Dunon ne juge pas ce que touchent les fonctions)."""
         k, v, l = self.suivant()
+        if k == "kw" and v == "fonction":
+            self.attendre("(")
+            ps = []
+            if not self.est_op(")"):
+                ps.append(self.un_type())
+                while self.est_op(","):
+                    self.suivant()
+                    ps.append(self.un_type())
+            self.attendre(")")
+            r = "e"
+            if self.est_op(":"):
+                self.suivant()
+                r = self.un_type()
+            if any(x.startswith("g:") for x in ps + [r]):
+                raise VtxError(f"ligne {l} : un type de fonction dans un type de fonction : pas encore")
+            return "g:" + ",".join(ps) + ">" + r
         if k == "id" and v in self.structs:
             return "r:" + v                    # référence à une structure : adresse d'un bloc (le tas)
         if k != "id" or v not in TYPES:
@@ -6965,6 +6986,9 @@ def el_candidat(f):
     """(genre, expression ou instruction, sans appel, usages des paramètres) si f peut être recopiée, sinon None."""
     if len(f.corps) != 1 or f.rtype in LARGES2 or any(t in LARGES2 for t in f.ptypes) or getattr(f, "rangee", False):
         return None
+    # 0.65 : une fonction passée en valeur garde sa molécule (son adresse est prise)
+    if getattr(f, "reference", False):
+        return None
     s = f.corps[0]
     if s[0] == "retour" and s[1] is not None:
         corps = s[1]
@@ -7450,6 +7474,20 @@ class Generateur:
             self.fonction(f)
         while self.a_generer:
             self.fonction(self.a_generer.pop(0))
+        if getattr(self, "trampoline", 0):
+            # 0.65 : l'appel par valeur, comme sur Lugus : la cible dans R1 ; PUSH R1 puis RET y saute, l'adresse de
+            # retour de l'appelant restant en place (la cible voit la pile d'un appel ordinaire)
+            self.etiquette("F___appeler")
+            self.emettre("PUSH R1")
+            self.emettre("RET")
+            if not getattr(self, "appel_libre", False):
+                # rien n'appelle __appeler lui-même (des fonctions passées sans appel) : la table l'appelle, pour qu'il
+                # soit une molécule à lui
+                self.emettre("CALL F___appeler")
+            # puis, jamais jouée, une table d'appels : chaque fonction passée en valeur y est la cible d'un CALL
+            for f in list(self.fonctions.values()):
+                if getattr(f, "reference", False):
+                    self.emettre(f"CALL F_{f.nom}")
         for i, (et, adr, vals) in enumerate(self.blobs):
             self.etiquette(f"DONNEES{i}")
             for k in range(0, len(vals), 8):
@@ -7502,7 +7540,10 @@ class Generateur:
         g = e[0]
         if g == "non_log" and self.typ(e[1]) == "q":
             raise VtxError(f"ligne {ligne_de(e)} : « ! » ne s'applique pas à un logique : utilisez non4() ou anti()")
-        if g in ("nombre", "etiq", "lire", "non_log", "blit"):
+        if g == "appelv":
+            tv = self.typ(e[1])
+            return sig_parts(sig_norm(tv))[1] if est_sig(tv) else "e"
+        if g in ("nombre", "etiq", "lire", "non_log", "blit", "fref"):
             return "e"
         if g == "fnombre":
             return "f"
@@ -7634,6 +7675,15 @@ class Generateur:
         """Conversion implicite du résultat (R1, ou R1:R4) de t vers voulu."""
         if t == voulu:
             return
+        # 0.65 : une valeur de fonction est un entier ; un entier se déclare fonction (une promesse), et une fonction
+        # passe là où va un entier ; deux types de fonction différents ne se mélangent pas (comme sur Lugus)
+        if est_sig(voulu) and (t == "e" or (est_sig(t) and sig_norm(t) == sig_norm(voulu))):
+            return
+        if est_sig(t) and voulu == "e":
+            return
+        if est_sig(voulu) or est_sig(t):
+            # le même message que vtxc64
+            raise VtxError(f"ligne {ligne} : une valeur de fonction ne va pas là où l'on attend un autre type")
         if voulu == "e" and t == "i":
             return                                   # l'entier_32 est déjà rangé sans signe dans 64 bits
         if voulu == "f" and t in ENTIERS:
@@ -8160,6 +8210,15 @@ class Generateur:
 
     def expr(self, e, voulu=None):
         """Émet e ; rend son type. Avec voulu, convertit le résultat."""
+        if e[0] == "fref" and est_sig(voulu):
+            # 0.65 : une fonction nommée là où l'on attend un type de fonction : sa signature doit être celle-là
+            f = self.signature(e[1], e[2])
+            sf = "g:" + ",".join(f.ptypes) + ">" + (f.rtype or "e")
+            if sig_norm(sf) != sig_norm(voulu):
+                raise VtxError(f"ligne {e[2]} : « {e[1]} » ne convient pas à {nom_sig(voulu)} : elle est "
+                               f"{nom_sig(sf)}")
+            self.expr_e(e)
+            return voulu
         if e[0] == "blit":
             e = ("qnombre", e[1]) if voulu == "q" else ("nombre", e[2])
         if est_ref(voulu) and e == ("nombre", 0):
@@ -8208,6 +8267,8 @@ class Generateur:
             self.expr_w(e)
         elif t == "x":
             self.expr_x(e)
+        elif est_sig(t):
+            self.expr_e(e)
         if voulu is not None and voulu != t:
             self.conv(t, voulu, ligne_de(e), e)
             return voulu
@@ -8238,6 +8299,10 @@ class Generateur:
             self.emettre(f"MOV R1,R{self.regs[e[1]]}" if e[1] in self.regs else f"LDF R1,#{off}")
         elif g == "etiq":
             self.emettre(f"LDI R1,{e[1]}")
+        elif g == "fref":
+            self.emettre(f"LDI R1,F_{e[1]}")
+        elif g == "appelv":
+            self.appel_valeur(e)
         elif g == "non":
             t = self.expr(e[1])
             self.emettre("CMP3 R1,R1")
@@ -8384,6 +8449,8 @@ class Generateur:
             self.emettre(f"{p}{ {'+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV'}[op] } R1,R1,R2")
         elif g == "appel":
             self.appel(e)
+        elif g == "appelv":
+            self.appel_valeur(e)                       # 0.65 : une fonction de flottants passée en valeur
         elif g in ("champ_ref", "champ"):              # champ flottant d'une structure
             self.expr_e(e)
         else:
@@ -8537,6 +8604,35 @@ class Generateur:
         if suf is None or not du_prelude(noms[suf]):
             return base
         return noms[suf]
+
+    def appel_valeur(self, e):
+        """0.65 : f(a, b) où f est une valeur (une fonction passée), comme sur Lugus : les arguments empilés comme pour un
+        appel ordinaire (un mot chacun), la cible dans R1, puis CALL F___appeler."""
+        args, ligne = e[2], e[3]
+        tv = self.typ(e[1])
+        if est_sig(tv):
+            # le type de la fonction est connu : le nombre d'arguments vérifié, chacun converti à son type
+            ps, r = sig_parts(sig_norm(tv))
+            if len(args) != len(ps):
+                raise VtxError(f"ligne {ligne} : « {e[1][1]} » ({nom_sig(tv)}) attend {len(ps)} argument(s), pas "
+                               f"{len(args)}")
+            if any(x in LARGES2 for x in ps + [r]):
+                raise VtxError(f"ligne {ligne} : un appel par valeur ne passe que des valeurs d'un mot")
+            for a, pt in zip(args, ps):
+                self.expr(a, pt)
+                self.emettre("PUSH R1")
+            self.expr(e[1], tv)
+        else:
+            for a in args:
+                t = self.expr(a)
+                if t in LARGES2:
+                    raise VtxError(f"ligne {ligne} : un appel par valeur ne passe que des valeurs d'un mot")
+                self.emettre("PUSH R1")
+            self.expr(e[1], "e")
+        self.appel_libre = True
+        self.emettre("CALL F___appeler")
+        if args:
+            self.emettre(f"ADDI R14,R14,#{len(args)}")
 
     def appel(self, e):
         ng = self.generique(e)
@@ -8844,13 +8940,111 @@ class Generateur:
 
 def appels(n, acc):
     if isinstance(n, tuple):
-        if len(n) >= 3 and n[0] == "appel":
+        if len(n) >= 3 and n[0] in ("appel", "fref"):
             acc.add(n[1])
         for x in n:
             appels(x, acc)
     elif isinstance(n, list):
         for x in n:
             appels(x, acc)
+
+
+NOMS_SIG = {"e": "entier", "i": "entier_32", "f": "flottant", "s": "flottant_32", "q": "logique", "t": "texte",
+            "w": "entier_petuar", "x": "flottant_petuar", "p": "point", "F": "flottant[]", "L": "logique[]"}
+
+
+def est_sig(t):
+    """0.65 : un type de fonction (« g:T1,T2>R »), comme sur Lugus"""
+    return isinstance(t, str) and t.startswith("g:")
+
+
+def sig_parts(t):
+    """(les types des paramètres, le type du résultat) d'un type de fonction « g:… »"""
+    a, r = t[2:].split(">", 1)
+    return ([x for x in a.split(",")] if a else []), r
+
+
+def sig_norm(t):
+    """le type de fonction tel que la génération le voit : les textes et les tableaux sont des entiers (typer_textes)"""
+    ps, r = sig_parts(t)
+    n = lambda x: "e" if x in ("t", "F", "L") else x
+    return "g:" + ",".join(n(x) for x in ps) + ">" + n(r)
+
+
+def nom_sig(t):
+    ps, r = sig_parts(t)
+    nm = lambda x: x[2:] if x.startswith("r:") else NOMS_SIG.get(x, x)
+    return "fonction(" + ", ".join(nm(x) for x in ps) + "): " + nm(r)
+
+
+def _contient_appelv(n):
+    if isinstance(n, tuple):
+        # une tâche d'un accord est un triplet (l'instruction, sa note, son nom) : l'instruction est cherchée aussi
+        if len(n) > 0 and not isinstance(n[0], str):
+            return any(_contient_appelv(x) for x in n)
+        return (len(n) > 0 and n[0] in ("appelv", "fref")) or any(_contient_appelv(x) for x in n[1:])
+    if isinstance(n, list):
+        return any(_contient_appelv(x) for x in n)
+    return False
+
+
+def resoudre_valeurs(fs):
+    """0.65 : les fonctions passées en valeur, comme sur Lugus (0.6w). Un nom de fonction écrit sans parenthèses, là où
+    aucune variable ne porte ce nom, devient sa référence (("fref", nom, ligne) : l'adresse de sa molécule) ; un appel
+    f(…) dont le nom est une variable (un paramètre, un soit, une boucle) et pas une fonction devient un appel par valeur
+    (("appelv", ("var", f, ligne), args, ligne)), qui passe par le trampoline __appeler. Une fonction référencée garde sa
+    molécule (jamais recopiée en ligne). Rend 1 si un appel par valeur ou une référence existe."""
+    noms = {f.nom for f in fs}
+    vu = [0]
+
+    def locales(f):
+        acc = set(f.params)
+
+        def tour(n):
+            if isinstance(n, tuple) and n:
+                if n[0] in ("soit", "pour", "segments") and isinstance(n[1], str):
+                    acc.add(n[1])
+                for x in n[1:]:
+                    tour(x)
+            elif isinstance(n, list):
+                for x in n:
+                    tour(x)
+        tour(f.corps)
+        return acc
+
+    def refaire(n, loc):
+        if isinstance(n, list):
+            return [refaire(x, loc) for x in n]
+        if not isinstance(n, tuple) or not n:
+            return n
+        if n[0] == "var" and len(n) == 3 and n[1] not in loc and n[1] in noms:
+            return ("fref", n[1], n[2])
+        if n[0] == "appel" and len(n) >= 4 and n[1] in loc and n[1] not in noms and n[1] not in INTEGRES:
+            vu[0] = 1
+            return ("appelv", ("var", n[1], n[3]), [refaire(a, loc) for a in n[2]], n[3])
+        return tuple(refaire(x, loc) for x in n)
+
+    refs = set()
+    for f in fs:
+        loc = locales(f)
+        f.corps = refaire(f.corps, loc)
+        acc = set()
+
+        def cherche(n):
+            if isinstance(n, tuple) and n:
+                if n[0] == "fref":
+                    acc.add(n[1])
+                for x in n[1:]:
+                    cherche(x)
+            elif isinstance(n, list):
+                for x in n:
+                    cherche(x)
+        cherche(f.corps)
+        refs |= acc
+    for f in fs:
+        if f.nom in refs:
+            f.reference = True
+    return 1 if vu[0] or refs else 0
 
 
 def elaguer(fs):
@@ -9082,6 +9276,8 @@ DERNIERE_PARTITION = {"accords": [], "notes": {}}
 
 def typer_textes(fs, types_champs):
     rtexte = {f.nom for f in fs if f.rtype == "t"}
+    rsig = {f.nom: f.rtype for f in fs if est_sig(f.rtype)}   # 0.65 : les fonctions qui rendent une fonction
+    sigv = {}                                                # 0.65 : les variables d'un type de fonction
     du_prelude = {f.nom for f in fs if getattr(f, "origine", "") == "prélude"}
     champs = {}
     for _st, cs in types_champs.items():
@@ -9195,6 +9391,10 @@ def typer_textes(fs, types_champs):
             return e[2] in champs_texte
         if g == "bin" and e[1] == "+":
             return est_texte(e[2], env) or est_texte(e[3], env)
+        if g == "appelv" and e[1][0] == "var":
+            # 0.65 : l'appel d'une valeur de fonction dont le type dit qu'elle rend un texte
+            sv = sigv.get(e[1][1])
+            return sv is not None and sig_parts(sv)[1] == "t"
         return False
 
     def soits(x, acc):
@@ -9296,9 +9496,16 @@ def typer_textes(fs, types_champs):
         tablog.clear()
         tablog.update(p for p, t in zip(f.params, f.ptypes) if t == "L")
         env = {p: t == "t" for p, t in zip(f.params, f.ptypes)}
+        sigv.clear()
+        sigv.update((p, t) for p, t in zip(f.params, f.ptypes) if est_sig(t))
         if getattr(f, "origine", "") != "prélude":
             liste = []
             soits(f.corps, liste)
+            for st in liste:
+                if len(st) > 4 and est_sig(st[4]):
+                    sigv[st[1]] = st[4]
+                elif isinstance(st[2], tuple) and st[2][0] == "appel" and est_sig(rsig.get(st[2][1])):
+                    sigv[st[1]] = rsig[st[2][1]]
             change = True
             while change:
                 change = False
@@ -9382,6 +9589,7 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
         for f in pre:
             f.origine = "prélude"
         fs = fs + pre
+    trampoline = resoudre_valeurs(fs)
     typer_textes(fs, a.types_champs)
     # 0.62 : une fonction du programme qui porte le nom d'une fonction intégrée est refusée avant l'élagage, comme
     # vtxc le fait (même si elle n'est jamais appelée)
@@ -9393,8 +9601,13 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
     DERNIERE_PARTITION["accords"], DERNIERE_PARTITION["notes"] = [], {}
     if optim and partition:
         DERNIERE_PARTITION["accords"], DERNIERE_PARTITION["notes"] = partitionner(gardees, melange)
+    if trampoline and optim:
+        # 0.65 : seulement si une fonction gardée appelle par valeur ou en nomme une (le prélude en a peut-être, que le
+        # programme n'emploie pas)
+        trampoline = int(any(_contient_appelv(f.corps) for f in gardees))
     g = Generateur(gardees, optim, a.donnees, reserve)
     g.structs, g.types_champs, g.textes = a.structs, a.types_champs, a.textes
+    g.trampoline = trampoline
     return g.generer()
 
 
@@ -9508,6 +9721,10 @@ class Effets:
             w.add(ZONE_COPIES)
         elif g == "appel":
             self.appel(n[1], r, w)
+        elif g == "appelv":
+            # 0.65 : un appel par valeur : on ne sait pas qui est appelé : tout, et le monde
+            r |= {ES, TOUT}
+            w |= {ES, TOUT}
         for x in n[1:]:
             if isinstance(x, (tuple, list)):
                 self.parcourir(x, r, w)
@@ -9559,7 +9776,7 @@ def segments_independants(eff, st):
                 marche(n[2])
                 marche(n[3])
                 return
-        if n[0] in ("lire", "ecrire", "asm", "appel", "champ_ref", "ecrire_champ", "nouveau_de", "construire"):
+        if n[0] in ("lire", "ecrire", "asm", "appel", "appelv", "champ_ref", "ecrire_champ", "nouveau_de", "construire"):
             eff.parcourir(n, r, w)
             return
         for x in n[1:]:

@@ -150,7 +150,7 @@ C'est une écriture, pas une nouvelle instruction : les deux compilateurs de cha
 
 **Hypothèse** : les écritures mémoire écrites dans le bloc sont notées dans un journal ; `annuler;` les défait et sort du bloc ; `valider;` ou la fin du bloc les garde. Les blocs s'imbriquent. Les variables locales et les écritures faites par les fonctions appelées ne sont pas défaites ; `retour`, `arrêter` et `continuer` ne peuvent pas sortir d'une hypothèse ; l'étage 0 y est interdit.
 
-**Les fonctions passées en valeur** (Lugus, 0.6w) : une fonction se nomme sans parenthèses ; elle se range dans une
+**Les fonctions passées en valeur** (Lugus, 0.6w ; Dunon, 0.65, sans la promesse « touche » dans le type, et pas de valeur de 128 bits passée par valeur) : une fonction se nomme sans parenthèses ; elle se range dans une
 variable, un tableau ou un champ de structure, se passe à une autre fonction, se rend ; on l'appelle par la variable qui
 la porte.
 

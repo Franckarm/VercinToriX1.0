@@ -134,7 +134,7 @@ structure Param { nom, type, suivant: Param, usages }   // usages : dans un corp
 // l'instruction ; el_sans : son corps n'écrit rien (sans appel d'une fonction qui ne soit pas pure) ; el_pure : 1
 // fonction pure qui lit la mémoire, 2 pure qui ne fait que calculer ; el_actif : en cours de recopie
 structure Fonction { nom, params: Param, nb, rtype, corps: Noeud, etiq, ligne, garde, suivant: Fonction, suite: Fonction,
-                     er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif, gen }
+                     er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif, gen, vref }
 structure Constante { nom, val, type, haut, suivant: Constante }
 // sorte : 0 tableau d'entiers, 1 de quits, 2 de logiques (32 par mot), 3 de structures (st : son numéro)
 structure Tableau { nom, etage, base, taille, sorte, st, suivant: Tableau }
@@ -201,6 +201,10 @@ structure Ctx {
     retour_final,       // 1 : le « retour » en cours est la dernière instruction de la fonction (pas de saut)
     sans_ligne,         // 1 : l'instruction suivante est recopiée en ligne (pas de ligne notée)
     el_prof,            // expansions en ligne l'une dans l'autre
+    tramp,              // 0.65 : l'étiquette du trampoline __appeler (0 : pas de fonction passée en valeur)
+    tramp_libre,        // 0.65 : 1 si un appel passe par __appeler lui-même
+    sigs: Liste,        // 0.65 : les types de fonction écrits (chacun : n, les types des paramètres, le résultat)
+    sigv: Liste,        // 0.65 : typer_textes : les variables d'un type de fonction (nom, type)
     erreur
 }
 
@@ -237,7 +241,10 @@ constante N_ANNULER = 33;
 constante N_ACCORD = 35;     // val = numéro ; premier = les mesures
 constante N_MESURE = 36;     // premier = les tâches
 constante N_BLOC = 37;       // premier = des instructions
-constante N_INFO = 40;       // boucle en segments : val = segments, ligne = numéro, premier = tableaux cumulés
+constante N_INFO = 40;
+constante N_FREF = 70;       // 0.65 : une fonction passée en valeur (nom) : l'adresse de sa molécule
+constante N_APPELV = 71;     // 0.65 : f(…) où f est une valeur : a = la variable, premier = les arguments
+constante T_G = 2000000;     // 0.65 : un type de fonction : T_G + son numéro dans c.sigs       // boucle en segments : val = segments, ligne = numéro, premier = tableaux cumulés
 constante CANAUX = 6;
 constante ZONE_TOUT = 4;     // étage inconnu
 constante ZONE_ES = 5;       // entrées et sorties
@@ -1429,6 +1436,151 @@ fonction type_opt(c: Ctx) {
         retour 0;
     }
     avancer(c);
+    retour un_type(c);
+}
+
+// ------------------------------------------------------------------------------------- les types de fonction (0.65)
+// comme sur Lugus (vtxc128, 0.6w bis), sans la promesse « touche » : Dunon ne juge pas ce que touchent les fonctions
+fonction est_sig(t) {
+    retour t >= T_G && t < T_G + 16777216;
+}
+
+fonction sig_de(c: Ctx, t): Liste {
+    soit l: Liste = elem(c.sigs, t - T_G);
+    retour l;
+}
+
+// un type tel que la génération le voit : les textes et les tableaux sont des entiers (typer_textes)
+fonction type_norme(t) {
+    si t == T_T || t == T_TF || t == T_TL {
+        retour 0;
+    }
+    retour t;
+}
+
+// le numéro d'un type de fonction (le même pour les mêmes types écrits)
+fonction sig_numero(c: Ctx, l: Liste) {
+    si c.sigs == nul {
+        c.sigs = liste();
+    }
+    pour k dans 0..c.sigs.n {
+        soit m = sig_de(c, T_G + k);
+        si m.n == l.n {
+            soit pareil = 1;
+            pour i dans 0..m.n {
+                si elem(m, i) != elem(l, i) {
+                    pareil = 0;
+                }
+            }
+            si pareil {
+                retour T_G + k;
+            }
+        }
+    }
+    ajouter(c.sigs, bits(l));
+    retour T_G + c.sigs.n - 1;
+}
+
+// deux types de fonction pareils, une fois normés
+fonction sig_meme(c: Ctx, a: Liste, b: Liste) {
+    si a.n != b.n {
+        retour 0;
+    }
+    pour i dans 0..a.n {
+        si type_norme(elem(a, i)) != type_norme(elem(b, i)) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// le type d'une fonction du programme : (n, les types de ses paramètres, son résultat)
+fonction sig_fonction(f: Fonction): Liste {
+    soit l = liste();
+    ajouter(l, f.nb);
+    soit p = f.params;
+    tantque p != nul {
+        ajouter(l, p.type);
+        p = p.suivant;
+    }
+    ajouter(l, f.rtype);
+    retour l;
+}
+
+fonction nom_type_sig(c: Ctx, t): texte {
+    si t == 0 { retour "entier"; }
+    si t == T_I { retour "entier_32"; }
+    si t == T_F { retour "flottant"; }
+    si t == T_S { retour "flottant_32"; }
+    si t == T_LOG { retour "logique"; }
+    si t == T_T { retour "texte"; }
+    si t == T_W { retour "entier_petuar"; }
+    si t == T_X { retour "flottant_petuar"; }
+    si t == T_TF { retour "flottant[]"; }
+    si t == T_TL { retour "logique[]"; }
+    si est_struct(t) {
+        soit st = struct_numero(c, t);
+        retour st.nom;
+    }
+    retour "?";
+}
+
+fonction ajouter_decimal(l: Liste, n) {
+    si n >= 10 {
+        ajouter_decimal(l, n / 10);
+    }
+    ajouter(l, 48 + n % 10);
+}
+
+fonction nom_sig(c: Ctx, l: Liste): texte {
+    soit r = liste();
+    ajouter_texte(r, "fonction(");
+    soit n = elem(l, 0);
+    pour i dans 0..n {
+        si i > 0 {
+            ajouter_texte(r, ", ");
+        }
+        ajouter_texte(r, nom_type_sig(c, elem(l, 1 + i)));
+    }
+    ajouter_texte(r, "): ");
+    ajouter_texte(r, nom_type_sig(c, elem(l, 1 + n)));
+    retour texte_de(r, 0, r.n);
+}
+
+fonction un_type(c: Ctx) {
+    si est_kw(c, "fonction") {
+        soit lf = c.tok.ligne;
+        avancer(c);
+        attendre(c, "(");
+        soit ps = liste();
+        si !est_op(c, ")") {
+            ajouter(ps, un_type(c));
+            tantque c.erreur == 0 && est_op(c, ",") {
+                avancer(c);
+                ajouter(ps, un_type(c));
+            }
+        }
+        attendre(c, ")");
+        soit r = 0;
+        si est_op(c, ":") {
+            avancer(c);
+            r = un_type(c);
+        }
+        soit l = liste();
+        ajouter(l, ps.n);
+        soit imbrique = est_sig(r);
+        pour i dans 0..ps.n {
+            ajouter(l, elem(ps, i));
+            si est_sig(elem(ps, i)) {
+                imbrique = 1;
+            }
+        }
+        ajouter(l, r);
+        si imbrique {
+            erreur(c, lf, "un type de fonction dans un type de fonction : pas encore");
+        }
+        retour sig_numero(c, l);
+    }
     soit nom = identifiant(c);
     si egal(nom, "entier") {
         retour 0;
@@ -4292,7 +4444,15 @@ fonction typ(c: Ctx, e: Noeud) {
     si g == N_NONLOG && typ(c, e.a) == T_LOG {
         erreur(c, e.ligne, "« ! » ne s'applique pas à un logique : utilisez non4() ou anti()");
     }
-    si g == N_NOMBRE || g == N_ETIQ || g == N_LIRE || g == N_NONLOG || g == N_BLIT {
+    si g == N_APPELV {
+        soit tv = typ(c, e.a);
+        si est_sig(tv) {
+            soit sv = sig_de(c, tv);
+            retour type_norme(elem(sv, 1 + elem(sv, 0)));
+        }
+        retour 0;
+    }
+    si g == N_NOMBRE || g == N_ETIQ || g == N_LIRE || g == N_NONLOG || g == N_BLIT || g == N_FREF {
         retour 0;
     }
     si g == N_FNOMBRE { retour T_F; }
@@ -4438,6 +4598,18 @@ fonction refuser_logique(c: Ctx, e: Noeud) {
 // le résultat (R1, ou R1:R4) de type t vers le type voulu
 fonction conv(c: Ctx, t, voulu, e: Noeud) {
     si t == voulu {
+        retour;
+    }
+    // 0.65 : une valeur de fonction est un entier ; un entier se déclare fonction (une promesse), et une fonction passe
+    // là où va un entier ; deux types de fonction différents ne se mélangent pas (comme sur Lugus)
+    si est_sig(voulu) && (t == 0 || (est_sig(t) && sig_meme(c, sig_de(c, t), sig_de(c, voulu)))) {
+        retour;
+    }
+    si est_sig(t) && voulu == 0 {
+        retour;
+    }
+    si est_sig(voulu) || est_sig(t) {
+        erreur(c, e.ligne, "une valeur de fonction ne va pas là où l'on attend un autre type");
         retour;
     }
     si voulu == 0 && t == T_I {
@@ -4768,6 +4940,24 @@ fonction booleen_saut(c: Ctx, op) {
 // --------------------------------------------------------------------------------------------- expressions
 // e au type voulu (-1 : son propre type) ; rend le type obtenu
 fonction gen_v(c: Ctx, e: Noeud, voulu) {
+    si e.genre == N_FREF && est_sig(voulu) {
+        // 0.65 : une fonction nommée là où l'on attend un type de fonction : sa signature doit être celle-là
+        soit ff = fonction_de(c, e.nom);
+        soit sff = sig_fonction(ff);
+        si !sig_meme(c, sff, sig_de(c, voulu)) {
+            soit m = liste();
+            ajouter_texte(m, "« ");
+            ajouter_texte(m, e.nom);
+            ajouter_texte(m, " » ne convient pas à ");
+            ajouter_texte(m, nom_sig(c, sig_de(c, voulu)));
+            ajouter_texte(m, " : elle est ");
+            ajouter_texte(m, nom_sig(c, sff));
+            erreur(c, e.ligne, texte_de(m, 0, m.n));
+            retour voulu;
+        }
+        expr_e(c, e);
+        retour voulu;
+    }
     si e.genre == N_BLIT {
         si voulu == T_LOG {
             charger(c, 1, e.val);
@@ -4840,12 +5030,70 @@ fonction gen_v(c: Ctx, e: Noeud, voulu) {
         expr_w(c, e);
     } sinon si t == T_X {
         expr_x(c, e);
+    } sinon si est_sig(t) {
+        expr_e(c, e);
     }
     si voulu != 0 - 1 && voulu != t {
         conv(c, t, voulu, e);
         retour voulu;
     }
     retour t;
+}
+
+// 0.65 : f(a, b) où f est une valeur (une fonction passée), comme sur Lugus : les arguments empilés (un mot chacun),
+// la cible dans R1, puis l'appel par le trampoline
+fonction appel_valeur(c: Ctx, e: Noeud) {
+    soit av = e.premier;
+    soit nv = 0;
+    soit tv = typ(c, e.a);
+    si est_sig(tv) {
+        // le type de la fonction est connu : le nombre d'arguments vérifié, chacun converti à son type
+        soit sv = sig_de(c, tv);
+        si nb_args(av) != elem(sv, 0) {
+            soit m = liste();
+            ajouter_texte(m, "« ");
+            ajouter_texte(m, e.a.nom);
+            ajouter_texte(m, " » (");
+            ajouter_texte(m, nom_sig(c, sv));
+            ajouter_texte(m, ") attend ");
+            ajouter_decimal(m, elem(sv, 0));
+            ajouter_texte(m, " argument(s), pas ");
+            ajouter_decimal(m, nb_args(av));
+            erreur(c, e.ligne, texte_de(m, 0, m.n));
+            retour;
+        }
+        pour k dans 0..elem(sv, 0) + 1 {
+            si large(elem(sv, 1 + k)) {
+                erreur(c, e.ligne, "un appel par valeur ne passe que des valeurs d'un mot");
+                retour;
+            }
+        }
+        soit iv = 0;
+        tantque av != nul {
+            gen_v(c, av, type_norme(elem(sv, 1 + iv)));
+            pousser(c, 1);
+            nv = nv + 1;
+            iv = iv + 1;
+            av = av.suivant;
+        }
+        gen_v(c, e.a, tv);
+    } sinon {
+        tantque av != nul {
+            si large(gen(c, av)) {
+                erreur(c, e.ligne, "un appel par valeur ne passe que des valeurs d'un mot");
+                retour;
+            }
+            pousser(c, 1);
+            nv = nv + 1;
+            av = av.suivant;
+        }
+        gen_v(c, e.a, 0);
+    }
+    c.tramp_libre = 1;
+    saut(c, 51, c.tramp);
+    si nv != 0 {
+        rri(c, 6, 14, 14, nv);
+    }
 }
 
 fonction gen(c: Ctx, e: Noeud) {
@@ -4906,6 +5154,10 @@ fonction expr_e(c: Ctx, e: Noeud) {
         }
     } sinon si g == N_ETIQ {
         ldi_etiquette(c, 1, etiquette_texte(c, e.nom));
+    } sinon si g == N_FREF {
+        ldi_etiquette(c, 1, fonction_de(c, e.nom).etiq);
+    } sinon si g == N_APPELV {
+        appel_valeur(c, e);
     } sinon si g == N_NON {
         soit tn = gen(c, e.a);
         rr(c, 18, 1, 1);
@@ -5154,6 +5406,8 @@ fonction expr_f(c: Ctx, e: Noeud, t) {
         si egal(e.op, "/") { rrr(c, base + 3, 1, 1, 2); }
     } sinon si g == N_APPEL {
         appel(c, e);
+    } sinon si g == N_APPELV {
+        appel_valeur(c, e);                      // 0.65 : une fonction de flottants passée en valeur
     } sinon si g == N_CHAMP {
         expr_e(c, e);
     } sinon {
@@ -5508,7 +5762,7 @@ fonction el_preparer(c: Ctx) {
             pz.usages = 0;
             pz = pz.suivant;
         }
-        si s != nul && s.suivant == nul && el_types_simples(f) {
+        si s != nul && s.suivant == nul && el_types_simples(f) && f.vref == 0 {
             soit corps: Noeud = nul;
             soit genre = 0;
             si s.genre == N_RETOUR && s.a != nul {
@@ -7492,6 +7746,12 @@ fonction parcourir(c: Ctx, n: Noeud, r: Liste, w: Liste) {
         zone_ajouter(w, 3, COPIES_DEBUT, COPIES_FIN);
     } sinon si g == N_APPEL {
         effets_appel(c, n.nom, r, w);
+    } sinon si g == N_APPELV {
+        // 0.65 : un appel par valeur : on ne sait pas qui est appelé : tout, et le monde
+        es(r);
+        tout(r);
+        es(w);
+        tout(w);
     }
     si g != N_INFO {
         parcourir(c, n.a, r, w);
@@ -8049,7 +8309,7 @@ fonction appels_de(c: Ctx, e: Noeud, noms: Liste) {
     si e == nul {
         retour;
     }
-    si e.genre == N_APPEL {
+    si e.genre == N_APPEL || e.genre == N_FREF {
         ajouter(noms, e.nom);
     }
     si e.genre == N_CONSTRUIRE || e.genre == N_NOUVEAU {
@@ -8114,6 +8374,20 @@ fonction generer(c: Ctx) {
     saut(c, 51, p.etiq);
     emettre(c, ins(63, 0, 0, 0, 0));
     elaguer(c);
+    si c.tramp != 0 && c.optim {
+        // 0.65 : comme vtx64.py, le trampoline seulement si une fonction gardée appelle par valeur ou en nomme une
+        soit fg0 = c.fonctions;
+        soit vu0 = 0;
+        tantque fg0 != nul {
+            si fg0.garde == 1 && a_valeurs(fg0.corps) {
+                vu0 = 1;
+            }
+            fg0 = fg0.suivant;
+        }
+        si vu0 == 0 {
+            c.tramp = 0;
+        }
+    }
     si c.optim && c.partition {
         partitionner(c);
     }
@@ -8131,6 +8405,25 @@ fonction generer(c: Ctx) {
         soit g = c.file_debut;
         c.file_debut = g.suite;
         fonction_code(c, g);
+    }
+    si c.tramp != 0 {
+        // 0.65 : l'appel par valeur : PUSH R1 puis RET saute à la cible, l'adresse de retour de l'appelant restant en
+        // place
+        poser_etiquette(c, c.tramp);
+        pousser(c, 1);
+        emettre(c, ins(52, 0, 0, 0, 0));
+        si c.tramp_libre == 0 {
+            // rien n'appelle __appeler lui-même : la table l'appelle, pour qu'il soit une molécule à lui
+            saut(c, 51, c.tramp);
+        }
+        // puis, jamais jouée, une table d'appels : chaque fonction passée en valeur y est la cible d'un CALL
+        soit fv = c.fonctions;
+        tantque fv != nul {
+            si fv.garde == 1 && fv.vref == 1 {
+                saut(c, 51, fv.etiq);
+            }
+            fv = fv.suivant;
+        }
     }
     // blocs de données, puis textes : longueur puis un caractère par mot, dans l'ordre de leur première apparition
     soit dn = c.blocs;
@@ -8892,7 +9185,53 @@ fonction est_texte(c: Ctx, e: Noeud, env: Liste) {
     si e.genre == N_BIN && egal(e.op, "+") {
         retour est_texte(c, e.a, env) || est_texte(c, e.b, env);
     }
+    si e.genre == N_APPELV && e.a.genre == N_VAR {
+        // 0.65 : l'appel d'une valeur de fonction dont le type dit qu'elle rend un texte
+        soit sv = sig_var(c, e.a.nom);
+        si est_sig(sv) {
+            soit ls = sig_de(c, sv);
+            retour elem(ls, 1 + elem(ls, 0)) == T_T;
+        }
+    }
     retour 0;
+}
+
+// 0.65 : le type de fonction d'une variable (0 si elle n'en a pas)
+fonction sig_var(c: Ctx, nom) {
+    si c.sigv == nul {
+        retour 0;
+    }
+    soit i = 0;
+    tantque i < c.sigv.n {
+        si egal(elem(c.sigv, i), nom) {
+            retour elem(c.sigv, i + 1);
+        }
+        i = i + 2;
+    }
+    retour 0;
+}
+
+fonction noter_sigv(c: Ctx, s: Noeud) {
+    tantque s != nul {
+        si s.genre == N_SOIT {
+            si est_sig(s.val) {
+                ajouter(c.sigv, s.nom);
+                ajouter(c.sigv, s.val);
+            } sinon si s.val == 0 && s.a != nul && s.a.genre == N_APPEL {
+                soit fa = fonction_de(c, s.a.nom);
+                si fa != nul && est_sig(fa.rtype) {
+                    ajouter(c.sigv, s.nom);
+                    ajouter(c.sigv, fa.rtype);
+                }
+            }
+        }
+        noter_sigv(c, s.a);
+        noter_sigv(c, s.b);
+        noter_sigv(c, s.c);
+        noter_sigv(c, s.premier);
+        noter_sigv(c, s.deuxieme);
+        s = s.suivant;
+    }
 }
 
 // les « soit » d'une fonction : marque comme textes les variables déclarées texte ou initialisées par un texte
@@ -9258,6 +9597,77 @@ fonction prelude_utile(c: Ctx, t) {
     }
 }
 
+// ------------------------------------------------------------------------------------- les fonctions passées en valeur
+// 0.65, comme resoudre_valeurs de vtx64.py (et vtxc128) : un nom de fonction écrit sans parenthèses, là où aucune
+// variable ne porte ce nom, devient sa référence (N_FREF) ; un appel dont le nom est une variable et pas une fonction
+// devient un appel par valeur (N_APPELV). Une fonction référencée garde sa molécule (vref : jamais recopiée en ligne).
+fonction locales_de(n: Noeud, l: Liste) {
+    tantque n != nul {
+        si n.genre == N_SOIT || n.genre == N_POUR {
+            ajouter(l, n.nom);
+        }
+        locales_de(n.a, l);
+        locales_de(n.b, l);
+        locales_de(n.c, l);
+        locales_de(n.premier, l);
+        locales_de(n.deuxieme, l);
+        n = n.suivant;
+    }
+}
+
+fonction refaire_valeurs(c: Ctx, n: Noeud, loc: Liste) {
+    tantque n != nul {
+        si n.genre == N_VAR && !dans_liste(loc, n.nom) && fonction_de(c, n.nom) != nul {
+            n.genre = N_FREF;
+            soit fr = fonction_de(c, n.nom);
+            fr.vref = 1;
+            si c.tramp == 0 {
+                c.tramp = nouvelle_etiquette(c);
+            }
+        } sinon si n.genre == N_APPEL && dans_liste(loc, n.nom) && fonction_de(c, n.nom) == nul && !est_integre(n.nom) {
+            n.genre = N_APPELV;
+            n.a = Noeud { genre: N_VAR, nom: n.nom, ligne: n.ligne };
+            si c.tramp == 0 {
+                c.tramp = nouvelle_etiquette(c);
+            }
+        }
+        refaire_valeurs(c, n.a, loc);
+        refaire_valeurs(c, n.b, loc);
+        refaire_valeurs(c, n.c, loc);
+        refaire_valeurs(c, n.premier, loc);
+        refaire_valeurs(c, n.deuxieme, loc);
+        n = n.suivant;
+    }
+}
+
+fonction a_valeurs(n: Noeud) {
+    tantque n != nul {
+        si n.genre == N_APPELV || n.genre == N_FREF {
+            retour 1;
+        }
+        si a_valeurs(n.a) || a_valeurs(n.b) || a_valeurs(n.c) || a_valeurs(n.premier) || a_valeurs(n.deuxieme) {
+            retour 1;
+        }
+        n = n.suivant;
+    }
+    retour 0;
+}
+
+fonction resoudre_valeurs(c: Ctx) {
+    soit f = c.fonctions;
+    tantque f != nul {
+        soit loc = liste();
+        soit p = f.params;
+        tantque p != nul {
+            ajouter(loc, p.nom);
+            p = p.suivant;
+        }
+        locales_de(f.corps, loc);
+        refaire_valeurs(c, f.corps, loc);
+        f = f.suivant;
+    }
+}
+
 fonction typer_textes(c: Ctx) {
     soit f = c.fonctions;
     tantque f != nul {
@@ -9266,8 +9676,13 @@ fonction typer_textes(c: Ctx) {
             c.tabflot = liste();
             c.tablog = liste();
             soit env = liste();
+            c.sigv = liste();
             soit p = f.params;
             tantque p != nul {
+                si est_sig(p.type) {
+                    ajouter(c.sigv, p.nom);
+                    ajouter(c.sigv, p.type);
+                }
                 si p.type == T_T {
                     ajouter(env, p.nom);
                 }
@@ -9279,6 +9694,7 @@ fonction typer_textes(c: Ctx) {
                 }
                 p = p.suivant;
             }
+            noter_sigv(c, f.corps);
             tantque soits_textes(c, f.corps, env, 0) > 0 {
             }
             textes_liste(c, f.corps, env);
@@ -9396,6 +9812,7 @@ fonction principal() {
         c.tableaux = tableaux;
     }
     si c.erreur == 0 {
+        resoudre_valeurs(c);
         typer_textes(c);
     }
     si c.erreur == 0 {

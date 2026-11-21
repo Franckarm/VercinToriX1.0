@@ -3240,3 +3240,30 @@ hex, la molécule, l'atome.
   gardent leurs mots). Et `tests/test_natif128.py` jouait `cube_mere.vtx` deux fois dans le même dossier (la seconde
   relisait les cubes de la première) : chaque jeu part sans cube.
 - **La suite** : la paillasse et Ogmios montrent ces faces lues dans le cube ; puis les autres points du langage.
+
+## 70. Les fonctions passées en valeur sur Dunon (21 novembre, 0.65)
+
+**Le premier des points du langage**, dans l'ordre donné par le créateur. Dunon n'avait pas ce que Lugus a depuis la
+0.6w et la 0.6x : une fonction qui se passe à une autre, et son type.
+
+- **Comme sur Lugus** : un nom de fonction sans parenthèses est sa valeur ; `f(…)` par une variable qui n'est pas le nom
+  d'une fonction est un appel par valeur ; les arguments empilés comme pour un appel ordinaire, la cible dans R1, puis
+  `CALL __appeler`, qui fait `PUSH R1 ; RET`. Derrière, la table jamais jouée : un `CALL` vers chaque fonction passée,
+  pour qu'elle ait sa molécule. Une fonction passée n'est jamais recopiée en ligne ; un appel par valeur touche tout
+  pour la partition.
+- **Le type** : `fonction(entier, entier): entier`, vérifié où l'on peut : une fonction nommée là où l'on attend un type
+  doit l'avoir ; un appel par une variable typée compte ses arguments et convertit chacun (un flottant reste un
+  flottant, un texte reste un texte). Un entier se range dans une variable typée fonction (la même porte ouverte que
+  sur Lugus).
+- **Ce qui diffère de Lugus, et pourquoi** : pas de promesse « touche » dans le type, puisque Dunon ne juge pas ce que
+  touchent les fonctions ; une valeur de 128 bits (`entier_petuar`, `flottant_petuar`), qui tient sur deux mots de
+  Dunon, ne passe pas par valeur, et c'est dit.
+- **Dans les deux compilateurs de Dunon**, vtx64.py et vtxc64, les mêmes mots et les mêmes refus, mot pour mot. Les
+  programmes déjà écrits gardent leurs mots (les 55 programmes de Dunon comparés à l'ancien compilateur : 0 changé).
+- **`face` et `centre`** se lisent maintenant d'une fonction passée sur Dunon : 0 et inconnu, puisque Dunon n'est pas
+  lancé depuis un cube de programme.
+- **Vérifié** (`tests/test_valeurs64.py`, 13 contrôles) : `exemples128/valeurs.vtx` et `exemples128/types_fonction.vtx`
+  sur Dunon, un mélange (un tableau de fonctions, la récursion par valeur, une composition), deux fonctions passées sans
+  appel par valeur, face et centre ; six refus, le même message des deux côtés.
+- **Les limites, honnêtement** : comme sur Lugus, pas de type de fonction dans un type de fonction ; sans type écrit, le
+  nombre d'arguments n'est pas vérifié.
