@@ -3418,3 +3418,25 @@ case pour la fin ou le résultat, puis fermer les deux brèches trouvées par l'
 - **Vérifié** : les mêmes mots sur les 47 programmes de Lugus (vtxc128 compris, qui se compile lui-même) ; l'épreuve
   (47 vérifications) ; le juge en vtx et sa référence en Python (services 32 et 33 : une lecture).
 - **Pas encore** : Dunon (vtx64, vtxc64) a toujours les deux brèches ; `s.champ[i]` n'est pas vérifié.
+
+### 75 ter. L'épissage des vérifications, Dunon et les champs (21 novembre, 0.69c)
+
+**Décidé avec le créateur le 21** : la vitesse compte ; l'épissage est le bon lieu pour retirer les vérifications de
+`t[i]`, en deux niveaux.
+
+- **L'épissage sûr, toujours fait** (vtx128.py et vtx64.py `epissage_sur`, vtxc128 et vtxc64 la même) : dans
+  `pour i dans a..longueur(t)`, `t[i]` perd son `__borne` si rien dans la boucle ne peut rendre `i` trop grand : ni `i`
+  ni `t` réaffectés ; aucune fonction qui raccourcit un tableau (`retirer`, `enlever`, `vider`, `liberer`,
+  `tronquer_tableau`, `compter_si` et trois internes) ; aucun appel, sauf `longueur`, qui reçoive une variable nue autre
+  que `i` ou un champ (ce pourrait être `t`) ; aucun appel par valeur ; aucune écriture directe à l'étage 3 hors d'une
+  case de tableau. Mesuré : 1 216 315 instructions au lieu de 3 640 214 (1 115 214 sans aucune vérification).
+- **L'épissage rapide, demandé, après l'épreuve** : `lugus eprouver PROG.adn [ENTRÉES…]` lance le programme avec ses
+  vérifications ; s'il va au bout, l'ADN le note (l'intron « epreuve » : la signature de ses mots). `lugus PROG.adn
+  --rapide` recompile alors le texte gardé dans l'ADN, précédé de `constante __SANS_BORNES = 1; ` (sur la première
+  ligne : les numéros de ligne ne bougent pas), et lance ces mots-là. Sans épreuve (ou si les mots ont changé), le
+  programme garde ses vérifications et Lugus dit pourquoi. L'épreuve vaut pour les entrées données. `--rapide` d'un ARN
+  reste ce qu'il était (les mots seuls, sans témoins).
+- **Dunon** : les deux brèches fermées de même (le service 32 et 33 dans spu64.rs et spu64.py, `__borne` dans son
+  prélude, `nombre_pour_texte`, l'épissage).
+- **Les champs** : `s.champ[i]` (le champ d'une variable) est vérifié aussi, sur les deux machines.
+- **Pas encore** : une poignée calculée (`f()[i]`) ; le message nomme `t`, pas le vrai nom du tableau.

@@ -238,8 +238,10 @@ section 54, et `exemples128/supposons.vtx`.
 **Les bornes et les textes (0.69b, Lugus).** Sur Lugus, `t[i]` d'un tableau dynamique (une variable, ou `t[i][j]`) vérifie
 son indice : hors du tableau, en lecture comme en écriture, la machine s'arrête et dit la ligne, l'indice et la longueur
 (`ligne 4 : t[7] est hors du tableau (sa longueur : 3, les indices vont de 0 à 2)`), plutôt que de lire ou d'écrire à
-côté. Le prélude ne se vérifie pas (son code est sûr). Le prix : un appel par case lue (environ trois fois plus
-d'instructions sur une boucle qui ne fait que lire un tableau). Pas encore : `s.champ[i]`, ni Dunon. Un nombre sûr (un
+côté. Le prélude ne se vérifie pas (son code est sûr). Le prix : un appel par case lue, que l'épissage retire
+(0.69c) : toujours dans `pour i dans a..longueur(t)` quand rien dans la boucle ne peut raccourcir `t` ; tout entier
+après l'épreuve (`lugus eprouver PROG.adn`, puis `lugus PROG.adn --rapide`), ou avec `constante __SANS_BORNES = 1;`
+écrit dans le programme (à vos risques). Vérifié aussi : `s.champ[i]`, et sur Dunon. Un nombre sûr (un
 nombre écrit, un calcul, une variable qui ne reçoit que des nombres) ne va pas là où l'on a écrit `texte` (un `soit`, un
 paramètre) : `soit m: texte = n;` est refusé ; `texte(n)` écrit un nombre en texte.
 

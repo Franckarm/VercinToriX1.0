@@ -17,6 +17,8 @@
 //                                   embarqué) : le compte rendu, puis l'ADN relu (réparé) s'il est demandé
 //   lugus apprendre PROG.adn [ENTRÉES…]   lance, puis garde les souvenirs dans l'ADN (l'épigénome) : relancé, il les reprend
 //   lugus oublier PROG.adn          retire l'épigénome
+//   lugus eprouver PROG.adn [ENTRÉES…]  l'épreuve : lancé avec ses vérifications ; passée, elle est notée dans l'ADN
+//   lugus PROG.adn --rapide         après l'épreuve : recompilé sans les vérifications de t[i] (l'épissage rapide)
 //   lugus pourquoi PROG.adn …       la même chose, depuis le texte gardé dans l'ADN (s'il redonne ses mots)
 //   lugus pourquoi PROG.vtx [LIAISON | RÉACTION.LIAISON] [ENTRÉES…]   la provenance : d'où vient chaque valeur
 //   lugus cataloguer DOSSIER        le catalogue des modules du dossier (catalogue.vtxcat : nom, empreinte, molécules et
@@ -641,6 +643,30 @@ fn lugus() {
         let memoire = provenance::cases(&reactions, |a| spu.lire((3u128 << 62) | a as u128));
         let lire = |a: u64| *memoire.get(&a).unwrap_or(&0);
         println!("{}", provenance::pourquoi(&reactions, quoi.as_deref(), &lire));
+    } else if args.len() >= 3 && args[1] == "eprouver" {
+        // 0.69c : l'épreuve : le programme tourne avec ses vérifications (t[i] dans ses bornes) ; s'il va au bout sans en
+        // déclencher, l'ADN le note (l'intron « epreuve », la signature de ses mots) : l'épissage rapide est permis
+        let (mots, _, t0) = adn::transcrire(&args[2], false).unwrap_or_else(|e| {
+            dire!("{}", e);
+            sortir(1)
+        });
+        if t0.intron("source").is_none() {
+            dire!("{} ne garde pas son texte : l'épissage rapide le recompile sans vérifications, il en a besoin", args[2]);
+            sortir(1);
+        }
+        let mols = adn::lire_adn(&args[2]).map(|x| x.1).unwrap_or_default();
+        let dossier = std::path::Path::new(&args[2]).parent().map(|p| p.to_path_buf());
+        // une erreur (un t[i] hors du tableau) arrête Lugus ici : rien n'est noté
+        jouer_avec(&mots, &args[3..], dossier, Some(&t0), None);
+        let mut t = t0.clone();
+        t.introns.retain(|(n, _)| n != "epreuve");
+        t.introns.push(("epreuve".into(), vec![adn::signature(&mots).to_string()]));
+        if let Err(e) = adn::ecrire_adn(&args[2], &mots, &mols, &t) {
+            dire!("écriture de {} impossible : {}", args[2], e);
+            sortir(1);
+        }
+        dire!("l'épreuve est passée : aucun t[i] n'est sorti de son tableau (avec ces entrées-là) ; notée dans {} : \
+               « lugus {} --rapide » le lance sans ses vérifications", args[2], args[2]);
     } else if args.len() >= 3 && (args[1] == "apprendre" || args[1] == "oublier") {
         // apprendre : lancer, puis garder les souvenirs dans l'ADN (l'épigénome) ; oublier : les retirer
         // l'ADN est d'abord vérifié (et réparé, réécrit) ; l'épigénome d'avant est repris pour apprendre encore
@@ -703,6 +729,36 @@ fn lugus() {
         match adn::transcrire(&args[1], false) {
             Ok((mots, _, t)) => {
                 let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
+                // 0.69c : l'épissage rapide : après l'épreuve (« lugus eprouver »), le texte recompilé sans les
+                // vérifications de t[i] ; sans elle, le programme garde ses vérifications, et Lugus dit pourquoi
+                if args[2..].iter().any(|a| a == "--rapide") {
+                    let entrees: Vec<String> = args[2..].iter().filter(|a| *a != "--rapide").cloned().collect();
+                    let signe = adn::signature(&mots).to_string();
+                    let eprouve = t.intron("epreuve").map_or(false, |l| l.first() == Some(&signe));
+                    match (eprouve, t.intron("source")) {
+                        (true, Some(src)) => {
+                            // sur la première ligne : les numéros de ligne ne bougent pas
+                            let texte = format!("constante __SANS_BORNES = 1; {}", src.join("\n"));
+                            let rapides = match compiler128(&nombres128(VTXC128), &texte, &dossier_de128(&args[1]), COMPLET128, false) {
+                                Ok((m, _, _)) => m,
+                                Err(e) => {
+                                    eprint!("{}", e);
+                                    sortir(1);
+                                }
+                            };
+                            dire!("l'épissage rapide : l'épreuve est passée, les vérifications de t[i] sont retirées \
+                                   ({} mots au lieu de {})", rapides.len(), mots.len());
+                            jouer_avec(&rapides, &entrees, dossier, None, None);
+                        }
+                        _ => {
+                            dire!("l'épissage rapide attend l'épreuve (« lugus eprouver {} [ENTRÉES…] ») : le programme \
+                                   garde ses vérifications", args[1]);
+                            let mols = adn::lire_adn(&args[1]).map(|x| x.1).unwrap_or_default();
+                            jouer_avec(&mots, &entrees, dossier, Some(&t), Some((mols, t.clone())));
+                        }
+                    }
+                    return;
+                }
                 let mols = adn::lire_adn(&args[1]).map(|x| x.1).unwrap_or_default();
                 let veille = Some((mols, t.clone()));
                 jouer_avec(&mots, &args[2..], dossier, Some(&t), veille);
@@ -764,7 +820,7 @@ fn lugus() {
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        dire!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] [--veille|--rapide] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots|PROG.arn] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]Đ-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        dire!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] [--veille|--rapide] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots|PROG.arn] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]Đ-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus eprouver PROG.adn [ENTRÉES…] | lugus PROG.adn --rapide | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
         sortir(2);
     }
 }

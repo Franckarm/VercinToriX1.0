@@ -15,6 +15,8 @@ struct Page {
 }
 
 pub struct Spu64 {
+    /// 0.69c : l'indice d'un t[i] hors des bornes, retenu par le service 32 pour le message du service 33
+    pub borne_indice: u64,
     pub r: [u64; 16],
     pub pc: u64,
     z: bool,
@@ -52,6 +54,7 @@ impl Spu64 {
         let mut r = [0u64; 16];
         r[14] = PILE;
         Spu64 {
+            borne_indice: 0,
             r,
             pc: 0,
             z: false,
@@ -395,6 +398,18 @@ impl Spu64 {
             25 => Ok(self.pas),
             // 0.64 : les faces d'un programme : Dunon n'est pas lancé depuis un cube de programme ; rien (inconnu)
             31 => Ok(0),
+            // 0.69c : t[i] hors des bornes : 32 retient l'indice, 33 arrête la machine (arg = longueur << 24 | ligne)
+            32 => {
+                self.borne_indice = arg;
+                Ok(0)
+            }
+            33 => {
+                let i = self.borne_indice;
+                let indice = if i >= 1 << 63 { format!("{}", i as i64) } else { i.to_string() };
+                Err(format!("ligne {} : t[{}] est hors du tableau (sa longueur : {}, les indices vont de 0 à {}) ; \
+                             la machine s'arrête plutôt que de lire ou d'écrire à côté", arg & 0xFF_FFFF, indice, arg >> 24,
+                            if arg >> 24 == 0 { "rien : il est vide".to_string() } else { ((arg >> 24) - 1).to_string() }))
+            }
             30 => {
                 // 0.63 : le cube mère (un nom, comme un fichier ; il n'a pas de fréquence) : ensuite ranger_cube écrit
                 // TETE-NOM-ÉTAGE-FRÉQUENCE.cub et met à jour TETE-NOM.cub (le squelette), et les pages se relisent sous

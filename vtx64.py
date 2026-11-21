@@ -345,6 +345,7 @@ class Fonction:
 class Analyseur:
     def __init__(self, jetons):
         self.t, self.i = jetons, 0
+        self.en_prelude = False      # 0.69c : le prélude ne vérifie pas ses t[i]
         self.consts, self.donnees = {"vrai": 1, "faux": 0, "CPU": 0, "GPU": 1, "PARTAGE": 2, "DISQUE": 3, "nul": 0}, []
         self.textes = {}                  # texte littéral -> numéro de son étiquette
         self.types_champs = {}            # structure -> {champ : type}
@@ -916,7 +917,7 @@ class Analyseur:
                         self.cumul_utilise = True
                     self.nseg_id = getattr(self, "nseg_id", 0) + 1
                     return ("segments", nom, a, b, corps, l, nseg, self.nseg_id, tuple(cumul))
-                return ("pour", nom, a, b, corps, l, pas)
+                return ("pour", nom, a, b, epissage_sur(nom, b, corps), l, pas)
             if v == "arrêter" or v == "continuer":
                 self.fin()
                 if self.ctx and self.ctx[-1][0] == "hyp":
@@ -1398,9 +1399,17 @@ class Analyseur:
         while self.est_op(".", "["):
             if self.est_op("["):
                 # t[i] d'un tableau dynamique (tableau(n), [a, b, c]) : la case i de son bloc de données
+                lb = self.regard()[2]
                 self.suivant()
                 i = self.expr()
                 self.attendre("]")
+                # 0.69c (comme Lugus, 0.69b) : l'indice passe par __borne quand la poignée se relit sans rien changer ;
+                # pas dans le prélude, ni avec « constante __SANS_BORNES = 1; » (l'épissage rapide)
+                if not self.en_prelude and "__SANS_BORNES" not in self.consts and (e[0] == "var" or (
+                        e[0] == "champ_ref" and isinstance(e[1], tuple) and e[1][0] == "var") or (
+                        e[0] == "lire" and len(e) == 3 and e[1] == 3 and e[2][0] == "bin" and e[2][1] == "+"
+                        and e[2][2][0] == "lire")):
+                    i = ("appel", "__borne", [i, e, ("nombre", lb)], lb)
                 e = self.element(e, i)
                 continue
             self.suivant()
@@ -1687,6 +1696,15 @@ fonction __rendre_suite(h0, h1) {
     @3[14680064 + k] = h0 + 1;
 }
 // le tas est plein : le programme s'arrête avec un message clair (au lieu d'écrire à l'adresse 0)
+// 0.69b : l'indice d'un t[i] : hors du tableau, la machine s'arrête et dit la ligne (le service 32 retient l'indice,
+// le 33 arrête : longueur << 24 | ligne) ; pour le juge, une lecture de l'étage 3, rien de plus
+fonction __borne(i, h, ligne) {
+    si i >= @3[h] {
+        __service(32, i);
+        __service(33, @3[h] * 16777216 + ligne);
+    }
+    retour i;
+}
 fonction __verifier(h) {
     si h == 0 {
         __service(10, 0);
@@ -9470,8 +9488,134 @@ DERNIERE_PARTITION = {"accords": [], "notes": {}}
 # texte redevient « entier » : la génération du code ne le voit plus. La partition voit les appels : les tâches qui
 # fabriquent des textes écrivent dans le tas, et ne sont pas jouées ensemble par erreur.
 
+OPS_NOMBRE = {"-", "*", "/", "%", "<<", ">>", "&", "|", "^"}
+# 0.69c : les fonctions du prélude qui raccourcissent un tableau qu'on leur passe (vtxc128 a la même liste)
+RACCOURCISSENT = {"retirer", "enlever", "vider", "liberer", "tronquer_tableau", "compter_si", "__bn_divpetit",
+                  "__bn_droite", "__bn_sub"}
+
+
+def epissage_sur(i, fin, corps):
+    """0.69c, l'épissage sûr : dans « pour i dans a..longueur(t) », t[i] n'a pas besoin de __borne si rien dans la boucle
+    ne peut rendre i trop grand : ni i ni t réaffectés, aucune fonction qui raccourcit un tableau, aucun appel (sauf
+    longueur) qui reçoit une variable nue autre que i ou un champ (ce pourrait être t), aucun appel par valeur, aucune
+    écriture directe à l'étage 3 hors d'une case de tableau. Rend le corps, les __borne(i, t, …) retirés."""
+    if not (isinstance(fin, tuple) and fin[0] == "appel" and fin[1] == "longueur" and len(fin[2]) == 1
+            and fin[2][0][0] == "var"):
+        return corps
+    t = fin[2][0][1]
+    if t == i:
+        return corps
+    sur = [True]
+
+    def voir(x):
+        if not sur[0] or not isinstance(x, (list, tuple)):
+            return
+        if isinstance(x, list):
+            for y in x:
+                voir(y)
+            return
+        if not x:
+            return
+        g = x[0]
+        if g in ("soit", "affecter") and x[1] in (i, t):
+            sur[0] = False
+        elif g == "appelv":
+            sur[0] = False
+        elif g == "appel" and x[1] in RACCOURCISSENT:
+            sur[0] = False
+        elif g == "appel" and x[1] not in ("longueur", "__borne") \
+                and any(isinstance(a, tuple) and a and (a[0] in ("champ_ref", "champ") or (a[0] == "var" and a[1] != i))
+                        for a in x[2]):
+            sur[0] = False
+        elif g == "ecrire" and not (x[1] == 3 and isinstance(x[2], tuple) and x[2][0] == "bin" and x[2][1] == "+"
+                                    and isinstance(x[2][2], tuple) and x[2][2][0] == "lire"):
+            sur[0] = False
+        for y in x[1:]:
+            voir(y)
+    voir(corps)
+    if not sur[0]:
+        return corps
+
+    def retirer(x):
+        if isinstance(x, list):
+            return [retirer(y) for y in x]
+        if not isinstance(x, tuple) or not x:
+            return x
+        if (x[0] == "appel" and x[1] == "__borne" and len(x[2]) == 3 and x[2][0][:2] == ("var", i)
+                and x[2][1][:2] == ("var", t)):
+            return x[2][0]
+        return tuple(retirer(y) if isinstance(y, (list, tuple)) else y for y in x)
+    return retirer(corps)
+
+
+def nombre_pour_texte(f, liste, env, ptexte):
+    """0.69b : un nombre sûr (un nombre écrit, un calcul, une variable qui n'en reçoit pas d'autre) ne va pas là où l'on a
+    écrit « texte » (un soit, un paramètre) : la machine prendrait le nombre pour l'adresse d'un texte. La plus petite
+    ligne fautive est dite (vtxc128 dit la même)."""
+    params = set(f.params)
+    defs = {}
+    for st in liste:
+        defs.setdefault(st[1], []).append(st[2])
+
+    def affs(x):
+        if isinstance(x, list):
+            for y in x:
+                affs(y)
+        elif isinstance(x, tuple) and x:
+            if x[0] == "affecter":
+                defs.setdefault(x[1], []).append(x[2])
+            for y in x[1:]:
+                if isinstance(y, (list, tuple)):
+                    affs(y)
+    affs(f.corps)
+    ent = {v for v in defs if v not in params and not env.get(v) and any(st[1] == v for st in liste)}
+
+    def sur(e):
+        if not isinstance(e, tuple) or not e:
+            return False
+        if e[0] == "nombre":
+            return True
+        if e[0] == "bin" and e[1] in OPS_NOMBRE:
+            return True
+        if e[0] == "bin" and e[1] == "+":
+            return sur(e[2]) and sur(e[3])
+        return e[0] == "var" and e[1] in ent
+    change = True
+    while change:
+        change = False
+        for v in sorted(ent):
+            if not all(sur(x) for x in defs[v]):
+                ent.discard(v)
+                change = True
+    fautes = []
+    for st in liste:
+        if len(st) > 4 and st[4] == "t" and sur(st[2]):
+            fautes.append((st[3], f"ligne {st[3]} : « {st[1]} » est un texte : il ne reçoit pas un nombre "
+                                  f"(texte(n) écrit un nombre en texte)"))
+
+    def appels(x):
+        if isinstance(x, list):
+            for y in x:
+                appels(y)
+        elif isinstance(x, tuple) and x:
+            if x[0] == "appel" and x[1] in ptexte:
+                for k, (a, (pn, est)) in enumerate(zip(x[2], ptexte[x[1]])):
+                    if est and sur(a):
+                        fautes.append((x[3], f"ligne {x[3]} : « {x[1]} » attend un texte (son paramètre « {pn} ») : "
+                                             f"il ne reçoit pas un nombre (texte(n) écrit un nombre en texte)"))
+            for y in x[1:]:
+                if isinstance(y, (list, tuple)):
+                    appels(y)
+    appels(f.corps)
+    if fautes:
+        raise VtxError(min(fautes)[1])
+
+
 def typer_textes(fs, types_champs):
     rtexte = {f.nom for f in fs if f.rtype == "t"}
+    # 0.69c : les paramètres déclarés texte, avant que les types de textes deviennent des entiers
+    ptexte = {f.nom: [(p, t == "t") for p, t in zip(f.params, f.ptypes)] for f in fs
+              if getattr(f, "origine", "") != "prélude" and "t" in f.ptypes}
     rsig = {f.nom: f.rtype for f in fs if est_sig(f.rtype)}   # 0.65 : les fonctions qui rendent une fonction
     sigv = {}                                                # 0.65 : les variables d'un type de fonction
     du_prelude = {f.nom for f in fs if getattr(f, "origine", "") == "prélude"}
@@ -9719,6 +9863,7 @@ def typer_textes(fs, types_champs):
                     if st[1] not in tablog and ((len(st) > 4 and st[4] == "L") or tableau_logique(st[2])):
                         tablog.add(st[1])
                         change = True
+            nombre_pour_texte(f, liste, env, ptexte)
             f.corps = rw(f.corps, env)
         # pour la génération du code, un texte (et la poignée d'un tableau de flottants) est un entier
         f.ptypes = ["e" if t in ("t", "F", "L") else t for t in f.ptypes]
@@ -9780,6 +9925,7 @@ def _compiler(src, prelude=True, optim=True, partition=True, melange=None):
         # le prélude continue la numérotation des textes du programme (un texte écrit dans le prélude a sa propre
         # étiquette, et pas celle d'un texte du programme)
         ap = Analyseur(lexer(PRELUDE))
+        ap.en_prelude = True
         ap.textes = a.textes
         pre = [f for f in ap.programme() if f.nom not in noms]
         for f in pre:
@@ -9854,7 +10000,8 @@ def ensembles_conflit(za, zb):
 class Effets:
     """Lectures et écritures (zones) de chaque fonction, appels compris (point fixe)."""
 
-    INTEGRES_EFFETS = {"sortie": ({ES}, {ES}), "entrée": ({ES}, {ES}), "bruit": ({ES}, {ES}), "pile": ({ES}, {ES}), "__service": ({ES, TOUT}, {ES, TOUT}), "gemv": ({(2, 0, 1 << 24)}, {(2, 0, 1 << 24)}),
+    INTEGRES_EFFETS = {"sortie": ({ES}, {ES}), "entrée": ({ES}, {ES}), "bruit": ({ES}, {ES}), "pile": ({ES}, {ES}), "__service": ({ES, TOUT}, {ES, TOUT}),
+                       "__borne": ({(3, 0, 1 << 24)}, set()), "gemv": ({(2, 0, 1 << 24)}, {(2, 0, 1 << 24)}),
                        **{n: ({ES, TOUT}, {ES}) for n in ("lire_car", "ecrire_car", "ouvrir_lecture", "ouvrir_ecriture",
                                                           "fermer", "fin_de")}}
 

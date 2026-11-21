@@ -1905,7 +1905,10 @@ fonction unaire(c: Ctx): Noeud {
             attendre(c, "]");
             // 0.69b : l'indice passe par __borne (hors du tableau : la machine s'arrête et dit la ligne), quand la
             // poignée se relit sans rien changer (une variable, ou la case d'un tableau : t[i][j]) ; pas dans le prélude
-            si !c.en_prelude && (e.genre == N_VAR || (e.genre == N_LIRE && e.val == 3 && e.b != nul && e.b.genre == N_BIN
+            // 0.69c : « constante __SANS_BORNES = 1; » (l'épissage rapide, après l'épreuve) les retire toutes
+            si !c.en_prelude && constante_de(c, "__SANS_BORNES") == nul && (e.genre == N_VAR
+                    || (e.genre == N_CHAMP && e.a != nul && e.a.genre == N_VAR && !egal(e.nom, "r") && !egal(e.nom, "v")
+                        && !egal(e.nom, "b") && !egal(e.nom, "a")) || (e.genre == N_LIRE && e.val == 3 && e.b != nul && e.b.genre == N_BIN
                                                      && egal(e.b.op, "+") && e.b.a != nul && e.b.a.genre == N_LIRE)) {
                 soit hb = copier(e);
                 hb.suivant = nombre(lb, lb);
@@ -2983,6 +2986,7 @@ fonction instruction(c: Ctx): Noeud {
         s4.premier = bloc(c);
         c.pile.n = c.pile.n - 1;
         si nseg == 0 {
+            s4.premier = epissage_sur(s4.nom, s4.b, s4.premier);
             retour s4;
         }
         // sans optimisation, une boucle en segments est une boucle ordinaire entre deux bornes calculées une fois
@@ -13984,6 +13988,81 @@ fonction resoudre_valeurs(c: Ctx) {
         refaire_valeurs(c, f.corps, loc);
         f = f.suivant;
     }
+}
+
+// 0.69c, l'épissage sûr (vtx128.py epissage_sur) : dans « pour i dans a..longueur(t) », t[i] n'a pas besoin de
+// __borne si rien dans la boucle ne peut rendre i trop grand
+fonction raccourcit(nom) {
+    retour egal(nom, "retirer") || egal(nom, "enlever") || egal(nom, "vider") || egal(nom, "liberer")
+        || egal(nom, "tronquer_tableau") || egal(nom, "compter_si") || egal(nom, "__bn_divpetit")
+        || egal(nom, "__bn_droite") || egal(nom, "__bn_sub");
+}
+
+fonction pour_sur(s: Noeud, i, t) {
+    tantque s != nul {
+        si (s.genre == N_SOIT || s.genre == N_AFFECTER) && (egal(s.nom, i) || egal(s.nom, t)) {
+            retour 0;
+        }
+        si s.genre == N_APPELV {
+            retour 0;
+        }
+        si s.genre == N_APPEL {
+            si raccourcit(s.nom) {
+                retour 0;
+            }
+            si !egal(s.nom, "longueur") && !egal(s.nom, "__borne") {
+                soit a = s.premier;
+                tantque a != nul {
+                    si a.genre == N_CHAMP || (a.genre == N_VAR && !egal(a.nom, i)) {
+                        retour 0;
+                    }
+                    a = a.suivant;
+                }
+            }
+        }
+        si s.genre == N_ECRIRE && !(s.val == 3 && s.a == nul && s.b != nul && s.b.genre == N_BIN && egal(s.b.op, "+")
+                                    && s.b.a != nul && s.b.a.genre == N_LIRE) {
+            retour 0;
+        }
+        si !pour_sur(s.a, i, t) || !pour_sur(s.b, i, t) || !pour_sur(s.c, i, t) || !pour_sur(s.premier, i, t)
+                || !pour_sur(s.deuxieme, i, t) {
+            retour 0;
+        }
+        s = s.suivant;
+    }
+    retour 1;
+}
+
+fonction retirer_bornes(n: Noeud, i, t): Noeud {
+    si n == nul {
+        retour nul;
+    }
+    soit r = n;
+    si n.genre == N_APPEL && egal(n.nom, "__borne") && n.premier != nul && n.premier.genre == N_VAR
+            && egal(n.premier.nom, i) && n.premier.suivant != nul && n.premier.suivant.genre == N_VAR
+            && egal(n.premier.suivant.nom, t) {
+        r = n.premier;
+    } sinon {
+        r.a = retirer_bornes(r.a, i, t);
+        r.b = retirer_bornes(r.b, i, t);
+        r.c = retirer_bornes(r.c, i, t);
+        r.premier = retirer_bornes(r.premier, i, t);
+        r.deuxieme = retirer_bornes(r.deuxieme, i, t);
+    }
+    r.suivant = retirer_bornes(n.suivant, i, t);
+    retour r;
+}
+
+fonction epissage_sur(i, fin: Noeud, corps: Noeud): Noeud {
+    si fin == nul || fin.genre != N_APPEL || !egal(fin.nom, "longueur") || fin.premier == nul
+            || fin.premier.genre != N_VAR || fin.premier.suivant != nul || egal(fin.premier.nom, i) {
+        retour corps;
+    }
+    soit t = fin.premier.nom;
+    si !pour_sur(corps, i, t) {
+        retour corps;
+    }
+    retour retirer_bornes(corps, i, t);
 }
 
 // 0.69b : un nombre sûr (un nombre écrit, un calcul, une variable qui n'en reçoit pas d'autre) ne va pas là où l'on a

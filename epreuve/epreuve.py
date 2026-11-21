@@ -277,6 +277,45 @@ rp = subprocess.run([sys.executable, os.path.join(racine, "vtx128.py"), "run", o
                     env=dict(os.environ, PYTHONIOENCODING="utf-8"))
 verifier("la machine de référence en Python s'arrête au même endroit, avec le même message",
          "ligne 4 : t[7] est hors du tableau (sa longueur : 3" in rp.stdout + rp.stderr, (rp.stdout + rp.stderr)[-300:])
+f = ecrire("champ.vtx", "structure Sac { contenu }\nfonction principal() {\n    soit s = Sac { contenu: [1, 2] };\n"
+                        "    afficher(s.contenu[5]);\n}\n")
+c, s, e = lugus(f)
+verifier("un tableau rangé dans le champ d'une structure : s.contenu[5] arrêté de même", c != 0 and "hors du tableau" in e,
+         s + e)
+d64 = subprocess.run([os.path.join(BIN, "vtx64" + X), os.path.join(d, "hors.vtx")], capture_output=True, text=True,
+                     encoding="utf-8", errors="replace", cwd=d)
+verifier("Dunon, la machine de 64 bits, s'arrête aussi sur t[7]", d64.returncode != 0 and "t[7] est hors du tableau"
+         in d64.stdout + d64.stderr, (d64.stdout + d64.stderr)[-300:])
+
+
+def instructions(*args):
+    c, s, e = lugus(*args, env={"LUGUS_TEMPS": "1"})
+    n = next((l.split()[0] for l in e.split("\n") if "instructions en" in l), "0")
+    return c, s.strip(), int(n), e
+
+
+BOUCLE = ("fonction principal() {{\n    soit t = tableau(1000);\n    pour i dans 0..{b} {{ t[i] = i * 7 % 13; }}\n"
+          "    soit s = 0;\n    pour k dans 0..100 {{\n        pour i dans 0..{b} {{ s = s + t[i]; }}\n    }}\n"
+          "    afficher(s);\n}}\n")
+_, s1, n_verif, _ = instructions(ecrire("boucle1.vtx", BOUCLE.format(b="1000")))
+_, s2, n_sur, _ = instructions(ecrire("boucle2.vtx", BOUCLE.format(b="longueur(t)")))
+verifier(f"l'épissage sûr : la même boucle écrite sur 0..longueur(t) n'a plus besoin de vérifier t[i] : {n_sur} instructions "
+         f"au lieu de {n_verif}", s1 == s2 == "600000" and n_sur * 2 < n_verif, f"{s1} {s2} {n_sur} {n_verif}")
+lugus("ranger", os.path.join(d, "boucle1.vtx"), "boucle1.adn")
+c, s3, n_avant, e = instructions("boucle1.adn", "--rapide")
+verifier("l'épissage rapide sans épreuve : refusé avec sa raison, le programme garde ses vérifications",
+         s3 == "600000" and n_avant == n_verif and "attend l'épreuve" in e, e[-300:])
+c, s4, e4 = lugus("eprouver", "boucle1.adn")
+c, s5, n_rapide, e = instructions("boucle1.adn", "--rapide")
+verifier(f"après « lugus eprouver » (passée, notée dans l'ADN) : l'épissage rapide retire les vérifications : {n_rapide} "
+         f"instructions au lieu de {n_verif}", "épreuve est passée" in e4 and s5 == "600000" and n_rapide * 2 < n_verif,
+         e4[-200:] + e[-200:])
+lugus("ranger", os.path.join(d, "hors.vtx"), "hors.adn")
+c, s6, e6 = lugus("eprouver", "hors.adn")
+c, s7, e7 = lugus("hors.adn", "--rapide")
+verifier("un programme qui sort de son tableau ne passe pas l'épreuve : l'épissage rapide lui reste refusé",
+         "hors du tableau" in e6 and "attend l'épreuve" in e7 and "hors du tableau" in e7, e6[-200:] + e7[-200:])
+
 ok, m, py = refus("texte.vtx", "fonction principal() {\n    soit n = 3;\n    n = n + 1;\n    soit m: texte = n;\n"
                                "    afficher(m);\n}\n", "est un texte")
 verifier("« soit m: texte = n » avec n un entier : refusé par les deux compilateurs (avant, la machine s'emballait)",
@@ -352,13 +391,10 @@ chapitre[0] = None
 titre("VIII. LES BRÈCHES CONNUES : ce que l'épreuve a trouvé et qui reste à fermer (montré, pas compté)",
       "Une épreuve honnête dit aussi où le rempart est bas. Ces lignes ne comptent pas dans le bilan ; elles disent\n"
       "le prochain travail.")
-print("  [..] les deux brèches de la 0.69 sont fermées sur Lugus (chapitre VII) ; Dunon, la machine de 64 bits, ne les a")
-print("       pas encore fermées (t[i] hors des bornes y lit sans rien dire, un nombre y passe pour un texte).")
-f = ecrire("champ.vtx", "structure Sac { contenu }\nfonction principal() {\n    soit s = Sac { contenu: [1, 2] };\n"
-                        "    afficher(s.contenu[5]);\n}\n")
-c, s, e = lugus(f)
-print(f"  [..] un tableau rangé dans le champ d'une structure : s.contenu[5] rend « {s.strip() or e.strip()[:60]} » ; la")
-print("       vérification ne couvre encore que t[i] d'une variable et t[i][j]. À faire : les champs.")
+print("  [..] t[i] est vérifié pour une variable, t[i][j] et s.champ[i] ; une poignée calculée (f()[i]) ne l'est pas")
+print("       encore (la vérifier la calculerait deux fois). Le message nomme toujours t, pas le vrai nom du tableau.")
+print("  [..] l'épreuve vaut pour les entrées données : un programme éprouvé avec d'autres entrées peut encore déborder ;")
+print("       l'épissage rapide est un choix, à faire en connaissance de cause.")
 
 # ================================================================================================= le bilan
 print("\n" + "=" * 100)

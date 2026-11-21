@@ -2485,7 +2485,7 @@ class Analyseur:
                         self.cumul_utilise = True
                     self.nseg_id = getattr(self, "nseg_id", 0) + 1
                     return ("segments", nom, a, b, corps, l, nseg, self.nseg_id, tuple(cumul))
-                return ("pour", nom, a, b, corps, l, pas)
+                return ("pour", nom, a, b, epissage_sur(nom, b, corps), l, pas)
             if v == "arrêter" or v == "continuer":
                 self.fin()
                 if self.ctx and self.ctx[-1][0] == "hyp":
@@ -3148,7 +3148,9 @@ class Analyseur:
                 # 0.69b : l'indice passe par __borne (hors du tableau : la machine s'arrête et dit la ligne), quand la
                 # poignée se relit sans rien changer (une variable, ou la case d'un tableau : t[i][j]) ; pas dans le
                 # prélude (son code est sûr, et le vérifier ralentirait tout)
-                if not self.en_prelude and (e[0] == "var" or (e[0] == "lire" and len(e) == 3 and e[1] == 3
+                # 0.69c : « constante __SANS_BORNES = 1; » (l'épissage rapide, après l'épreuve) les retire toutes
+                if not self.en_prelude and "__SANS_BORNES" not in self.consts and (e[0] == "var" or (
+                        e[0] == "champ_ref" and isinstance(e[1], tuple) and e[1][0] == "var") or (e[0] == "lire" and len(e) == 3 and e[1] == 3
                                                               and e[2][0] == "bin" and e[2][1] == "+"
                                                               and e[2][2][0] == "lire")):
                     i = ("appel", "__borne", [i, e, ("nombre", lb)], lb)
@@ -12056,6 +12058,63 @@ def vers_lugus(fs):
 
 
 OPS_NOMBRE = {"-", "*", "/", "%", "<<", ">>", "&", "|", "^"}
+# 0.69c : les fonctions du prélude qui raccourcissent un tableau qu'on leur passe (vtxc128 a la même liste)
+RACCOURCISSENT = {"retirer", "enlever", "vider", "liberer", "tronquer_tableau", "compter_si", "__bn_divpetit",
+                  "__bn_droite", "__bn_sub"}
+
+
+def epissage_sur(i, fin, corps):
+    """0.69c, l'épissage sûr : dans « pour i dans a..longueur(t) », t[i] n'a pas besoin de __borne si rien dans la boucle
+    ne peut rendre i trop grand : ni i ni t réaffectés, aucune fonction qui raccourcit un tableau, aucun appel (sauf
+    longueur) qui reçoit une variable nue autre que i ou un champ (ce pourrait être t), aucun appel par valeur, aucune
+    écriture directe à l'étage 3 hors d'une case de tableau. Rend le corps, les __borne(i, t, …) retirés."""
+    if not (isinstance(fin, tuple) and fin[0] == "appel" and fin[1] == "longueur" and len(fin[2]) == 1
+            and fin[2][0][0] == "var"):
+        return corps
+    t = fin[2][0][1]
+    if t == i:
+        return corps
+    sur = [True]
+
+    def voir(x):
+        if not sur[0] or not isinstance(x, (list, tuple)):
+            return
+        if isinstance(x, list):
+            for y in x:
+                voir(y)
+            return
+        if not x:
+            return
+        g = x[0]
+        if g in ("soit", "affecter") and x[1] in (i, t):
+            sur[0] = False
+        elif g == "appelv":
+            sur[0] = False
+        elif g == "appel" and x[1] in RACCOURCISSENT:
+            sur[0] = False
+        elif g == "appel" and x[1] not in ("longueur", "__borne") \
+                and any(isinstance(a, tuple) and a and (a[0] in ("champ_ref", "champ") or (a[0] == "var" and a[1] != i))
+                        for a in x[2]):
+            sur[0] = False
+        elif g == "ecrire" and not (x[1] == 3 and isinstance(x[2], tuple) and x[2][0] == "bin" and x[2][1] == "+"
+                                    and isinstance(x[2][2], tuple) and x[2][2][0] == "lire"):
+            sur[0] = False
+        for y in x[1:]:
+            voir(y)
+    voir(corps)
+    if not sur[0]:
+        return corps
+
+    def retirer(x):
+        if isinstance(x, list):
+            return [retirer(y) for y in x]
+        if not isinstance(x, tuple) or not x:
+            return x
+        if (x[0] == "appel" and x[1] == "__borne" and len(x[2]) == 3 and x[2][0][:2] == ("var", i)
+                and x[2][1][:2] == ("var", t)):
+            return x[2][0]
+        return tuple(retirer(y) if isinstance(y, (list, tuple)) else y for y in x)
+    return retirer(corps)
 
 
 def nombre_pour_texte(f, liste, env, ptexte):
