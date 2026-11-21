@@ -414,7 +414,8 @@ compilateur sans Python.
 - **L'ADN fiable** : trois témoins, la triangulation, version 4 aux neutrons quaternaires ; zéro erreur muette dans tous
   les essais. **L'ADN vivant** : les introns signalés (GU…AG), les isotopes lourds, le texte gardé et la
   rétrotranscription, l'épigénome (ce qui est appris, gardé : 995 389 instructions, puis 5 181), l'épissage alternatif
-  (les isoformes rapide, sur, memoire, complet, arnc), la patrouille et l'apoptose (éteintes par défaut : trois couches,
+  (les isoformes rapide, sur, memoire, complet, arnc ; 0.66 : seul l'ARNc s'écrit, les autres sont des façons de le
+  lancer), la patrouille et l'apoptose (éteintes par défaut : trois couches,
   pas vingt).
 - **Le codon et le gène** : trois lectures lues ensemble, 20 situations sans ordre, 40 avec ordre ; la contradiction
   gardée en suspens avec un délai ; le gène, une chaîne de codons qui situe la famille qui se contredit (le compte de tous
@@ -626,8 +627,9 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
    Taranis, Gobatix. **Direction pour après** : la mémoire du cube doit servir à l'IA, pour éviter la coupure entre deux
    conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
 4. Dunon : les fonctions passées en valeur et leur type (fait, 0.65) ; `multiplier_ajouter` exact, un seul arrondi (fait,
-   0.65). **Simplifier** : un glossaire d'une ligne par mot dans les messages ; mesurer quelles isoformes servent ; l'ARNc pour
-   le travail, l'ADN pour le gardé, et moins de formats de fichiers.
+   0.65). **Simplifier** (fait en partie, 0.66) : trois formes seulement, l'ADN pour le gardé, l'ARNc pour le travail, le cube
+   pour la mémoire ; les isoformes épissées deviennent des façons de lancer l'ARNc ; reste un glossaire d'une ligne
+   par mot dans les messages.
 5. **Les faces dans le cube** (fait, 0.64) : à la même fréquence, le code à l'étage Đ (le tau gallicum, l'étage 0), les
    trois axes du dé aux étages 1, 2, 3, chaque molécule à la place de son début ; `face(f, k)` et `centre(f)` lus
    pendant qu'il tourne (le registre tridimensionnel). La hiérarchie du créateur : le cube mère, le cube hex, la
@@ -675,8 +677,8 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 - **molécule** : une fonction ou une réaction compilée ; **atome** : une ligne d'une réaction ; **liaison** : une donnée
   qui va d'un atome à un autre ; **vague** : les atomes qui réagissent ensemble.
 - **ADN** : le programme rangé pour durer (ses mots, ses témoins, son texte, sa carte). **ARN, ARNc** : une copie de
-  travail ; l'ARNc porte tout et se rétrotranscrit en ADN entier. **isoforme** : une sorte d'ARN (rapide, sur, memoire,
-  complet, arnc). **intron** : une section que le lecteur garde sans la comprendre. **coiffe** : la signature des mots
+  travail ; l'ARNc porte tout et se rétrotranscrit en ADN entier. **isoforme** : une façon de lancer l'ARNc (0.66 : rapide, sous
+  veille ; les anciens fichiers rapide, sur, memoire, complet se lisent toujours). **intron** : une section que le lecteur garde sans la comprendre. **coiffe** : la signature des mots
   d'un ARN, vérifiée avant de le lancer.
 - **signature, ombre, neutrons** : les trois témoins de l'ADN ; **triangulation** : une réparation gardée seulement si
   deux témoins l'appuient.

@@ -150,9 +150,11 @@ verifier("lugus carte PROG.vtx : la carte, sans rien écrire à côté du progra
          and sorted(os.listdir(os.path.join(d, "ex"))) == avant, r.stderr[-500:])
 
 # 3. ce que dit un brin sans carte : ses mots seuls (Belnap : les noms et les promesses inconnus)
-lugus("transcrire", os.path.join("ex", "faces.adn"), "rapide.arn", "--isoforme", "rapide")
+# (0.66 : un ARN rapide ne s'écrit plus ; un ancien, de la 0.65, se lit toujours)
+_m, _ml, _t = adn.lire_adn(os.path.join(d, "ex", "faces.adn"))
+adn.ecrire_arn_ancien(os.path.join(d, "rapide.arn"), _m, _ml, _t, "rapide")
 r = lugus("carte", "rapide.arn")
-verifier("un ARN rapide : ce qu'il touche et ses racines viennent des mots ; ses noms et ses promesses sont inconnus",
+verifier("un ancien ARN rapide : ce qu'il touche et ses racines viennent des mots ; ses noms et ses promesses sont inconnus",
          r.returncode == 0 and "ce brin n'a pas de carte rangée" in r.stderr and "son nom est inconnu" in r.stderr
          and "ses promesses     : inconnues" in r.stderr, r.stderr[:600])
 

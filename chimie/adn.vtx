@@ -1891,7 +1891,7 @@ fonction ecrire_arn(chemin, isoforme) {
     si !sur && !memoire && !texte_egal(isoforme, "rapide") {
         ecrire_t(1, "isoforme inconnue « ");
         ecrire_t(1, isoforme);
-        ecrire_t(1, " » (rapide, sur, memoire, complet, arnc)\n");
+        ecrire_t(1, " » (un ARN est l'ARNc)\n");
         @2[G + G_ERR] = 1;
         retour;
     }
@@ -1988,9 +1988,18 @@ fonction transcrire(adn, sortie, isoforme) {
         ecrire_t(1, "l'ADN réparé est réécrit\n");
     }
     si isoforme != 0 || finit_par_texte(sortie, ".arn") {
+        // 0.66 : un ARN est l'ARNc (il porte tout) ; les isoformes épissées ne s'écrivent plus : ce sont des façons de
+        // le lancer (rapide, sous veille), et les anciens fichiers se lisent toujours
         soit iso = isoforme;
-        si iso == 0 {
-            iso = "rapide";
+        si iso == 0 || longueur(iso) == 0 {
+            iso = "arnc";
+        }
+        si texte_egal(iso, "rapide") || texte_egal(iso, "sur") || texte_egal(iso, "memoire") || texte_egal(iso, "complet") {
+            ecrire_t(1, "l'isoforme « ");
+            ecrire_t(1, iso);
+            ecrire_t(1, " » ne s'écrit plus (0.66) : l'ARN est l'ARNc, il porte tout ; lancez-le rapide (lugus PROG.arn --rapide) ou sous veille (--veille), ses souvenirs sont repris s'il en a\n");
+            @2[G + G_ERR] = 1;
+            retour E_INCONNU;
         }
         ecrire_arn(sortie, iso);
         si @2[G + G_ERR] == 0 {

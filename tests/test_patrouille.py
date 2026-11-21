@@ -27,12 +27,12 @@ def verifier(nom, ok, detail=""):
         echecs.append(nom)
 
 
-def lancer(chemin, avarie=None, **env):
+def lancer(chemin, avarie=None, *args, **env):
     e = dict(os.environ, **env)
     e.pop("LUGUS_AVARIE", None)
     if avarie:
         e["LUGUS_AVARIE"] = avarie
-    r = subprocess.run([lugus, chemin], capture_output=True, text=True, encoding="utf-8", env=e)
+    r = subprocess.run([lugus, chemin, *args], capture_output=True, text=True, encoding="utf-8", env=e)
     return r.returncode, r.stdout.strip(), r.stderr
 
 
@@ -62,8 +62,9 @@ mots, mols, t = adn.lire_adn(f_adn)
 lourde = next(m for m in mols if m.isotope)
 froide = next(m for m in mols if m.debut == lourde.fin)          # la molécule qui suit (bilan, appelée à la fin)
 JUSTE = "359.833333333333333333333333333401"
-f_rapide = os.path.join(d, "pat.arn")
-subprocess.run([lugus, "transcrire", f_adn, f_rapide, "--isoforme", "rapide"], capture_output=True, text=True, encoding="utf-8")
+# 0.66 : l'ARN est l'ARNc ; lancé --rapide, les mots seuls (ni témoins, ni patrouille), ce que faisait l'ARN rapide
+f_rapide = os.path.join(d, "pat-c.arn")
+subprocess.run([lugus, "transcrire", f_adn, f_rapide], capture_output=True, text=True, encoding="utf-8")
 
 # 1. sans avarie : la patrouille ne change rien (ni le résultat, ni le nombre d'instructions)
 c0, s0, e0 = lancer(f_adn, LUGUS_TEMPS="1")
@@ -80,7 +81,7 @@ def faussent(f_prog, places, bits, pas, n=3):
     for place in places:
         for bit in bits:
             av = f"{pas}:{place}:{bit}"
-            if lancer(f_prog, av)[1] != JUSTE:
+            if lancer(f_prog, av, "--rapide")[1] != JUSTE:
                 out.append(av)
                 break
         if len(out) >= n:
@@ -127,10 +128,11 @@ verifier("neuf mots voisins abîmés (au-delà de l'ombre) : l'apoptose, aucun r
 
 # 6. l'ARN sûr (les témoins gardés) : la patrouille veille aussi
 f_sur = os.path.join(d, "pat.arn")
-subprocess.run([lugus, "transcrire", f_adn, f_sur, "--isoforme", "sur"], capture_output=True, text=True,
+subprocess.run([lugus, "transcrire", f_adn, f_sur], capture_output=True, text=True,
                encoding="utf-8")
 c, s, e = lancer(f_sur, av_froide)
-verifier("l'ARN sûr : la patrouille répare comme depuis l'ADN", c == 0 and s == JUSTE and "réparé" in e, s + " / " + e)
+verifier("l'ARNc (les témoins gardés) : la patrouille répare comme depuis l'ADN", c == 0 and s == JUSTE and "réparé" in e,
+         s + " / " + e)
 
 # 7. un ARN ancien qui porte encore une queue (la section est sautée) : il est lancé comme les autres
 texte = open(f_sur, encoding="utf-8").read()
@@ -156,14 +158,12 @@ f_alt = os.path.join(d, "alternance.adn")
 subprocess.run([lugus, "ranger", os.path.join(racine, "exemples128", "alternance.vtx"), f_alt], capture_output=True)
 subprocess.run([lugus, "apprendre", f_alt], capture_output=True)
 f_mem = os.path.join(d, "alternance.arn")
-subprocess.run([lugus, "transcrire", f_alt, f_mem, "--isoforme", "memoire"], capture_output=True)
+subprocess.run([lugus, "transcrire", f_alt, f_mem], capture_output=True)
 c, s, e = lancer(f_mem, LUGUS_TEMPS="1")
-f_rap2 = os.path.join(d, "alt-rapide.arn")
-subprocess.run([lugus, "transcrire", f_alt, f_rap2], capture_output=True)
-c2, s2, e2 = lancer(f_rap2, LUGUS_TEMPS="1")
+c2, s2, e2 = lancer(f_mem, None, "--rapide", LUGUS_TEMPS="1")
 n_mem = int(next((l.split()[0] for l in e.splitlines() if "instructions en" in l), "0"))
 n_rap = int(next((l.split()[0] for l in e2.splitlines() if "instructions en" in l), "0"))
-verifier(f"l'ARN mémoire reprend l'épigénome : {n_rap} -> {n_mem} instructions, le même résultat",
+verifier(f"l'ARNc reprend l'épigénome ; lancé --rapide, il ne le reprend pas : {n_rap} -> {n_mem} instructions, le même résultat",
          s == s2 == "2640024" and 0 < n_mem * 20 < n_rap and "souvenirs repris" in e, f"{s} {s2} {e}")
 
 # 10. sans isotope lourd, la patrouille est éteinte par défaut : --veille (ou LUGUS_PATROUILLE=1) l'arme

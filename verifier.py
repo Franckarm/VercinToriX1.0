@@ -117,7 +117,7 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_bords64.py")]))
     etapes.append(("Dunon fait le travail de Lugus : logique[], tableaux de textes, conseil.vtx et combat.vtx à l'identique",
                    [sys.executable, os.path.join("tests", "test_logiques64.py")]))
-    etapes.append(("le chemin de l'ADN en vtx : ranger, transcrire, l'ARN et ses isoformes, l'intron du compilateur",
+    etapes.append(("le chemin de l'ADN en vtx : ranger, transcrire, l'ARNc et les anciennes isoformes, l'intron du compilateur",
                    [sys.executable, os.path.join("tests", "test_adn_chemin.py")]))
     etapes.append(("le chemin dans les deux sens : ARN → ADN (l'ADNc), ADN → hex → cube et retour, en vtx",
                    [sys.executable, os.path.join("tests", "test_adn_deux_sens.py")]))

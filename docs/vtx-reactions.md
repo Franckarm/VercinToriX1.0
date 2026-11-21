@@ -3296,3 +3296,30 @@ flottants : Lugus 128, 64 et 32 bits, Dunon 64 et 32 bits.
   multiplication et une addition. C'est le prix de l'exactitude sans instruction de la machine ; une instruction FMA
   dans Lugus et Dunon (le processeur la fait en un cycle) le rendrait gratuit, et `multiplier_ajouter` l'emploierait
   sans changer de sens.
+
+## 72. Simplifier : l'ADN, l'ARNc, le cube (21 novembre, 0.66)
+
+**Décidé par le créateur le 21** : trois formes seulement. Un programme pouvait vivre en neuf : le texte, les mots, le
+hex, le cube, l'ADN, et cinq ARN (rapide, sûr, mémoire, complet, l'ARNc). Il en reste trois qui comptent, et le
+chemin du créateur les tient : **ARNc → ADN → hex → cube → hex → ADN → ARN**, où l'ARN du bout du chemin est l'ARNc
+lui-même.
+
+- **L'ADN** est ce qui dure, **l'ARNc** le travail (il porte tout : la coiffe, les mots, les trois témoins, le texte,
+  la carte, les souvenirs, et se rétrotranscrit en ADN entier), **le cube** la mémoire (le code à l'étage Đ, les faces
+  aux étages 1 à 3, sous le cube mère). Les mots et le hex restent des vues d'outil : ce que la machine joue, ce que
+  l'homme lit.
+- **`lugus transcrire PROG.adn PROG.arn`** écrit l'ARNc. Les isoformes épissées ne s'écrivent plus (`--isoforme rapide`,
+  `sur`, `memoire`, `complet` : refusé, et dit pourquoi) ; ce sont des **façons de lancer l'ARNc** : `lugus PROG.arn`
+  avec ses témoins et ses souvenirs (la patrouille veille sur les isotopes lourds, ou partout avec `--veille`), ou
+  `lugus PROG.arn --rapide` : les mots seuls, ni témoins, ni patrouille, ni souvenirs, ce que faisait l'ARN rapide.
+- **Les anciens ARN se lisent toujours** : un ARN rapide, sûr, mémoire ou complet de la 0.65 se lance, se
+  rétrotranscrit et montre sa carte comme avant (`chimie/adn.py` garde leur écrivain, `ecrire_arn_ancien`, pour le
+  vérifier).
+- **Vérifié** : `tests/test_adn_chemin.py` (l'ARNc écrit en vtx, lancé et lancé rapide ; les quatre isoformes refusées,
+  rien n'est écrit ; un ancien ARN de chacune se lance ; l'épigénome dans l'ARNc), `tests/test_adn_deux_sens.py` (le
+  tour entier dans l'ordre du créateur, l'ADNc de l'ARNc et des quatre anciens ARN, octet pour octet de la référence),
+  `tests/test_patrouille.py` (l'ARNc lancé rapide est l'ancien ARN rapide : sans témoins, une avarie fausse le résultat ;
+  lancé tel quel, la patrouille répare ; ses souvenirs repris, et pas en rapide), `tests/test_carte_arn.py` (la carte
+  d'un ancien ARN rapide).
+- **Ce qui reste de « simplifier »** : un glossaire d'une ligne par mot dans les messages (que « molécule », « brin »,
+  « coiffe » s'expliquent là où ils paraissent).

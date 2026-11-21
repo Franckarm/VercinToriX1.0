@@ -9,9 +9,10 @@
 //   lugus PROG.adn [ENTRÉES…] [--veille]   vérifie et répare l'ADN ; l'épissage retire les témoins : l'ARN (les mots
 //                                   seuls) est lancé ; la patrouille veille avec --veille, ou si le programme a des isotopes
 //                                   lourds (LUGUS_PATROUILLE=0 l'éteint, =1 l'arme)
-//   lugus transcrire PROG.adn PROG.arn [--isoforme rapide|sur|memoire|complet]   l'épissage alternatif : un ARN avec sa
-//                                   coiffe ; sur garde les témoins (la patrouille), memoire l'épigénome
-//   lugus PROG.arn [ENTRÉES…] [--veille]   vérifie la coiffe, lance
+//   lugus transcrire PROG.adn PROG.arn   l'ARN : l'ARNc (0.66 : il porte tout ; les isoformes épissées ne s'écrivent
+//                                   plus, les anciens ARN se lisent toujours)
+//   lugus PROG.arn [ENTRÉES…] [--veille | --rapide]   vérifie la coiffe, lance ; --rapide : les mots seuls (ni témoins,
+//                                   ni patrouille, ni souvenirs), ce que faisait l'ARN rapide
 //   lugus relire PROG.adn [RELU.adn]      la même lecture, faite par le lecteur d'ADN écrit en vtx (chimie/adn.vtx,
 //                                   embarqué) : le compte rendu, puis l'ADN relu (réparé) s'il est demandé
 //   lugus apprendre PROG.adn [ENTRÉES…]   lance, puis garde les souvenirs dans l'ADN (l'épigénome) : relancé, il les reprend
@@ -681,15 +682,21 @@ fn main() {
             std::process::exit(1)
         });
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
-        let epi = arn.epigenome.clone().map(|e| adn::Temoins { signatures: vec![], ombres: vec![], neutrons: Default::default(),
-                                                                  introns: vec![("epigenome".into(), e)], version: 4 });
-        jouer_avec(&arn.mots, &args[2..], dossier, epi.as_ref(), arn.temoins.take());
+        // 0.66 : --rapide lance les mots seuls (ni témoins, ni patrouille, ni souvenirs) : ce que faisait l'ARN rapide
+        if args[2..].iter().any(|a| a == "--rapide") {
+            let entrees: Vec<String> = args[2..].iter().filter(|a| *a != "--rapide").cloned().collect();
+            jouer_avec(&arn.mots, &entrees, dossier, None, None);
+        } else {
+            let epi = arn.epigenome.clone().map(|e| adn::Temoins { signatures: vec![], ombres: vec![], neutrons: Default::default(),
+                                                                      introns: vec![("epigenome".into(), e)], version: 4 });
+            jouer_avec(&arn.mots, &args[2..], dossier, epi.as_ref(), arn.temoins.take());
+        }
     } else if args.len() >= 2 && args[1].ends_with(".vtx") {
         let mots = compiler_ou_sortir(&nombres128(VTXC128), &args[1], COMPLET128);
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]1-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        eprintln!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] [--veille|--rapide] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots|PROG.arn] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]Đ-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
         std::process::exit(2);
     }
 }

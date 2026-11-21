@@ -2,7 +2,7 @@
 """Le chemin dans les deux sens (0.6n bis) : Cube → Hex → ADN → ARN, et retour, ARN → ADN (la rétrotranscription :
 l'ADNc), ADN → Hex → Cube ; chaque station rend les mêmes mots, et tout est fait par le lecteur d'ADN écrit en vtx
 (chimie/adn.vtx, embarqué dans lugus). Vérifié contre la référence chimie/adn.py, octet pour octet : le hex, l'ADN rangé
-depuis un hex ou un cube, l'ADNc de chaque isoforme ; un hex et un cube se lancent ; les avaries : un hex retouché (pris
+depuis un hex ou un cube, l'ADNc de l'ARNc et des anciens ARN épissés (0.66 : ils ne s'écrivent plus, ils se lisent toujours) ; un hex et un cube se lancent ; les avaries : un hex retouché (pris
 tel qu'il est, et dit), des places qui ne se suivent pas (refusé), un cube abîmé ou effacé (réparé par son anti-cube et
 son ombre), un ARN sûr abîmé ou à la coiffe abîmée (réparé par ses témoins), un ARN rapide abîmé (variable : rien
 n'est écrit)."""
@@ -106,10 +106,14 @@ for p in progs:
     verifier(f"{p} : le hex et le cube se lancent, la sortie du programme",
              rh.stdout == lance and rc.stdout == lance and lance != "", repr((rh.stdout, rc.stdout, lance, rh.stderr)))
 
-    # ADN → ARN → ADNc, chaque isoforme
-    for iso in ("rapide", "sur", "memoire", "complet"):
+    # ADN → ARN → ADNc : l'ARNc (0.66 : l'ARN porte tout), et les anciens ARN épissés de la 0.65, qui se lisent toujours
+    for iso in ("arnc", "rapide", "sur", "memoire", "complet"):
         a = f"{p}_{iso}.arn"
-        lugus("transcrire", p + ".adn", a, "--isoforme", iso)
+        if iso == "arnc":
+            lugus("transcrire", p + ".adn", a)
+        else:
+            mts, mls, tt = adn.lire_adn(os.path.join(d, p + ".adn"))
+            adn.ecrire_arn_ancien(os.path.join(d, a), mts, mls, tt, iso)
         r = lugus("retrotranscrire", a, f"{p}_{iso}_c.adn")
         e, mots, mols, t = adn.adnc(os.path.join(d, a))
         adn.ecrire_adn(os.path.join(d, f"{p}_{iso}_cr.adn"), mots, mols, t)
@@ -148,7 +152,7 @@ T = lambda x: os.path.join("tour", x)
 etapes = [("arnc", T("chute.vtx"), T("t1.arn")), ("retrotranscrire", T("t1.arn"), T("t2.adn")),
           ("hex", T("t2.adn"), T("t3.hex")), ("cube", T("t3.hex"), "330"),
           ("hex", T("cube128-t3-Đ-330.cub"), T("t5.hex")), ("ranger", T("t5.hex"), T("t6.adn")),
-          ("transcrire", T("t6.adn"), T("t7.arn"), "--isoforme", "rapide")]
+          ("transcrire", T("t6.adn"), T("t7.arn"))]
 ok = True
 for e in etapes:
     r = lugus(*e)
@@ -229,7 +233,7 @@ os.makedirs(os.path.join(d, "ex"), exist_ok=True)
 shutil.copy(os.path.join(racine, "exemples128", "codon.vtx"), os.path.join(d, "ex"))
 shutil.copytree(os.path.join(racine, "bibliotheque"), os.path.join(d, "bibliotheque"))
 lugus("ranger", os.path.join("ex", "codon.vtx"))
-r = lugus("transcrire", os.path.join("ex", "codon.adn"), os.path.join("ex", "codon.arn"), "--isoforme", "sur")
+r = lugus("transcrire", os.path.join("ex", "codon.adn"), os.path.join("ex", "codon.arn"))
 verifier("le texte gardé d'un long programme qui importe une bibliothèque, vérifié en vtx : vrai",
          "le texte : vrai" in r.stderr, r.stderr)
 

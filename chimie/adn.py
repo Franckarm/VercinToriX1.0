@@ -1323,3 +1323,21 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def ecrire_arn_ancien(chemin, mots, mols, t, iso):
+    """0.66 : un ARN épissé de la 0.65 (rapide, sur, memoire, complet), écrit comme Lugus l'écrivait : les isoformes ne
+    s'écrivent plus (l'ARN est l'ARNc), mais les anciens fichiers se lisent toujours ; ce greffon sert à le vérifier"""
+    s = ["VTXARN02" if t.get("version", 4) >= 4 else "VTXARN01", "GU coiffe 1", f"{signature(mots)}|{iso}", "AG",
+         "GU mots 1", ",".join(map(str, mots)), "AG"]
+    if iso in ("sur", "complet"):
+        lm = [f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{sg}|{int(m.isotope)}" for m, sg in zip(mols, t["signatures"])]
+        s += ["GU molecules %d" % len(lm)] + lm + ["AG"]
+        s += ["GU ombres %d" % len(t["ombres"])] + [",".join(map(str, o)) for o in t["ombres"]] + ["AG"]
+        s += ["GU neutrons 1", ",".join(f"{i}:{v}" for i, v in sorted(t["neutrons"].items())), "AG"]
+    if iso in ("memoire", "complet"):
+        e = intron(t, "epigenome")
+        if e is not None:
+            s += ["GU epigenome %d" % len(e)] + list(e) + ["AG"]
+    with open(chemin, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(s) + "\n")

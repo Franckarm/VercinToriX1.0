@@ -41,8 +41,8 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
   - **l'ADN vivant** : il garde aussi le texte (recompilé, il doit redonner les mots), les isotopes lourds
     (`-> a lourd`) et l'épigénome (`lugus apprendre` : les souvenirs appris, repris au lancement suivant) ; sur demande
     (`--veille`) ou pour les isotopes lourds, la patrouille relit le code pendant l'exécution et le répare ; un isotope
-    lourd abîmé pendant qu'il sert arrête la machine (l'apoptose) ; `lugus transcrire PROG.adn PROG.arn --isoforme
-    rapide|sur|memoire` tire plusieurs ARN d'un même ADN, avec une coiffe vérifiée ; `lugus relire PROG.adn` fait la
+    lourd abîmé pendant qu'il sert arrête la machine (l'apoptose) ; `lugus transcrire PROG.adn PROG.arn` tire de
+    l'ADN son ARN, l'ARNc, qui porte tout, avec une coiffe vérifiée (0.66 : il se lance aussi rapide, `--rapide`) ; `lugus relire PROG.adn` fait la
     même lecture avec le lecteur écrit en vtx (`chimie/adn.vtx`), forgeable en exécutable (docs/vtx-reactions.md,
     section 9).
   - **dans les deux sens** (0.6n bis) : `lugus retrotranscrire PROG.arn` refait l'ADN d'un ARN (l'ADNc, réparé par ses
@@ -83,7 +83,7 @@ lugus pourquoi exemples128/panel.vtx r2             # d'où vient ce 42
 lugus ranger exemples128/chute.vtx                  # l'ADN : chute.adn
 lugus exemples128/chute.adn                         # vérifié, réparé si besoin, lancé sous la patrouille
 lugus apprendre exemples128/alternance.adn          # (après lugus ranger) ses souvenirs gardés dans l'ADN
-lugus transcrire exemples128/chute.adn chute.arn --isoforme sur   # un ARN qui garde ses témoins
+lugus transcrire exemples128/chute.adn chute.arn   # l'ARNc : il garde ses témoins, son texte, ses souvenirs
 lugus carte exemples128/chute.vtx                   # la carte : ce qu'est chaque fonction, ce qu'elle touche, ses racines, ses promesses
 lugus exemples128/supposons.vtx                    # supposons x parmi [ … ] { ecarter; noter n; } retenir r; : essayer, garder le meilleur
 lugus exemples128/valeurs.vtx                     # les fonctions passées en valeur : pour_chacun(t, carre), plier(t, plus, 0)

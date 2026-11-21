@@ -91,42 +91,40 @@ for nom in ("chute.vtx", "bonjour128.vtx"):
              and octets(base + "_a.mots") == octets(base + "_b.mots") and "le texte : vrai" in r.stderr,
              r.stderr[-400:])
 
-# 3. l'ARN et ses quatre isoformes : écrit en vtx, sa coiffe reconnue par Lugus, lancé il donne la sortie du programme
+# 3. l'ARN (0.66 : l'ARNc, il porte tout) : écrit en vtx, sa coiffe reconnue par Lugus, lancé il donne la sortie du
+#    programme, aussi en rapide (les mots seuls) ; les isoformes épissées ne s'écrivent plus, mais leurs anciens fichiers
+#    se lisent toujours
 base = progs["chute.vtx"][:-4]
 attendu = lugus(progs["chute.vtx"]).stdout
 mots, mols, t = adn.lire_adn(base + "_py.adn")
-
-
-def arn_attendu(iso):
-    s = ["VTXARN02", "GU coiffe 1", f"{adn.signature(mots)}|{iso}", "AG", "GU mots 1", ",".join(map(str, mots)), "AG"]
-    if iso in ("sur", "complet"):
-        lm = [f"m{m.debut}|{m.debut}|{m.fin}|{int(m.frontiere)}|{sg}|{int(m.isotope)}" for m, sg in zip(mols, t["signatures"])]
-        s += ["GU molecules %d" % len(lm)] + lm + ["AG"]
-        s += ["GU ombres %d" % len(t["ombres"])] + [",".join(map(str, o)) for o in t["ombres"]] + ["AG"]
-        s += ["GU neutrons 1", ",".join(f"{i}:{v}" for i, v in sorted(t["neutrons"].items())), "AG"]
-    return "\n".join(s) + "\n"
-
-
+f_arn = base + ".arn"
+r = lugus("transcrire", base + "_py.adn", f_arn)
+ecrit = open(f_arn, encoding="utf-8").read() if os.path.exists(f_arn) else ""
+joue = lugus(f_arn).stdout
+rapide = lugus(f_arn, "--rapide").stdout
+verifier("l'ARN écrit en vtx est l'ARNc (sa coiffe le dit) ; lancé, et lancé rapide, il donne la sortie du programme",
+         ecrit.startswith("VTXARN02\nGU coiffe 1\n") and "|arnc\n" in ecrit and joue == attendu and rapide == attendu,
+         r.stderr[-300:] + joue[-200:])
 for iso in ("rapide", "sur", "memoire", "complet"):
-    f_arn = base + f"_{iso}.arn"
-    r = lugus("transcrire", base + "_py.adn", f_arn, "--isoforme", iso)
-    ecrit = open(f_arn, encoding="utf-8").read() if os.path.exists(f_arn) else ""
-    joue = lugus(f_arn).stdout
-    verifier(f"l'ARN « {iso} » écrit en vtx : le format de Lugus, sa coiffe reconnue, lancé il donne la sortie du "
-             f"programme", ecrit == arn_attendu(iso) and joue == attendu, r.stderr[-300:] + joue[-200:])
+    x = base + f"_{iso}.arn"
+    r = lugus("transcrire", base + "_py.adn", x, "--isoforme", iso)
+    adn.ecrire_arn_ancien(base + f"_{iso}_ancien.arn", mots, mols, t, iso)
+    joue = lugus(base + f"_{iso}_ancien.arn").stdout
+    verifier(f"l'isoforme « {iso} » ne s'écrit plus (dit, rien n'est écrit) ; un ancien ARN « {iso} » se lance encore",
+             "ne s'écrit plus" in r.stderr + r.stdout and not os.path.exists(x) and joue == attendu, r.stderr[-300:] + joue[-200:])
 r = lugus("transcrire", base + "_py.adn", base + "_x.arn", "--isoforme", "rien")
 verifier("une isoforme inconnue est refusée", "isoforme inconnue" in r.stderr + r.stdout and not os.path.exists(base + "_x.arn"))
 
-# 4. l'épigénome : appris par Lugus, gardé dans l'ARN « memoire » écrit en vtx, et l'ARN lancé reprend ses souvenirs
+# 4. l'épigénome : appris par Lugus, gardé dans l'ARNc écrit en vtx, et l'ARN lancé reprend ses souvenirs
 alt = os.path.join(d, "alternance.vtx")
 shutil.copy(os.path.join(racine, "exemples128", "alternance.vtx"), alt)
 lugus("ranger", alt)
 lugus("apprendre", os.path.join(d, "alternance.adn"))
-r = lugus("transcrire", os.path.join(d, "alternance.adn"), os.path.join(d, "alternance.arn"), "--isoforme", "memoire")
+r = lugus("transcrire", os.path.join(d, "alternance.adn"), os.path.join(d, "alternance.arn"))
 t_arn = open(os.path.join(d, "alternance.arn"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "alternance.arn")) else ""
 _, _, t_alt = adn.lire_adn(os.path.join(d, "alternance.adn"))
 epi = adn.intron(t_alt, "epigenome")
-verifier("l'épigénome (les souvenirs appris) est recopié dans l'ARN « memoire » écrit en vtx, ligne pour ligne",
+verifier("l'épigénome (les souvenirs appris) est recopié dans l'ARNc écrit en vtx, ligne pour ligne",
          epi is not None and ("GU epigenome %d\n" % len(epi) + "\n".join(epi) + "\nAG\n") in t_arn, r.stderr[-300:])
 
 # 5. la rétrotranscription et l'intron « compilateur »
