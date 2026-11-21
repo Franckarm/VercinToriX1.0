@@ -3217,6 +3217,12 @@ hex, la molécule, l'atome.
   coiffe en #FFFFFE, la queue en #FFFFFF. Une page du fichier dit son étage (bits 8 et 9 de son numéro) ; l'anti-cube
   garde ces bits (le miroir de Lugus et de Dunon, en Rust et en Python). Le service 29 relit un cube mère sur ses quatre
   étages, à une fréquence libre dans chacun. Un cube mère d'avant (sans la marque) est refait au prochain rangement.
+  **Laissé ouvert pour des processeurs plus larges** (la demande du créateur) : la largeur d'un point est écrite dans
+  l'en-tête du fichier (« VTXCUB64 », « VTXCU128 » ; un SPU-256, *Albios*, aurait le sien), et le format du cube mère
+  porte sa marque (« VTXMERE2 », qui peut devenir « VTXMERE3 »). La règle pour aller plus haut : les 64 bits du
+  descripteur restent au bas du point, tels quels ; une machine plus large ajoute ses champs au-dessus, sans rien
+  déplacer. Un cube écrit aujourd'hui se lira donc demain sur une machine plus large, et celle-ci saura qu'elle lit un
+  cube plus étroit par son en-tête.
 - **Les anciens cubes** : un cube de la 0.63 (le programme à l'étage 1) se lance encore par son cube mère ; un cube des
   faces lancé seul est refusé, et dit pourquoi.
 - **Vérifié** (`tests/test_faces_cube.py`, 13 contrôles) : les six faces lues pendant qu'il tourne, celles de la carte
