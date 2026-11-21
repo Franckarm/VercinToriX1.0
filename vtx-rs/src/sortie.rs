@@ -285,6 +285,9 @@ mod fen {
         place: (i32, i32, i32, i32),
     }
     static IMAGE: Mutex<Image> = Mutex::new(Image { px: Vec::new(), l: 0, h: 0, ferme: false, place: (0, 0, 0, 0) });
+    /// 0.68 : la fenêtre du dernier programme : un programme relancé (F5 de l'atelier) ferme la précédente avant d'ouvrir
+    /// la sienne
+    static DERNIERE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
     static BOUTONS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
     fn w(s: &str) -> Vec<u16> {
@@ -375,6 +378,22 @@ mod fen {
         }
         /// Crée la fenêtre (et son fil) à la première image : sa taille suit celle de l'image, agrandie jusqu'à 4 fois.
         fn ouvrir(&mut self, l: usize, h: usize) {
+            // 0.68 : la fenêtre d'avant (un programme lancé avant celui-ci) est fermée, puis l'image repart à neuf
+            let avant = DERNIERE.swap(0, std::sync::atomic::Ordering::Relaxed);
+            if avant != 0 {
+                unsafe { PostMessageW(avant as H, WM_CLOSE, 0, 0) };
+                let debut = Instant::now();
+                while !IMAGE.lock().unwrap().ferme && debut.elapsed() < Duration::from_secs(2) {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+            }
+            {
+                let mut im = IMAGE.lock().unwrap();
+                im.ferme = false;
+                im.l = 0;
+                im.h = 0;
+                im.px.clear();
+            }
             let titre = self.titre.clone();
             let (tx, rx) = std::sync::mpsc::channel::<isize>();
             std::thread::spawn(move || unsafe {
@@ -409,6 +428,9 @@ mod fen {
                 IMAGE.lock().unwrap().ferme = true;
             });
             self.hwnd = rx.recv().ok();
+            if let Some(hw) = self.hwnd {
+                DERNIERE.store(hw, std::sync::atomic::Ordering::Relaxed);
+            }
         }
     }
 

@@ -3336,3 +3336,22 @@ cube, étage Đ, ADNc, patrouille… Ils s'expliquent maintenant eux-mêmes.
 - **Où** : tous les messages de `lugus`, ceux du lecteur d'ADN en vtx compris. Dunon et l'atelier pas encore.
 - **Vérifié** (`tests/test_glossaire.py`, 4 contrôles) : les mots parus, chacun une fois, et pas les autres ; rien par
   un tube ni avec `VTX_GLOSSAIRE=0` ; un message sans mot propre à vtx, pas de glossaire.
+
+## 74. La fenêtre d'un programme (21 novembre, 0.68)
+
+**Demandé par le créateur le 21** : pas d'image dans la vue du cube ; un programme qui dessine, joue un son ou se finit
+ouvre sa propre fenêtre, comme dans un éditeur de code moderne.
+
+- **Dans l'atelier** (`atelier.exe`, Ogmios) : F5 ouvre la fenêtre du programme dès qu'il appelle `presenter()` (la même
+  que `vtx toile128` : l'image agrandie sans flou, la souris et le clavier de cette fenêtre vont au programme) ; la vue
+  du cube reste au cube. Maj+F5 l'arrête toujours ; relancé, le programme ferme sa fenêtre d'avant et en ouvre une neuve.
+  Les fichiers qu'il crée (images, sons, exécutables) s'ouvrent toujours dans la visionneuse.
+- **Avec `lugus PROG.vtx`** (et un double-clic sur un programme) : la même fenêtre, qui reste ouverte à la fin jusqu'à
+  ce qu'on la ferme. Elle s'ouvre pour quelqu'un : à la console, ou avec `VTX_FENETRE=1` ; lu par un tube (les tests),
+  le programme n'en ouvre pas, ni avec `VTX_FENETRE=0`.
+- **Sous Windows seulement** : ailleurs, `presenter()` rend 0 sans rien montrer, comme avant. Le code de Windows est
+  vérifié ici à la compilation (`cargo check` sous la forme de Windows) ; il se voit sur le PC du créateur
+  (`essai-0.68.bat`).
+- **La suite** : Ogmios écrit en vtx (`ogmios/ogmios.vtx`) aura la même fenêtre pour le programme lancé par F5, et ne
+  figera plus pendant qu'il tourne (la machine fille lancée à côté, son compte rendu lu au fil de l'eau, Échap pour
+  l'arrêter) : il faut pour cela que la machine sache tenir deux fenêtres à la fois.

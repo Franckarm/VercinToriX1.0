@@ -36,6 +36,10 @@ mod machine128;
 mod adn;
 #[allow(dead_code)]
 mod provenance;
+#[allow(dead_code)]
+mod gif;
+#[allow(dead_code)]
+mod sortie;
 /// 0.67 : un message de Lugus (sur la sortie des erreurs), gardé pour le glossaire de la fin
 macro_rules! dire {
     ($($a:tt)*) => {{
@@ -158,6 +162,29 @@ fn reprendre_epigenome(spu: &mut Spu128, t: &adn::Temoins, mots: &[u128]) -> usi
     }
 }
 
+/// 0.68 : le titre de la fenêtre d'un programme : le nom du fichier lancé
+fn titre_fenetre() -> String {
+    std::env::args().nth(1).unwrap_or_default()
+}
+
+/// 0.68 : le service 12 (presenter) de Lugus lancé seul : l'image de l'étage 1 (ecran(l, h)) vers la fenêtre
+fn presenter_lugus(s: &Spu128) -> u128 {
+    let (l, h) = (s.regarder((3u128 << 62) | 14_680_058), s.regarder((3u128 << 62) | 14_680_059));
+    if !((1..=4096).contains(&l) && (1..=4096).contains(&h) && l * h <= 1 << 24) {
+        return u64::MAX as u128;
+    }
+    let (l, h) = (l as usize, h as usize);
+    let px: Vec<u32> = (0..l * h).map(|i| {
+        let v = s.regarder((1u128 << 62) | i as u128);
+        if v >> 64 == 0 {
+            (((v >> 56) & 0xFF) << 16 | ((v >> 40) & 0xFF) << 8 | ((v >> 24) & 0xFF)) as u32
+        } else {
+            (((v >> 120) & 0xFF) << 16 | ((v >> 88) & 0xFF) << 8 | ((v >> 56) & 0xFF)) as u32
+        }
+    }).collect();
+    if sortie::montrer(l, h, &px) { 0 } else { 1 }
+}
+
 /// 0.64 : le cube du programme lancé depuis son cube (ses faces), donné à la machine qui le joue
 static CUBE_LANCE: std::sync::Mutex<Option<crate::hote::CubeProgramme>> = std::sync::Mutex::new(None);
 
@@ -278,6 +305,24 @@ fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::Path
     let mut spu = Spu128::nouveau();
     spu.dossier = dossier;
     spu.cube_programme = CUBE_LANCE.lock().unwrap().take();
+    // 0.68 : un programme qui dessine (ecran, pixel, presenter) ouvre sa fenêtre, comme un programme fini (Windows) ;
+    // ailleurs, presenter() rend 0 sans rien montrer, comme avant
+    // (la fenêtre s'ouvre pour quelqu'un : la console, ou VTX_FENETRE=1 ; lu par un tube, comme dans les tests, le
+    // programme ne l'ouvre pas, VTX_FENETRE=0 non plus)
+    let fenetre_voulue = {
+        use std::io::IsTerminal;
+        match std::env::var("VTX_FENETRE").ok().as_deref() {
+            Some("0") => false,
+            Some("1") => true,
+            _ => std::io::stdout().is_terminal(),
+        }
+    };
+    if fenetre_voulue {
+        if let Some(f) = sortie::fenetre(&titre_fenetre()) {
+            sortie::installer(Some(f));
+            spu.presenter = Some(Box::new(presenter_lugus));
+        }
+    }
     spu.charger(mots);
     if let Some(t) = t {
         reprendre_epigenome(&mut spu, t, mots);
@@ -328,8 +373,11 @@ fn jouer_avec(mots: &[u128], entrees: &[String], dossier: Option<std::path::Path
     }
     if let Err(e) = r {
         dire!("erreur : {}", e);
+        sortie::finir();
         sortir(1);
     }
+    // 0.68 : la fenêtre du programme reste ouverte jusqu'à ce qu'on la ferme (s'il en a ouvert une)
+    sortie::finir();
     spu
 }
 

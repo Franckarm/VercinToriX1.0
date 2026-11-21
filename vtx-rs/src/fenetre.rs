@@ -851,12 +851,16 @@ fn lancer_avec(adn_range: Option<PathBuf>) {
     at.rx_sortie = Some(rx_s);
     at.tx_entree = Some(tx_e);
     ARRET.store(false, Ordering::Relaxed);
-    // les images du programme (presenter()) viennent dans la vue du cube ; la souris et le clavier y vont au programme
+    // 0.68 : les images du programme (presenter()) s'ouvrent dans leur propre fenêtre, comme un programme fini (le
+    // créateur : pas d'image dans la vue du cube) ; la souris et le clavier de cette fenêtre vont au programme
     *IMAGE.lock().unwrap() = None;
     at.dessin = false;
     super::hote::remettre();
     super::hote::FENETRE.store(true, Ordering::Relaxed);
-    super::toile::installer(Some(Box::new(VueAtelier { cube: at.cube as usize })));
+    match super::sortie::fenetre(&fichier.to_string_lossy()) {
+        Some(f) => super::toile::installer(Some(Box::new(FenetreProgramme { f }))),
+        None => super::toile::installer(Some(Box::new(VueAtelier { cube: at.cube as usize }))),
+    }
     ANNONCEE.store(false, Ordering::Relaxed);
     PEINTURE.store(false, Ordering::Relaxed);
     unsafe {
@@ -2157,6 +2161,16 @@ static ANNONCEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 static PEINTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// La sortie de la toile dans l'atelier : chaque image présentée remplace la précédente dans la vue du cube.
+/// 0.68 : la fenêtre du programme lancé par F5 (sortie::fenetre), qui s'arrête aussi par Maj+F5
+struct FenetreProgramme {
+    f: Box<dyn super::toile::Sortie>,
+}
+impl super::toile::Sortie for FenetreProgramme {
+    fn montrer(&mut self, l: usize, h: usize, px: &[u32]) -> bool {
+        self.f.montrer(l, h, px) && !ARRET.load(Ordering::Relaxed)
+    }
+}
+
 struct VueAtelier {
     cube: usize,
 }
