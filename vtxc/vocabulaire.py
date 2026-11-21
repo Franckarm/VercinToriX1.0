@@ -1577,7 +1577,7 @@ fonction ecart_bases(a, b) { retour 32 - nb_bits(qegal(a, b)); }
 
 # ------------------------------------------------------------------------------------------------ Lugus seul : les fonctions en valeur
 VALEURS_LUGUS = r"""
-// -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus seul : Dunon n'a pas encore les fonctions en valeur)
+// -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
 // transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :
 // Rust map, filter, fold, all, any, !any, find, position, filter().count(), for_each, retain, sort_by_key (la fonction
 // rend 1 ou 0 pour une question ; ces mots rendent 1 ou 0, ou 18446744073709551615 pour « absent »)
@@ -1673,7 +1673,8 @@ def bloc_lugus():
 
 
 def bloc_dunon():
-    corps = NOMBRES_DUNON + COMMUN
+    # 0.65 : Dunon a les fonctions passées en valeur : les mots qui prennent une fonction aussi
+    corps = NOMBRES_DUNON + COMMUN + VALEURS_LUGUS
     var = variantes(corps, (("s", "flottant_32", "flottant_32"),))
     return DEBUT + AIDE_DUNON + pour_dunon(corps) + "// les variantes pour le flottant de 32 bits\n" + pour_dunon(var) + FIN
 
@@ -1725,7 +1726,7 @@ def documenter():
            "une question rend cet état ; une moyenne de rien est inconnue ; un texte qui n'est pas un nombre est variable.",
            "**Les questions sur un texte ou un tableau** rendent 1 ou 0, comme `commence_par` ; « absent » s'écrit",
            "18446744073709551615 (−1 lu signé), comme `position`.", ""]
-    blocs = ((COMMUN, "Lugus, Dunon"), (VALEURS_LUGUS, "Lugus"))
+    blocs = ((COMMUN, "Lugus, Dunon"), (VALEURS_LUGUS, "Lugus, Dunon"))
     total = 0
     for texte, machines in blocs:
         lignes = texte.split("\n")

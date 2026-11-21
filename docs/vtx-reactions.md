@@ -3260,11 +3260,14 @@ hex, la molécule, l'atome.
   Dunon, ne passe pas par valeur, et c'est dit.
 - **Dans les deux compilateurs de Dunon**, vtx64.py et vtxc64, les mêmes mots et les mêmes refus, mot pour mot. Les
   programmes déjà écrits gardent leurs mots (les 55 programmes de Dunon comparés à l'ancien compilateur : 0 changé).
+- **Le vocabulaire qui prend une fonction** (`transformer`, `filtrer`, `plier`, `tous`, `au_moins_un`, `aucun`,
+  `trouver_si`, `rang_si`, `compter_si`, `pour_chacun`, `garder_si`, `trier_par`) est maintenant aussi sur Dunon ; une
+  fonction du programme qui porte l'un de ces noms garde la main (les programmes de Dunon gardent leurs mots).
 - **`face` et `centre`** se lisent maintenant d'une fonction passée sur Dunon : 0 et inconnu, puisque Dunon n'est pas
   lancé depuis un cube de programme.
-- **Vérifié** (`tests/test_valeurs64.py`, 13 contrôles) : `exemples128/valeurs.vtx` et `exemples128/types_fonction.vtx`
+- **Vérifié** (`tests/test_valeurs64.py`, 14 contrôles) : `exemples128/valeurs.vtx` et `exemples128/types_fonction.vtx`
   sur Dunon, un mélange (un tableau de fonctions, la récursion par valeur, une composition), deux fonctions passées sans
-  appel par valeur, face et centre ; six refus, le même message des deux côtés.
+  appel par valeur, face et centre, le vocabulaire qui prend une fonction ; six refus, le même message des deux côtés.
 - **Les limites, honnêtement** : comme sur Lugus, pas de type de fonction dans un type de fonction ; sans type écrit, le
   nombre d'arguments n'est pas vérifié.
 

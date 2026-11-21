@@ -194,9 +194,9 @@ une question rend cet état ; une moyenne de rien est inconnue ; un texte qui n'
 | `complement_adn`, `inverser_bases`, `anti_sens` | A↔T, C↔G (3 − q) ; les bases lues à l'envers ; le brin d'en face |
 | `compter_base`, `teneur_gc`, `ecart_bases` | combien de fois une base, les G et les C, les bases qui diffèrent |
 
-## « tableaux, avec une fonction » (Rust Iterator ; Lugus seul : Dunon n'a pas encore les fonctions en valeur)
+## « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
 
-*Machines : Lugus.*
+*Machines : Lugus, Dunon.*
 
 | Mots | Ce qu'ils font, d'où ils viennent |
 |---|---|

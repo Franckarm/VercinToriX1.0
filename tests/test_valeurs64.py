@@ -120,6 +120,22 @@ r = dunon(FC)
 verifier("face et centre d'une fonction passée sur Dunon : les mêmes mots ; 0 et inconnu (pas de cube de programme)",
          ok and r.stdout.split("\n")[:2] == ["0", "inconnu"], det + " " + r.stdout + r.stderr)
 
+VOC = ecrire("vocabulaire.vtx", """fonction carre(x) { retour x * x; }
+fonction pair(x) { retour x % 2 == 0; }
+fonction plus(a, b) { retour a + b; }
+fonction principal() {
+    soit t = [1, 2, 3, 4, 5];
+    soit c = transformer(t, carre);
+    afficher(c[0], c[4], longueur(filtrer(t, pair)), plier(t, plus, 0), compter_si(t, pair), rang_si(t, pair));
+    trier_par(t, carre);
+    afficher(tous(t, pair), au_moins_un(t, pair));
+}
+""")
+ok, det = memes_mots(VOC)
+r = dunon(VOC)
+verifier("les mots du vocabulaire qui prennent une fonction (transformer, filtrer, plier, compter_si…) sur Dunon",
+         ok and r.stdout.split("\n")[:2] == ["1 25 2 15 2 1", "0 1"], det + " " + r.stdout + r.stderr)
+
 TETE = """fonction carre(x) { retour x * x; }
 fonction plus(a, b) { retour a + b; }
 fonction moitie(x: flottant): flottant { retour x / 2.0; }

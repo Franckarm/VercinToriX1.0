@@ -529,8 +529,8 @@ afficher(transformer([1, 2, 3], carre)[2], plier([1, 2, 3], plus, 0));          
   comme Blender ; une matrice, 16 cases ligne par ligne.
 - **Ce qui n'y est pas** : les broches d'Arduino (Lugus et Dunon n'en ont pas), les bibliothèques entières (le
   vocabulaire prépare leur branchement, il ne les recopie pas). `multiplier_ajouter` est exact, en un seul arrondi,
-  depuis la 0.65 ; Dunon a les fonctions passées en valeur depuis la 0.65 (les mots du vocabulaire qui prennent une
-  fonction restent à lui donner). `premier`, `dernier`, `moyenne`… lisent des tableaux d'entiers.
+  depuis la 0.65 ; Dunon a les fonctions passées en valeur depuis la 0.65, et les mots du vocabulaire qui prennent
+  une fonction. `premier`, `dernier`, `moyenne`… lisent des tableaux d'entiers.
 
 ### Hasard
 

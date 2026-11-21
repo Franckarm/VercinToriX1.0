@@ -8930,7 +8930,7 @@ fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * 6148914691236517
 fonction teneur_gc(x) { retour compter_base(x, 1) + compter_base(x, 2); }
 fonction ecart_bases(a, b) { retour 32 - nb_bits(qegal(a, b)); }
 
-// -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus seul : Dunon n'a pas encore les fonctions en valeur)
+// -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
 // transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :
 // Rust map, filter, fold, all, any, !any, find, position, filter().count(), for_each, retain, sort_by_key (la fonction
 // rend 1 ou 0 pour une question ; ces mots rendent 1 ou 0, ou 18446744073709551615 pour « absent »)

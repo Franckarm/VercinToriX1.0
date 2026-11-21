@@ -6768,6 +6768,41 @@ fonction anti_sens(x) { retour inverser_bases(~x); }
 fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * 6148914691236517205)); }
 fonction teneur_gc(x) { retour compter_base(x, 1) + compter_base(x, 2); }
 fonction ecart_bases(a, b) { retour 32 - nb_bits(qegal(a, b)); }
+
+// -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
+// transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :
+// Rust map, filter, fold, all, any, !any, find, position, filter().count(), for_each, retain, sort_by_key (la fonction
+// rend 1 ou 0 pour une question ; ces mots rendent 1 ou 0, ou 18446744073709551615 pour « absent »)
+fonction transformer(t, __fv) { soit r = tableau(0); pour x dans t { ajouter(r, __fv(x)); } retour r; }
+fonction filtrer(t, __fv) { soit r = tableau(0); pour x dans t { si __fv(x) != 0 { ajouter(r, x); } } retour r; }
+fonction plier(t, __fv, depart) { soit acc = depart; pour x dans t { acc = __fv(acc, x); } retour acc; }
+fonction tous(t, __fv) { pour x dans t { si __fv(x) == 0 { retour 0; } } retour 1; }
+fonction au_moins_un(t, __fv) { pour x dans t { si __fv(x) != 0 { retour 1; } } retour 0; }
+fonction aucun(t, __fv) { pour x dans t { si __fv(x) != 0 { retour 0; } } retour 1; }
+fonction trouver_si(t, __fv) { pour x dans t { si __fv(x) != 0 { retour x; } } retour 0; }
+fonction rang_si(t, __fv) {
+    soit n = longueur(t);
+    pour i dans 0..n { si __fv(t[i]) != 0 { retour i; } }
+    retour 18446744073709551615;
+}
+fonction compter_si(t, __fv) { soit k = 0; pour x dans t { si __fv(x) != 0 { k = k + 1; } } retour k; }
+fonction pour_chacun(t, __fv) { pour x dans t { __fv(x); } }
+fonction garder_si(t, __fv) {
+    soit w = 0;
+    soit n = longueur(t);
+    pour i dans 0..n { si __fv(t[i]) != 0 { t[w] = t[i]; w = w + 1; } }
+    tantque longueur(t) > w { retirer(t); }
+}
+fonction trier_par(t, __fv) {
+    soit n = longueur(t);
+    pour i dans 1..n {
+        soit x = t[i];
+        soit kx = __fv(x);
+        soit j = i;
+        tantque j > 0 && __fv(t[j - 1]) .> kx { t[j] = t[j - 1]; j = j - 1; }
+        t[j] = x;
+    }
+}
 // les variantes pour le flottant de 32 bits
 fonction __signe_s(v: flottant_32): flottant_32 { retour flottant_32(__signe_f(flottant(v))); }
 fonction __est_positif_s(v: flottant_32): logique { retour __est_positif_f(flottant(v)); }
