@@ -248,6 +248,11 @@ class Forge(V.Generateur):
                                                   f".wrapping_sub({zone[1]}) as usize; if !z{k}.is_null() && i < "
                                                   f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) = v as {ty}; }} }} else "
                                                   f"{{ c.ecrire(etg(a, {et}), v); }} }}")) + ";")
+            elif et == 2:
+                # 0.805 : l'étage 2 par la carte du vergobret
+                a = self.val(adr, "e")
+                v = self.val(val)
+                self.ligne(self.b([a, v], "c.ecrire2({0}, {1})") + ";")
             elif isinstance(et, int) and adr[0] == "nombre":
                 a = lit((adr[1] & ~(3 << 62) & M64) | (et << 62))
                 self.ligne(self.b([self.val(val)], "c.ecrire(" + a + ", {0})") + ";")
@@ -873,6 +878,9 @@ class Forge(V.Generateur):
                                                             f".wrapping_sub({zone[1]}) as usize; if !z{k}.is_null() && i < "
                                                             f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) as u128 }} }} else "
                                                             f"{{ c.lire(etg(a, {e[1]})) }} }}"))
+            # 0.805 : l'étage 2 par la carte du vergobret
+            if e[1] == 2:
+                return self.b([self.val(e[2], "e")], "c.lire2({0})")
             if isinstance(e[1], int) and e[2][0] == "nombre":
                 return f"c.lire({lit((e[2][1] & ~(3 << 62) & M64) | (e[1] << 62))})"
             return self.b([self.adresse(e[1], e[2])], "c.lire({0})")
@@ -1351,14 +1359,14 @@ def programme_rust(src, dossier=None, nom="programme"):
         s.append(f"#[allow(dead_code)]\nstatic SPV{k}: [u32; {len(mots)}] = [" + ",".join(map(str, mots)) + "];")
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
     s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
-             "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],\n"
+             "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64], carte: Carte::neuve(),\n"
              "          pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], rb: [std::ptr::null_mut(); 64], wb: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
     # la machine d'un cylindre : celle d'un fil, qui lit le cube commun et n'écrit que dans le sien
     # 0.74b : les machines des cylindres sont gardées d'un passage à l'autre (une machine neuve remettait à zéro deux
     # pages d'un mégaoctet, le code et la pile, à chaque passage et dans chaque fil)
     s.append("#[allow(dead_code)]\nfn ctx_cylindre(inst: &Instantane) -> Box<Ctx> {\n"
              "    let mut c = match CTX_RESERVE.lock().unwrap().pop() { Some(EnvoiCtx(c)) => c, None => Box::new(ctx_fils()) };\n"
-             "    c.sp = spu128::PILE; c.cl = [u128::MAX; 64]; c.ce = [u128::MAX; 64]; c.pb = [std::ptr::null_mut(); 64]; c.rb = [std::ptr::null_mut(); 64]; c.wb = [std::ptr::null_mut(); 64];\n"
+             "    c.sp = spu128::PILE; c.cl = [u128::MAX; 64]; c.ce = [u128::MAX; 64]; c.pb = [std::ptr::null_mut(); 64]; c.rb = [std::ptr::null_mut(); 64]; c.wb = [std::ptr::null_mut(); 64]; c.carte.oublier();\n"
              "    c.ombre = Some(Box::new(Cylindre { commun: inst as *const Instantane, feuilles: Default::default(), "
              "lus: Default::default(), vues: Default::default(), partage: false, ecrits: Default::default(), danger: false }));\n    c\n}")
     # 0.77 : la machine d'un cœur « en bandes » : il écrit directement dans le cube commun

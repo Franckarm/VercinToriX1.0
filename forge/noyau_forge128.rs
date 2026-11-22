@@ -34,6 +34,33 @@ struct Ctx {
     vider: fn(&mut Ctx),
     // la machine d'un cylindre (les segments joués ensemble) : elle lit le cube commun, et n'écrit que dans le sien
     ombre: Option<Box<Cylindre>>,
+    // 0.805 : la carte du vergobret : pour chaque page de l'étage 2 (là où vivent les données d'un programme), le
+    // pointeur sur son premier mot, pour lire (c2l) et pour écrire (c2e) ; en bandes, les mots lus (r2) et écrits (w2),
+    // un bit par mot (la promesse). Lire un mot de l'étage 2 n'est plus que : numéro de page, pointeur, mot. Une page
+    // entre dans la carte à sa première lecture ou écriture ; la carte est oubliée avec le petit cache (oublier_pages)
+    carte: Box<Carte>,
+}
+
+const CARTE: usize = 256;      // les pages de l'étage 2 dans la carte : 256 × 65536 mots (16 millions)
+
+struct Carte {
+    l: [*mut u128; CARTE],
+    e: [*mut u128; CARTE],
+    r: [*mut u64; CARTE],
+    w: [*mut u64; CARTE],
+}
+
+impl Carte {
+    fn neuve() -> Box<Carte> {
+        Box::new(Carte { l: [std::ptr::null_mut(); CARTE], e: [std::ptr::null_mut(); CARTE],
+                         r: [std::ptr::null_mut(); CARTE], w: [std::ptr::null_mut(); CARTE] })
+    }
+    fn oublier(&mut self) {
+        self.l = [std::ptr::null_mut(); CARTE];
+        self.e = [std::ptr::null_mut(); CARTE];
+        self.r = [std::ptr::null_mut(); CARTE];
+        self.w = [std::ptr::null_mut(); CARTE];
+    }
 }
 
 // ------------------------------------------------------------------ les cylindres : un cube par cœur
@@ -509,6 +536,75 @@ fn case(k: u128) -> usize {
 }
 
 impl Ctx {
+    /// 0.805 : lire un mot de l'étage 2 (a : son adresse dans l'étage) par la carte du vergobret
+    #[inline(always)]
+    fn lire2(&mut self, a: u128) -> u128 {
+        let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
+        let pg = (idx >> 16) as usize;
+        if pg < CARTE {
+            let p = self.carte.l[pg];
+            if !p.is_null() {
+                let j = (idx & 65535) as usize;
+                let b = self.carte.r[pg];
+                if !b.is_null() {
+                    unsafe { *b.add(j >> 6) |= 1u64 << (j & 63) };
+                }
+                return unsafe { *p.add(j) };
+            }
+        }
+        self.lire2_lent(idx)
+    }
+    #[inline(never)]
+    fn lire2_lent(&mut self, idx: u64) -> u128 {
+        let a = etg(idx as u128, 2);
+        let v = self.lire(a);
+        // la page vient d'entrer dans le petit cache (sauf une feuille de cylindre, ou une page absente) : elle entre
+        // dans la carte ; hors des bandes, un cylindre (en segments) garde son chemin
+        let pg = (idx >> 16) as usize;
+        if pg < CARTE && self.ombre.as_ref().map_or(true, |o| o.partage) {
+            let (k, _) = Spu128::cle_page(a);
+            let h = case(k);
+            if self.cl[h] == k {
+                self.carte.l[pg] = self.pl[h];
+                self.carte.r[pg] = self.rb[h];
+            }
+        }
+        v
+    }
+    /// 0.805 : écrire un mot de l'étage 2 par la carte du vergobret
+    #[inline(always)]
+    fn ecrire2(&mut self, a: u128, v: u128) {
+        let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
+        let pg = (idx >> 16) as usize;
+        if pg < CARTE {
+            let p = self.carte.e[pg];
+            if !p.is_null() {
+                let j = (idx & 65535) as usize;
+                let w = self.carte.w[pg];
+                if !w.is_null() {
+                    unsafe { *w.add(j >> 6) |= 1u64 << (j & 63) };
+                }
+                unsafe { *p.add(j) = v };
+                return;
+            }
+        }
+        self.ecrire2_lent(idx, v)
+    }
+    #[inline(never)]
+    fn ecrire2_lent(&mut self, idx: u64, v: u128) {
+        let a = etg(idx as u128, 2);
+        self.ecrire(a, v);
+        // une page écrite directement (sans brin, pas une feuille de cylindre) entre dans la carte
+        let pg = (idx >> 16) as usize;
+        if pg < CARTE && self.ombre.as_ref().map_or(true, |o| o.partage) {
+            let (k, _) = Spu128::cle_page(a);
+            let h = case(k);
+            if self.ce[h] == k && self.pb[h].is_null() {
+                self.carte.e[pg] = self.pe[h];
+                self.carte.w[pg] = self.wb[h];
+            }
+        }
+    }
     #[inline(always)]
     fn lire(&mut self, a: u128) -> u128 {
         let (k, j) = Spu128::cle_page(a);
@@ -665,6 +761,7 @@ impl Ctx {
     fn oublier_pages(&mut self) {
         self.ce = [u128::MAX; 64];
         self.cl = [u128::MAX; 64];
+        self.carte.oublier();
     }
     #[inline(always)]
     fn pousser(&mut self, v: u128) {
@@ -890,7 +987,7 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     }
     m.charger(mots);
     m.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
-    let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],
+    let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64], carte: Carte::neuve(),
                       pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], rb: [std::ptr::null_mut(); 64],
                       wb: [std::ptr::null_mut(); 64],
                       vider, ombre: None };

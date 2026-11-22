@@ -3870,3 +3870,33 @@ surfaces, voxels ou polygones).
   prix du calque à chaque image). Forgé, ici : 27,5 ms sur un cœur (35 en 0.803), 19 à 24 ms sur deux. La forge gagne
   moins que le C : ses mots ont 128 bits (deux fois plus de mémoire remuée) et chaque lecture passe par la recherche de
   sa page. Empreinte : 4981707699916968273.
+
+## 88. Le vergobret, premier pas : la carte des pages (22 novembre, 0.805)
+
+**Le créateur** (après la 0.804, chez lui : 20,4 ms par image sur un cœur, 17,6 sur tous) : c'est mieux, mais pas assez
+quand la lumière change ; chercher la page, un cœur devait s'en charger : ne fait-il pas son travail ? Les mots de 128
+bits restent (Lugus, et le plus de hex possible).
+
+- **Le constat** : ce cœur, le vergobret, décidé en 0.77, n'avait jamais été construit. Mesuré (callgrind, le banc forgé
+  sur un cœur) : **42 % des instructions** servaient à trouver la page du mot lu ou écrit (décoder l'adresse, son étage,
+  hacher la page, comparer avec le petit cache de 64 pages, marquer le mot lu).
+- **La carte du vergobret** (`forge/noyau_forge128.rs` : `Carte`, `lire2`, `ecrire2`) : pour chaque page de l'étage 2
+  (là où vivent les données d'un programme), le pointeur sur son premier mot, pour lire et pour écrire ; en bandes, les
+  mots lus et écrits (la promesse, toujours vérifiée au mot près). Lire un mot de l'étage 2 n'est plus que : numéro de
+  page, pointeur, mot. Une page entre dans la carte à sa première lecture ou écriture ; la carte est oubliée avec le
+  petit cache (après une fusion de cylindres, un brin posé, un service qui touche aux pages). Les cylindres en
+  segments gardent leur chemin (leurs feuilles). La forge écrit `c.lire2` / `c.ecrire2` pour tout `@2[…]`.
+- **Mesures** (le banc du val, toute la lumière refaite à chaque image) : sur un cœur, **de 27,5 à 19 ms** par image ;
+  sur deux, de 19-24 à 14 ms. L'accès à la mémoire passe de 42 % à environ 18 % des instructions. La même empreinte ;
+  la forge conforme (103 programmes : mêmes sorties, même mémoire que Lugus) ; les cylindres et les bandes conformes.
+- **La promesse gardée** : sans marquer les mots lus, on gagnerait environ 1 ms (dans le bruit) : ce n'est pas assez
+  pour renoncer à la vérification.
+- **La suite du vergobret** : l'équipe de cœurs qui reste en place (les cœurs sont encore lancés à chaque boucle en
+  bandes) ; les deux calques, posés d'un bloc.
+- **Deux idées du créateur, notées pour la suite** :
+  - *Un cœur entre deux étages* : puisqu'un cœur se charge d'un étage, un cœur placé entre deux étages ferait la
+    lumière et l'ombre (le calque d'ombre calculé au passage, entre l'étage du décor et celui de l'affichage) ; les
+    deux calques sont à penser avec les étages.
+  - *La clepsydre* (plutôt qu'une pyramide) : autour d'un point de surface, quatre points au-dessus, vers la source de
+    lumière, et quatre points en dessous, pour la projection de l'ombre : deux cônes opposés par la pointe, le point
+    de surface au milieu.
