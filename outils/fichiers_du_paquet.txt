@@ -2,9 +2,9 @@ AUTEUR.md
 COMMENCER.md
 LISEZMOI.md
 belenos/val.vtx
-belenos/val_scene.vtx
 belenos/val_banc.vtx
 belenos/val_ref.c
+belenos/val_scene.vtx
 bibliotheque/adn.vtx
 bibliotheque/anticube128-1-392.cub
 bibliotheque/catalogue.vtxcat
@@ -98,6 +98,7 @@ exemples128/banc_traduction.vtx
 exemples128/bonjour128.vtx
 exemples128/bords_du_monde.vtx
 exemples128/bords_du_monde.vtx.mots
+exemples128/calcul_vagues.vtx
 exemples128/catalogue.vtx
 exemples128/chute.vtx
 exemples128/codon.vtx
@@ -134,6 +135,8 @@ exemples64/bords_du_monde.vtx
 exemples64/brin.vtx
 exemples64/cubes64.vtx
 exemples64/quaternaire64.vtx
+forge/forge128.py
+forge/noyau_forge128.rs
 gobannos/flottants.vtx
 gobannos/gobannos.vtx
 natif/natif.py
@@ -154,6 +157,8 @@ spu64/exemples/vitesse.mots
 spu64/exemples/vitesse.s64
 spu64/qflot.py
 spu64/spu64.py
+taranis/noyau_vtx.py
+taranis/spirv.py
 vtx-rs/Cargo.lock
 vtx-rs/Cargo.toml
 vtx-rs/LISEZMOI.md
