@@ -1304,15 +1304,15 @@ def programme_rust(src, dossier=None, nom="programme"):
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
     s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
              "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],\n"
-             "          pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
+             "          pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], rb: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
     # la machine d'un cylindre : celle d'un fil, qui lit le cube commun et n'écrit que dans le sien
     # 0.74b : les machines des cylindres sont gardées d'un passage à l'autre (une machine neuve remettait à zéro deux
     # pages d'un mégaoctet, le code et la pile, à chaque passage et dans chaque fil)
     s.append("#[allow(dead_code)]\nfn ctx_cylindre(inst: &Instantane) -> Box<Ctx> {\n"
              "    let mut c = match CTX_RESERVE.lock().unwrap().pop() { Some(EnvoiCtx(c)) => c, None => Box::new(ctx_fils()) };\n"
-             "    c.sp = spu128::PILE; c.cl = [u128::MAX; 64]; c.ce = [u128::MAX; 64]; c.pb = [std::ptr::null_mut(); 64];\n"
+             "    c.sp = spu128::PILE; c.cl = [u128::MAX; 64]; c.ce = [u128::MAX; 64]; c.pb = [std::ptr::null_mut(); 64]; c.rb = [std::ptr::null_mut(); 64];\n"
              "    c.ombre = Some(Box::new(Cylindre { commun: inst as *const Instantane, feuilles: Default::default(), "
-             "lues: Default::default(), vues: Default::default(), danger: false }));\n    c\n}")
+             "lus: Default::default(), vues: Default::default(), danger: false }));\n    c\n}")
     s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees);\n}\n")
     return "\n".join(s), mots

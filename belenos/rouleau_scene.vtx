@@ -1,0 +1,332 @@
+// machine : lugus
+// Belenos : le rouleau de lumière, en 2D (une coupe verticale du val). L'idée du créateur : la lumière entrelacée avec
+// la matière dans le tapis roulant. Chaque cellule porte sa matière (le plan 0 du rouleau) et la lumière qui la traverse
+// dans huit directions, en trois couleurs (les plans 1 à 24). La propagation est gratuite : la lumière qui va dans la
+// direction d, pour la cellule c, est rangée en (c + o_d) mod N, et o_d recule à chaque pas (le tapis roulant, comme le
+// fluide de Belenos : aucune donnée ne bouge). La collision, c'est la matière : la roche, l'herbe et la lande diffusent
+// ce qu'elles reçoivent (et en absorbent une part, selon leur couleur), la neige renvoie presque tout (et la lumière
+// s'y enfonce un peu), l'eau laisse passer en bleuissant et reflète une part à sa surface, l'air en diffuse un peu (la
+// brume), le feu émet en vacillant ; les bords absorbent, et le ciel y entre : le soleil dans sa direction, le bleu du
+// ciel de partout en haut. Tout en entiers : les mêmes nombres partout.
+// Sans programme principal : rouleau.vtx la montre, rouleau_banc.vtx la mesure.
+
+constante NX = 256;                // la coupe : NX colonnes, NY rangées (la rangée 0 en haut)
+constante NY = 128;
+constante N = 32768;
+constante MASQUE = 32767;
+constante MAT = 0;                 // @2[MAT + c] : la matière de la cellule c
+constante LUM = 65536;             // @2[LUM + (3 d + k) N + ((c + o_d) & MASQUE)] : la lumière de direction d, couleur k
+constante ORIG = 1048576;          // @2[ORIG + d] : o_d, l'origine du tapis de la direction d
+constante DX = 1048592;            // @2[DX + d], @2[DY + d] : la direction d (signée)
+constante DY = 1048608;
+constante MIROIR = 1048624;        // @2[MIROIR + d] : la direction d réfléchie sur l'eau (dy changé de signe)
+constante ALB = 1048640;           // @2[ALB + 3 m + k] : la part renvoyée par la matière m, couleur k (sur 256)
+constante ECRAN = 1048704;         // @2[ECRAN + c] : la couleur vue de la cellule c (0xRRGGBB)
+
+// les matières
+constante BORD = 0;
+constante AIR = 1;
+constante ROCHE = 2;
+constante HERBE = 3;
+constante NEIGE = 4;
+constante LANDE = 5;
+constante EAU = 6;
+constante SURFACE = 7;             // la première rangée d'eau : elle reflète
+constante FEU = 8;
+constante TERRE = 9;
+
+constante SOLEIL = 4096;           // la lumière du soleil, par direction et par couleur, quand il est haut
+constante DIFF_AIR = 3;            // la part de l'air diffusée à chaque cellule (sur 256) : la brume
+
+fonction hache2(x, z) {
+    soit h = x * 374761393 + z * 668265263 + 1013904223;
+    h = (h ^ (h >> 13)) * 1274126177;
+    retour (h ^ (h >> 16)) & 65535;
+}
+
+// le relief de la coupe : la hauteur du sol en x (la rangée du premier sol), des collines et un creux (le lac)
+fonction sol_en(x) {
+    soit h = 0;
+    soit p = 64;
+    soit amp = 22;
+    tantque p >= 4 {
+        soit x0 = x / p;
+        soit f = (x % p) * 256 / p;
+        soit s = f * f * (768 - 2 * f) / 65536;
+        soit a = hache2(x0, p) % 256;
+        soit b = hache2(x0 + 1, p) % 256;
+        h = h + (a * (256 - s) + b * s) / 256 * amp / 256;
+        p = p / 2;
+        amp = amp * 5 / 8;
+    }
+    // un grand mont à gauche, le creux du lac au milieu
+    soit mont = 0;
+    si x < 90 {
+        mont = (90 - x) * (90 - x) / 150;
+    }
+    soit creux = 0;
+    si x > 120 && x < 190 {
+        soit u = x - 155;
+        si u .< 0 {
+            u = 0 - u;
+        }
+        creux = (35 - u) * 26 / 35;
+    }
+    retour 92 - h - mont + creux;
+}
+
+constante NIVEAU = 1048700;        // @2[NIVEAU] : la rangée de la surface du lac (le fond du creux, moins 9 rangées)
+
+fonction preparer_rouleau() {
+    // les huit directions : 0 droite, 1 bas-droite, 2 bas, 3 bas-gauche, 4 gauche, 5 haut-gauche, 6 haut, 7 haut-droite
+    soit dxs = [1, 1, 0, 0 - 1, 0 - 1, 0 - 1, 0, 1];
+    soit dys = [0, 1, 1, 1, 0, 0 - 1, 0 - 1, 0 - 1];
+    soit mir = [0, 7, 6, 5, 4, 3, 2, 1];
+    pour d dans 0..8 {
+        @2[DX + d] = dxs[d];
+        @2[DY + d] = dys[d];
+        @2[MIROIR + d] = mir[d];
+        @2[ORIG + d] = 0;
+    }
+    // ce que chaque matière renvoie (sur 256), rouge, vert, bleu
+    soit albedos = [0, 0, 0,   0, 0, 0,   120, 112, 104,   70, 120, 50,   235, 240, 250,   130, 115, 75,
+                    0, 0, 0,   0, 0, 0,   0, 0, 0,   90, 70, 50];
+    pour k dans 0..30 {
+        @2[ALB + k] = albedos[k];
+    }
+    // le lac : sa surface 9 rangées au-dessus du fond du creux
+    soit fond = 0;
+    pour xl dans 120..190 {
+        si sol_en(xl) > fond {
+            fond = sol_en(xl);
+        }
+    }
+    @2[NIVEAU] = fond - 9;
+    // la matière de chaque cellule
+    pour c dans 0..N {
+        soit x = c % NX;
+        soit y = c / NX;
+        soit m = AIR;
+        si x == 0 || x == NX - 1 || y == 0 || y == NY - 1 {
+            m = BORD;
+        } sinon {
+            soit s = sol_en(x);
+            si y >= s {
+                // le sol : sa couche du dessus selon l'altitude et la pente, la terre dessous
+                soit pente = sol_en(x + 1) - sol_en(x - 1);
+                si pente .< 0 {
+                    pente = 0 - pente;
+                }
+                soit prof = y - s;
+                m = TERRE;
+                si prof < 3 {
+                    si pente > 3 {
+                        m = ROCHE;
+                    } sinon si s < 45 {
+                        m = NEIGE;
+                    } sinon si s < 70 {
+                        m = LANDE;
+                    } sinon {
+                        m = HERBE;
+                    }
+                } sinon si prof < 10 && pente > 2 {
+                    m = ROCHE;
+                }
+            } sinon si y >= @2[NIVEAU] && x > 110 && x < 200 {
+                m = EAU;
+                si y == @2[NIVEAU] {
+                    m = SURFACE;
+                }
+            }
+        }
+        @2[MAT + c] = m;
+    }
+    // le feu : un foyer sur la rive gauche du lac
+    soit xf = 118;
+    soit sf = sol_en(xf);
+    pour dy dans 1..4 {
+        pour dxf dans 0..3 {
+            @2[MAT + (sf - dy) * NX + xf + dxf] = FEU;
+        }
+    }
+    // pas de lumière au départ
+    pour i dans 0..(24 * N) {
+        @2[LUM + i] = 0;
+    }
+}
+
+// la place de la lumière de direction d, couleur k, pour la cellule logique c
+fonction place_lum(c, d, k) {
+    retour LUM + (3 * d + k) * N + ((c + @2[ORIG + d]) & MASQUE);
+}
+
+// un pas du rouleau : la collision de chaque cellule, puis le tapis avance (les origines reculent)
+// soleil : la direction d'où vient la lumière du soleil (0 à 7), hauteur : sa force (sur 256), t : le temps (le feu)
+fonction pas_rouleau(soleil, force, t, feu) {
+    // chaque cellule n'écrit que sa propre lumière : les cellules vont en segments (sur plusieurs cœurs)
+    pour c dans 0..N en segments {
+        soit m = @2[MAT + c];
+        si m == BORD {
+            // le bord absorbe ; le ciel y entre : le soleil dans sa direction, s'il va vers l'intérieur
+            soit x = c % NX;
+            soit y = c / NX;
+            pour d dans 0..8 {
+                soit ddx = @2[DX + d];
+                soit ddy = @2[DY + d];
+                soit r = 0;
+                soit g = 0;
+                soit b = 0;
+                soit dedans = 0;
+                si (y == 0 && ddy == 1) || (x == 0 && ddx == 1) || (x == NX - 1 && ddx == 0 - 1) {
+                    dedans = 1;
+                }
+                si dedans == 1 && d == soleil {
+                    r = SOLEIL * force / 256;
+                    g = SOLEIL * force / 256 * (200 + force / 5) / 256;
+                    b = SOLEIL * force / 256 * (150 + force * 2 / 5) / 256;
+                } sinon si y == 0 && ddy == 1 {
+                    // le bleu du ciel, de tout le haut
+                    r = 60 * force / 256;
+                    g = 110 * force / 256;
+                    b = 220 * force / 256;
+                }
+                @2[place_lum(c, d, 0)] = r;
+                @2[place_lum(c, d, 1)] = g;
+                @2[place_lum(c, d, 2)] = b;
+            }
+        } sinon si m == AIR || m == FEU {
+            // l'air : presque tout passe ; une petite part est diffusée dans toutes les directions (la brume)
+            soit sr = 0;
+            soit sg = 0;
+            soit sb = 0;
+            pour d dans 0..8 {
+                sr = sr + @2[place_lum(c, d, 0)];
+                sg = sg + @2[place_lum(c, d, 1)];
+                sb = sb + @2[place_lum(c, d, 2)];
+            }
+            soit er = 0;
+            soit eg = 0;
+            soit eb = 0;
+            si m == FEU && feu == 1 {
+                // le feu : il émet dans toutes les directions, en vacillant
+                soit vf = 160 + hache2(c, t) % 96;
+                er = 700 * vf / 256;
+                eg = 300 * vf / 256;
+                eb = 60 * vf / 256;
+            }
+            pour d dans 0..8 {
+                soit p0 = place_lum(c, d, 0);
+                soit p1 = p0 + N;
+                soit p2 = p1 + N;
+                soit vr = @2[p0];
+                soit vg = @2[p1];
+                soit vb = @2[p2];
+                @2[p0] = vr - vr * DIFF_AIR / 256 + sr * DIFF_AIR / 2048 + er;
+                @2[p1] = vg - vg * DIFF_AIR / 256 + sg * DIFF_AIR / 2048 + eg;
+                @2[p2] = vb - vb * DIFF_AIR / 256 + sb * DIFF_AIR / 2048 + eb;
+            }
+        } sinon si m == EAU || m == SURFACE {
+            // l'eau : elle laisse passer en bleuissant ; à la surface, une part de ce qui descend remonte (le reflet)
+            pour d dans 0..8 {
+                soit q0 = place_lum(c, d, 0);
+                @2[q0] = @2[q0] * 225 / 256;
+                @2[q0 + N] = @2[q0 + N] * 245 / 256;
+                @2[q0 + 2 * N] = @2[q0 + 2 * N] * 252 / 256;
+            }
+            si m == SURFACE {
+                pour d dans 1..4 {
+                    soit dm = @2[MIROIR + d];
+                    soit a0 = place_lum(c, d, 0);
+                    soit b0 = place_lum(c, dm, 0);
+                    pour k dans 0..3 {
+                        soit vs = @2[a0 + k * N];
+                        soit refl = vs * 60 / 256;
+                        @2[a0 + k * N] = vs - refl;
+                        @2[b0 + k * N] = @2[b0 + k * N] + refl;
+                    }
+                }
+            }
+        } sinon {
+            // un sol : ce qu'il reçoit est renvoyé dans toutes les directions, selon sa couleur
+            soit tr = 0;
+            soit tg = 0;
+            soit tb = 0;
+            pour d dans 0..8 {
+                tr = tr + @2[place_lum(c, d, 0)];
+                tg = tg + @2[place_lum(c, d, 1)];
+                tb = tb + @2[place_lum(c, d, 2)];
+            }
+            soit ar = @2[ALB + 3 * m];
+            soit ag = @2[ALB + 3 * m + 1];
+            soit ab = @2[ALB + 3 * m + 2];
+            soit sor = tr * ar / 2048;
+            soit sog = tg * ag / 2048;
+            soit sob = tb * ab / 2048;
+            pour d dans 0..8 {
+                soit s0 = place_lum(c, d, 0);
+                @2[s0] = sor;
+                @2[s0 + N] = sog;
+                @2[s0 + 2 * N] = sob;
+            }
+        }
+    }
+    // le tapis avance : chaque direction recule son origine de son pas (la lumière va d'une cellule à la suivante)
+    pour d dans 0..8 {
+        soit pasd = @2[DX + d] + @2[DY + d] * NX;
+        @2[ORIG + d] = (@2[ORIG + d] - pasd) & MASQUE;
+    }
+}
+
+// la couleur vue de chaque cellule : ce qu'un sol renvoie, l'eau bleutée, l'air par sa brume, le feu ; l'éclat ramené
+// dans 0..255 (v · 255 / (v + K))
+fonction ton(v) {
+    retour v * 255 / (v + 2600);
+}
+
+fonction voir_rouleau() {
+    pour c dans 0..N en segments {
+        soit m = @2[MAT + c];
+        soit fr = 0;
+        soit fg = 0;
+        soit fb = 0;
+        pour d dans 0..8 {
+            fr = fr + @2[place_lum(c, d, 0)];
+            fg = fg + @2[place_lum(c, d, 1)];
+            fb = fb + @2[place_lum(c, d, 2)];
+        }
+        soit r = 0;
+        soit g = 0;
+        soit b = 0;
+        si m == BORD {
+            r = 20;
+            g = 22;
+            b = 30;
+        } sinon si m == AIR {
+            // l'air : la brume éclairée (une petite part de ce qui passe, le bleu plus diffusé que le rouge), sur un
+            // fond de nuit
+            r = 10 + ton(fr / 6);
+            g = 12 + ton(fg / 5);
+            b = 22 + ton(fb / 3);
+        } sinon si m == FEU {
+            r = 255;
+            g = 150 + hache2(c, 7) % 60;
+            b = 40;
+        } sinon si m == EAU || m == SURFACE {
+            r = 6 + ton(fr) / 3;
+            g = 20 + ton(fg) / 2;
+            b = 40 + ton(fb) * 2 / 3;
+        } sinon {
+            // un sol : sa couleur sous la lumière qu'il reçoit
+            soit ar = @2[ALB + 3 * m];
+            soit ag = @2[ALB + 3 * m + 1];
+            soit ab = @2[ALB + 3 * m + 2];
+            r = 6 + ton(fr * ar / 64);
+            g = 5 + ton(fg * ag / 64);
+            b = 4 + ton(fb * ab / 64);
+        }
+        si r > 255 { r = 255; }
+        si g > 255 { g = 255; }
+        si b > 255 { b = 255; }
+        @2[ECRAN + c] = r * 65536 + g * 256 + b;
+    }
+}

@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.75.zip`, `essai-0.75.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.77.zip`, `essai-0.77.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -46,7 +46,7 @@ avec le créateur.*
   gardé dans le dépôt : le refaire (`lugus cataloguer bibliotheque`) après toute retouche d'un module de la
   bibliothèque (sinon `importer empreinte` le refuse, l'empreinte ayant changé).
 - `outils/tests_du_paquet.txt` : les tests mis dans le paquet ; la commande du paquet : `git archive --format=zip
-  --prefix=vtx-0.6/ -o vtx-0.74.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
+  --prefix=vtx-0.6/ -o vtx-0.76.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
   spu128 chimie natif gobannos exemples exemples128 exemples64 bibliotheque docs` suivi de ces tests et de
   `tests/test_supposons.py tests/supposons_alors.vtx tests/test_gobannos.py tests/gobannos tests/test_valeurs.py
   tests/valeurs_mele.vtx tests/test_types_fonction.py tests/test_gobannos_flottants.py tests/test_nombres.py
@@ -95,7 +95,9 @@ fonctions, puis le lac et ses reflets. **0.73 (§79)** : la paillasse en grille 
 la ligne, montrée pendant le glissement) et la fenêtre d'édition des cases (nombre et noms des entrées et des sorties) ;
 la scène forgée (2,5 × le C) ; les cylindres de la forge plus lents que un cœur sur la scène (à réparer). **0.74 (§79 bis)** : les cylindres de la forge
 réparés (cache de 64 pages, hachage rapide, segments en alternance, fusion stricte ; 1 cœur : 3,7 ms par image, 1,6 × le C).
-**Prochain** : lire la mesure 4 cœurs du créateur ; Taranis pour la scène (lectures à adresse calculée, mémoire dans
+**0.75 (§79 ter)** : les cylindres, copie par blocs, réserves, variables dans les registres. **0.76 (§80)** : le
+rouleau de lumière en 2D (`belenos/rouleau.vtx`) ; le contrôle des cylindres au mot près. **Prochain** : lire la mesure
+du créateur ; Taranis pour la scène (lectures à adresse calculée, mémoire dans
 les fonctions appelées, l'image), puis la lumière dans le rouleau en 2D (l'idée du créateur), puis le val dans le cube. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.
 

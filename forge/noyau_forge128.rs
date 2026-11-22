@@ -26,6 +26,8 @@ struct Ctx {
     pe: [*mut u128; 64],
     // 0.74b : pour un cylindre, la feuille de la page écrite (ses blocs ouverts) ; nul hors d'un cylindre
     pb: [*mut Feuille; 64],
+    // 0.74c : pour un cylindre, les mots lus de la page (un bit par mot) ; nul hors d'un cylindre
+    rb: [*mut u64; 64],
     // les tableaux rangés hors du cube (l'adaptation automatique) : leur recopie dans le cube, avant toute fin
     vider: fn(&mut Ctx),
     // la machine d'un cylindre (les segments joués ensemble) : elle lit le cube commun, et n'écrit que dans le sien
@@ -143,7 +145,10 @@ impl Feuille {
 struct Cylindre {
     commun: *const Instantane,
     feuilles: Table<u128, Box<Feuille>>,
-    lues: Ensemble<u128>,
+    /// 0.74c : les mots lus, page par page (un bit par mot) : un conflit n'est vu que si un autre cylindre a
+    /// vraiment changé un mot que celui-ci a lu (avant, une page lue et écrite par deux cylindres, même à des mots
+    /// différents, faisait tout rejouer)
+    lus: Table<u128, Box<[u64; 1024]>>,
     /// 0.73 : les pages déjà vues par ce cylindre et leur premier mot (celle du cube commun, ou la sienne) : une
     /// page n'est cherchée et notée qu'une fois
     vues: Table<u128, *mut u128>,
@@ -153,7 +158,7 @@ struct Cylindre {
 /// Ce qu'un cylindre rend : ses pages, les pages qu'il a lues, et s'il faut tout rejouer
 struct Recolte {
     pages: Vec<(u128, Box<Feuille>)>,
-    lues: Vec<u128>,
+    lues: Vec<(u128, Box<[u64; 1024]>)>,
     danger: bool,
 }
 
@@ -197,7 +202,7 @@ fn rendre(c: &mut Ctx) -> Recolte {
             rendre_a_la_reserve(f.mots);
         }
     }
-    Recolte { pages, lues: o.lues.into_iter().collect(), danger: o.danger }
+    Recolte { pages, lues: o.lus.into_iter().collect(), danger: o.danger }
 }
 
 /// l'adresse du premier mot d'une page, depuis sa clé
@@ -219,18 +224,39 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
         rapport_cylindres(recoltes.len(), 0, 0, "un cylindre a touché ce qui n'est qu'au cube commun : rejoué");
         return false;
     }
-    // les pages que chacun a vraiment changées (déjà triées dans les fils, par rendre)
-    let ecrites: Vec<std::collections::HashSet<u128>> =
-        recoltes.iter().map(|r| r.pages.iter().map(|(k, _)| *k).collect()).collect();
-    // un cylindre a-t-il lu une page qu'un autre cylindre a écrite ?
+    // un cylindre a-t-il lu un mot qu'un autre cylindre a changé ? (au mot près : les blocs que l'autre a ouverts et
+    // changés, les mots que celui-ci a lus)
+    let ecrites: Vec<std::collections::HashMap<u128, &Feuille>> =
+        recoltes.iter().map(|r| r.pages.iter().map(|(k, f)| (*k, &**f)).collect()).collect();
     for t in 0..recoltes.len() {
-        for k in &recoltes[t].lues {
-            if ecrites.iter().enumerate().any(|(s, e)| s != t && e.contains(k)) {
-                rapport_cylindres(recoltes.len(), 0, 0, "un cylindre a lu ce qu'un autre écrivait : rejoué");
-                return false;
+        for (k, bits) in &recoltes[t].lues {
+            for (s_, e) in ecrites.iter().enumerate() {
+                if s_ == t {
+                    continue;
+                }
+                let f = match e.get(k) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                for b in 0..1024 {
+                    if bits[b] == 0 || !f.ouvert(b) {
+                        continue;
+                    }
+                    for i in 0..64 {
+                        if (bits[b] >> i) & 1 == 1 {
+                            let j = b * 64 + i;
+                            let orig = if f.commun.is_null() { 0 } else { unsafe { *f.commun.add(j) } };
+                            if f.mots[j] != orig {
+                                rapport_cylindres(recoltes.len(), 0, 0, "un cylindre a lu ce qu'un autre écrivait : rejoué");
+                                return false;
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+    drop(ecrites);
     // chaque page du cube commun, avec ceux qui l'ont écrite
     let nr = recoltes.len();
     let mut ordre: Vec<u128> = Vec::new();
@@ -378,6 +404,10 @@ impl Ctx {
         let (k, j) = Spu128::cle_page(a);
         let h = case(k);
         if k == self.cl[h] {
+            let b = self.rb[h];
+            if !b.is_null() {
+                unsafe { *b.add(j >> 6) |= 1u64 << (j & 63) };
+            }
             return unsafe { *self.pl[h].add(j) };
         }
         self.lire_lent(a, k, j)
@@ -386,19 +416,21 @@ impl Ctx {
     fn lire_lent(&mut self, a: u128, k: u128, j: usize) -> u128 {
         if self.ombre.is_some() && k >> 120 != 0 {
             let o = self.ombre.as_mut().unwrap();
+            // 0.74c : le mot lu est noté
+            let bits: *mut u64 = o.lus.entry(k).or_insert_with(|| Box::new([0u64; 1024])).as_mut_ptr();
+            unsafe { *bits.add(j >> 6) |= 1u64 << (j & 63) };
             // 0.74b : une page que ce cylindre écrit : bloc par bloc (les siens, ouverts ; les autres, du cube commun)
             if let Some(f) = o.feuilles.get(&k) {
-                o.lues.insert(k);
                 return f.lire(j);
             }
-            // 0.73 : une page déjà vue : son premier mot est connu, rien à chercher ni à noter
+            // 0.73 : une page déjà vue : son premier mot est connu, rien à chercher
             if let Some(&p) = o.vues.get(&k) {
                 let h = case(k);
                 self.cl[h] = k;
                 self.pl[h] = p;
+                self.rb[h] = bits;
                 return unsafe { *p.add(j) };
             }
-            o.lues.insert(k);
             let commun = unsafe { &*o.commun };
             if let Some(&(p, _)) = commun.pages.get(&k) {
                 // la page du cube commun, lue sans la copier
@@ -406,6 +438,7 @@ impl Ctx {
                 let h = case(k);
                 self.cl[h] = k;
                 self.pl[h] = p;
+                self.rb[h] = bits;
                 return unsafe { *p.add(j) };
             }
             if commun.disque {
@@ -418,6 +451,7 @@ impl Ctx {
         let h = case(k);
         self.cl[h] = k;
         self.pl[h] = p;
+        self.rb[h] = std::ptr::null_mut();
         unsafe { *p.add(j) }
     }
     #[inline(always)]
@@ -680,7 +714,8 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     m.charger(mots);
     m.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
     let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],
-                      pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], vider, ombre: None };
+                      pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], rb: [std::ptr::null_mut(); 64],
+                      vider, ombre: None };
     debuter(&mut c);
     // le brin : le code, les textes écrits et les données du programme sont de l'ADN (comme au début du programme
     // compilé : MARQUE R0, FIN_CODE, 1), puis l'appel de principal (CALL : l'adresse de retour dans la pile)

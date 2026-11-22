@@ -1,6 +1,9 @@
 AUTEUR.md
 COMMENCER.md
 LISEZMOI.md
+belenos/rouleau.vtx
+belenos/rouleau_banc.vtx
+belenos/rouleau_scene.vtx
 belenos/val.vtx
 belenos/val_banc.vtx
 belenos/val_ref.c

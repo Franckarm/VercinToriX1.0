@@ -1,0 +1,69 @@
+// machine : lugus
+// Belenos : le rouleau de lumière en 2D, à regarder (la coupe du val, agrandie trois fois).
+//     vtx toile128 belenos/rouleau.vtx
+// o / p : le soleil d'une direction à l'autre (du ras de l'horizon à gauche au ras de l'horizon à droite) ;
+// i / k : le soleil plus fort, plus faible (jusqu'à la nuit) ; f : le feu ; Échap : finir.
+// La lumière met une centaine de pas à traverser la coupe : on la voit couler, puis se poser.
+importer "rouleau_scene.vtx";
+
+constante ZOOM = 3;
+constante PAS_IMAGE = 4;
+
+fonction montrer() {
+    pour c dans 0..N {
+        soit coul = @2[ECRAN + c];
+        soit pr = (coul >> 16) & 255;
+        soit pg = (coul >> 8) & 255;
+        soit pb = coul & 255;
+        soit p = rgb(pr, pg, pb);
+        soit x0 = (c % NX) * ZOOM;
+        soit y0 = (c / NX) * ZOOM;
+        pour yy dans 0..ZOOM {
+            pour xx dans 0..ZOOM {
+                @1[(y0 + yy) * NX * ZOOM + x0 + xx] = p;
+            }
+        }
+    }
+}
+
+fonction principal() {
+    ecran(NX * ZOOM, NY * ZOOM);
+    preparer_rouleau();
+    // les cinq places du soleil : la direction où va sa lumière (0 : vers la droite, au ras de l'horizon à gauche ;
+    // 1 : bas-droite ; 2 : vers le bas, au zénith ; 3 : bas-gauche ; 4 : vers la gauche)
+    soit soleil = 1;
+    soit force = 230;
+    soit feu = 1;
+    soit t = 0;
+    soit fin = 0;
+    tantque fin == 0 {
+        soit debut = horloge();
+        pour q dans 0..PAS_IMAGE {
+            pas_rouleau(soleil, force, t, feu);
+            t = t + 1;
+        }
+        voir_rouleau();
+        montrer();
+        soit noms = ["levant ras", "matin", "midi", "soir", "couchant ras"];
+        texte_image(4, 4, "pas " + texte(t) + "   soleil : " + noms[soleil] + "   force " + texte(force) + "   " +
+                    texte(horloge() - debut) + " ms pour " + texte(PAS_IMAGE) + " pas", rgb(255, 230, 160));
+        presenter();
+        soit k = touche();
+        tantque k != 0 {
+            si k == 27 {
+                fin = 1;
+            } sinon si k == 111 && soleil > 0 {
+                soleil = soleil - 1;
+            } sinon si k == 112 && soleil < 4 {
+                soleil = soleil + 1;
+            } sinon si k == 105 && force < 250 {
+                force = force + 20;
+            } sinon si k == 107 && force >= 20 {
+                force = force - 20;
+            } sinon si k == 102 {
+                feu = 1 - feu;
+            }
+            k = touche();
+        }
+    }
+}

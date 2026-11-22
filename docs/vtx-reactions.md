@@ -3640,3 +3640,32 @@ avait ôté le hachage et le déséquilibre, pas le vrai poids.
 - **Ce que ça dit** : pour une image de 3,6 ms, l'isolement des cylindres (chacun son cube, puis la fusion) coûte autant
   que le travail. Les cylindres gagnent sur les gros calculs ; pour l'image en temps réel, la carte graphique est la
   vraie voie.
+
+## 80. Le rouleau de lumière, en 2D (22 novembre, 0.76)
+
+**L'idée du créateur** : la lumière entrelacée avec la matière dans le tapis roulant (le rouleau), comme le fluide.
+
+- **`belenos/rouleau_scene.vtx`** : une coupe verticale du val, 256 × 128 cellules. Le rouleau a 25 plans : la matière
+  (plan 0), et la lumière de chacune des huit directions en trois couleurs. La lumière qui va dans la direction d,
+  pour la cellule c, est rangée en (c + o_d) mod N ; à chaque pas, o_d recule du pas de sa direction : **la propagation
+  ne déplace aucune donnée** (le tapis roulant du fluide de Belenos). **La collision, c'est la matière** : la roche,
+  l'herbe, la lande et la terre renvoient ce qu'elles reçoivent dans toutes les directions, selon leur couleur ; la
+  neige renvoie presque tout (et la lumière s'y enfonce un peu) ; l'eau laisse passer en bleuissant, et sa surface
+  renvoie vers le haut une part de ce qui descend ; l'air en diffuse un peu (la brume, plus bleue que rouge) ; le feu
+  émet en vacillant ; les bords absorbent, et le ciel y entre (le soleil dans sa direction, le bleu de partout en haut).
+  Tout en entiers.
+- **`belenos/rouleau.vtx`** (`vtx toile128 belenos/rouleau.vtx`) : la coupe agrandie trois fois ; o / p : le soleil
+  du levant au couchant (cinq places : les directions du réseau), i / k : sa force (jusqu'à la nuit), f : le feu. On voit
+  la lumière couler du ciel puis se poser : les pentes face au soleil éclairées, l'ombre portée derrière le mont, la neige
+  brillante, le lac bleu, et la nuit, le seul feu qui éclaire le sol autour de lui.
+- **`belenos/rouleau_banc.vtx`** : 300 pas, puis l'empreinte de l'image : la même sur Lugus et forgé ; 38 ms par pas
+  traduit en x86, 5,8 ms forgé (un cœur).
+- **Les limites, honnêtement** : huit directions seulement ; une source ponctuelle (le feu) rayonne en étoile à huit
+  branches (l'« effet de rayons » des méthodes sur réseau) ; le soleil n'a que cinq places. La suite : seize directions
+  (ou plus) ; l'ombre du cube pour le soleil direct (net, à tout angle), le rouleau pour tout le reste.
+- **Les cylindres sur le rouleau** : chaque cellule n'écrit que sa propre lumière (les cellules sont en segments). La
+  fusion voyait un conflit dès qu'une page était lue par l'un et écrite par l'autre (« un cylindre a lu ce qu'un autre
+  écrivait : rejoué »), même à des mots différents. **Le contrôle est maintenant au mot près** : chaque cylindre note
+  les mots qu'il lit (un bit par mot), et il n'y a conflit que si un autre a vraiment changé l'un d'eux. Le rouleau passe
+  sans être rejoué. Mais chaque pas remue 12,6 Mo de lumière (786 432 mots de 16 octets) : les cylindres recopient puis
+  fondent autant, et sur deux cœurs le pas est 2,5 fois plus lent. Le rouleau est fait pour la carte graphique.

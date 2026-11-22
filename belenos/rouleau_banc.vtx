@@ -1,0 +1,23 @@
+// machine : lugus
+// Belenos : le banc du rouleau de lumière (sans fenêtre). La coupe se prépare, le soleil (bas-droite) et le feu
+// éclairent 300 pas ; à la fin, l'empreinte de l'image vue (FNV-1a) et le temps d'un pas.
+//     lugus belenos/rouleau_banc.vtx
+importer "rouleau_scene.vtx";
+
+constante PAS_BANC = 300;
+
+fonction principal() {
+    preparer_rouleau();
+    soit t0 = horloge();
+    pour t dans 0..PAS_BANC {
+        pas_rouleau(1, 230, t, 1);
+    }
+    soit duree = horloge() - t0;
+    voir_rouleau();
+    soit h = 14695981039346656037;
+    pour c dans 0..N {
+        h = (h ^ @2[ECRAN + c]) * 1099511628211;
+    }
+    afficher("empreinte :", h);
+    afficher(texte(PAS_BANC) + " pas en " + texte(duree) + " ms");
+}
