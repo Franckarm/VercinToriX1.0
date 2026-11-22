@@ -17,7 +17,7 @@ avec le créateur.*
   (service 28, `lister_dossier`, `dossier_present`), `lugus cataloguer DOSSIER` (écrit en vtx, dans le lecteur d'ADN),
   `importer empreinte "16hex";` sans chemin, la vibration de chaque molécule (`lugus morceaux`), et la carte qui dit
   d'où vient chaque molécule (et voit une retouche).
-- Les journaux : `docs/vtx-reactions.md` (sections 1 à 76), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
+- Les journaux : `docs/vtx-reactions.md` (sections 1 à 76 bis), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
   feuille de route, section 11), `docs/vtx-syntaxe-v0-4.md` (la référence du langage).
 
 ## 2. Les règles de travail (à garder)
@@ -84,7 +84,9 @@ boucles sur `0..longueur(t)` sans vérification, toujours) et l'épissage rapide
 `lugus PROG.adn --rapide`), décidés avec le créateur ; Dunon et `s.champ[i]` fermés. **0.70 (§76)** : LDT et STT (la machine vérifie t[i] en une instruction,
 plus vite que sans vérification : 716 314 instructions contre 1 115 214), sur Lugus et Dunon, la traduction native,
 Gobannos, le juge ; l'épissage d'hier éteint (`LDT_STT`) ; Ogmios : la place des vagues fait l'ordre des lignes, la
-nouvelle page, la case suite (Ne) qui renvoie à la page suivante. **Reste** : `f()[i]` ; un LDT sans vérification
+nouvelle page, la case suite (Ne) qui renvoie à la page suivante. **0.70b (§76 bis)** : la paillasse fait l'ordre du texte (colonne, puis hauteur), appeler une page et le
+retour. **Ensuite, proposé au créateur** : Belenos, le cube comme tapis roulant (le temps), l'anti-cube pour les reflets,
+l'ombre pour les ombres. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.
 
 **Le glossaire** (fait, 0.67, §73). **La fenêtre d'un programme** (fait, 0.68, §74 : l'atelier et `lugus`, sous
