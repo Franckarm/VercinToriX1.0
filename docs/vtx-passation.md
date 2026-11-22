@@ -1,4 +1,4 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.65)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.801)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.80.zip`, `essai-0.80.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.802.zip`, `essai-0.802.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -103,7 +103,13 @@ essayer. **0.78 (§82)** : l'image en un bloc (`presenter`, 23 fois plus vite) ;
 l'écran 8 fois plus vite) ; ensuite, dans l'ordre du créateur : l'anti-cube, l'ombre, la lumière quaternaire (vrai /
 faux / variable / inconnu, dégressive, l'inondation par sauts). **0.79 (§83)** : l'ombre quaternaire par balayage (vrai, faux, variable avec
 sa densité, inconnu), juste au-delà de 200 cases ; ensuite : la lumière quaternaire (dégressive, l'inondation par sauts),
-le tracé des rayons de l'image (ce qui coûte). **Prochain** : lire la mesure
+le tracé des rayons de l'image (ce qui coûte). **0.801 (§84)** : l'ombre et la lumière ensemble (l'idée du créateur :
+une seule lumière par case, du blanc au noir ; vrai = une source en plein, faux = le noir, variable = tout le gris) ;
+les sources diverses : le soleil, le ciel (selon l'heure et l'ouverture de la case), le renvoi du sol éclairé (porté
+dans les deux sens le long des lignes, dégressif), huit feux (dégressifs, avec leur ombre quaternaire ; `f`), la lune
+et son ombre la nuit (`k` jusqu'à −24°, `n`) ; empreinte 4817037499302952394. Ensuite : le renvoi égal dans toutes les
+directions (l'inondation par sauts, le début de l'anti-cube et des reflets), les feux qui vacillent et renvoient, puis
+le tracé des rayons. **Prochain** : lire la mesure
 du créateur ; Taranis pour la scène (lectures à adresse calculée, mémoire dans
 les fonctions appelées, l'image), puis la lumière dans le rouleau en 2D (l'idée du créateur), puis le val dans le cube. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.
