@@ -3486,4 +3486,3 @@ sous-programme).
   case ne peut pas calculer avant l'arrivée de sa valeur, comme un réactif.
 - **appeler** (Ne) : `= page_2(_) -> lK` : la page suivante comme sous-programme, son résultat revient dans une liaison
   neuve. Dans la page appelée, la case qui donne le résultat porte « retour vers principal » ; un double clic y ramène.
-EOF
