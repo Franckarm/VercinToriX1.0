@@ -4,7 +4,7 @@ texte. Sans écran, par « vtx paillasse » (le même module que l'atelier, les 
   1. la lecture : les atomes, leurs liaisons et leurs vagues sont ceux du compilateur (vtx128.py), sur les exemples de
      Lugus et sur des réactions au hasard ;
   2. les gestes : tirer une liaison sur une entrée libre « _ », délier, ajouter un atome (double clic), le retirer
-     (Suppr), déplacer une case (sa place gardée dans PROG.paillasse) ; le texte réécrit compile et donne le bon
+     (Suppr), déplacer une case (sa colonne gardée dans PROG.paillasse) ; le texte réécrit compile et donne le bon
      résultat ;
   3. les valeurs (Ctrl+P) : chaque liaison porte sa valeur et son état de Belnap (vrai, porte faux, jamais calculée).
 
@@ -166,9 +166,17 @@ x0, y0 = c[3]["x"] + 10, c[3]["y"] + 8
 paillasse(f, gestes=[f"bas {x0} {y0}", f"bouge {x0 + 40} {y0 + 120}", f"haut {x0 + 40} {y0 + 120}"])
 c2, _ = plan(f)
 place = os.path.join(D, "r.paillasse")
-verifier("déplacer une case : elle reste où on l'a posée (r.paillasse), le texte ne change pas",
-         (c2[3]["x"], c2[3]["y"]) == (c[3]["x"] + 40, c[3]["y"] + 120) and os.path.exists(place)
-         and open(f, encoding="utf-8").read() == t, f"{c[3]} -> {c2[3]}")
+# 0.72 : la grille aimantée : seule dans sa colonne, la case revient à sa place ; rien n'est écrit
+verifier("déplacer une case dans sa colonne, sans autre case : elle revient à sa place de la grille, le texte ne change pas",
+         (c2[3]["x"], c2[3]["y"]) == (c[3]["x"], c[3]["y"]) and open(f, encoding="utf-8").read() == t, f"{c[3]} -> {c2[3]}")
+# portée dans la colonne de la vague 3 : sa ligne passe à la place de cette vague, sa colonne est gardée
+x3 = c[5]["x"] + 10
+sortie = paillasse(f, gestes=[f"bas {x0} {y0}", f"bouge {x3} {y0 + 150}", f"haut {x3} {y0 + 150}"])
+t3 = sortie.replace("\r\n", "\n")
+verifier("une case portée dans la colonne d'une autre vague : la grille la range, sa colonne est gardée (r.paillasse)",
+         os.path.exists(place) and "|3|-1" in open(place, encoding="utf-8").read() and "vague 3" in t3, t3[-400:])
+os.remove(place)
+c2, _ = plan(f)
 cx, cy = c2[5]["x"] + 6, c2[5]["y"] + 6
 sortie = paillasse(f, gestes=[f"bas {cx} {cy}", f"haut {cx} {cy}"])
 verifier("un clic sur une case : l'éditeur va à sa ligne", "aller à la ligne 5" in sortie, sortie[:300])

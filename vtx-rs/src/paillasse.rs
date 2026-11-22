@@ -1134,6 +1134,8 @@ pub struct TexteP {
 #[derive(Clone)]
 struct Case {
     atome: usize,
+    /// 0.72 : la colonne (la vague) où la case est rangée
+    col: usize,
     x: i32,
     y: i32,
     l: i32,
@@ -1144,7 +1146,8 @@ struct Case {
 
 #[derive(Clone)]
 enum Geste {
-    Deplacer { atome: usize, dx: i32, dy: i32, x0: i32, y0: i32, bouge: bool },
+    /// 0.72 : (mx, my) la souris ; cible : la colonne et le rang où la case tomberait si on la lâchait
+    Deplacer { atome: usize, dx: i32, dy: i32, x0: i32, y0: i32, bouge: bool, mx: i32, my: i32, cible: Option<(usize, usize)> },
     Lier { nom: String, de: (i32, i32), a: (i32, i32) },
     Delier { atome: usize, port: usize, de: (i32, i32), a: (i32, i32) },
     Panoramique { x0: i32, y0: i32, d0: (i32, i32) },
@@ -1368,6 +1371,10 @@ pub struct Paillasse {
     pub derniere_case: Option<usize>,
     /// 0.69b : où le clic droit a ouvert le menu des cases
     pub clic_droit: Option<(i32, i32)>,
+    /// 0.72 : la place réservée à la case qu'on glisse (x, y, largeur, hauteur)
+    fantome: Option<(i32, i32, i32, i32)>,
+    /// 0.72 : la fenêtre d'édition d'une case, si elle est ouverte
+    pub edition: Option<Edition>,
 }
 
 impl Default for Paillasse {
@@ -1483,7 +1490,7 @@ impl Paillasse {
     pub fn nouvelle() -> Paillasse {
         Paillasse { faces: None, perimee: false, reactions: vec![], courante: 0, choisi: None, positions: HashMap::new(), valeurs: HashMap::new(), decal: (0, 0),
                     car_l: 6, car_h: 12, echelle: 1.0, message: None, cases: vec![], colonnes: vec![], onglets: vec![], entrees_r: vec![], geste: None,
-                    palette_ouverte: false, derniere_case: None, clic_droit: None }
+                    palette_ouverte: false, derniere_case: None, clic_droit: None, fantome: None, edition: None }
     }
 
     /// relire le texte (la réaction montrée et l'atome choisi restent, si on les retrouve)
@@ -1555,17 +1562,83 @@ impl Paillasse {
         }
     }
 
-    /// les cases de la réaction montrée : rangées par vagues (ou à la place choisie à la main)
+    /// 0.72 : la colonne (la vague) d'une case : celle choisie à la main (gardée dans PROG.paillasse), sinon sa vague
+    fn colonne_atome(&self, r: &Reaction, k: usize) -> usize {
+        let a = &r.atomes[k];
+        match self.positions.get(&(r.nom.clone(), a.cle())) {
+            Some(&(c, -1)) if c >= 1 => c as usize,
+            _ => a.vague.max(1),
+        }
+    }
+
+    /// 0.72 : les cases de chaque colonne, dans l'ordre de leurs lignes (l'indice 0, les entrées, reste vide) ; apercu :
+    /// la case qu'on glisse, rangée à la colonne et au rang où elle tomberait
+    fn par_colonnes(&self, r: &Reaction, apercu: Option<(usize, usize, usize)>) -> Vec<Vec<usize>> {
+        let mut ks: Vec<usize> = (0..r.atomes.len()).collect();
+        ks.sort_by_key(|&k| r.atomes[k].ligne);
+        let mut n = r.nb_vagues.max(1);
+        for &k in &ks {
+            n = n.max(self.colonne_atome(r, k));
+        }
+        if let Some((_, c, _)) = apercu {
+            n = n.max(c);
+        }
+        let mut cols: Vec<Vec<usize>> = vec![vec![]; n + 1];
+        for &k in &ks {
+            if apercu.map_or(false, |p| p.0 == k) {
+                continue;
+            }
+            cols[self.colonne_atome(r, k)].push(k);
+        }
+        if let Some((k, c, rang)) = apercu {
+            let v = &mut cols[c];
+            v.insert(rang.min(v.len()), k);
+        }
+        cols
+    }
+
+    /// 0.72 : où tomberait la case « atome » lâchée en (x, y) : la colonne sous la souris (la dernière, libre, si l'on
+    /// va plus loin), et le rang : le nombre de cases de cette colonne dont le milieu est au-dessus de la souris
+    fn cible_sous(&self, atome: usize, x: i32, y: i32) -> (usize, usize) {
+        let dernier = self.colonnes.iter().map(|c| c.0).max().unwrap_or(1).max(1);
+        let col = match self.colonne_de(x) {
+            Some(v) => v.max(1),
+            None if self.colonnes.first().map_or(false, |c| x < c.1) => 1,
+            None => dernier,
+        };
+        let rang = self.cases.iter().filter(|c| c.col == col && c.atome != atome && c.y + c.h / 2 < y).count();
+        (col, rang)
+    }
+
+    /// 0.72 : la ligne où écrire une case neuve de la colonne v : avant la première case d'une colonne plus tardive
+    fn ligne_pour_colonne(&self, r: &Reaction, v: usize) -> usize {
+        let cols = self.par_colonnes(r, None);
+        cols.iter().skip(v + 1).flatten().map(|&k| r.atomes[k].ligne).min().unwrap_or(r.fin)
+    }
+
+    /// les cases de la réaction montrée, rangées dans leurs colonnes (0.72 : la grille aimantée : une colonne par
+    /// vague, les cases empilées dans l'ordre de leurs lignes ; pendant un glissement, les autres s'écartent pour
+    /// montrer la place où la case tombera, et une colonne libre attend au bout)
     fn placer(&mut self) {
         self.cases.clear();
         self.entrees_r.clear();
         self.colonnes.clear();
+        self.fantome = None;
         let r = match self.reactions.get(self.courante) {
             Some(r) => r.clone(),
             None => return,
         };
         let (cl, ch) = (self.car_l, self.car_h);
         let (x0, y0) = self.origine();
+        let glisse = match &self.geste {
+            Some(Geste::Deplacer { atome, bouge: true, cible: Some((c, rang)), dx, dy, mx, my, .. }) if !r.carte =>
+                Some((*atome, *c, *rang, *mx - *dx, *my - *dy)),
+            _ => None,
+        };
+        let mut cols = self.par_colonnes(&r, glisse.map(|g| (g.0, g.1, g.2)));
+        if glisse.is_some() && cols.last().map_or(false, |c| !c.is_empty()) {
+            cols.push(vec![]);
+        }
         // les colonnes : les entrées de la réaction (s'il y en a), puis une par vague, assez large pour ses cases et
         // les noms de leurs sorties
         let mut x = x0;
@@ -1580,33 +1653,44 @@ impl Paillasse {
             self.colonnes.push((0, x - self.px(12), lp + self.px(40)));
             x += lp + self.px(40);
         }
-        for v in 1..=r.nb_vagues.max(1) {
-            let dans: Vec<&Atome> = r.atomes.iter().filter(|a| a.vague == v).collect();
+        let mut place_col: Vec<i32> = vec![0; cols.len()];
+        for v in 1..cols.len() {
+            let dans: Vec<&Atome> = cols[v].iter().map(|&k| &r.atomes[k]).collect();
             let lmax = dans.iter().map(|a| self.mesure_case(a).0).max().unwrap_or(self.px(120));
             let lab = dans.iter().flat_map(|a| a.sorties.iter()).map(|s| self.etiquette_sortie(s).chars().count() as i32).max().unwrap_or(0);
             let large = lmax + (lab * cl + self.px(40)).max(self.px(70));
             self.colonnes.push((v, x - self.px(12), large));
+            place_col[v] = x;
             x += large;
         }
-        let mut hauteur_vague: HashMap<usize, i32> = HashMap::new();
-        let mut ordre: Vec<usize> = (0..r.atomes.len()).collect();
-        ordre.sort_by_key(|&k| (r.atomes[k].vague, r.atomes[k].ligne));
-        for k in ordre {
-            let a = &r.atomes[k];
-            let (l, h, rangs) = self.mesure_case(a);
-            let (x, y) = match self.positions.get(&(r.nom.clone(), a.cle())) {
-                Some(&(px, py)) => (x0 + self.px(px), y0 + self.px(py)),
-                None => {
-                    let cx = self.colonnes.iter().find(|c| c.0 == a.vague).map(|c| c.1 + self.px(12)).unwrap_or(x0);
-                    let hy = hauteur_vague.entry(a.vague).or_insert(0);
-                    let p = (cx, y0 + *hy);
-                    *hy += h + self.px(26);
-                    p
+        let mut glissee: Option<Case> = None;
+        for v in 1..cols.len() {
+            let mut y = y0;
+            for &k in &cols[v] {
+                let a = &r.atomes[k];
+                let (l, h, rangs) = self.mesure_case(a);
+                let (cx, cy) = match glisse {
+                    Some(g) if g.0 == k => {
+                        // la place réservée (le fantôme), et la case qui suit la souris
+                        self.fantome = Some((place_col[v], y, l, h));
+                        (g.3, g.4)
+                    }
+                    _ => (place_col[v], y),
+                };
+                y += h + self.px(26);
+                let entrees = (0..a.entrees.len()).map(|i| (cx, cy + rangs[i])).collect();
+                let sorties = (0..a.sorties.len()).map(|i| (cx + l, cy + rangs[i])).collect();
+                let c = Case { atome: k, col: v, x: cx, y: cy, l, h, entrees, sorties };
+                if glisse.map_or(false, |g| g.0 == k) {
+                    glissee = Some(c);
+                } else {
+                    self.cases.push(c);
                 }
-            };
-            let entrees = (0..a.entrees.len()).map(|i| (x, y + rangs[i])).collect();
-            let sorties = (0..a.sorties.len()).map(|i| (x + l, y + rangs[i])).collect();
-            self.cases.push(Case { atome: k, x, y, l, h, entrees, sorties });
+            }
+        }
+        // la case qu'on glisse est dessinée par-dessus les autres
+        if let Some(c) = glissee {
+            self.cases.push(c);
         }
     }
 
@@ -1687,6 +1771,32 @@ impl Paillasse {
         for (_, c) in r.contrats.iter().rev() {
             tx.push(TexteP { x: self.px(12), y: yb, texte: c.clone(), couleur: 0xE0A040 });
             yb -= ch + self.px(4);
+        }
+        // 0.72 : la place où la case glissée tombera : un cadre en pointillés, et la ligne qu'elle prendra
+        if let (Some((fx, fy, fl, fh)), Some(Geste::Deplacer { atome, cible: Some((v, _)), .. })) = (self.fantome, &self.geste) {
+            let pas_p = self.px(6).max(3);
+            for i in (0..fl).step_by(pas_p as usize * 2) {
+                im.plein(fx + i, fy, pas_p.min(fl - i), e2, OR);
+                im.plein(fx + i, fy + fh - e2, pas_p.min(fl - i), e2, OR);
+            }
+            for j in (0..fh).step_by(pas_p as usize * 2) {
+                im.plein(fx, fy + j, e2, pas_p.min(fh - j), OR);
+                im.plein(fx + fl - e2, fy + j, e2, pas_p.min(fh - j), OR);
+            }
+            let cols = self.par_colonnes(&r, self.cases.iter().find(|c| c.atome == *atome).map(|_| {
+                let (c, rang) = match &self.geste { Some(Geste::Deplacer { cible: Some(p), .. }) => *p, _ => (1, 0) };
+                (*atome, c, rang)
+            }));
+            let mut lignes: Vec<usize> = r.atomes.iter().map(|a| a.ligne).collect();
+            lignes.sort();
+            let pos = cols.iter().flatten().position(|k| k == atome).unwrap_or(0);
+            let ligne = lignes.get(pos).copied().unwrap_or(0) + 1;
+            // l'étiquette, au-dessus de la case qu'on tient (elle couvre souvent sa place)
+            let t = format!("ici : vague {}, ligne {}", v, ligne);
+            let (gx, gy) = self.cases.last().map(|c| (c.x, c.y)).unwrap_or((fx, fy));
+            let lt = (t.chars().count() as i32 + 2) * cl;
+            im.plein(gx, gy - ch - self.px(10), lt, ch + self.px(6), 0x3A3020);
+            tx.push(TexteP { x: gx + cl, y: gy - ch - self.px(7), texte: t, couleur: OR });
         }
         // les liaisons : de la sortie qui les donne vers chaque entrée qui les lit
         for c in self.cases.clone() {
@@ -1785,6 +1895,7 @@ impl Paillasse {
         if let Some(m) = &self.message {
             tx.push(TexteP { x: self.px(12), y: h as i32 - self.px(8) - ch, texte: m.clone(), couleur: OR });
         }
+        self.dessiner_edition(&mut im, &mut tx, l as i32, h as i32);
         (im, tx)
     }
 
@@ -1807,6 +1918,13 @@ impl Paillasse {
 
     /// la souris (x, y en pixels de la paillasse) ; source : le texte actuel
     pub fn souris(&mut self, genre: Souris, x: i32, y: i32, source: &str) -> Reponse {
+        // 0.72 : la fenêtre d'édition ouverte prend les clics (un double clic compte comme un clic)
+        if self.edition.is_some() {
+            return match genre {
+                Souris::Bas | Souris::Double => self.clic_edition(x, y, source),
+                _ => Reponse::Rien,
+            };
+        }
         if matches!(genre, Souris::Bas | Souris::Droit | Souris::Double) {
             self.palette_ouverte = false;
         }
@@ -1897,7 +2015,8 @@ impl Paillasse {
                 }
                 if let Some(c) = self.case_sous(x, y).cloned() {
                     self.choisi = Some(c.atome);
-                    self.geste = Some(Geste::Deplacer { atome: c.atome, dx: x - c.x, dy: y - c.y, x0: x, y0: y, bouge: false });
+                    self.geste = Some(Geste::Deplacer { atome: c.atome, dx: x - c.x, dy: y - c.y, x0: x, y0: y, bouge: false,
+                                                        mx: x, my: y, cible: None });
                     return Reponse::Redessiner;
                 }
                 self.choisi = None;
@@ -1910,16 +2029,13 @@ impl Paillasse {
                 let nom_r = self.reaction().map(|r| r.nom.clone());
                 let cle = |p: &Paillasse, k: usize| p.reaction().map(|r| r.atomes[k].cle());
                 match self.geste.clone() {
-                    Some(Geste::Deplacer { atome, dx, dy, x0, y0, bouge }) => {
+                    Some(Geste::Deplacer { atome, dx, dy, x0, y0, bouge, cible, .. }) => {
+                        let _ = (echelle, ox, oy, &nom_r, cle);
                         let bouge = bouge || (x - x0).abs() > 3 || (y - y0).abs() > 3;
-                        if bouge {
-                            let px = ((x - dx - ox) as f32 / echelle) as i32;
-                            let py = ((y - dy - oy) as f32 / echelle) as i32;
-                            if let (Some(n), Some(c)) = (nom_r, cle(self, atome)) {
-                                self.positions.insert((n, c), (px, py));
-                            }
-                        }
-                        self.geste = Some(Geste::Deplacer { atome, dx, dy, x0, y0, bouge });
+                        // 0.72 : la grille aimantée : la colonne sous la souris, et le rang parmi ses cases (au-dessus du
+                        // milieu d'une case : avant elle) ; les autres cases s'écartent pour montrer la place
+                        let cible = if bouge { Some(self.cible_sous(atome, x, y)) } else { cible };
+                        self.geste = Some(Geste::Deplacer { atome, dx, dy, x0, y0, bouge, mx: x, my: y, cible });
                         Reponse::Redessiner
                     }
                     Some(Geste::Lier { nom, de, .. }) => {
@@ -1947,20 +2063,31 @@ impl Paillasse {
                     Some(Geste::Deplacer { atome, bouge: false, .. }) => Reponse::Aller(r.atomes[atome].ligne),
                     // 0.70b : la paillasse fait l'ordre du texte : les lignes des cases suivent leurs places, colonne par
                     // colonne (de gauche à droite), puis de haut en bas ; la case reste où on l'a posée
-                    Some(Geste::Deplacer { atome, bouge: true, .. }) if !r.carte => {
-                        self.placer();
-                        let mut cles: Vec<(i32, i32, usize)> = self.cases.iter()
-                            .map(|c| (self.colonne_de(c.x + 1).map_or(i32::MAX, |v| v as i32), c.y, c.atome)).collect();
-                        cles.sort();
-                        let ordre: Vec<usize> = cles.iter().map(|k| k.2).collect();
+                    Some(Geste::Deplacer { atome, bouge: true, cible, .. }) if !r.carte => {
+                        // 0.72 : la case tombe à la place montrée ; le texte prend l'ordre des colonnes, puis des rangs
+                        let (v, rang) = cible.unwrap_or_else(|| self.cible_sous(atome, x, y));
+                        let cols = self.par_colonnes(&r, Some((atome, v, rang)));
+                        let ordre: Vec<usize> = cols.iter().flatten().copied().collect();
                         let (s, l) = ordonner_lignes(source, &r, &ordre, atome);
                         let a = &r.atomes[atome];
-                        let v = self.colonne_de(x).unwrap_or(a.vague);
+                        let cle_a = (r.nom.clone(), a.cle());
+                        if v == a.vague.max(1) {
+                            self.positions.remove(&cle_a);
+                        } else {
+                            self.positions.insert(cle_a, (v as i32, -1));
+                        }
+                        let _ = x;
                         // une valeur reçue d'une vague plus tardive : la case est posée là, elle calculera à son arrivée
                         let entrees: Vec<&str> = a.entrees.iter().map(|e| e.nom.as_str()).collect();
                         let attend = r.atomes.iter().filter(|b| b.vague >= v && b.sorties.iter().any(|o| entrees.contains(&o.as_str())))
                             .flat_map(|b| b.sorties.iter().filter(|o| entrees.contains(&o.as_str())).cloned()).collect::<Vec<_>>();
-                        self.message = Some(if attend.is_empty() {
+                        let mut avant: Vec<usize> = (0..r.atomes.len()).collect();
+                        avant.sort_by_key(|&k| r.atomes[k].ligne);
+                        self.message = Some(if s == source && ordre != avant {
+                            "le texte n'a pas pu suivre : une case de cette réaction n'est pas sur une seule ligne".to_string()
+                        } else if attend.is_empty() && v > a.vague.max(1) {
+                            format!("la case est à la vague {}, ligne {} (elle pourrait réagir dès la vague {})", v, l + 1, a.vague)
+                        } else if attend.is_empty() {
                             format!("la case est à la vague {}, ligne {}", v, l + 1)
                         } else {
                             format!("la case est à la vague {}, ligne {} ; elle reçoit {} d'une vague plus tardive : \
@@ -2021,11 +2148,11 @@ impl Paillasse {
                     return Reponse::Editer { source: Some(s), ligne: l, texte: t, x, y };
                 }
                 if let Some(c) = self.case_sous(x, y).cloned() {
+                    // 0.72 : la fenêtre d'édition de la case
                     self.choisi = Some(c.atome);
-                    let r = self.reaction().unwrap();
-                    let l = r.atomes[c.atome].ligne;
-                    let t = source.split('\n').nth(l).unwrap_or("").trim().to_string();
-                    return Reponse::Editer { source: None, ligne: l, texte: t, x: c.x, y: c.y };
+                    let l = self.reaction().unwrap().atomes[c.atome].ligne;
+                    self.ouvrir_edition(source, l);
+                    return Reponse::Aller(l);
                 }
                 // 0.69b : dans le vide, le menu des cases là où l'on a cliqué
                 self.clic_droit = Some((x, y));
@@ -2037,7 +2164,14 @@ impl Paillasse {
                     let (s, l) = ajouter_reaction(source);
                     return Reponse::Texte { source: s, ligne: l };
                 }
-                if let Some(c) = self.case_sous(x, y) {
+                if let Some(c) = self.case_sous(x, y).cloned() {
+                    // 0.72 : le double clic sur l'en-tête d'une case : la fenêtre d'édition
+                    if y < c.y + self.car_h + self.px(10) {
+                        self.choisi = Some(c.atome);
+                        let l = self.reaction().unwrap().atomes[c.atome].ligne;
+                        self.ouvrir_edition(source, l);
+                        return Reponse::Aller(l);
+                    }
                     let r = self.reaction().unwrap();
                     // 0.70 : une case qui renvoie vers une page : le double clic ouvre la page
                     if let Some(n) = r.atomes[c.atome].vers.clone().or_else(|| r.atomes[c.atome].retour.clone()) {
@@ -2050,6 +2184,7 @@ impl Paillasse {
                     return Reponse::Aller(r.atomes[c.atome].ligne);
                 }
                 let (s, l) = self.poser_atome(x, y, source);
+                self.ouvrir_edition(&s, l);
                 Reponse::Texte { source: s, ligne: l }
             }
         }
@@ -2080,21 +2215,47 @@ impl Paillasse {
                 };
                 let (s, l) = poser_modele(source, &r, c);
                 self.derniere_case = Some(k);
-                // la place choisie : celle du clic, sous la clé de l'atome neuf
-                if let Some(a) = analyser(&s).into_iter().find(|q| q.nom == r.nom).and_then(|q| q.atomes.into_iter().find(|a| a.ligne == l)) {
-                    let (ox, oy) = self.origine();
-                    self.positions.insert((r.nom.clone(), a.cle()),
-                                          (((x - ox) as f32 / self.echelle) as i32, ((y - oy) as f32 / self.echelle) as i32));
-                }
                 (s, l)
             }
         };
-        let (s, l) = match (vague, r0) {
-            (Some(v), Some(r)) if v >= 1 => deplacer_ligne(&s, l, ligne_pour_vague(&r, v, None)),
-            _ => (s, l),
+        let _ = (vague, r0, y);
+        // 0.72 : la case neuve va dans la colonne où l'on a cliqué (au bout), et la fenêtre d'édition s'ouvre
+        let (s, l) = self.ranger_neuve(&s, l, x);
+        self.ouvrir_edition(&s, l);
+        Reponse::Texte { source: s, ligne: l }
+    }
+
+    /// 0.72 : une case neuve (sa ligne l dans le texte s) rangée dans la colonne sous x : sa ligne va avant les colonnes
+    /// plus tardives, et sa colonne est retenue ; rend le texte et la ligne
+    fn ranger_neuve(&mut self, s: &str, l: usize, x: i32) -> (String, usize) {
+        let col = match self.colonne_de(x) {
+            Some(v) => v.max(1),
+            None if self.colonnes.first().map_or(false, |c| x < c.1) => 1,
+            None => self.colonnes.iter().map(|c| c.0).max().unwrap_or(1).max(1),
         };
-        let t = s.split('\n').nth(l).unwrap_or("").trim().to_string();
-        Reponse::Editer { source: Some(s), ligne: l, texte: t, x, y }
+        let nom = match self.reaction().filter(|r| !r.carte) {
+            Some(r) => r.nom.clone(),
+            None => return (s.to_string(), l),
+        };
+        let r = match analyser(s).into_iter().find(|q| q.nom == nom) {
+            Some(r) => r,
+            None => return (s.to_string(), l),
+        };
+        let k = match r.atomes.iter().position(|a| a.ligne == l) {
+            Some(k) => k,
+            None => return (s.to_string(), l),
+        };
+        let cle = (nom.clone(), r.atomes[k].cle());
+        if col == r.atomes[k].vague.max(1) {
+            self.positions.remove(&cle);
+        } else {
+            self.positions.insert(cle, (col as i32, -1));
+        }
+        // la ligne : avant la première case d'une colonne plus tardive (sans compter la case neuve)
+        let mut autres = r.clone();
+        autres.atomes.remove(k);
+        let avant = self.ligne_pour_colonne(&autres, col);
+        deplacer_ligne(s, l, avant.min(r.fin))
     }
 
     /// 0.70 : la vague de la colonne sous x (0 : les entrées), s'il y en a une
@@ -2160,12 +2321,11 @@ impl Paillasse {
         let place = r.fin.min(v.len());
         v.insert(place, format!("{}{}{}", retrait, ligne, cr));
         src = v.join("\n");
-        if let Some((x, y)) = ou {
-            if let Some(a) = analyser(&src).into_iter().find(|q| q.nom == r.nom).and_then(|q| q.atomes.into_iter().find(|a| a.ligne == place)) {
-                let (ox, oy) = self.origine();
-                self.positions.insert((r.nom.clone(), a.cle()),
-                                      (((x - ox) as f32 / self.echelle) as i32, ((y - oy) as f32 / self.echelle) as i32));
-            }
+        let mut place = place;
+        if let Some((x, _)) = ou {
+            let (s2, l2) = self.ranger_neuve(&src, place, x);
+            src = s2;
+            place = l2;
         }
         self.message = Some(if appeler {
             format!("l'appel : la valeur part dans la page « {} », son résultat revient ici (double clic : ouvrir la page)",
@@ -2173,11 +2333,10 @@ impl Paillasse {
         } else {
             format!("la suite : la valeur part dans la page « {} » (double clic sur la case pour l'ouvrir)", suivante)
         });
-        let t = src.split('\n').nth(place).unwrap_or("").trim().to_string();
-        match ou {
-            Some((x, y)) => Reponse::Editer { source: Some(src), ligne: place, texte: t, x, y },
-            None => Reponse::Texte { source: src, ligne: place },
+        if ou.is_some() {
+            self.ouvrir_edition(&src, place);
         }
+        Reponse::Texte { source: src, ligne: place }
     }
 
     /// un atome neuf « = _ -> lK » à la fin de la réaction, placé où l'on a cliqué ; rend le texte et sa ligne
@@ -2191,15 +2350,15 @@ impl Paillasse {
             }
             k
         });
-        let (ox, oy) = self.origine();
-        let px = ((x - ox) as f32 / self.echelle) as i32;
-        let py = ((y - oy) as f32 / self.echelle) as i32;
-        self.positions.insert((r.nom.clone(), nom), (px, py));
-        (s, l)
+        let _ = (nom, y);
+        self.ranger_neuve(&s, l, x)
     }
 
     /// une touche quand la paillasse a le clavier : Suppr retire l'atome choisi, Échap oublie le choix
     pub fn touche(&mut self, vk: u32, source: &str) -> Reponse {
+        if self.edition.is_some() {
+            return self.touche_edition(vk, source);
+        }
         if self.reaction().map_or(false, |r| r.carte) && vk == 0x2E {
             return Reponse::Message("la carte du programme se lit, elle ne se réécrit pas : retirez la fonction dans le texte".into());
         }
@@ -2369,11 +2528,15 @@ impl Paillasse {
                     t.push_str(&format!(", elle rend {}", res));
                 }
                 t.push_str(".\r\n");
-                t.push_str("Glisser une case : la déplacer. Tirer d'une sortie (à droite d'une case) vers une case : lier (la \
-                            liaison remplit son entrée libre « _ », ou l'entrée visée). Tirer une entrée vers le vide : délier.\r\n\
-                            Double clic dans le vide : un atome neuf (« = _ -> l1 » s'écrit dans le texte). Clic droit sur une case : \
-                            l'éditer (Entrée écrit, Échap renonce) ; clic droit dans le vide : le menu des cases, la case choisie se pose là et s'édite. \
-                            Suppr : retirer l'atome choisi. Glisser le vide : déplacer la paillasse.\r\n\
+                t.push_str("Glisser une case : chaque vague est une colonne, les cases s'y empilent dans l'ordre de leurs lignes ; \
+                            pendant le glissement, les autres s'écartent et un cadre montre la place (la vague et la ligne qu'elle \
+                            prendra) ; lâchée, la ligne du texte suit. Tirer d'une sortie (à droite d'une case) vers une case : lier \
+                            (la liaison remplit son entrée libre « _ », ou l'entrée visée). Tirer une entrée vers le vide : délier.\r\n\
+                            Clic droit sur une case, ou double clic sur son en-tête : la fenêtre d'édition (son nom, ce qu'elle fait, \
+                            le nombre et le nom de ses entrées et de ses sorties ; Tab : le champ suivant, Entrée écrit, Échap \
+                            renonce). Clic droit dans le vide : le menu des cases, la case choisie se pose dans cette colonne et \
+                            s'édite. Double clic dans le vide : une case vide (« = _ -> l1 »). Suppr : retirer la case choisie. \
+                            Glisser le vide : déplacer la paillasse.\r\n\
                             Ctrl+P : faire réagir avec la provenance ; chaque liaison montre alors sa valeur (vert : arrivée, rouge : \
                             sa branche n'a pas réagi, gris : jamais calculée).\r\n");
                 // 0.6q : la réaction est une molécule : ses six faces, de l'ADN rangé au dernier F5
@@ -2425,10 +2588,592 @@ impl Paillasse {
             if c.len() == 3 {
                 if let (Ok(y), Ok(x)) = (c[0].parse::<i32>(), c[1].parse::<i32>()) {
                     if let Some((r, k)) = c[2].split_once('|') {
-                        self.positions.insert((r.to_string(), k.to_string()), (x, y));
+                        // 0.72 : seules les colonnes choisies (« |N|-1 ») ; les anciennes places au point près sont oubliées
+                        if y == -1 {
+                            self.positions.insert((r.to_string(), k.to_string()), (x, y));
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ 0.72 : éditer une case
+/// Un morceau de « ce que fait » une case : du texte, ou une de ses entrées (son numéro dans la liste des entrées)
+#[derive(Clone, Debug)]
+enum Morceau {
+    Texte(String),
+    Entree(usize),
+}
+
+/// Ce qu'on peut viser dans la fenêtre d'édition
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Zone {
+    Champ(usize),
+    Moins(bool),
+    Plus(bool),
+    Ecrire,
+    Annuler,
+}
+
+/// 0.72 : la fenêtre d'édition d'une case (le clic droit sur une case, ou le double clic sur son en-tête). On y écrit
+/// son nom, ce qu'elle fait, ses entrées et ses sorties (leur nombre et leurs noms) ; la ligne de code qui en sortira
+/// est montrée en bas ; Entrée l'écrit dans le texte, Échap renonce.
+#[derive(Clone, Debug)]
+pub struct Edition {
+    pub reaction: String,
+    pub ligne: usize,
+    retrait: String,
+    /// le début de la ligne quand la case n'a pas de nom (« = », ou rien pour « @3[_] = _ »)
+    sans_nom: String,
+    pub nom: String,
+    morceaux: Vec<Morceau>,
+    /// les noms des entrées (« _ » : une entrée libre ; vide pendant qu'on l'écrit : libre aussi)
+    pub entrees: Vec<String>,
+    /// les sorties, telles qu'écrites (« a lourd », « r: flottant ») ; leurs noms d'origine, pour les renommer partout
+    pub sorties: Vec<String>,
+    anciennes: Vec<String>,
+    apres: String,
+    commentaire: String,
+    /// les liaisons connues de la réaction (ses entrées et les sorties des autres cases)
+    connues: Vec<String>,
+    pub champ: usize,
+    zones: Vec<(i32, i32, i32, i32, Zone)>,
+}
+
+fn nom_valide(n: &str) -> bool {
+    !n.is_empty() && n.chars().next().map_or(false, |c| c.is_alphabetic() || c == '_') && n.chars().all(lettre)
+}
+
+impl Edition {
+    /// la case de la ligne « ligne » du texte, dans la réaction r
+    fn depuis(source: &str, r: &Reaction, ligne: usize) -> Option<Edition> {
+        let k = r.atomes.iter().position(|a| a.ligne == ligne)?;
+        let l = source.split('\n').nth(ligne)?.trim_end_matches('\r');
+        let fc = fin_code(l);
+        let code = &l[..fc];
+        let debut = code.len() - code.trim_start().len();
+        let fin = code.trim_end().trim_end_matches(';').len().max(debut);
+        let fleche = chercher(code, "->", debut, fin);
+        // « apres » : après les sorties, ou au bout de ce que fait la case
+        let ws = mots(code, debut, fin);
+        let p_apres = ws.iter().filter(|w| w.0 == "apres").map(|w| w.1).last();
+        let gauche_fin = fleche.or(p_apres).unwrap_or(fin);
+        let a = &r.atomes[k];
+        let (q0, nom) = if !a.nom.is_empty() {
+            let e = code[debut..].find('=').map(|p| p + debut + 1).unwrap_or(debut);
+            (e, a.nom.clone())
+        } else if code[debut..].starts_with('=') && !code[debut..].starts_with("==") {
+            (debut + 1, String::new())
+        } else {
+            (debut, String::new())
+        };
+        let sans_nom = if code[debut..].starts_with('=') || !a.nom.is_empty() { "= ".to_string() } else { String::new() };
+        let quoi = code[q0..gauche_fin].trim().to_string();
+        let sorties: Vec<String> = match fleche {
+            Some(fl) => {
+                let fs = p_apres.filter(|&p| p > fl).unwrap_or(fin);
+                code[fl + 2..fs].split(',').map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).collect()
+            }
+            None => vec![],
+        };
+        let apres = p_apres.map(|p| code[p + 5..fin].trim().to_string()).unwrap_or_default();
+        let mut connues: Vec<String> = r.params.clone();
+        for (j, b) in r.atomes.iter().enumerate() {
+            if j != k {
+                connues.extend(b.sorties.iter().cloned());
+            }
+        }
+        let mut e = Edition {
+            reaction: r.nom.clone(),
+            ligne,
+            retrait: code[..debut].to_string(),
+            sans_nom,
+            nom,
+            morceaux: vec![],
+            entrees: vec![],
+            anciennes: sorties.iter().map(|m| premier_mot(m)).collect(),
+            sorties,
+            apres,
+            commentaire: l[fc..].trim().to_string(),
+            connues,
+            champ: 1,
+            zones: vec![],
+        };
+        e.decouper(&quoi);
+        Some(e)
+    }
+
+    /// « ce que fait » la case, en texte
+    pub fn quoi(&self) -> String {
+        let mut t = String::new();
+        for m in &self.morceaux {
+            match m {
+                Morceau::Texte(x) => t.push_str(x),
+                Morceau::Entree(i) => {
+                    let n = &self.entrees[*i];
+                    t.push_str(if n.is_empty() { "_" } else { n });
+                }
+            }
+        }
+        t
+    }
+
+    /// coupe « ce que fait » en texte et en entrées (« _ », ou une liaison connue), comme la paillasse les voit
+    fn decouper(&mut self, quoi: &str) {
+        self.morceaux.clear();
+        self.entrees.clear();
+        let mut i = 0;
+        for (m, d, f, prec, suit) in mots(quoi, 0, quoi.len()) {
+            if prec == '.' || suit == '(' || MOTS.contains(&m.as_str()) {
+                continue;
+            }
+            if m != "_" && !self.connues.contains(&m) {
+                continue;
+            }
+            if d > i {
+                self.morceaux.push(Morceau::Texte(quoi[i..d].to_string()));
+            }
+            // une liaison nommée deux fois est une seule entrée ; chaque « _ » en est une
+            let k = if m == "_" { None } else { self.entrees.iter().position(|e| *e == m) };
+            let k = match k {
+                Some(k) => k,
+                None => {
+                    self.entrees.push(m.clone());
+                    self.entrees.len() - 1
+                }
+            };
+            self.morceaux.push(Morceau::Entree(k));
+            i = f;
+        }
+        if i < quoi.len() {
+            self.morceaux.push(Morceau::Texte(quoi[i..].to_string()));
+        }
+    }
+
+    /// une entrée de plus : un argument « _ » de plus à l'appel qui finit la case, sinon « op _ » avec la dernière
+    /// opération écrite (« + _ » s'il n'y en a pas)
+    fn ajouter_entree(&mut self) {
+        let q = self.quoi();
+        let t = q.trim_end();
+        let neuf = if t.ends_with(')') && t.contains('(') {
+            let p = t.len() - 1;
+            let avant = t[..p].trim_end();
+            if avant.ends_with('(') { format!("{}_)", &t[..p]) } else { format!("{}, _)", &t[..p]) }
+        } else if t.ends_with(']') && t.contains('[') {
+            format!("{} + _", t)
+        } else {
+            let op = t.char_indices().rev().find(|(_, c)| "+-*/%<>".contains(*c)).map(|(i, c)| {
+                // « <= », « >= », « == » : l'opération entière
+                let deux = &t[i.saturating_sub(1)..i + c.len_utf8()];
+                if deux == "<=" || deux == ">=" || deux == "==" || deux == "!=" { deux.to_string() } else { c.to_string() }
+            });
+            let op = match op.as_deref() {
+                Some("-") if t.trim_start().starts_with('-') && t.matches('-').count() == 1 => "+".to_string(),
+                Some(o) => o.to_string(),
+                None => "+".to_string(),
+            };
+            if t.is_empty() { "_".to_string() } else { format!("{} {} _", t, op) }
+        };
+        self.decouper(&neuf);
+        self.champ = 2 + self.entrees.len().saturating_sub(1);
+    }
+
+    /// une entrée de moins : la dernière place de la dernière entrée s'en va, avec ce qui la sépare de la précédente
+    /// (« , » ou l'opération)
+    fn retirer_entree(&mut self) {
+        let n = match self.entrees.len() {
+            0 => return,
+            n => n - 1,
+        };
+        let p = match self.morceaux.iter().rposition(|m| matches!(m, Morceau::Entree(i) if *i == n)) {
+            Some(p) => p,
+            None => return,
+        };
+        let sep = |c: char| ",+-*/%<>=!&|".contains(c);
+        let mut fait = false;
+        if p > 0 {
+            if let Morceau::Texte(t) = &mut self.morceaux[p - 1] {
+                let tt = t.trim_end();
+                let coupe = tt.trim_end_matches(sep);
+                if coupe.len() < tt.len() {
+                    *t = coupe.trim_end().to_string();
+                    fait = true;
+                }
+            }
+        }
+        if !fait && p + 1 < self.morceaux.len() {
+            if let Morceau::Texte(t) = &mut self.morceaux[p + 1] {
+                let tt = t.trim_start();
+                let coupe = tt.trim_start_matches(sep);
+                if coupe.len() < tt.len() {
+                    *t = coupe.trim_start().to_string();
+                    if !t.is_empty() && !t.starts_with(')') && !t.starts_with(']') {
+                        t.insert(0, ' ');
+                    }
+                }
+            }
+        }
+        self.morceaux.remove(p);
+        let q = self.quoi();
+        self.decouper(&q);
+        self.champ = self.champ.min(self.nb_champs() - 1);
+    }
+
+    fn ajouter_sortie(&mut self) {
+        let mut k = 1;
+        while self.connues.contains(&format!("l{}", k)) || self.sorties.iter().any(|s| premier_mot(s) == format!("l{}", k)) {
+            k += 1;
+        }
+        self.sorties.push(format!("l{}", k));
+        self.anciennes.push(String::new());
+        self.champ = 2 + self.entrees.len() + self.sorties.len() - 1;
+    }
+
+    fn retirer_sortie(&mut self) {
+        self.sorties.pop();
+        self.anciennes.pop();
+        self.champ = self.champ.min(self.nb_champs() - 1);
+    }
+
+    fn nb_champs(&self) -> usize {
+        2 + self.entrees.len() + self.sorties.len()
+    }
+
+    /// le texte du champ n
+    fn valeur(&self, n: usize) -> String {
+        let ne = self.entrees.len();
+        match n {
+            0 => self.nom.clone(),
+            1 => self.quoi(),
+            k if k < 2 + ne => self.entrees[k - 2].clone(),
+            k => self.sorties.get(k - 2 - ne).map(|s| premier_mot(s)).unwrap_or_default(),
+        }
+    }
+
+    /// le champ n reçoit le texte v
+    fn poser(&mut self, n: usize, v: String) {
+        let ne = self.entrees.len();
+        match n {
+            0 => self.nom = v,
+            1 => self.decouper(&v),
+            k if k < 2 + ne => self.entrees[k - 2] = v,
+            k => {
+                if let Some(s) = self.sorties.get_mut(k - 2 - ne) {
+                    let reste = s[premier_mot(s).len()..].to_string();
+                    *s = v + &reste;
+                }
+            }
+        }
+    }
+
+    fn taper(&mut self, c: char) {
+        let n = self.champ;
+        let mut v = self.valeur(n);
+        // dans un nom (de case, d'entrée, de sortie) : seulement des lettres, des chiffres et « _ »
+        if n != 1 && !lettre(c) {
+            return;
+        }
+        if n >= 2 && n < 2 + self.entrees.len() && v == "_" {
+            v.clear();
+        }
+        v.push(c);
+        self.poser(n, v);
+    }
+
+    fn effacer(&mut self) {
+        let n = self.champ;
+        let mut v = self.valeur(n);
+        v.pop();
+        self.poser(n, v);
+    }
+
+    /// la ligne de code que la case deviendra
+    pub fn ligne_code(&self) -> String {
+        let mut t = self.retrait.clone();
+        if !self.nom.trim().is_empty() {
+            t.push_str(self.nom.trim());
+            t.push_str(" = ");
+        } else {
+            t.push_str(&self.sans_nom);
+        }
+        t.push_str(self.quoi().trim());
+        let sorties: Vec<&String> = self.sorties.iter().filter(|s| !premier_mot(s).is_empty()).collect();
+        if !sorties.is_empty() {
+            t.push_str(" -> ");
+            t.push_str(&sorties.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", "));
+        }
+        if !self.apres.is_empty() {
+            t.push_str(" apres ");
+            t.push_str(&self.apres);
+        }
+        if !self.commentaire.is_empty() {
+            t.push_str("  ");
+            t.push_str(&self.commentaire);
+        }
+        t
+    }
+
+    /// ce qui ne va pas encore (un nom qui n'en est pas un, une sortie donnée deux fois…), ou None
+    fn probleme(&self) -> Option<String> {
+        if !self.nom.is_empty() && (!nom_valide(&self.nom) || MOTS.contains(&self.nom.as_str())) {
+            return Some(format!("« {} » ne peut pas être un nom de case", self.nom));
+        }
+        if self.quoi().trim().is_empty() {
+            return Some("la case ne fait rien : écrivez ce qu'elle fait".into());
+        }
+        let mut vus: Vec<String> = vec![];
+        for s in &self.sorties {
+            let n = premier_mot(s);
+            if n.is_empty() {
+                continue;
+            }
+            if !nom_valide(&n) {
+                return Some(format!("« {} » n'est pas un nom de liaison", n));
+            }
+            if vus.contains(&n) || (self.connues.contains(&n) && !self.anciennes.contains(&n)) {
+                return Some(format!("la liaison {} est déjà donnée ailleurs", n));
+            }
+            vus.push(n);
+        }
+        None
+    }
+
+    /// écrire la case dans le texte : sa ligne, et les sorties renommées partout dans la réaction
+    fn ecrire(&self, source: &str, r: &Reaction) -> String {
+        let mut v: Vec<String> = source.split('\n').map(|x| x.to_string()).collect();
+        if self.ligne < v.len() {
+            let cr = v[self.ligne].ends_with('\r');
+            v[self.ligne] = self.ligne_code() + if cr { "\r" } else { "" };
+        }
+        // une sortie renommée : les cases qui la lisaient lisent le nouveau nom
+        for (i, s) in self.sorties.iter().enumerate() {
+            let (ancien, neuf) = (self.anciennes.get(i).cloned().unwrap_or_default(), premier_mot(s));
+            if ancien.is_empty() || neuf.is_empty() || ancien == neuf {
+                continue;
+            }
+            for k in r.ligne..=r.fin.min(v.len().saturating_sub(1)) {
+                if k == self.ligne {
+                    continue;
+                }
+                let l = v[k].clone();
+                let fc = fin_code(l.trim_end_matches('\r'));
+                let mut places: Vec<(usize, usize)> = mots(&l, 0, fc).into_iter().filter(|w| w.0 == ancien && w.3 != '.')
+                    .map(|w| (w.1, w.2)).collect();
+                if k == r.ligne {
+                    // l'en-tête : seulement le résultat (« -> r »)
+                    let fl = l.find("->").unwrap_or(l.len());
+                    places.retain(|p| p.0 > fl);
+                }
+                if !places.is_empty() {
+                    v[k] = remplacer_places(&l, &places, &neuf);
+                }
+            }
+        }
+        v.join("\n")
+    }
+}
+
+/// le premier mot (le nom) d'une sortie écrite « a lourd » ou « r: flottant »
+fn premier_mot(s: &str) -> String {
+    s.trim().chars().take_while(|&c| lettre(c)).collect()
+}
+
+impl Paillasse {
+    /// 0.72 : la fenêtre d'édition est-elle ouverte (le clavier va alors à elle) ?
+    pub fn en_edition(&self) -> bool {
+        self.edition.is_some()
+    }
+
+    /// 0.72 : ouvrir la fenêtre d'édition de la case de la ligne « ligne » (dans le texte « source »)
+    pub fn ouvrir_edition(&mut self, source: &str, ligne: usize) -> bool {
+        let nom = match self.reaction().filter(|r| !r.carte) {
+            Some(r) => r.nom.clone(),
+            None => return false,
+        };
+        let r = match analyser(source).into_iter().find(|q| q.nom == nom) {
+            Some(r) => r,
+            None => return false,
+        };
+        self.edition = Edition::depuis(source, &r, ligne);
+        if self.edition.is_some() {
+            self.message = Some("la case s'édite : Tab passe au champ suivant, Entrée l'écrit dans le texte, Échap renonce".into());
+        }
+        self.edition.is_some()
+    }
+
+    /// 0.72 : un caractère tapé, pour la fenêtre d'édition
+    pub fn caractere(&mut self, c: char) -> Reponse {
+        match self.edition.as_mut() {
+            Some(e) if !c.is_control() => {
+                e.taper(c);
+                Reponse::Redessiner
+            }
+            _ => Reponse::Rien,
+        }
+    }
+
+    /// 0.72 : une touche pour la fenêtre d'édition (Tab, flèches, Retour, Entrée, Échap)
+    fn touche_edition(&mut self, vk: u32, source: &str) -> Reponse {
+        let e = match self.edition.as_mut() {
+            Some(e) => e,
+            None => return Reponse::Rien,
+        };
+        match vk {
+            0x09 | 0x28 => e.champ = (e.champ + 1) % e.nb_champs(),
+            0x26 => e.champ = (e.champ + e.nb_champs() - 1) % e.nb_champs(),
+            0x08 => e.effacer(),
+            0x0D => return self.ecrire_edition(source),
+            0x1B => {
+                self.edition = None;
+                self.message = Some("rien n'est écrit".into());
+            }
+            _ => return Reponse::Rien,
+        }
+        Reponse::Redessiner
+    }
+
+    fn ecrire_edition(&mut self, source: &str) -> Reponse {
+        let e = match self.edition.clone() {
+            Some(e) => e,
+            None => return Reponse::Rien,
+        };
+        if let Some(p) = e.probleme() {
+            self.message = Some(p.clone());
+            return Reponse::Message(p);
+        }
+        let r = match analyser(source).into_iter().find(|q| q.nom == e.reaction) {
+            Some(r) => r,
+            None => {
+                self.edition = None;
+                return Reponse::Message("la réaction de cette case n'est plus dans le texte".into());
+            }
+        };
+        self.edition = None;
+        let s = e.ecrire(source, &r);
+        self.message = Some(format!("la case est écrite, ligne {}", e.ligne + 1));
+        if s == source {
+            Reponse::Redessiner
+        } else {
+            Reponse::Texte { source: s, ligne: e.ligne }
+        }
+    }
+
+    /// 0.72 : un clic quand la fenêtre d'édition est ouverte : un champ, − ou +, Écrire, Annuler ; ailleurs, rien
+    fn clic_edition(&mut self, x: i32, y: i32, source: &str) -> Reponse {
+        let z = match self.edition.as_ref() {
+            Some(e) => e.zones.iter().find(|z| x >= z.0 && x < z.0 + z.2 && y >= z.1 && y < z.1 + z.3).map(|z| z.4),
+            None => return Reponse::Rien,
+        };
+        let e = self.edition.as_mut().unwrap();
+        match z {
+            Some(Zone::Champ(n)) => e.champ = n,
+            Some(Zone::Moins(false)) => e.retirer_entree(),
+            Some(Zone::Plus(false)) => e.ajouter_entree(),
+            Some(Zone::Moins(true)) => e.retirer_sortie(),
+            Some(Zone::Plus(true)) => e.ajouter_sortie(),
+            Some(Zone::Ecrire) => return self.ecrire_edition(source),
+            Some(Zone::Annuler) => {
+                self.edition = None;
+                self.message = Some("rien n'est écrit".into());
+            }
+            None => {}
+        }
+        Reponse::Redessiner
+    }
+
+    /// 0.72 : dessiner la fenêtre d'édition par-dessus la paillasse (les textes qu'elle couvre sont retirés)
+    fn dessiner_edition(&mut self, im: &mut Image, tx: &mut Vec<TexteP>, l: i32, h: i32) {
+        let (cl, ch) = (self.car_l, self.car_h);
+        let e1 = self.px(1).max(1);
+        let e2 = self.px(2).max(2);
+        let e = match self.edition.as_mut() {
+            Some(e) => e,
+            None => return,
+        };
+        let marge = cl;
+        let lf = (58 * cl).min(l - 2 * marge).max(30 * cl);
+        let rang = ch + ch / 2 + 4;
+        let n_lignes = 9 + e.entrees.len() + e.sorties.len();
+        let hf = (n_lignes as i32 * rang + rang).min(h - 2 * marge);
+        let xf = (l - lf - marge).max(marge);
+        let yf = (ch * 3).min(h - hf - marge).max(marge);
+        // ce qui est dessous ne se lit plus
+        tx.retain(|t| !(t.x >= xf - 4 * cl && t.x < xf + lf && t.y >= yf - ch && t.y < yf + hf));
+        im.plein(xf + e2 * 2, yf + e2 * 2, lf, hf, 0x101216);
+        im.plein(xf, yf, lf, hf, 0x2A303C);
+        im.cadre(xf, yf, lf, hf, e2, OR);
+        im.plein(xf, yf, lf, rang, 0x353C4A);
+        e.zones.clear();
+        let mut y = yf + 3;
+        tx.push(TexteP { x: xf + cl, y, texte: format!("Éditer la case, ligne {}", e.ligne + 1), couleur: OR });
+        y += rang + 2;
+        let xc = xf + 18 * cl;
+        let lc = lf - 19 * cl;
+        let champ = |e: &mut Edition, im: &mut Image, tx: &mut Vec<TexteP>, y: i32, etiquette: &str, n: usize, x_et: i32| {
+            tx.push(TexteP { x: x_et, y: y + 2, texte: etiquette.to_string(), couleur: PALE });
+            let actif = e.champ == n;
+            im.plein(xc, y, lc, ch + 6, if actif { 0x1C2028 } else { 0x23272F });
+            im.cadre(xc, y, lc, ch + 6, e1, if actif { OR } else { 0x4A5262 });
+            let mut v = e.valeur(n);
+            if n >= 2 && n < 2 + e.entrees.len() && (v.is_empty() || v == "_") && !actif {
+                v = "_ (libre)".into();
+            }
+            let place = (lc / cl - 2).max(4) as usize;
+            let nb = v.chars().count();
+            let mut montre: String = if nb > place { v.chars().skip(nb - place).collect() } else { v };
+            if actif {
+                montre.push('|');
+            }
+            tx.push(TexteP { x: xc + cl / 2, y: y + 3, texte: montre, couleur: ENCRE });
+            e.zones.push((xc, y, lc, ch + 6, Zone::Champ(n)));
+        };
+        champ(e, im, tx, y, "nom (facultatif)", 0, xf + cl);
+        y += rang;
+        champ(e, im, tx, y, "ce qu'elle fait", 1, xf + cl);
+        y += rang + 4;
+        // les entrées et les sorties : leur nombre (− et +), puis un champ par nom
+        let bouton = |e: &mut Edition, im: &mut Image, tx: &mut Vec<TexteP>, x: i32, y: i32, t: &str, z: Zone| {
+            let lb = 3 * cl;
+            im.plein(x, y, lb, ch + 6, 0x3A4252);
+            im.cadre(x, y, lb, ch + 6, e1, 0x5A6478);
+            tx.push(TexteP { x: x + cl, y: y + 3, texte: t.to_string(), couleur: ENCRE });
+            e.zones.push((x, y, lb, ch + 6, z));
+        };
+        for sortie in [false, true] {
+            let n = if sortie { e.sorties.len() } else { e.entrees.len() };
+            let titre = if sortie { format!("sorties : {}", n) } else { format!("entrées : {}", n) };
+            tx.push(TexteP { x: xf + cl, y: y + 3, texte: titre, couleur: if sortie { 0xE0A040 } else { 0x70B0A0 } });
+            bouton(e, im, tx, xc, y, "-", Zone::Moins(sortie));
+            bouton(e, im, tx, xc + 4 * cl, y, "+", Zone::Plus(sortie));
+            y += rang;
+            for i in 0..n {
+                let k = if sortie { 2 + e.entrees.len() + i } else { 2 + i };
+                champ(e, im, tx, y, &format!("  {} {}", if sortie { "sortie" } else { "entrée" }, i + 1), k, xf + cl);
+                y += rang;
+            }
+            y += 4;
+        }
+        // la ligne de code qui sortira, et ce qui ne va pas
+        tx.push(TexteP { x: xf + cl, y, texte: "le code :".into(), couleur: PALE });
+        y += ch + 4;
+        let code = e.ligne_code().trim().to_string();
+        let place = (lf / cl - 2).max(10) as usize;
+        let code: String = if code.chars().count() > place { code.chars().take(place - 1).collect::<String>() + "…" } else { code };
+        tx.push(TexteP { x: xf + cl, y, texte: code, couleur: 0xC8C4B8 });
+        y += rang;
+        if let Some(p) = e.probleme() {
+            tx.push(TexteP { x: xf + cl, y, texte: p, couleur: FAUX });
+        }
+        y += rang;
+        let lb = 16 * cl;
+        for (k, (t, z)) in [("Écrire (Entrée)", Zone::Ecrire), ("Annuler (Échap)", Zone::Annuler)].iter().enumerate() {
+            let x = xf + cl + k as i32 * (lb + 2 * cl);
+            im.plein(x, y, lb, ch + 8, if k == 0 { 0x4A6A3A } else { 0x3A4252 });
+            im.cadre(x, y, lb, ch + 8, e1, if k == 0 { VRAI } else { 0x5A6478 });
+            tx.push(TexteP { x: x + cl, y: y + 4, texte: t.to_string(), couleur: ENCRE });
+            e.zones.push((x, y, lb, ch + 8, *z));
         }
     }
 }
@@ -2523,6 +3268,7 @@ pub fn commande(args: &[String]) {
                 continue;
             }
             let n = |k: usize| m.get(k).and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
+            let ouverte = p.edition.is_some();
             let rep = match m[0] {
                 "bas" => p.souris(Souris::Bas, n(1), n(2), &source),
                 "bouge" => p.souris(Souris::Bouge, n(1), n(2), &source),
@@ -2530,6 +3276,12 @@ pub fn commande(args: &[String]) {
                 "double" => p.souris(Souris::Double, n(1), n(2), &source),
                 "droit" => p.souris(Souris::Droit, n(1), n(2), &source),
                 // ecrire TEXTE : ce qu'on tape dans la boîte du clic droit, puis Entrée
+                // 0.72 : la fenêtre d'édition ouverte : la ligne entière de la case devient TEXTE, et la fenêtre se ferme
+                "ecrire" if p.edition.is_some() => {
+                    let ligne = p.edition.take().map(|e| e.ligne).unwrap_or(0);
+                    let t = l.splitn(2, char::is_whitespace).nth(1).unwrap_or("").trim();
+                    Reponse::Texte { source: editer_ligne(&source, ligne, t), ligne }
+                }
                 "ecrire" => match en_edition.take() {
                     Some(ligne) => {
                         let t = l.splitn(2, char::is_whitespace).nth(1).unwrap_or("").trim();
@@ -2538,6 +3290,14 @@ pub fn commande(args: &[String]) {
                     None => Reponse::Message("rien à écrire : pas de case en édition (clic droit d'abord)".into()),
                 },
                 "touche" => p.touche(n(1) as u32, &source),
+                // 0.72 : car TEXTE : des caractères tapés (pour la fenêtre d'édition)
+                "car" => {
+                    let t = l.splitn(2, char::is_whitespace).nth(1).unwrap_or("").trim_end();
+                    for c in t.chars() {
+                        p.caractere(c);
+                    }
+                    Reponse::Redessiner
+                }
                 "ligne" => {
                     p.choisir_ligne((n(1) - 1).max(0) as usize);
                     Reponse::Redessiner
@@ -2610,6 +3370,17 @@ pub fn commande(args: &[String]) {
                     println!("édition de la ligne {} : {}", ligne + 1, texte);
                 }
                 _ => {}
+            }
+            // 0.72 : la fenêtre d'édition vient de s'ouvrir : ce qu'elle édite
+            if !ouverte {
+                if let Some(e) = &p.edition {
+                    println!("édition de la ligne {} : {}", e.ligne + 1, e.ligne_code().trim());
+                }
+            }
+            if let Some(m) = &p.message {
+                if m.starts_with("la case est à la vague") {
+                    println!("message : {}", m);
+                }
             }
             p.dessiner(taille.0, taille.1);
         }

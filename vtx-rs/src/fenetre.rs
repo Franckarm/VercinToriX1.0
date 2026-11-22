@@ -2679,6 +2679,10 @@ fn reponse_paillasse(r: super::paillasse::Reponse) {
     }
     unsafe {
         InvalidateRect(at.paillasse, std::ptr::null(), 0);
+        // 0.72 : la fenêtre d'édition d'une case vient de s'ouvrir : le clavier va à la paillasse
+        if at.pail.en_edition() {
+            SetFocus(at.paillasse);
+        }
     }
     maj_explications();
 }
@@ -2847,6 +2851,7 @@ unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> 
         }
         // le clic droit : éditer la case (ou en poser une neuve là, dans le vide)
         WM_RBUTTONDOWN => {
+            SetFocus(h);
             fermer_boite_case(true);
             let r = at.pail.souris(Souris::Droit, x, y, &texte());
             reponse_paillasse(r);
@@ -2856,6 +2861,21 @@ unsafe extern "system" fn proc_paillasse(h: H, m: u32, wp: usize, lp: isize) -> 
             fermer_boite_case(wp == 1);
             0
         }
+        // 0.72 : la fenêtre d'édition d'une case ouverte : le clavier va à elle (les lettres, Tab, flèches, Retour,
+        // Entrée, Échap)
+        WM_KEYDOWN if at.pail.en_edition() => {
+            let r = at.pail.touche(wp as u32, &texte());
+            reponse_paillasse(r);
+            0
+        }
+        WM_CHAR if at.pail.en_edition() => {
+            if let Some(c) = char::from_u32(wp as u32) {
+                let r = at.pail.caractere(c);
+                reponse_paillasse(r);
+            }
+            0
+        }
+        WM_KEYUP if at.pail.en_edition() => 0,
         // la paillasse ne garde que Suppr et Échap ; toute autre touche va au texte (et le clavier y revient)
         WM_KEYDOWN if wp == 0x2E || wp == 0x1B => {
             let r = at.pail.touche(wp as u32, &texte());

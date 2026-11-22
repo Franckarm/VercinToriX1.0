@@ -1,0 +1,16 @@
+// machine : lugus
+// Une réaction à essayer sur la paillasse d'Ogmios (0.72) : chaque vague est une colonne.
+//   - glisser une case : les autres s'écartent, un cadre montre la place (la vague, la ligne) ; lâchée, le texte suit ;
+//   - clic droit sur une case (ou double clic sur son en-tête) : la fenêtre d'édition (nom, ce qu'elle fait, le nombre
+//     et le nom de ses entrées et de ses sorties) ;
+//   - clic droit dans le vide : le menu des cases.
+reaction calcul(a, b) -> r {
+    = a + b -> s
+    = a * b -> p
+    = s - p -> d
+    = d * 2 -> r
+}
+
+fonction principal() {
+    afficher(calcul(3, 4));
+}

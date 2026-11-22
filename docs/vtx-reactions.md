@@ -3549,3 +3549,44 @@ les reflets, l'ombre pour les ombres.
   les deux compilateurs) ; puis les cylindres (une bande d'image par cœur).
 - **L'épreuve d'Alésia** a un chapitre VIII, « Voir » : le banc traduit rend l'empreinte attendue, le C aussi (si un
   compilateur C est là), et `val.vtx` se parcourt sans fenêtre (9 images). 59 vérifications.
+
+## 79. La paillasse en grille ; la fenêtre d'édition ; la scène face aux outils (22 novembre, 0.73)
+
+**Demandé par le créateur le 22** : les cases, une fois posées, ne changeaient pas la ligne du code qu'elles écrivent,
+et leur déplacement n'était « pas génial » ; éditer une case dans une petite fenêtre (et non dans son en-tête), pour
+choisir entre autres le nombre de ses connexions ; « pratique et intuitif ».
+
+- **Ce qui n'allait pas** : la case se posait au point près, par-dessus ses voisines, sans se ranger ; on ne voyait ni
+  où elle tomberait ni quelle ligne elle prendrait.
+- **La grille aimantée** : chaque vague est une colonne ; les cases s'y empilent dans l'ordre de leurs lignes. Pendant
+  le glissement, les autres cases s'écartent, un cadre en pointillés montre la place, et une étiquette dit « ici :
+  vague V, ligne L » ; une colonne libre attend au bout. Lâchée, la case tombe dans la place et le texte prend l'ordre
+  des colonnes, puis des rangs. La colonne choisie est gardée (`PROG.paillasse`, « réaction|clé|V|-1 ») ; les anciennes
+  places au point près sont oubliées. Une case posée plus tard que sa vague le dit (« elle pourrait réagir dès la vague
+  1 ») ; posée plus tôt que ce qu'elle lit : « elle calculera quand la valeur arrivera ». Une case neuve (le menu du
+  clic droit, le double clic) va dans la colonne où l'on a cliqué.
+- **La fenêtre d'édition** (clic droit sur une case, ou double clic sur son en-tête ; aussi à chaque case posée) : le
+  nom de la case, ce qu'elle fait, **le nombre de ses entrées et de ses sorties** (− et +) et leurs noms ; la ligne de
+  code qui en sortira, en bas ; ce qui ne va pas (un nom qui n'en est pas un, une liaison donnée deux fois). Une entrée de
+  plus : un argument `_` de plus à l'appel qui finit la case (`fusion(a, b, _)`), sinon la dernière opération écrite
+  (`a + b + _`) ; une de moins : la dernière, avec ce qui la sépare. Une sortie renommée l'est aussi là où on la lisait.
+  Tab passe au champ suivant, Entrée écrit, Échap renonce. Dans Ogmios, le clavier va à la fenêtre tant qu'elle est
+  ouverte.
+- **Vérifié** : `tests/test_paillasse.py` et `tests/test_ogmios.py` conformes (trois tests de l'ancienne boîte et des
+  places au point près réécrits) ; l'épreuve d'Alésia, 60 vérifications (la fenêtre d'édition ajoutée au chapitre I) ;
+  Ogmios compile (`cargo check --features verif_fenetre --bin ogmios`). L'exemple `exemples128/calcul_vagues.vtx`.
+
+**La scène face aux outils (la question du créateur : « tout a été fait avec vtx ? les cubes ont servi ? »)** :
+la scène est écrite en vtx, compilée par les deux compilateurs, jouée par Lugus, traduite, forgée ; mais elle ne range
+rien dans un cube sur disque (ni anti-cube, ni ombre), ne reprend ni le fluide ni le tableau d'Auvergne de Belenos, et
+son « tapis roulant » n'était qu'une lumière refaite par bandes. **La forge** (vtx → Rust → code machine) donne la même
+image en 5,7 ms (2,5 × le C, au lieu de 10). **Les cylindres** : les colonnes du rendu et les lignes de la lumière sont
+en segments (`val_scene.vtx`) ; l'image reste la même, mais **sur 2 cœurs c'est 3 fois plus lent** (15 ms) : chaque
+cylindre recopie les pages qu'il écrit (l'écran : environ 2 Mo par image) et chaque lecture qui manque son petit cache
+(16 cases pour une dizaine de pages vives) passe par une table de hachage. À réparer dans `forge/noyau_forge128.rs`.
+`essai-0.73.bat` mesure la scène forgée sur 1, 2 et 4 cœurs chez le créateur.
+
+**La suite décidée** : la lumière dans le rouleau (l'idée du créateur : la lumière entrelacée avec la matière dans le
+tapis roulant, comme le fluide : la propagation gratuite, la collision par la matière du cube), d'abord en 2D (une coupe
+du val, un feu, le soleil) ; l'ombre du cube pour le soleil direct ; le cube des matières ; la neige qui se dépose par
+un tapis vertical ; l'eau par le fluide ; le reflet par un miroir segmenté ; puis Taranis.

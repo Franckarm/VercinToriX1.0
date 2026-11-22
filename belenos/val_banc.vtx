@@ -26,9 +26,7 @@ fonction principal() {
     peindre_relief();
     soit az = 640;
     soit el = 71;
-    pour z dans 0..G {
-        eclairer_ligne(z, az, el);
-    }
+    eclairer_lignes(0, G, az, el);
     soit t_images = horloge();
     soit cx = (1 << 40) + (G / 2) * 65536;
     soit cz = (1 << 40) + (G / 2) * 65536;
@@ -41,9 +39,7 @@ fonction principal() {
         cz = cz + ca ./ 2;
         a = (a + 6) & 1023;
         az = (az + 4) & 1023;
-        pour q dans 0..BANDE {
-            eclairer_ligne((bande + q) & MASQUE, az, el);
-        }
+        eclairer_lignes(bande, bande + BANDE, az, el);
         bande = (bande + BANDE) & MASQUE;
         soit sol = @2[HAUT + ((cz >> 16) & MASQUE) * G + ((cx >> 16) & MASQUE)];
         rendre(cx, cz, sol + 4000, a, H / 3, az, el);

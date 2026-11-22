@@ -123,6 +123,13 @@ r = subprocess.run([VTX, "paillasse", f_o, "--gestes", g_o], capture_output=True
 to = r.stdout.replace("\r\n", "\n").split("--- le texte\n")[-1]
 verifier("une case montée au-dessus d'une autre dans sa vague : sa ligne passe avant elle (la paillasse fait l'ordre du texte)",
          0 < to.find("= a * 3 -> t") < to.find("= a + b -> s"), to[-300:])
+# 0.72 : la fenêtre d'édition d'une case (clic droit) : une entrée de plus, une sortie renommée partout
+f_e = ecrire("edition.vtx", VAGUES)
+g_e = ecrire("edition.gestes", "droit 150 100\nbas 785 115\nbas 800 230\ntouche 8\ncar somme_ab\ntouche 13\n")
+subprocess.run([VTX, "paillasse", f_e, "--gestes", g_e, "--ecrire"], capture_output=True, cwd=d)
+te = open(f_e, encoding="utf-8").read()
+verifier("la fenêtre d'édition d'une case : une entrée libre de plus, la sortie renommée là où on la lisait",
+         "= a + b + _ -> somme_ab" in te and "= somme_ab * 2 -> d" in te, te)
 f_p = ecrire("pages.vtx", "reaction principal() {\n    = [3, 4, 5] -> t\n    = somme pour chaque v dans t : v -> s\n}\n")
 g_p = ecrire("pages.gestes", "droit 600 300\ncase suite\necrire = sortie(page_2(s))\n")
 subprocess.run([VTX, "paillasse", f_p, "--gestes", g_p, "--ecrire"], capture_output=True, cwd=d)
