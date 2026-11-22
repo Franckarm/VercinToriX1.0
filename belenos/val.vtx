@@ -15,9 +15,7 @@ fonction principal() {
     // le soleil : au sud-ouest, à 25 degrés ; tout le relief éclairé une première fois
     soit az = 640;
     soit el = 71;
-    pour z dans 0..G {
-        eclairer_ligne(z, az, el);
-    }
+    eclairer_lignes(0, G, az, el);
     // le tapis roulant de la lumière : la prochaine bande à éclairer, et ce qui reste à refaire depuis que le soleil a bougé
     soit bande = 0;
     soit reste = 0;
@@ -73,9 +71,7 @@ fonction principal() {
             reste = G;
         }
         si reste > 0 {
-            pour q dans 0..BANDE {
-                eclairer_ligne((bande + q) & MASQUE, az, el);
-            }
+            eclairer_lignes(bande, bande + BANDE, az, el);
             bande = (bande + BANDE) & MASQUE;
             si reste > BANDE {
                 reste = reste - BANDE;
@@ -89,6 +85,19 @@ fonction principal() {
         // le compteur : le temps de l'image précédente, le soleil
         texte_image(4, 4, "image " + texte(ms) + " ms   soleil " + texte(az * 360 / 1024) + " / " + texte(el * 360 / 1024),
                     rgb(255, 255, 255));
+        // 0.79 : l'ombre quaternaire : la part de chaque état (les lignes pas encore refaites : inconnu)
+        soit tv = 0;
+        soit tf = 0;
+        soit tvar = 0;
+        pour nl dans 0..G {
+            tf = tf + @2[COMPTE + 4 * nl + 1];
+            tv = tv + @2[COMPTE + 4 * nl + 2];
+            tvar = tvar + @2[COMPTE + 4 * nl + 3];
+        }
+        soit tout = G * G;
+        soit tinc = reste * G;
+        texte_image(4, 16, "vrai " + texte(tv * 100 / tout) + " %   faux " + texte(tf * 100 / tout) + " %   variable " +
+                    texte(tvar * 100 / tout) + " %   inconnu " + texte(tinc * 100 / tout) + " %", rgb(255, 230, 160));
         images = images + 1;
         si presenter() == 1 {
             fini = 1;

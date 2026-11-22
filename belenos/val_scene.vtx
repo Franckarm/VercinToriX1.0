@@ -115,6 +115,7 @@ fonction peindre_relief() {
             @2[ALB + z * G + x] = r * 65536 + g * 256 + b;
         }
     }
+    preparer_normales();
 }
 
 // ------------------------------------------------------------------------------------------------------- le soleil
@@ -131,27 +132,45 @@ fonction hauteur_en(x, z) {
     retour @2[HAUT + (z & MASQUE) * G + (x & MASQUE)];
 }
 
-// les distances (en cases) où l'ombre regarde vers le soleil : serrées près, de plus en plus loin
-constante NOMBRE = 17;
-constante OMB = 3148800;           // @2[OMB + k] : la distance k de l'ombre
-fonction pas_ombre(k) {
-    retour @2[OMB + k];
-}
+// ------------------------------------------------------------------------------------------- l'ombre quaternaire
+// 0.79 : l'ombre par balayage (l'ombre du cube projetée par le soleil). La lumière parcourt le relief en lignes
+// parallèles, dans la direction où elle va ; chaque ligne porte son horizon (le relief le plus haut déjà rencontré, qui
+// descend de la pente du soleil à chaque pas) et la distance au point qui fait l'ombre. Chaque case reçoit son état,
+// en quaternaire :
+//     vrai      au-dessus de l'horizon : éclairée
+//     faux      sous l'horizon, au-delà de la pénombre (ou tournée à l'opposé du soleil) : l'ombre pleine
+//     variable  dans la pénombre : sa densité (la part de lumière) ; la pénombre s'élargit avec la distance au point
+//               qui fait l'ombre (un soleil n'est pas un point) : nette au pied d'un rocher, floue loin derrière
+//     inconnu   une ligne pas encore refaite depuis que le soleil a bougé
+// Chaque case est vue deux fois (un tour pour l'horizon, un tour pour l'écrire), au lieu de dix-sept sondages vers le
+// soleil ; chaque ligne n'écrit que ses cases : les lignes vont en bandes.
+constante ETAT = 5242880;          // @2[ETAT + z·G + x] : l'état de la case (0 inconnu, 1 faux, 2 vrai, 3 variable)
+constante COMPTE = 5505024;        // @2[COMPTE + 4 n + e] : le nombre de cases de la ligne n dans l'état e
+// 0.79 : la pente de chaque case, calculée une fois (le relief ne bouge pas) : -gx, -gz (signés) et la longueur de la
+// normale (-gx, 512, -gz)
+constante NX = 5767168;
+constante NZ = 6029312;
+constante NL = 6291456;
 
-// toutes les lignes de z0 à z1 (exclu), en segments : chaque cylindre éclaire les siennes
-fonction eclairer_lignes(z0, z1, az, el) {
-    pour z dans z0..z1 en bandes {
-        eclairer_ligne(z & MASQUE, az, el);
+fonction preparer_normales() {
+    pour z dans 0..G en bandes {
+        pour x dans 0..G {
+            soit gx = hauteur_en(x + 1, z) - hauteur_en(x + G - 1, z);    // signés
+            soit gz = hauteur_en(x, z + 1) - hauteur_en(x, z + G - 1);
+            @2[NX + z * G + x] = 0 - gx;
+            @2[NZ + z * G + x] = 0 - gz;
+            @2[NL + z * G + x] = racine_entiere(gx * gx + 262144 + gz * gz);
+        }
     }
 }
 
-// la ligne z de la grille, éclairée par le soleil (az, el) : la pente face au soleil (le produit scalaire de la
-// normale et de la direction du soleil), l'ombre portée avec sa pénombre, le ciel ; la couleur dans COUL
-fonction eclairer_ligne(z, az, el) {
+fonction eclairer_lignes(n0, n1, az, el) {
     soit se = sin1024(el);
     soit ce = cos1024(el);
-    soit lx = (ce * sin1024(az)) ./ 65536;          // la direction du soleil, en 1/65536
-    soit lz = (ce * cos1024(az)) ./ 65536;
+    soit sa = sin1024(az);
+    soit ca = cos1024(az);
+    soit lx = (ce * sa) ./ 65536;          // la direction du soleil, en 1/65536
+    soit lz = (ce * ca) ./ 65536;
     soit ly = se;
     // la lumière du soleil : blanche haut dans le ciel, orangée au ras de l'horizon
     soit chaud = 256;
@@ -164,72 +183,122 @@ fonction eclairer_ligne(z, az, el) {
     soit sr = 255;
     soit sg = 150 + chaud * 100 / 256;
     soit sb = 90 + chaud * 160 / 256;
-    // la montée du rayon vers le soleil, par case, en 1/256 d'unité : 256 · tan(el)
+    // la descente du rayon, par case, en 1/256 d'unité : 256 · tan(el)
     soit montee = 0;
     si se .> 0 && ce .> 0 {
         montee = se * 256 / ce;
     }
-    pour x dans 0..G {
-        soit h = @2[HAUT + z * G + x];
-        soit gx = hauteur_en(x + 1, z) - hauteur_en(x + G - 1, z);    // signés
-        soit gz = hauteur_en(x, z + 1) - hauteur_en(x, z + G - 1);
-        // la normale (-gx, 512, -gz), sa longueur
-        soit n2 = gx * gx + 262144 + gz * gz;
-        soit nl = racine_entiere(n2);
-        soit pd = (0 - gx) * lx + 512 * ly + (0 - gz) * lz;          // signé, en 1/65536 · unités de la normale
-        soit diffus = 0;
-        si pd .> 0 {
-            diffus = pd ./ nl / 256;                                    // sur 256
+    // la direction où va la lumière : (-sa, -ca) ; l'axe dominant avance d'une case à chaque pas, l'autre de dmin
+    // (en 1/65536 de case)
+    soit asa = sa;
+    si sa .< 0 {
+        asa = 0 - sa;
+    }
+    soit aca = ca;
+    si ca .< 0 {
+        aca = 0 - ca;
+    }
+    soit axe_x = 0;
+    si asa >= aca {
+        axe_x = 1;
+    }
+    soit dmaj = 1;
+    soit dmin = 0;
+    si axe_x == 1 {
+        si sa .> 0 {
+            dmaj = 0 - 1;
         }
-        si diffus > 256 {
-            diffus = 256;
+        dmin = ((0 - ca) * 65536) ./ asa;
+    } sinon {
+        si ca .> 0 {
+            dmaj = 0 - 1;
         }
-        // l'ombre portée : on remonte vers le soleil ; la pénombre vient d'un soleil qui n'est pas un point
-        soit lumiere = 256;
-        si se .<= 0 {
-            lumiere = 0;
-        } sinon si diffus > 0 {
-            soit k = 0;
-            tantque k < NOMBRE && lumiere > 0 {
-                soit d = pas_ombre(k);
-                soit px = x + ((sin1024(az) * d) ./ 65536);
-                soit pz = z + ((cos1024(az) * d) ./ 65536);
-                soit ht = hauteur_en(px, pz);
-                soit rayon = h + montee * d;
-                // la marge : combien le relief dépasse le rayon, rapportée à la largeur de la pénombre (d · 6)
-                si ht > rayon - d * 6 {
-                    soit cache = (ht - rayon + d * 6) * 256 / (d * 12);
-                    si cache > 256 {
-                        cache = 256;
-                    }
-                    si 256 - cache < lumiere {
-                        lumiere = 256 - cache;
-                    }
+        dmin = ((0 - sa) * 65536) ./ aca;
+    }
+    // la longueur d'un pas (en 1/65536 de case), et la descente du rayon sur un pas
+    soit longueur = racine_entiere(65536 * 65536 + dmin * dmin);
+    soit chute = montee * longueur / 65536;
+    pour n dans n0..n1 en bandes {
+        soit ligne = n & MASQUE;
+        soit horizon = 0 - 1000000000;
+        soit docc = 0;
+        soit nv = 0;
+        soit nf = 0;
+        soit nvar = 0;
+        pour i dans 0..(2 * G) {
+            soit maj = (i * dmaj) & MASQUE;
+            soit mino = (((ligne << 16) + i * dmin) .>> 16) & MASQUE;
+            soit x = maj;
+            soit z = mino;
+            si axe_x == 0 {
+                x = mino;
+                z = maj;
+            }
+            soit cell = z * G + x;
+            soit h = @2[HAUT + cell];
+            horizon = horizon - chute;
+            docc = docc + 1;
+            si i >= G {
+                // la pente face au soleil : la normale (-gx, 512, -gz), gardée depuis la préparation
+                soit nl = @2[NL + cell];
+                soit pd = @2[NX + cell] * lx + 512 * ly + @2[NZ + cell] * lz;
+                soit diffus = 0;
+                si pd .> 0 {
+                    diffus = pd ./ nl / 256;
                 }
-                k = k + 1;
+                si diffus > 256 {
+                    diffus = 256;
+                }
+                // l'état : la marge sous l'horizon, rapportée à la demi-largeur de la pénombre
+                soit marge = horizon - h;
+                soit w = 12 + docc * 6;
+                soit lumiere = 256;
+                soit etat = 2;
+                si se .<= 0 || diffus == 0 {
+                    lumiere = 0;
+                    etat = 1;
+                } sinon si marge .>= w {
+                    lumiere = 0;
+                    etat = 1;
+                } sinon si marge .> 0 - w {
+                    lumiere = 256 - ((marge + w) * 128) ./ w;
+                    etat = 3;
+                }
+                si etat == 2 {
+                    nv = nv + 1;
+                } sinon si etat == 1 {
+                    nf = nf + 1;
+                } sinon {
+                    nvar = nvar + 1;
+                }
+                soit direct = diffus * lumiere / 256;
+                soit c = @2[ALB + cell];
+                soit r = (c >> 16) & 255;
+                soit g = (c >> 8) & 255;
+                soit b = c & 255;
+                // le ciel (bleuté) partout, le soleil là où il touche
+                soit rr = r * (60 + direct * sr / 256) / 256;
+                soit gg = g * (68 + direct * sg / 256) / 256;
+                soit bb = b * (84 + direct * sb / 256) / 256;
+                si rr > 255 { rr = 255; }
+                si gg > 255 { gg = 255; }
+                si bb > 255 { bb = 255; }
+                @2[COUL + cell] = rr * 65536 + gg * 256 + bb;
+                @2[ETAT + cell] = etat;
+            }
+            si h .> horizon {
+                horizon = h;
+                docc = 0;
             }
         }
-        soit direct = diffus * lumiere / 256;
-        soit c = @2[ALB + z * G + x];
-        soit r = (c >> 16) & 255;
-        soit g = (c >> 8) & 255;
-        soit b = c & 255;
-        // le ciel (bleuté) partout, le soleil là où il touche
-        soit rr = r * (60 + direct * sr / 256) / 256;
-        soit gg = g * (68 + direct * sg / 256) / 256;
-        soit bb = b * (84 + direct * sb / 256) / 256;
-        si rr > 255 { rr = 255; }
-        si gg > 255 { gg = 255; }
-        si bb > 255 { bb = 255; }
-        @2[COUL + z * G + x] = rr * 65536 + gg * 256 + bb;
+        @2[COMPTE + 4 * ligne] = 0;
+        @2[COMPTE + 4 * ligne + 1] = nf;
+        @2[COMPTE + 4 * ligne + 2] = nv;
+        @2[COMPTE + 4 * ligne + 3] = nvar;
     }
 }
 
 fonction preparer_tables() {
-    soit d_ombre = [1, 2, 3, 4, 6, 8, 11, 15, 20, 27, 36, 48, 64, 85, 113, 150, 200];
-    pour k dans 0..NOMBRE {
-        @2[OMB + k] = d_ombre[k];
-    }
     // le sinus en entiers (la formule de Bhaskara, à 0,2 % près) : les mêmes nombres sur toutes les machines et dans
     // tous les langages (un sinus en flottants pourrait différer d'un arrondi)
     pour a dans 0..1024 {

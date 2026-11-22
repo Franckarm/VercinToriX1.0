@@ -3717,3 +3717,27 @@ source ; tous les points hex à la fois (l'inondation par sauts) ; l'ordre : l'a
 - **Chaque point de l'écran écrit une fois** (`val_scene.vtx`) : chaque colonne peint son relief, puis son ciel
   au-dessus (une table des couleurs du ciel) et le soleil là où il se voit ; avant, tout le ciel d'abord, puis le relief
   par-dessus. La même empreinte.
+
+## 83. L'ombre quaternaire (22 novembre, 0.79)
+
+**Demandé par le créateur** : l'ombre en quaternaire aussi, avec l'ombre du cube : la densité de l'ombre projetée, et
+une diffusion variable.
+
+- **Par balayage** (`eclairer_lignes`, `val_scene.vtx` ; le même calcul en C dans `val_ref.c`) : la lumière parcourt le
+  relief en lignes parallèles, dans la direction où elle va ; chaque ligne porte son horizon (le relief le plus haut
+  déjà rencontré, qui descend de la pente du soleil à chaque pas) et la distance au point qui fait l'ombre. Chaque case
+  reçoit son état : **vrai** (au-dessus de l'horizon), **faux** (sous l'horizon au-delà de la pénombre, ou tournée à
+  l'opposé du soleil), **variable** (dans la pénombre, avec sa densité ; la pénombre s'élargit avec la distance au point
+  qui fait l'ombre : nette au pied d'un rocher, floue loin derrière), **inconnu** (une ligne pas encore refaite depuis
+  que le soleil a bougé). Chaque case est vue deux fois (un tour pour l'horizon, un tour pour l'écrire) ; les lignes ne
+  se touchent pas : elles vont en bandes. L'état de chaque case est gardé (`ETAT`), et compté par ligne (`COMPTE`).
+- **Plus juste** : l'ancienne recherche (dix-sept sondages vers le soleil, jusqu'à 200 cases) coupait les longues
+  ombres des grands sommets ; le balayage les suit jusqu'au bout (vu de dessus : les mêmes ombres, et la longue ombre
+  effilée d'un sommet au-delà de 200 cases).
+- **La fenêtre** (`val.vtx`) dit, sous le compteur, la part de chaque état : au départ, vrai 34 %, faux 62 %, variable
+  2 %, inconnu 0 % ; quand le soleil bouge, inconnu monte, puis redescend à mesure que le tapis refait les lignes.
+- **Les pentes gardées** : la normale de chaque case est calculée une fois (le relief ne bouge pas) ; l'éclairage d'une
+  case n'est plus qu'un produit et une division.
+- **Honnêtement** : ni le balayage ni les pentes gardées n'accélèrent l'image forgée (l'ancienne recherche s'arrêtait
+  vite dans l'ombre pleine) ; ce qui coûte, c'est le tracé des rayons de l'image. Le C : 2,2 ms par image ; la même
+  empreinte (-2697648536993976745).
