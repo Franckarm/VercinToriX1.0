@@ -122,7 +122,16 @@ pub fn image128(s: &Spu128) -> Option<(usize, usize, Vec<u32>)> {
         return None;
     }
     let (l, h) = (l as usize, h as usize);
-    let px = (0..l * h).map(|i| point128(s.regarder((1u128 << 62) | i as u128))).collect();
+    // 0.78 : l'étage de l'écran part en un bloc, page par page (avant : une recherche de page par point, 4 ms par image
+    // de 480 × 270 rien que pour la préparer)
+    let mut px = vec![0u32; l * h];
+    for (k, morceau) in px.chunks_mut(65536).enumerate() {
+        if let Some(mots) = s.page_vue(1, k as u128) {
+            for (d, &v) in morceau.iter_mut().zip(mots.iter()) {
+                *d = point128(v);
+            }
+        }
+    }
     Some((l, h, px))
 }
 

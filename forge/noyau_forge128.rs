@@ -841,10 +841,53 @@ fn finir(c: &mut Ctx) {
     print!("{}", t);
 }
 
+/// 0.78 : l'image de l'étage 1 (l'écran), prise en un bloc, page par page, et montrée (la fenêtre, ou les fichiers)
+fn point_forge(v: u128) -> u32 {
+    if v >> 64 == 0 {
+        let v = v as u64;
+        return (((v >> 56) & 0xFF) << 16 | ((v >> 40) & 0xFF) << 8 | ((v >> 24) & 0xFF)) as u32;
+    }
+    (((v >> 120) & 0xFF) << 16 | ((v >> 88) & 0xFF) << 8 | ((v >> 56) & 0xFF)) as u32
+}
+
+fn presenter_forge(s: &Spu128) -> u128 {
+    let (l, h) = (s.regarder((3u128 << 62) | 14_680_058), s.regarder((3u128 << 62) | 14_680_059));
+    if !((1..=4096).contains(&l) && (1..=4096).contains(&h) && l * h <= 1 << 24) {
+        return u64::MAX as u128;
+    }
+    let (l, h) = (l as usize, h as usize);
+    let mut px = vec![0u32; l * h];
+    for (k, morceau) in px.chunks_mut(65536).enumerate() {
+        if let Some(mots) = s.page_vue(1, k as u128) {
+            for (d, &v) in morceau.iter_mut().zip(mots.iter()) {
+                *d = point_forge(v);
+            }
+        }
+    }
+    if sortie::montrer(l, h, &px) { 0 } else { 1 }
+}
+
 fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vider: fn(&mut Ctx), mots: &[u128], fin_code: u128,
                     nom: &str, entrees: &[String]) {
     let mut m = Spu128::nouveau();
     m.dossier = std::env::current_dir().ok();
+    // 0.78 : la fenêtre du programme (ou VTX_IMAGES=DOSSIER : les images en fichiers PNG), ouverte à la première image
+    hote::remettre();
+    match std::env::var("VTX_IMAGES") {
+        Ok(d) => {
+            hote::HORLOGE_IMAGES.store(true, std::sync::atomic::Ordering::Relaxed);
+            sortie::installer(Some(sortie::fichiers(&d, 1, usize::MAX)));
+        }
+        Err(_) => sortie::installer(sortie::fenetre(nom)),
+    }
+    m.presenter = Some(Box::new(presenter_forge));
+    // VTX_SCENARIO=FICHIER : les touches d'un scénario (« N appui CODE », « N touche CODE »…), comme vtx toile128
+    if let Ok(f) = std::env::var("VTX_SCENARIO") {
+        match std::fs::read_to_string(&f).map_err(|e| e.to_string()).and_then(|t| hote::charger_scenario(&t)) {
+            Ok(_) => {}
+            Err(e) => eprintln!("scénario {} : {}", f, e),
+        }
+    }
     m.charger(mots);
     m.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
     let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],
@@ -861,6 +904,8 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     let duree = debut.elapsed();
     vider(&mut c);
     finir(&mut c);
+    // la fenêtre reste ouverte jusqu'à ce qu'on la ferme (l'animation est écrite)
+    sortie::finir();
     if std::env::var("FORGE_TEMPS").is_ok() {
         eprintln!("{} : {:.3} s", nom, duree.as_secs_f64());
     }

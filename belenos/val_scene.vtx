@@ -22,6 +22,7 @@ constante INV = 3146752;           // @2[INV + k] : 65536 · ECHELLE / distance(
 constante DIST = 3147264;          // @2[DIST + k] : la distance du pas k, en 1/256 d'unité
 constante BRUME = 3147776;         // @2[BRUME + k] : la part de brume du pas k (sur 256)
 constante YBUF = 3148288;          // @2[YBUF + x] : le haut déjà peint de la colonne x
+constante CIEL = 3149312;          // @2[CIEL + y] : 0.78, la couleur du ciel à la rangée y
 constante ALB = 4194304;           // @2[ALB + z·G + x] : la couleur propre de la case (0xRRGGBB, sans lumière)
 constante NPAS = 400;              // les pas d'un rayon
 constante BANDE = 16;              // les lignes de la grille éclairées de nouveau à chaque image quand le soleil bouge
@@ -270,7 +271,8 @@ fonction embrume(c, part) {
 // une image : l'œil en (cx, cz) (en 1/65536 de case), à la hauteur ch (en 1/256), regardant vers l'angle a (sur 1024),
 // l'horizon à la ligne hor
 fonction rendre(cx, cz, ch, a, hor, az, el) {
-    // le ciel : un dégradé, plus chaud vers l'horizon quand le soleil est bas
+    // 0.78 : chaque point de l'écran est écrit une seule fois (avant : tout le ciel d'abord, puis le relief par-dessus) :
+    // les couleurs du ciel, rangée par rangée, dans une table ; chaque colonne peint son relief, puis son ciel au-dessus
     soit se = sin1024(el);
     soit soir = 0;
     si se .< 24000 {
@@ -284,35 +286,20 @@ fonction rendre(cx, cz, ch, a, hor, az, el) {
         soit r = (0x5A * (256 - t) + (0xC8 + soir * 55 / 160) * t) / 256;
         soit g = (0x7C * (256 - t) + (0xD6 - soir * 40 / 160) * t) / 256;
         soit b = (0xB4 * (256 - t) + (0xE6 - soir * 110 / 160) * t) / 256;
-        soit c = rgb(r, g, b);
-        pour x dans 0..W {
-            @1[y * W + x] = c;
-        }
+        @2[CIEL + y] = rgb(r, g, b);
     }
-    // le disque du soleil, s'il est dans le champ (60 degrés : 85 sur 1024 de chaque côté)
+    // le disque du soleil, s'il est dans le champ (60 degrés : 85 sur 1024 de chaque côté) : son centre (sx, sy)
+    soit sx = 0;
+    soit sy = 0;
+    soit soleil_vu = 0;
     soit ecart_s = (az - a + 512) & 1023;
     si ecart_s > 512 - 85 && ecart_s < 512 + 85 && se .> 0 {
-        soit sx = W / 2 + (ecart_s - 512) * (W / 2) ./ 85;
+        sx = W / 2 + (ecart_s - 512) * (W / 2) ./ 85;
         soit sy_haut = se * ECHELLE ./ cos1024(el);
         si sy_haut < hor + 20 {
-            soit sy = hor - sy_haut;
-            pour ddy dans 0..17 {
-                pour ddx dans 0..17 {
-                    soit ex = ddx - 8;
-                    soit ey = ddy - 8;
-                    si ex * ex + ey * ey < 64 {
-                        soit qx = sx + ex;
-                        soit qy = sy + ey;
-                        si qx < W && qy < H {
-                            @1[qy * W + qx] = rgb(255, 245, 220);
-                        }
-                    }
-                }
-            }
+            sy = hor - sy_haut;
+            soleil_vu = 1;
         }
-    }
-    pour x dans 0..W {
-        @2[YBUF + x] = H;
     }
     soit sa = @2[SINUS + (a & 1023)];
     soit ca = @2[SINUS + ((a + 256) & 1023)];
@@ -348,6 +335,18 @@ fonction rendre(cx, cz, ch, a, hor, az, el) {
                 haut = ys;
             }
             k = k + 1;
+        }
+        // le ciel au-dessus du relief, et le disque du soleil là où il se voit
+        soit ex = x - sx;
+        pour yc dans 0..haut {
+            soit pc = @2[CIEL + yc];
+            si soleil_vu == 1 && (ex .< 9 && ex .> 0 - 9) {
+                soit ey = yc - sy;
+                si ey .< 9 && ey .> 0 - 9 && ex * ex + ey * ey < 64 {
+                    pc = rgb(255, 245, 220);
+                }
+            }
+            @1[yc * W + x] = pc;
         }
     }
 }

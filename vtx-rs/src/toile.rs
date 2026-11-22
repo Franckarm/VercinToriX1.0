@@ -48,7 +48,15 @@ pub fn taille_dessin64(s: &Spu64) -> Option<(usize, usize)> {
 /// L'image d'un programme du SPU-64 : chaque point profond #RRRRGGGGBBBBAAAA vu en 0x00RRGGBB (l'octet fort de chaque voie).
 pub fn image64(s: &Spu64) -> Option<(usize, usize, Vec<u32>)> {
     let (l, h) = taille_dessin64(s)?;
-    let px = (0..l * h).map(|i| point64(s.regarder((1u64 << 62) | i as u64))).collect();
+    // 0.78 : l'étage de l'écran part en un bloc, page par page
+    let mut px = vec![0u32; l * h];
+    for (k, morceau) in px.chunks_mut(65536).enumerate() {
+        if let Some(mots) = s.page_vue(1, k as u64) {
+            for (d, &v) in morceau.iter_mut().zip(mots.iter()) {
+                *d = point64(v);
+            }
+        }
+    }
     Some((l, h, px))
 }
 

@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.78.zip`, `essai-0.78.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.79.zip`, `essai-0.79.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -46,7 +46,7 @@ avec le créateur.*
   gardé dans le dépôt : le refaire (`lugus cataloguer bibliotheque`) après toute retouche d'un module de la
   bibliothèque (sinon `importer empreinte` le refuse, l'empreinte ayant changé).
 - `outils/tests_du_paquet.txt` : les tests mis dans le paquet ; la commande du paquet : `git archive --format=zip
-  --prefix=vtx-0.6/ -o vtx-0.77.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
+  --prefix=vtx-0.6/ -o vtx-0.78.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
   spu128 chimie natif gobannos exemples exemples128 exemples64 bibliotheque docs` suivi de ces tests et de
   `tests/test_supposons.py tests/supposons_alors.vtx tests/test_gobannos.py tests/gobannos tests/test_valeurs.py
   tests/valeurs_mele.vtx tests/test_types_fonction.py tests/test_gobannos_flottants.py tests/test_nombres.py
@@ -99,7 +99,9 @@ réparés (cache de 64 pages, hachage rapide, segments en alternance, fusion str
 rouleau de lumière en 2D (`belenos/rouleau.vtx`) ; le contrôle des cylindres au mot près. **0.77 (§81)** : `en bandes` (un seul cube, chaque cœur sa part,
 la promesse vérifiée au mot près) ; décidé avec le créateur : ensuite la chaîne des étages (`chaine { etage … }`) et le
 vergobret (un cœur pour la cadence et le contrôle), puis la carte ; la lumière par diffusion (pyramide de cubes) à
-essayer. **Prochain** : lire la mesure
+essayer. **0.78 (§82)** : l'image en un bloc (`presenter`, 23 fois plus vite) ; la forge ouvre sa fenêtre (le val à
+l'écran 8 fois plus vite) ; ensuite, dans l'ordre du créateur : l'anti-cube, l'ombre, la lumière quaternaire (vrai /
+faux / variable / inconnu, dégressive, l'inondation par sauts). **Prochain** : lire la mesure
 du créateur ; Taranis pour la scène (lectures à adresse calculée, mémoire dans
 les fonctions appelées, l'image), puis la lumière dans le rouleau en 2D (l'idée du créateur), puis le val dans le cube. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.

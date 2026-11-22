@@ -1322,7 +1322,8 @@ def code_zones(plan):
 
 ATTRIBUTS = ("#![allow(unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, dead_code, "
              "clippy::all, non_snake_case, unused_imports, unused_labels, unused_braces)]")
-MODULES = ["qflot128", "spu128", "hote", "miroir", "taranis_vk"]     # recopiés de vtx-rs/src
+MODULES = ["qflot128", "spu128", "hote", "miroir", "taranis_vk", "gif", "sortie"]     # recopiés de vtx-rs/src
+# (0.78 : gif et sortie, la fenêtre : un programme forgé présente lui-même ses images)
 
 
 def noyau():

@@ -198,6 +198,11 @@ impl Spu64 {
     }
 
     /// Un mot lu sans rien changer (ni cache, ni page sortie du disque) : pour le panneau du pas à pas.
+    /// 0.78 : les mots d'une page entière, lus sans rien changer (étage, numéro de page) : l'image part en un bloc
+    pub fn page_vue(&self, e: usize, cle: u64) -> Option<&[u64]> {
+        self.pages[e].get(&cle).map(|p| &p.mots[..])
+    }
+
     pub fn regarder(&self, adr: u64) -> u64 {
         let (e, i) = Self::place(adr);
         self.pages[e].get(&(i >> 16)).map(|p| p.mots[(i as usize) & (PAGE - 1)]).unwrap_or(0)

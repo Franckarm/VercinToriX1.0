@@ -3695,3 +3695,25 @@ jusqu'à l'affichage ; un cœur, le vergobret, pour la cadence et le contrôle.
   ciel, les rebonds, le feu, la brume). À essayer après la chaîne des étages.
 - **La suite** : la chaîne des étages et le vergobret (la cadence, l'équilibre des cœurs entre les étages, le clavier
   et la patrouille) ; puis la carte graphique.
+
+## 82. L'image en un bloc, et l'écran à la vitesse de la forge (22 novembre, 0.78)
+
+**Mesuré chez le créateur (0.77)** : en bandes, le rouleau passe de 1,87 s (1 cœur) à 1,40 s (4 cœurs), le val ne
+gagne pas. **Demandé** : commencer par l'image ; « il faut que l'étage envoie l'info en un bloc pour apparaître à
+l'écran : si on gagne du temps ici, on gagnera du temps pour tout le reste ». **L'idée du créateur pour la lumière**
+(à faire ensuite) : la lumière quaternaire, vrai (vu par la source), faux (caché), variable (les deux : la pénombre,
+le halo, le reflet), inconnu (pas atteint), dégressive depuis la source et depuis le point occupé le plus proche de la
+source ; tous les points hex à la fois (l'inondation par sauts) ; l'ordre : l'anti-cube, l'ombre, la lumière.
+
+- **`presenter()` lisait l'écran point par point** : une recherche de page par point, 4,2 ms par image de 480 × 270 rien
+  que pour la préparer (autant que tout le rendu du val). **L'étage de l'écran part maintenant en un bloc**, page par
+  page (`page_vue`, Lugus et Dunon) : 0,18 ms (23 fois plus vite) ; les images sont les mêmes au point près.
+- **La fenêtre faisait tourner la version traduite en x86** (28 à 35 ms par image du val), alors que la forge en fait 3
+  à 4. **La forge présente maintenant elle-même ses images** : la fenêtre (`sortie.rs`, et `gif.rs`) est recopiée dans
+  le programme forgé, `presenter()` y envoie l'étage de l'écran en un bloc ; `VTX_IMAGES=DOSSIER` écrit les images en
+  PNG, `VTX_SCENARIO=FICHIER` rejoue des touches (comme `vtx toile128`). Le val forgé rend les mêmes 46 images que la
+  fenêtre traduite ; 201 images en 0,93 s (préparation comprise) contre 7,7 s : **8 fois plus vite à l'écran**. La
+  fenêtre limite à 60 images par seconde (la cadence).
+- **Chaque point de l'écran écrit une fois** (`val_scene.vtx`) : chaque colonne peint son relief, puis son ciel
+  au-dessus (une table des couleurs du ciel) et le soleil là où il se voit ; avant, tout le ciel d'abord, puis le relief
+  par-dessus. La même empreinte.
