@@ -16,10 +16,11 @@ fonction principal() {
     // le soleil : au sud-ouest, à 25 degrés ; tout le relief éclairé une première fois
     soit az = 640;
     soit el = 71;
-    eclairer_lignes(0, G, az, el);
+    eclairer_tout(az, el);
     // le tapis roulant de la lumière : la prochaine bande à éclairer, et ce qui reste à refaire depuis que le soleil a bougé
     soit bande = 0;
     soit reste = 0;
+    soit tour = 2;              // 0.802 : 1 pendant le premier tour du tapis après un saut de lumière
     soit avant = horloge();
     soit ms = 0;
     // l'œil : au milieu de la grille (avec une marge pour rester positif), au-dessus du sol
@@ -79,6 +80,17 @@ fonction principal() {
             } sinon {
                 reste = 0;
             }
+            // 0.802 : la pyramide des renvois, refaite toutes les quatre bandes et quand la lumière est finie (les
+            // bandes suivantes la lisent) : le renvoi change lentement, il n'a pas besoin de plus
+            si (bande & 63) == 0 || reste == 0 {
+                construire_pyramide();
+            }
+            // le second tour : après un saut de lumière (n, f), les premières bandes ont lu une pyramide d'avant : on
+            // refait un tour avec la pyramide de la nouvelle lumière
+            si reste == 0 && tour == 1 {
+                tour = 2;
+                reste = G;
+            }
         }
         // la hauteur de l'œil : le sol sous lui, plus la hauteur choisie
         soit sol = @2[HAUT + ((cz >> 16) & MASQUE) * G + ((cx >> 16) & MASQUE)];
@@ -123,6 +135,7 @@ fonction principal() {
             si t == 102 {
                 @2[REGLES] = 1 - @2[REGLES];
                 reste = G;
+                tour = 1;
             }
             si t == 110 {
                 si el .> 0 {
@@ -131,6 +144,7 @@ fonction principal() {
                     el = 71;
                 }
                 reste = G;
+                tour = 1;
             }
             t = touche();
         }

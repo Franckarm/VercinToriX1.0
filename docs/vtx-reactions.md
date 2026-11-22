@@ -3780,3 +3780,36 @@ lumière, la lumière jusqu'au noir. Penser aux sources de lumière diverses, et
   côté n'est pas vue, et on devine de légères traînées le long des lignes) : l'inondation par sauts le rendra égal dans
   toutes les directions, et ce sera le début de l'anti-cube (les reflets). Les feux ne renvoient pas de lumière, et ne
   vacillent pas encore. La trame en damier sur la roche et la neige vient des marches du relief (elle était là avant).
+
+## 85. Le renvoi par la pyramide de cubes (22 novembre, 0.802)
+
+**La suite demandée par le créateur.** En 0.801, le renvoi (la lumière que le sol éclairé renvoie dans l'ombre) suivait
+les lignes du soleil, dans les deux sens : la lumière qui entre par le côté n'était pas vue, et on devinait des
+traînées le long des lignes.
+
+- **Pourquoi pas l'inondation par sauts** : elle trouve, pour chaque case, le point éclairé *le plus proche* ; or une
+  case dans l'ombre reçoit la lumière renvoyée par *tout* ce qui l'entoure : une somme, pas un plus proche voisin. Le
+  bon outil est la **pyramide de cubes** (la diffusion, l'idée déjà notée au §81). L'inondation par sauts est gardée
+  pour les reflets de l'anti-cube, où c'est bien le point le plus proche qui compte.
+- **La pyramide** (`construire_pyramide`, `val_scene.vtx` ; la même en C) : chaque case note ce qu'elle renvoie (sa
+  couleur sous les sources : l'astre et les feux, sans le ciel ni le renvoi : un seul rebond) dans `SRC` ; quatre
+  niveaux en sont tirés, des sommes de 2 × 2, 4 × 4, 8 × 8 et 16 × 16 cases. Les trois voies tiennent chacune dans 16
+  bits d'un même mot (au plus 255 × 256) : chaque niveau n'est qu'une addition de quatre mots, sans rien défaire.
+  Chaque niveau va en bandes.
+- **La lecture** (`lire_niveau`) : chaque case lit les quatre niveaux autour d'elle, en mêlant les quatre blocs voisins
+  (bilinéaire, sur le tore) ; les plus proches comptent plus (96, 80, 64, 64 sur 256). Le renvoi arrive par la part du
+  ciel que le relief cache : `128 + 2 × (256 − ouverture)` sur 256 (une case à découvert n'en reçoit guère ; un creux ou
+  le pied d'une paroi, beaucoup). Il vient de toutes les directions : plus de traînées dues au renvoi ; l'ombre reste
+  claire près de son bord et sombre au fond, en plus doux.
+- **Les feux renvoient** : leur lumière entre dans `SRC`, leurs halos s'élargissent sur le sol et les parois.
+- **Le tapis à deux tours** (`val.vtx`) : chaque bande lit la pyramide faite avant elle. Quand la lumière saute (`n`,
+  `f`), le tapis fait un premier tour (ce que chaque case renvoie), puis la pyramide, puis un second tour qui la lit
+  (sans lui, la nuit gardait le renvoi du jour). Quand le soleil tourne, la pyramide est refaite toutes les quatre bandes.
+- **Le balayage redevient un seul tour** (plus de carnet par ligne) : l'horizon, la lumière directe, et la composition
+  de la case dans le même pas.
+- **Ce que ça coûte** : en C, 2,6 ms par image (le banc refait la pyramide à chaque image) ; la forge, de 4,4 à environ
+  6 ms par image quand le soleil bouge ; rien de plus quand il est immobile. La même empreinte partout :
+  -3681145075876775514.
+- **Les limites** : le renvoi ne regarde pas si le relief le coupe entre la source et la case (il passe les crêtes) ;
+  les traînées en éventail qui restent dans les grandes ombres viennent de la pénombre du balayage (chaque ligne a son
+  horizon), pas du renvoi.

@@ -4,7 +4,7 @@
 // portées (l'ombre du relief projetée depuis le soleil, avec sa pénombre), recalculées par bandes quand le soleil bouge
 // (le tapis roulant : chaque image ne paie que sa bande) ; le ciel et le disque du soleil ; le compteur de l'image.
 // 0.801 : l'ombre et la lumière ensemble (une seule lumière par case, du blanc au noir) et les sources diverses : le
-// soleil, le ciel, le renvoi du sol éclairé, les feux, la lune.
+// soleil, le ciel, le renvoi du sol éclairé, les feux, la lune. 0.802 : le renvoi par la pyramide de cubes.
 // Un relief vallonné de pentes variées (une grille de 512 × 512 hauteurs, du bruit sur cinq octaves), la neige au-dessus
 // d'une altitude et sur les pentes douces, la roche sur les pentes fortes, l'herbe en bas ; le ciel et la brume du loin.
 // Chaque image : chaque colonne lance un rayon qui avance du plus près au plus loin et peint de bas en haut ce qu'il
@@ -175,8 +175,11 @@ fonction preparer_normales() {
 //     le soleil   direct, là où il touche (la pente face à lui, adoucie par la pénombre)
 //     le ciel     selon l'heure (bleuté de jour, faible la nuit) et selon l'ouverture de la case au ciel (un creux en
 //                 voit peu, un sommet le voit tout)
-//     le renvoi   la lumière que renvoie le sol éclairé, portée le long de la ligne dans les deux sens et qui baisse à
-//                 chaque pas : l'ombre est claire près de son bord, sombre loin dedans (la valeur dégressive)
+//     le renvoi   la lumière que renvoie le sol éclairé, 0.802 : par la pyramide de cubes (la diffusion) : la carte de
+//                 ce que chaque case renvoie, moyennée par blocs de 2, 4, 8 et 16 cases ; chaque case lit les quatre
+//                 niveaux autour d'elle : le renvoi vient de toutes les directions, et baisse en s'éloignant du sol
+//                 éclairé ; il arrive par la part du ciel que le relief cache (une case à découvert n'en reçoit guère,
+//                 un creux ou le pied d'une paroi beaucoup) : l'ombre est claire près de son bord, sombre loin dedans
 //     les feux    des feux de camp, une forge, des lanternes, dans les creux : leur lumière baisse avec la distance et
 //                 passe ou non le relief, en quaternaire (leur ombre a sa pénombre comme celle du soleil)
 // L'état de la case vient de la lumière reçue : vrai, une source la touche en plein (le coin blanc du cube) ; faux,
@@ -184,16 +187,16 @@ fonction preparer_normales() {
 // renvois (à la fois dans l'ombre et dans la lumière) ; inconnu, pas encore refait.
 constante OUV = 6553600;           // @2[OUV + cell] : l'ouverture au ciel (256 : tout le ciel)
 constante FEU = 6815744;           // @2[FEU + cell] : la lumière des feux (r << 32 | g << 16 | b), et 1 << 60 : un foyer
-constante TRACE_D = 7077888;       // le carnet de chaque ligne (CARNET cases) : la lumière directe (+ 512 si en plein)
-constante TRACE_S = 7372800;       // ce que la case renvoie (0xRRGGBB)
-constante TRACE_F = 7667712;       // le renvoi reçu de l'avant (0xRRGGBB)
+constante SRC = 7077888;           // @2[SRC + cell] : 0.802, ce que la case renvoie (r << 32 | g << 16 | b)
+constante PYR1 = 7340032;          // la pyramide des renvois : des sommes de 4, 16, 64 et 256 cases (16 bits par voie)
+constante PYR2 = 7405568;
+constante PYR3 = 7421952;
+constante PYR4 = 7426048;
 constante FOYERS = 7962624;        // les feux : x, z, hauteur de la flamme, r, g, b (6 mots chacun)
 constante REGLES = 7962700;        // @2[REGLES] : 1 si les feux sont allumés
 constante DIRS = 7962710;          // les huit directions (dx, dz), signées
 constante NFEUX = 8;
 constante RAYON = 40;              // la portée d'un feu, en cases
-constante CARNET = 576;            // G + 64 : la ligne et sa marge (le renvoi a besoin de ce qui suit)
-constante RENVOI = 230;            // la part du renvoi gardée à chaque pas (sur 256)
 constante NOIR = 24;               // sous cette lumière (moyenne des trois voies), la case est faux : noire
 
 // l'ouverture au ciel : dans huit directions, la plus haute pente vers le relief voisin (à 3, 6, 12 et 24 cases) ; le
@@ -387,9 +390,58 @@ fonction eclairer_feux() {
     }
 }
 
-// le balayage : à l'aller, l'horizon de la ligne (l'ombre du cube), la lumière directe du soleil, ce que chaque case
-// renvoie et le renvoi venu de l'avant, notés dans le carnet de la ligne ; au retour, le renvoi venu de l'arrière, et la
-// lumière de chaque case (soleil, ciel, renvois, feux), sa couleur et son état
+// 0.802 : la pyramide de cubes : chaque niveau somme 2 × 2 cases du niveau d'en dessous (les voies tiennent dans 16
+// bits : au plus 255 × 256) ; chaque ligne n'écrit que ses cases, les niveaux vont en bandes l'un après l'autre
+fonction construire_pyramide() {
+    pour qz dans 0..256 en bandes {
+        pour qx dans 0..256 {
+            soit s0 = SRC + 2 * qz * G + 2 * qx;
+            @2[PYR1 + qz * 256 + qx] = @2[s0] + @2[s0 + 1] + @2[s0 + G] + @2[s0 + G + 1];
+        }
+    }
+    reduire(PYR1, PYR2, 128);
+    reduire(PYR2, PYR3, 64);
+    reduire(PYR3, PYR4, 32);
+}
+
+fonction reduire(dessous, dessus, n) {
+    pour rz dans 0..n en bandes {
+        pour rx dans 0..n {
+            soit s0 = dessous + 4 * rz * n + 2 * rx;
+            @2[dessus + rz * n + rx] = @2[s0] + @2[s0 + 1] + @2[s0 + 2 * n] + @2[s0 + 2 * n + 1];
+        }
+    }
+}
+
+// un niveau de la pyramide lu à la case (x, z), en mêlant ses quatre blocs voisins (bilinéaire, en 1/256) : les trois
+// voies, toujours en sommes (r << 32 | g << 16 | b)
+fonction lire_niveau(base, l, x, z) {
+    soit nn = G >> l;
+    soit mk = nn - 1;
+    soit u = ((x * 256 + 128) >> l) + nn * 256 - 128;
+    soit v = ((z * 256 + 128) >> l) + nn * 256 - 128;
+    soit ix = (u >> 8) & mk;
+    soit iz = (v >> 8) & mk;
+    soit ix1 = (ix + 1) & mk;
+    soit iz1 = (iz + 1) & mk;
+    soit tx = u & 255;
+    soit tz = v & 255;
+    soit pa = @2[base + iz * nn + ix];
+    soit pb = @2[base + iz * nn + ix1];
+    soit pc = @2[base + iz1 * nn + ix];
+    soit pd = @2[base + iz1 * nn + ix1];
+    soit wa = (256 - tx) * (256 - tz);
+    soit wb = tx * (256 - tz);
+    soit wc = (256 - tx) * tz;
+    soit wd = tx * tz;
+    soit vr = (((pa >> 32) & 65535) * wa + ((pb >> 32) & 65535) * wb + ((pc >> 32) & 65535) * wc + ((pd >> 32) & 65535) * wd) >> 16;
+    soit vg = (((pa >> 16) & 65535) * wa + ((pb >> 16) & 65535) * wb + ((pc >> 16) & 65535) * wc + ((pd >> 16) & 65535) * wd) >> 16;
+    soit vb = ((pa & 65535) * wa + (pb & 65535) * wb + (pc & 65535) * wc + (pd & 65535) * wd) >> 16;
+    retour (vr << 32) | (vg << 16) | vb;
+}
+
+// le balayage : l'horizon de la ligne (l'ombre du cube), la lumière directe, et la lumière de chaque case (soleil, ciel,
+// renvoi lu dans la pyramide, feux), sa couleur, son état, et ce qu'elle renvoie (pour la prochaine pyramide)
 fonction eclairer_lignes(n0, n1, az, el) {
     // 0.801 : la nuit, la lune prend le relais : à l'opposé du soleil, aussi haute qu'il est bas, faible et bleutée ;
     // elle a son ombre, faite par le même balayage
@@ -406,7 +458,7 @@ fonction eclairer_lignes(n0, n1, az, el) {
     soit ce = cos1024(l_el);
     soit sa = sin1024(l_az);
     soit ca = cos1024(l_az);
-    soit lx = (ce * sa) ./ 65536;          // la direction du soleil, en 1/65536
+    soit lx = (ce * sa) ./ 65536;          // la direction de l'astre, en 1/65536
     soit lz = (ce * ca) ./ 65536;
     soit ly = se;
     // la lumière du soleil : blanche haut dans le ciel, orangée au ras de l'horizon
@@ -474,14 +526,12 @@ fonction eclairer_lignes(n0, n1, az, el) {
     soit chute = montee * longueur / 65536;
     pour n dans n0..n1 en bandes {
         soit ligne = n & MASQUE;
-        soit carnet = ligne * CARNET;
         soit horizon = 0 - 1000000000;
         soit docc = 0;
-        soit fr = 0;
-        soit fg = 0;
-        soit fb = 0;
-        // l'aller
-        pour i dans 0..(2 * G + 64) {
+        soit nv = 0;
+        soit nf = 0;
+        soit nvar = 0;
+        pour i dans 0..(2 * G) {
             soit maj = (i * dmaj) & MASQUE;
             soit mino = (((ligne << 16) + i * dmin) .>> 16) & MASQUE;
             soit x = maj;
@@ -494,8 +544,8 @@ fonction eclairer_lignes(n0, n1, az, el) {
             soit h = @2[HAUT + cell];
             horizon = horizon - chute;
             docc = docc + 1;
-            si i + 64 >= G {
-                // la pente face au soleil : la normale (-gx, 512, -gz), gardée depuis la préparation
+            si i >= G {
+                // la pente face à l'astre : la normale (-gx, 512, -gz), gardée depuis la préparation
                 soit nl = @2[NL + cell];
                 soit pd = @2[NX + cell] * lx + 512 * ly + @2[NZ + cell] * lz;
                 soit diffus = 0;
@@ -505,7 +555,7 @@ fonction eclairer_lignes(n0, n1, az, el) {
                 si diffus > 256 {
                     diffus = 256;
                 }
-                // le soleil vu : la marge sous l'horizon, rapportée à la demi-largeur de la pénombre (plus large loin du
+                // l'astre vu : la marge sous l'horizon, rapportée à la demi-largeur de la pénombre (plus large loin du
                 // point qui fait l'ombre)
                 soit marge = horizon - h;
                 soit w = 12 + docc * 6;
@@ -518,107 +568,56 @@ fonction eclairer_lignes(n0, n1, az, el) {
                     lumiere = 256 - ((marge + w) * 128) ./ w;
                 }
                 soit direct = diffus * lumiere / 256;
-                // ce que la case renvoie : sa couleur sous le soleil, à moitié
-                soit c = @2[ALB + cell];
-                soit s_r = ((c >> 16) & 255) * (direct * sr / 256) / 512;
-                soit s_g = ((c >> 8) & 255) * (direct * sg / 256) / 512;
-                soit s_b = (c & 255) * (direct * sb / 256) / 512;
-                // le renvoi venu de l'avant : il baisse à chaque pas
-                fr = fr * RENVOI / 256;
-                fg = fg * RENVOI / 256;
-                fb = fb * RENVOI / 256;
-                si i >= G {
-                    soit j = carnet + i - G;
-                    soit plein = 0;
-                    si lumiere == 256 && direct > 0 {
-                        plein = 512;
-                    }
-                    @2[TRACE_D + j] = direct + plein;
-                    @2[TRACE_S + j] = s_r * 65536 + s_g * 256 + s_b;
-                    @2[TRACE_F + j] = fr * 65536 + fg * 256 + fb;
-                }
-                si s_r > fr {
-                    fr = s_r;
-                }
-                si s_g > fg {
-                    fg = s_g;
-                }
-                si s_b > fb {
-                    fb = s_b;
-                }
-            }
-            si h .> horizon {
-                horizon = h;
-                docc = 0;
-            }
-        }
-        // le retour
-        soit br = 0;
-        soit bg = 0;
-        soit bb = 0;
-        soit nv = 0;
-        soit nf = 0;
-        soit nvar = 0;
-        soit k = CARNET;
-        tantque k > 0 {
-            k = k - 1;
-            soit sv = @2[TRACE_S + carnet + k];
-            br = br * RENVOI / 256;
-            bg = bg * RENVOI / 256;
-            bb = bb * RENVOI / 256;
-            si k < G {
-                soit ii = G + k;
-                soit maj2 = (ii * dmaj) & MASQUE;
-                soit mino2 = (((ligne << 16) + ii * dmin) .>> 16) & MASQUE;
-                soit cel = mino2 * G + maj2;
-                si axe_x == 0 {
-                    cel = maj2 * G + mino2;
-                }
-                soit dv = @2[TRACE_D + carnet + k];
-                soit dir_ = dv & 511;
-                soit fv = @2[TRACE_F + carnet + k];
-                // le renvoi reçu : le plus fort des deux sens
-                soit rr_ = (fv >> 16) & 255;
-                soit rg_ = (fv >> 8) & 255;
-                soit rb_ = fv & 255;
-                si br > rr_ {
-                    rr_ = br;
-                }
-                si bg > rg_ {
-                    rg_ = bg;
-                }
-                si bb > rb_ {
-                    rb_ = bb;
-                }
-                // la lumière de la case : le ciel (selon son ouverture), le soleil, les renvois, les feux
-                soit ouv = @2[OUV + cel];
-                soit tr = cr * ouv / 256 + dir_ * sr / 256 + rr_;
-                soit tg = cg * ouv / 256 + dir_ * sg / 256 + rg_;
-                soit tb = cb * ouv / 256 + dir_ * sb / 256 + rb_;
                 soit etat = 3;
-                si dv >= 512 {
+                si lumiere == 256 && direct > 0 {
                     etat = 2;
                 }
-                soit alb = @2[ALB + cel];
+                // la lumière des sources (l'astre, les feux) : ce que la case renvoie en vient
+                soit dr = direct * sr / 256;
+                soit dg = direct * sg / 256;
+                soit db = direct * sb / 256;
+                soit alb = @2[ALB + cell];
+                soit foyer = 0;
                 si feux == 1 {
-                    soit fe = @2[FEU + cel];
+                    soit fe = @2[FEU + cell];
                     soit er = (fe >> 32) & 65535;
                     soit eg = (fe >> 16) & 65535;
                     soit eb = fe & 65535;
-                    tr = tr + er;
-                    tg = tg + eg;
-                    tb = tb + eb;
+                    dr = dr + er;
+                    dg = dg + eg;
+                    db = db + eb;
                     si er + eg + eb >= 288 {
                         etat = 2;
                     }
                     si (fe >> 60) == 1 {
-                        // le foyer lui-même : la flamme
-                        alb = 0xFFE0B0;
-                        tr = 320;
-                        tg = 300;
-                        tb = 280;
-                        etat = 2;
+                        foyer = 1;
                     }
+                }
+                // le renvoi : les quatre niveaux de la pyramide autour de la case (les plus proches comptent plus),
+                // reçu par la part du ciel que le relief cache, plus un fond (le relief n'est jamais tout plat)
+                soit p1 = lire_niveau(PYR1, 1, x, z);
+                soit p2 = lire_niveau(PYR2, 2, x, z);
+                soit p3 = lire_niveau(PYR3, 3, x, z);
+                soit p4 = lire_niveau(PYR4, 4, x, z);
+                soit rv_r = (((p1 >> 32) & 65535) * 24 + ((p2 >> 32) & 65535) * 5 + ((p3 >> 32) & 65535) + ((p4 >> 32) & 65535) / 4) / 256;
+                soit rv_g = (((p1 >> 16) & 65535) * 24 + ((p2 >> 16) & 65535) * 5 + ((p3 >> 16) & 65535) + ((p4 >> 16) & 65535) / 4) / 256;
+                soit rv_b = ((p1 & 65535) * 24 + (p2 & 65535) * 5 + (p3 & 65535) + (p4 & 65535) / 4) / 256;
+                soit ouv = @2[OUV + cell];
+                soit recu = 128 + (256 - ouv) * 2;
+                rv_r = rv_r * recu / 256;
+                rv_g = rv_g * recu / 256;
+                rv_b = rv_b * recu / 256;
+                // la lumière de la case : le ciel (selon son ouverture), les sources, le renvoi
+                soit tr = cr * ouv / 256 + dr + rv_r;
+                soit tg = cg * ouv / 256 + dg + rv_g;
+                soit tb = cb * ouv / 256 + db + rv_b;
+                si foyer == 1 {
+                    // le foyer lui-même : la flamme
+                    alb = 0xFFE0B0;
+                    tr = 320;
+                    tg = 300;
+                    tb = 280;
+                    etat = 2;
                 }
                 si etat == 3 && tr + tg + tb < 3 * NOIR {
                     etat = 1;
@@ -635,8 +634,22 @@ fonction eclairer_lignes(n0, n1, az, el) {
                 si qb > 255 {
                     qb = 255;
                 }
-                @2[COUL + cel] = qr * 65536 + qg * 256 + qb;
-                @2[ETAT + cel] = etat;
+                @2[COUL + cell] = qr * 65536 + qg * 256 + qb;
+                @2[ETAT + cell] = etat;
+                // ce que la case renvoie : sa couleur sous les sources (sans le ciel ni le renvoi : un seul rebond)
+                soit or_ = ((alb >> 16) & 255) * dr / 256;
+                soit og = ((alb >> 8) & 255) * dg / 256;
+                soit ob = (alb & 255) * db / 256;
+                si or_ > 255 {
+                    or_ = 255;
+                }
+                si og > 255 {
+                    og = 255;
+                }
+                si ob > 255 {
+                    ob = 255;
+                }
+                @2[SRC + cell] = (or_ << 32) | (og << 16) | ob;
                 si etat == 2 {
                     nv = nv + 1;
                 } sinon si etat == 1 {
@@ -645,14 +658,9 @@ fonction eclairer_lignes(n0, n1, az, el) {
                     nvar = nvar + 1;
                 }
             }
-            si ((sv >> 16) & 255) > br {
-                br = (sv >> 16) & 255;
-            }
-            si ((sv >> 8) & 255) > bg {
-                bg = (sv >> 8) & 255;
-            }
-            si (sv & 255) > bb {
-                bb = sv & 255;
+            si h .> horizon {
+                horizon = h;
+                docc = 0;
             }
         }
         @2[COMPTE + 4 * ligne] = 0;
@@ -660,6 +668,13 @@ fonction eclairer_lignes(n0, n1, az, el) {
         @2[COMPTE + 4 * ligne + 2] = nv;
         @2[COMPTE + 4 * ligne + 3] = nvar;
     }
+}
+
+// 0.802 : tout éclairer : un balayage, la pyramide de ce qui est renvoyé, et un second balayage qui la lit
+fonction eclairer_tout(az, el) {
+    eclairer_lignes(0, G, az, el);
+    construire_pyramide();
+    eclairer_lignes(0, G, az, el);
 }
 
 fonction preparer_tables() {

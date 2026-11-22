@@ -110,10 +110,8 @@ static void preparer_normales(void) {
 /* 0.80 : l'ombre et la lumière ensemble (comme val_scene.vtx) : l'ouverture au ciel, les feux, le balayage aller-retour */
 #define NFEUX 8
 #define RAYON 40
-#define CARNET 576
-#define RENVOI 230
 #define NOIR 24
-static u OUV[G * G], FEU[G * G], TRACE_D[G * CARNET], TRACE_S[G * CARNET], TRACE_F[G * CARNET], FOYERS[6 * NFEUX];
+static u OUV[G * G], FEU[G * G], SRC[G * G], PYR1[256 * 256], PYR2[128 * 128], PYR3[64 * 64], PYR4[32 * 32], FOYERS[6 * NFEUX];
 static u REGLES, DIRS[16], BRUMEC[3];
 
 static void preparer_ouverture(void) {
@@ -222,6 +220,38 @@ static void eclairer_feux(void) {
         }
 }
 
+/* 0.802 : la pyramide de cubes des renvois (comme val_scene.vtx) */
+static void reduire(u *dessous, u *dessus, u n) {
+    for (u rz = 0; rz < n; rz++)
+        for (u rx = 0; rx < n; rx++) {
+            u *s0 = dessous + 4 * rz * n + 2 * rx;
+            dessus[rz * n + rx] = s0[0] + s0[1] + s0[2 * n] + s0[2 * n + 1];
+        }
+}
+
+static void construire_pyramide(void) {
+    for (u qz = 0; qz < 256; qz++)
+        for (u qx = 0; qx < 256; qx++) {
+            u *s0 = SRC + 2 * qz * G + 2 * qx;
+            PYR1[qz * 256 + qx] = s0[0] + s0[1] + s0[G] + s0[G + 1];
+        }
+    reduire(PYR1, PYR2, 128);
+    reduire(PYR2, PYR3, 64);
+    reduire(PYR3, PYR4, 32);
+}
+
+static u lire_niveau(const u *base, u l, u x, u z) {
+    u nn = G >> l, mk = nn - 1;
+    u uu = ((x * 256 + 128) >> l) + nn * 256 - 128, v = ((z * 256 + 128) >> l) + nn * 256 - 128;
+    u ix = (uu >> 8) & mk, iz = (v >> 8) & mk, ix1 = (ix + 1) & mk, iz1 = (iz + 1) & mk, tx = uu & 255, tz = v & 255;
+    u pa = base[iz * nn + ix], pb = base[iz * nn + ix1], pc = base[iz1 * nn + ix], pd = base[iz1 * nn + ix1];
+    u wa = (256 - tx) * (256 - tz), wb = tx * (256 - tz), wc = (256 - tx) * tz, wd = tx * tz;
+    u vr = (((pa >> 32) & 65535) * wa + ((pb >> 32) & 65535) * wb + ((pc >> 32) & 65535) * wc + ((pd >> 32) & 65535) * wd) >> 16;
+    u vg = (((pa >> 16) & 65535) * wa + ((pb >> 16) & 65535) * wb + ((pc >> 16) & 65535) * wc + ((pd >> 16) & 65535) * wd) >> 16;
+    u vb = ((pa & 65535) * wa + (pb & 65535) * wb + (pc & 65535) * wc + (pd & 65535) * wd) >> 16;
+    return (vr << 32) | (vg << 16) | vb;
+}
+
 static void eclairer_lignes(u n0, u n1, u az, u el) {
     u se_vrai = sin1024(el), l_az = az, l_el = el, lune = 0;
     if (slt(se_vrai, 0)) { lune = 1; l_az = (az + 512) & 1023; l_el = 0 - el; }
@@ -244,9 +274,9 @@ static void eclairer_lignes(u n0, u n1, u az, u el) {
     u longueur = racine_entiere((u)65536 * 65536 + dmin * dmin);
     u chute = montee * longueur / 65536;
     for (u n = n0; n < n1; n++) {
-        u ligne = n & MASQUE, carnet = ligne * CARNET;
-        u horizon = 0 - (u)1000000000, docc = 0, fr = 0, fg = 0, fb = 0;
-        for (u i = 0; i < 2 * G + 64; i++) {
+        u ligne = n & MASQUE;
+        u horizon = 0 - (u)1000000000, docc = 0, nv = 0, nf = 0, nvar = 0;
+        for (u i = 0; i < 2 * G; i++) {
             u maj = (i * dmaj) & MASQUE;
             u mino = ((u)((s)((ligne << 16) + i * dmin) >> 16)) & MASQUE;
             u x = maj, z = mino;
@@ -255,7 +285,7 @@ static void eclairer_lignes(u n0, u n1, u az, u el) {
             u h = HAUT[cell];
             horizon = horizon - chute;
             docc = docc + 1;
-            if (i + 64 >= G) {
+            if (i >= G) {
                 u nl = NLT[cell];
                 u pd = NXT[cell] * lx + 512 * ly + NZT[cell] * lz;
                 u diffus = 0;
@@ -266,68 +296,50 @@ static void eclairer_lignes(u n0, u n1, u az, u el) {
                 else if (!slt(marge, w)) lumiere = 0;
                 else if (slt(0 - w, marge)) lumiere = 256 - sdiv((marge + w) * 128, w);
                 u direct = diffus * lumiere / 256;
-                u c = ALB[cell];
-                u s_r = ((c >> 16) & 255) * (direct * sr / 256) / 512;
-                u s_g = ((c >> 8) & 255) * (direct * sg / 256) / 512;
-                u s_b = (c & 255) * (direct * sb / 256) / 512;
-                fr = fr * RENVOI / 256; fg = fg * RENVOI / 256; fb = fb * RENVOI / 256;
-                if (i >= G) {
-                    u j = carnet + i - G;
-                    u plein = (lumiere == 256 && direct > 0) ? 512 : 0;
-                    TRACE_D[j] = direct + plein;
-                    TRACE_S[j] = s_r * 65536 + s_g * 256 + s_b;
-                    TRACE_F[j] = fr * 65536 + fg * 256 + fb;
-                }
-                if (s_r > fr) fr = s_r;
-                if (s_g > fg) fg = s_g;
-                if (s_b > fb) fb = s_b;
-            }
-            if (slt(horizon, h)) { horizon = h; docc = 0; }
-        }
-        u br = 0, bg = 0, bb = 0, nv = 0, nf = 0, nvar = 0;
-        u k = CARNET;
-        while (k > 0) {
-            k = k - 1;
-            u sv = TRACE_S[carnet + k];
-            br = br * RENVOI / 256; bg = bg * RENVOI / 256; bb = bb * RENVOI / 256;
-            if (k < G) {
-                u ii = G + k;
-                u maj2 = (ii * dmaj) & MASQUE;
-                u mino2 = ((u)((s)((ligne << 16) + ii * dmin) >> 16)) & MASQUE;
-                u cel = axe_x ? mino2 * G + maj2 : maj2 * G + mino2;
-                u dv = TRACE_D[carnet + k], dir_ = dv & 511, fv = TRACE_F[carnet + k];
-                u rr_ = (fv >> 16) & 255, rg_ = (fv >> 8) & 255, rb_ = fv & 255;
-                if (br > rr_) rr_ = br;
-                if (bg > rg_) rg_ = bg;
-                if (bb > rb_) rb_ = bb;
-                u ouv = OUV[cel];
-                u tr = cr * ouv / 256 + dir_ * sr / 256 + rr_;
-                u tg = cg * ouv / 256 + dir_ * sg / 256 + rg_;
-                u tb = cb * ouv / 256 + dir_ * sb / 256 + rb_;
-                u etat = dv >= 512 ? 2 : 3;
-                u alb = ALB[cel];
+                u etat = (lumiere == 256 && direct > 0) ? 2 : 3;
+                u dr = direct * sr / 256, dg = direct * sg / 256, db = direct * sb / 256;
+                u alb = ALB[cell], foyer = 0;
                 if (feux == 1) {
-                    u fe = FEU[cel];
+                    u fe = FEU[cell];
                     u er = (fe >> 32) & 65535, eg = (fe >> 16) & 65535, eb = fe & 65535;
-                    tr += er; tg += eg; tb += eb;
+                    dr += er; dg += eg; db += eb;
                     if (er + eg + eb >= 288) etat = 2;
-                    if ((fe >> 60) == 1) { alb = 0xFFE0B0; tr = 320; tg = 300; tb = 280; etat = 2; }
+                    if ((fe >> 60) == 1) foyer = 1;
                 }
+                u p1 = lire_niveau(PYR1, 1, x, z), p2 = lire_niveau(PYR2, 2, x, z);
+                u p3 = lire_niveau(PYR3, 3, x, z), p4 = lire_niveau(PYR4, 4, x, z);
+                u rv_r = (((p1 >> 32) & 65535) * 24 + ((p2 >> 32) & 65535) * 5 + ((p3 >> 32) & 65535) + ((p4 >> 32) & 65535) / 4) / 256;
+                u rv_g = (((p1 >> 16) & 65535) * 24 + ((p2 >> 16) & 65535) * 5 + ((p3 >> 16) & 65535) + ((p4 >> 16) & 65535) / 4) / 256;
+                u rv_b = ((p1 & 65535) * 24 + (p2 & 65535) * 5 + (p3 & 65535) + (p4 & 65535) / 4) / 256;
+                u ouv = OUV[cell];
+                u recu = 128 + (256 - ouv) * 2;
+                rv_r = rv_r * recu / 256; rv_g = rv_g * recu / 256; rv_b = rv_b * recu / 256;
+                u tr = cr * ouv / 256 + dr + rv_r, tg = cg * ouv / 256 + dg + rv_g, tb = cb * ouv / 256 + db + rv_b;
+                if (foyer == 1) { alb = 0xFFE0B0; tr = 320; tg = 300; tb = 280; etat = 2; }
                 if (etat == 3 && tr + tg + tb < 3 * NOIR) etat = 1;
                 u qr = ((alb >> 16) & 255) * tr / 256, qg = ((alb >> 8) & 255) * tg / 256, qb = (alb & 255) * tb / 256;
                 if (qr > 255) qr = 255;
                 if (qg > 255) qg = 255;
                 if (qb > 255) qb = 255;
-                COUL[cel] = qr * 65536 + qg * 256 + qb;
-                ETAT[cel] = etat;
+                COUL[cell] = qr * 65536 + qg * 256 + qb;
+                ETAT[cell] = etat;
+                u or_ = ((alb >> 16) & 255) * dr / 256, og = ((alb >> 8) & 255) * dg / 256, ob = (alb & 255) * db / 256;
+                if (or_ > 255) or_ = 255;
+                if (og > 255) og = 255;
+                if (ob > 255) ob = 255;
+                SRC[cell] = (or_ << 32) | (og << 16) | ob;
                 if (etat == 2) nv++; else if (etat == 1) nf++; else nvar++;
             }
-            if (((sv >> 16) & 255) > br) br = (sv >> 16) & 255;
-            if (((sv >> 8) & 255) > bg) bg = (sv >> 8) & 255;
-            if ((sv & 255) > bb) bb = sv & 255;
+            if (slt(horizon, h)) { horizon = h; docc = 0; }
         }
         COMPTE[4 * ligne] = 0; COMPTE[4 * ligne + 1] = nf; COMPTE[4 * ligne + 2] = nv; COMPTE[4 * ligne + 3] = nvar;
     }
+}
+
+static void eclairer_tout(u az, u el) {
+    eclairer_lignes(0, G, az, el);
+    construire_pyramide();
+    eclairer_lignes(0, G, az, el);
 }
 
 static void preparer_tables(void) {
@@ -434,7 +446,7 @@ int main(void) {
     preparer_feux();
     eclairer_feux();
     u az = 640, el = 71;
-    eclairer_lignes(0, G, az, el);
+    eclairer_tout(az, el);
     clock_gettime(CLOCK_MONOTONIC, &t1);
     u cx = ((u)1 << 40) + (G / 2) * 65536, cz = ((u)1 << 40) + (G / 2) * 65536, a = 0, bande = 0;
     for (int n = 0; n < IMAGES; n++) {
@@ -444,6 +456,7 @@ int main(void) {
         a = (a + 6) & 1023;
         az = (az + 4) & 1023;
         eclairer_lignes(bande, bande + BANDE, az, el);
+        construire_pyramide();
         bande = (bande + BANDE) & MASQUE;
         u sol = HAUT[((cz >> 16) & MASQUE) * G + ((cx >> 16) & MASQUE)];
         rendre(cx, cz, sol + 4000, a, H / 3, az, el);
@@ -454,8 +467,9 @@ int main(void) {
     printf("empreinte : %lld\n", (long long)h);
     /* VAL_DESSUS=fichier.ppm [el] : la carte éclairée vue de dessus (pour régler la lumière) */
     if (getenv("VAL_DESSUS")) {
-        if (getenv("VAL_EL")) { u e2 = (u)(s)atoll(getenv("VAL_EL")); eclairer_lignes(0, G, az, e2); }
-        if (getenv("VAL_SANS_FEUX")) { REGLES = 0; eclairer_lignes(0, G, az, getenv("VAL_EL") ? (u)(s)atoll(getenv("VAL_EL")) : el); }
+        u e2 = getenv("VAL_EL") ? (u)(s)atoll(getenv("VAL_EL")) : el;
+        if (getenv("VAL_SANS_FEUX")) REGLES = 0;
+        if (getenv("VAL_EL") || getenv("VAL_SANS_FEUX")) eclairer_tout(az, e2);
         FILE *f = fopen(getenv("VAL_DESSUS"), "wb");
         fprintf(f, "P6 %d %d 255\n", G, G);
         for (int i = 0; i < G * G; i++) { unsigned char p[3] = {COUL[i] >> 16, COUL[i] >> 8, COUL[i]}; fwrite(p, 1, 3, f); }
