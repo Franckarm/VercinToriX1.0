@@ -115,6 +115,13 @@ r = subprocess.run([VTX, "paillasse", f_v, "--gestes", g_v], capture_output=True
 tv = r.stdout.replace("\r\n", "\n").split("--- le texte\n")[-1]
 verifier("une case glissée de la vague 2 à la vague 3 : sa ligne passe à la place de la vague 3 dans le texte",
          tv.find("= s * 2 -> d") > tv.find("= d + t -> r") > 0, tv[-300:])
+f_o = ecrire("ordre.vtx", VAGUES)
+g_o = ecrire("ordre.gestes", "bas 150 190\nbouge 150 30\nhaut 150 30\n")
+r = subprocess.run([VTX, "paillasse", f_o, "--gestes", g_o], capture_output=True, text=True, encoding="utf-8",
+                   errors="replace", cwd=d)
+to = r.stdout.replace("\r\n", "\n").split("--- le texte\n")[-1]
+verifier("une case montée au-dessus d'une autre dans sa vague : sa ligne passe avant elle (la paillasse fait l'ordre du texte)",
+         0 < to.find("= a * 3 -> t") < to.find("= a + b -> s"), to[-300:])
 f_p = ecrire("pages.vtx", "reaction principal() {\n    = [3, 4, 5] -> t\n    = somme pour chaque v dans t : v -> s\n}\n")
 g_p = ecrire("pages.gestes", "droit 600 300\ncase suite\necrire = sortie(page_2(s))\n")
 subprocess.run([VTX, "paillasse", f_p, "--gestes", g_p, "--ecrire"], capture_output=True, cwd=d)
@@ -122,6 +129,14 @@ c, s, e = lugus(f_p)
 tp = open(f_p, encoding="utf-8").read()
 verifier("la case « suite » (Ne) crée la page 2 et y renvoie sa valeur : le programme à deux pages rend 12",
          "reaction page_2(entree) -> fin" in tp and s.strip() == "12", tp + s + e)
+f_a = ecrire("appel.vtx", "reaction principal() {\n    = [3, 4, 5] -> t\n    = somme pour chaque v dans t : v -> s\n}\n")
+g_a = ecrire("appel.gestes", "droit 600 300\ncase appeler\necrire = page_2(s) -> d\n")
+subprocess.run([VTX, "paillasse", f_a, "--gestes", g_a, "--ecrire"], capture_output=True, cwd=d)
+ta = open(f_a, encoding="utf-8").read().replace("    = page_2(s) -> d\n", "    = page_2(s) -> d\n    = sortie(d * 2)\n")
+open(f_a, "w", encoding="utf-8").write(ta)
+c, s, e = lugus(f_a)
+verifier("la case « appeler » : la page 2 comme sous-programme, son résultat revient ((3 + 4 + 5) × 2 = 24)",
+         s.strip() == "24", ta + s + e)
 # la réaction complétée à la main (les « _ » deviennent des liaisons) : elle compile et réagit
 src_complete = ("reaction principal() {\n"
                 "    = [4, 8, 15, 16, 23, 42] -> t\n"

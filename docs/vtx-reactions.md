@@ -3473,3 +3473,17 @@ qui renvoie à la page suivante.
   montre. La case **suite** (Ne) : la fin qui renvoie à la page suivante (créée s'il n'y en a pas) : `= page_2(_) ->
   r`, ou `= sortie(page_2(_))` ; toute case qui appelle une autre page porte le néon et le nom de la page (« vers
   page_2 ») ; un double clic sur elle ouvre la page.
+
+### 76 bis. La paillasse fait l'ordre du texte ; appeler une page, le retour (22 novembre, 0.70b)
+
+**Demandé par le créateur le 22** : la position verticale dans la paillasse définit la ligne, le passage d'une vague à
+l'autre aussi ; la case ne doit pas « attendre une liaison » pour être placée ; la case retour (une page comme
+sous-programme).
+
+- Après chaque déplacement, les lignes des cases sont réécrites dans l'ordre de leurs places : colonne par colonne,
+  de gauche à droite, puis de haut en bas (`ordonner_lignes`). La case reste où on l'a posée. Si elle reçoit une
+  valeur d'une vague plus tardive, la paillasse le dit seulement (« elle calculera quand la valeur arrivera ») : une
+  case ne peut pas calculer avant l'arrivée de sa valeur, comme un réactif.
+- **appeler** (Ne) : `= page_2(_) -> lK` : la page suivante comme sous-programme, son résultat revient dans une liaison
+  neuve. Dans la page appelée, la case qui donne le résultat porte « retour vers principal » ; un double clic y ramène.
+EOF
