@@ -3741,3 +3741,42 @@ une diffusion variable.
 - **Honnêtement** : ni le balayage ni les pentes gardées n'accélèrent l'image forgée (l'ancienne recherche s'arrêtait
   vite dans l'ombre pleine) ; ce qui coûte, c'est le tracé des rayons de l'image. Le C : 2,2 ms par image ; la même
   empreinte (-2697648536993976745).
+
+## 84. L'ombre et la lumière ensemble, et les sources diverses (22 novembre, 0.801)
+
+**Demandé par le créateur** : que l'ombre et la lumière fonctionnent ensemble ; la variable se ferait naturellement,
+comme les niveaux de gris du cube, mais dans l'ombre du cube : plutôt qu'un point qui va jusqu'au noir ou jusqu'à la
+lumière, la lumière jusqu'au noir. Penser aux sources de lumière diverses, et faire le reste.
+
+- **Une seule lumière par case, de 256 au noir** (`eclairer_lignes`, `val_scene.vtx` ; le même calcul en C), faite de
+  plusieurs sources : le **soleil** direct (la pente face à lui, adoucie par la pénombre de 0.79) ; le **ciel**, selon
+  l'heure (bleuté de jour, faible la nuit) et selon l'**ouverture** de la case (`preparer_ouverture`, une fois : dans
+  huit directions, la plus haute pente vers le relief à 3, 6, 12 et 24 cases ; le ciel caché par une pente de tangente
+  t est t² / (1 + t²)) ; le **renvoi** du sol éclairé (sa couleur sous le soleil, à moitié), porté le long de la ligne
+  dans les deux sens et qui baisse à chaque pas (230 / 256) : l'ombre est claire près de son bord, sombre loin dedans ;
+  les **feux** ; la nuit, la **lune**.
+- **L'aller et le retour** : à l'aller, l'horizon, la lumière directe, ce que chaque case renvoie et le renvoi venu de
+  l'avant sont notés dans le **carnet de la ligne** (576 cases : la ligne et 64 de marge, pour que le retour parte déjà
+  chargé) ; au retour, le renvoi venu de l'arrière et la lumière de chaque case. Chaque ligne n'écrit que son carnet et
+  ses cases : les lignes vont toujours en bandes, et la promesse tient (la forge sur 1 et 4 cœurs, la même empreinte).
+- **L'état vient de la lumière reçue** : **vrai**, une source la touche en plein (le coin blanc du cube) ; **faux**,
+  presque rien n'arrive, moins de 24 sur 256 en moyenne (le coin noir) ; **variable**, tout le gris entre les deux :
+  l'ombre éclairée par le ciel et les renvois, à la fois dans l'ombre et dans la lumière (Belnap) ; **inconnu**, pas
+  encore refait. De jour, au départ : vrai 35 %, faux 0 %, variable 64 % (en 0.79 : faux 62 %). La nuit, feux allumés,
+  sous la lune : vrai 17 %, faux 76 %, variable 5 %. Faux n'est plus « dans l'ombre » mais « dans le noir ».
+- **Les feux** (`preparer_feux`, `eclairer_feux`, une fois : le relief et les feux ne bougent pas) : huit feux dans
+  les creux et les replats bas, loin les uns des autres, choisis par la hache ; trois sortes (le feu de camp, la forge,
+  la lanterne). Pour chaque case à moins de 40 cases : la valeur dégressive depuis le feu (nulle à 40 cases), la ligne
+  de vue depuis la flamme (sa plus grande marge sous le relief, en quaternaire : passe, coupée, ou la pénombre entre
+  les deux : les feux ont leur ombre) et la pente face au feu. Le foyer lui-même est une flamme. `f` les allume et les
+  éteint.
+- **La lune** : sous l'horizon, le soleil passe la main à la lune, à l'opposé, aussi haute que le soleil est bas, faible
+  et bleutée ; son ombre vient du même balayage. Le ciel et la brume s'assombrissent ; le disque de la lune se voit.
+  `k` descend le soleil jusqu'à −24° ; `n` passe du jour à la nuit d'un coup.
+- **Ce que ça coûte** : la préparation, une fois, de 73 à 130 ms (en C) ; par image, le C ne bouge pas (2,3 ms), la
+  forge passe de 3,7 à 4,4 ms (les 16 lignes refaites par image font deux tours au lieu d'un). La même empreinte
+  partout : 4817037499302952394.
+- **Les limites, honnêtement** : le renvoi ne suit que la direction du soleil (la lumière qui entre dans l'ombre par le
+  côté n'est pas vue, et on devine de légères traînées le long des lignes) : l'inondation par sauts le rendra égal dans
+  toutes les directions, et ce sera le début de l'anti-cube (les reflets). Les feux ne renvoient pas de lumière, et ne
+  vacillent pas encore. La trame en damier sur la roche et la neige vient des marches du relief (elle était là avant).

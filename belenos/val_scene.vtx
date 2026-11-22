@@ -3,6 +3,8 @@
 // 0.72 : le soleil qu'on fait tourner (o / p) et monter (i / k), la lumière selon la pente face au soleil et les ombres
 // portées (l'ombre du relief projetée depuis le soleil, avec sa pénombre), recalculées par bandes quand le soleil bouge
 // (le tapis roulant : chaque image ne paie que sa bande) ; le ciel et le disque du soleil ; le compteur de l'image.
+// 0.801 : l'ombre et la lumière ensemble (une seule lumière par case, du blanc au noir) et les sources diverses : le
+// soleil, le ciel, le renvoi du sol éclairé, les feux, la lune.
 // Un relief vallonné de pentes variées (une grille de 512 × 512 hauteurs, du bruit sur cinq octaves), la neige au-dessus
 // d'une altitude et sur les pentes douces, la roche sur les pentes fortes, l'herbe en bas ; le ciel et la brume du loin.
 // Chaque image : chaque colonne lance un rayon qui avance du plus près au plus loin et peint de bas en haut ce qu'il
@@ -116,6 +118,10 @@ fonction peindre_relief() {
         }
     }
     preparer_normales();
+    // 0.80 : l'ouverture au ciel, les feux et leur lumière (le relief ne bouge pas : une fois)
+    preparer_ouverture();
+    preparer_feux();
+    eclairer_feux();
 }
 
 // ------------------------------------------------------------------------------------------------------- le soleil
@@ -164,11 +170,242 @@ fonction preparer_normales() {
     }
 }
 
+// ------------------------------------------------------------------- 0.80 : l'ombre et la lumière ensemble
+// L'ombre n'est plus un aplat : chaque case reçoit une seule lumière, de 256 au noir, faite de plusieurs sources :
+//     le soleil   direct, là où il touche (la pente face à lui, adoucie par la pénombre)
+//     le ciel     selon l'heure (bleuté de jour, faible la nuit) et selon l'ouverture de la case au ciel (un creux en
+//                 voit peu, un sommet le voit tout)
+//     le renvoi   la lumière que renvoie le sol éclairé, portée le long de la ligne dans les deux sens et qui baisse à
+//                 chaque pas : l'ombre est claire près de son bord, sombre loin dedans (la valeur dégressive)
+//     les feux    des feux de camp, une forge, des lanternes, dans les creux : leur lumière baisse avec la distance et
+//                 passe ou non le relief, en quaternaire (leur ombre a sa pénombre comme celle du soleil)
+// L'état de la case vient de la lumière reçue : vrai, une source la touche en plein (le coin blanc du cube) ; faux,
+// presque rien n'arrive (le coin noir) ; variable, tout le gris entre les deux, l'ombre éclairée par le ciel et les
+// renvois (à la fois dans l'ombre et dans la lumière) ; inconnu, pas encore refait.
+constante OUV = 6553600;           // @2[OUV + cell] : l'ouverture au ciel (256 : tout le ciel)
+constante FEU = 6815744;           // @2[FEU + cell] : la lumière des feux (r << 32 | g << 16 | b), et 1 << 60 : un foyer
+constante TRACE_D = 7077888;       // le carnet de chaque ligne (CARNET cases) : la lumière directe (+ 512 si en plein)
+constante TRACE_S = 7372800;       // ce que la case renvoie (0xRRGGBB)
+constante TRACE_F = 7667712;       // le renvoi reçu de l'avant (0xRRGGBB)
+constante FOYERS = 7962624;        // les feux : x, z, hauteur de la flamme, r, g, b (6 mots chacun)
+constante REGLES = 7962700;        // @2[REGLES] : 1 si les feux sont allumés
+constante DIRS = 7962710;          // les huit directions (dx, dz), signées
+constante NFEUX = 8;
+constante RAYON = 40;              // la portée d'un feu, en cases
+constante CARNET = 576;            // G + 64 : la ligne et sa marge (le renvoi a besoin de ce qui suit)
+constante RENVOI = 230;            // la part du renvoi gardée à chaque pas (sur 256)
+constante NOIR = 24;               // sous cette lumière (moyenne des trois voies), la case est faux : noire
+
+// l'ouverture au ciel : dans huit directions, la plus haute pente vers le relief voisin (à 3, 6, 12 et 24 cases) ; le
+// ciel caché par une pente de tangente t est t² / (1 + t²) (le ciel pondéré par l'angle) ; calculée une fois
+fonction preparer_ouverture() {
+    pour oz dans 0..G en bandes {
+        pour ox dans 0..G {
+            soit oh = @2[HAUT + oz * G + ox];
+            soit occ = 0;
+            pour dir dans 0..8 {
+                soit ux = @2[DIRS + 2 * dir];
+                soit uz = @2[DIRS + 2 * dir + 1];
+                soit pas = 256;
+                si (dir & 1) == 1 {
+                    pas = 362;
+                }
+                soit m = 0;
+                soit d = 3;
+                tantque d < 40 {
+                    soit e = hauteur_en(ox + ux * d, oz + uz * d) - oh;
+                    si e .> 0 {
+                        soit t = e * 256 / (d * pas);
+                        si t > m {
+                            m = t;
+                        }
+                    }
+                    d = d * 2;
+                }
+                occ = occ + m * m * 256 / (m * m + 65536);
+            }
+            soit ouv = 256 - occ / 8;
+            si ouv < 16 {
+                ouv = 16;
+            }
+            @2[OUV + oz * G + ox] = ouv;
+        }
+    }
+}
+
+// les feux : dans les creux et les replats bas (là où l'on campe), loin les uns des autres, choisis par la hache (les
+// mêmes partout) ; trois sortes : le feu de camp, la forge, la lanterne
+fonction preparer_feux() {
+    soit n = 0;
+    soit k = 0;
+    tantque n < NFEUX && k < 4096 {
+        soit fx = hache(k * 31 + 5, k * 17 + 3) & MASQUE;
+        soit fz = hache(k * 13 + 11, k * 29 + 7) & MASQUE;
+        soit fh = hauteur_en(fx, fz);
+        soit gx = @2[NX + fz * G + fx];
+        soit gz = @2[NZ + fz * G + fx];
+        si gx .< 0 {
+            gx = 0 - gx;
+        }
+        si gz .< 0 {
+            gz = 0 - gz;
+        }
+        soit bon = 0;
+        si fh < 14000 && gx + gz < 500 {
+            bon = 1;
+        }
+        pour q dans 0..n {
+            soit ax = (fx + G - @2[FOYERS + 6 * q]) & MASQUE;
+            soit az2 = (fz + G - @2[FOYERS + 6 * q + 1]) & MASQUE;
+            si ax > G / 2 {
+                ax = G - ax;
+            }
+            si az2 > G / 2 {
+                az2 = G - az2;
+            }
+            si ax < 60 && az2 < 60 {
+                bon = 0;
+            }
+        }
+        si bon == 1 {
+            soit f = FOYERS + 6 * n;
+            @2[f] = fx;
+            @2[f + 1] = fz;
+            @2[f + 2] = fh + 768;
+            soit sorte = n % 3;
+            si sorte == 0 {
+                @2[f + 3] = 1115;
+                @2[f + 4] = 612;
+                @2[f + 5] = 262;
+            } sinon si sorte == 1 {
+                @2[f + 3] = 955;
+                @2[f + 4] = 337;
+                @2[f + 5] = 150;
+            } sinon {
+                @2[f + 3] = 638;
+                @2[f + 4] = 538;
+                @2[f + 5] = 375;
+            }
+            n = n + 1;
+        }
+        k = k + 1;
+    }
+    @2[REGLES] = 1;
+}
+
+// la lumière des feux, une fois (le relief et les feux ne bougent pas) : pour chaque case à portée, la valeur dégressive
+// depuis le feu (nulle à RAYON cases), le relief entre les deux (la ligne de vue depuis la flamme : sa plus grande
+// marge sous le relief, en quaternaire : passe, coupée, ou la pénombre entre les deux) et la pente face au feu
+fonction eclairer_feux() {
+    pour vz dans 0..G en bandes {
+        pour vx dans 0..G {
+            soit cell = vz * G + vx;
+            soit hc = @2[HAUT + cell];
+            soit lr = 0;
+            soit lg = 0;
+            soit lb = 0;
+            soit foyer = 0;
+            pour f dans 0..NFEUX {
+                soit fb = FOYERS + 6 * f;
+                soit fx = @2[fb];
+                soit fz = @2[fb + 1];
+                soit hs = @2[fb + 2];
+                soit ddx = ((vx + G + G / 2 - fx) & MASQUE) - G / 2;     // signé
+                soit ddz = ((vz + G + G / 2 - fz) & MASQUE) - G / 2;
+                si ddx .< RAYON && ddx .> 0 - RAYON && ddz .< RAYON && ddz .> 0 - RAYON {
+                    soit d2 = ddx * ddx + ddz * ddz;
+                    si d2 < RAYON * RAYON {
+                        si d2 <= 2 {
+                            foyer = 1;
+                        }
+                        soit dd = racine_entiere(d2 * 65536);
+                        soit reste_d = RAYON * 256 - dd;
+                        soit att = reste_d * reste_d / (RAYON * RAYON * 256);
+                        soit adx = ddx;
+                        si ddx .< 0 {
+                            adx = 0 - ddx;
+                        }
+                        soit adz = ddz;
+                        si ddz .< 0 {
+                            adz = 0 - ddz;
+                        }
+                        soit nmax = adx;
+                        si adz > nmax {
+                            nmax = adz;
+                        }
+                        soit vis = 256;
+                        soit face = 256;
+                        si nmax > 1 {
+                            soit cible = hc + 128;
+                            soit pire = 0 - 1000000000;
+                            pour t dans 1..nmax {
+                                soit sx = fx + (ddx * t) ./ nmax;
+                                soit sz = fz + (ddz * t) ./ nmax;
+                                soit hy = hs + ((cible - hs) * t) ./ nmax;
+                                soit m = hauteur_en(sx, sz) - hy;
+                                si m .> pire {
+                                    pire = m;
+                                }
+                            }
+                            si pire .>= 160 {
+                                vis = 0;
+                            } sinon si pire .> 0 - 160 {
+                                vis = 256 - ((pire + 160) * 128) ./ 160;
+                            }
+                            // la pente face au feu : la normale contre la direction de la case vers la flamme
+                            soit wx = (0 - ddx) * 256;
+                            soit wz = (0 - ddz) * 256;
+                            soit wy = hs - hc;
+                            soit pd = @2[NX + cell] * wx + 512 * wy + @2[NZ + cell] * wz;
+                            face = 0;
+                            si pd .> 0 {
+                                soit lv = racine_entiere(wx * wx + wy * wy + wz * wz);
+                                face = (pd ./ @2[NL + cell]) * 256 ./ lv;
+                                si face > 256 {
+                                    face = 256;
+                                }
+                            }
+                        }
+                        soit part = att * vis / 256 * face / 256;
+                        lr = lr + @2[fb + 3] * part / 256;
+                        lg = lg + @2[fb + 4] * part / 256;
+                        lb = lb + @2[fb + 5] * part / 256;
+                    }
+                }
+            }
+            si lr > 4095 {
+                lr = 4095;
+            }
+            si lg > 4095 {
+                lg = 4095;
+            }
+            si lb > 4095 {
+                lb = 4095;
+            }
+            @2[FEU + cell] = (foyer << 60) | (lr << 32) | (lg << 16) | lb;
+        }
+    }
+}
+
+// le balayage : à l'aller, l'horizon de la ligne (l'ombre du cube), la lumière directe du soleil, ce que chaque case
+// renvoie et le renvoi venu de l'avant, notés dans le carnet de la ligne ; au retour, le renvoi venu de l'arrière, et la
+// lumière de chaque case (soleil, ciel, renvois, feux), sa couleur et son état
 fonction eclairer_lignes(n0, n1, az, el) {
-    soit se = sin1024(el);
-    soit ce = cos1024(el);
-    soit sa = sin1024(az);
-    soit ca = cos1024(az);
+    // 0.801 : la nuit, la lune prend le relais : à l'opposé du soleil, aussi haute qu'il est bas, faible et bleutée ;
+    // elle a son ombre, faite par le même balayage
+    soit se_vrai = sin1024(el);
+    soit l_az = az;
+    soit l_el = el;
+    soit lune = 0;
+    si se_vrai .< 0 {
+        lune = 1;
+        l_az = (az + 512) & 1023;
+        l_el = 0 - el;
+    }
+    soit se = sin1024(l_el);
+    soit ce = cos1024(l_el);
+    soit sa = sin1024(l_az);
+    soit ca = cos1024(l_az);
     soit lx = (ce * sa) ./ 65536;          // la direction du soleil, en 1/65536
     soit lz = (ce * ca) ./ 65536;
     soit ly = se;
@@ -183,6 +420,23 @@ fonction eclairer_lignes(n0, n1, az, el) {
     soit sr = 255;
     soit sg = 150 + chaud * 100 / 256;
     soit sb = 90 + chaud * 160 / 256;
+    si lune == 1 {
+        sr = 60;
+        sg = 72;
+        sb = 104;
+    }
+    // le ciel : sa lumière selon l'heure (bleutée de jour, faible la nuit)
+    soit jour = 256;
+    si se_vrai .< 16000 {
+        jour = 0;
+        si se_vrai .> 0 - 6000 {
+            jour = (se_vrai + 6000) * 256 / 22000;
+        }
+    }
+    soit cr = 8 + 52 * jour / 256;
+    soit cg = 11 + 57 * jour / 256;
+    soit cb = 24 + 60 * jour / 256;
+    soit feux = @2[REGLES];
     // la descente du rayon, par case, en 1/256 d'unité : 256 · tan(el)
     soit montee = 0;
     si se .> 0 && ce .> 0 {
@@ -220,12 +474,14 @@ fonction eclairer_lignes(n0, n1, az, el) {
     soit chute = montee * longueur / 65536;
     pour n dans n0..n1 en bandes {
         soit ligne = n & MASQUE;
+        soit carnet = ligne * CARNET;
         soit horizon = 0 - 1000000000;
         soit docc = 0;
-        soit nv = 0;
-        soit nf = 0;
-        soit nvar = 0;
-        pour i dans 0..(2 * G) {
+        soit fr = 0;
+        soit fg = 0;
+        soit fb = 0;
+        // l'aller
+        pour i dans 0..(2 * G + 64) {
             soit maj = (i * dmaj) & MASQUE;
             soit mino = (((ligne << 16) + i * dmin) .>> 16) & MASQUE;
             soit x = maj;
@@ -238,7 +494,7 @@ fonction eclairer_lignes(n0, n1, az, el) {
             soit h = @2[HAUT + cell];
             horizon = horizon - chute;
             docc = docc + 1;
-            si i >= G {
+            si i + 64 >= G {
                 // la pente face au soleil : la normale (-gx, 512, -gz), gardée depuis la préparation
                 soit nl = @2[NL + cell];
                 soit pd = @2[NX + cell] * lx + 512 * ly + @2[NZ + cell] * lz;
@@ -249,21 +505,138 @@ fonction eclairer_lignes(n0, n1, az, el) {
                 si diffus > 256 {
                     diffus = 256;
                 }
-                // l'état : la marge sous l'horizon, rapportée à la demi-largeur de la pénombre
+                // le soleil vu : la marge sous l'horizon, rapportée à la demi-largeur de la pénombre (plus large loin du
+                // point qui fait l'ombre)
                 soit marge = horizon - h;
                 soit w = 12 + docc * 6;
                 soit lumiere = 256;
-                soit etat = 2;
                 si se .<= 0 || diffus == 0 {
                     lumiere = 0;
-                    etat = 1;
                 } sinon si marge .>= w {
                     lumiere = 0;
-                    etat = 1;
                 } sinon si marge .> 0 - w {
                     lumiere = 256 - ((marge + w) * 128) ./ w;
-                    etat = 3;
                 }
+                soit direct = diffus * lumiere / 256;
+                // ce que la case renvoie : sa couleur sous le soleil, à moitié
+                soit c = @2[ALB + cell];
+                soit s_r = ((c >> 16) & 255) * (direct * sr / 256) / 512;
+                soit s_g = ((c >> 8) & 255) * (direct * sg / 256) / 512;
+                soit s_b = (c & 255) * (direct * sb / 256) / 512;
+                // le renvoi venu de l'avant : il baisse à chaque pas
+                fr = fr * RENVOI / 256;
+                fg = fg * RENVOI / 256;
+                fb = fb * RENVOI / 256;
+                si i >= G {
+                    soit j = carnet + i - G;
+                    soit plein = 0;
+                    si lumiere == 256 && direct > 0 {
+                        plein = 512;
+                    }
+                    @2[TRACE_D + j] = direct + plein;
+                    @2[TRACE_S + j] = s_r * 65536 + s_g * 256 + s_b;
+                    @2[TRACE_F + j] = fr * 65536 + fg * 256 + fb;
+                }
+                si s_r > fr {
+                    fr = s_r;
+                }
+                si s_g > fg {
+                    fg = s_g;
+                }
+                si s_b > fb {
+                    fb = s_b;
+                }
+            }
+            si h .> horizon {
+                horizon = h;
+                docc = 0;
+            }
+        }
+        // le retour
+        soit br = 0;
+        soit bg = 0;
+        soit bb = 0;
+        soit nv = 0;
+        soit nf = 0;
+        soit nvar = 0;
+        soit k = CARNET;
+        tantque k > 0 {
+            k = k - 1;
+            soit sv = @2[TRACE_S + carnet + k];
+            br = br * RENVOI / 256;
+            bg = bg * RENVOI / 256;
+            bb = bb * RENVOI / 256;
+            si k < G {
+                soit ii = G + k;
+                soit maj2 = (ii * dmaj) & MASQUE;
+                soit mino2 = (((ligne << 16) + ii * dmin) .>> 16) & MASQUE;
+                soit cel = mino2 * G + maj2;
+                si axe_x == 0 {
+                    cel = maj2 * G + mino2;
+                }
+                soit dv = @2[TRACE_D + carnet + k];
+                soit dir_ = dv & 511;
+                soit fv = @2[TRACE_F + carnet + k];
+                // le renvoi reçu : le plus fort des deux sens
+                soit rr_ = (fv >> 16) & 255;
+                soit rg_ = (fv >> 8) & 255;
+                soit rb_ = fv & 255;
+                si br > rr_ {
+                    rr_ = br;
+                }
+                si bg > rg_ {
+                    rg_ = bg;
+                }
+                si bb > rb_ {
+                    rb_ = bb;
+                }
+                // la lumière de la case : le ciel (selon son ouverture), le soleil, les renvois, les feux
+                soit ouv = @2[OUV + cel];
+                soit tr = cr * ouv / 256 + dir_ * sr / 256 + rr_;
+                soit tg = cg * ouv / 256 + dir_ * sg / 256 + rg_;
+                soit tb = cb * ouv / 256 + dir_ * sb / 256 + rb_;
+                soit etat = 3;
+                si dv >= 512 {
+                    etat = 2;
+                }
+                soit alb = @2[ALB + cel];
+                si feux == 1 {
+                    soit fe = @2[FEU + cel];
+                    soit er = (fe >> 32) & 65535;
+                    soit eg = (fe >> 16) & 65535;
+                    soit eb = fe & 65535;
+                    tr = tr + er;
+                    tg = tg + eg;
+                    tb = tb + eb;
+                    si er + eg + eb >= 288 {
+                        etat = 2;
+                    }
+                    si (fe >> 60) == 1 {
+                        // le foyer lui-même : la flamme
+                        alb = 0xFFE0B0;
+                        tr = 320;
+                        tg = 300;
+                        tb = 280;
+                        etat = 2;
+                    }
+                }
+                si etat == 3 && tr + tg + tb < 3 * NOIR {
+                    etat = 1;
+                }
+                soit qr = ((alb >> 16) & 255) * tr / 256;
+                soit qg = ((alb >> 8) & 255) * tg / 256;
+                soit qb = (alb & 255) * tb / 256;
+                si qr > 255 {
+                    qr = 255;
+                }
+                si qg > 255 {
+                    qg = 255;
+                }
+                si qb > 255 {
+                    qb = 255;
+                }
+                @2[COUL + cel] = qr * 65536 + qg * 256 + qb;
+                @2[ETAT + cel] = etat;
                 si etat == 2 {
                     nv = nv + 1;
                 } sinon si etat == 1 {
@@ -271,24 +644,15 @@ fonction eclairer_lignes(n0, n1, az, el) {
                 } sinon {
                     nvar = nvar + 1;
                 }
-                soit direct = diffus * lumiere / 256;
-                soit c = @2[ALB + cell];
-                soit r = (c >> 16) & 255;
-                soit g = (c >> 8) & 255;
-                soit b = c & 255;
-                // le ciel (bleuté) partout, le soleil là où il touche
-                soit rr = r * (60 + direct * sr / 256) / 256;
-                soit gg = g * (68 + direct * sg / 256) / 256;
-                soit bb = b * (84 + direct * sb / 256) / 256;
-                si rr > 255 { rr = 255; }
-                si gg > 255 { gg = 255; }
-                si bb > 255 { bb = 255; }
-                @2[COUL + cell] = rr * 65536 + gg * 256 + bb;
-                @2[ETAT + cell] = etat;
             }
-            si h .> horizon {
-                horizon = h;
-                docc = 0;
+            si ((sv >> 16) & 255) > br {
+                br = (sv >> 16) & 255;
+            }
+            si ((sv >> 8) & 255) > bg {
+                bg = (sv >> 8) & 255;
+            }
+            si (sv & 255) > bb {
+                bb = sv & 255;
             }
         }
         @2[COMPTE + 4 * ligne] = 0;
@@ -319,6 +683,23 @@ fonction preparer_tables() {
         @2[BRUME + k] = brume;
         dist = dist + 64 + dist / 60;
     }
+    // 0.80 : les huit directions (dx, dz) : est, sud-est, sud, sud-ouest, ouest, nord-ouest, nord, nord-est
+    @2[DIRS] = 1;
+    @2[DIRS + 1] = 0;
+    @2[DIRS + 2] = 1;
+    @2[DIRS + 3] = 1;
+    @2[DIRS + 4] = 0;
+    @2[DIRS + 5] = 1;
+    @2[DIRS + 6] = 0 - 1;
+    @2[DIRS + 7] = 1;
+    @2[DIRS + 8] = 0 - 1;
+    @2[DIRS + 9] = 0;
+    @2[DIRS + 10] = 0 - 1;
+    @2[DIRS + 11] = 0 - 1;
+    @2[DIRS + 12] = 0;
+    @2[DIRS + 13] = 0 - 1;
+    @2[DIRS + 14] = 1;
+    @2[DIRS + 15] = 0 - 1;
 }
 
 // ------------------------------------------------------------------------------------------------------- l'image
@@ -329,11 +710,12 @@ fonction profond(c) {
     retour rgb((c >> 16) & 255, (c >> 8) & 255, c & 255);
 }
 
-// la couleur c fondue vers la brume (part sur 256)
+// la couleur c fondue vers la brume (part sur 256) ; 0.80 : la couleur de la brume suit l'heure (@2[BRUMEC], 3 mots)
+constante BRUMEC = 7962730;
 fonction embrume(c, part) {
-    soit r = ((c >> 16) & 255) * (256 - part) + 200 * part;
-    soit g = ((c >> 8) & 255) * (256 - part) + 214 * part;
-    soit b = (c & 255) * (256 - part) + 230 * part;
+    soit r = ((c >> 16) & 255) * (256 - part) + @2[BRUMEC] * part;
+    soit g = ((c >> 8) & 255) * (256 - part) + @2[BRUMEC + 1] * part;
+    soit b = (c & 255) * (256 - part) + @2[BRUMEC + 2] * part;
     retour rgb(r / 256, g / 256, b / 256);
 }
 
@@ -350,21 +732,47 @@ fonction rendre(cx, cz, ch, a, hor, az, el) {
             soir = 160;
         }
     }
+    // 0.80 : la nuit : le ciel et la brume s'assombrissent quand le soleil passe sous l'horizon
+    soit nuit = 0;
+    si se .< 4000 {
+        nuit = 220;
+        si se .> 0 - 6000 {
+            nuit = (4000 - se) * 220 / 10000;
+        }
+    }
+    @2[BRUMEC] = 200 * (256 - nuit) / 256 + nuit / 22;
+    @2[BRUMEC + 1] = 214 * (256 - nuit) / 256 + nuit / 16;
+    @2[BRUMEC + 2] = 230 * (256 - nuit) / 256 + nuit / 7;
     pour y dans 0..H {
         soit t = y * 256 / H;
         soit r = (0x5A * (256 - t) + (0xC8 + soir * 55 / 160) * t) / 256;
         soit g = (0x7C * (256 - t) + (0xD6 - soir * 40 / 160) * t) / 256;
         soit b = (0xB4 * (256 - t) + (0xE6 - soir * 110 / 160) * t) / 256;
+        r = r * (256 - nuit) / 256 + nuit / 40;
+        g = g * (256 - nuit) / 256 + nuit / 30;
+        b = b * (256 - nuit) / 256 + nuit / 12;
         @2[CIEL + y] = rgb(r, g, b);
     }
     // le disque du soleil, s'il est dans le champ (60 degrés : 85 sur 1024 de chaque côté) : son centre (sx, sy)
     soit sx = 0;
     soit sy = 0;
     soit soleil_vu = 0;
-    soit ecart_s = (az - a + 512) & 1023;
-    si ecart_s > 512 - 85 && ecart_s < 512 + 85 && se .> 0 {
+    // 0.801 : la nuit, la lune (à l'opposé du soleil, plus petite et pâle)
+    soit astre_az = az;
+    soit astre_el = el;
+    soit astre_c = rgb(255, 245, 220);
+    soit rayon2 = 64;
+    si se .< 0 {
+        astre_az = (az + 512) & 1023;
+        astre_el = 0 - el;
+        astre_c = rgb(225, 230, 245);
+        rayon2 = 30;
+    }
+    soit ase = sin1024(astre_el);
+    soit ecart_s = (astre_az - a + 512) & 1023;
+    si ecart_s > 512 - 85 && ecart_s < 512 + 85 && ase .> 0 {
         sx = W / 2 + (ecart_s - 512) * (W / 2) ./ 85;
-        soit sy_haut = se * ECHELLE ./ cos1024(el);
+        soit sy_haut = ase * ECHELLE ./ cos1024(astre_el);
         si sy_haut < hor + 20 {
             sy = hor - sy_haut;
             soleil_vu = 1;
@@ -411,8 +819,8 @@ fonction rendre(cx, cz, ch, a, hor, az, el) {
             soit pc = @2[CIEL + yc];
             si soleil_vu == 1 && (ex .< 9 && ex .> 0 - 9) {
                 soit ey = yc - sy;
-                si ey .< 9 && ey .> 0 - 9 && ex * ex + ey * ey < 64 {
-                    pc = rgb(255, 245, 220);
+                si ey .< 9 && ey .> 0 - 9 && ex * ex + ey * ey < rayon2 {
+                    pc = astre_c;
                 }
             }
             @1[yc * W + x] = pc;

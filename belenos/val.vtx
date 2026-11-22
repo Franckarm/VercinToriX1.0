@@ -1,7 +1,8 @@
 // machine : lugus
 // Belenos : « Le val des neiges », la scène d'essai qu'on parcourt.
 //     vtx toile128 belenos/val.vtx         (flèches : avancer, tourner ; a / q : monter, descendre ; o / p : tourner le
-//                                           soleil ; i / k : le monter, le descendre ; Échap : finir)
+//                                           soleil ; i / k : le monter, le descendre (jusque sous l'horizon : la
+//                                           nuit) ; n : le jour ou la nuit d'un coup ; f : les feux ; Échap : finir)
 // La scène elle-même (le relief, la lumière, le rendu) est dans val_scene.vtx ; le banc de mesure dans val_banc.vtx,
 // et le même calcul en C dans val_ref.c (la même image au point près : on compare les temps à armes égales).
 importer "val_scene.vtx";
@@ -62,11 +63,11 @@ fonction principal() {
             az = (az + 4) & 1023;
             reste = G;
         }
-        si appuyee(105) && el < 250 {
+        si appuyee(105) && el .< 250 {
             el = el + 2;
             reste = G;
         }
-        si appuyee(107) && el > 2 {
+        si appuyee(107) && el .> 0 - 70 {
             el = el - 2;
             reste = G;
         }
@@ -83,9 +84,17 @@ fonction principal() {
         soit sol = @2[HAUT + ((cz >> 16) & MASQUE) * G + ((cx >> 16) & MASQUE)];
         rendre(cx, cz, sol + au_sol, a, hor, az, el);
         // le compteur : le temps de l'image précédente, le soleil
-        texte_image(4, 4, "image " + texte(ms) + " ms   soleil " + texte(az * 360 / 1024) + " / " + texte(el * 360 / 1024),
+        soit haut_s = texte(el * 360 / 1024);
+        si el .< 0 {
+            haut_s = "-" + texte((0 - el) * 360 / 1024);
+        }
+        soit feux_s = "feux éteints";
+        si @2[REGLES] == 1 {
+            feux_s = "feux allumés";
+        }
+        texte_image(4, 4, "image " + texte(ms) + " ms   soleil " + texte(az * 360 / 1024) + " / " + haut_s + "   " + feux_s,
                     rgb(255, 255, 255));
-        // 0.79 : l'ombre quaternaire : la part de chaque état (les lignes pas encore refaites : inconnu)
+        // 0.79 : l'ombre quaternaire (0.80 : la lumière de chaque case, du blanc au noir) : la part de chaque état (les lignes pas encore refaites : inconnu)
         soit tv = 0;
         soit tf = 0;
         soit tvar = 0;
@@ -109,6 +118,19 @@ fonction principal() {
         tantque t != 0 {
             si t == 27 {
                 fini = 1;
+            }
+            // 0.80 : f allume ou éteint les feux ; n passe du jour à la nuit (et retour) : toute la lumière à refaire
+            si t == 102 {
+                @2[REGLES] = 1 - @2[REGLES];
+                reste = G;
+            }
+            si t == 110 {
+                si el .> 0 {
+                    el = 0 - 40;
+                } sinon {
+                    el = 71;
+                }
+                reste = G;
             }
             t = touche();
         }
