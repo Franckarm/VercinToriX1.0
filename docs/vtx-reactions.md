@@ -3486,3 +3486,22 @@ sous-programme).
   case ne peut pas calculer avant l'arrivée de sa valeur, comme un réactif.
 - **appeler** (Ne) : `= page_2(_) -> lK` : la page suivante comme sous-programme, son résultat revient dans une liaison
   neuve. Dans la page appelée, la case qui donne le résultat porte « retour vers principal » ; un double clic y ramène.
+
+## 77. Belenos : le val des neiges, la scène d'essai qu'on parcourt (22 novembre, 0.71)
+
+**Demandé par le créateur le 22** : une scène de haute qualité, en 3D, dans l'esprit d'un grand jeu de montagne
+nordique (un paysage original, pas une copie) : des collines de pentes variées, un plan d'eau ou une fontaine, des
+flammes (la diffusion de la lumière), les ombres avec un soleil qu'on fait tourner, la neige (le dépôt de texture) ; et
+surtout s'y déplacer pour vérifier le calcul en temps réel. Le cube comme tapis roulant (le temps), l'anti-cube pour
+les reflets, l'ombre pour les ombres.
+
+- **Premier pas** (`belenos/val.vtx`, `vtx toile128 belenos/val.vtx`) : un relief de 512 × 512 (cinq octaves de bruit,
+  les vallées aplanies, les monts au carré), la roche sur les pentes fortes, la neige en haut et sur les replats déjà
+  hauts, la lande, l'herbe ; un rayon par colonne d'image, du plus près au plus loin (le tampon de hauteur), la brume du
+  loin ; les flèches pour marcher et tourner, a et q pour monter et descendre. Tout en entiers ; les mêmes mots par les
+  deux compilateurs. Mesuré ici (un cœur) : 146 ms l'image en 480 × 270 (7 images par seconde), 3,4 s pour créer le
+  relief.
+- **La suite prévue** : le soleil qu'on fait tourner et les ombres (l'ombre du relief projetée depuis le soleil) ; le
+  lac et ses reflets (l'anti-cube) ; l'eau et les nuages qui avancent (le tapis roulant) ; la neige qui tombe et se
+  dépose ; un feu (la lumière diffusée, qui vacille) ; une fontaine ; puis la forge et les cylindres (plusieurs cœurs),
+  puis Taranis (la carte) pour la haute définition en temps réel ; les objets fins viendront de Gobatix.
