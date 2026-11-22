@@ -20,10 +20,10 @@ struct Ctx {
     sp: u128,
     // les pages vues : 16 cases (par le numéro de page), leur clé et le pointeur sur leur premier mot ; pour l'écriture,
     // seulement les pages sans brin (les autres passent par ecrire_mem, qui vérifie l'ADN)
-    cl: [u128; 16],
-    pl: [*mut u128; 16],
-    ce: [u128; 16],
-    pe: [*mut u128; 16],
+    cl: [u128; 64],
+    pl: [*mut u128; 64],
+    ce: [u128; 64],
+    pe: [*mut u128; 64],
     // les tableaux rangés hors du cube (l'adaptation automatique) : leur recopie dans le cube, avant toute fin
     vider: fn(&mut Ctx),
     // la machine d'un cylindre (les segments joués ensemble) : elle lit le cube commun, et n'écrit que dans le sien
@@ -49,10 +49,33 @@ struct Instantane {
 unsafe impl Sync for Instantane {}
 unsafe impl Send for Instantane {}
 
+/// 0.73 : un hachage rapide pour les clés de page (le hachage par défaut de Rust, fait contre les attaques, prenait
+/// plus de la moitié du temps des cylindres)
+#[derive(Default, Clone, Copy)]
+struct Rapide(u64);
+impl std::hash::Hasher for Rapide {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, b: &[u8]) {
+        for &x in b {
+            self.0 = (self.0.rotate_left(5) ^ x as u64).wrapping_mul(0x51_7C_C1_B7_27_22_0A_95);
+        }
+    }
+    fn write_u128(&mut self, v: u128) {
+        self.0 = ((v as u64) ^ ((v >> 64) as u64).rotate_left(29)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    }
+}
+type Table<K, V> = std::collections::HashMap<K, V, std::hash::BuildHasherDefault<Rapide>>;
+type Ensemble<K> = std::collections::HashSet<K, std::hash::BuildHasherDefault<Rapide>>;
+
 struct Cylindre {
     commun: *const Instantane,
-    copiees: std::collections::HashSet<u128>,
-    lues: std::collections::HashSet<u128>,
+    copiees: Ensemble<u128>,
+    lues: Ensemble<u128>,
+    /// 0.73 : les pages déjà vues par ce cylindre et leur premier mot (celle du cube commun, ou la sienne) : une
+    /// page n'est cherchée et notée qu'une fois
+    vues: Table<u128, *mut u128>,
     danger: bool,
 }
 
@@ -85,10 +108,10 @@ fn rendre(c: &mut Ctx) -> Recolte {
     let cles: Vec<u128> = o.copiees.iter().copied().collect();
     // seules les pages vraiment changées sont rendues ; la comparaison se fait ici, dans le fil, sur son cœur
     let inst = unsafe { &*o.commun };
-    let zero = vec![0u128; MOTS_PAGE];
-    let pages = c.m.rendre_pages(&cles).into_iter().filter(|(k, mots)| {
-        let orig = inst.pages.get(k).map(|&(p, _)| p as *const u128).unwrap_or(zero.as_ptr());
-        mots[..] != unsafe { std::slice::from_raw_parts(orig, MOTS_PAGE) }[..]
+    // 0.73 : une page absente du cube commun est changée dès qu'un de ses mots n'est pas nul (sans page de zéros)
+    let pages = c.m.rendre_pages(&cles).into_iter().filter(|(k, mots)| match inst.pages.get(k) {
+        Some(&(p, _)) => mots[..] != unsafe { std::slice::from_raw_parts(p as *const u128, MOTS_PAGE) }[..],
+        None => mots.iter().any(|&w| w != 0),
     }).collect();
     Recolte { pages, lues: o.lues.into_iter().collect(), danger: o.danger }
 }
@@ -100,7 +123,12 @@ fn adresse_page(k: u128) -> u128 {
     if i >> 48 == 0 { (e << 62) | i } else { (e << 126) | i }
 }
 
-/// Fond les cubes des cylindres dans le cube commun ; faux : il faut rejouer les segments l'un après l'autre
+/// Fond les cubes des cylindres dans le cube commun ; faux : il faut rejouer les segments l'un après l'autre.
+/// 0.73 : les segments sont donnés aux cylindres en alternance (0, n, 2n… au premier ; 1, n + 1… au second), pour que
+/// chacun ait sa part du travail où qu'il soit dans la boucle ; l'ordre des segments n'est donc plus celui des
+/// cylindres, et la fusion devient stricte : si un cylindre a lu une page qu'un autre écrivait, ou si deux cylindres ont
+/// écrit le même mot de deux valeurs différentes (un mot variable), rien n'est posé et les segments sont rejoués dans
+/// l'ordre. Le résultat reste toujours celui de Lugus.
 #[allow(dead_code)]
 fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
     if recoltes.iter().any(|r| r.danger) {
@@ -110,16 +138,16 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
     // les pages que chacun a vraiment changées (déjà triées dans les fils, par rendre)
     let ecrites: Vec<std::collections::HashSet<u128>> =
         recoltes.iter().map(|r| r.pages.iter().map(|(k, _)| *k).collect()).collect();
-    // un cylindre a-t-il lu une page qu'un cylindre d'avant a écrite ?
-    for t in 1..recoltes.len() {
+    // un cylindre a-t-il lu une page qu'un autre cylindre a écrite ?
+    for t in 0..recoltes.len() {
         for k in &recoltes[t].lues {
-            if ecrites[..t].iter().any(|e| e.contains(k)) {
+            if ecrites.iter().enumerate().any(|(s, e)| s != t && e.contains(k)) {
                 rapport_cylindres(recoltes.len(), 0, 0, "un cylindre a lu ce qu'un autre écrivait : rejoué");
                 return false;
             }
         }
     }
-    // chaque page du cube commun, avec ceux qui l'ont écrite, dans l'ordre des segments
+    // chaque page du cube commun, avec ceux qui l'ont écrite
     let nr = recoltes.len();
     let mut ordre: Vec<u128> = Vec::new();
     let mut auteurs: std::collections::HashMap<u128, Vec<Box<[u128]>>> = std::collections::HashMap::new();
@@ -128,34 +156,35 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
             auteurs.entry(k).or_insert_with(|| { ordre.push(k); Vec::new() }).push(mots);
         }
     }
-    // une page écrite par un seul cylindre : sa copie devient la page commune (rien n'est recopié)
-    struct Fonte { dst: usize, mots: Vec<Box<[u128]>> }
+    // les pages écrites par plusieurs : fondues mot à mot dans une page neuve, une page par fil à la fois, sur tous
+    // les cœurs ; rien n'est encore posé
+    struct Fonte { k: u128, orig: usize, mots: Vec<Box<[u128]>> }
+    let mut seules: Vec<(u128, Box<[u128]>)> = Vec::new();
     let mut fontes: Vec<Fonte> = Vec::new();
-    let mut anciennes: Vec<Box<[u128]>> = Vec::new();
     let pages = ordre.len();
     for k in &ordre {
         let mut m = auteurs.remove(k).unwrap();
         if m.len() == 1 {
-            anciennes.extend(c.m.poser_page(adresse_page(*k), m.pop().unwrap()));
+            seules.push((*k, m.pop().unwrap()));
         } else {
-            let (dst, _, _) = c.m.page_de(adresse_page(*k));
-            fontes.push(Fonte { dst: dst as usize, mots: m });
+            let (orig, _, _) = c.m.page_de(adresse_page(*k));
+            fontes.push(Fonte { k: *k, orig: orig as usize, mots: m });
         }
     }
-    // les pages écrites par plusieurs : fondues mot à mot, une page par fil à la fois, sur tous les cœurs
     let nt = cylindres_voulus().min(fontes.len()).max(1);
     let suivante = std::sync::atomic::AtomicUsize::new(0);
-    let variables: u64 = std::thread::scope(|sc| {
+    let (neuves, variables): (Vec<(u128, Box<[u128]>)>, u64) = std::thread::scope(|sc| {
         let fils: Vec<_> = (0..nt).map(|_| sc.spawn(|| {
             let mut v = 0u64;
+            let mut faites = Vec::new();
             loop {
                 let n = suivante.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 if n >= fontes.len() {
                     break;
                 }
                 let f = &fontes[n];
-                let d = unsafe { std::slice::from_raw_parts_mut(f.dst as *mut u128, MOTS_PAGE) };
-                let o = d.to_vec();
+                let o = unsafe { std::slice::from_raw_parts(f.orig as *const u128, MOTS_PAGE) };
+                let mut d: Box<[u128]> = o.into();
                 let mut deja = vec![false; MOTS_PAGE];
                 for mots in &f.mots {
                     // un cylindre ne change qu'un coin de la page : les blocs de 64 mots intacts sont sautés d'un coup
@@ -174,14 +203,31 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
                         }
                     }
                 }
+                faites.push((f.k, d));
             }
-            v
+            (faites, v)
         })).collect();
-        fils.into_iter().map(|h| h.join().unwrap()).sum()
+        let mut tout = Vec::new();
+        let mut v = 0;
+        for h in fils {
+            let (f, n) = h.join().unwrap();
+            tout.extend(f);
+            v += n;
+        }
+        (tout, v)
     });
-    drop(fontes); drop(anciennes);
+    if variables > 0 {
+        rapport_cylindres(nr, 0, variables, "deux cylindres ont écrit le même mot de deux valeurs (variable) : rejoué dans l'ordre");
+        return false;
+    }
+    // tout est sûr : les pages sont posées telles quelles (rien n'est recopié)
+    let mut anciennes: Vec<Box<[u128]>> = Vec::new();
+    for (k, mots) in seules.into_iter().chain(neuves) {
+        anciennes.extend(c.m.poser_page(adresse_page(k), mots));
+    }
+    drop(anciennes);
     c.oublier_pages();
-    rapport_cylindres(nr, pages, variables, "");
+    rapport_cylindres(nr, pages, 0, "");
     true
 }
 
@@ -199,16 +245,20 @@ fn rapport_cylindres(n: usize, pages: usize, variables: u64, rejoue: &str) {
         if rejoue.is_empty() {
             eprintln!("cylindres : {} ; {} pages fondues ; {} mots variables (deux cylindres, deux valeurs)", n, pages, variables);
         } else {
-            eprintln!("cylindres : {} ; {}", n, rejoue);
+            if variables > 0 {
+                eprintln!("cylindres : {} ; {} mots variables ; {}", n, variables, rejoue);
+            } else {
+                eprintln!("cylindres : {} ; {}", n, rejoue);
+            }
         }
     }
 }
 
-/// la case d'une page dans le petit cache : son numéro et son étage mêlés, le numéro plié par quatre bits (comme case16 de spu128.rs)
+/// la case d'une page dans le petit cache (0.73 : 64 cases) : son numéro et son étage mêlés
 #[inline(always)]
 fn case(k: u128) -> usize {
     let n = k as usize;
-    (n ^ (n >> 4) ^ (n >> 8) ^ ((k >> 120) as usize).wrapping_mul(5)) & 15
+    ((n ^ (n >> 6) ^ (n >> 12)).wrapping_add(((k >> 120) as usize).wrapping_mul(37))) & 63
 }
 
 impl Ctx {
@@ -225,11 +275,19 @@ impl Ctx {
     fn lire_lent(&mut self, a: u128, k: u128, j: usize) -> u128 {
         if self.ombre.is_some() && k >> 120 != 0 {
             let o = self.ombre.as_mut().unwrap();
+            // 0.73 : une page déjà vue : son premier mot est connu, rien à chercher ni à noter
+            if let Some(&p) = o.vues.get(&k) {
+                let h = case(k);
+                self.cl[h] = k;
+                self.pl[h] = p;
+                return unsafe { *p.add(j) };
+            }
             o.lues.insert(k);
             if !o.copiees.contains(&k) {
                 let commun = unsafe { &*o.commun };
                 if let Some(&(p, _)) = commun.pages.get(&k) {
                     // la page du cube commun, lue sans la copier
+                    o.vues.insert(k, p);
                     let h = case(k);
                     self.cl[h] = k;
                     self.pl[h] = p;
@@ -241,6 +299,12 @@ impl Ctx {
                 // une page que le cube commun n'a pas : elle est vide ; elle devient la sienne
                 o.copiees.insert(k);
             }
+            let (p, _, _) = self.m.page_de(a);
+            self.ombre.as_mut().unwrap().vues.insert(k, p);
+            let h = case(k);
+            self.cl[h] = k;
+            self.pl[h] = p;
+            return unsafe { *p.add(j) };
         }
         let (p, _, _) = self.m.page_de(a);
         let h = case(k);
@@ -275,17 +339,21 @@ impl Ctx {
                 if source.is_none() && commun.disque {
                     o.danger = true;
                 }
-                let (pd, _, _) = self.m.page_de(a);
+                // 0.73 : la copie est posée telle quelle (ni page remise à zéro, ni recopie par-dessus)
                 if let Some((ps, brins)) = source {
                     if brins {
                         o.danger = true;
                     }
-                    unsafe { std::ptr::copy_nonoverlapping(ps as *const u128, pd, MOTS_PAGE) };
+                    let copie: Box<[u128]> = unsafe { std::slice::from_raw_parts(ps as *const u128, MOTS_PAGE) }.into();
+                    self.m.poser_page(adresse_page(k), copie);
                 }
+                let (pd, _, _) = self.m.page_de(a);
                 let h = case(k);
                 if self.cl[h] == k {
                     self.cl[h] = u128::MAX;
                 }
+                // la page vue jusqu'ici était celle du cube commun : désormais, c'est la sienne
+                o.vues.insert(k, pd);
             }
         }
         let (p, _, brins) = self.m.page_de(a);
@@ -301,8 +369,8 @@ impl Ctx {
     }
     /// un brin vient d'être posé : les écritures repassent par la vérification
     fn oublier_pages(&mut self) {
-        self.ce = [u128::MAX; 16];
-        self.cl = [u128::MAX; 16];
+        self.ce = [u128::MAX; 64];
+        self.cl = [u128::MAX; 64];
     }
     #[inline(always)]
     fn pousser(&mut self, v: u128) {
@@ -485,8 +553,8 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     m.dossier = std::env::current_dir().ok();
     m.charger(mots);
     m.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
-    let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 16], pl: [std::ptr::null_mut(); 16], ce: [u128::MAX; 16],
-                      pe: [std::ptr::null_mut(); 16], vider, ombre: None };
+    let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],
+                      pe: [std::ptr::null_mut(); 64], vider, ombre: None };
     debuter(&mut c);
     // le brin : le code, les textes écrits et les données du programme sont de l'ADN (comme au début du programme
     // compilé : MARQUE R0, FIN_CODE, 1), puis l'appel de principal (CALL : l'adresse de retour dans la pile)

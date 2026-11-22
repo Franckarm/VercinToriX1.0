@@ -484,7 +484,8 @@ class Forge(V.Generateur):
         self.ligne("let fils: Vec<_> = (0..nt).map(|t| sc.spawn(move || {")
         self.niveau += 1
         self.ligne("let mut c_fils = ctx_cylindre(inst); let c = &mut c_fils;")
-        self.ligne(f"for q in (t * {m} / nt)..((t + 1) * {m} / nt) {{")
+        # 0.73 : les segments en alternance (chaque cylindre a sa part du travail où qu'il soit dans la boucle)
+        self.ligne(f"for q in (t..{m}).step_by(nt) {{")
         self.niveau += 1
         self.ligne("match q {")
         self.niveau += 1
@@ -1298,12 +1299,12 @@ def programme_rust(src, dossier=None, nom="programme"):
         s.append(f"#[allow(dead_code)]\nstatic SPV{k}: [u32; {len(mots)}] = [" + ",".join(map(str, mots)) + "];")
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
     s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
-             "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 16], pl: [std::ptr::null_mut(); 16], ce: [u128::MAX; 16],\n"
-             "          pe: [std::ptr::null_mut(); 16], vider: |_c| {}, ombre: None }\n}")
+             "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],\n"
+             "          pe: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
     # la machine d'un cylindre : celle d'un fil, qui lit le cube commun et n'écrit que dans le sien
     s.append("#[allow(dead_code)]\nfn ctx_cylindre(inst: &Instantane) -> Ctx {\n    let mut c = ctx_fils();\n"
              "    c.ombre = Some(Box::new(Cylindre { commun: inst as *const Instantane, copiees: Default::default(), "
-             "lues: Default::default(), danger: false }));\n    c\n}")
+             "lues: Default::default(), vues: Default::default(), danger: false }));\n    c\n}")
     s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees);\n}\n")
     return "\n".join(s), mots

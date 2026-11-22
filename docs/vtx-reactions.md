@@ -3590,3 +3590,29 @@ cylindre recopie les pages qu'il écrit (l'écran : environ 2 Mo par image) et c
 tapis roulant, comme le fluide : la propagation gratuite, la collision par la matière du cube), d'abord en 2D (une coupe
 du val, un feu, le soleil) ; l'ombre du cube pour le soleil direct ; le cube des matières ; la neige qui se dépose par
 un tapis vertical ; l'eau par le fluide ; le reflet par un miroir segmenté ; puis Taranis.
+
+### 79 bis. Les cylindres de la forge réparés (22 novembre, 0.74)
+
+**Mesuré chez le créateur (0.73)** : la scène forgée, 5,75 ms par image sur 1 cœur, 16,66 sur 2, 13,33 sur 4. « Ce
+n'est pas bon. »
+
+- **Le profil** (callgrind) : près de 60 % du temps des cylindres dans le hachage. À chaque lecture qui manquait le
+  petit cache des pages (16 cases, pour une dizaine de pages vives), le cylindre rangeait la page dans deux tables
+  hachées par SipHash (le hachage de Rust fait contre les attaques). **Réparé** : un cache de 64 cases, mieux mêlé ; un
+  hachage rapide pour les tables des cylindres ; chaque page n'est cherchée et notée qu'une fois (`vues`). Le cache
+  plus grand profite aussi à un seul cœur : **3,7 ms par image au lieu de 5,7 (1,6 × le C)**.
+- **Le déséquilibre** : les segments allaient par blocs contigus ; le premier cœur avait la moitié gauche de l'image
+  (2,7 ms de travail), le second la droite (0,7 ms), et chacun attendait le plus lent. **Les segments vont maintenant en
+  alternance** (0, n, 2n… au premier cylindre ; 1, n + 1… au second) : 1,7 ms chacun. L'ordre des cylindres n'étant plus
+  celui des segments, la fusion devient stricte : un cylindre qui a lu une page qu'un autre écrivait, ou deux cylindres
+  qui ont écrit le même mot de deux valeurs (un mot variable), et rien n'est posé : les segments sont rejoués dans
+  l'ordre. Le résultat reste toujours celui de Lugus (`tests/test_cylindres.py`, la forge : 103 programmes conformes).
+- **Moins de mémoire remuée** : la copie d'une page écrite est posée telle quelle (plus de page remise à zéro puis
+  recopiée) ; plus de page de zéros pour comparer ; les pages fondues sont posées sans recopie.
+- **Ce qui reste** : chaque cylindre recopie encore la page entière (1 Mo) qu'il écrit, et la fusion la compare ; sur
+  une image de 480 × 270 en 3,7 ms, c'est une part sensible. La machine de travail n'a que deux cœurs partagés : la
+  mesure qui compte est celle du créateur (`essai-0.74.bat`, 1, 2, 4 cœurs et tous).
+- **La carte graphique n'a pas servi** : `VTX_TARANIS=1` dit pourquoi. Le noyau de Taranis n'accepte que des lectures
+  dont l'adresse se calcule depuis l'indice de la boucle (la fenêtre de l'étage 2) ; le rendu lit le relief là où le
+  rayon arrive (une adresse qui dépend du calcul), la lumière lit et écrit dans une fonction appelée, et l'image est à
+  l'étage 1. À étendre (la suite).

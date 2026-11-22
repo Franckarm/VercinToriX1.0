@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Les cylindres (forge128 : « en segments » joués sur plusieurs cœurs, un cube par cylindre, fondus mot à mot) : le
 programme forgé rend la même sortie que Lugus avec 1, 2 et 3 cylindres ; une boucle dépendante est vue et rejouée dans
-l'ordre ; des segments qui écrivent les mêmes mots donnent des mots variables, résolus comme dans l'ordre.
+l'ordre ; des segments qui écrivent les mêmes mots de valeurs différentes donnent des mots variables : rejoués dans
+l'ordre (0.73 : les segments sont donnés en alternance, l'ordre des cylindres n'est plus celui des segments).
 
     python3 tests/test_cylindres.py"""
 import os
@@ -24,7 +25,7 @@ def verifier(nom, ok, detail=""):
 d = tempfile.mkdtemp(prefix="cylindres-")
 for prog, attendu in ((os.path.join(racine, "exemples128", "cylindres.vtx"), ["pages fondues ; 0 mots variables"]),
                       (os.path.join(ici, "cylindres_dependants.vtx"),
-                       ["a lu ce qu'un autre écrivait : rejoué", "mots variables"])):
+                       ["a lu ce qu'un autre écrivait : rejoué", "mots variables ; deux cylindres ont écrit le même mot"])):
     nom = os.path.splitext(os.path.basename(prog))[0]
     exe = os.path.join(d, nom + (".exe" if os.name == "nt" else ""))
     f = subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), prog, "-o", exe], capture_output=True,
@@ -41,7 +42,7 @@ for prog, attendu in ((os.path.join(racine, "exemples128", "cylindres.vtx"), ["p
             for a in attendu:
                 verifier(f"{nom} sur {n} cylindres : « {a} »", a in r.stderr, r.stderr[-300:])
             if nom == "cylindres_dependants":
-                verifier(f"{nom} : 3 mots variables (deux cylindres, deux valeurs)", "3 mots variables" in r.stderr or n > 2,
-                         r.stderr[-300:])
+                verifier(f"{nom} : des mots variables (deux cylindres, deux valeurs), rejoués dans l'ordre",
+                         "mots variables ; deux cylindres" in r.stderr and "rejoué dans l'ordre" in r.stderr, r.stderr[-300:])
 print("cylindres : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)
