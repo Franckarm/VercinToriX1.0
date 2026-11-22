@@ -2940,7 +2940,8 @@ fonction instruction(c: Ctx): Noeud {
             si c.tok.genre == 3 {
                 nseg = avancer(c).val;
             }
-            si !est_id(c, "segments") {
+            // 0.77 : « en bandes » donne les mêmes mots qu'« en segments » (la promesse est pour la forge)
+            si !est_id(c, "segments") && !est_id(c, "bandes") {
                 erreur(c, c.tok.ligne, "« segments » attendu après « en »");
             }
             avancer(c);

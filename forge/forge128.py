@@ -332,7 +332,10 @@ class Forge(V.Generateur):
             # qu'ils sont indépendants, par exemple quand ils écrivent le cube à une adresse calculée) ; les cylindres
             # le vérifient en jouant (fusionner), et rejouent dans l'ordre si besoin : toutes les notes, dans l'ordre
             toutes = [st for mesure in s[2] for st, _note, _nom in mesure]
-            if self.cylindres_possibles(toutes):
+            ligne_acc = V.DERNIERE_PARTITION["accords"][s[1]]["ligne"] if s[1] < len(V.DERNIERE_PARTITION["accords"]) else None
+            if ligne_acc in V.LIGNES_BANDES and self.cylindres_possibles(toutes):
+                self.notes_en_bandes(toutes, ligne_acc)
+            elif self.cylindres_possibles(toutes):
                 self.notes_en_cylindres(toutes)
             else:
                 for mesure in s[2]:
@@ -465,31 +468,26 @@ class Forge(V.Generateur):
             return False
         return self.sans_effet(notes[0][4], set())
 
-    def notes_en_cylindres(self, notes):
-        """Les notes d'une mesure jouées ensemble : un cylindre par cœur, chacun des notes qui se suivent, sur son propre
-        cube ; puis la fusion (noyau : fusionner) ; si elle refuse, les notes l'une après l'autre."""
+    def part_des_coeurs(self, notes, bandes):
+        """La part de chaque cœur : un fil par cœur et par passage (std::thread::scope). 0.77 : une équipe de fils
+        gardés vivants a été essayée (noyau : equipe_jouer) ; le compilateur Rust alourdissait alors tout le code de la
+        fonction, même joué sur un seul cœur (30 % d'instructions de plus) ; elle attend de trouver pourquoi."""
         m = len(notes)
-        self.ligne("{")
-        self.niveau += 1
-        self.ligne("let mut fait = false;")
-        self.vers_la_carte(notes)
-        self.ligne("if !fait && cylindres_voulus() > 1 {")
-        self.niveau += 1
-        self.ligne("let t0 = std::time::Instant::now();")
-        self.ligne("let inst = instantane(c);")
-        self.ligne(f"let nt = cylindres_voulus().min({m});")
         self.ligne("let recoltes: Vec<Recolte> = std::thread::scope(|sc| {")
         self.niveau += 1
         self.ligne("let inst = &inst;")
         self.ligne("let fils: Vec<_> = (0..nt).map(|t| sc.spawn(move || {")
         self.niveau += 1
-        self.ligne("let mut c_fils = ctx_cylindre(inst); let c = &mut c_fils;")
-        # 0.74b : les variables de la fonction, recopiées dans le fil : capturées, elles vivaient dans la mémoire de la
-        # fermeture (cinq fois plus d'écritures en mémoire) ; locales, elles vont dans les registres du processeur
+        self.ligne(f"let mut c_fils = {'ctx_bande' if bandes else 'ctx_cylindre'}(inst); let c = &mut c_fils;")
+        # les variables de la fonction, recopiées dans le fil (locales, elles vont dans les registres)
         if self.toutes:
             self.ligne(" ".join(f"let mut v_{ident(v)} = v_{ident(v)};" for v in self.toutes))
-        # 0.73 : les segments en alternance (chaque cylindre a sa part du travail où qu'il soit dans la boucle)
-        self.ligne(f"for q in (t..{m}).step_by(nt) {{")
+        if bandes:
+            # chaque cœur sa bande : des segments contigus (les mêmes données d'un pas à l'autre)
+            self.ligne(f"for q in (t * {m} / nt)..((t + 1) * {m} / nt) {{")
+        else:
+            # les segments en alternance (chaque cylindre a sa part du travail où qu'il soit dans la boucle)
+            self.ligne(f"for q in (t..{m}).step_by(nt) {{")
         self.niveau += 1
         self.ligne("match q {")
         self.niveau += 1
@@ -510,12 +508,61 @@ class Forge(V.Generateur):
         self.ligne("fils.into_iter().map(|h| h.join().unwrap()).collect()")
         self.niveau -= 1
         self.ligne("});")
+
+    def notes_en_cylindres(self, notes):
+        """Les notes d'une mesure jouées ensemble : un cylindre par cœur, chacun des notes qui se suivent, sur son propre
+        cube ; puis la fusion (noyau : fusionner) ; si elle refuse, les notes l'une après l'autre."""
+        m = len(notes)
+        self.ligne("{")
+        self.niveau += 1
+        self.ligne("let mut fait = false;")
+        self.vers_la_carte(notes)
+        self.ligne("if !fait && cylindres_voulus() > 1 {")
+        self.niveau += 1
+        self.ligne("let t0 = std::time::Instant::now();")
+        self.ligne("let inst = instantane(c);")
+        self.ligne(f"let nt = cylindres_voulus().min({m});")
+        self.part_des_coeurs(notes, False)
         self.ligne("let t1 = std::time::Instant::now();")
         self.ligne("fait = fusionner(c, &inst, recoltes);")
         self.ligne("chrono_cylindres(t0, t1);")
         self.niveau -= 1
         self.ligne("}")
         self.ligne("if !fait {")
+        self.niveau += 1
+        for st in notes:
+            self.instr(st)
+        self.niveau -= 1
+        self.ligne("}")
+        self.niveau -= 1
+        self.ligne("}")
+
+    def notes_en_bandes(self, notes, ligne):
+        """0.77 : une boucle « en bandes » : chaque cœur sa bande (des segments qui se suivent), et tous écrivent
+        directement dans le cube commun ; chacun note les mots qu'il lit et écrit ; après, si un cœur a écrit un mot
+        qu'un autre a lu ou écrit, la promesse n'est pas tenue : la machine s'arrête et le dit (comme t[i] hors du
+        tableau). Une page absente du cube commun passe par une feuille, fondue ensuite."""
+        m = len(notes)
+        self.ligne("{")
+        self.niveau += 1
+        self.ligne("if cylindres_voulus() > 1 {")
+        self.niveau += 1
+        self.ligne("let t0 = std::time::Instant::now();")
+        self.ligne("let inst = instantane(c);")
+        self.ligne(f"let nt = cylindres_voulus().min({m});")
+        self.part_des_coeurs(notes, True)
+        self.ligne("let t1 = std::time::Instant::now();")
+        self.ligne("if recoltes.iter().any(|r| r.danger) || bandes_touchees(&recoltes).is_some() {")
+        self.ligne(f"    arreter(c, \"ligne {ligne} : la boucle « en bandes » n'a pas tenu sa promesse : deux cœurs ont touché le "
+                   f"même mot (l'un l'écrivait, l'autre le lisait ou l'écrivait) ; écrivez « en segments »\");")
+        self.ligne("}")
+        self.ligne("if !fusionner(c, &inst, recoltes) {")
+        self.ligne(f"    arreter(c, \"ligne {ligne} : la boucle « en bandes » n'a pas tenu sa promesse ; écrivez « en segments »\");")
+        self.ligne("}")
+        self.ligne("c.oublier_pages();")
+        self.ligne("chrono_cylindres(t0, t1);")
+        self.niveau -= 1
+        self.ligne("} else {")
         self.niveau += 1
         for st in notes:
             self.instr(st)
@@ -1304,15 +1351,18 @@ def programme_rust(src, dossier=None, nom="programme"):
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
     s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
              "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],\n"
-             "          pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], rb: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
+             "          pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], rb: [std::ptr::null_mut(); 64], wb: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
     # la machine d'un cylindre : celle d'un fil, qui lit le cube commun et n'écrit que dans le sien
     # 0.74b : les machines des cylindres sont gardées d'un passage à l'autre (une machine neuve remettait à zéro deux
     # pages d'un mégaoctet, le code et la pile, à chaque passage et dans chaque fil)
     s.append("#[allow(dead_code)]\nfn ctx_cylindre(inst: &Instantane) -> Box<Ctx> {\n"
              "    let mut c = match CTX_RESERVE.lock().unwrap().pop() { Some(EnvoiCtx(c)) => c, None => Box::new(ctx_fils()) };\n"
-             "    c.sp = spu128::PILE; c.cl = [u128::MAX; 64]; c.ce = [u128::MAX; 64]; c.pb = [std::ptr::null_mut(); 64]; c.rb = [std::ptr::null_mut(); 64];\n"
+             "    c.sp = spu128::PILE; c.cl = [u128::MAX; 64]; c.ce = [u128::MAX; 64]; c.pb = [std::ptr::null_mut(); 64]; c.rb = [std::ptr::null_mut(); 64]; c.wb = [std::ptr::null_mut(); 64];\n"
              "    c.ombre = Some(Box::new(Cylindre { commun: inst as *const Instantane, feuilles: Default::default(), "
-             "lus: Default::default(), vues: Default::default(), danger: false }));\n    c\n}")
+             "lus: Default::default(), vues: Default::default(), partage: false, ecrits: Default::default(), danger: false }));\n    c\n}")
+    # 0.77 : la machine d'un cœur « en bandes » : il écrit directement dans le cube commun
+    s.append("#[allow(dead_code)]\nfn ctx_bande(inst: &Instantane) -> Box<Ctx> {\n    let mut c = ctx_cylindre(inst);\n"
+             "    c.ombre.as_mut().unwrap().partage = true;\n    c\n}")
     s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees);\n}\n")
     return "\n".join(s), mots

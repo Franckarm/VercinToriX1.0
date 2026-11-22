@@ -760,6 +760,16 @@ accord 0 dans principal (orchestre.vtx, ligne 87) : 6 tâches en 3 mesure(s)
 
 **Tableaux cumulés.** Un histogramme ou une somme écrit à des cases qui ne dépendent pas de l'indice, donc les segments se gêneraient. `en segments cumulant T` (ou `cumulant T, U`) donne à chaque segment sa propre copie de `T`, remise à zéro, puis ajoute toutes les copies dans `T` une fois les segments finis. Le résultat est exactement celui de la boucle ordinaire, car l'addition sur 32 bits ne dépend pas de l'ordre. Pour que ce soit sûr, dans la boucle `T` ne peut s'écrire que sous la forme `T[x] = T[x] + valeur` (ou `valeur + T[x]`, ou `T[x] - valeur`), avec la même case des deux côtés et une valeur qui ne lit pas `T`. Toute autre lecture de `T`, une adresse calculée qui pourrait l'atteindre, ou une fonction appelée qui le touche, est refusée. Les champs de structure sont permis (`ps[k].n = ps[k].n + 1`). Les copies vivent dans `@3[14680064..15728640]` (0xE00000 à 0xF00000), zone réservée : un tableau déclaré là est refusé quand un programme utilise `cumulant`. Sans partition, `cumulant` est sans effet et la boucle est ordinaire.
 
+**En bandes** (0.77). `pour i dans a..b en bandes { … }` donne les mêmes mots qu'`en segments`, avec une promesse de
+plus : chaque tour n'écrit que dans sa part du cube, et ne lit rien de ce qu'un autre tour écrit (le rouleau de lumière :
+chaque cellule ne touche que sa propre lumière ; une image : chaque colonne n'écrit que ses points). Forgé, chaque cœur
+reçoit une bande (des segments qui se suivent) et **écrit directement dans le cube commun**, sans copie ni fusion ;
+chacun note les mots qu'il lit et écrit (un bit par mot), et si la promesse n'est pas tenue (un cœur a écrit un mot qu'un
+autre lisait ou écrivait), la machine s'arrête et le dit, avec la ligne (« écrivez « en segments » »), comme pour t[i]
+hors du tableau. Sur un seul cœur (et sur Lugus), la boucle se joue dans l'ordre et la promesse n'est pas vérifiée.
+`en segments` reste le mode sûr pour tout programme (chaque cœur son propre cube, puis la fusion), plus lent quand la
+boucle remue beaucoup de mémoire.
+
 **Noms des segments.** Dans la partition, les segments portent les ordinaux gaulois des comptes de fournées de La Graufesenque : *cintux* (1er), *allos* (2e), *tritios*, *petuarios*, *pinpetos*, *suexos* (6e). Avec 6 segments, le nom est celui du cylindre : `histogramme·tritios`. Avec 12 ou 18, c'est cylindre puis temps : `flou·tritios·allos` est le segment du 3e cylindre au 2e temps. Les formes sont celles des inscriptions (*cintux* et *allos* sont sûrs ; plusieurs autres sont reconstruits par les linguistes).
 
 L'analyse est prudente : en cas de doute, elle sépare les tâches. Seuls les appels écrits comme instructions forment des tâches (pas `x = f();`), et les fonctions du prélude ne sont jamais réordonnées. Une tâche ne peut pas modifier les variables locales de l'appelant, ce qui rend le réordonnancement sûr.

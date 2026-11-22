@@ -54,7 +54,7 @@ fonction bruit_lisse(x, z, p) {
 }
 
 fonction creer_relief() {
-    pour z dans 0..G en segments {
+    pour z dans 0..G en bandes {
         pour x dans 0..G {
             // cinq octaves : les grandes collines, puis les plis de plus en plus fins
             soit h = bruit_lisse(x, z, 256) * 16 + bruit_lisse(x, z, 128) * 8 + bruit_lisse(x, z, 64) * 4 + bruit_lisse(x, z, 32) * 2
@@ -76,7 +76,7 @@ fonction creer_relief() {
 
 // l'éclairage et la matière de chaque case : la pente (la différence avec les voisines), l'altitude
 fonction peindre_relief() {
-    pour z dans 0..G en segments {
+    pour z dans 0..G en bandes {
         pour x dans 0..G {
             soit h = @2[HAUT + z * G + x];
             soit hx = @2[HAUT + z * G + ((x + 1) & MASQUE)];
@@ -139,7 +139,7 @@ fonction pas_ombre(k) {
 
 // toutes les lignes de z0 à z1 (exclu), en segments : chaque cylindre éclaire les siennes
 fonction eclairer_lignes(z0, z1, az, el) {
-    pour z dans z0..z1 en segments {
+    pour z dans z0..z1 en bandes {
         eclairer_ligne(z & MASQUE, az, el);
     }
 }
@@ -317,7 +317,7 @@ fonction rendre(cx, cz, ch, a, hor, az, el) {
     soit sa = @2[SINUS + (a & 1023)];
     soit ca = @2[SINUS + ((a + 256) & 1023)];
     // les colonnes en segments : chaque cylindre (un cœur) peint ses colonnes, aucune n'écrit chez une autre
-    pour x dans 0..W en segments {
+    pour x dans 0..W en bandes {
         // la direction du rayon de la colonne : l'axe de la vue, plus un écart à droite (un champ de 60 degrés)
         soit ecart = x * 2 * 37837 / W;                 // tan(30°) · 65536 = 37837, de -1 à +1 fois cela
         // dir = avant + (ecart - 37837) · droite, avec avant = (sin a, cos a), droite = (cos a, -sin a)

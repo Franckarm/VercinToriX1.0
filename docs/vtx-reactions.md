@@ -3669,3 +3669,29 @@ avait ôté le hachage et le déséquilibre, pas le vrai poids.
   les mots qu'il lit (un bit par mot), et il n'y a conflit que si un autre a vraiment changé l'un d'eux. Le rouleau passe
   sans être rejoué. Mais chaque pas remue 12,6 Mo de lumière (786 432 mots de 16 octets) : les cylindres recopient puis
   fondent autant, et sur deux cœurs le pas est 2,5 fois plus lent. Le rouleau est fait pour la carte graphique.
+
+## 81. En bandes : un seul cube, chaque cœur sa part (22 novembre, 0.77)
+
+**Mesuré chez le créateur (0.76)** : le val forgé, 4,41 ms par image sur 1 cœur, 9,66 sur 2, 9,75 sur 4, 12,91 sur 8,
+27,41 sur 24 ; le rouleau, 1,82 s sur 1 cœur, 4,87 sur 2, 3,18 sur 4. Les cylindres ne gagnent pas : chaque cœur son
+cube, puis la fusion, coûte autant que le travail. **L'idée du créateur** : ne pas recréer un cube entier sur chaque
+cœur, mais partager le travail du cube : chaque cœur sa part d'un étage, et les étages qui coulent l'un dans l'autre
+jusqu'à l'affichage ; un cœur, le vergobret, pour la cadence et le contrôle.
+
+- **`pour … en bandes`** (les deux compilateurs : les mêmes mots qu'`en segments` ; la promesse est notée pour la
+  forge) : chaque cœur reçoit une bande et écrit directement dans le cube commun. Chacun note les mots lus et écrits ;
+  une promesse non tenue arrête la machine (`tests/bandes/` : deux cœurs qui écrivent le même mot, un cœur qui lit ce
+  qu'un autre écrit). Le rouleau et le val sont en bandes.
+- **Mesuré ici** (deux cœurs, mémoire partagée) : le rouleau, 300 pas en 1,7 s sur 1 cœur, 1,6 à 1,8 s sur 2 (avant :
+  2,5 fois plus lent sur 2) ; plus de fusion. La mémoire de la machine de travail est le frein : chez le créateur, la
+  mesure dira la pente.
+- **L'équipe de cœurs gardés vivants** (`equipe_jouer`) est écrite dans le noyau, mais pas branchée : avec elle, le
+  compilateur Rust alourdissait tout le code de la fonction du programme, même jouée sur un seul cœur (30 %
+  d'instructions de plus, vu à callgrind) ; les fils restent créés à chaque passage, le temps de trouver pourquoi.
+- **La lumière, une règle physique** (question du créateur) : l'approximation de diffusion. Une lumière qui a beaucoup
+  rebondi se comporte comme la chaleur : une valeur par case et par couleur (8 fois moins de mémoire que le rouleau à
+  huit directions), lisse (plus d'étoile autour du feu), résolue vite sur une pyramide de cubes (256³, 128³, …, la
+  méthode multigrille). Les trois voix : l'ombre (le soleil direct, net), l'anti-cube (les reflets), la diffusion (le
+  ciel, les rebonds, le feu, la brume). À essayer après la chaîne des étages.
+- **La suite** : la chaîne des étages et le vergobret (la cadence, l'équilibre des cœurs entre les étages, le clavier
+  et la patrouille) ; puis la carte graphique.

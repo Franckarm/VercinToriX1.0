@@ -44,5 +44,23 @@ for prog, attendu in ((os.path.join(racine, "exemples128", "cylindres.vtx"), ["p
             if nom == "cylindres_dependants":
                 verifier(f"{nom} : des mots variables (deux cylindres, deux valeurs), rejoués dans l'ordre",
                          "mots variables ; deux cylindres" in r.stderr and "rejoué dans l'ordre" in r.stderr, r.stderr[-300:])
+# 0.77 : « en bandes » : les cœurs écrivent directement dans le cube commun ; une promesse non tenue arrête la machine
+for nom, attendu_ok in (("bon", True), ("mauvais", False), ("lit", False)):
+    prog = os.path.join(ici, "bandes", nom + ".vtx")
+    exe = os.path.join(d, "bandes_" + nom + (".exe" if os.name == "nt" else ""))
+    f = subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), prog, "-o", exe], capture_output=True,
+                       text=True)
+    verifier(f"en bandes, {nom} : forgé", f.returncode == 0, f.stderr[-500:])
+    if f.returncode:
+        continue
+    ref = subprocess.run([lugus, prog], capture_output=True, text=True, cwd=d).stdout.strip()
+    un = subprocess.run([exe], capture_output=True, text=True, cwd=d, env=dict(os.environ, VTX_COEURS="1"))
+    verifier(f"en bandes, {nom} sur 1 cœur : la sortie de Lugus", un.stdout.strip() == ref, un.stdout + un.stderr)
+    r = subprocess.run([exe], capture_output=True, text=True, cwd=d, env=dict(os.environ, VTX_COEURS="3"))
+    if attendu_ok:
+        verifier(f"en bandes, {nom} sur 3 cœurs : la sortie de Lugus", r.stdout.strip() == ref, r.stdout + r.stderr)
+    else:
+        verifier(f"en bandes, {nom} sur 3 cœurs : la promesse non tenue arrête la machine et le dit",
+                 r.returncode != 0 and "n'a pas tenu sa promesse" in r.stderr, r.stdout + r.stderr)
 print("cylindres : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)

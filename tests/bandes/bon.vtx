@@ -1,0 +1,9 @@
+// machine : lugus
+fonction principal() {
+    pour i dans 0..100000 en bandes {
+        @2[1000000 + i] = i * 3 + @2[3000000 + i];
+    }
+    soit s = 0;
+    pour k dans 0..100000 { s = s + @2[1000000 + k]; }
+    afficher(s);
+}

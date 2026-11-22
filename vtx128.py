@@ -2453,8 +2453,12 @@ class Analyseur:
                     if self.regard()[0] == "num":
                         nseg = self.suivant()[1]
                     k3, v3, l3 = self.suivant()
-                    if not (k3 == "id" and v3 == "segments"):
+                    if not (k3 == "id" and v3 in ("segments", "bandes")):
                         raise VtxError(f"ligne {l3} : « segments » attendu après « en »")
+                    # 0.77 : « en bandes » : les mêmes mots qu'« en segments » ; la promesse (chaque cœur n'écrit que
+                    # dans sa part du cube, sans lire celle d'un autre) est notée pour la forge, qui la vérifie
+                    if v3 == "bandes":
+                        LIGNES_BANDES.add(l)
                     if not 2 <= nseg <= MAX_SEGMENTS:
                         raise VtxError(f"ligne {l} : nombre de segments entre 2 et {MAX_SEGMENTS}")
                     nseg = -(-nseg // CANAUX) * CANAUX   # multiple du nombre de cylindres : pas de cylindre à vide
@@ -12828,6 +12832,10 @@ def segments_independants(eff, st):
 
 def est_tache(st, fonctions):
     return (st[0] == "expr" and st[1][0] == "appel" and st[1][1] in fonctions and not st[1][1].startswith("__"))
+
+
+# 0.77 : les lignes des boucles « en bandes » (la forge y fait écrire les cœurs directement dans le cube commun)
+LIGNES_BANDES = set()
 
 
 def partitionner(fonctions, melange=None):

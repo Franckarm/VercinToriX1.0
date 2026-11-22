@@ -1,0 +1,8 @@
+// machine : lugus
+fonction principal() {
+    @2[1000000] = 0;
+    pour i dans 0..100000 en bandes {
+        @2[1000000 + (i % 7)] = i;
+    }
+    afficher(@2[1000000]);
+}

@@ -28,6 +28,8 @@ struct Ctx {
     pb: [*mut Feuille; 64],
     // 0.74c : pour un cylindre, les mots lus de la page (un bit par mot) ; nul hors d'un cylindre
     rb: [*mut u64; 64],
+    // 0.77 : en bandes, les mots écrits directement dans le cube commun (un bit par mot) ; nul sinon
+    wb: [*mut u64; 64],
     // les tableaux rangés hors du cube (l'adaptation automatique) : leur recopie dans le cube, avant toute fin
     vider: fn(&mut Ctx),
     // la machine d'un cylindre (les segments joués ensemble) : elle lit le cube commun, et n'écrit que dans le sien
@@ -149,6 +151,9 @@ struct Cylindre {
     /// vraiment changé un mot que celui-ci a lu (avant, une page lue et écrite par deux cylindres, même à des mots
     /// différents, faisait tout rejouer)
     lus: Table<u128, Box<[u64; 1024]>>,
+    /// 0.77 : en bandes, le cylindre écrit directement dans le cube commun ; les mots écrits, page par page
+    partage: bool,
+    ecrits: Table<u128, Box<[u64; 1024]>>,
     /// 0.73 : les pages déjà vues par ce cylindre et leur premier mot (celle du cube commun, ou la sienne) : une
     /// page n'est cherchée et notée qu'une fois
     vues: Table<u128, *mut u128>,
@@ -158,6 +163,7 @@ struct Cylindre {
 /// Ce qu'un cylindre rend : ses pages, les pages qu'il a lues, et s'il faut tout rejouer
 struct Recolte {
     pages: Vec<(u128, Box<Feuille>)>,
+    ecrits: Vec<(u128, Box<[u64; 1024]>)>,
     lues: Vec<(u128, Box<[u64; 1024]>)>,
     danger: bool,
 }
@@ -202,7 +208,7 @@ fn rendre(c: &mut Ctx) -> Recolte {
             rendre_a_la_reserve(f.mots);
         }
     }
-    Recolte { pages, lues: o.lus.into_iter().collect(), danger: o.danger }
+    Recolte { pages, ecrits: o.ecrits.into_iter().collect(), lues: o.lus.into_iter().collect(), danger: o.danger }
 }
 
 /// l'adresse du premier mot d'une page, depuis sa clé
@@ -368,6 +374,110 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
     true
 }
 
+/// 0.77 : l'équipe des cœurs, gardée vivante : les fils sont créés une fois ; à chaque passage, le fil t joue la part t
+/// (le fil 0 est celui du programme) ; le même fil reprend la même part d'un passage à l'autre (ses données restent
+/// près de lui). Créer des fils à chaque passage coûtait cher, sous Windows surtout.
+type Tache = dyn Fn(usize) -> Recolte + Sync;
+struct Envoi(*const Tache);
+unsafe impl Send for Envoi {}
+struct Equipe {
+    ordre: std::sync::Mutex<(u64, usize, Envoi)>,
+    cv: std::sync::Condvar,
+    fin: std::sync::Mutex<(usize, Vec<Option<Recolte>>)>,
+    cv_fin: std::sync::Condvar,
+    fils: std::sync::Mutex<usize>,
+}
+static EQUIPE: std::sync::OnceLock<Equipe> = std::sync::OnceLock::new();
+
+fn equipe() -> &'static Equipe {
+    EQUIPE.get_or_init(|| Equipe {
+        ordre: std::sync::Mutex::new((0, 0, Envoi(std::ptr::null::<fn(usize) -> Recolte>() as *const Tache))),
+        cv: std::sync::Condvar::new(),
+        fin: std::sync::Mutex::new((0, Vec::new())),
+        cv_fin: std::sync::Condvar::new(),
+        fils: std::sync::Mutex::new(1),
+    })
+}
+
+fn equipier(i: usize) {
+    let e = equipe();
+    let mut vu = 0u64;
+    loop {
+        let (nt, f) = {
+            let mut o = e.ordre.lock().unwrap();
+            while o.0 == vu {
+                o = e.cv.wait(o).unwrap();
+            }
+            vu = o.0;
+            (o.1, o.2 .0)
+        };
+        if i < nt {
+            let r = unsafe { (*f)(i) };
+            let mut fin = e.fin.lock().unwrap();
+            fin.1[i] = Some(r);
+            fin.0 -= 1;
+            if fin.0 == 0 {
+                e.cv_fin.notify_all();
+            }
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn equipe_jouer<'a>(nt: usize, f: &'a (dyn Fn(usize) -> Recolte + Sync + 'a)) -> Vec<Recolte> {
+    let e = equipe();
+    {
+        let mut n = e.fils.lock().unwrap();
+        while *n < nt {
+            let i = *n;
+            std::thread::spawn(move || equipier(i));
+            *n += 1;
+        }
+    }
+    {
+        let mut fin = e.fin.lock().unwrap();
+        fin.0 = nt - 1;
+        fin.1 = (0..nt).map(|_| None).collect();
+    }
+    if nt > 1 {
+        let mut o = e.ordre.lock().unwrap();
+        o.0 += 1;
+        o.1 = nt;
+        // la tâche ne vit que le temps de ce passage : on attend que tous l'aient jouée avant de rendre la main
+        o.2 = Envoi(unsafe { std::mem::transmute::<&'a (dyn Fn(usize) -> Recolte + Sync + 'a), &'static Tache>(f) } as *const Tache);
+        e.cv.notify_all();
+    }
+    let r0 = f(0);
+    let mut fin = e.fin.lock().unwrap();
+    while fin.0 > 0 {
+        fin = e.cv_fin.wait(fin).unwrap();
+    }
+    fin.1[0] = Some(r0);
+    std::mem::take(&mut fin.1).into_iter().map(|r| r.unwrap()).collect()
+}
+
+/// 0.77 : après une boucle « en bandes » : un cœur a-t-il écrit un mot qu'un autre a lu ou écrit ? (un bit par mot :
+/// les mots écrits de chacun contre les mots lus et écrits de tous les autres). Rend la première page touchée.
+#[allow(dead_code)]
+fn bandes_touchees(recoltes: &[Recolte]) -> Option<u128> {
+    for t in 0..recoltes.len() {
+        for (k, w) in &recoltes[t].ecrits {
+            for (s_, r) in recoltes.iter().enumerate() {
+                if s_ == t {
+                    continue;
+                }
+                let autres = [r.lues.iter().find(|x| x.0 == *k).map(|x| &x.1), r.ecrits.iter().find(|x| x.0 == *k).map(|x| &x.1)];
+                for b in autres.iter().flatten() {
+                    if w.iter().zip(b.iter()).any(|(x, y)| x & y != 0) {
+                        return Some(*k);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 #[allow(dead_code)]
 fn chrono_cylindres(t0: std::time::Instant, t1: std::time::Instant) {
     if std::env::var("VTX_CYLINDRES").is_ok() {
@@ -459,6 +569,10 @@ impl Ctx {
         let (k, j) = Spu128::cle_page(a);
         let h = case(k);
         if k == self.ce[h] {
+            let w = self.wb[h];
+            if !w.is_null() {
+                unsafe { *w.add(j >> 6) |= 1u64 << (j & 63) };
+            }
             let f = self.pb[h];
             if !f.is_null() {
                 let f = unsafe { &mut *f };
@@ -481,6 +595,24 @@ impl Ctx {
                     o.danger = true;
                 }
             } else {
+                // 0.77 : en bandes, une page du cube commun s'écrit directement (le mot écrit est noté)
+                if o.partage && !o.feuilles.contains_key(&k) {
+                    let commun = unsafe { &*o.commun };
+                    if let Some(&(p, false)) = commun.pages.get(&k) {
+                        let bits: *mut u64 = o.ecrits.entry(k).or_insert_with(|| Box::new([0u64; 1024])).as_mut_ptr();
+                        let (_, j) = Spu128::cle_page(a);
+                        let h = case(k);
+                        self.ce[h] = k;
+                        self.pe[h] = p;
+                        self.pb[h] = std::ptr::null_mut();
+                        self.wb[h] = bits;
+                        unsafe {
+                            *bits.add(j >> 6) |= 1u64 << (j & 63);
+                            *p.add(j) = v;
+                        }
+                        return;
+                    }
+                }
                 // 0.74b : une page du cube : sa feuille (créée à la première écriture), ouverte bloc par bloc
                 if !o.feuilles.contains_key(&k) {
                     let commun = unsafe { &*o.commun };
@@ -506,6 +638,7 @@ impl Ctx {
                 self.ce[h] = k;
                 self.pe[h] = unsafe { (*f).mots.as_mut_ptr() };
                 self.pb[h] = f;
+                self.wb[h] = std::ptr::null_mut();
                 unsafe {
                     if !(*f).ouvert(j >> 6) {
                         (*f).ouvrir(j >> 6);
@@ -522,6 +655,7 @@ impl Ctx {
             self.ce[h] = k;
             self.pe[h] = p;
             self.pb[h] = std::ptr::null_mut();
+            self.wb[h] = std::ptr::null_mut();
         }
         if let Err(e) = self.m.ecrire_mem(a, v) {
             arreter(self, &e);
@@ -715,6 +849,7 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     m.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
     let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],
                       pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], rb: [std::ptr::null_mut(); 64],
+                      wb: [std::ptr::null_mut(); 64],
                       vider, ombre: None };
     debuter(&mut c);
     // le brin : le code, les textes écrits et les données du programme sont de l'ADN (comme au début du programme

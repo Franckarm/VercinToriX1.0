@@ -164,7 +164,7 @@ fonction place_lum(c, d, k) {
 // soleil : la direction d'où vient la lumière du soleil (0 à 7), hauteur : sa force (sur 256), t : le temps (le feu)
 fonction pas_rouleau(soleil, force, t, feu) {
     // chaque cellule n'écrit que sa propre lumière : les cellules vont en segments (sur plusieurs cœurs)
-    pour c dans 0..N en segments {
+    pour c dans 0..N en bandes {
         soit m = @2[MAT + c];
         si m == BORD {
             // le bord absorbe ; le ciel y entre : le soleil dans sa direction, s'il va vers l'intérieur
@@ -284,7 +284,7 @@ fonction ton(v) {
 }
 
 fonction voir_rouleau() {
-    pour c dans 0..N en segments {
+    pour c dans 0..N en bandes {
         soit m = @2[MAT + c];
         soit fr = 0;
         soit fg = 0;
