@@ -18,7 +18,7 @@
 //   lugus apprendre PROG.adn [ENTRÉES…]   lance, puis garde les souvenirs dans l'ADN (l'épigénome) : relancé, il les reprend
 //   lugus oublier PROG.adn          retire l'épigénome
 //   lugus eprouver PROG.adn [ENTRÉES…]  l'épreuve : lancé avec ses vérifications ; passée, elle est notée dans l'ADN
-//   lugus PROG.adn --rapide         après l'épreuve : recompilé sans les vérifications de t[i] (l'épissage rapide)
+//   lugus PROG.adn --rapide         (0.70 : les vérifications de t[i] sont faites par la machine : rien à retirer)
 //   lugus pourquoi PROG.adn …       la même chose, depuis le texte gardé dans l'ADN (s'il redonne ses mots)
 //   lugus pourquoi PROG.vtx [LIAISON | RÉACTION.LIAISON] [ENTRÉES…]   la provenance : d'où vient chaque valeur
 //   lugus cataloguer DOSSIER        le catalogue des modules du dossier (catalogue.vtxcat : nom, empreinte, molécules et
@@ -665,8 +665,8 @@ fn lugus() {
             dire!("écriture de {} impossible : {}", args[2], e);
             sortir(1);
         }
-        dire!("l'épreuve est passée : aucun t[i] n'est sorti de son tableau (avec ces entrées-là) ; notée dans {} : \
-               « lugus {} --rapide » le lance sans ses vérifications", args[2], args[2]);
+        dire!("l'épreuve est passée : aucun t[i] n'est sorti de son tableau (avec ces entrées-là) ; notée dans {}",
+              args[2]);
     } else if args.len() >= 3 && (args[1] == "apprendre" || args[1] == "oublier") {
         // apprendre : lancer, puis garder les souvenirs dans l'ADN (l'épigénome) ; oublier : les retirer
         // l'ADN est d'abord vérifié (et réparé, réécrit) ; l'épigénome d'avant est repris pour apprendre encore
@@ -729,34 +729,14 @@ fn lugus() {
         match adn::transcrire(&args[1], false) {
             Ok((mots, _, t)) => {
                 let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
-                // 0.69c : l'épissage rapide : après l'épreuve (« lugus eprouver »), le texte recompilé sans les
-                // vérifications de t[i] ; sans elle, le programme garde ses vérifications, et Lugus dit pourquoi
+                // 0.70 : les vérifications de t[i] sont faites par la machine (LDT, STT) en une instruction, plus vite
+                // que l'ancienne lecture sans vérification : l'épissage rapide n'a plus rien à retirer
                 if args[2..].iter().any(|a| a == "--rapide") {
+                    dire!("--rapide : les vérifications de t[i] sont faites par la machine elle-même (LDT, STT), en une \
+                           instruction, plus vite que sans elles : il n'y a plus rien à retirer");
                     let entrees: Vec<String> = args[2..].iter().filter(|a| *a != "--rapide").cloned().collect();
-                    let signe = adn::signature(&mots).to_string();
-                    let eprouve = t.intron("epreuve").map_or(false, |l| l.first() == Some(&signe));
-                    match (eprouve, t.intron("source")) {
-                        (true, Some(src)) => {
-                            // sur la première ligne : les numéros de ligne ne bougent pas
-                            let texte = format!("constante __SANS_BORNES = 1; {}", src.join("\n"));
-                            let rapides = match compiler128(&nombres128(VTXC128), &texte, &dossier_de128(&args[1]), COMPLET128, false) {
-                                Ok((m, _, _)) => m,
-                                Err(e) => {
-                                    eprint!("{}", e);
-                                    sortir(1);
-                                }
-                            };
-                            dire!("l'épissage rapide : l'épreuve est passée, les vérifications de t[i] sont retirées \
-                                   ({} mots au lieu de {})", rapides.len(), mots.len());
-                            jouer_avec(&rapides, &entrees, dossier, None, None);
-                        }
-                        _ => {
-                            dire!("l'épissage rapide attend l'épreuve (« lugus eprouver {} [ENTRÉES…] ») : le programme \
-                                   garde ses vérifications", args[1]);
-                            let mols = adn::lire_adn(&args[1]).map(|x| x.1).unwrap_or_default();
-                            jouer_avec(&mots, &entrees, dossier, Some(&t), Some((mols, t.clone())));
-                        }
-                    }
+                    let mols = adn::lire_adn(&args[1]).map(|x| x.1).unwrap_or_default();
+                    jouer_avec(&mots, &entrees, dossier, Some(&t), Some((mols, t.clone())));
                     return;
                 }
                 let mols = adn::lire_adn(&args[1]).map(|x| x.1).unwrap_or_default();

@@ -918,13 +918,7 @@ impl Spu128 {
                 self.borne_indice = arg;
                 Ok(0)
             }
-            33 => {
-                let i = self.borne_indice as u64;
-                let indice = if i >= 1 << 63 { format!("{}", i as i64) } else { i.to_string() };
-                Err(format!("ligne {} : t[{}] est hors du tableau (sa longueur : {}, les indices vont de 0 à {}) ; \
-                             la machine s'arrête plutôt que de lire ou d'écrire à côté", arg & 0xFF_FFFF, indice, arg >> 24,
-                            if arg >> 24 == 0 { "rien : il est vide".to_string() } else { ((arg >> 24) - 1).to_string() }))
-            }
+            33 => Err(hors_du_tableau((arg & 0xFF_FFFF) as u64, self.borne_indice as u64 as i64 as i128, arg >> 24)),
             31 => {
                 // 0.64 : une face d'une molécule du programme (arg = k << 32 | sa place, k de 0 à 5), ou son centre (k = 6)
                 let k = (arg >> 32) as u64;
@@ -1459,6 +1453,25 @@ impl Spu128 {
                 self.poser(d, v, false, 128);
             }
             0x2A => self.ecrire_mem(dv.wrapping_add(tv), sv)?,
+            // 0.70 : LDT / STT, la case T d'un tableau, vérifiée (la poignée : S pour LDT, D pour STT ; imm : la ligne).
+            // À la largeur L : la longueur M[étage3(P)], l'adresse des données M[étage3(P + 2)], la case
+            // M[étage3(données + T)] ; T hors de 0..longueur (sans signe) : la machine s'arrête et dit la ligne.
+            0x2C | 0x2D => {
+                let etage3 = |x: u128| (x & m & !(3u128 << (l - 2))) | (3u128 << (l - 2));
+                let poignee = if op == 0x2C { sv } else { dv };
+                let n = self.lire(etage3(poignee));
+                if tm >= n {
+                    return Err(hors_du_tableau(imm as u64, signe(tm, l), n));
+                }
+                let donnees = self.lire(etage3(poignee.wrapping_add(2)));
+                let case = etage3(donnees.wrapping_add(tm));
+                if op == 0x2C {
+                    let v = self.lire(case);
+                    self.poser(d, v, false, 128);
+                } else {
+                    self.ecrire_mem(case, sv)?;
+                }
+            }
             0x25 => {
                 let v = self.lire(self.r[13].wrapping_add(si) & M120);
                 self.poser(d, v, false, 128);
@@ -1691,4 +1704,11 @@ fn mulhs128(a: i128, b: i128) -> u128 {
 #[allow(dead_code)]
 pub fn q128() -> crate::qflot128::Fmt {
     Q128
+}
+
+/// 0.70 : le message d'un t[i] hors de son tableau (LDT, STT, et le service 33 de __borne)
+pub fn hors_du_tableau(ligne: u64, indice: i128, n: u128) -> String {
+    format!("ligne {} : t[{}] est hors du tableau (sa longueur : {}, les indices vont de 0 à {}) ; la machine s'arrête \
+             plutôt que de lire ou d'écrire à côté", ligne, indice, n,
+            if n == 0 { "rien : il est vide".to_string() } else { (n - 1).to_string() })
 }

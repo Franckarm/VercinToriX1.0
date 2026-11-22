@@ -3149,7 +3149,7 @@ class Analyseur:
                 # poignée se relit sans rien changer (une variable, ou la case d'un tableau : t[i][j]) ; pas dans le
                 # prélude (son code est sûr, et le vérifier ralentirait tout)
                 # 0.69c : « constante __SANS_BORNES = 1; » (l'épissage rapide, après l'épreuve) les retire toutes
-                if not self.en_prelude and "__SANS_BORNES" not in self.consts and (e[0] == "var" or (
+                if not self.en_prelude and (LDT_STT or "__SANS_BORNES" not in self.consts) and (e[0] == "var" or (
                         e[0] == "champ_ref" and isinstance(e[1], tuple) and e[1][0] == "var") or (e[0] == "lire" and len(e) == 3 and e[1] == 3
                                                               and e[2][0] == "bin" and e[2][1] == "+"
                                                               and e[2][2][0] == "lire")):
@@ -10492,6 +10492,12 @@ class Generateur:
         return "R1", 0
 
     def lire_mem(self, et, adr):
+        b = case_bornee(et, adr)
+        if b:
+            # 0.70 : t[i] vérifié en une instruction : LDT (la poignée, l'indice ; la ligne dans l'immédiat)
+            ra, rb = self.deux_ops(b[0], b[1])
+            self.emettre(f"LDT.64 R1,{ra},{rb},#{b[2]}")
+            return
         r, dec = self.adresse(et, adr)
         self.emettre(f"LD R1,{r},#{dec}")
 
@@ -10508,6 +10514,18 @@ class Generateur:
                 return
             self.charger("R2", v)
             self.emettre("ST R2,R1,#0")
+            return
+        b = case_bornee(et, adr)
+        if b:
+            # 0.70 : t[i] = v vérifié en une instruction : STT (la poignée, la valeur, l'indice ; la ligne)
+            self.deux(b[0], b[1])
+            self.emettre("PUSH R1")
+            self.emettre("PUSH R2")
+            self.expr(val)
+            self.emettre("MOV R3,R1")
+            self.emettre("POP R2")
+            self.emettre("POP R1")
+            self.emettre(f"STT.64 R1,R3,R2,#{b[2]}")
             return
         r, dec = self.adresse(et, adr)
         self.emettre("PUSH R1")
@@ -12057,10 +12075,26 @@ def vers_lugus(fs):
             f.corps = rw(f.corps)
 
 
+def case_bornee(et, adr):
+    """0.70 : @3[@3[h + 2] + __borne(i, h, ligne)] (un t[i] vérifié) : (h, i, ligne), sinon None"""
+    if not (et == 3 and isinstance(et, int) and isinstance(adr, tuple) and adr[0] == "bin" and adr[1] == "+"):
+        return None
+    d, x = adr[2], adr[3]
+    if not (isinstance(d, tuple) and d[0] == "lire" and d[1] == 3 and isinstance(d[1], int) and d[2][0] == "bin"
+            and d[2][1] == "+" and d[2][3][0] == "nombre" and d[2][3][1] == 2):
+        return None
+    if not (isinstance(x, tuple) and x[0] == "appel" and x[1] == "__borne" and len(x[2]) == 3 and x[2][2][0] == "nombre"):
+        return None
+    return d[2][2], x[2][0], x[2][2][1]
+
+
 OPS_NOMBRE = {"-", "*", "/", "%", "<<", ">>", "&", "|", "^"}
 # 0.69c : les fonctions du prélude qui raccourcissent un tableau qu'on leur passe (vtxc128 a la même liste)
 RACCOURCISSENT = {"retirer", "enlever", "vider", "liberer", "tronquer_tableau", "compter_si", "__bn_divpetit",
                   "__bn_droite", "__bn_sub"}
+
+
+LDT_STT = True   # 0.70 : la machine vérifie t[i] elle-même (LDT, STT)
 
 
 def epissage_sur(i, fin, corps):
@@ -12068,6 +12102,10 @@ def epissage_sur(i, fin, corps):
     ne peut rendre i trop grand : ni i ni t réaffectés, aucune fonction qui raccourcit un tableau, aucun appel (sauf
     longueur) qui reçoit une variable nue autre que i ou un champ (ce pourrait être t), aucun appel par valeur, aucune
     écriture directe à l'étage 3 hors d'une case de tableau. Rend le corps, les __borne(i, t, …) retirés."""
+    # 0.70 : sur Lugus, LDT et STT vérifient t[i] en une instruction, plus vite que la lecture sans vérification : il
+    # n'y a plus rien à retirer (Dunon fera de même quand il aura les siennes)
+    if LDT_STT:
+        return corps
     if not (isinstance(fin, tuple) and fin[0] == "appel" and fin[1] == "longueur" and len(fin[2]) == 1
             and fin[2][0][0] == "var"):
         return corps

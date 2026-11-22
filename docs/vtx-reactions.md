@@ -3440,3 +3440,36 @@ case pour la fin ou le résultat, puis fermer les deux brèches trouvées par l'
   prélude, `nombre_pour_texte`, l'épissage).
 - **Les champs** : `s.champ[i]` (le champ d'une variable) est vérifié aussi, sur les deux machines.
 - **Pas encore** : une poignée calculée (`f()[i]`) ; le message nomme `t`, pas le vrai nom du tableau.
+
+## 76. LDT et STT : la machine vérifie t[i] elle-même ; Ogmios, les vagues et les pages (22 novembre, 0.70)
+
+**Décidé avec le créateur le 22** : une instruction vérifiée dans le SPU (« le 2 »), sur Lugus et sur Dunon ; puis deux
+points d'Ogmios : la place d'une case dans les vagues décide de sa ligne, et des pages qu'on crée facilement, le néon
+qui renvoie à la page suivante.
+
+- **LDT et STT** (codes 2C et 2D, libres sur les deux machines, à côté de LDX, STX et LDIH) : `LDT d, s, t, #ligne`
+  lit la case T du tableau de poignée S ; `STT d, s, t, #ligne` écrit S dans la case T du tableau de poignée D. À la
+  largeur L de l'instruction : la longueur `M[étage3(P)]`, l'adresse des données `M[étage3(P + 2)]`, la case
+  `M[étage3(données + T)]` (étage3 : les bits L-1 et L-2 à 3, comme ETG #3). T hors de 0..longueur (sans signe) : la
+  machine s'arrête et dit la ligne (l'immédiat), l'indice et la longueur, le même message que le service 33. Partout :
+  spu128.rs, spu128.py, spu64.rs, spu64.py ; vtx128.py, vtxc128, vtx64.py, vtxc64 (`case_bornee` : la case dont
+  l'indice passe par `__borne` devient un LDT ou un STT, l'arbre et le juge ne changent pas) ; la traduction native
+  (natif128 : trois lectures, l'indice comparé ; hors du tableau, Lugus rejoue l'instruction et dit l'erreur) ;
+  Gobannos (le piège dit la ligne) ; le juge du lecteur (LDT lit, STT écrit), sa référence, les frontières et la
+  vibration des molécules.
+- **Mesuré** : la boucle de l'épreuve (cent tours d'un tableau de 1000 cases) prend 716 314 instructions, toutes
+  vérifiées ; 1 115 214 sans aucune vérification (l'ancienne lecture, six instructions) ; 3 640 214 avec `__borne`.
+  Le duel : 39,8 millions (45,2 sans vérification, 69,6 avec `__borne`). **La sûreté est plus rapide que son
+  absence** : une instruction fait le travail de six.
+- **L'épissage d'hier (§75 ter) n'a plus rien à retirer** : retirer la vérification ramènerait la lecture en six
+  instructions. L'épissage sûr, `__SANS_BORNES` et l'épissage rapide sont éteints (`LDT_STT` dans les quatre
+  compilateurs) ; `lugus PROG.adn --rapide` le dit et lance le programme ; `lugus eprouver` note toujours l'épreuve
+  (pour d'autres introns à venir).
+- **Ogmios, les vagues** : poser une case dans la colonne d'une vague écrit sa ligne à la place de cette vague (avant
+  la première case d'une vague plus tardive) ; glisser une case vers une autre colonne y déplace sa ligne. Les
+  liaisons décident toujours de la vague (une case réagit dès que ses entrées sont là) : la paillasse le dit quand
+  la case ne peut pas suivre (« elle attend une liaison de la vague N »). L'ordre compte vraiment pour les ponts.
+- **Ogmios, les pages** : « Nouvelle page » au clic droit (geste `page`) crée `reaction page_N(entree) -> fin` et la
+  montre. La case **suite** (Ne) : la fin qui renvoie à la page suivante (créée s'il n'y en a pas) : `= page_2(_) ->
+  r`, ou `= sortie(page_2(_))` ; toute case qui appelle une autre page porte le néon et le nom de la page (« vers
+  page_2 ») ; un double clic sur elle ouvre la page.

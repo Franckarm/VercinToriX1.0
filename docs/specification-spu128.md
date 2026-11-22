@@ -141,6 +141,12 @@ opérations communes ; les familles nouvelles commencent à 80 (hex).
 
 ### 4.3 Mémoire, pile, sauts, entrées et sorties, brin
 
+**LDT / STT (2C / 2D, 0.70)** : `LDT d, s, t, #ligne` : la case T du tableau de poignée S ; `STT d, s, t, #ligne` :
+S dans la case T du tableau de poignée D. À la largeur L : longueur = `M[e3(P)]`, données = `M[e3(P + 2)]`, case =
+`M[e3(données + T)]`, où `e3(x)` place x à l'étage 3 (les bits L−1 et L−2 à 1, comme ETG #3). Si `T ≥ longueur`
+(sans signe), la machine s'arrête : « ligne L : t[T] est hors du tableau (sa longueur : n …) ». LDT pose Z comme LD.
+Le SPU-64 a les mêmes (L = 64).
+
 Comme au SPU-64 : LD / ST (20 / 21), LDX / STX (29 / 2A), LDF / STF (25 / 26), PUSH / POP (27 / 28), JMP, JZ, JNZ, JC,
 JNC (30, 31, 32, 35, 36), CALL / RET (33 / 34 ; CALL empile `PC + 1`, en demi-mots), IN / OUT (23 / 24), ENTC, SORC,
 SYS (51, 52, 53), MARQUE / BRIN (5E / 5F), HALT (3F). Les adresses calculées sont prises modulo 2^128 ; LDF, STF,

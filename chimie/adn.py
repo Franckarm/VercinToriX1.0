@@ -262,7 +262,7 @@ def lire(mots, molecules, t):
 
 # les codes d'opération de Lugus (spu128.py) : CALL, LDI et LDIH (suivis d'une constante), ceux qui écrivent ou sortent
 OP_CALL, OP_LDI, OP_LDIH = 0x33, 0x0A, 0x2B
-OPS_FRONTIERE = {0x21, 0x24, 0x2A, 0x39, 0x52, 0x53, 0x55, 0x5E, 0x5F}   # ST OUT STX GEMV SORC SYS STQ MARQUE BRIN
+OPS_FRONTIERE = {0x21, 0x24, 0x2A, 0x2D, 0x39, 0x52, 0x53, 0x55, 0x5E, 0x5F}   # ST OUT STX STT GEMV SORC SYS STQ MARQUE BRIN
 
 
 def demis(mots):
@@ -598,8 +598,8 @@ def promesses(mots, molecules, noms, lignes):
 #   lourd|empreinte|histoire|en-tête
 # Tirée des mots, du texte et des noms donnés par le compilateur ; le lecteur en vtx (chimie/adn.vtx) l'écrit de même,
 # octet pour octet.
-OPS_LIT = {0x20, 0x29, 0x54, 0x38, 0x5F}          # LD LDX LDQ GDOT BRIN
-OPS_ECRIT = {0x21, 0x2A, 0x55, 0x39, 0x5E}        # ST STX STQ GEMV MARQUE
+OPS_LIT = {0x20, 0x29, 0x2C, 0x54, 0x38, 0x5F}    # LD LDX LDT LDQ GDOT BRIN
+OPS_ECRIT = {0x21, 0x2A, 0x2D, 0x55, 0x39, 0x5E}  # ST STX STT STQ GEMV MARQUE
 OPS_MONDE = {0x24, 0x52, 0x23, 0x51}              # OUT SORC IN ENTC
 SERVICES = {10: 2, 13: 2, 25: 1, 26: 2, 32: 1, 33: 1}         # les autres services touchent le monde (fichiers, cubes, voix…)
 DEBUTS = ("fonction ", "reaction ", "structure ", "constante ", "exemple ", "importer ")
@@ -832,7 +832,7 @@ CHEMINS_VIB = 6
 
 def forme_registres(op):
     """les registres d'une instruction : 1 écrit d, 2 lit d, 4 lit s, 8 lit t (d'après sa forme, spu128/spu128.py)"""
-    if op in (0x2A, 0x55):                      # STX, STQ
+    if op in (0x2A, 0x2D, 0x55):                # STX, STT, STQ
         return 2 | 4 | 8
     if op == 0x20:                              # LD
         return 1 | 4

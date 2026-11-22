@@ -105,6 +105,23 @@ familles = [l.split()[0] for l in sortie_forge.split("\n") if " — " in l and l
 verifier(f"la palette expliquée : {len(familles)} familles ({' '.join(familles)})", len(familles) >= 15, sortie_forge[-600:])
 for l in texte.strip().split("\n"):
     dire(l)
+# 0.70 : la place d'une case dans les vagues décide de sa ligne ; une page neuve, et la suite qui y renvoie
+VAGUES = ("reaction calcul(a, b) -> r {\n    = a + b -> s\n    = s * 2 -> d\n    = a * 3 -> t\n    = d + t -> r\n}\n"
+          "fonction principal() { afficher(calcul(2, 5)); }\n")
+f_v = ecrire("vagues.vtx", VAGUES)
+g_v = ecrire("vagues.gestes", "bas 310 78\nbouge 470 260\nhaut 470 260\n")
+r = subprocess.run([VTX, "paillasse", f_v, "--gestes", g_v], capture_output=True, text=True, encoding="utf-8",
+                   errors="replace", cwd=d)
+tv = r.stdout.replace("\r\n", "\n").split("--- le texte\n")[-1]
+verifier("une case glissée de la vague 2 à la vague 3 : sa ligne passe à la place de la vague 3 dans le texte",
+         tv.find("= s * 2 -> d") > tv.find("= d + t -> r") > 0, tv[-300:])
+f_p = ecrire("pages.vtx", "reaction principal() {\n    = [3, 4, 5] -> t\n    = somme pour chaque v dans t : v -> s\n}\n")
+g_p = ecrire("pages.gestes", "droit 600 300\ncase suite\necrire = sortie(page_2(s))\n")
+subprocess.run([VTX, "paillasse", f_p, "--gestes", g_p, "--ecrire"], capture_output=True, cwd=d)
+c, s, e = lugus(f_p)
+tp = open(f_p, encoding="utf-8").read()
+verifier("la case « suite » (Ne) crée la page 2 et y renvoie sa valeur : le programme à deux pages rend 12",
+         "reaction page_2(entree) -> fin" in tp and s.strip() == "12", tp + s + e)
 # la réaction complétée à la main (les « _ » deviennent des liaisons) : elle compile et réagit
 src_complete = ("reaction principal() {\n"
                 "    = [4, 8, 15, 16, 23, 42] -> t\n"
@@ -298,23 +315,18 @@ BOUCLE = ("fonction principal() {{\n    soit t = tableau(1000);\n    pour i dans
           "    soit s = 0;\n    pour k dans 0..100 {{\n        pour i dans 0..{b} {{ s = s + t[i]; }}\n    }}\n"
           "    afficher(s);\n}}\n")
 _, s1, n_verif, _ = instructions(ecrire("boucle1.vtx", BOUCLE.format(b="1000")))
-_, s2, n_sur, _ = instructions(ecrire("boucle2.vtx", BOUCLE.format(b="longueur(t)")))
-verifier(f"l'épissage sûr : la même boucle écrite sur 0..longueur(t) n'a plus besoin de vérifier t[i] : {n_sur} instructions "
-         f"au lieu de {n_verif}", s1 == s2 == "600000" and n_sur * 2 < n_verif, f"{s1} {s2} {n_sur} {n_verif}")
+# 0.70 : la machine vérifie t[i] elle-même (LDT, STT) ; l'ancienne lecture sans vérification prenait 1 115 214
+# instructions pour cette boucle (0.69c, __SANS_BORNES), et 3 640 214 avec __borne
+verifier(f"t[i] vérifié par la machine (LDT, STT : une instruction) : {n_verif} instructions pour cent tours d'un tableau "
+         f"de 1000 cases ; sans aucune vérification, l'ancienne lecture en prenait 1115214", s1 == "600000"
+         and n_verif < 1115214, f"{s1} {n_verif}")
+d64b = subprocess.run([os.path.join(BIN, "vtx64" + X), os.path.join(d, "boucle1.vtx")], capture_output=True, text=True,
+                      encoding="utf-8", errors="replace", cwd=d)
+verifier("Dunon a les mêmes instructions (LDT, STT) et rend la même somme", d64b.stdout.strip() == "600000",
+         (d64b.stdout + d64b.stderr)[-200:])
 lugus("ranger", os.path.join(d, "boucle1.vtx"), "boucle1.adn")
-c, s3, n_avant, e = instructions("boucle1.adn", "--rapide")
-verifier("l'épissage rapide sans épreuve : refusé avec sa raison, le programme garde ses vérifications",
-         s3 == "600000" and n_avant == n_verif and "attend l'épreuve" in e, e[-300:])
-c, s4, e4 = lugus("eprouver", "boucle1.adn")
-c, s5, n_rapide, e = instructions("boucle1.adn", "--rapide")
-verifier(f"après « lugus eprouver » (passée, notée dans l'ADN) : l'épissage rapide retire les vérifications : {n_rapide} "
-         f"instructions au lieu de {n_verif}", "épreuve est passée" in e4 and s5 == "600000" and n_rapide * 2 < n_verif,
-         e4[-200:] + e[-200:])
-lugus("ranger", os.path.join(d, "hors.vtx"), "hors.adn")
-c, s6, e6 = lugus("eprouver", "hors.adn")
-c, s7, e7 = lugus("hors.adn", "--rapide")
-verifier("un programme qui sort de son tableau ne passe pas l'épreuve : l'épissage rapide lui reste refusé",
-         "hors du tableau" in e6 and "attend l'épreuve" in e7 and "hors du tableau" in e7, e6[-200:] + e7[-200:])
+c, s5, e = lugus("boucle1.adn", "--rapide")
+verifier("--rapide n'a plus rien à retirer, et le dit", s5.strip() == "600000" and "rien à retirer" in e, e[-300:])
 
 ok, m, py = refus("texte.vtx", "fonction principal() {\n    soit n = 3;\n    n = n + 1;\n    soit m: texte = n;\n"
                                "    afficher(m);\n}\n", "est un texte")

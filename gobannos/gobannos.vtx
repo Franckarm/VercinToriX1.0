@@ -638,6 +638,15 @@ fonction message(t: texte) {
 }
 
 // arrêter l'exécutable : « Gobannos : MESSAGE (demi-instruction P) »
+// 0.70 : RAX placé à l'étage 3 (les bits 63-62), RDX à zéro : une adresse courte de l'étage des tableaux
+fonction etage3_rax() {
+    mov_ri(RCX, 0x3FFFFFFFFFFFFFFF);
+    op_rr(0x21, RAX, RCX);
+    mov_ri(RCX, 0xC000000000000000);
+    op_rr(0x09, RAX, RCX);
+    op_rr(0x31, RDX, RDX);
+}
+
 fonction piege(t: texte, p) {
     soit k = message(t);
     lea_rip(RSI, 4, k);
@@ -1142,6 +1151,46 @@ fonction traduire_un(p) {
             mov_rr(R11, RDX);
             mov_rm(RAX, RBX, E_SCR + 24);
             mov_rm(RDX, RBX, E_SCR + 32);
+            mov_ri(RCX, p);
+            call_r(R_ECRIRE);
+        }
+        retour suivant;
+    }
+    // --- 0.70 : LDT / STT (largeur 64) : la longueur, l'adresse des données, la case, chacune à l'étage 3 (les bits
+    // 63-62) ; l'indice hors de 0..longueur : le piège dit la ligne (Lugus dit aussi l'indice et la longueur)
+    si (op == 0x2C || op == 0x2D) && wl == 1 {
+        soit pg = d;
+        si op == 0x2C {
+            pg = s;
+        }
+        charger(pg, RAX, 255);
+        etage3_rax();
+        mov_ri(RCX, p);
+        call_r(R_LIRE);
+        test_rr(RDX, RDX);
+        soit j1 = jcc8(5);
+        charger(t, RCX, 255);
+        op_rr(0x39, RCX, RAX);
+        soit j2 = jcc8(2);
+        piege("ligne " + texte(imm) + " : un indice est hors du tableau ; la machine s'arrête plutôt que de lire ou "
+              + "d'écrire à côté", p);
+        ici8(j1);
+        ici8(j2);
+        charger(pg, RAX, 255);
+        op_ri(0, RAX, 2);
+        etage3_rax();
+        mov_ri(RCX, p);
+        call_r(R_LIRE);
+        charger(t, RCX, 255);
+        op_rr(0x01, RAX, RCX);
+        etage3_rax();
+        si op == 0x2C {
+            mov_ri(RCX, p);
+            call_r(R_LIRE);
+            poser_z(RAX, RDX);
+            ranger(d, RAX, RDX);
+        } sinon {
+            charger(s, R10, R11);
             mov_ri(RCX, p);
             call_r(R_ECRIRE);
         }

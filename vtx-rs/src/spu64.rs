@@ -403,13 +403,7 @@ impl Spu64 {
                 self.borne_indice = arg;
                 Ok(0)
             }
-            33 => {
-                let i = self.borne_indice;
-                let indice = if i >= 1 << 63 { format!("{}", i as i64) } else { i.to_string() };
-                Err(format!("ligne {} : t[{}] est hors du tableau (sa longueur : {}, les indices vont de 0 à {}) ; \
-                             la machine s'arrête plutôt que de lire ou d'écrire à côté", arg & 0xFF_FFFF, indice, arg >> 24,
-                            if arg >> 24 == 0 { "rien : il est vide".to_string() } else { ((arg >> 24) - 1).to_string() }))
-            }
+            33 => Err(hors_du_tableau(arg & 0xFF_FFFF, self.borne_indice as i64, arg >> 24)),
             30 => {
                 // 0.63 : le cube mère (un nom, comme un fichier ; il n'a pas de fréquence) : ensuite ranger_cube écrit
                 // TETE-NOM-ÉTAGE-FRÉQUENCE.cub et met à jour TETE-NOM.cub (le squelette), et les pages se relisent sous
@@ -785,6 +779,23 @@ fn accorder_cube64(&mut self, chemin: &std::path::Path, e: usize, f: u64, mere: 
                 self.poser(d, v);
             }
             0x2A => self.ecrire_mem(dv.wrapping_add(tv), sv)?,
+            // 0.70 : LDT / STT, la case T d'un tableau, vérifiée (la poignée : S pour LDT, D pour STT ; imm : la ligne)
+            0x2C | 0x2D => {
+                let etage3 = |x: u64| (x & !(3u64 << 62)) | (3u64 << 62);
+                let poignee = if op == 0x2C { sv } else { dv };
+                let n = self.lire(etage3(poignee));
+                if tv >= n {
+                    return Err(hors_du_tableau(imm as u64, tv as i64, n));
+                }
+                let donnees = self.lire(etage3(poignee.wrapping_add(2)));
+                let case = etage3(donnees.wrapping_add(tv));
+                if op == 0x2C {
+                    let v = self.lire(case);
+                    self.poser(d, v);
+                } else {
+                    self.ecrire_mem(case, sv)?;
+                }
+            }
             0x25 => {
                 let v = self.lire(self.r[13].wrapping_add(si) & M48);
                 self.poser(d, v);
@@ -920,4 +931,11 @@ fn accorder_cube64(&mut self, chemin: &std::path::Path, e: usize, f: u64, mere: 
         }
         s
     }
+}
+
+/// 0.70 : le message d'un t[i] hors de son tableau (LDT, STT, et le service 33 de __borne)
+pub fn hors_du_tableau(ligne: u64, indice: i64, n: u64) -> String {
+    format!("ligne {} : t[{}] est hors du tableau (sa longueur : {}, les indices vont de 0 à {}) ; la machine s'arrête \
+             plutôt que de lire ou d'écrire à côté", ligne, indice, n,
+            if n == 0 { "rien : il est vide".to_string() } else { (n - 1).to_string() })
 }

@@ -31,7 +31,7 @@ OPS = {
     "ZEXT32": (0x1C, "rr"), "SEXT32": (0x1D, "rr"), "MULHS": (0x1E, "rrr"), "ETG": (0x1F, "rri"), "ETGX": (0x22, "rrr"),
     "LD": (0x20, "mem"), "ST": (0x21, "mem"), "IN": (0x23, "in"), "OUT": (0x24, "out"),
     "LDF": (0x25, "off"), "STF": (0x26, "off"), "PUSH": (0x27, "out"), "POP": (0x28, "in"),
-    "LDX": (0x29, "rrr"), "STX": (0x2A, "rrr"),
+    "LDX": (0x29, "rrr"), "STX": (0x2A, "rrr"), "LDT": (0x2C, "rrri"), "STT": (0x2D, "rrri"),
     "JMP": (0x30, "jump"), "JZ": (0x31, "jump"), "JNZ": (0x32, "jump"), "CALL": (0x33, "jump"),
     "RET": (0x34, "none"), "JC": (0x35, "jump"), "JNC": (0x36, "jump"),
     "GDOT": (0x38, "rrr"), "GEMV": (0x39, "none"), "HALT": (0x3F, "none"),
@@ -58,6 +58,12 @@ NOMS = {code: nom for nom, (code, _) in OPS.items()}
 # le bit k de BB vaut 1 ; une erreur par colonne s'y retrouve (o0) et s'y situe (les ok). À la lecture : vrai (2) tout
 # s'accorde, faux (1) réparé, variable (3) contradiction que rien ne tranche, inconnu (0) rien.
 _MOTS = 65536
+
+
+def hors_du_tableau(ligne, indice, n):
+    """0.70 : le message d'un t[i] hors de son tableau (LDT, STT, et le service 33 de __borne)"""
+    return (f"ligne {ligne} : t[{indice}] est hors du tableau (sa longueur : {n}, les indices vont de 0 à "
+            f"{n - 1 if n else 'rien : il est vide'}) ; la machine s'arrête plutôt que de lire ou d'écrire à côté")
 
 
 def _prefixe(chemin, avant):
@@ -442,6 +448,8 @@ def assembler(texte):
             mots.append(instr(code))
         elif forme == "rrr":
             mots.append(instr(code, reg(args[0]), reg(args[1]), reg(args[2])))
+        elif forme == "rrri":
+            mots.append(instr(code, reg(args[0]), reg(args[1]), reg(args[2]), imm32(val(args[3]), False)))
         elif forme == "rri" or forme == "mem":
             mots.append(instr(code, reg(args[0]), reg(args[1]), 0, imm32(val(args[2]) if len(args) > 2 else 0, True)))
         elif forme == "rr":
@@ -626,11 +634,7 @@ class CPU:
             return 0
         if code == 33:
             i = getattr(self, "borne_indice", 0) & ((1 << 64) - 1)
-            indice = i - (1 << 64) if i >= 1 << 63 else i
-            n = arg >> 24
-            raise Erreur(f"ligne {arg & 0xFFFFFF} : t[{indice}] est hors du tableau (sa longueur : {n}, les indices vont "
-                         f"de 0 à {n - 1 if n else 'rien : il est vide'}) ; la machine s'arrête plutôt que de lire ou "
-                         f"d'écrire à côté")
+            raise Erreur(hors_du_tableau(arg & 0xFFFFFF, i - (1 << 64) if i >= 1 << 63 else i, arg >> 24))
         if code == 31:
             # 0.64 : les faces du programme lancé depuis son cube (Lugus en Rust) ; cette machine n'est pas lancée depuis
             # un cube : rien (inconnu)
@@ -949,6 +953,19 @@ class CPU:
             self.poser(d, self.lire(S + T))
         elif op == 0x2A:
             self.ecrire_mem(D + T, S)
+        elif op in (0x2C, 0x2D):
+            # 0.70 : LDT / STT, la case T d'un tableau, vérifiée (la poignée : S pour LDT, D pour STT ; imm : la ligne)
+            def etage3(x):
+                return (x & ~(3 << 62) & ((1 << 64) - 1)) | (3 << 62)
+            poignee = S if op == 0x2C else D
+            n = self.lire(etage3(poignee))
+            if T >= n:
+                raise Erreur(hors_du_tableau(imm, T - (1 << 64) if T >= 1 << 63 else T, n))
+            case = etage3(self.lire(etage3(poignee + 2)) + T)
+            if op == 0x2C:
+                self.poser(d, self.lire(case))
+            else:
+                self.ecrire_mem(case, S)
         elif op == 0x25:
             self.poser(d, self.lire((self.r[13] + si) & M48))
         elif op == 0x26:

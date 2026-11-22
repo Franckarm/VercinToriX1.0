@@ -669,6 +669,64 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                     }
                 }
             }
+            // 0.70 : LDT / STT (largeur 64), la case T d'un tableau, vérifiée : trois lectures (la longueur, l'adresse
+            // des données, la case), chacune à l'étage 3 (les bits 63-62) ; l'indice hors de 0..longueur : on sort, et
+            // Lugus rejoue l'instruction p pour dire l'erreur (avec sa ligne)
+            (1, 0x2C | 0x2D) => {
+                let poignee = if op == 0x2C { s } else { d };
+                let etage3 = |a: &mut Asm| {
+                    a.imm64(RCX, !(3u64 << 62));
+                    a.b(&[0x48, 0x21, 0xCE]); // and rsi, rcx
+                    a.imm64(RCX, 3u64 << 62);
+                    a.b(&[0x48, 0x09, 0xCE]); // or rsi, rcx
+                    a.b(&[0x31, 0xD2]); // xor edx, edx
+                };
+                // la longueur (dans r8:r9)
+                a.charger(RSI, reg(poignee));
+                etage3(&mut a);
+                a.lire_rapide(ocache, lire, otampon);
+                a.b(&[0x4D, 0x85, 0xC9]); // test r9, r9 : une longueur de plus de 64 bits garde tout indice
+                a.b(&[0x0F, 0x85]); // jnz dedans
+                let j1 = a.o.len();
+                a.d32(0);
+                a.charger(RAX, reg(t));
+                a.b(&[0x4C, 0x39, 0xC0]); // cmp rax, r8
+                a.b(&[0x0F, 0x82]); // jb dedans
+                let j2 = a.o.len();
+                a.d32(0);
+                a.b(&[0xB8]); // mov eax, p : hors du tableau, Lugus rejoue l'instruction et dit l'erreur
+                a.d32(p as u32);
+                a.jmp_sortie(0);
+                a.ici(j1);
+                a.ici(j2);
+                // l'adresse des données : M[étage3(poignée + 2)]
+                a.charger(RSI, reg(poignee));
+                a.b(&[0x48, 0x83, 0xC6, 0x02]); // add rsi, 2
+                etage3(&mut a);
+                a.lire_rapide(ocache, lire, otampon);
+                // la case : étage3(données + indice)
+                a.b(&[0x4C, 0x89, 0xC6]); // mov rsi, r8
+                a.charger(RAX, reg(t));
+                a.b(&[0x48, 0x01, 0xC6]); // add rsi, rax
+                etage3(&mut a);
+                if op == 0x2C {
+                    a.lire_rapide(ocache, lire, otampon);
+                    if !suivante_pose {
+                        a.octet(oc, 0);
+                        a.b(&[0x4C, 0x89, 0xC0, 0x4C, 0x09, 0xC8]); // mov rax, r8 ; or rax, r9
+                        a.poser_drapeau(0x94, oz);
+                    }
+                    if d != 0 {
+                        a.ranger(reg(d), R8);
+                        a.ranger(reg(d) + 8, R9);
+                    }
+                } else {
+                    a.charger(RCX, reg(s));
+                    a.charger(R8, reg(s) + 8);
+                    a.ecrire_rapide(ocache, ecrire, p);
+                }
+                a.compter(opas);
+            }
             (0, 0x20 | 0x25 | 0x28) => {
                 match op {
                     0x20 => adresse(&mut a, s, false),

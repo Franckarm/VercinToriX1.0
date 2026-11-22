@@ -10,6 +10,8 @@
 // qegal, nb_bits) et les comparaisons signées (.< .<= .> .>=, ./ .% .>> par le prélude).
 // Comme vtx ne convertit jamais un entier en référence, toutes les listes sont chaînées et typées.
 
+constante LDT_STT = 1;   // 0.70 : la machine vérifie t[i] elle-même (LDT, STT)
+
 constante MASQUE = 16777215;
 
 // --------------------------------------------------------------------------------------------- mémoire et tas
@@ -1747,7 +1749,7 @@ fonction unaire(c: Ctx): Noeud {
             attendre(c, "]");
             // 0.69c (comme Lugus, 0.69b) : l'indice passe par __borne quand la poignée se relit sans rien changer ; pas
             // dans le prélude, ni avec « constante __SANS_BORNES = 1; » (l'épissage rapide)
-            si !c.en_prelude && constante_de(c, "__SANS_BORNES") == nul && (e.genre == N_VAR
+            si !c.en_prelude && (LDT_STT || constante_de(c, "__SANS_BORNES") == nul) && (e.genre == N_VAR
                     || (e.genre == N_CHAMP && e.a != nul && e.a.genre == N_VAR && !egal(e.nom, "r") && !egal(e.nom, "v")
                         && !egal(e.nom, "b") && !egal(e.nom, "a")) || (e.genre == N_LIRE
                     && e.val == 3 && e.b != nul && e.b.genre == N_BIN && egal(e.b.op, "+") && e.b.a != nul
@@ -4680,7 +4682,31 @@ fonction adresse(c: Ctx, etg, ex: Noeud, adr: Noeud) {
     retour 4294967296;
 }
 
+// 0.70 : @3[@3[h + 2] + __borne(i, h, ligne)] (un t[i] vérifié), comme case_bornee de vtx128.py
+fonction case_bornee(etg, ex: Noeud, adr: Noeud) {
+    si ex != nul || etg != 3 || adr == nul || adr.genre != N_BIN || !egal(adr.op, "+") {
+        retour 0;
+    }
+    soit d = adr.a;
+    si d == nul || d.genre != N_LIRE || d.val != 3 || d.a != nul || d.b == nul || d.b.genre != N_BIN
+            || !egal(d.b.op, "+") || d.b.b == nul || d.b.b.genre != N_NOMBRE || d.b.b.val != 2 {
+        retour 0;
+    }
+    soit x = adr.b;
+    si x == nul || x.genre != N_APPEL || !egal(x.nom, "__borne") || x.premier == nul || x.premier.suivant == nul
+            || x.premier.suivant.suivant == nul || x.premier.suivant.suivant.genre != N_NOMBRE {
+        retour 0;
+    }
+    retour 1;
+}
+
 fonction lire_mem(c: Ctx, etg, ex: Noeud, adr: Noeud) {
+    si case_bornee(etg, ex, adr) {
+        // 0.70 : t[i] vérifié en une instruction : LDT (la poignée, l'indice ; la ligne dans l'immédiat)
+        soit rr = deux_ops(c, adr.a.b.a, adr.b.premier);
+        emettre(c, ins(44, 1, rr >> 4, rr & 15, adr.b.premier.suivant.suivant.val));
+        retour;
+    }
     soit p = adresse(c, etg, ex, adr);
     ld(c, 1, p >> 32, p & 4294967295);
 }
@@ -4700,6 +4726,18 @@ fonction ecrire_mem(c: Ctx, etg, ex: Noeud, adr: Noeud, val: Noeud, ligne) {
         }
         charger(c, 2, v);
         st(c, 2, 1, 0);
+        retour;
+    }
+    si case_bornee(etg, ex, adr) {
+        // 0.70 : t[i] = v vérifié en une instruction : STT (la poignée, la valeur, l'indice ; la ligne)
+        deux(c, adr.a.b.a, adr.b.premier);
+        pousser(c, 1);
+        pousser(c, 2);
+        gen(c, val);
+        mov(c, 3, 1);
+        depiler(c, 2);
+        depiler(c, 1);
+        emettre(c, ins(45, 1, 3, 2, adr.b.premier.suivant.suivant.val));
         retour;
     }
     soit p = adresse(c, etg, ex, adr);
@@ -9752,6 +9790,11 @@ fonction retirer_bornes(n: Noeud, i, t): Noeud {
 }
 
 fonction epissage_sur(i, fin: Noeud, corps: Noeud): Noeud {
+    // 0.70 : sur Lugus, LDT et STT vérifient t[i] en une instruction, plus vite que la lecture sans vérification : il
+    // n'y a plus rien à retirer (Dunon fera de même quand il aura les siennes)
+    si LDT_STT {
+        retour corps;
+    }
     si fin == nul || fin.genre != N_APPEL || !egal(fin.nom, "longueur") || fin.premier == nul
             || fin.premier.genre != N_VAR || fin.premier.suivant != nul || egal(fin.premier.nom, i) {
         retour corps;

@@ -1528,7 +1528,8 @@ fonction marquer_instructions(n) {
 }
 
 fonction op_frontiere(op) {
-    retour op == 33 || op == 36 || op == 42 || op == 57 || op == 82 || op == 83 || op == 85 || op == 94 || op == 95;
+    retour op == 33 || op == 36 || op == 42 || op == 45 || op == 57 || op == 82 || op == 83 || op == 85 || op == 94
+        || op == 95;
 }
 
 // les molécules : la tête, puis une par fonction (de la cible d'un CALL à la suivante) ; une frontière (O) si son code
@@ -3020,11 +3021,12 @@ fonction toucher(k, ncalls) {
             soit d = (h >> 44) & 15;
             soit s2 = (h >> 40) & 15;
             soit imm = h & 4294967295;
-            si op == 32 || op == 41 || op == 84 || op == 56 || op == 95 {
+            // 0.70 : LDT (44) lit l'étage 3, STT (45) l'écrit
+            si op == 32 || op == 41 || op == 44 || op == 84 || op == 56 || op == 95 {
                 si niveau < 1 {
                     niveau = 1;
                 }
-            } sinon si op == 33 || op == 42 || op == 85 || op == 57 || op == 94 {
+            } sinon si op == 33 || op == 42 || op == 45 || op == 85 || op == 57 || op == 94 {
                 si niveau < 2 {
                     niveau = 2;
                 }
@@ -4615,6 +4617,8 @@ fonction vib_preparer() {
     @2[V_FORME + 41] = 13;
     @2[V_FORME + 42] = 14;
     @2[V_FORME + 43] = 3;
+    @2[V_FORME + 44] = 13;
+    @2[V_FORME + 45] = 14;
     @2[V_FORME + 56] = 13;
     @2[V_FORME + 64] = 13;
     @2[V_FORME + 65] = 13;

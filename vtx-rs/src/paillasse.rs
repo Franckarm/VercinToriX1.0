@@ -52,6 +52,8 @@ pub struct Atome {
     /// 0.69 : la famille de la case (S, Si, Fe, Mg…), lue dans ce qu'elle fait ; vide : une case de structure seule.
     /// L'élément (H, O, N, C, par la valence) reste celui de la molécule de registre
     pub famille: String,
+    /// 0.70 : la page (une autre réaction du texte) vers laquelle cette case renvoie sa valeur, s'il y en a une
+    pub vers: Option<String>,
 }
 
 impl Atome {
@@ -250,6 +252,9 @@ pub const PALETTE: &[CasePalette] = &[
     CasePalette { symbole: "Ne", element: "néon", famille: "fin", nom: "fin", modele: "= _ -> !",
                   aide: "la fin de la réaction : la liaison qu'elle rend (son « -> r »), ou la sortie du programme \
                          (sortie(_)) si elle ne rend rien ; le néon, l'enseigne qui dit que c'est fini" },
+    CasePalette { symbole: "Ne", element: "néon", famille: "fin", nom: "suite", modele: "= >(_) -> !",
+                  aide: "la fin qui renvoie à la page suivante : sa valeur part dans l'onglet d'après (créé s'il n'existe \
+                         pas), qui la reçoit en entrée ; la case dit le nom de la page, un double clic l'ouvre" },
 ];
 
 /// la famille d'une case, lue dans ce qu'elle fait (le symbole de son élément), vide pour une case de structure seule
@@ -358,6 +363,22 @@ fn element_de(v: usize) -> String {
     }
 }
 
+/// 0.70 : une case qui appelle une autre réaction du texte renvoie vers cette page (le néon, la fin qui continue)
+fn noter_renvois(rs: &mut [Reaction]) {
+    let noms: Vec<String> = rs.iter().filter(|r| !r.carte).map(|r| r.nom.clone()).collect();
+    for r in rs.iter_mut().filter(|r| !r.carte) {
+        let ici = r.nom.clone();
+        for a in r.atomes.iter_mut() {
+            let q = a.quoi.trim().trim_start_matches('=').trim();
+            let q = q.strip_prefix("sortie(").unwrap_or(q);
+            if let Some(n) = noms.iter().find(|n| **n != ici && q.starts_with(&format!("{}(", n))) {
+                a.vers = Some(n.clone());
+                a.famille = "Ne".into();
+            }
+        }
+    }
+}
+
 /// la lecture : les réactions du texte, leurs atomes, leurs liaisons et leurs vagues
 pub fn analyser(source: &str) -> Vec<Reaction> {
     let lignes: Vec<&str> = source.split('\n').collect();
@@ -433,6 +454,7 @@ pub fn analyser(source: &str) -> Vec<Reaction> {
         out.push(r);
         i = j + 1;
     }
+    noter_renvois(&mut out);
     out
 }
 
@@ -521,7 +543,8 @@ fn lire_atome(r: &mut Reaction, l: &str, numero: usize) {
     };
     // les entrées sont trouvées une fois toutes les liaisons connues (relier_et_ranger) : on garde la place de quoi
     r.atomes.push(Atome { ligne: numero, nom, quoi, sorties, entrees: vec![Port { nom: String::new(), places: vec![(q0, q1)] }],
-                          apres, genre, vague: 0, element: String::new(), lourd, famille: String::new() });
+                          apres, genre, vague: 0, element: String::new(), lourd, famille: String::new(),
+                          vers: None });
 }
 
 /// ce que touche un atome hors de ses liaisons (comme Atome.cibles de vtx128.py) : (genre, étage, adresse)
@@ -840,7 +863,7 @@ pub fn carte(source: &str) -> Option<Reaction> {
         let entrees: Vec<Port> = appels[k].iter().filter(|&&c| c != k).map(|&c| Port { nom: fonctions[c].0.clone(), places: vec![] }).collect();
         let mut a = Atome { ligne: f.2, nom: f.0.clone(), quoi: format!("fonction {}", f.1), sorties: vec![f.0.clone()], entrees,
                             apres: vec![], genre: Genre::Calcul, vague: 0, element: String::new(), lourd: false,
-                            famille: String::new() };
+                            famille: String::new(), vers: None };
         a.element = element_de(a.valence());
         a
     }).collect();
@@ -960,6 +983,49 @@ pub fn retirer_atome(source: &str, a: &Atome) -> String {
 }
 
 /// une réaction neuve, à la fin du texte
+/// 0.70 : la ligne où écrire une case de la vague v : avant la première case (dans l'ordre des lignes) d'une vague plus
+/// tardive, sinon à la fin de la réaction ; « sauf » : la case qu'on déplace
+pub fn ligne_pour_vague(r: &Reaction, v: usize, sauf: Option<usize>) -> usize {
+    let mut ordre: Vec<usize> = (0..r.atomes.len()).filter(|&k| Some(k) != sauf).collect();
+    ordre.sort_by_key(|&k| r.atomes[k].ligne);
+    ordre.iter().find(|&&k| r.atomes[k].vague > v).map(|&k| r.atomes[k].ligne).unwrap_or(r.fin)
+}
+
+/// 0.70 : déplacer la ligne « de » pour qu'elle vienne juste avant la ligne « avant » (des places du texte d'origine) ;
+/// rend le texte et la nouvelle place de la ligne
+pub fn deplacer_ligne(source: &str, de: usize, avant: usize) -> (String, usize) {
+    let mut v: Vec<String> = source.split('\n').map(|x| x.to_string()).collect();
+    if de >= v.len() || avant == de || avant == de + 1 {
+        return (source.to_string(), de);
+    }
+    let l = v.remove(de);
+    let place = if avant > de { avant - 1 } else { avant };
+    v.insert(place.min(v.len()), l);
+    (v.join("\n"), place)
+}
+
+/// 0.70 : une page neuve (une réaction qui reçoit une valeur et la rend) : « reaction page_N(entree) -> fin » ; rend le
+/// texte, la ligne de sa première case et son nom
+pub fn ajouter_page(source: &str) -> (String, usize, String) {
+    let noms: Vec<String> = analyser(source).into_iter().map(|r| r.nom).collect();
+    let mut k = noms.len() + 1;
+    let mut nom = format!("page_{}", k);
+    while noms.contains(&nom) || source.contains(&format!("fonction {}(", nom)) {
+        k += 1;
+        nom = format!("page_{}", k);
+    }
+    let cr = if source.contains("\r\n") { "\r\n" } else { "\n" };
+    let mut t = source.trim_end().to_string();
+    if !t.is_empty() {
+        t.push_str(cr);
+        t.push_str(cr);
+    }
+    let ligne = t.split('\n').count() - 1;
+    t.push_str(&format!("// la page {} : elle reçoit « entree » de la page d'avant{}reaction {}(entree) -> fin {{{}    \
+                         = entree -> fin{}}}{}", nom, cr, nom, cr, cr, cr));
+    (t, ligne + 2, nom)
+}
+
 pub fn ajouter_reaction(source: &str) -> (String, usize) {
     let noms: Vec<String> = analyser(source).into_iter().map(|r| r.nom).collect();
     let mut nom = "principal".to_string();
@@ -1637,6 +1703,10 @@ impl Paillasse {
             tx.push(TexteP { x: rx - cl * symbole.chars().count() as i32 / 2, y: ry - ch / 2, texte: symbole.clone(), couleur: 0x1B1E24 });
             let titre = if a.nom.is_empty() { format!("ligne {}", a.ligne + 1) } else { a.nom.clone() };
             let titre = if a.famille.is_empty() { titre } else { format!("{} · {}", titre, a.element) };
+            let titre = match &a.vers {
+                Some(n) => format!("{} vers {}", titre, n),
+                None => titre,
+            };
             tx.push(TexteP { x: rx + rayon + self.px(6), y: c.y + self.px(5), texte: titre, couleur: ENCRE });
             let q: String = if a.quoi.chars().count() > 40 { a.quoi.chars().take(39).collect::<String>() + "…" } else { a.quoi.clone() };
             tx.push(TexteP { x: c.x + cl, y: c.y + ch + self.px(15), texte: q, couleur: 0xC8C4B8 });
@@ -1832,6 +1902,37 @@ impl Paillasse {
                 };
                 match g {
                     Some(Geste::Deplacer { atome, bouge: false, .. }) => Reponse::Aller(r.atomes[atome].ligne),
+                    // 0.70 : posée dans une autre vague, la case y prend aussi sa place dans le texte (l'ordre du code)
+                    Some(Geste::Deplacer { atome, bouge: true, .. }) if !r.carte => {
+                        let a = &r.atomes[atome];
+                        match self.colonne_de(x) {
+                            Some(v) if v >= 1 && v != a.vague => {
+                                let (s, l) = deplacer_ligne(source, a.ligne, ligne_pour_vague(&r, v, Some(atome)));
+                                // les liaisons décident de la vague : avant ses entrées, la case ne peut pas réagir
+                                let entrees: Vec<&str> = a.entrees.iter().map(|e| e.nom.as_str()).collect();
+                                let au_plus_tot = r.atomes.iter().filter(|b| b.sorties.iter().any(|o| entrees.contains(&o.as_str())))
+                                    .map(|b| b.vague + 1).max().unwrap_or(1);
+                                let cle_a = a.cle();
+                                let nouvelle = analyser(&s).into_iter().find(|q| q.nom == r.nom)
+                                    .and_then(|q| q.atomes.into_iter().find(|b| b.cle() == cle_a)).map_or(a.vague, |b| b.vague);
+                                self.message = Some(if v < au_plus_tot {
+                                    format!("sa ligne vient à la place de la vague {} (ligne {}) ; la case reste à la vague {} : \
+                                             elle attend une liaison de la vague {}", v, l + 1, nouvelle, au_plus_tot - 1)
+                                } else if nouvelle == v {
+                                    format!("la case passe à la vague {} : sa ligne devient la ligne {}", v, l + 1)
+                                } else {
+                                    format!("sa ligne vient à la place de la vague {} (ligne {}) ; elle réagit toujours à la \
+                                             vague {}, dès que ses entrées sont là", v, l + 1, nouvelle)
+                                });
+                                if s == source {
+                                    Reponse::Redessiner
+                                } else {
+                                    Reponse::Texte { source: s, ligne: l }
+                                }
+                            }
+                            _ => Reponse::Redessiner,
+                        }
+                    }
                     Some(Geste::Lier { nom, .. }) => {
                         let cible = self.port_sous(x, y, false).map(|(k, i, _)| (k, Some(i)))
                             .or_else(|| self.case_sous(x, y).map(|c| (c.atome, None)));
@@ -1899,6 +2000,14 @@ impl Paillasse {
                 }
                 if let Some(c) = self.case_sous(x, y) {
                     let r = self.reaction().unwrap();
+                    // 0.70 : une case qui renvoie vers une page : le double clic ouvre la page
+                    if let Some(n) = r.atomes[c.atome].vers.clone() {
+                        if let Some(i) = self.reactions.iter().position(|q| q.nom == n) {
+                            self.courante = i;
+                            self.choisi = None;
+                            return Reponse::Redessiner;
+                        }
+                    }
                     return Reponse::Aller(r.atomes[c.atome].ligne);
                 }
                 let (s, l) = self.poser_atome(x, y, source);
@@ -1914,6 +2023,15 @@ impl Paillasse {
             Some(p) => p,
             None => return Reponse::Rien,
         };
+        // 0.70 : la colonne où l'on a cliqué décide de la place de la ligne (avant la vague suivante)
+        let vague = self.colonne_de(x);
+        if let Some((k, c)) = k.and_then(|k| PALETTE.get(k).map(|c| (k, c))) {
+            if c.nom == "suite" {
+                self.derniere_case = Some(k);
+                return self.poser_suite(source, Some((x, y)));
+            }
+        }
+        let r0 = self.reaction().filter(|r| !r.carte).cloned();
         let (s, l) = match k.and_then(|k| PALETTE.get(k).map(|c| (k, c))) {
             None => self.poser_atome(x, y, source),
             Some((k, c)) => {
@@ -1932,8 +2050,84 @@ impl Paillasse {
                 (s, l)
             }
         };
+        let (s, l) = match (vague, r0) {
+            (Some(v), Some(r)) if v >= 1 => deplacer_ligne(&s, l, ligne_pour_vague(&r, v, None)),
+            _ => (s, l),
+        };
         let t = s.split('\n').nth(l).unwrap_or("").trim().to_string();
         Reponse::Editer { source: Some(s), ligne: l, texte: t, x, y }
+    }
+
+    /// 0.70 : la vague de la colonne sous x (0 : les entrées), s'il y en a une
+    pub fn colonne_de(&self, x: i32) -> Option<usize> {
+        self.colonnes.iter().find(|c| x >= c.1 && x < c.1 + c.2).map(|c| c.0)
+    }
+
+    /// 0.70 : une page neuve, montrée tout de suite
+    pub fn nouvelle_page(&mut self, source: &str) -> Reponse {
+        let (s, l, nom) = ajouter_page(source);
+        self.lire(&s);
+        if let Some(i) = self.reactions.iter().position(|r| r.nom == nom) {
+            self.courante = i;
+        }
+        self.message = Some(format!("la page « {} » : elle reçoit « entree » ; une case « suite » (Ne) de la page d'avant \
+                                     lui envoie sa valeur", nom));
+        Reponse::Texte { source: s, ligne: l }
+    }
+
+    /// 0.70 : la case « suite » : la fin qui renvoie à la page suivante (l'onglet d'après, créé s'il n'existe pas)
+    fn poser_suite(&mut self, source: &str, ou: Option<(i32, i32)>) -> Reponse {
+        let r = match self.reaction().filter(|r| !r.carte) {
+            Some(r) => r.clone(),
+            None => return Reponse::Message("la suite se pose dans une page (une réaction)".into()),
+        };
+        let pages: Vec<String> = self.reactions.iter().filter(|q| !q.carte).map(|q| q.nom.clone()).collect();
+        let ici = pages.iter().position(|n| *n == r.nom).unwrap_or(0);
+        let (mut src, suivante) = match pages.get(ici + 1) {
+            Some(n) => (source.to_string(), n.clone()),
+            None => {
+                let (s, _, n) = ajouter_page(source);
+                (s, n)
+            }
+        };
+        let nb = analyser(&src).into_iter().find(|q| q.nom == suivante).map_or(1, |q| q.params.len().max(1));
+        let appel = format!("{}({})", suivante, vec!["_"; nb].join(", "));
+        // le résultat de la réaction s'il n'est pas encore donné ; sinon une liaison neuve (la réaction le donne déjà)
+        let ligne = match &r.resultat {
+            Some(res) if !r.atomes.iter().any(|a| a.sorties.contains(res)) => format!("= {} -> {}", appel, res),
+            Some(_) => {
+                let mut k = 1;
+                while r.params.contains(&format!("l{}", k)) || r.atomes.iter().any(|a| a.sorties.contains(&format!("l{}", k))) {
+                    k += 1;
+                }
+                format!("= {} -> l{}", appel, k)
+            }
+            None => format!("= sortie({})", appel),
+        };
+        let lignes: Vec<&str> = src.split('\n').collect();
+        let retrait = r.atomes.last().map(|a| {
+            let l = lignes[a.ligne];
+            l[..l.len() - l.trim_start().len()].to_string()
+        }).unwrap_or_else(|| "    ".into());
+        let cr = if src.contains("\r\n") { "\r" } else { "" };
+        let mut v: Vec<String> = lignes.iter().map(|x| x.to_string()).collect();
+        let place = r.fin.min(v.len());
+        v.insert(place, format!("{}{}{}", retrait, ligne, cr));
+        src = v.join("\n");
+        if let Some((x, y)) = ou {
+            if let Some(a) = analyser(&src).into_iter().find(|q| q.nom == r.nom).and_then(|q| q.atomes.into_iter().find(|a| a.ligne == place)) {
+                let (ox, oy) = self.origine();
+                self.positions.insert((r.nom.clone(), a.cle()),
+                                      (((x - ox) as f32 / self.echelle) as i32, ((y - oy) as f32 / self.echelle) as i32));
+            }
+        }
+        self.message = Some(format!("la suite : la valeur part dans la page « {} » (double clic sur la case pour l'ouvrir)",
+                                    suivante));
+        let t = src.split('\n').nth(place).unwrap_or("").trim().to_string();
+        match ou {
+            Some((x, y)) => Reponse::Editer { source: Some(src), ligne: place, texte: t, x, y },
+            None => Reponse::Texte { source: src, ligne: place },
+        }
     }
 
     /// un atome neuf « = _ -> lK » à la fin de la réaction, placé où l'on a cliqué ; rend le texte et sa ligne
@@ -1988,6 +2182,9 @@ impl Paillasse {
         self.palette_ouverte = false;
         self.derniere_case = Some(k);
         self.choisi = None;
+        if c.nom == "suite" {
+            return self.poser_suite(source, None);
+        }
         let r = self.reaction().filter(|r| !r.carte).cloned();
         let (s, l) = match r {
             Some(r) => poser_modele(source, &r, c),
@@ -2076,6 +2273,10 @@ impl Paillasse {
                                                .find(|x| a.quoi.trim().starts_with(x.modele.trim_start_matches('=').trim()
                                                                                  .split(['(', ' ', '_']).next().unwrap_or("")))
                                                .unwrap_or(c).aide));
+                }
+                if let Some(n) = &a.vers {
+                    t.push_str(&format!("Elle renvoie à la page « {} » : sa valeur y part en entrée (double clic : ouvrir la \
+                                         page).\r\n", n));
                 }
                 t.push_str(&format!("Ce qu'il fait : {}\r\n", a.quoi));
                 t.push_str(&format!("Vague {} : {}\r\n", a.vague, if lues.is_empty() && a.apres.is_empty() {
@@ -2326,6 +2527,8 @@ pub fn commande(args: &[String]) {
                         p.poser_ici(k, &source)
                     }
                 }
+                // 0.70 : page : une page neuve
+                "page" => p.nouvelle_page(&source),
                 "poser" => match PALETTE.iter().position(|c| Some(c.nom) == m.get(1).copied()) {
                     Some(k) => p.poser_case(k, &source),
                     None => Reponse::Message(format!("pas de case « {} » dans la palette", m.get(1).copied().unwrap_or(""))),

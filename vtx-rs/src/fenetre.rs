@@ -2644,6 +2644,8 @@ fn reponse_paillasse(r: super::paillasse::Reponse) {
             let choix = unsafe {
                 let m = CreatePopupMenu();
                 AppendMenuW(m, 0, 1, w("Case vide\t= _ -> l").as_ptr());
+                // 0.70 : une page neuve (une réaction qui reçoit une valeur et la rend), montrée tout de suite
+                AppendMenuW(m, 0, 999, w("Nouvelle page\treaction page_N(entree) -> fin").as_ptr());
                 let mut famille = "";
                 for (k, c) in super::paillasse::PALETTE.iter().enumerate() {
                     if c.famille != famille {
@@ -2664,6 +2666,11 @@ fn reponse_paillasse(r: super::paillasse::Reponse) {
                 at.pail.clic_droit = None;
                 etat("paillasse : aucune case posée");
                 return;
+            }
+            if choix == 999 {
+                at.pail.clic_droit = None;
+                let r = at.pail.nouvelle_page(&lire_texte(at.source));
+                return reponse_paillasse(r);
             }
             let k = if choix == 1 { None } else { Some(choix as usize - 2) };
             let r = at.pail.poser_ici(k, &lire_texte(at.source));

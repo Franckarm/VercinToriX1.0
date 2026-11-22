@@ -17,7 +17,7 @@ avec le créateur.*
   (service 28, `lister_dossier`, `dossier_present`), `lugus cataloguer DOSSIER` (écrit en vtx, dans le lecteur d'ADN),
   `importer empreinte "16hex";` sans chemin, la vibration de chaque molécule (`lugus morceaux`), et la carte qui dit
   d'où vient chaque molécule (et voit une retouche).
-- Les journaux : `docs/vtx-reactions.md` (sections 1 à 75 ter), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
+- Les journaux : `docs/vtx-reactions.md` (sections 1 à 76), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
   feuille de route, section 11), `docs/vtx-syntaxe-v0-4.md` (la référence du langage).
 
 ## 2. Les règles de travail (à garder)
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.70.zip`, `essai-0.70.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.71.zip`, `essai-0.71.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -46,7 +46,7 @@ avec le créateur.*
   gardé dans le dépôt : le refaire (`lugus cataloguer bibliotheque`) après toute retouche d'un module de la
   bibliothèque (sinon `importer empreinte` le refuse, l'empreinte ayant changé).
 - `outils/tests_du_paquet.txt` : les tests mis dans le paquet ; la commande du paquet : `git archive --format=zip
-  --prefix=vtx-0.6/ -o vtx-0.70.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
+  --prefix=vtx-0.6/ -o vtx-0.71.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
   spu128 chimie natif gobannos exemples exemples128 exemples64 bibliotheque docs` suivi de ces tests et de
   `tests/test_supposons.py tests/supposons_alors.vtx tests/test_gobannos.py tests/gobannos tests/test_valeurs.py
   tests/valeurs_mele.vtx tests/test_types_fonction.py tests/test_gobannos_flottants.py tests/test_nombres.py
@@ -81,8 +81,11 @@ fermer ensuite, trouvé par l'épreuve** : `t[i]` hors des bornes lit sans rien 
 accepté par les deux compilateurs. Le paquet n'emporte plus les tests (ils restent dans le dépôt). **0.69b (§75 bis)** : le menu des cases au clic droit, la case de
 fin (Ne) ; les deux brèches fermées sur Lugus (`__borne`, services 32 et 33 ; `nombre_pour_texte`).  **0.69c (§75 ter)** : l'épissage sûr (les
 boucles sur `0..longueur(t)` sans vérification, toujours) et l'épissage rapide (`lugus eprouver PROG.adn`, puis
-`lugus PROG.adn --rapide`), décidés avec le créateur ; Dunon et `s.champ[i]` fermés. **Reste** : `f()[i]` ; une
-instruction de chargement vérifié, si la vitesse le demande encore.
+`lugus PROG.adn --rapide`), décidés avec le créateur ; Dunon et `s.champ[i]` fermés. **0.70 (§76)** : LDT et STT (la machine vérifie t[i] en une instruction,
+plus vite que sans vérification : 716 314 instructions contre 1 115 214), sur Lugus et Dunon, la traduction native,
+Gobannos, le juge ; l'épissage d'hier éteint (`LDT_STT`) ; Ogmios : la place des vagues fait l'ordre des lignes, la
+nouvelle page, la case suite (Ne) qui renvoie à la page suivante. **Reste** : `f()[i]` ; un LDT sans vérification
+pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.
 
 **Le glossaire** (fait, 0.67, §73). **La fenêtre d'un programme** (fait, 0.68, §74 : l'atelier et `lugus`, sous
 Windows). **Ensuite** : Ogmios en vtx, F5 qui ne fige pas et sa fenêtre (deux fenêtres à la fois dans sortie.rs). **La suite donnée par le créateur le 21** : Ogmios, construit en vtx ; s'assurer
