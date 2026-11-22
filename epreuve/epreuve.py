@@ -424,7 +424,7 @@ verifier("l'ARN coiffé est vérifié avant de servir (sa coiffe, ses témoins) 
 titre("VIII. VOIR : Belenos, le val des neiges (une scène 3D en entiers : relief, soleil, ombres portées, brume)",
       "La même scène, calculée en vtx et en C, doit donner la même image au point près : son empreinte (FNV-1a sur\n"
       "les 129 600 points). Puis le temps d'une image, traduite en x86-64, face au C.")
-EMPREINTE = "7510702145557097999"
+EMPREINTE = "4981707699916968273"
 banc_exe = os.path.join(d, "val_banc" + X)
 r = subprocess.run([VTX, "exe128", os.path.join(racine, "belenos", "val_banc.vtx"), banc_exe], capture_output=True,
                    text=True, encoding="utf-8", errors="replace", cwd=d)

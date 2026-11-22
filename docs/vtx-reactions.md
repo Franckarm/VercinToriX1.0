@@ -3844,3 +3844,29 @@ un bloc s'applique-t-il mal ?
   l'empreinte du C est restée juste, celle de vtx a changé ; c'est l'accord des deux qui l'a montré).
 - **Ce qui reste cher** : le balayage, quand le soleil vient du nord ou du sud, avance d'une rangée à chaque pas (un
   saut de 512 mots) ; et la moitié de ses pas ne sert qu'à porter l'horizon.
+
+## 87. La lumière en calque (22 novembre, 0.804)
+
+**Le créateur** (après son essai de la 0.803 : 31 ms par image sur un cœur, 42 ms sur tous) : avec l'ombre du cube, le
+résultat devrait être bien meilleur ; tout est refait, alors que l'idée serait d'apposer un calque (la luminance et
+l'ombre) sur la texture déjà établie à la conception du décor. Et le paysage fait par le cube donnerait une surface plus
+simple pour les couleurs, l'ombre, la lumière et les reflets (décidé : plus tard, et seulement avec les points des
+surfaces, voxels ou polygones).
+
+- **Le calque** (`val_scene.vtx` ; la même chose en C) : le décor fixe se prépare une fois (la couleur propre,
+  l'ouverture au ciel, la lumière des feux, et désormais ce que les feux renvoient : `FEUR`). Quand l'astre bouge, on
+  ne refait que **le calque d'ombre** (`OMBRE` : pour chaque case, la lumière de l'astre qu'elle reçoit et son état
+  quaternaire) et la pyramide du renvoi. La couleur finale est posée **au moment de peindre** (`teinte`), seulement sur
+  les cases que l'œil voit ; il n'y a plus de composition de tout le relief.
+- **Le balayage sans division** : la normale unitaire est gardée en un mot (`NUNIT`, sur 4096) : la pente face à
+  l'astre n'est plus qu'un produit ; la pénombre se lit dans une table (`INVW`). Il lit au plus deux mots par case et
+  en écrit un.
+- **Moins de cœurs lancés** : sur la machine du créateur, lancer et rassembler les cœurs coûtait plus que le travail ;
+  seuls le balayage et les colonnes de l'image restent en bandes ; la pyramide (petite) va sur un seul cœur.
+- **Le compteur** dit désormais l'état du calque d'ombre (vrai : l'astre en plein ; variable : la pénombre ; faux : à
+  l'ombre) ; le dégradé jusqu'au noir se fait en posant le calque.
+- **Mesures** (toute la lumière refaite à chaque image, plus l'image) : en C, 10,4 ms (18,9 en 0.803) : le calque
+  d'ombre 7,0 ms, la pyramide 2,4 ms ; l'image seule, calque posé, 2,25 ms (1,3 ms quand la couleur était gardée : le
+  prix du calque à chaque image). Forgé, ici : 27,5 ms sur un cœur (35 en 0.803), 19 à 24 ms sur deux. La forge gagne
+  moins que le C : ses mots ont 128 bits (deux fois plus de mémoire remuée) et chaque lecture passe par la recherche de
+  sa page. Empreinte : 4981707699916968273.
