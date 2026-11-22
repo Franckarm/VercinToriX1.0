@@ -2,6 +2,9 @@ AUTEUR.md
 COMMENCER.md
 LISEZMOI.md
 belenos/val.vtx
+belenos/val_scene.vtx
+belenos/val_banc.vtx
+belenos/val_ref.c
 bibliotheque/adn.vtx
 bibliotheque/anticube128-1-392.cub
 bibliotheque/catalogue.vtxcat

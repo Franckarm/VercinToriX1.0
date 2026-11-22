@@ -3505,3 +3505,47 @@ les reflets, l'ombre pour les ombres.
   lac et ses reflets (l'anti-cube) ; l'eau et les nuages qui avancent (le tapis roulant) ; la neige qui tombe et se
   dépose ; un feu (la lumière diffusée, qui vacille) ; une fontaine ; puis la forge et les cylindres (plusieurs cœurs),
   puis Taranis (la carte) pour la haute définition en temps réel ; les objets fins viendront de Gobatix.
+
+## 78. Le soleil, les ombres, et la scène face au C (22 novembre, 0.72)
+
+**Demandé par le créateur le 22** : tester, ajuster, fiabiliser, et montrer toute la performance de Vercintorix face
+à d'autres modèles graphiques.
+
+- **Le soleil et les ombres** (`belenos/val.vtx`) : o / p tournent le soleil, i / k le montent et le descendent. La
+  lumière suit la pente face au soleil (la normale du relief) ; l'ombre portée remonte vers le soleil sur 17 distances
+  (serrées près, espacées loin), avec une pénombre (un soleil n'est pas un point) ; la lumière s'orange au ras de
+  l'horizon, le ciel aussi ; le disque du soleil dans le champ. Quand le soleil bouge, la grille est éclairée de nouveau
+  par bandes de 16 lignes, une bande par image : le tapis roulant, chaque image ne paie que sa part. Le compteur dans
+  l'image (ms par image, la place du soleil). Les rayures claires sur la neige venaient d'un grain qui dépassait 255 :
+  corrigé (borné).
+- **La scène en trois fichiers** : `val_scene.vtx` (le relief, la lumière, le rendu, sans programme principal),
+  `val.vtx` (la marche, au clavier), `val_banc.vtx` (le banc : sans fenêtre, toujours le même passage, 12 images, le
+  soleil qui tourne, puis l'**empreinte** de la dernière image, FNV-1a sur ses 129 600 points). Le sinus est en entiers
+  (Bhaskara, à 0,2 % près) : les mêmes nombres partout, aucun arrondi de flottant ne peut différer d'une machine ou
+  d'un langage à l'autre.
+- **La référence en C** (`val_ref.c`) : le même calcul, ligne pour ligne, en C (mots de 64 bits, les opérations signées
+  par conversion). Elle donne **la même empreinte** que vtx (en -O2 comme en -O0) : la même image au point près. On
+  compare donc des temps à travail identique.
+- **Ce que la comparaison a trouvé** : en x86 traduit, l'éclairage coûtait 68 fois le C. Le profil (`VTX_PROFIL=1`) :
+  12 millions de divisions signées (`./`, code #1A) n'étaient pas traduites ; chacune sortait du code x86, se faisait
+  rejouer par Lugus, et vidait le cache des pages, d'où 29 millions de lectures lentes derrière elles. **Traduites**
+  (division et reste signés, à la largeur 64 : par zéro, tout à un ou le dividende ; le plus petit par −1, lui-même et
+  un reste nul, comme Lugus) ; vérifiées contre Lugus sur les cas de bord (`tests/test_natif128.py`, « signes »).
+- **`toile128` traduit aussi en x86** (comme les .exe ; `VTX_INTERPRETE=1` garde Lugus seul) : les 46 images du
+  scénario du soleil en 3,5 s au lieu de 16,4.
+- **Mesuré ici (un cœur, 480 × 270, machine partagée : ±20 %)** :
+
+  | | préparer (relief, 512 lignes éclairées) | une image complète | dont le rendu seul |
+  |---|---|---|---|
+  | C, gcc -O2 | 62 ms | 2,3 ms | 1,7 ms |
+  | vtx traduit en x86 (0.72) | 0,65 s | 22 à 28 ms | 15 ms |
+  | vtx traduit (0.71, avant #1A) | | ~50 ms | |
+  | Lugus seul (l'interprète) | 5,8 s | ~105 ms (185 ms à l'horloge du banc) | |
+
+  Vercintorix est donc à **environ 10 fois le C** sur cette scène, 35 à 45 images par seconde. L'écart vient surtout de
+  la traduction : les registres de la machine restent en mémoire (pas dans ceux du processeur), chaque instruction
+  compte son pas, et chaque petite fonction (sin1024, hauteur_en, embrume, rgb) est un vrai appel. Les trois pistes,
+  par gain attendu : garder les registres dans ceux du processeur ; déplier les petites fonctions à la compilation (dans
+  les deux compilateurs) ; puis les cylindres (une bande d'image par cœur).
+- **L'épreuve d'Alésia** a un chapitre VIII, « Voir » : le banc traduit rend l'empreinte attendue, le C aussi (si un
+  compilateur C est là), et `val.vtx` se parcourt sans fenêtre (9 images). 59 vérifications.

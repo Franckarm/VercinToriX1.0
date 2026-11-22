@@ -7,7 +7,7 @@
 // cubes sur disque : le même chemin que Lugus).
 //
 // Ce qui est traduit : à la largeur 64, les opérations entières du chemin court de Lugus (ADD, ADDI, SUB, CMP, MUL,
-// AND, OR, XOR, les décalages, MOVI, ETG), la division et le reste sans signe ; les mêmes (sauf ETG et la division)
+// AND, OR, XOR, les décalages, MOVI, ETG), la division et le reste, sans signe et signés (0.72) ; les mêmes (sauf ETG et la division)
 // sur tout le mot de 128 bits (0.6j) ; les constantes LDI et LDIH ;
 // les flottants quaternaires (addition, soustraction, produit, quotient, racine, comparaisons, conversions depuis les
 // entiers), par un appel direct à natif_flot, le format en constante ; à la largeur 128 : MOV, les lectures et écritures de la mémoire et de la
@@ -600,6 +600,33 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
                     a.b(&[0x74, 0x08]); // jz : diviseur nul, rax garde le dividende
                     a.b(&[0x31, 0xD2, 0x48, 0xF7, 0xF1]); // xor edx, edx ; div rcx
                     a.b(&[0x48, 0x89, 0xD0]); // mov rax, rdx
+                }
+                a.octet(oc, 0);
+                a.b(&[0x48, 0x85, 0xC0]); // test rax, rax
+                a.poser_drapeau(0x94, oz);
+                if d != 0 {
+                    a.ranger(reg(d), RAX);
+                    a.zero(reg(d) + 8);
+                }
+                a.compter(opas);
+            }
+            (1, 0x1A | 0x1B) => {
+                // 0.72 : la division et le reste signés (./ et .%) ; par zéro : tout à un pour la division, le dividende
+                // pour le reste ; le plus petit par -1 : lui-même (la négation, comme Lugus), et un reste nul
+                a.charger(RAX, reg(s));
+                a.charger(RCX, reg(t));
+                a.b(&[0x48, 0x85, 0xC9]); // test rcx, rcx
+                if op == 0x1A {
+                    a.b(&[0x74, 0x12]); // jz : diviseur nul
+                    a.b(&[0x48, 0x83, 0xF9, 0xFF, 0x75, 0x05]); // cmp rcx, -1 ; jne : le cas ordinaire
+                    a.b(&[0x48, 0xF7, 0xD8, 0xEB, 0x0E]); // neg rax ; jmp : fin
+                    a.b(&[0x48, 0x99, 0x48, 0xF7, 0xF9, 0xEB, 0x07]); // cqo ; idiv rcx ; jmp : fin
+                    a.b(&[0x48, 0xC7, 0xC0, 0xFF, 0xFF, 0xFF, 0xFF]); // mov rax, -1
+                } else {
+                    a.b(&[0x74, 0x12]); // jz : diviseur nul, rax garde le dividende
+                    a.b(&[0x48, 0x83, 0xF9, 0xFF, 0x75, 0x04]); // cmp rcx, -1 ; jne : le cas ordinaire
+                    a.b(&[0x31, 0xC0, 0xEB, 0x08]); // xor eax, eax ; jmp : fin
+                    a.b(&[0x48, 0x99, 0x48, 0xF7, 0xF9, 0x48, 0x89, 0xD0]); // cqo ; idiv rcx ; mov rax, rdx
                 }
                 a.octet(oc, 0);
                 a.b(&[0x48, 0x85, 0xC0]); // test rax, rax

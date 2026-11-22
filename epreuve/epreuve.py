@@ -3,7 +3,7 @@
 
     python epreuve/epreuve.py
 
-Sept chapitres, chacun dit ce qu'il montre puis le vérifie :
+Huit chapitres, chacun dit ce qu'il montre puis le vérifie :
     I.   La forge       : créer une réaction à la paillasse d'Ogmios, case par case ; les deux compilateurs d'accord
     II.  Programmer     : structures, textes, tableaux, dictionnaires, fonctions passées en valeur
     III. Compter        : entiers de 128 bits exacts, flottants de 128 bits, le flottant quaternaire, multiplier_ajouter
@@ -11,6 +11,7 @@ Sept chapitres, chacun dit ce qu'il montre puis le vérifie :
     V.   Réagir         : les réactions (vagues sur plusieurs cœurs, la division par zéro réparée)
     VI.  Se souvenir    : ARNc -> ADN -> hex -> cube -> hex -> ADN -> ARN, et chaque forme redonne le même programme
     VII. Se défendre    : le juge des promesses, les types, la patrouille qui répare, l'apoptose qui refuse le faux
+    VIII. Voir          : Belenos, le val des neiges ; la même image en vtx et en C, et le temps de chacun
 Chaque vérification écrit [ok] ou [!!] ; à la fin, le bilan. Rien n'est écrit hors d'un dossier temporaire."""
 import math
 import os
@@ -412,10 +413,43 @@ c, s, e = lugus("freinage-rapide.arn", "--veille")
 verifier("l'ARN coiffé est vérifié avant de servir (sa coiffe, ses témoins) : il donne le même résultat",
          c == 0 and s.strip() == juste, e[-200:])
 
-# ================================================================================================= VIII. les brèches
+# ================================================================================================= VIII. voir
+titre("VIII. VOIR : Belenos, le val des neiges (une scène 3D en entiers : relief, soleil, ombres portées, brume)",
+      "La même scène, calculée en vtx et en C, doit donner la même image au point près : son empreinte (FNV-1a sur\n"
+      "les 129 600 points). Puis le temps d'une image, traduite en x86-64, face au C.")
+EMPREINTE = "-7864931267575122577"
+banc_exe = os.path.join(d, "val_banc" + X)
+r = subprocess.run([VTX, "exe128", os.path.join(racine, "belenos", "val_banc.vtx"), banc_exe], capture_output=True,
+                   text=True, encoding="utf-8", errors="replace", cwd=d)
+t0 = time.time()
+rb = subprocess.run([banc_exe], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=d, timeout=600) \
+    if r.returncode == 0 else r
+t_banc = time.time() - t0
+verifier(f"le banc du val (préparer le relief, 12 images, le soleil qui tourne) en .exe traduit ({t_banc:.2f} s) : "
+         f"l'empreinte attendue", EMPREINTE in rb.stdout, (rb.stdout + rb.stderr)[-300:])
+dire("vtx : " + (rb.stdout.strip().split("\n") + [""])[1][:150])
+cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
+if cc:
+    ref = os.path.join(d, "val_ref" + X)
+    rc = subprocess.run([cc, "-O2", "-o", ref, os.path.join(racine, "belenos", "val_ref.c")], capture_output=True, text=True)
+    rr = subprocess.run([ref], capture_output=True, text=True, encoding="utf-8", errors="replace") if rc.returncode == 0 else rc
+    verifier("la même scène écrite en C (val_ref.c, -O2) : la même empreinte, au point près", EMPREINTE in rr.stdout,
+             (rr.stdout + rr.stderr)[-300:])
+    dire("le C : " + rr.stderr.strip()[:150])
+else:
+    dire("pas de compilateur C ici : la comparaison avec val_ref.c est sautée (cc -O2 belenos/val_ref.c pour la faire)")
+images = os.path.join(d, "val_images")
+sc = ecrire("val.sc", "1 appui 112\n8 relache 112\n9 touche 27\n")
+rt = subprocess.run([VTX, "toile128", os.path.join(racine, "belenos", "val.vtx"), "--scenario", sc, "--images", images,
+                     "--pas", "1"], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=d, timeout=600)
+vues = sorted(os.listdir(images)) if os.path.isdir(images) else []
+verifier(f"val.vtx parcouru sans fenêtre (le soleil tourné, puis Échap) : {len(vues)} images peintes",
+         rt.returncode == 0 and len(vues) == 9, (rt.stdout + rt.stderr)[-300:])
+
+# ================================================================================================= IX. les brèches
 bilan.append(tuple(chapitre))
 chapitre[0] = None
-titre("VIII. LES BRÈCHES CONNUES : ce que l'épreuve a trouvé et qui reste à fermer (montré, pas compté)",
+titre("IX. LES BRÈCHES CONNUES : ce que l'épreuve a trouvé et qui reste à fermer (montré, pas compté)",
       "Une épreuve honnête dit aussi où le rempart est bas. Ces lignes ne comptent pas dans le bilan ; elles disent\n"
       "le prochain travail.")
 print("  [..] t[i] est vérifié pour une variable, t[i][j] et s.champ[i] ; une poignée calculée (f()[i]) ne l'est pas")

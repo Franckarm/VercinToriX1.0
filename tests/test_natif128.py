@@ -181,6 +181,22 @@ fonction principal() {
     afficher(petits, egaux);
 }
 """,
+    # 0.72 : la division et le reste signés traduits (par zéro, le plus petit par -1)
+    "signes": """// machine : lugus
+fonction principal() {
+    soit v = [0, 1, 2, 7, 0 - 1, 0 - 7, 0 - 2, 9223372036854775807, 0 - 9223372036854775807 - 1, 1000000, 0 - 3];
+    soit h = 0;
+    pour a dans v {
+        pour b dans v {
+            soit q = a ./ b;
+            soit r = a .% b;
+            h = h * 31 + q * 7 + r;
+            afficher(a, b, q, r);
+        }
+    }
+    afficher("h", h);
+}
+""",
 }
 for nom, src in cas.items():
     f = os.path.join(d, nom + ".vtx")

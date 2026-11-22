@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.72.zip`, `essai-0.72.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.73.zip`, `essai-0.73.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -46,7 +46,7 @@ avec le créateur.*
   gardé dans le dépôt : le refaire (`lugus cataloguer bibliotheque`) après toute retouche d'un module de la
   bibliothèque (sinon `importer empreinte` le refuse, l'empreinte ayant changé).
 - `outils/tests_du_paquet.txt` : les tests mis dans le paquet ; la commande du paquet : `git archive --format=zip
-  --prefix=vtx-0.6/ -o vtx-0.71.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
+  --prefix=vtx-0.6/ -o vtx-0.72.zip HEAD AUTEUR.md COMMENCER.md LISEZMOI.md vtx.py vtx64.py vtx128.py vtx-rs vtxc spu64
   spu128 chimie natif gobannos exemples exemples128 exemples64 bibliotheque docs` suivi de ces tests et de
   `tests/test_supposons.py tests/supposons_alors.vtx tests/test_gobannos.py tests/gobannos tests/test_valeurs.py
   tests/valeurs_mele.vtx tests/test_types_fonction.py tests/test_gobannos_flottants.py tests/test_nombres.py
@@ -86,7 +86,12 @@ plus vite que sans vérification : 716 314 instructions contre 1 115 214), sur L
 Gobannos, le juge ; l'épissage d'hier éteint (`LDT_STT`) ; Ogmios : la place des vagues fait l'ordre des lignes, la
 nouvelle page, la case suite (Ne) qui renvoie à la page suivante. **0.70b (§76 bis)** : la paillasse fait l'ordre du texte (colonne, puis hauteur), appeler une page et le
 retour. **0.71 (§77)** : Belenos, le val des neiges (`belenos/val.vtx`, premier pas : le relief et la marche, 7 images
-par seconde sur un cœur) ; la suite de la scène est au §77. **Reste** : `f()[i]` ; un LDT sans vérification
+par seconde sur un cœur) ; la suite de la scène est au §77. **0.72 (§78)** : le soleil (o p i k) et les ombres portées
+avec pénombre, éclairées par bandes (le tapis roulant) ; la scène en trois fichiers (`val_scene.vtx`, `val.vtx`,
+`val_banc.vtx`) et sa référence en C (`val_ref.c`, la même empreinte au point près) ; la division signée traduite en x86
+(elle faisait sortir du code traduit) ; `toile128` traduit ; vtx ≈ 10 × le C sur la scène ; l'épreuve a son chapitre
+Voir (59). **Prochain pour Belenos** : les registres dans ceux du processeur (natif128), déplier les petites
+fonctions, puis le lac et ses reflets. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.
 
 **Le glossaire** (fait, 0.67, §73). **La fenêtre d'un programme** (fait, 0.68, §74 : l'atelier et `lugus`, sous

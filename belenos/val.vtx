@@ -1,222 +1,10 @@
 // machine : lugus
-// Belenos : « Le val des neiges », la scène d'essai qu'on parcourt (premier pas : le relief et la marche).
-// Un relief vallonné de pentes variées (une grille de 512 × 512 hauteurs, du bruit sur cinq octaves), la neige au-dessus
-// d'une altitude et sur les pentes douces, la roche sur les pentes fortes, l'herbe en bas ; le ciel et la brume du loin.
-// Chaque image : chaque colonne lance un rayon qui avance du plus près au plus loin et peint de bas en haut ce qu'il
-// découvre (le tampon de hauteur de la colonne : rien n'est peint deux fois). Tout en entiers : les mêmes nombres partout.
-//     vtx toile128 belenos/val.vtx         (flèches : avancer, tourner ; a / q : monter, descendre ; Échap : finir)
-// Sans fenêtre (les essais) : --scenario rejoue des touches, et la scène s'arrête à Échap.
-
-constante W = 480;                 // l'image
-constante H = 270;
-constante G = 512;                 // la grille du relief : G × G cases (elle se répète : on marche sans bord)
-constante MASQUE = 511;
-constante HAUT = 1048576;          // @2[HAUT + z·G + x] : la hauteur, en 1/256 d'unité
-constante COUL = 2097152;          // @2[COUL + z·G + x] : la couleur (le point profond, éclairé)
-constante SINUS = 3145728;         // @2[SINUS + a] : 65536 · sin(2π a / 1024), en entier signé (deux compléments)
-constante INV = 3146752;           // @2[INV + k] : 65536 · ECHELLE / distance(k)
-constante DIST = 3147264;          // @2[DIST + k] : la distance du pas k, en 1/256 d'unité
-constante BRUME = 3147776;         // @2[BRUME + k] : la part de brume du pas k (sur 256)
-constante YBUF = 3148288;          // @2[YBUF + x] : le haut déjà peint de la colonne x
-constante NPAS = 400;              // les pas d'un rayon
-constante ECHELLE = 220;           // la hauteur à l'écran d'une unité à une unité de distance
-
-// ------------------------------------------------------------------------------------------------------- le relief
-fonction hache(x, z) {
-    soit h = (x & MASQUE) * 374761393 + (z & MASQUE) * 668265263 + 1013904223;
-    h = (h ^ (h >> 13)) * 1274126177;
-    retour (h ^ (h >> 16)) & 65535;
-}
-
-// le bruit lisse à la période p (une puissance de deux) : les quatre coins, mêlés en douceur (en 1/65536)
-fonction bruit_lisse(x, z, p) {
-    soit x0 = x / p;
-    soit z0 = z / p;
-    soit fx = (x % p) * 256 / p;
-    soit fz = (z % p) * 256 / p;
-    // la courbe douce : 3t² - 2t³ (sur 256)
-    soit sx = fx * fx * (768 - 2 * fx) / 65536;
-    soit sz = fz * fz * (768 - 2 * fz) / 65536;
-    soit pas_g = G / p;
-    soit a = hache(x0 % pas_g, z0 % pas_g);
-    soit b = hache((x0 + 1) % pas_g, z0 % pas_g);
-    soit c = hache(x0 % pas_g, (z0 + 1) % pas_g);
-    soit d = hache((x0 + 1) % pas_g, (z0 + 1) % pas_g);
-    soit h1 = (a * (256 - sx) + b * sx) / 256;
-    soit h2 = (c * (256 - sx) + d * sx) / 256;
-    retour (h1 * (256 - sz) + h2 * sz) / 256;
-}
-
-fonction creer_relief() {
-    pour z dans 0..G {
-        pour x dans 0..G {
-            // cinq octaves : les grandes collines, puis les plis de plus en plus fins
-            soit h = bruit_lisse(x, z, 256) * 16 + bruit_lisse(x, z, 128) * 8 + bruit_lisse(x, z, 64) * 4 + bruit_lisse(x, z, 32) * 2
-                     + bruit_lisse(x, z, 16);
-            // les crêtes plus hautes, les vallées plus douces : la hauteur au carré (le relief de montagne)
-            soit n = h / 31;
-            // les vallées aplanies sous 20000, les monts au-dessus, en carré : de 0 à 60000 (234 unités)
-            soit m = 0;
-            si n > 20000 {
-                m = (n - 20000) * 2;
-            }
-            si m > 65535 {
-                m = 65535;
-            }
-            @2[HAUT + z * G + x] = m * m / 65536 * 5 / 2 + n / 6;
-        }
-    }
-}
-
-// l'éclairage et la matière de chaque case : la pente (la différence avec les voisines), l'altitude
-fonction peindre_relief() {
-    pour z dans 0..G {
-        pour x dans 0..G {
-            soit h = @2[HAUT + z * G + x];
-            soit hx = @2[HAUT + z * G + ((x + 1) & MASQUE)];
-            soit hz = @2[HAUT + ((z + 1) & MASQUE) * G + x];
-            // la lumière d'un soleil au sud-ouest, un peu haut : 128 sur le plat, plus vers lui, moins à l'opposé
-            soit lum = 150;
-            si hx > h {
-                lum = lum + (hx - h) / 6;
-            } sinon {
-                lum = lum - (h - hx) / 6;
-            }
-            si hz > h {
-                lum = lum - (hz - h) / 9;
-            } sinon {
-                lum = lum + (h - hz) / 9;
-            }
-            si lum .< 40 {
-                lum = 40;
-            }
-            si lum > 255 {
-                lum = 255;
-            }
-            soit pente = 0;
-            si hx > h { pente = pente + hx - h; } sinon { pente = pente + h - hx; }
-            si hz > h { pente = pente + hz - h; } sinon { pente = pente + h - hz; }
-            soit r = 70;
-            soit g = 110;
-            soit b = 60;
-            si pente > 700 {
-                // la roche des pentes fortes
-                r = 110;
-                g = 105;
-                b = 100;
-            } sinon si h > 30000 || (h > 20000 && pente < 260) {
-                // la neige : en haut, et sur les replats déjà hauts
-                r = 235;
-                g = 238;
-                b = 245;
-            } sinon si h > 12000 {
-                // la lande d'altitude
-                r = 120;
-                g = 115;
-                b = 80;
-            }
-            // un grain : la case n'est pas tout à fait la même que sa voisine
-            soit grain = hache(x * 7, z * 13) & 15;
-            r = (r + grain) * lum / 256;
-            g = (g + grain) * lum / 256;
-            b = (b + grain) * lum / 256;
-            si r > 255 { r = 255; }
-            si g > 255 { g = 255; }
-            si b > 255 { b = 255; }
-            @2[COUL + z * G + x] = r * 65536 + g * 256 + b;
-        }
-    }
-}
-
-fonction preparer_tables() {
-    pour a dans 0..1024 {
-        soit s = sinus(flottant(a) * 6.283185307179586 / 1024.0) * 65536.0;
-        si s < 0.0 {
-            @2[SINUS + a] = 0 - entier(0.0 - s);
-        } sinon {
-            @2[SINUS + a] = entier(s);
-        }
-    }
-    // les pas d'un rayon : serrés près de l'œil, de plus en plus longs au loin
-    soit dist = 256;
-    pour k dans 0..NPAS {
-        @2[DIST + k] = dist;
-        @2[INV + k] = 65536 * ECHELLE * 256 / dist;
-        soit brume = k * k * 256 / (NPAS * NPAS);
-        @2[BRUME + k] = brume;
-        dist = dist + 64 + dist / 60;
-    }
-}
-
-// ------------------------------------------------------------------------------------------------------- l'image
-constante CIEL_HAUT = 0x5A7CB4;
-constante CIEL_BAS = 0xC8D6E6;
-
-fonction profond(c) {
-    retour rgb((c >> 16) & 255, (c >> 8) & 255, c & 255);
-}
-
-// la couleur c fondue vers la brume (part sur 256)
-fonction embrume(c, part) {
-    soit r = ((c >> 16) & 255) * (256 - part) + 200 * part;
-    soit g = ((c >> 8) & 255) * (256 - part) + 214 * part;
-    soit b = (c & 255) * (256 - part) + 230 * part;
-    retour rgb(r / 256, g / 256, b / 256);
-}
-
-// une image : l'œil en (cx, cz) (en 1/65536 de case), à la hauteur ch (en 1/256), regardant vers l'angle a (sur 1024),
-// l'horizon à la ligne hor
-fonction rendre(cx, cz, ch, a, hor) {
-    // le ciel : un dégradé
-    pour y dans 0..H {
-        soit t = y * 256 / H;
-        soit r = (0x5A * (256 - t) + 0xC8 * t) / 256;
-        soit g = (0x7C * (256 - t) + 0xD6 * t) / 256;
-        soit b = (0xB4 * (256 - t) + 0xE6 * t) / 256;
-        soit c = rgb(r, g, b);
-        pour x dans 0..W {
-            @1[y * W + x] = c;
-        }
-    }
-    pour x dans 0..W {
-        @2[YBUF + x] = H;
-    }
-    soit sa = @2[SINUS + (a & 1023)];
-    soit ca = @2[SINUS + ((a + 256) & 1023)];
-    pour x dans 0..W {
-        // la direction du rayon de la colonne : l'axe de la vue, plus un écart à droite (un champ de 60 degrés)
-        soit ecart = x * 2 * 37837 / W;                 // tan(30°) · 65536 = 37837, de -1 à +1 fois cela
-        // dir = avant + (ecart - 37837) · droite, avec avant = (sin a, cos a), droite = (cos a, -sin a)
-        soit e = ecart - 37837;                          // signé (deux compléments)
-        soit dx = sa + (e * ca) ./ 65536;
-        soit dz = ca - (e * sa) ./ 65536;
-        soit haut = H;
-        soit k = 0;
-        tantque k < NPAS && haut > 0 {
-            soit dist = @2[DIST + k];
-            soit px = (cx + (dx * dist) ./ 256) >> 16;
-            soit pz = (cz + (dz * dist) ./ 256) >> 16;
-            soit cell = (pz & MASQUE) * G + (px & MASQUE);
-            soit h = @2[HAUT + cell];
-            soit inv = @2[INV + k];
-            // la ligne à l'écran : hor + (ch - h) · inv
-            soit ys = 0;
-            soit dessus = ch * inv / 16777216;
-            soit dessous = h * inv / 16777216;
-            si hor + dessus > dessous {
-                ys = hor + dessus - dessous;
-            }
-            si ys < haut {
-                soit cc = embrume(@2[COUL + cell], @2[BRUME + k]);
-                pour yy dans ys..haut {
-                    @1[yy * W + x] = cc;
-                }
-                haut = ys;
-            }
-            k = k + 1;
-        }
-    }
-}
+// Belenos : « Le val des neiges », la scène d'essai qu'on parcourt.
+//     vtx toile128 belenos/val.vtx         (flèches : avancer, tourner ; a / q : monter, descendre ; o / p : tourner le
+//                                           soleil ; i / k : le monter, le descendre ; Échap : finir)
+// La scène elle-même (le relief, la lumière, le rendu) est dans val_scene.vtx ; le banc de mesure dans val_banc.vtx,
+// et le même calcul en C dans val_ref.c (la même image au point près : on compare les temps à armes égales).
+importer "val_scene.vtx";
 
 fonction principal() {
     ecran(W, H);
@@ -224,6 +12,17 @@ fonction principal() {
     creer_relief();
     peindre_relief();
     cadence(0);
+    // le soleil : au sud-ouest, à 25 degrés ; tout le relief éclairé une première fois
+    soit az = 640;
+    soit el = 71;
+    pour z dans 0..G {
+        eclairer_ligne(z, az, el);
+    }
+    // le tapis roulant de la lumière : la prochaine bande à éclairer, et ce qui reste à refaire depuis que le soleil a bougé
+    soit bande = 0;
+    soit reste = 0;
+    soit avant = horloge();
+    soit ms = 0;
     // l'œil : au milieu de la grille (avec une marge pour rester positif), au-dessus du sol
     soit cx = (1 << 40) + (G / 2) * 65536;
     soit cz = (1 << 40) + (G / 2) * 65536;
@@ -256,13 +55,47 @@ fonction principal() {
         si appuyee(113) && au_sol > 400 {
             au_sol = au_sol - 120;
         }
+        // le soleil : o / p le tournent, i / k le montent et le descendent ; la lumière se refait bande par bande
+        si appuyee(111) {
+            az = (az + 1024 - 4) & 1023;
+            reste = G;
+        }
+        si appuyee(112) {
+            az = (az + 4) & 1023;
+            reste = G;
+        }
+        si appuyee(105) && el < 250 {
+            el = el + 2;
+            reste = G;
+        }
+        si appuyee(107) && el > 2 {
+            el = el - 2;
+            reste = G;
+        }
+        si reste > 0 {
+            pour q dans 0..BANDE {
+                eclairer_ligne((bande + q) & MASQUE, az, el);
+            }
+            bande = (bande + BANDE) & MASQUE;
+            si reste > BANDE {
+                reste = reste - BANDE;
+            } sinon {
+                reste = 0;
+            }
+        }
         // la hauteur de l'œil : le sol sous lui, plus la hauteur choisie
         soit sol = @2[HAUT + ((cz >> 16) & MASQUE) * G + ((cx >> 16) & MASQUE)];
-        rendre(cx, cz, sol + au_sol, a, hor);
+        rendre(cx, cz, sol + au_sol, a, hor, az, el);
+        // le compteur : le temps de l'image précédente, le soleil
+        texte_image(4, 4, "image " + texte(ms) + " ms   soleil " + texte(az * 360 / 1024) + " / " + texte(el * 360 / 1024),
+                    rgb(255, 255, 255));
         images = images + 1;
         si presenter() == 1 {
             fini = 1;
         }
+        soit maintenant = horloge();
+        ms = maintenant - avant;
+        avant = maintenant;
         soit t = touche();
         tantque t != 0 {
             si t == 27 {

@@ -146,7 +146,8 @@ pub fn lancer(args: &[String], machine: u32) {
         }
         s.presenter = Some(Box::new(super::pas128::presenter128));
         s.machine_fille = Some(super::machine128::machine_fille);
-        let r = s.executer(u64::MAX);
+        // 0.72 : traduite en x86-64 comme un .exe (VTX_INTERPRETE : Lugus seul)
+        let r = super::exe128::avancer(&mut s, &mots);
         if !s.sortie.is_empty() {
             println!("{}", s.sortie.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(","));
         }
