@@ -3813,3 +3813,34 @@ traînées le long des lignes.
 - **Les limites** : le renvoi ne regarde pas si le relief le coupe entre la source et la case (il passe les crêtes) ;
   les traînées en éventail qui restent dans les grandes ombres viennent de la pénombre du balayage (chaque ligne a son
   horizon), pas du renvoi.
+
+## 86. La lumière instantanée : trois étages dans la même image (22 novembre, 0.803)
+
+**Vu par le créateur** : un changement de lumière balaie encore l'écran, alors qu'il doit être instantané ; l'étage en
+un bloc s'applique-t-il mal ?
+
+- **L'étage en un bloc n'y était pour rien** : l'image part bien à l'écran d'un seul bloc. Ce qui balayait, c'était le
+  **calcul** de la lumière, étalé exprès sur le tapis (16 lignes par image : un changement mettait 32 images, 64 avec
+  les deux tours de la 0.802, à traverser l'écran). C'était un choix, pas une panne ; il ne convenait pas.
+- **Toute la lumière dans l'image où elle change**, en trois étages qui se suivent, chacun en bandes sur les cœurs
+  (`eclairer_tout`, `val_scene.vtx` ; la même chose en C) :
+  1. **le balayage** (`eclairer_lignes`) : l'ombre du cube et la lumière des sources reçue par chaque case (l'astre, les
+     feux), notée dans `LUM` (et deux drapeaux : une source en plein, un foyer). Il ne lit plus que trois mots par case
+     (la hauteur ; la pente, **en un seul mot** `NORM` au lieu de trois ; les feux) et n'en écrit qu'un ;
+  2. **la pyramide, montée puis redescendue** (`construire_pyramide`) : en montant, ce que chaque case renvoie
+     (`renvoye`, calculé ici, dans l'ordre de la mémoire) sommé par blocs de 2, 4, 8, 16 ; en redescendant
+     (`descendre`), chaque niveau reçoit celui d'au-dessus, mêlé, plus sa propre moyenne pondérée : `RV1` (256 × 256)
+     dit le renvoi autour de chaque bloc de 2 × 2 cases ;
+  3. **la composition** (`composer`), rangée par rangée, dans l'ordre de la mémoire : le ciel selon l'ouverture, les
+     sources, le renvoi (`RV1` mêlé autour de la case), la couleur, l'état, le compte de chaque rangée.
+- **Plus de tapis, plus de second tour** : tout est cohérent dans l'image même. L'image qui suit `n` est déjà toute de
+  nuit ; celle qui suit `f`, déjà sans feux. Le compteur « inconnu » reste à 0 : rien n'attend plus d'être refait.
+- **Ce que ça coûte** (toute la lumière refaite, plus l'image) : en C, sur un cœur, 13,9 ms (le balayage 9,7, la
+  pyramide 1,7, la composition 3,1) ; forgé, 35 ms sur un cœur, **22 ms sur deux** (les trois étages se partagent bien
+  entre les cœurs). Quand la lumière ne change pas, rien de plus (l'image seule, 3 à 4 ms). Le banc refait désormais
+  toute la lumière à chaque image : il mesure ce que coûte un changement instantané. La même empreinte partout :
+  7510702145557097999.
+- **Une erreur trouvée en route** : l'adresse de `NORM` recouvrait la table des feux (en C, les tableaux sont séparés :
+  l'empreinte du C est restée juste, celle de vtx a changé ; c'est l'accord des deux qui l'a montré).
+- **Ce qui reste cher** : le balayage, quand le soleil vient du nord ou du sud, avance d'une rangée à chaque pas (un
+  saut de 512 mots) ; et la moitié de ses pas ne sert qu'à porter l'horizon.

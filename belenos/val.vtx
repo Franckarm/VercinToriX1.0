@@ -17,10 +17,9 @@ fonction principal() {
     soit az = 640;
     soit el = 71;
     eclairer_tout(az, el);
-    // le tapis roulant de la lumière : la prochaine bande à éclairer, et ce qui reste à refaire depuis que le soleil a bougé
-    soit bande = 0;
-    soit reste = 0;
-    soit tour = 2;              // 0.802 : 1 pendant le premier tour du tapis après un saut de lumière
+    // 0.803 : la lumière se refait tout entière, dans l'image même où elle change (plus de tapis : un changement est
+    // instantané)
+    soit refaire = 0;
     soit avant = horloge();
     soit ms = 0;
     // l'œil : au milieu de la grille (avec une marge pour rester positif), au-dessus du sol
@@ -55,42 +54,26 @@ fonction principal() {
         si appuyee(113) && au_sol > 400 {
             au_sol = au_sol - 120;
         }
-        // le soleil : o / p le tournent, i / k le montent et le descendent ; la lumière se refait bande par bande
+        // le soleil : o / p le tournent, i / k le montent et le descendent ; la lumière se refait aussitôt
         si appuyee(111) {
             az = (az + 1024 - 4) & 1023;
-            reste = G;
+            refaire = 1;
         }
         si appuyee(112) {
             az = (az + 4) & 1023;
-            reste = G;
+            refaire = 1;
         }
         si appuyee(105) && el .< 250 {
             el = el + 2;
-            reste = G;
+            refaire = 1;
         }
         si appuyee(107) && el .> 0 - 70 {
             el = el - 2;
-            reste = G;
+            refaire = 1;
         }
-        si reste > 0 {
-            eclairer_lignes(bande, bande + BANDE, az, el);
-            bande = (bande + BANDE) & MASQUE;
-            si reste > BANDE {
-                reste = reste - BANDE;
-            } sinon {
-                reste = 0;
-            }
-            // 0.802 : la pyramide des renvois, refaite toutes les quatre bandes et quand la lumière est finie (les
-            // bandes suivantes la lisent) : le renvoi change lentement, il n'a pas besoin de plus
-            si (bande & 63) == 0 || reste == 0 {
-                construire_pyramide();
-            }
-            // le second tour : après un saut de lumière (n, f), les premières bandes ont lu une pyramide d'avant : on
-            // refait un tour avec la pyramide de la nouvelle lumière
-            si reste == 0 && tour == 1 {
-                tour = 2;
-                reste = G;
-            }
+        si refaire == 1 {
+            eclairer_tout(az, el);
+            refaire = 0;
         }
         // la hauteur de l'œil : le sol sous lui, plus la hauteur choisie
         soit sol = @2[HAUT + ((cz >> 16) & MASQUE) * G + ((cx >> 16) & MASQUE)];
@@ -116,7 +99,7 @@ fonction principal() {
             tvar = tvar + @2[COMPTE + 4 * nl + 3];
         }
         soit tout = G * G;
-        soit tinc = reste * G;
+        soit tinc = 0;
         texte_image(4, 16, "vrai " + texte(tv * 100 / tout) + " %   faux " + texte(tf * 100 / tout) + " %   variable " +
                     texte(tvar * 100 / tout) + " %   inconnu " + texte(tinc * 100 / tout) + " %", rgb(255, 230, 160));
         images = images + 1;
@@ -134,8 +117,7 @@ fonction principal() {
             // 0.80 : f allume ou éteint les feux ; n passe du jour à la nuit (et retour) : toute la lumière à refaire
             si t == 102 {
                 @2[REGLES] = 1 - @2[REGLES];
-                reste = G;
-                tour = 1;
+                refaire = 1;
             }
             si t == 110 {
                 si el .> 0 {
@@ -143,8 +125,7 @@ fonction principal() {
                 } sinon {
                     el = 71;
                 }
-                reste = G;
-                tour = 1;
+                refaire = 1;
             }
             t = touche();
         }

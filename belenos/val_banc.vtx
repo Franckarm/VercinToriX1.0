@@ -1,6 +1,6 @@
 // machine : lugus
 // Belenos : le banc du val des neiges. Sans fenêtre, toujours le même passage : douze images, l'œil qui avance et
-// tourne, le soleil qui tourne (une bande de lumière refaite à chaque image) ; à la fin, l'empreinte de la dernière
+// tourne, le soleil qui tourne (0.803 : toute la lumière refaite à chaque image) ; à la fin, l'empreinte de la dernière
 // image (FNV-1a sur ses points). Les mêmes nombres partout : Lugus, la machine en Python, le .exe traduit en x86, et
 // la même scène écrite dans un autre langage (pour la comparer) doivent donner la même empreinte.
 //     LUGUS_TEMPS=1 lugus belenos/val_banc.vtx        (le temps et les instructions)
@@ -31,7 +31,6 @@ fonction principal() {
     soit cx = (1 << 40) + (G / 2) * 65536;
     soit cz = (1 << 40) + (G / 2) * 65536;
     soit a = 0;
-    soit bande = 0;
     pour n dans 0..IMAGES {
         soit sa = @2[SINUS + (a & 1023)];
         soit ca = @2[SINUS + ((a + 256) & 1023)];
@@ -39,9 +38,8 @@ fonction principal() {
         cz = cz + ca ./ 2;
         a = (a + 6) & 1023;
         az = (az + 4) & 1023;
-        eclairer_lignes(bande, bande + BANDE, az, el);
-        construire_pyramide();
-        bande = (bande + BANDE) & MASQUE;
+        // 0.803 : toute la lumière à chaque image (le soleil a bougé) : ce que coûte un changement instantané
+        eclairer_tout(az, el);
         soit sol = @2[HAUT + ((cz >> 16) & MASQUE) * G + ((cx >> 16) & MASQUE)];
         rendre(cx, cz, sol + 4000, a, H / 3, az, el);
     }
