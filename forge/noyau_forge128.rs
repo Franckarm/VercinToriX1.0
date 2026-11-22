@@ -24,6 +24,8 @@ struct Ctx {
     pl: [*mut u128; 64],
     ce: [u128; 64],
     pe: [*mut u128; 64],
+    // 0.74b : pour un cylindre, la feuille de la page écrite (ses blocs ouverts) ; nul hors d'un cylindre
+    pb: [*mut Feuille; 64],
     // les tableaux rangés hors du cube (l'adaptation automatique) : leur recopie dans le cube, avant toute fin
     vider: fn(&mut Ctx),
     // la machine d'un cylindre (les segments joués ensemble) : elle lit le cube commun, et n'écrit que dans le sien
@@ -69,9 +71,78 @@ impl std::hash::Hasher for Rapide {
 type Table<K, V> = std::collections::HashMap<K, V, std::hash::BuildHasherDefault<Rapide>>;
 type Ensemble<K> = std::collections::HashSet<K, std::hash::BuildHasherDefault<Rapide>>;
 
+/// 0.74b : une page qu'un cylindre écrit, ouverte bloc par bloc (64 mots) : au premier mot écrit dans un bloc, ce bloc
+/// seul est recopié du cube commun (ou mis à zéro s'il n'y est pas) ; le cylindre ne rend que ses blocs ouverts, et la
+/// fusion ne regarde qu'eux (avant, chaque cylindre recopiait et comparait la page entière, un mégaoctet)
+struct Feuille {
+    mots: Box<[u128]>,
+    blocs: [u64; 16],
+    commun: *const u128,
+}
+unsafe impl Send for Feuille {}
+unsafe impl Sync for Feuille {}
+
+/// 0.74b : la réserve des pages de feuilles : une page rendue sert de nouveau, sans être remise à zéro (seuls ses blocs
+/// ouverts sont lus, et un bloc est toujours rempli à son ouverture)
+static RESERVE: std::sync::Mutex<Vec<Box<[u128]>>> = std::sync::Mutex::new(Vec::new());
+
+/// 0.74b : la réserve des machines des cylindres (une machine rendue sert au passage suivant)
+struct EnvoiCtx(Box<Ctx>);
+unsafe impl Send for EnvoiCtx {}
+static CTX_RESERVE: std::sync::Mutex<Vec<EnvoiCtx>> = std::sync::Mutex::new(Vec::new());
+
+#[allow(dead_code)]
+fn remettre_ctx(c: Box<Ctx>) {
+    let mut r = CTX_RESERVE.lock().unwrap();
+    if r.len() < 64 {
+        r.push(EnvoiCtx(c));
+    }
+}
+
+fn page_de_reserve() -> Box<[u128]> {
+    match RESERVE.lock().unwrap().pop() {
+        Some(p) => p,
+        None => vec![0u128; MOTS_PAGE].into_boxed_slice(),
+    }
+}
+
+fn rendre_a_la_reserve(p: Box<[u128]>) {
+    let mut r = RESERVE.lock().unwrap();
+    if r.len() < 256 {
+        r.push(p);
+    }
+}
+
+impl Feuille {
+    #[inline(always)]
+    fn ouvert(&self, b: usize) -> bool {
+        (self.blocs[b >> 6] >> (b & 63)) & 1 == 1
+    }
+    #[inline(never)]
+    fn ouvrir(&mut self, b: usize) {
+        let d = &mut self.mots[b * 64..b * 64 + 64];
+        if self.commun.is_null() {
+            d.fill(0);
+        } else {
+            d.copy_from_slice(unsafe { std::slice::from_raw_parts(self.commun.add(b * 64), 64) });
+        }
+        self.blocs[b >> 6] |= 1 << (b & 63);
+    }
+    #[inline(always)]
+    fn lire(&self, j: usize) -> u128 {
+        if self.ouvert(j >> 6) {
+            self.mots[j]
+        } else if self.commun.is_null() {
+            0
+        } else {
+            unsafe { *self.commun.add(j) }
+        }
+    }
+}
+
 struct Cylindre {
     commun: *const Instantane,
-    copiees: Ensemble<u128>,
+    feuilles: Table<u128, Box<Feuille>>,
     lues: Ensemble<u128>,
     /// 0.73 : les pages déjà vues par ce cylindre et leur premier mot (celle du cube commun, ou la sienne) : une
     /// page n'est cherchée et notée qu'une fois
@@ -81,7 +152,7 @@ struct Cylindre {
 
 /// Ce qu'un cylindre rend : ses pages, les pages qu'il a lues, et s'il faut tout rejouer
 struct Recolte {
-    pages: Vec<(u128, Box<[u128]>)>,
+    pages: Vec<(u128, Box<Feuille>)>,
     lues: Vec<u128>,
     danger: bool,
 }
@@ -105,14 +176,27 @@ fn cylindres_voulus() -> usize {
 #[allow(dead_code)]
 fn rendre(c: &mut Ctx) -> Recolte {
     let o = c.ombre.take().unwrap();
-    let cles: Vec<u128> = o.copiees.iter().copied().collect();
-    // seules les pages vraiment changées sont rendues ; la comparaison se fait ici, dans le fil, sur son cœur
-    let inst = unsafe { &*o.commun };
-    // 0.73 : une page absente du cube commun est changée dès qu'un de ses mots n'est pas nul (sans page de zéros)
-    let pages = c.m.rendre_pages(&cles).into_iter().filter(|(k, mots)| match inst.pages.get(k) {
-        Some(&(p, _)) => mots[..] != unsafe { std::slice::from_raw_parts(p as *const u128, MOTS_PAGE) }[..],
-        None => mots.iter().any(|&w| w != 0),
-    }).collect();
+    // seuls les blocs vraiment changés restent ouverts ; la comparaison se fait ici, dans le fil, sur son cœur
+    let mut pages = Vec::new();
+    for (k, mut f) in o.feuilles.into_iter() {
+        for b in 0..1024 {
+            if f.ouvert(b) {
+                let pareil = if f.commun.is_null() {
+                    f.mots[b * 64..b * 64 + 64].iter().all(|&w| w == 0)
+                } else {
+                    f.mots[b * 64..b * 64 + 64] == *unsafe { std::slice::from_raw_parts(f.commun.add(b * 64), 64) }
+                };
+                if pareil {
+                    f.blocs[b >> 6] &= !(1 << (b & 63));
+                }
+            }
+        }
+        if f.blocs.iter().any(|&w| w != 0) {
+            pages.push((k, f));
+        } else {
+            rendre_a_la_reserve(f.mots);
+        }
+    }
     Recolte { pages, lues: o.lues.into_iter().collect(), danger: o.danger }
 }
 
@@ -150,82 +234,109 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
     // chaque page du cube commun, avec ceux qui l'ont écrite
     let nr = recoltes.len();
     let mut ordre: Vec<u128> = Vec::new();
-    let mut auteurs: std::collections::HashMap<u128, Vec<Box<[u128]>>> = std::collections::HashMap::new();
+    let mut auteurs: std::collections::HashMap<u128, Vec<Box<Feuille>>> = std::collections::HashMap::new();
     for r in recoltes {
-        for (k, mots) in r.pages {
-            auteurs.entry(k).or_insert_with(|| { ordre.push(k); Vec::new() }).push(mots);
+        for (k, f) in r.pages {
+            auteurs.entry(k).or_insert_with(|| { ordre.push(k); Vec::new() }).push(f);
         }
     }
-    // les pages écrites par plusieurs : fondues mot à mot dans une page neuve, une page par fil à la fois, sur tous
-    // les cœurs ; rien n'est encore posé
-    struct Fonte { k: u128, orig: usize, mots: Vec<Box<[u128]>> }
-    let mut seules: Vec<(u128, Box<[u128]>)> = Vec::new();
-    let mut fontes: Vec<Fonte> = Vec::new();
     let pages = ordre.len();
-    for k in &ordre {
-        let mut m = auteurs.remove(k).unwrap();
-        if m.len() == 1 {
-            seules.push((*k, m.pop().unwrap()));
-        } else {
-            let (orig, _, _) = c.m.page_de(adresse_page(*k));
-            fontes.push(Fonte { k: *k, orig: orig as usize, mots: m });
-        }
-    }
-    let nt = cylindres_voulus().min(fontes.len()).max(1);
-    let suivante = std::sync::atomic::AtomicUsize::new(0);
-    let (neuves, variables): (Vec<(u128, Box<[u128]>)>, u64) = std::thread::scope(|sc| {
-        let fils: Vec<_> = (0..nt).map(|_| sc.spawn(|| {
-            let mut v = 0u64;
-            let mut faites = Vec::new();
-            loop {
-                let n = suivante.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                if n >= fontes.len() {
-                    break;
+    // les pages du cube commun où poser, puis le travail en tranches de 64 blocs (4 096 mots), partagé entre les cœurs
+    let cibles: Vec<(usize, usize)> = ordre.iter().enumerate()
+        .map(|(n, k)| (n, c.m.page_de(adresse_page(*k)).0 as usize)).collect();
+    let feuilles: Vec<&Vec<Box<Feuille>>> = ordre.iter().map(|k| &auteurs[k]).collect();
+    let tranches: Vec<(usize, usize)> = (0..ordre.len()).flat_map(|n| (0..16).map(move |t| (n, t))).collect();
+    let nt = cylindres_voulus().max(1).min(tranches.len().max(1));
+    let travail = |faire: &(dyn Fn(usize, usize) -> u64 + Sync)| -> u64 {
+        let suivante = std::sync::atomic::AtomicUsize::new(0);
+        std::thread::scope(|sc| {
+            let fils: Vec<_> = (0..nt).map(|_| sc.spawn(|| {
+                let mut v = 0;
+                loop {
+                    let q = suivante.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if q >= tranches.len() {
+                        break;
+                    }
+                    v += faire(tranches[q].0, tranches[q].1);
                 }
-                let f = &fontes[n];
-                let o = unsafe { std::slice::from_raw_parts(f.orig as *const u128, MOTS_PAGE) };
-                let mut d: Box<[u128]> = o.into();
-                let mut deja = vec![false; MOTS_PAGE];
-                for mots in &f.mots {
-                    // un cylindre ne change qu'un coin de la page : les blocs de 64 mots intacts sont sautés d'un coup
-                    for b in (0..MOTS_PAGE).step_by(64) {
-                        if mots[b..b + 64] == o[b..b + 64] {
-                            continue;
-                        }
-                        for j in b..b + 64 {
-                            if mots[j] != o[j] {
-                                if deja[j] && d[j] != mots[j] {
-                                    v += 1;
-                                }
-                                d[j] = mots[j];
-                                deja[j] = true;
-                            }
+                v
+            })).collect();
+            fils.into_iter().map(|h| h.join().unwrap()).sum()
+        })
+    };
+    // d'abord, sans rien poser : deux cylindres ont-ils changé le même mot de deux valeurs ? (seuls les blocs ouverts
+    // par plusieurs sont regardés)
+    let verifier = |n: usize, t: usize| -> u64 {
+        let fs = feuilles[n];
+        if fs.len() < 2 {
+            return 0;
+        }
+        let d = unsafe { std::slice::from_raw_parts(cibles[n].1 as *const u128, MOTS_PAGE) };
+        let mut v = 0;
+        for b in t * 64..t * 64 + 64 {
+            if fs.iter().filter(|f| f.ouvert(b)).count() < 2 {
+                continue;
+            }
+            for j in b * 64..b * 64 + 64 {
+                let mut vu: Option<u128> = None;
+                for f in fs.iter().filter(|f| f.ouvert(b)) {
+                    let w = f.mots[j];
+                    if w != d[j] {
+                        match vu {
+                            Some(x) if x != w => v += 1,
+                            _ => vu = Some(w),
                         }
                     }
                 }
-                faites.push((f.k, d));
             }
-            (faites, v)
-        })).collect();
-        let mut tout = Vec::new();
-        let mut v = 0;
-        for h in fils {
-            let (f, n) = h.join().unwrap();
-            tout.extend(f);
-            v += n;
         }
-        (tout, v)
-    });
+        v
+    };
+    let variables = travail(&verifier);
     if variables > 0 {
+        for (_, fs) in auteurs {
+            for f in fs {
+                rendre_a_la_reserve(f.mots);
+            }
+        }
         rapport_cylindres(nr, 0, variables, "deux cylindres ont écrit le même mot de deux valeurs (variable) : rejoué dans l'ordre");
         return false;
     }
-    // tout est sûr : les pages sont posées telles quelles (rien n'est recopié)
-    let mut anciennes: Vec<Box<[u128]>> = Vec::new();
-    for (k, mots) in seules.into_iter().chain(neuves) {
-        anciennes.extend(c.m.poser_page(adresse_page(k), mots));
+    // tout est sûr : chaque bloc ouvert est posé dans le cube commun (chaque tranche par un seul cœur)
+    let poser = |n: usize, t: usize| -> u64 {
+        let fs = feuilles[n];
+        let d = unsafe { std::slice::from_raw_parts_mut(cibles[n].1 as *mut u128, MOTS_PAGE) };
+        for b in t * 64..t * 64 + 64 {
+            let nb = fs.iter().filter(|f| f.ouvert(b)).count();
+            if nb == 0 {
+                continue;
+            }
+            if nb == 1 {
+                // un seul l'a ouvert : son bloc part de ce même bloc du cube commun, il est posé tel quel
+                let f = fs.iter().find(|f| f.ouvert(b)).unwrap();
+                d[b * 64..b * 64 + 64].copy_from_slice(&f.mots[b * 64..b * 64 + 64]);
+                continue;
+            }
+            let mut avant = [0u128; 64];
+            avant.copy_from_slice(&d[b * 64..b * 64 + 64]);
+            for f in fs.iter().filter(|f| f.ouvert(b)) {
+                for i in 0..64 {
+                    let w = f.mots[b * 64 + i];
+                    if w != avant[i] {
+                        d[b * 64 + i] = w;
+                    }
+                }
+            }
+        }
+        0
+    };
+    travail(&poser);
+    drop(feuilles);
+    for (_, fs) in auteurs {
+        for f in fs {
+            rendre_a_la_reserve(f.mots);
+        }
     }
-    drop(anciennes);
     c.oublier_pages();
     rapport_cylindres(nr, pages, 0, "");
     true
@@ -275,6 +386,11 @@ impl Ctx {
     fn lire_lent(&mut self, a: u128, k: u128, j: usize) -> u128 {
         if self.ombre.is_some() && k >> 120 != 0 {
             let o = self.ombre.as_mut().unwrap();
+            // 0.74b : une page que ce cylindre écrit : bloc par bloc (les siens, ouverts ; les autres, du cube commun)
+            if let Some(f) = o.feuilles.get(&k) {
+                o.lues.insert(k);
+                return f.lire(j);
+            }
             // 0.73 : une page déjà vue : son premier mot est connu, rien à chercher ni à noter
             if let Some(&p) = o.vues.get(&k) {
                 let h = case(k);
@@ -283,28 +399,20 @@ impl Ctx {
                 return unsafe { *p.add(j) };
             }
             o.lues.insert(k);
-            if !o.copiees.contains(&k) {
-                let commun = unsafe { &*o.commun };
-                if let Some(&(p, _)) = commun.pages.get(&k) {
-                    // la page du cube commun, lue sans la copier
-                    o.vues.insert(k, p);
-                    let h = case(k);
-                    self.cl[h] = k;
-                    self.pl[h] = p;
-                    return unsafe { *p.add(j) };
-                }
-                if commun.disque {
-                    o.danger = true;
-                }
-                // une page que le cube commun n'a pas : elle est vide ; elle devient la sienne
-                o.copiees.insert(k);
+            let commun = unsafe { &*o.commun };
+            if let Some(&(p, _)) = commun.pages.get(&k) {
+                // la page du cube commun, lue sans la copier
+                o.vues.insert(k, p);
+                let h = case(k);
+                self.cl[h] = k;
+                self.pl[h] = p;
+                return unsafe { *p.add(j) };
             }
-            let (p, _, _) = self.m.page_de(a);
-            self.ombre.as_mut().unwrap().vues.insert(k, p);
-            let h = case(k);
-            self.cl[h] = k;
-            self.pl[h] = p;
-            return unsafe { *p.add(j) };
+            if commun.disque {
+                o.danger = true;
+            }
+            // une page que le cube commun n'a pas : elle est vide
+            return 0;
         }
         let (p, _, _) = self.m.page_de(a);
         let h = case(k);
@@ -317,6 +425,13 @@ impl Ctx {
         let (k, j) = Spu128::cle_page(a);
         let h = case(k);
         if k == self.ce[h] {
+            let f = self.pb[h];
+            if !f.is_null() {
+                let f = unsafe { &mut *f };
+                if !f.ouvert(j >> 6) {
+                    f.ouvrir(j >> 6);
+                }
+            }
             unsafe { *self.pe[h].add(j) = v };
             return;
         }
@@ -331,29 +446,39 @@ impl Ctx {
                 if a > spu128::PILE || a < PILE_BAS {
                     o.danger = true;
                 }
-            } else if !o.copiees.contains(&k) {
-                // la première écriture dans une page : elle est copiée du cube commun dans le cube du cylindre
-                o.copiees.insert(k);
-                let commun = unsafe { &*o.commun };
-                let source = commun.pages.get(&k).copied();
-                if source.is_none() && commun.disque {
-                    o.danger = true;
-                }
-                // 0.73 : la copie est posée telle quelle (ni page remise à zéro, ni recopie par-dessus)
-                if let Some((ps, brins)) = source {
-                    if brins {
+            } else {
+                // 0.74b : une page du cube : sa feuille (créée à la première écriture), ouverte bloc par bloc
+                if !o.feuilles.contains_key(&k) {
+                    let commun = unsafe { &*o.commun };
+                    let source = commun.pages.get(&k).copied();
+                    if source.is_none() && commun.disque {
                         o.danger = true;
                     }
-                    let copie: Box<[u128]> = unsafe { std::slice::from_raw_parts(ps as *const u128, MOTS_PAGE) }.into();
-                    self.m.poser_page(adresse_page(k), copie);
+                    if source.map_or(false, |s| s.1) {
+                        o.danger = true;
+                    }
+                    let f = Box::new(Feuille { mots: page_de_reserve(), blocs: [0; 16],
+                                               commun: source.map_or(std::ptr::null(), |s| s.0 as *const u128) });
+                    o.feuilles.insert(k, f);
+                    o.vues.remove(&k);
+                    let h = case(k);
+                    if self.cl[h] == k {
+                        self.cl[h] = u128::MAX;
+                    }
                 }
-                let (pd, _, _) = self.m.page_de(a);
+                let f: *mut Feuille = &mut **o.feuilles.get_mut(&k).unwrap();
+                let (_, j) = Spu128::cle_page(a);
                 let h = case(k);
-                if self.cl[h] == k {
-                    self.cl[h] = u128::MAX;
+                self.ce[h] = k;
+                self.pe[h] = unsafe { (*f).mots.as_mut_ptr() };
+                self.pb[h] = f;
+                unsafe {
+                    if !(*f).ouvert(j >> 6) {
+                        (*f).ouvrir(j >> 6);
+                    }
+                    *(*f).mots.as_mut_ptr().add(j) = v;
                 }
-                // la page vue jusqu'ici était celle du cube commun : désormais, c'est la sienne
-                o.vues.insert(k, pd);
+                return;
             }
         }
         let (p, _, brins) = self.m.page_de(a);
@@ -362,6 +487,7 @@ impl Ctx {
             let h = case(k);
             self.ce[h] = k;
             self.pe[h] = p;
+            self.pb[h] = std::ptr::null_mut();
         }
         if let Err(e) = self.m.ecrire_mem(a, v) {
             arreter(self, &e);
@@ -554,7 +680,7 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     m.charger(mots);
     m.entree.extend(entrees.iter().filter_map(|x| x.parse::<u128>().ok()));
     let mut c = Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],
-                      pe: [std::ptr::null_mut(); 64], vider, ombre: None };
+                      pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], vider, ombre: None };
     debuter(&mut c);
     // le brin : le code, les textes écrits et les données du programme sont de l'ADN (comme au début du programme
     // compilé : MARQUE R0, FIN_CODE, 1), puis l'appel de principal (CALL : l'adresse de retour dans la pile)

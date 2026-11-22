@@ -484,6 +484,10 @@ class Forge(V.Generateur):
         self.ligne("let fils: Vec<_> = (0..nt).map(|t| sc.spawn(move || {")
         self.niveau += 1
         self.ligne("let mut c_fils = ctx_cylindre(inst); let c = &mut c_fils;")
+        # 0.74b : les variables de la fonction, recopiées dans le fil : capturées, elles vivaient dans la mémoire de la
+        # fermeture (cinq fois plus d'écritures en mémoire) ; locales, elles vont dans les registres du processeur
+        if self.toutes:
+            self.ligne(" ".join(f"let mut v_{ident(v)} = v_{ident(v)};" for v in self.toutes))
         # 0.73 : les segments en alternance (chaque cylindre a sa part du travail où qu'il soit dans la boucle)
         self.ligne(f"for q in (t..{m}).step_by(nt) {{")
         self.niveau += 1
@@ -500,7 +504,7 @@ class Forge(V.Generateur):
         self.ligne("}")
         self.niveau -= 1
         self.ligne("}")
-        self.ligne("rendre(c)")
+        self.ligne("let r = rendre(c); remettre_ctx(c_fils); r")
         self.niveau -= 1
         self.ligne("})).collect();")
         self.ligne("fils.into_iter().map(|h| h.join().unwrap()).collect()")
@@ -1300,10 +1304,14 @@ def programme_rust(src, dossier=None, nom="programme"):
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
     s.append("#[allow(dead_code)]\nfn ctx_fils() -> Ctx {\n    let mut m = Spu128::nouveau();\n    m.charger(&MOTS);\n"
              "    Ctx { m, sp: spu128::PILE, cl: [u128::MAX; 64], pl: [std::ptr::null_mut(); 64], ce: [u128::MAX; 64],\n"
-             "          pe: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
+             "          pe: [std::ptr::null_mut(); 64], pb: [std::ptr::null_mut(); 64], vider: |_c| {}, ombre: None }\n}")
     # la machine d'un cylindre : celle d'un fil, qui lit le cube commun et n'écrit que dans le sien
-    s.append("#[allow(dead_code)]\nfn ctx_cylindre(inst: &Instantane) -> Ctx {\n    let mut c = ctx_fils();\n"
-             "    c.ombre = Some(Box::new(Cylindre { commun: inst as *const Instantane, copiees: Default::default(), "
+    # 0.74b : les machines des cylindres sont gardées d'un passage à l'autre (une machine neuve remettait à zéro deux
+    # pages d'un mégaoctet, le code et la pile, à chaque passage et dans chaque fil)
+    s.append("#[allow(dead_code)]\nfn ctx_cylindre(inst: &Instantane) -> Box<Ctx> {\n"
+             "    let mut c = match CTX_RESERVE.lock().unwrap().pop() { Some(EnvoiCtx(c)) => c, None => Box::new(ctx_fils()) };\n"
+             "    c.sp = spu128::PILE; c.cl = [u128::MAX; 64]; c.ce = [u128::MAX; 64]; c.pb = [std::ptr::null_mut(); 64];\n"
+             "    c.ombre = Some(Box::new(Cylindre { commun: inst as *const Instantane, feuilles: Default::default(), "
              "lues: Default::default(), vues: Default::default(), danger: false }));\n    c\n}")
     s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees);\n}\n")

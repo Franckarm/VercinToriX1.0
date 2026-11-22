@@ -3616,3 +3616,27 @@ n'est pas bon. »
   dont l'adresse se calcule depuis l'indice de la boucle (la fenêtre de l'étage 2) ; le rendu lit le relief là où le
   rayon arrive (une adresse qui dépend du calcul), la lumière lit et écrit dans une fonction appelée, et l'image est à
   l'étage 1. À étendre (la suite).
+
+### 79 ter. Les cylindres, la suite : la copie par blocs (22 novembre, 0.75)
+
+**Mesuré chez le créateur (0.74)** : 3,58 ms par image sur 1 cœur ; 8,58 sur 2 ; 10,00 sur 4 ; 18,08 sur 24. Le
+détail sur 4 cœurs : 2 à 4 ms dans les fils et 1,3 à 2,7 ms de fusion à chaque passage. La réparation de la 0.74
+avait ôté le hachage et le déséquilibre, pas le vrai poids.
+
+- **La copie par blocs** : un cylindre ne recopiait pas une page qu'il écrit (un mégaoctet : 65 536 mots de 16 octets),
+  il la recopiait entière ; la fusion la comparait entière. Maintenant, une page écrite est une **feuille ouverte bloc
+  par bloc** (64 mots) : au premier mot écrit dans un bloc, ce bloc seul est recopié du cube commun ; le cylindre rend
+  ses blocs ouverts (ceux qui ont vraiment changé), et la fusion ne regarde qu'eux, répartie sur tous les cœurs par
+  tranches. La fusion de la lumière passe de 1,3 ms à 0,1 ms.
+- **Les réserves** : les machines des cylindres (2 Mo remis à zéro, le code et la pile, à chaque passage et dans
+  chaque fil) et les pages des feuilles servent d'un passage à l'autre.
+- **Les variables dans les registres** : capturées par le fil, les variables du programme vivaient dans la mémoire de
+  la fermeture : cinq fois plus d'écritures en mémoire (cachegrind : 13 millions contre 2,4) ; un cylindre seul
+  rendait l'image en 7,3 ms au lieu de 2,6. Elles sont recopiées en locales au début de chaque fil : 3,2 ms.
+- **Où l'on en est (2 vrais cœurs ici)** : le rendu se partage (1,7 ms par fil au lieu de 3,2), mais l'écran entier
+  (129 600 mots de 16 octets, 2 Mo) se fond encore en 1 ms environ à chaque image ; à deux cœurs, on ne gagne pas
+  encore. Sur 4 cœurs et plus, chez le créateur, la mesure le dira. La forge reste exacte (103 programmes, les
+  cylindres).
+- **Ce que ça dit** : pour une image de 3,6 ms, l'isolement des cylindres (chacun son cube, puis la fusion) coûte autant
+  que le travail. Les cylindres gagnent sur les gros calculs ; pour l'image en temps réel, la carte graphique est la
+  vraie voie.
