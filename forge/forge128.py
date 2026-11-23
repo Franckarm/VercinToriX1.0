@@ -614,15 +614,21 @@ class Forge(V.Generateur):
                    and (st[6] if len(st) > 6 else 1) == (notes[0][6] if len(notes[0]) > 6 else 1) for st in notes)
         self.ligne("{")
         self.niveau += 1
-        self.ligne("if cylindres_voulus() > 1 && c.ombre.is_none() {")
+        # 0.810 : le réglage de cette boucle (le vergobret mesure : combien de cœurs lui vont le mieux)
+        self.nreglages = getattr(self, "nreglages", 0) + 1
+        site = f"REGLAGE_{self.nreglages}"
+        self.reglages = getattr(self, "reglages", []) + [site]
+        self.ligne(f"let nt_voulu = if c.ombre.is_none() {{ {site}.coeurs() }} else {{ 1 }};")
+        self.ligne("let t_reglage = std::time::Instant::now();")
+        self.ligne("if nt_voulu > 1 {")
         self.niveau += 1
         self.ligne("let t0 = std::time::Instant::now();")
         self.ligne("let inst = instantane(c);")
         if meme:
-            self.ligne("let nt = cylindres_voulus();")
+            self.ligne("let nt = nt_voulu;")
             self.equipe_en_morceaux(notes)
         else:
-            self.ligne(f"let nt = cylindres_voulus().min({m});")
+            self.ligne(f"let nt = nt_voulu.min({m});")
             self.part_des_coeurs(notes, True)
         self.ligne("let t1 = std::time::Instant::now();")
         self.ligne("if recoltes.iter().any(|r| r.danger) || bandes_touchees(&recoltes).is_some() {")
@@ -641,6 +647,7 @@ class Forge(V.Generateur):
             self.instr(st)
         self.niveau -= 1
         self.ligne("}")
+        self.ligne(f"if c.ombre.is_none() {{ {site}.noter(nt_voulu, t_reglage.elapsed(), 1, {ligne}); }}")
         self.niveau -= 1
         self.ligne("}")
 
@@ -1422,6 +1429,9 @@ def programme_rust(src, dossier=None, nom="programme"):
          f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n"]
     s += [x.replace(MARQUE, "") for x in fonctions]
     s.append(code_zones(fo.plan or {}))
+    # 0.810 : le réglage de chaque boucle « en bandes » (le vergobret mesure)
+    for r in sorted(set(getattr(fo, "reglages", []))):
+        s.append(f"#[allow(dead_code)]\nstatic {r}: Reglage = Reglage::neuf();")
     for k, spv in enumerate(fo.noyaux):
         mots = [int.from_bytes(spv[i:i + 4], "little") for i in range(0, len(spv), 4)]
         s.append(f"#[allow(dead_code)]\nstatic SPV{k}: [u32; {len(mots)}] = [" + ",".join(map(str, mots)) + "];")

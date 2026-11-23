@@ -1,4 +1,4 @@
-/* Belenos : le paysage fait dans le cube, écrit en C pour comparer (0.809). Le même calcul que cubes_scene.vtx et
+/* Belenos : le paysage fait dans le cube, écrit en C pour comparer (0.809, 0.810 : les calques de lumière). Le même calcul que cubes_scene.vtx et
  * cubes_film.vtx, entier pour entier : la même empreinte. Sans GIF (les images sont calculées, pas écrites).
  *     cc -O2 -o cubes_ref belenos/cubes_ref.c                      (l'échelle 1, un cœur)
  *     cc -O2 -fopenmp -o cubes_ref belenos/cubes_ref.c             (les rangées de l'image sur tous les cœurs)
@@ -54,7 +54,7 @@ static inline u sar(u a, int n) { return (u)((s)a >> n); }
 static inline int slt(u a, u b) { return (s)a < (s)b; }
 
 static u SINUS[1024], *HCOL, *PENTE, GLOB[64], SOLEILS[16];
-static u *DIRE[16], *DIRT[16], *POOLE[16], *POOLT[16];
+static u *DIRE[16], *DIRT[16], *POOLE[16], *POOLT[16], *CIELC[16], *SOLC[16];
 static u *DISTA, *DISTB;
 static u ECRAN[W * H];
 static u COMPTE[4 * H];
@@ -269,6 +269,8 @@ static void placer_et_remplir(void) {
         GLOB[1 + t] = n;
         POOLE[t] = calloc(n * 512 + 1, sizeof(u));
         POOLT[t] = calloc(n * 512 + 1, sizeof(u));
+        CIELC[t] = calloc(n * 64 + 1, sizeof(u));
+        SOLC[t] = calloc(n * 64 + 1, sizeof(u));
     }
 #pragma omp parallel for schedule(dynamic, 8)
     for (long q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
@@ -402,6 +404,102 @@ static u ciel(u dx, u dy, u dz) {
     return rgb24(r, g, b);
 }
 
+/* 0.810 : les calques de lumière (le ciel une fois, la clepsydre quand le soleil bouge) */
+static u depart(u x, u y, u z, u nx, u ny, u nz) {
+    u sx = (x << 16) + 32768 + nx * 858, sy = (y << 16) + 32768 + ny * 858, sz = (z << 16) + 32768 + nz * 858;
+    if (element(sx >> 16, sy >> 16, sz >> 16) != 0) {
+        u meilleur = 6, note = 0 - (u)1000;
+        for (u k = 0; k < 6; k++) {
+            u vx = x, vy = y, vz = z, nk = nx;
+            if (k == 0) vx = x + 1; else if (k == 1) { vx = x - 1; nk = 0 - nx; }
+            else if (k == 2) { vy = y + 1; nk = ny; } else if (k == 3) { vy = y - 1; nk = 0 - ny; }
+            else if (k == 4) { vz = z + 1; nk = nz; } else { vz = z - 1; nk = 0 - nz; }
+            if (element(vx, vy, vz) == 0 && slt(note, nk)) { note = nk; meilleur = k; }
+        }
+        return meilleur;
+    }
+    return 6;
+}
+static void partir(u x, u y, u z, u nx, u ny, u nz, u *sx, u *sy, u *sz) {
+    *sx = (x << 16) + 32768 + nx * 858; *sy = (y << 16) + 32768 + ny * 858; *sz = (z << 16) + 32768 + nz * 858;
+    u dp = depart(x, y, z, nx, ny, nz);
+    if (dp < 6) {
+        *sx = (x << 16) + 32768; *sy = (y << 16) + 32768; *sz = (z << 16) + 32768;
+        if (dp == 0) *sx += 65536; else if (dp == 1) *sx -= 65536; else if (dp == 2) *sy += 65536;
+        else if (dp == 3) *sy -= 65536; else if (dp == 4) *sz += 65536; else *sz -= 65536;
+    }
+}
+static u soleil_depuis(u sx, u sy, u sz, u nx, u ny, u nz) {
+    u nl = sdiv(nx * SOLEILS[12] + ny * SOLEILS[13] + nz * SOLEILS[14], 127);
+    if (!slt(0, nl)) return 0;
+    u vus = 0;
+    for (u k = 0; k < 4; k++)
+        if (tracer(sx, sy, sz, SOLEILS[3 * k], SOLEILS[3 * k + 1], SOLEILS[3 * k + 2], (u)700 * 65536 * RN / RD, 0) == MANQUE) vus++;
+    return vus;
+}
+static u ciel_depuis(u sx, u sy, u sz, u nx, u ny, u nz) {
+    u n16x = nx * 516, n16y = ny * 516, n16z = nz * 516;
+    u t1x = 0, t1y = 0, t1z = 0;
+    u ay_ = slt(ny, 0) ? 0 - ny : ny;
+    if (slt(ay_, 90)) { t1x = 0 - n16z; t1z = n16x; } else { t1y = n16z; t1z = 0 - n16y; }
+    u l1 = racine_entiere(t1x * t1x + t1y * t1y + t1z * t1z);
+    if (l1 == 0) l1 = 1;
+    t1x = sdiv(t1x * 65536, l1); t1y = sdiv(t1y * 65536, l1); t1z = sdiv(t1z * 65536, l1);
+    u t2x = sdiv(n16y * t1z - n16z * t1y, 65536), t2y = sdiv(n16z * t1x - n16x * t1z, 65536), t2z = sdiv(n16x * t1y - n16y * t1x, 65536);
+    u ouverts = 0;
+    for (u k = 0; k < 4; k++) {
+        u ex = t1x, ey = t1y, ez = t1z;
+        if (k == 1) { ex = 0 - t1x; ey = 0 - t1y; ez = 0 - t1z; }
+        else if (k == 2) { ex = t2x; ey = t2y; ez = t2z; }
+        else if (k == 3) { ex = 0 - t2x; ey = 0 - t2y; ez = 0 - t2z; }
+        u cx = sdiv(n16x * 3 + ex * 4, 5), cy = sdiv(n16y * 3 + ey * 4, 5), cz = sdiv(n16z * 3 + ez * 4, 5);
+        if (tracer(sx, sy, sz, cx, cy, cz, (u)14 * 65536 * RN / RD, 0) == MANQUE) ouverts++;
+    }
+    return ouverts;
+}
+static u soleil_vu(u x, u y, u z, u nx, u ny, u nz) {
+    u sx, sy, sz;
+    partir(x, y, z, nx, ny, nz, &sx, &sy, &sz);
+    return soleil_depuis(sx, sy, sz, nx, ny, nz);
+}
+static u ciel_ouvert(u x, u y, u z, u nx, u ny, u nz) {
+    u sx, sy, sz;
+    partir(x, y, z, nx, ny, nz, &sx, &sy, &sz);
+    return ciel_depuis(sx, sy, sz, nx, ny, nz);
+}
+static int expose(u x, u y, u z) {
+    return element(x + 1, y, z) == 0 || element(x - 1, y, z) == 0 || element(x, y + 1, z) == 0 ||
+           element(x, y - 1, z) == 0 || element(x, y, z + 1) == 0 || element(x, y, z - 1) == 0;
+}
+static void ranger_lumiere(int avec_ciel) {
+#pragma omp parallel for schedule(dynamic, 8)
+    for (long q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
+        u t = (u)q >> 10, bx = (u)q & 31, bz = ((u)q >> 5) & 31;
+        u x0 = (t % TUILES) * 256 + bx * 8, z0 = (t / TUILES) * 256 + bz * 8;
+        for (u by = 0; by < 32; by++) {
+            u e = DIRE[t][(bx << 10) | (by << 5) | bz];
+            if (e >= 16 && e < ((u)1 << 62)) {
+                u n = e - 16;
+                for (u w = 0; w < 64; w++) {
+                    u ms_ = 0, mc = 0;
+                    for (u j = 0; j < 8; j++) {
+                        u v = w * 8 + j, x = x0 + (v >> 6), y = by * 8 + ((v >> 3) & 7), z = z0 + (v & 7);
+                        u el = POOLE[t][n * 512 + v];
+                        if (el != 0 && ((el >> 2) & 63) != EAU && expose(x, y, z)) {
+                            u nx = ((el >> 8) & 255) - 128, ny = ((el >> 16) & 255) - 128, nz = ((el >> 24) & 255) - 128;
+                            if (nx == 0 - (u)128) { nx = 0; ny = 127; nz = 0; }
+                            ms_ |= (128 | soleil_vu(x, y, z, nx, ny, nz)) << (j * 8);
+                            if (avec_ciel) mc |= (128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8);
+                        }
+                    }
+                    SOLC[t][n * 64 + w] = ms_;
+                    if (avec_ciel) CIELC[t][n * 64 + w] = mc;
+                }
+            }
+        }
+    }
+}
+
 static u regarder(u ox, u oy, u oz, u dx, u dy, u dz, u profondeur, u temps) {
     u t = tracer(ox, oy, oz, dx, dy, dz, (u)1100 * 65536 * RN / RD, 1);
     if (t == MANQUE) return ciel(dx, dy, dz);
@@ -431,31 +529,18 @@ static u regarder(u ox, u oy, u oz, u dx, u dy, u dz, u profondeur, u temps) {
         etat = 2;
     } else {
         u nl = sdiv(nx * lx + ny * ly + nz * lz, 127);
-        u vus = 0;
-        u sx = px + nx * 600, sy = py + ny * 600, sz = pz + nz * 600;
-        if (slt(0, nl)) {
-            for (u k = 0; k < 4; k++)
-                if (tracer(sx, sy, sz, SOLEILS[3 * k], SOLEILS[3 * k + 1], SOLEILS[3 * k + 2], (u)700 * 65536 * RN / RD, 0) == MANQUE) vus++;
-            if (vus == 4) etat = 2;
-            else if (vus > 0) etat = 3;
-        } else nl = 0;
-        u n16x = nx * 516, n16y = ny * 516, n16z = nz * 516;
-        u t1x = 0, t1y = 0, t1z = 0;
-        u ay_ = slt(ny, 0) ? 0 - ny : ny;
-        if (slt(ay_, 90)) { t1x = 0 - n16z; t1z = n16x; } else { t1y = n16z; t1z = 0 - n16y; }
-        u l1 = racine_entiere(t1x * t1x + t1y * t1y + t1z * t1z);
-        if (l1 == 0) l1 = 1;
-        t1x = sdiv(t1x * 65536, l1); t1y = sdiv(t1y * 65536, l1); t1z = sdiv(t1z * 65536, l1);
-        u t2x = sdiv(n16y * t1z - n16z * t1y, 65536), t2y = sdiv(n16z * t1x - n16x * t1z, 65536), t2z = sdiv(n16x * t1y - n16y * t1x, 65536);
-        u ouverts = 0;
-        for (u k = 0; k < 4; k++) {
-            u ex = t1x, ey = t1y, ez = t1z;
-            if (k == 1) { ex = 0 - t1x; ey = 0 - t1y; ez = 0 - t1z; }
-            else if (k == 2) { ex = t2x; ey = t2y; ez = t2z; }
-            else if (k == 3) { ex = 0 - t2x; ey = 0 - t2y; ez = 0 - t2z; }
-            u cx = sdiv(n16x * 3 + ex * 4, 5), cy = sdiv(n16y * 3 + ey * 4, 5), cz = sdiv(n16z * 3 + ez * 4, 5);
-            if (tracer(sx, sy, sz, cx, cy, cz, (u)14 * 65536 * RN / RD, 0) == MANQUE) ouverts++;
+        if (!slt(0, nl)) nl = 0;
+        u vus = 0, ouverts = 0;
+        int connu = 0;
+        u tt = (z >> 8) * TUILES + (x >> 8);
+        u e0 = DIRE[tt][(((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+        if (e0 >= 16 && e0 < ((u)1 << 62)) {
+            u iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7), dec = (iv & 7) * 8;
+            u sb = (SOLC[tt][(e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+            if (sb >= 128) { connu = 1; vus = sb & 15; ouverts = (CIELC[tt][(e0 - 16) * 64 + (iv >> 3)] >> dec) & 15; }
         }
+        if (!connu) { vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz); ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz); }
+        if (slt(0, nl)) { if (vus == 4) etat = 2; else if (vus > 0) etat = 3; }
         u ciel_part = 40 + ouverts * 30;
         u soleil = nl * vus / 4 * 256 / 65536;
         u lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20, lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18,
@@ -512,11 +597,16 @@ int main(void) {
     printf("le monde : %.0f ms ; blocs porteurs d'une surface, par tuile : %llu, %llu, %llu, %llu\n", ms(t0, t1),
            (unsigned long long)GLOB[1], (unsigned long long)GLOB[2], (unsigned long long)GLOB[3], (unsigned long long)GLOB[4]);
     preparer_soleil(360, 70);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    ranger_lumiere(1);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    printf("les calques de lumiere : %.0f ms\n", ms(t0, t1));
     u ay = GLOB[0];
     double total = 0;
     u avant = IMAGES * 7 / 12;
     for (u i = 0; i < IMAGES; i++) {
-        if (TOURNE == 1) preparer_soleil(300 + i * 3, 50 + i);
+        clock_gettime(CLOCK_MONOTONIC, &ti);
+        if (TOURNE == 1) { preparer_soleil(300 + i * 3, 50 + i); ranger_lumiere(0); }
         u cx = ARCHE_X * 65536, cy, cz;
         if (i < avant) {
             cy = (u)110 * 65536 * RN / RD - (((u)110 * RN / RD - ay - (u)12 * RN / RD) * 65536 / avant) * i;
@@ -534,11 +624,16 @@ int main(void) {
             u p = sdiv(vy, 256) * sin1024(a) + ((u)80 * 256 * RN / RD) * cos1024(a);
             if (slt(vu, p)) { vu = p; tangage = a; }
         }
-        clock_gettime(CLOCK_MONOTONIC, &ti);
         rendre_cubes(cx, cy, cz, lacet, tangage, i * 3);
         clock_gettime(CLOCK_MONOTONIC, &tf);
         total += ms(ti, tf);
         if (getenv("CUBES_DETAIL")) printf("image %llu : %.0f ms\n", (unsigned long long)i + 1, ms(ti, tf));
+    }
+    if (getenv("CUBES_PPM")) {
+        FILE *f = fopen(getenv("CUBES_PPM"), "wb");
+        fprintf(f, "P6 %d %d 255\n", W, H);
+        for (u i = 0; i < W * H; i++) { unsigned char p[3] = {ECRAN[i] >> 16, ECRAN[i] >> 8, ECRAN[i]}; fwrite(p, 1, 3, f); }
+        fclose(f);
     }
     u h = 14695981039346656037u;
     for (u i = 0; i < W * H; i++) h = (h ^ ECRAN[i]) * 1099511628211u;

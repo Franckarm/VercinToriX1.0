@@ -42,6 +42,11 @@ fonction filmer(tourne) {
              + texte(@2[GLOB + 2]) + ", " + texte(@2[GLOB + 3]) + ", " + texte(@2[GLOB + 4]));
     // le soleil : l'après-midi, sur le côté (des ombres longues)
     preparer_soleil(360, 70);
+    // 0.810 : les calques de lumière rangés dans le cube (le ciel une fois pour toutes, la clepsydre pour ce soleil)
+    soit tl0 = horloge();
+    ranger_lumiere(1);
+    soit tl1 = horloge();
+    afficher("les calques de lumière (le ciel et le soleil) : " + texte(tl1 - tl0) + " ms");
     afficher("échelle " + texte(RN) + "/" + texte(RD) + " : un monde de " + texte(MONDE) + " points de côté, " + texte(TUILES * TUILES)
              + " tuiles, " + texte(2 * TUILES * TUILES) + " cubes ; le plus haut point : " + texte(@2[GLOB + 20]));
     ecran(W, H);
@@ -52,8 +57,11 @@ fonction filmer(tourne) {
     // suit exactement x = 256, la frontière entre deux tuiles (deux cubes) ; il passe aussi z = 256, l'autre frontière
     soit avant = IMAGES * 7 / 12;
     pour i dans 0..IMAGES {
+        soit ti = horloge();
         si tourne == 1 {
+            // le soleil a bougé : sa clepsydre se refait (le ciel reste), comptée dans le temps de l'image
             preparer_soleil(300 + i * 3, 50 + i);
+            ranger_lumiere(0);
         }
         soit cx = ARCHE_X * 65536;
         soit cy = 0;
@@ -80,7 +88,6 @@ fonction filmer(tourne) {
                 tangage = a;
             }
         }
-        soit ti = horloge();
         rendre_cubes(cx, cy, cz, lacet, tangage, i * 3);
         soit tf = horloge();
         total = total + (tf - ti);

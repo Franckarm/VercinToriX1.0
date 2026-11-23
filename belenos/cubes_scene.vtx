@@ -17,6 +17,8 @@
 // L'image : un rayon par point de l'écran ; l'ombre par la clepsydre (quatre rayons vers les quatre bords du soleil :
 // les quatre en clair, vrai ; aucun, faux ; entre les deux, variable, la pénombre et sa densité) ; quatre rayons courts
 // vers le ciel autour de la normale (l'occlusion) ; l'eau renvoie le monde (Divona : le rayon retourné), ridée.
+// 0.810 : la lumière se range dans le cube, en deux calques par tuile (un octet par point de surface) : le ciel, une fois
+// pour toutes ; la clepsydre, refaite quand le soleil bouge. L'œil qui vole ne paie plus qu'un rayon par point.
 
 constante W = 1280;
 constante H = 720;
@@ -26,6 +28,10 @@ constante MASQ = MONDE - 1;
 constante NB = MONDE / 8;          // le côté du monde, en blocs
 constante FTEX = 1;                // le cube de texture de la tuile t : fréquence FTEX + t (jusqu'à 16 tuiles)
 constante FELT = 17;               // le cube d'élément de la tuile t : fréquence FELT + t
+constante FCIEL = 33;              // 0.810 : le calque du ciel de la tuile t (fréquence FCIEL + t) : ce que chaque point
+                                   // de surface voit du ciel, rangé une fois (un octet par point, huit points par mot)
+constante FSOL = 49;               // 0.810 : le calque du soleil de la tuile t (fréquence FSOL + t) : la clepsydre de
+                                   // chaque point de surface, refaite seulement quand le soleil bouge
 constante REP = 32768;             // la réserve d'un cube : après son annuaire
 constante MER = 44 * RN / RD;      // le niveau de la mer
 constante VIDE = 9223372036854775808;  // 2 << 62 : un bloc vide ; ses bits bas : à combien de blocs est la matière
@@ -728,6 +734,252 @@ fonction ciel(dx, dy, dz) {
     retour rgb24(r, g, b);
 }
 
+// ---------------------------------------------------------------------------------------- les calques de lumière
+// 0.810 : la lumière d'un point de surface se calcule depuis son centre (pas depuis l'endroit où le rayon de l'œil l'a
+// touché) : elle ne dépend plus de l'œil, elle se range dans le cube. Le ciel ne dépend ni de l'œil ni du soleil : il se
+// range une fois ; la clepsydre dépend du soleil : elle se refait quand il bouge, et l'œil qui vole n'en paie rien.
+
+// le départ des rayons d'un point de surface : son centre, poussé le long de la normale (d'une demi-maille et 1,16 :
+// comme depuis sa face, en 0.809) ; si ce départ tombe dans la matière (une arête, une marche : la normale penche vers
+// un voisin plein), le centre du voisin vide le mieux tourné vers la normale. Rend 6 (le départ le long de la normale)
+// ou le voisin choisi : 0 +x, 1 -x, 2 +y, 3 -y, 4 +z, 5 -z
+fonction depart(x, y, z, nx, ny, nz) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    si element(sx >> 16, sy >> 16, sz >> 16) != 0 {
+        soit meilleur = 6;
+        soit note = 0 - 1000;
+        pour k dans 0..6 {
+            soit vx = x;
+            soit vy = y;
+            soit vz = z;
+            soit nk = nx;
+            si k == 0 {
+                vx = x + 1;
+            } sinon si k == 1 {
+                vx = x - 1;
+                nk = 0 - nx;
+            } sinon si k == 2 {
+                vy = y + 1;
+                nk = ny;
+            } sinon si k == 3 {
+                vy = y - 1;
+                nk = 0 - ny;
+            } sinon si k == 4 {
+                vz = z + 1;
+                nk = nz;
+            } sinon {
+                vz = z - 1;
+                nk = 0 - nz;
+            }
+            si element(vx, vy, vz) == 0 && nk .> note {
+                note = nk;
+                meilleur = k;
+            }
+        }
+        retour meilleur;
+    }
+    retour 6;
+}
+
+// la clepsydre d'un point : combien des quatre rayons vers les bords du soleil passent (0 si la pente lui tourne le dos)
+fonction soleil_depuis(sx, sy, sz, nx, ny, nz) {
+    soit nl = (nx * @2[SOLEILS + 12] + ny * @2[SOLEILS + 13] + nz * @2[SOLEILS + 14]) ./ 127;
+    si nl .<= 0 {
+        retour 0;
+    }
+    soit vus = 0;
+    pour k dans 0..4 {
+        si tracer(sx, sy, sz, @2[SOLEILS + 3 * k], @2[SOLEILS + 3 * k + 1], @2[SOLEILS + 3 * k + 2], 700 * 65536 * RN / RD, 0)
+           == MANQUE {
+            vus = vus + 1;
+        }
+    }
+    retour vus;
+}
+
+// le ciel vu d'un point : quatre rayons courts autour de la normale (la normale penchée vers deux directions
+// perpendiculaires, dans les deux sens) ; combien passent
+fonction ciel_depuis(sx, sy, sz, nx, ny, nz) {
+    soit n16x = nx * 516;
+    soit n16y = ny * 516;
+    soit n16z = nz * 516;
+    // t1 : perpendiculaire à la normale (sa composante la plus faible mise à part)
+    soit t1x = 0;
+    soit t1y = 0;
+    soit t1z = 0;
+    soit ay_ = ny;
+    si ay_ .< 0 {
+        ay_ = 0 - ay_;
+    }
+    si ay_ .< 90 {
+        // une paroi : t1 = n × (0, 1, 0)
+        t1x = 0 - n16z;
+        t1z = n16x;
+    } sinon {
+        // un replat : t1 = n × (1, 0, 0)
+        t1y = n16z;
+        t1z = 0 - n16y;
+    }
+    soit l1 = racine_entiere(t1x * t1x + t1y * t1y + t1z * t1z);
+    si l1 == 0 {
+        l1 = 1;
+    }
+    t1x = (t1x * 65536) ./ l1;
+    t1y = (t1y * 65536) ./ l1;
+    t1z = (t1z * 65536) ./ l1;
+    soit t2x = (n16y * t1z - n16z * t1y) ./ 65536;
+    soit t2y = (n16z * t1x - n16x * t1z) ./ 65536;
+    soit t2z = (n16x * t1y - n16y * t1x) ./ 65536;
+    soit ouverts = 0;
+    pour k dans 0..4 {
+        soit ex = t1x;
+        soit ey = t1y;
+        soit ez = t1z;
+        si k == 1 {
+            ex = 0 - t1x;
+            ey = 0 - t1y;
+            ez = 0 - t1z;
+        } sinon si k == 2 {
+            ex = t2x;
+            ey = t2y;
+            ez = t2z;
+        } sinon si k == 3 {
+            ex = 0 - t2x;
+            ey = 0 - t2y;
+            ez = 0 - t2z;
+        }
+        soit cx = (n16x * 3 + ex * 4) ./ 5;
+        soit cy = (n16y * 3 + ey * 4) ./ 5;
+        soit cz = (n16z * 3 + ez * 4) ./ 5;
+        si tracer(sx, sy, sz, cx, cy, cz, 14 * 65536 * RN / RD, 0) == MANQUE {
+            ouverts = ouverts + 1;
+        }
+    }
+    retour ouverts;
+}
+
+// la clepsydre et le ciel d'un point de surface, depuis son centre (ou son voisin vide) : ce qui se range
+fonction soleil_vu(x, y, z, nx, ny, nz) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    soit dp = depart(x, y, z, nx, ny, nz);
+    si dp < 6 {
+        sx = (x << 16) + 32768;
+        sy = (y << 16) + 32768;
+        sz = (z << 16) + 32768;
+        si dp == 0 {
+            sx = sx + 65536;
+        } sinon si dp == 1 {
+            sx = sx - 65536;
+        } sinon si dp == 2 {
+            sy = sy + 65536;
+        } sinon si dp == 3 {
+            sy = sy - 65536;
+        } sinon si dp == 4 {
+            sz = sz + 65536;
+        } sinon {
+            sz = sz - 65536;
+        }
+    }
+    retour soleil_depuis(sx, sy, sz, nx, ny, nz);
+}
+
+fonction ciel_ouvert(x, y, z, nx, ny, nz) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    soit dp = depart(x, y, z, nx, ny, nz);
+    si dp < 6 {
+        sx = (x << 16) + 32768;
+        sy = (y << 16) + 32768;
+        sz = (z << 16) + 32768;
+        si dp == 0 {
+            sx = sx + 65536;
+        } sinon si dp == 1 {
+            sx = sx - 65536;
+        } sinon si dp == 2 {
+            sy = sy + 65536;
+        } sinon si dp == 3 {
+            sy = sy - 65536;
+        } sinon si dp == 4 {
+            sz = sz + 65536;
+        } sinon {
+            sz = sz - 65536;
+        }
+    }
+    retour ciel_depuis(sx, sy, sz, nx, ny, nz);
+}
+
+// la normale d'un mot d'élément, en trois nombres signés (rangés en un : x | y << 16 | z << 32, chacun + 128)
+fonction normale_de(e) {
+    soit nx = ((e >> 8) & 255);
+    si nx == 0 {
+        retour 128 | (255 << 16) | (128 << 32);
+    }
+    retour nx | (((e >> 16) & 255) << 16) | (((e >> 24) & 255) << 32);
+}
+
+// un point de surface : de la matière (pas de l'eau) avec, à côté, un point vide (par où un rayon peut l'atteindre)
+fonction expose(x, y, z) {
+    si element(x + 1, y, z) == 0 || element(x - 1, y, z) == 0 || element(x, y + 1, z) == 0 {
+        retour 1;
+    }
+    si element(x, y - 1, z) == 0 || element(x, y, z + 1) == 0 || element(x, y, z - 1) == 0 {
+        retour 1;
+    }
+    retour 0;
+}
+
+// ranger les calques : pour chaque point de surface de chaque bloc porteur, sa clepsydre (et, avec_ciel == 1, son ciel) ;
+// un octet par point (128 | la valeur : 128 dit « rangé »), huit points par mot, à la place du bloc dans la réserve ;
+// chaque colonne de blocs écrit ses seules places (en bandes)
+fonction ranger_lumiere(avec_ciel) {
+    pour q dans 0..(TUILES * TUILES * 1024) en bandes {
+        soit t = q >> 10;
+        soit bx = q & 31;
+        soit bz = (q >> 5) & 31;
+        soit x0 = (t % TUILES) * 256 + bx * 8;
+        soit z0 = (t / TUILES) * 256 + bz * 8;
+        soit base = (FELT + t) << 24;
+        pour by dans 0..32 {
+            soit e = @2[base + ((bx << 10) | (by << 5) | bz)];
+            si e >= 16 && e < (1 << 62) {
+                soit n = e - 16;
+                pour w dans 0..64 {
+                    soit ms = 0;
+                    soit mc = 0;
+                    pour j dans 0..8 {
+                        soit v = w * 8 + j;
+                        soit x = x0 + (v >> 6);
+                        soit y = by * 8 + ((v >> 3) & 7);
+                        soit z = z0 + (v & 7);
+                        soit el = @2[base + REP + n * 512 + v];
+                        si el != 0 && ((el >> 2) & 63) != EAU {
+                            si expose(x, y, z) == 1 {
+                                soit nn = normale_de(el);
+                                soit nx = (nn & 255) - 128;
+                                soit ny = ((nn >> 16) & 255) - 128;
+                                soit nz = ((nn >> 32) & 255) - 128;
+                                ms = ms | ((128 | soleil_vu(x, y, z, nx, ny, nz)) << (j * 8));
+                                si avec_ciel == 1 {
+                                    mc = mc | ((128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8));
+                                }
+                            }
+                        }
+                    }
+                    @2[((FSOL + t) << 24) + n * 64 + w] = ms;
+                    si avec_ciel == 1 {
+                        @2[((FCIEL + t) << 24) + n * 64 + w] = mc;
+                    }
+                }
+            }
+        }
+    }
+}
+
 // la couleur vue par un rayon : le point touché, éclairé ; l'eau renvoie le monde (profondeur : combien de renvois
 // restent permis). Rend (l'état de la lumière << 24) | 0xRRGGBB ; l'état : 0 inconnu (le ciel), 1 faux (l'ombre), 2
 // vrai (le soleil en plein), 3 variable (la pénombre)
@@ -791,82 +1043,36 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
     } sinon {
         // la pente face au soleil
         soit nl = (nx * lx + ny * ly + nz * lz) ./ 127;
+        si nl .<= 0 {
+            nl = 0;
+        }
+        // 0.810 : la clepsydre et le ciel du point se lisent dans ses calques (rangés) ; un point qui n'y est pas (un
+        // point intérieur, touché par un rayon passé entre deux points par leur arête) se calcule sur place, depuis
+        // l'endroit touché (comme en 0.809 : son centre est dans la matière)
         soit vus = 0;
-        // le point de départ des rayons : un peu au-dessus de la surface, le long de la normale
-        soit sx = px + nx * 600;
-        soit sy = py + ny * 600;
-        soit sz = pz + nz * 600;
-        si nl .> 0 {
-            // la clepsydre : quatre rayons vers les quatre bords du soleil
-            pour k dans 0..4 {
-                si tracer(sx, sy, sz, @2[SOLEILS + 3 * k], @2[SOLEILS + 3 * k + 1], @2[SOLEILS + 3 * k + 2], 700 * 65536 * RN / RD, 0)
-                   == MANQUE {
-                    vus = vus + 1;
-                }
+        soit ouverts = 0;
+        soit connu = 0;
+        soit tt = (z >> 8) * TUILES + (x >> 8);
+        soit e0 = @2[((FELT + tt) << 24) + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+        si e0 >= 16 && e0 < (1 << 62) {
+            soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
+            soit dec = (iv & 7) * 8;
+            soit sb = (@2[((FSOL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+            si sb >= 128 {
+                connu = 1;
+                vus = sb & 15;
+                ouverts = (@2[((FCIEL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 15;
             }
+        }
+        si connu == 0 {
+            vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
+            ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
+        }
+        si nl .> 0 {
             si vus == 4 {
                 etat = 2;
             } sinon si vus > 0 {
                 etat = 3;
-            }
-        } sinon {
-            nl = 0;
-        }
-        // le ciel vu : quatre rayons courts autour de la normale (la normale penchée vers deux directions
-        // perpendiculaires, dans les deux sens)
-        soit n16x = nx * 516;
-        soit n16y = ny * 516;
-        soit n16z = nz * 516;
-        // t1 : perpendiculaire à la normale (sa composante la plus faible mise à part)
-        soit t1x = 0;
-        soit t1y = 0;
-        soit t1z = 0;
-        soit ay_ = ny;
-        si ay_ .< 0 {
-            ay_ = 0 - ay_;
-        }
-        si ay_ .< 90 {
-            // une paroi : t1 = n × (0, 1, 0)
-            t1x = 0 - n16z;
-            t1z = n16x;
-        } sinon {
-            // un replat : t1 = n × (1, 0, 0)
-            t1y = n16z;
-            t1z = 0 - n16y;
-        }
-        soit l1 = racine_entiere(t1x * t1x + t1y * t1y + t1z * t1z);
-        si l1 == 0 {
-            l1 = 1;
-        }
-        t1x = (t1x * 65536) ./ l1;
-        t1y = (t1y * 65536) ./ l1;
-        t1z = (t1z * 65536) ./ l1;
-        soit t2x = (n16y * t1z - n16z * t1y) ./ 65536;
-        soit t2y = (n16z * t1x - n16x * t1z) ./ 65536;
-        soit t2z = (n16x * t1y - n16y * t1x) ./ 65536;
-        soit ouverts = 0;
-        pour k dans 0..4 {
-            soit ex = t1x;
-            soit ey = t1y;
-            soit ez = t1z;
-            si k == 1 {
-                ex = 0 - t1x;
-                ey = 0 - t1y;
-                ez = 0 - t1z;
-            } sinon si k == 2 {
-                ex = t2x;
-                ey = t2y;
-                ez = t2z;
-            } sinon si k == 3 {
-                ex = 0 - t2x;
-                ey = 0 - t2y;
-                ez = 0 - t2z;
-            }
-            soit cx = (n16x * 3 + ex * 4) ./ 5;
-            soit cy = (n16y * 3 + ey * 4) ./ 5;
-            soit cz = (n16z * 3 + ez * 4) ./ 5;
-            si tracer(sx, sy, sz, cx, cy, cz, 14 * 65536 * RN / RD, 0) == MANQUE {
-                ouverts = ouverts + 1;
             }
         }
         // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol

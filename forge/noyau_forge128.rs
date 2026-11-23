@@ -216,6 +216,71 @@ fn cylindres_voulus() -> usize {
         .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)))
 }
 
+/// 0.810 : le vergobret mesure : une règle sans rien savoir du processeur (ni ses cœurs réels, ni ses fils jumeaux, ni sa
+/// mémoire). Chaque boucle « en bandes » a son réglage : elle essaie tous les fils que la machine offre, puis la moitié,
+/// le quart… (deux passages chacun, le temps par tour de boucle) tant que c'est plus rapide ; puis elle garde le
+/// meilleur. Le résultat ne dépend pas du nombre de cœurs (la promesse des bandes) : seul le temps change.
+/// VTX_COEURS=n impose n ; VTX_REGLAGE=1 dit le choix de chaque boucle.
+#[allow(dead_code)]
+pub struct Reglage {
+    // (essai en cours, mesures faites de cet essai, la meilleure de cet essai, le meilleur nombre, son temps, figé)
+    etat: std::sync::Mutex<(usize, u32, f64, usize, f64, bool)>,
+}
+
+#[allow(dead_code)]
+impl Reglage {
+    pub const fn neuf() -> Reglage {
+        Reglage { etat: std::sync::Mutex::new((0, 0, f64::MAX, 0, f64::MAX, false)) }
+    }
+    pub fn coeurs(&self) -> usize {
+        if std::env::var("VTX_COEURS").is_ok() {
+            return cylindres_voulus();
+        }
+        let mut e = self.etat.lock().unwrap();
+        if e.5 {
+            return e.3;
+        }
+        if e.0 == 0 {
+            e.0 = cylindres_voulus().max(1);
+        }
+        e.0
+    }
+    pub fn noter(&self, nt: usize, duree: std::time::Duration, tours: u64, ligne: u32) {
+        if std::env::var("VTX_COEURS").is_ok() {
+            return;
+        }
+        let mut e = self.etat.lock().unwrap();
+        if e.5 || nt != e.0 {
+            return;
+        }
+        let t = duree.as_secs_f64() / (tours.max(1) as f64);
+        e.1 += 1;
+        if t < e.2 {
+            e.2 = t;
+        }
+        if e.1 < 2 {
+            return;
+        }
+        // cet essai est mesuré : meilleur que le meilleur (d'au moins 3 %) ? on continue vers la moitié ; sinon on fige
+        let (essai, temps) = (e.0, e.2);
+        if temps < e.4 * 0.97 || e.3 == 0 {
+            e.3 = essai;
+            e.4 = temps;
+            if essai > 1 {
+                e.0 = (essai / 2).max(1);
+                e.1 = 0;
+                e.2 = f64::MAX;
+                return;
+            }
+        }
+        e.5 = true;
+        if std::env::var("VTX_REGLAGE").is_ok() {
+            eprintln!("vergobret : la boucle de la ligne {} va sur {} cœur(s) (sur {} fils offerts)", ligne, e.3,
+                      cylindres_voulus());
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn rendre(c: &mut Ctx) -> Recolte {
     let o = c.ombre.take().unwrap();

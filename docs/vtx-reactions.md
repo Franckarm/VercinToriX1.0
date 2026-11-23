@@ -4071,3 +4071,56 @@ option ? D'accord pour Divona. La technique n'est-elle pas banale ?
   la recalculer à chaque image est un gaspillage ; elle se range une fois dans le cube d'éléments. Et l'ombre du soleil
   se range de même par point de surface (le calque de la 0.804, mais dans le cube), refaite seulement quand le soleil
   bouge.
+
+## 94. La lumière rangée dans le cube, et le vergobret qui mesure (23 novembre, 0.810)
+
+**Le créateur** : d'accord pour la suite ; imaginer aussi un processeur à 8 cœurs réels (que vtx vaille sur tous les
+processeurs) ; il faudra faire par paquets ; ensuite optimiser Divona avec l'anti-cube, et une idée : le passage d'un
+cube à l'autre (d'une fréquence à l'autre) fluide, et ce qu'on voit de loin une surface, un trompe-l'œil ; l'anti-cube
+comme un cube à fréquence négative, qui ne montre qu'une représentation de ce qu'il y a dedans.
+
+- **Les calques de lumière dans le cube** : la lumière d'un point de surface se calcule depuis son centre (et non plus
+  depuis l'endroit où l'œil l'a touché) ; elle ne dépend plus de l'œil, elle se range. Deux calques par tuile, un octet
+  par point de surface, huit points par mot, à la place du bloc dans la réserve : le **ciel** (fréquence `FCIEL + t` :
+  combien des quatre rayons courts voient le ciel), rangé une fois, il ne dépend ni de l'œil ni du soleil ; le
+  **soleil** (fréquence `FSOL + t` : la clepsydre), refait seulement quand le soleil bouge (`ranger_lumiere`, en bandes :
+  chaque colonne de blocs écrit ses seules places). L'œil qui vole ne lance plus qu'un rayon par point de l'écran (et le
+  renvoi de Divona) au lieu de neuf.
+- **Deux défauts trouvés en regardant l'image** (l'empreinte vtx = C ne pouvait pas les voir : les deux faisaient la
+  même faute) : des taches noires en pointillés sur les marches de l'herbe. (1) Un rayon de l'œil qui passe entre deux
+  points par leur arête touche un point **intérieur** (ses six voisins pleins) : il n'est pas dans le calque, et le
+  calculer depuis son centre part de dedans la matière ; il se calcule désormais depuis l'endroit touché, comme en
+  0.809. (2) Le départ depuis le centre était une demi-maille plus bas que depuis la face : avec le soleil bas, les
+  rayons butaient sur la marche voisine ; le départ est poussé d'une demi-maille de plus le long de la normale. Après :
+  563 points de l'image sur 921 600 diffèrent de la 0.809, aucun de plus de 30 sur 765.
+- **Mesures ici (deux cœurs)**, les quatre empreintes vtx = C :
+
+  | film | 0.809 | 0.810 vtx | 0.810 C | les calques |
+  |---|---|---|---|---|
+  | échelle 1 | 1,9 s | **0,81 s** | 0,77 s | 0,67 s, une fois |
+  | soleil qui tourne | 2,1 s | **1,26 s** | 1,16 s | refaits à chaque image (compté) |
+  | moitié | 1,6 s | 0,72 s | 0,70 s | 0,14 s |
+  | double | 2,6 s | 0,93 s | 0,89 s | 3,7 s, une fois |
+
+  Ce qui ne va pas encore : le calque du soleil se refait pour **tout le monde** (ce que l'œil ne voit pas compris) :
+  au double, un soleil qui bougerait coûterait 3 s de plus par image. La suite : ne refaire que les blocs près de
+  l'œil, ou étaler la refonte sur plusieurs images (deux calques échangés).
+- **Le vergobret mesure** (la règle universelle) : chaque boucle « en bandes » a son réglage ; elle essaie tous les
+  fils que la machine offre, puis la moitié, le quart… (deux passages chacun) tant que c'est plus rapide d'au moins
+  3 %, puis garde le meilleur. Rien du processeur n'est supposé (cœurs réels, fils jumeaux, mémoire) : un 8 cœurs, un
+  24 fils, un portable trouvent chacun leur nombre. L'image ne change pas avec le nombre de cœurs (la promesse des
+  bandes). `VTX_COEURS=n` impose ; `VTX_REGLAGE=1` dit le choix. Sa limite : les essais se comparent sur des passages
+  qui se suivent (deux images voisines du film) ; si le travail change beaucoup d'un passage à l'autre, le choix peut
+  se tromper d'un cran.
+- **Pour la suite (dites, pas faites)** :
+  - *les paquets* : quatre rayons voisins (2 × 2 points de l'écran) marchent ensemble : un seul bloc lu pour les quatre
+    tant qu'ils sont dans le même ; c'est ce que font les traceurs rapides des processeurs (et ce qui prépare la carte
+    graphique) ;
+  - *le trompe-l'œil* (l'idée du créateur) : c'est ce que les jeux appellent les imposteurs, et le relief des cartes de
+    hauteur (une surface qui montre de loin ce qui est dedans) ; ici, il a une forme naturelle : pour chaque bloc (et
+    pour un groupe de 8 × 8 × 8 blocs), une **coque** rangée : sa couleur moyenne et sa hauteur vue de chaque face.
+    Un rayon lointain s'arrête sur la coque au lieu d'entrer ; le passage de la coque au détail se fait selon la
+    distance, en fondu. La fréquence négative de l'anti-cube est un bon nom pour ce rangement : le même lieu, en
+    représentation ;
+  - *Divona par la coque* : le reflet n'a pas besoin du détail (les rides le floutent) : les rayons renvoyés liront
+    les coques, pas les points.
