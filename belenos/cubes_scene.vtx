@@ -587,6 +587,26 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
     soit t = 0;
     // 0.809 : au-dessus du plus haut point du monde, un rayon qui monte ne touchera plus rien
     soit plafond = @2[GLOB + 20] << 16;
+    // 0.811 : le rayon apprend sa pente une fois : l'inverse de chaque direction (2^40 / |d|) ; chaque pas multiplie au
+    // lieu de diviser (trois divisions de moins par pas : la division est l'opération la plus lente du processeur)
+    soit ix = 0;
+    soit iy = 0;
+    soit iz = 0;
+    si dx .> 0 {
+        ix = 1099511627776 / dx;
+    } sinon si dx .< 0 {
+        ix = 1099511627776 / (0 - dx);
+    }
+    si dy .> 0 {
+        iy = 1099511627776 / dy;
+    } sinon si dy .< 0 {
+        iy = 1099511627776 / (0 - dy);
+    }
+    si dz .> 0 {
+        iz = 1099511627776 / dz;
+    } sinon si dz .< 0 {
+        iz = 1099511627776 / (0 - dz);
+    }
     tantque t < tmax {
         soit px = ox + ((dx * t) .>> 16);
         soit py = oy + ((dy * t) .>> 16);
@@ -628,34 +648,34 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
         // la sortie de la cellule (le bloc, ou le point) : la plus proche des trois faces vers où va le rayon
         soit pas = MANQUE;
         si dx .> 0 {
-            soit ex1 = ((((x | (s - 1)) + 1 + arr) << 16) - px) * 65536 / dx;
+            soit ex1 = (((((x | (s - 1)) + 1 + arr) << 16) - px) * ix) >> 24;
             si ex1 < pas {
                 pas = ex1;
             }
         } sinon si dx .< 0 {
-            soit ex2 = ((px - (((x & (0 - s)) - arr) << 16)) + 1) * 65536 / (0 - dx);
+            soit ex2 = (((px - (((x & (0 - s)) - arr) << 16)) + 1) * ix) >> 24;
             si ex2 < pas {
                 pas = ex2;
             }
         }
         si dy .> 0 {
-            soit ey1 = ((((y | (s - 1)) + 1 + arr) << 16) - py) * 65536 / dy;
+            soit ey1 = (((((y | (s - 1)) + 1 + arr) << 16) - py) * iy) >> 24;
             si ey1 < pas {
                 pas = ey1;
             }
         } sinon si dy .< 0 {
-            soit ey2 = ((py - (((y & (0 - s)) - arr) << 16)) + 1) * 65536 / (0 - dy);
+            soit ey2 = (((py - (((y & (0 - s)) - arr) << 16)) + 1) * iy) >> 24;
             si ey2 < pas {
                 pas = ey2;
             }
         }
         si dz .> 0 {
-            soit ez1 = ((((z | (s - 1)) + 1 + arr) << 16) - pz) * 65536 / dz;
+            soit ez1 = (((((z | (s - 1)) + 1 + arr) << 16) - pz) * iz) >> 24;
             si ez1 < pas {
                 pas = ez1;
             }
         } sinon si dz .< 0 {
-            soit ez2 = ((pz - (((z & (0 - s)) - arr) << 16)) + 1) * 65536 / (0 - dz);
+            soit ez2 = (((pz - (((z & (0 - s)) - arr) << 16)) + 1) * iz) >> 24;
             si ez2 < pas {
                 pas = ez2;
             }

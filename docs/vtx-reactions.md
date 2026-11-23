@@ -4124,3 +4124,35 @@ comme un cube à fréquence négative, qui ne montre qu'une représentation de c
     représentation ;
   - *Divona par la coque* : le reflet n'a pas besoin du détail (les rides le floutent) : les rayons renvoyés liront
     les coques, pas les points.
+
+## 95. La pente apprise, et ce que coûte la promesse (23 novembre, 0.811)
+
+**Mesuré chez le créateur (0.810, 24 fils)** : le film en **123 ms par image** (315 en 0.809, 482 en 0.808) ; le soleil
+qui tourne, 200 ms (330) ; les calques, 128 ms une fois. Le vergobret a choisi seul : le rendu sur 24 fils (essayé sur
+12 aux images 3 et 4 : 170 ms au lieu de 118 ; les fils jumeaux rapportent 44 % sur le tracé de rayons, qui attend la
+mémoire) ; une boucle de la création du monde sur 12. Sur 8 cœurs réels (affinité 5555) : 226 ms ; de 8 à 12 cœurs
+réels, 89 % du gain attendu. Défaut vu : sous affinité, la machine dit encore « 24 fils offerts » (Rust ne lit pas
+l'affinité sous Windows) ; le réglage a gardé 24 fils sur 8 cœurs, sans perte mesurable (les morceaux dynamiques).
+Pas de gcc chez lui : pas de C (0.811 essaie le compilateur de Microsoft, que Rust installe d'ordinaire).
+
+**Le créateur** : pour les bandes, une autre technique, puisqu'ailleurs on fait autrement, en gardant le cœur de vtx.
+
+- **Ce que coûte la promesse, mesuré avant d'agir** : la forge sans marque (ni lecture ni écriture notées) contre la
+  forge vraie, deux cœurs : le val **21,6 → 18,1 ms** (16 %), le paysage **828 → 782 ms** (6 %). La « promesse
+  jugée » (vrai prouvé / faux refusé / inconnu vérifié / variable : une condition à l'entrée ; les fréquences comme
+  régions) reste la bonne direction pour le langage, mais elle ne rapporterait que cela : elle passe après.
+- **Le vrai goulot, trouvé au profil** (callgrind) : `tracer` fait 75 % des instructions ; à chaque pas d'un rayon,
+  jusqu'à trois **divisions** de 64 bits (la sortie de la cellule sur chaque axe) : la division est l'opération la
+  plus lente d'un processeur (des dizaines de cycles). Le C faisait la même chose.
+- **La pente apprise** (0.811) : au départ, le rayon calcule l'inverse de chacune de ses directions (2^40 / |d|) ;
+  chaque pas multiplie puis décale au lieu de diviser (le principe d'Amanatides et Woo, ici en entiers). Le produit
+  tient sur 64 bits (la distance d'une sortie de cellule est sous 2^24, l'inverse sous 2^40) ; l'arrondi par défaut
+  ne fait jamais sauter une cellule (au pire un pas de plus). Les **quatre empreintes sont celles de la 0.810** :
+  l'image est la même à l'octet près. Ici, deux cœurs : l'échelle 1 **809 → 568 ms**, le soleil qui tourne
+  1262 → 902, la moitié 719 → 502, le double 927 → 640 ; le C 771 → 526 (vtx à 8 % du C).
+- **Essayé et rejeté** : des vides qui savent leur distance plus loin (LOIN 16 et 32 au lieu de 8) : rien gagné
+  (834 et 859 ms contre 809) : les rayons ne se perdent pas dans le vide, ils peinent près des surfaces.
+- **Les paquets, honnêtement** : quatre rayons voisins qui marchent ensemble ne rapportent que si le processeur fait
+  les quatre calculs d'une seule instruction (les registres vectoriels) ; la forge écrit du code scalaire. Le mot de
+  Lugus a 128 bits : quatre voies de 32 bits. Un type « quatre rayons dans un mot » serait la façon vtx de le faire :
+  un ajout au langage, à décider.

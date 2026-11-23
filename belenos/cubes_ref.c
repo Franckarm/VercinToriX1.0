@@ -1,9 +1,10 @@
-/* Belenos : le paysage fait dans le cube, écrit en C pour comparer (0.809, 0.810 : les calques de lumière). Le même calcul que cubes_scene.vtx et
+/* Belenos : le paysage fait dans le cube, écrit en C pour comparer (0.809 ; 0.810 : les calques de lumière ; 0.811 : la pente apprise). Le même calcul que cubes_scene.vtx et
  * cubes_film.vtx, entier pour entier : la même empreinte. Sans GIF (les images sont calculées, pas écrites).
  *     cc -O2 -o cubes_ref belenos/cubes_ref.c                      (l'échelle 1, un cœur)
  *     cc -O2 -fopenmp -o cubes_ref belenos/cubes_ref.c             (les rangées de l'image sur tous les cœurs)
  *     cc -O2 -DRN=2 -DRD=1 ...                                      (une autre échelle)
  *     CUBES_IMAGES=6 ./cubes_ref                                     (moins d'images)
+ *     cl /O2 /openmp /TC cubes_ref.c                                (Windows, le compilateur de Microsoft)
  * Les opérations de vtx : / % < > sans signe ; ./ .>> .< .> avec signe ; tout sur 64 bits, en enveloppant. */
 #include <stdint.h>
 #include <stdio.h>
@@ -23,6 +24,11 @@
 
 typedef uint64_t u;
 typedef int64_t s;
+
+/* le compilateur de Microsoft (cl /O2 /openmp) n'a pas clock_gettime : l'horloge du C11 */
+#ifdef _MSC_VER
+#define clock_gettime(c, t) timespec_get((t), TIME_UTC)
+#endif
 
 #define W 1280
 #define H 720
@@ -346,6 +352,11 @@ static inline u couleur(u x, u y, u z) {
 
 static u tracer(u ox, u oy, u oz, u dx, u dy, u dz, u tmax, int eau) {
     u t = 0, plafond = GLOB[20] << 16;
+    /* 0.811 : la pente apprise une fois (2^40 / |d|) : chaque pas multiplie au lieu de diviser */
+    u ix = 0, iy = 0, iz = 0, P40 = (u)1 << 40;
+    if (slt(0, dx)) ix = P40 / dx; else if (slt(dx, 0)) ix = P40 / (0 - dx);
+    if (slt(0, dy)) iy = P40 / dy; else if (slt(dy, 0)) iy = P40 / (0 - dy);
+    if (slt(0, dz)) iz = P40 / dz; else if (slt(dz, 0)) iz = P40 / (0 - dz);
     while (t < tmax) {
         u px = ox + sar(dx * t, 16), py = oy + sar(dy * t, 16), pz = oz + sar(dz * t, 16);
         if (!slt(py, plafond) && !slt(dy, 0)) return MANQUE;
@@ -365,12 +376,12 @@ static u tracer(u ox, u oy, u oz, u dx, u dy, u dz, u tmax, int eau) {
         }
         u arr = sz_ == 8 ? (av - 1) * 8 : 0;
         u pas = MANQUE;
-        if (slt(0, dx)) { u ex = ((((x | (sz_ - 1)) + 1 + arr) << 16) - px) * 65536 / dx; if (ex < pas) pas = ex; }
-        else if (slt(dx, 0)) { u ex = ((px - (((x & (0 - sz_)) - arr) << 16)) + 1) * 65536 / (0 - dx); if (ex < pas) pas = ex; }
-        if (slt(0, dy)) { u ey = ((((y | (sz_ - 1)) + 1 + arr) << 16) - py) * 65536 / dy; if (ey < pas) pas = ey; }
-        else if (slt(dy, 0)) { u ey = ((py - (((y & (0 - sz_)) - arr) << 16)) + 1) * 65536 / (0 - dy); if (ey < pas) pas = ey; }
-        if (slt(0, dz)) { u ez = ((((z | (sz_ - 1)) + 1 + arr) << 16) - pz) * 65536 / dz; if (ez < pas) pas = ez; }
-        else if (slt(dz, 0)) { u ez = ((pz - (((z & (0 - sz_)) - arr) << 16)) + 1) * 65536 / (0 - dz); if (ez < pas) pas = ez; }
+        if (slt(0, dx)) { u ex = ((((x | (sz_ - 1)) + 1 + arr) << 16) - px) * ix >> 24; if (ex < pas) pas = ex; }
+        else if (slt(dx, 0)) { u ex = ((px - (((x & (0 - sz_)) - arr) << 16)) + 1) * ix >> 24; if (ex < pas) pas = ex; }
+        if (slt(0, dy)) { u ey = ((((y | (sz_ - 1)) + 1 + arr) << 16) - py) * iy >> 24; if (ey < pas) pas = ey; }
+        else if (slt(dy, 0)) { u ey = ((py - (((y & (0 - sz_)) - arr) << 16)) + 1) * iy >> 24; if (ey < pas) pas = ey; }
+        if (slt(0, dz)) { u ez = ((((z | (sz_ - 1)) + 1 + arr) << 16) - pz) * iz >> 24; if (ez < pas) pas = ez; }
+        else if (slt(dz, 0)) { u ez = ((pz - (((z & (0 - sz_)) - arr) << 16)) + 1) * iz >> 24; if (ez < pas) pas = ez; }
         t = t + pas + 1;
     }
     return MANQUE;
