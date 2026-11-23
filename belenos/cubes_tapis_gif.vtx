@@ -1,0 +1,10 @@
+// machine : lugus
+// Belenos : le paysage dans le cube, sur le tapis roulant à cinq images (0.812) ; tourne == 0.
+//     forgé : python forge/forge128.py belenos/cubes_tapis_gif.vtx -o cubes_tapis_gif.exe ; VTX_GIF=film.gif cubes_tapis_gif.exe
+constante RN = 1;
+constante RD = 1;
+importer "cubes_tapis.vtx";
+
+fonction principal() {
+    filmer_tapis(0);
+}

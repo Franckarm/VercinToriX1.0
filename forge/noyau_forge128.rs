@@ -218,66 +218,205 @@ fn cylindres_voulus() -> usize {
 
 /// 0.810 : le vergobret mesure : une règle sans rien savoir du processeur (ni ses cœurs réels, ni ses fils jumeaux, ni sa
 /// mémoire). Chaque boucle « en bandes » a son réglage : elle essaie tous les fils que la machine offre, puis la moitié,
-/// le quart… (deux passages chacun, le temps par tour de boucle) tant que c'est plus rapide ; puis elle garde le
+/// le quart… (deux passages chacun, le temps de chaque passage) tant que c'est plus rapide ; puis elle garde le
 /// meilleur. Le résultat ne dépend pas du nombre de cœurs (la promesse des bandes) : seul le temps change.
-/// VTX_COEURS=n impose n ; VTX_REGLAGE=1 dit le choix de chaque boucle.
+/// 0.812 : le vergobret apprend (une petite intelligence, honnêtement nommée : une mémoire et un plus proche voisin).
+/// - il se souvient : ce qu'il a appris est rangé dans `vergobret.savoir`, à côté du programme (une ligne par boucle :
+///   sa clé, le nombre de fils de la machine, le meilleur nombre de cœurs, son temps, le temps sur tous les fils) ;
+///   au lancement suivant, la boucle prend tout de suite ce qu'il sait ;
+/// - il devine : une boucle jamais vue est d'abord mesurée sur tous les fils ; s'il connaît une boucle qui coûtait à
+///   peu près autant (sur la même machine), il essaie directement son choix ;
+/// - il doute en quatre valeurs : inconnu (jamais vu), variable (deviné par un voisin, à confirmer), vrai (mesuré ici,
+///   ou souvenu et confirmé), faux (un souvenir démenti : le temps n'est plus celui retenu ; il oublie et réapprend).
+/// VTX_COEURS=n impose n ; VTX_REGLAGE=1 dit ce qu'il fait ; VTX_VERGOBRET=0 : sans mémoire.
+#[allow(dead_code)]
+#[derive(Clone, Copy, PartialEq)]
+enum Confiance { Inconnu, Variable, Vrai, Faux }
+
+#[allow(dead_code)]
+struct EtatReglage {
+    essai: usize,        // le nombre de cœurs essayé maintenant
+    mesures: u32,        // les passages mesurés de cet essai
+    temps: f64,          // le meilleur temps de cet essai
+    meilleur: usize,     // le meilleur nombre trouvé
+    t_meilleur: f64,
+    t_tous: f64,         // le temps sur tous les fils (ce qui caractérise la boucle : sa « signature » de coût)
+    fige: bool,
+    confiance: Confiance,
+    deviner: usize,      // le nombre deviné par un voisin (0 : aucun)
+    pret: bool,          // la mémoire a été consultée
+}
+
 #[allow(dead_code)]
 pub struct Reglage {
-    // (essai en cours, mesures faites de cet essai, la meilleure de cet essai, le meilleur nombre, son temps, figé)
-    etat: std::sync::Mutex<(usize, u32, f64, usize, f64, bool)>,
+    cle: u64,
+    etat: std::sync::Mutex<EtatReglage>,
+}
+
+/// une ligne du savoir : (clé, fils de la machine, meilleur nombre, son temps, temps sur tous les fils)
+type Souvenir = (u64, usize, usize, f64, f64);
+
+#[allow(dead_code)]
+fn savoir() -> &'static std::sync::Mutex<Vec<Souvenir>> {
+    static S: std::sync::OnceLock<std::sync::Mutex<Vec<Souvenir>>> = std::sync::OnceLock::new();
+    S.get_or_init(|| {
+        let mut v = Vec::new();
+        if let Some(f) = fichier_savoir() {
+            if let Ok(t) = std::fs::read_to_string(&f) {
+                for l in t.lines() {
+                    let m: Vec<&str> = l.split_whitespace().collect();
+                    if m.len() == 5 {
+                        if let (Ok(a), Ok(b), Ok(c), Ok(d), Ok(e)) = (u64::from_str_radix(m[0], 16), m[1].parse(), m[2].parse(),
+                                                                       m[3].parse(), m[4].parse()) {
+                            v.push((a, b, c, d, e));
+                        }
+                    }
+                }
+            }
+        }
+        std::sync::Mutex::new(v)
+    })
+}
+
+#[allow(dead_code)]
+fn fichier_savoir() -> Option<std::path::PathBuf> {
+    if std::env::var("VTX_VERGOBRET").map_or(false, |v| v == "0") {
+        return None;
+    }
+    std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("vergobret.savoir")))
+}
+
+#[allow(dead_code)]
+fn retenir(sv: Souvenir) {
+    let mut v = savoir().lock().unwrap();
+    v.retain(|x| !(x.0 == sv.0 && x.1 == sv.1));
+    v.push(sv);
+    if let Some(f) = fichier_savoir() {
+        let mut t = String::from("# vergobret : ce qu'il a appris (clé de la boucle, fils de la machine, meilleur nombre de cœurs, son temps, le temps sur tous les fils)\n");
+        for x in v.iter() {
+            t += &format!("{:016x} {} {} {:e} {:e}\n", x.0, x.1, x.2, x.3, x.4);
+        }
+        let _ = std::fs::write(f, t);
+    }
+}
+
+#[allow(dead_code)]
+fn dire_reglage(m: String) {
+    if std::env::var("VTX_REGLAGE").is_ok() {
+        eprintln!("vergobret : {}", m);
+    }
 }
 
 #[allow(dead_code)]
 impl Reglage {
-    pub const fn neuf() -> Reglage {
-        Reglage { etat: std::sync::Mutex::new((0, 0, f64::MAX, 0, f64::MAX, false)) }
+    pub const fn neuf(cle: u64) -> Reglage {
+        Reglage { cle, etat: std::sync::Mutex::new(EtatReglage { essai: 0, mesures: 0, temps: f64::MAX, meilleur: 0,
+            t_meilleur: f64::MAX, t_tous: 0.0, fige: false, confiance: Confiance::Inconnu, deviner: 0, pret: false }) }
     }
     pub fn coeurs(&self) -> usize {
         if std::env::var("VTX_COEURS").is_ok() {
             return cylindres_voulus();
         }
+        let tous = cylindres_voulus().max(1);
         let mut e = self.etat.lock().unwrap();
-        if e.5 {
-            return e.3;
+        if !e.pret {
+            e.pret = true;
+            e.essai = tous;
+            // se souvenir : cette boucle, sur une machine qui offre autant de fils
+            if let Some(sv) = savoir().lock().unwrap().iter().find(|x| x.0 == self.cle && x.1 == tous).copied() {
+                e.essai = sv.2.max(1).min(tous);
+                e.meilleur = e.essai;
+                e.t_meilleur = sv.3;
+                e.t_tous = sv.4;
+                e.confiance = Confiance::Variable;
+                e.deviner = usize::MAX; // un souvenir : à confirmer par la mesure
+            }
         }
-        if e.0 == 0 {
-            e.0 = cylindres_voulus().max(1);
-        }
-        e.0
+        if e.fige { e.meilleur } else { e.essai }
     }
-    pub fn noter(&self, nt: usize, duree: std::time::Duration, tours: u64, ligne: u32) {
+    pub fn noter(&self, nt: usize, duree: std::time::Duration, _tours: u64, ligne: u32) {
         if std::env::var("VTX_COEURS").is_ok() {
             return;
         }
+        let tous = cylindres_voulus().max(1);
         let mut e = self.etat.lock().unwrap();
-        if e.5 || nt != e.0 {
+        if e.fige || nt != e.essai {
             return;
         }
-        let t = duree.as_secs_f64() / (tours.max(1) as f64);
-        e.1 += 1;
-        if t < e.2 {
-            e.2 = t;
+        let t = duree.as_secs_f64();
+        e.mesures += 1;
+        if t < e.temps {
+            e.temps = t;
         }
-        if e.1 < 2 {
+        if e.mesures < 2 {
             return;
         }
-        // cet essai est mesuré : meilleur que le meilleur (d'au moins 3 %) ? on continue vers la moitié ; sinon on fige
-        let (essai, temps) = (e.0, e.2);
-        if temps < e.4 * 0.97 || e.3 == 0 {
-            e.3 = essai;
-            e.4 = temps;
+        let (essai, temps) = (e.essai, e.temps);
+        e.mesures = 0;
+        e.temps = f64::MAX;
+        // un souvenir mis à l'épreuve : le temps doit rester celui retenu (à 30 % près)
+        if e.deviner == usize::MAX {
+            if temps <= e.t_meilleur * 1.3 {
+                e.confiance = Confiance::Vrai;
+                e.fige = true;
+                dire_reglage(format!("la boucle de la ligne {} : se souvient, {} cœur(s) (sur {} fils) ; confirmé", ligne, essai, tous));
+            } else {
+                // démenti : il oublie et réapprend, depuis tous les fils
+                e.confiance = Confiance::Faux;
+                dire_reglage(format!("la boucle de la ligne {} : souvenir démenti ({:.1} ms au lieu de {:.1}) ; il réapprend", ligne,
+                                     temps * 1e3, e.t_meilleur * 1e3));
+                e.deviner = 0;
+                e.meilleur = 0;
+                e.t_meilleur = f64::MAX;
+                e.essai = tous;
+            }
+            return;
+        }
+        if essai == tous && e.meilleur == 0 {
+            e.t_tous = temps;
+            e.meilleur = tous;
+            e.t_meilleur = temps;
+            // deviner : la boucle connue (même machine) dont le coût sur tous les fils est le plus proche (à un facteur 2)
+            let voisin = savoir().lock().unwrap().iter().filter(|x| x.1 == tous && x.0 != self.cle && x.4 > 0.0)
+                .map(|x| ((x.4 / temps).ln().abs(), x.2)).filter(|x| x.0 < std::f64::consts::LN_2)
+                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap()).map(|x| x.1);
+            if let Some(n) = voisin {
+                if n < tous {
+                    e.confiance = Confiance::Variable;
+                    e.deviner = n;
+                    e.essai = n;
+                    dire_reglage(format!("la boucle de la ligne {} : devine {} cœur(s) d'après une boucle semblable", ligne, n));
+                    return;
+                }
+            }
+            if tous > 1 {
+                e.essai = (tous / 2).max(1);
+                return;
+            }
+        } else if e.deviner > 0 && essai == e.deviner {
+            // la devinette mise à l'épreuve
+            if temps < e.t_meilleur * 0.97 {
+                e.meilleur = essai;
+                e.t_meilleur = temps;
+                dire_reglage(format!("la boucle de la ligne {} : la devinette tient ({} cœurs)", ligne, essai));
+            } else {
+                dire_reglage(format!("la boucle de la ligne {} : la devinette ne tient pas ; tous les fils", ligne));
+            }
+            e.deviner = 0;
+        } else if temps < e.t_meilleur * 0.97 {
+            e.meilleur = essai;
+            e.t_meilleur = temps;
             if essai > 1 {
-                e.0 = (essai / 2).max(1);
-                e.1 = 0;
-                e.2 = f64::MAX;
+                e.essai = (essai / 2).max(1);
                 return;
             }
         }
-        e.5 = true;
-        if std::env::var("VTX_REGLAGE").is_ok() {
-            eprintln!("vergobret : la boucle de la ligne {} va sur {} cœur(s) (sur {} fils offerts)", ligne, e.3,
-                      cylindres_voulus());
-        }
+        e.fige = true;
+        e.confiance = Confiance::Vrai;
+        let sv = (self.cle, tous, e.meilleur, e.t_meilleur, e.t_tous);
+        drop(e);
+        retenir(sv);
+        dire_reglage(format!("la boucle de la ligne {} : apprend, {} cœur(s) (sur {} fils offerts) ; retenu", ligne, sv.2, tous));
     }
 }
 
@@ -615,7 +754,12 @@ fn bandes_touchees(recoltes: &[Recolte]) -> Option<u128> {
         }
     }
     for (k, p) in &pages {
-        if (0..1024).any(|j| p[1][j] | (p[0][j] & p[2][j]) != 0) {
+        if let Some(j) = (0..1024).find(|&j| p[1][j] | (p[0][j] & p[2][j]) != 0) {
+            if std::env::var("VTX_CYLINDRES").is_ok() {
+                let b = (p[1][j] | (p[0][j] & p[2][j])).trailing_zeros() as usize;
+                eprintln!("bandes : la promesse rompue à la page {:#x}, mot {} ({})", k, j * 64 + b,
+                          if p[1][j] >> b & 1 == 1 { "écrit par deux cœurs" } else { "écrit par l'un, lu par l'autre" });
+            }
             return Some(*k);
         }
     }

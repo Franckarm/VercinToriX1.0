@@ -4156,3 +4156,55 @@ Pas de gcc chez lui : pas de C (0.811 essaie le compilateur de Microsoft, que Ru
   les quatre calculs d'une seule instruction (les registres vectoriels) ; la forge écrit du code scalaire. Le mot de
   Lugus a 128 bits : quatre voies de 32 bits. Un type « quatre rayons dans un mot » serait la façon vtx de le faire :
   un ajout au langage, à décider.
+
+## 96. Le tapis à cinq images, l'ARN du vergobret, et le vergobret qui apprend (23 novembre, 0.812)
+
+**Mesuré chez le créateur (0.811, 24 fils)** : **73 ms par image** (123 en 0.810), le soleil qui tourne 124 ms ; les
+mêmes empreintes. Le C n'a pas compilé chez lui : le compilateur de Microsoft veut la variable d'une boucle OpenMP
+déclarée avant la boucle (C3015) ; corrigé.
+
+**Le créateur** : où sont passés le tapis d'étages et l'ARN ? Le vergobret a son mot à dire ; peut-être une IA en
+devenir ; le travail d'un cœur gérant les étages de plusieurs cubes. Puis : un tapis roulant à cinq images (le cache,
+l'image, l'ombre, la lumière, Divona) ; le vergobret doit lire l'ARN de la partie graphique ; le modèle peut se relâcher
+dans la partie graphique, le langage, son fonctionnement et Ogmios restent ce qu'ils étaient ; que le vergobret
+devienne une mini IA.
+
+- **Ce qui n'a pas bougé** : les deux compilateurs, le langage, Ogmios, la machine Lugus. Seuls changent la partie
+  graphique (`belenos/cubes_*.vtx`) et le noyau de la forge (le réglage du vergobret, un diagnostic de la promesse).
+- **Les étages d'un rayon** : `regarder` se fait en étages : `tracer` (l'image), `ombrer` (ce que reçoit le point),
+  `eclairer` (la couleur d'un point de terre), `divona` (l'eau), `brumer` ; `regarder` les enchaîne : la même image (les
+  quatre empreintes inchangées). Le soleil a trois **jeux** (directions et calques : `SOLEILS + 16 · jeu`,
+  `FSOL + 16 · jeu + t`).
+- **Le tapis** (`belenos/cubes_tapis.vtx`, `cubes_tapis_gif.vtx`, `cubes_tapis_soleil.vtx`) : chaque image a sa place
+  (fréquence `FTAP + i mod 5`, trois mots par point : la distance, la direction, l'ombre et la lumière) du premier étage
+  au dernier : on ne déplace pas les données, le repère avance. À chaque tour, **une seule boucle en bandes** : chaque
+  rangée passe par les cinq étages, chacun pour son image (k - son retard). Le cache refait par cinquièmes le calque du
+  soleil d'un jeu en chantier ; trois jeux tournent (un en chantier, deux qui servent) : aucune image ne lit un calque en
+  travaux, et la promesse des bandes le vérifie.
+- **L'ARN** : le vergobret transcrit le tapis en une table de l'étage 2 (le nombre d'étages, puis le code et le retard
+  de chacun) et, à chaque tour, la lit pour jouer chaque étage. Il choisit l'ARN selon ce qu'il y a à faire : du travail
+  pour le cache (le soleil bouge) : le tapis déplié, cinq étages, une image sort quatre tours après son départ ; rien à
+  refaire : un seul étage, tout d'un coup.
+- **Mesures ici (deux cœurs)** : le soleil qui bouge, **994 → 715 ms** par image (28 % de moins : le calque refait par
+  cinquièmes au lieu d'entier à chaque image ; le soleil avance par pas de cinq images, sans couture vue) ; le soleil
+  fixe : le tapis déplié ou replié coûtait **7 à 9 % de plus** (649–664 et 643–651 ms contre 600–607 : les trois mots
+  par point passés d'un étage à l'autre), d'où le choix d'un seul étage (595–626 ms, la même image, empreinte
+  7832993576801426321). Le dire franchement : sur un processeur dont chaque étage occupe déjà tous les cœurs, un tapis ne
+  rend pas une image moins chère ; il gagne là où il étale ou évite du travail (le calque), et il prépare la carte
+  graphique (où chaque étage est une passe). Son prix : quatre images de retard entre l'œil et l'écran (un film n'en
+  souffre pas ; un jeu, oui).
+- **La promesse a attrapé une faute** : la première version posait la table des yeux et l'ARN (600300, 600400) sur les
+  comptes par rangée (`COMPTE`, 720 × 4 mots depuis 600200) ; la boucle s'est arrêtée en le disant. Le noyau dit
+  maintenant où (`VTX_CYLINDRES=1` : la page, le mot, écrit par deux cœurs ou écrit par l'un et lu par l'autre).
+- **Le vergobret apprend** (une mini IA, honnêtement nommée : une mémoire et un plus proche voisin, pas un réseau de
+  neurones). Il **se souvient** : ce qu'il apprend est rangé dans `vergobret.savoir`, à côté du programme (la clé de la
+  boucle : son programme, sa ligne et son corps ; le nombre de fils de la machine ; le meilleur nombre de cœurs ; son
+  temps ; le temps sur tous les fils) ; au lancement suivant, la boucle prend tout de suite ce qu'il sait. Il **doute
+  en quatre valeurs** : inconnu (jamais vu), variable (souvenu ou deviné, à confirmer : deux passages), vrai (confirmé),
+  faux (un souvenir démenti : plus de 30 % plus lent que retenu ; il oublie et réapprend). Il **devine** : une boucle
+  jamais vue est mesurée sur tous les fils ; s'il connaît, sur la même machine, une boucle qui coûtait à peu près autant
+  (à un facteur 2), il essaie directement son choix. `VTX_VERGOBRET=0` : sans mémoire. Ses limites : il ne connaît que
+  le nombre de cœurs ; ses voisins ne se ressemblent que par leur coût ; une boucle jouée une seule fois n'apprend rien.
+- **Ensuite, pour qu'il devienne plus** : qu'il choisisse l'ARN en mesurant (le tapis ou tout d'un coup, essayés et
+  retenus), et non par une règle ; qu'il apprenne la taille des morceaux et l'ordre des étages ; le savoir d'une machine
+  servant aux programmes nouveaux.

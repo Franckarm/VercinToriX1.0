@@ -1,0 +1,398 @@
+// Belenos : le tapis roulant à cinq images (0.812), lu par le vergobret.
+//
+// L'idée du créateur : un tapis d'étages ; chaque image passe par cinq étages, un par tour : le cache (le calque du
+// soleil, refait par cinquièmes), l'image (le rayon de l'œil : le point touché), l'ombre (ce que le point reçoit), la
+// lumière (la couleur d'un point de terre), Divona (l'eau, puis la brume, puis l'écran). À chaque tour, cinq images
+// sont sur le tapis, chacune à son étage ; un tour est une seule boucle en bandes : chaque rangée de l'écran passe par
+// les cinq étages, chacun pour son image. Comme le tapis du fluide, on ne déplace pas les données : chaque image a sa
+// place (sa fréquence, FTAP + image mod 5) du premier étage au dernier ; c'est le repère qui avance.
+//
+// L'ARN : la forge et le programme sont l'ADN ; avant de jouer, le vergobret transcrit le tapis en ARN, une table de
+// l'étage 2 (ARN : le nombre d'étages, puis pour chacun son code et son retard, le tour où une image y passe) ; à
+// chaque tour, il lit l'ARN et joue chaque étage pour l'image qui y est. Un autre ARN, un autre tapis : moins
+// d'étages (un retard partagé), ou d'autres.
+//
+// Le prix : une image sort quatre tours après son départ (le retard du tapis) ; rien ne coûte moins par image si chaque
+// étage occupait déjà tous les cœurs. Ce qu'il apporte : le calque du soleil refait par cinquièmes (le soleil qui
+// bouge ne coûte plus un calque entier par image) ; trois jeux de calques tournent : un se construit pendant que les
+// deux autres servent (aucune image ne lit un calque en travaux : la promesse des bandes tient).
+importer "cubes_film.vtx";
+
+constante FTAP = 100;              // la place de l'image i sur le tapis : fréquence FTAP + (i mod 5), trois mots par point
+constante CAMS = 604000;           // l'œil de chaque place : CAMS + 16 · place (cx cy cz, fx fy fz, rx rz, ux uy uz,
+                                   // temps, jeu de soleil)
+constante ARN = 604100;            // l'ARN du tapis : ARN = le nombre d'étages ; ARN + 1 + 2e : le code de l'étage e,
+                                   // ARN + 2 + 2e : son retard
+constante CHANTIER = 604150;       // le jeu de soleil en construction (3 : aucun), puis le premier tour du chantier
+
+// les codes des étages
+constante E_CACHE = 1;
+constante E_IMAGE = 2;
+constante E_OMBRE = 3;
+constante E_LUMIERE = 4;
+constante E_DIVONA = 5;
+constante E_TOUT = 6;              // les quatre derniers d'un coup, pour chaque point
+
+// ------------------------------------------------------------------------------------------------ le vergobret
+// transcrire : le vergobret choisit le tapis selon ce qu'il y a à faire. Du travail pour le cache (le soleil bouge :
+// un calque à refaire) : le tapis à cinq étages, un tour de retard de l'un à l'autre, le calque refait par cinquièmes.
+// Rien à refaire : un seul étage, tout d'un coup (le rayon, l'ombre, la lumière et Divona pour chaque point, comme
+// rendre_cubes) : mesuré, le tapis y coûte 7 à 9 % de plus (trois mots par point passés d'un étage à l'autre) et n'y
+// gagne rien.
+fonction vergobret_transcrire(travail) {
+    si travail == 1 {
+        @2[ARN] = 5;
+        @2[ARN + 1] = E_CACHE;
+        @2[ARN + 3] = E_IMAGE;
+        @2[ARN + 5] = E_OMBRE;
+        @2[ARN + 7] = E_LUMIERE;
+        @2[ARN + 9] = E_DIVONA;
+        pour e dans 0..5 {
+            @2[ARN + 2 + 2 * e] = e;
+        }
+    } sinon {
+        @2[ARN] = 2;
+        @2[ARN + 1] = E_CACHE;
+        @2[ARN + 2] = 0;
+        @2[ARN + 3] = E_TOUT;
+        @2[ARN + 4] = 0;
+    }
+}
+
+// le retard du dernier étage : combien de tours après son départ une image sort
+fonction vergobret_retard() {
+    soit r = 0;
+    pour e dans 0..@2[ARN] {
+        si @2[ARN + 2 + 2 * e] > r {
+            r = @2[ARN + 2 + 2 * e];
+        }
+    }
+    retour r;
+}
+
+// un tour du tapis (le tour k ; n images en tout) : une seule boucle en bandes ; chaque rangée passe par les étages de
+// l'ARN, chacun pour l'image qui y est (k - son retard)
+fonction vergobret_tour(k, n) {
+    soit ne = @2[ARN];
+    pour y dans 0..H en bandes {
+        pour e dans 0..ne {
+            soit code = @2[ARN + 1 + 2 * e];
+            soit retard = @2[ARN + 2 + 2 * e];
+            si k >= retard && k - retard < n {
+                soit i = k - retard;
+                si code == E_CACHE {
+                    etage_cache(y, k);
+                } sinon si code == E_IMAGE {
+                    etage_image(y, i % 5);
+                } sinon si code == E_OMBRE {
+                    etage_ombre(y, i % 5);
+                } sinon si code == E_LUMIERE {
+                    etage_lumiere(y, i % 5);
+                } sinon si code == E_DIVONA {
+                    etage_divona(y, i % 5);
+                } sinon si code == E_TOUT {
+                    etage_tout(y, i % 5);
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------ les étages
+// la place d'un point (x, y) de l'image de la place s : trois mots (t ; la direction ; l'ombre et la lumière)
+fonction case_tapis(s, x, y) {
+    retour ((FTAP + s) << 24) + (y * W + x) * 3;
+}
+
+// la direction d'un rayon, rangée en un mot (trois voies de 20 bits, décalées de 65536)
+fonction plier_dir(dx, dy, dz) {
+    retour (dx + 65536) | ((dy + 65536) << 20) | ((dz + 65536) << 40);
+}
+
+// le cache : le calque du soleil en construction, une part de ses colonnes de blocs (un cinquième par tour, réparti
+// sur les rangées)
+fonction etage_cache(y, k) {
+    soit jeu = @2[CHANTIER];
+    si jeu < 3 {
+        soit nq = TUILES * TUILES * 1024;
+        soit m = (k - @2[CHANTIER + 1]) % 5;
+        soit q0 = m * nq / 5;
+        soit cnt = (m + 1) * nq / 5 - q0;
+        soit a = q0 + y * cnt / H;
+        soit b = q0 + (y + 1) * cnt / H;
+        pour q dans a..b {
+            ranger_colonne(q, 0, jeu);
+        }
+    }
+}
+
+// l'image : le rayon de l'œil de chaque point de la rangée ; t (la distance du point touché) et la direction
+fonction etage_image(y, s) {
+    soit c = CAMS + 16 * s;
+    soit cx = @2[c];
+    soit cy = @2[c + 1];
+    soit cz = @2[c + 2];
+    soit fx = @2[c + 3];
+    soit fy = @2[c + 4];
+    soit fz = @2[c + 5];
+    soit rx = @2[c + 6];
+    soit rz = @2[c + 7];
+    soit ux = @2[c + 8];
+    soit uy = @2[c + 9];
+    soit uz = @2[c + 10];
+    soit sy = ((H - 2 * y - 1) * 45889) ./ W;
+    pour x dans 0..W {
+        soit sx = ((2 * x + 1 - W) * 45889) ./ W;
+        soit dx = fx + (rx * sx + ux * sy) ./ 65536;
+        soit dy = fy + (uy * sy) ./ 65536;
+        soit dz = fz + (rz * sx + uz * sy) ./ 65536;
+        soit lg = racine_entiere(dx * dx + dy * dy + dz * dz);
+        dx = (dx * 65536) ./ lg;
+        dy = (dy * 65536) ./ lg;
+        dz = (dz * 65536) ./ lg;
+        soit p = case_tapis(s, x, y);
+        @2[p] = tracer(cx, cy, cz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
+        @2[p + 1] = plier_dir(dx, dy, dz);
+    }
+}
+
+// l'ombre : ce que reçoit chaque point touché de la rangée
+fonction etage_ombre(y, s) {
+    soit c = CAMS + 16 * s;
+    soit jeu = @2[c + 12];
+    pour x dans 0..W {
+        soit p = case_tapis(s, x, y);
+        soit d = @2[p + 1];
+        @2[p + 2] = ombrer(@2[c], @2[c + 1], @2[c + 2], (d & 1048575) - 65536, ((d >> 20) & 1048575) - 65536,
+                           ((d >> 40) & 1048575) - 65536, @2[p], jeu);
+    }
+}
+
+// la lumière : la couleur de chaque point de terre (l'eau attend Divona, le ciel n'a rien à faire)
+fonction etage_lumiere(y, s) {
+    soit c = CAMS + 16 * s;
+    soit jeu = @2[c + 12];
+    pour x dans 0..W {
+        soit p = case_tapis(s, x, y);
+        soit om = @2[p + 2];
+        si (om & 1) == 1 && (om & 2) == 0 {
+            soit d = @2[p + 1];
+            soit col = eclairer(@2[c], @2[c + 1], @2[c + 2], (d & 1048575) - 65536, ((d >> 20) & 1048575) - 65536,
+                                ((d >> 40) & 1048575) - 65536, @2[p], om, jeu);
+            @2[p + 2] = om | (col << 16);
+        }
+    }
+}
+
+// Divona : l'eau ; puis la brume et l'écran (le ciel, l'eau, la terre) ; les états de la lumière comptés
+fonction etage_divona(y, s) {
+    soit c = CAMS + 16 * s;
+    soit jeu = @2[c + 12];
+    soit temps = @2[c + 11];
+    soit n0 = 0;
+    soit n1 = 0;
+    soit n2 = 0;
+    soit n3 = 0;
+    pour x dans 0..W {
+        soit p = case_tapis(s, x, y);
+        soit t = @2[p];
+        soit d = @2[p + 1];
+        soit dx = (d & 1048575) - 65536;
+        soit dy = ((d >> 20) & 1048575) - 65536;
+        soit dz = ((d >> 40) & 1048575) - 65536;
+        soit om = @2[p + 2];
+        soit col = 0;
+        si t == MANQUE {
+            col = ciel(dx, dy, dz, jeu);
+            n0 = n0 + 1;
+        } sinon si (om & 2) != 0 {
+            col = brumer(divona(@2[c], @2[c + 1], @2[c + 2], dx, dy, dz, t, 1, temps, jeu), t);
+            n2 = n2 + 1;
+        } sinon {
+            col = brumer(om >> 16, t);
+            soit etat = (om >> 2) & 3;
+            si etat == 1 {
+                n1 = n1 + 1;
+            } sinon si etat == 2 {
+                n2 = n2 + 1;
+            } sinon {
+                n3 = n3 + 1;
+            }
+        }
+        @1[y * W + x] = rgb((col >> 16) & 255, (col >> 8) & 255, col & 255);
+    }
+    @2[COMPTE + 4 * y] = n0;
+    @2[COMPTE + 4 * y + 1] = n1;
+    @2[COMPTE + 4 * y + 2] = n2;
+    @2[COMPTE + 4 * y + 3] = n3;
+}
+
+// tout d'un coup : chaque point de la rangée regardé de bout en bout (le rayon, l'ombre, la lumière, Divona, la brume)
+fonction etage_tout(y, s) {
+    soit c = CAMS + 16 * s;
+    soit cx = @2[c];
+    soit cy = @2[c + 1];
+    soit cz = @2[c + 2];
+    soit fx = @2[c + 3];
+    soit fy = @2[c + 4];
+    soit fz = @2[c + 5];
+    soit rx = @2[c + 6];
+    soit rz = @2[c + 7];
+    soit ux = @2[c + 8];
+    soit uy = @2[c + 9];
+    soit uz = @2[c + 10];
+    soit temps = @2[c + 11];
+    soit jeu = @2[c + 12];
+    soit n0 = 0;
+    soit n1 = 0;
+    soit n2 = 0;
+    soit n3 = 0;
+    soit sy = ((H - 2 * y - 1) * 45889) ./ W;
+    pour x dans 0..W {
+        soit sx = ((2 * x + 1 - W) * 45889) ./ W;
+        soit dx = fx + (rx * sx + ux * sy) ./ 65536;
+        soit dy = fy + (uy * sy) ./ 65536;
+        soit dz = fz + (rz * sx + uz * sy) ./ 65536;
+        soit lg = racine_entiere(dx * dx + dy * dy + dz * dz);
+        dx = (dx * 65536) ./ lg;
+        dy = (dy * 65536) ./ lg;
+        dz = (dz * 65536) ./ lg;
+        soit v = regarder(cx, cy, cz, dx, dy, dz, 1, temps, jeu);
+        soit etat = v >> 24;
+        si etat == 0 {
+            n0 = n0 + 1;
+        } sinon si etat == 1 {
+            n1 = n1 + 1;
+        } sinon si etat == 2 {
+            n2 = n2 + 1;
+        } sinon {
+            n3 = n3 + 1;
+        }
+        @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+    }
+    @2[COMPTE + 4 * y] = n0;
+    @2[COMPTE + 4 * y + 1] = n1;
+    @2[COMPTE + 4 * y + 2] = n2;
+    @2[COMPTE + 4 * y + 3] = n3;
+}
+
+// ------------------------------------------------------------------------------------------------ le film
+// l'œil de l'image i du film (le même vol que cubes_film.vtx), posé à sa place s, avec son jeu de soleil
+fonction poser_oeil(i, s, jeu) {
+    soit ay = @2[GLOB];
+    soit avant = IMAGES * 7 / 12;
+    soit cx = ARCHE_X * 65536;
+    soit cy = 0;
+    soit cz = 0;
+    si i < avant {
+        cy = 110 * 65536 * RN / RD - ((110 * RN / RD - ay - 12 * RN / RD) * 65536 / avant) * i;
+        cz = 470 * 65536 * RN / RD - (170 * 65536 * RN / RD / avant) * i;
+    } sinon {
+        soit j = i - avant;
+        soit reste = IMAGES - avant;
+        cy = (ay + 12 * RN / RD) * 65536 + (((64 * RN / RD - ay - 12 * RN / RD) * 65536) ./ reste) * j;
+        cz = ARCHE_Z * 65536 - (110 * 65536 * RN / RD / reste) * j;
+    }
+    soit lacet = 512;
+    soit vy = (ay + 14 * RN / RD) * 65536 - cy;
+    soit tangage = 0;
+    soit vu = 0 - 4611686018427387904;
+    pour k dans 0..129 {
+        soit a = (k + 1024 - 64) & 1023;
+        soit pv = (vy ./ 256) * sin1024(a) + (80 * 256 * RN / RD) * cos1024(a);
+        si pv .> vu {
+            vu = pv;
+            tangage = a;
+        }
+    }
+    soit sl = sin1024(lacet);
+    soit cl = cos1024(lacet);
+    soit st = sin1024(tangage);
+    soit ct = cos1024(tangage);
+    soit c = CAMS + 16 * s;
+    @2[c] = cx;
+    @2[c + 1] = cy;
+    @2[c + 2] = cz;
+    @2[c + 3] = (sl * ct) ./ 65536;
+    @2[c + 4] = st;
+    @2[c + 5] = (cl * ct) ./ 65536;
+    @2[c + 6] = cl;
+    @2[c + 7] = 0 - sl;
+    @2[c + 8] = (0 - sl * st) ./ 65536;
+    @2[c + 9] = ct;
+    @2[c + 10] = (0 - cl * st) ./ 65536;
+    @2[c + 11] = i * 3;
+    @2[c + 12] = jeu;
+}
+
+// le film sur le tapis ; tourne == 1 : le soleil bouge (par pas de cinq images : chaque jeu de calques sert cinq
+// images, le suivant se construit pendant ce temps)
+fonction filmer_tapis(tourne) {
+    soit t0 = horloge();
+    creer_monde();
+    soit t1 = horloge();
+    afficher("le monde : " + texte(t1 - t0) + " ms");
+    preparer_soleil(300, 50, 0);
+    si tourne == 0 {
+        preparer_soleil(360, 70, 0);
+    }
+    soit tl0 = horloge();
+    ranger_lumiere(1, 0);
+    soit tl1 = horloge();
+    afficher("les calques de lumière (le ciel et le soleil) : " + texte(tl1 - tl0) + " ms");
+    vergobret_transcrire(tourne);
+    soit retard = vergobret_retard();
+    afficher("le vergobret a transcrit l'ARN du tapis : " + texte(@2[ARN]) + " étages, une image sort " + texte(retard)
+             + " tours après son départ (le soleil bouge : " + texte(tourne) + ")");
+    ecran(W, H);
+    cadence(100);
+    soit front = 0;
+    @2[CHANTIER] = 3;
+    soit total = 0;
+    soit tours = IMAGES + retard;
+    pour k dans 0..tours {
+        soit ti = horloge();
+        // le soleil : tous les cinq tours, le jeu construit devient celui des nouvelles images, et un autre se met en
+        // chantier (pour le soleil de l'image k + 5)
+        si tourne == 1 && k % 5 == 0 {
+            si @2[CHANTIER] < 3 {
+                front = @2[CHANTIER];
+            }
+            soit chantier = (front + 1) % 3;
+            si k + 5 < IMAGES {
+                preparer_soleil(300 + (k + 5) * 3, 50 + k + 5, chantier);
+                @2[CHANTIER] = chantier;
+                @2[CHANTIER + 1] = k;
+            } sinon {
+                @2[CHANTIER] = 3;
+            }
+        }
+        si k < IMAGES {
+            poser_oeil(k, k % 5, front);
+        }
+        vergobret_tour(k, IMAGES);
+        soit tf = horloge();
+        total = total + (tf - ti);
+        si k >= retard {
+            soit i = k - retard;
+            soit n0 = 0;
+            soit n1 = 0;
+            soit n2 = 0;
+            soit n3 = 0;
+            pour y dans 0..H {
+                n0 = n0 + @2[COMPTE + 4 * y];
+                n1 = n1 + @2[COMPTE + 4 * y + 1];
+                n2 = n2 + @2[COMPTE + 4 * y + 2];
+                n3 = n3 + @2[COMPTE + 4 * y + 3];
+            }
+            soit tous = W * H;
+            afficher("image " + texte(i + 1) + " : tour de " + texte(tf - ti) + " ms ; vrai " + texte(n2 * 100 / tous)
+                     + " %, variable " + texte(n3 * 100 / tous) + " %, faux " + texte(n1 * 100 / tous) + " %, inconnu "
+                     + texte(n0 * 100 / tous) + " %");
+            presenter();
+        }
+    }
+    afficher(texte(tours) + " tours, " + texte(IMAGES) + " images en " + texte(total) + " ms (" + texte(total / IMAGES)
+             + " ms par image)");
+    afficher("empreinte : " + texte(empreinte_image()));
+}

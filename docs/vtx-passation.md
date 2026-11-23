@@ -1,4 +1,4 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.811)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.812)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.812.zip`, `essai-0.812.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.813.zip`, `essai-0.813.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -143,7 +143,12 @@ calques de lumière dans le cube (le ciel rangé une fois, la clepsydre refaite 
 (`Reglage` dans le noyau : chaque boucle en bandes essaie tous les fils, la moitié, le quart… et garde le meilleur ;
 `VTX_REGLAGE=1`). Chez le créateur : 123 ms par image sur 24 fils, 226 ms sur 8 cœurs réels. **0.811 (§95)** : la
 pente apprise (le tracé multiplie au lieu de diviser : 30 % plus vite, la même image) ; la promesse mesurée (6 à 16 % :
-la promesse jugée passe après) ; le C compilable par MSVC. **Prochain** : lire la mesure du créateur ; puis
+la promesse jugée passe après) ; le C compilable par MSVC. Chez le créateur : 73 ms par image. **0.812 (§96)** : le
+tapis à cinq images (`belenos/cubes_tapis.vtx` : cache, image, ombre, lumière, Divona ; une boucle en bandes par tour ;
+trois jeux de soleil), l'ARN du tapis lu par le vergobret (il choisit : déplié quand le soleil bouge, 28 % de moins ; un
+seul étage sinon) ; le vergobret qui apprend (`vergobret.savoir` : il se souvient, devine par un voisin, doute en
+quatre valeurs). Le langage, les compilateurs et Ogmios n'ont pas bougé (la demande du créateur). **Prochain** : lire
+la mesure du créateur ; le vergobret qui choisit l'ARN en mesurant ; puis
 les paquets de rayons (un type « quatre voies » dans le mot de 128 bits : à décider) ; puis les coques (le trompe-l'œil du créateur : l'anti-cube à fréquence négative qui
 montre de loin ce qui est dedans ; la transition fluide entre cubes ; Divona qui lit les coques) ; le calque du soleil
 refait près de l'œil seulement. Ensuite : Taranis pour la scène (lectures à adresse calculée, mémoire dans

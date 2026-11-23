@@ -228,3 +228,6 @@ belenos/cubes_grand.vtx
 belenos/cubes_petit.vtx
 belenos/cubes_soleil.vtx
 belenos/cubes_ref.c
+belenos/cubes_tapis.vtx
+belenos/cubes_tapis_gif.vtx
+belenos/cubes_tapis_soleil.vtx

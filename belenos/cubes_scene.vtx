@@ -32,6 +32,8 @@ constante FCIEL = 33;              // 0.810 : le calque du ciel de la tuile t (f
                                    // de surface voit du ciel, rangé une fois (un octet par point, huit points par mot)
 constante FSOL = 49;               // 0.810 : le calque du soleil de la tuile t (fréquence FSOL + t) : la clepsydre de
                                    // chaque point de surface, refaite seulement quand le soleil bouge
+                                   // 0.812 : trois jeux de soleil (jeu 0, 1, 2 : FSOL + 16 · jeu + t ; ses directions
+                                   // en SOLEILS + 16 · jeu) : le tapis en construit un pendant que les deux autres servent
 constante REP = 32768;             // la réserve d'un cube : après son annuaire
 constante MER = 44 * RN / RD;      // le niveau de la mer
 constante VIDE = 9223372036854775808;  // 2 << 62 : un bloc vide ; ses bits bas : à combien de blocs est la matière
@@ -688,13 +690,14 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
 // ---------------------------------------------------------------------------------------------------- la lumière
 // le soleil (az, el sur 1024) et les quatre directions de la clepsydre : vers les quatre bords du disque du soleil (un
 // disque élargi, à 2 degrés : la pénombre se voit)
-fonction preparer_soleil(az, el) {
+fonction preparer_soleil(az, el, jeu) {
+    soit so = SOLEILS + 16 * jeu;
     soit lx = (cos1024(el) * sin1024(az)) ./ 65536;
     soit ly = sin1024(el);
     soit lz = (cos1024(el) * cos1024(az)) ./ 65536;
-    @2[SOLEILS + 12] = lx;
-    @2[SOLEILS + 13] = ly;
-    @2[SOLEILS + 14] = lz;
+    @2[so + 12] = lx;
+    @2[so + 13] = ly;
+    @2[so + 14] = lz;
     // deux directions perpendiculaires : u (horizontale), v = u × l
     soit ul = racine_entiere(lx * lx + lz * lz);
     soit ux = (lz * 65536) ./ ul;
@@ -725,14 +728,14 @@ fonction preparer_soleil(az, el) {
         soit sy = ly + (ey * 2300) ./ 65536;
         soit sz = lz + (ez * 2300) ./ 65536;
         soit lg = racine_entiere(sx * sx + sy * sy + sz * sz);
-        @2[SOLEILS + 3 * k] = (sx * 65536) ./ lg;
-        @2[SOLEILS + 3 * k + 1] = (sy * 65536) ./ lg;
-        @2[SOLEILS + 3 * k + 2] = (sz * 65536) ./ lg;
+        @2[so + 3 * k] = (sx * 65536) ./ lg;
+        @2[so + 3 * k + 1] = (sy * 65536) ./ lg;
+        @2[so + 3 * k + 2] = (sz * 65536) ./ lg;
     }
 }
 
 // le ciel dans la direction d : du bleu en haut au clair de l'horizon, le disque du soleil et sa lueur
-fonction ciel(dx, dy, dz) {
+fonction ciel(dx, dy, dz, jeu) {
     soit hy = dy;
     si hy .< 0 {
         hy = 0;
@@ -741,7 +744,8 @@ fonction ciel(dx, dy, dz) {
     soit r = (200 * (256 - t) + 92 * t) / 256;
     soit g = (214 * (256 - t) + 128 * t) / 256;
     soit b = (230 * (256 - t) + 184 * t) / 256;
-    soit cs = (dx * @2[SOLEILS + 12] + dy * @2[SOLEILS + 13] + dz * @2[SOLEILS + 14]) ./ 65536;
+    soit so = SOLEILS + 16 * jeu;
+    soit cs = (dx * @2[so + 12] + dy * @2[so + 13] + dz * @2[so + 14]) ./ 65536;
     si cs .> 65500 {
         retour rgb24(255, 248, 228);
     }
@@ -804,14 +808,15 @@ fonction depart(x, y, z, nx, ny, nz) {
 }
 
 // la clepsydre d'un point : combien des quatre rayons vers les bords du soleil passent (0 si la pente lui tourne le dos)
-fonction soleil_depuis(sx, sy, sz, nx, ny, nz) {
-    soit nl = (nx * @2[SOLEILS + 12] + ny * @2[SOLEILS + 13] + nz * @2[SOLEILS + 14]) ./ 127;
+fonction soleil_depuis(sx, sy, sz, nx, ny, nz, jeu) {
+    soit so = SOLEILS + 16 * jeu;
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
     si nl .<= 0 {
         retour 0;
     }
     soit vus = 0;
     pour k dans 0..4 {
-        si tracer(sx, sy, sz, @2[SOLEILS + 3 * k], @2[SOLEILS + 3 * k + 1], @2[SOLEILS + 3 * k + 2], 700 * 65536 * RN / RD, 0)
+        si tracer(sx, sy, sz, @2[so + 3 * k], @2[so + 3 * k + 1], @2[so + 3 * k + 2], 700 * 65536 * RN / RD, 0)
            == MANQUE {
             vus = vus + 1;
         }
@@ -881,7 +886,7 @@ fonction ciel_depuis(sx, sy, sz, nx, ny, nz) {
 }
 
 // la clepsydre et le ciel d'un point de surface, depuis son centre (ou son voisin vide) : ce qui se range
-fonction soleil_vu(x, y, z, nx, ny, nz) {
+fonction soleil_vu(x, y, z, nx, ny, nz, jeu) {
     soit sx = (x << 16) + 32768 + nx * 858;
     soit sy = (y << 16) + 32768 + ny * 858;
     soit sz = (z << 16) + 32768 + nz * 858;
@@ -904,7 +909,7 @@ fonction soleil_vu(x, y, z, nx, ny, nz) {
             sz = sz - 65536;
         }
     }
-    retour soleil_depuis(sx, sy, sz, nx, ny, nz);
+    retour soleil_depuis(sx, sy, sz, nx, ny, nz, jeu);
 }
 
 fonction ciel_ouvert(x, y, z, nx, ny, nz) {
@@ -956,57 +961,65 @@ fonction expose(x, y, z) {
 // ranger les calques : pour chaque point de surface de chaque bloc porteur, sa clepsydre (et, avec_ciel == 1, son ciel) ;
 // un octet par point (128 | la valeur : 128 dit « rangé »), huit points par mot, à la place du bloc dans la réserve ;
 // chaque colonne de blocs écrit ses seules places (en bandes)
-fonction ranger_lumiere(avec_ciel) {
+fonction ranger_lumiere(avec_ciel, jeu) {
     pour q dans 0..(TUILES * TUILES * 1024) en bandes {
-        soit t = q >> 10;
-        soit bx = q & 31;
-        soit bz = (q >> 5) & 31;
-        soit x0 = (t % TUILES) * 256 + bx * 8;
-        soit z0 = (t / TUILES) * 256 + bz * 8;
-        soit base = (FELT + t) << 24;
-        pour by dans 0..32 {
-            soit e = @2[base + ((bx << 10) | (by << 5) | bz)];
-            si e >= 16 && e < (1 << 62) {
-                soit n = e - 16;
-                pour w dans 0..64 {
-                    soit ms = 0;
-                    soit mc = 0;
-                    pour j dans 0..8 {
-                        soit v = w * 8 + j;
-                        soit x = x0 + (v >> 6);
-                        soit y = by * 8 + ((v >> 3) & 7);
-                        soit z = z0 + (v & 7);
-                        soit el = @2[base + REP + n * 512 + v];
-                        si el != 0 && ((el >> 2) & 63) != EAU {
-                            si expose(x, y, z) == 1 {
-                                soit nn = normale_de(el);
-                                soit nx = (nn & 255) - 128;
-                                soit ny = ((nn >> 16) & 255) - 128;
-                                soit nz = ((nn >> 32) & 255) - 128;
-                                ms = ms | ((128 | soleil_vu(x, y, z, nx, ny, nz)) << (j * 8));
-                                si avec_ciel == 1 {
-                                    mc = mc | ((128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8));
-                                }
+        ranger_colonne(q, avec_ciel, jeu);
+    }
+}
+
+// une colonne de blocs (q : la tuile et la place du bloc dans la tuile) : ses calques ; elle n'écrit que ses places
+fonction ranger_colonne(q, avec_ciel, jeu) {
+    soit t = q >> 10;
+    soit bx = q & 31;
+    soit bz = (q >> 5) & 31;
+    soit x0 = (t % TUILES) * 256 + bx * 8;
+    soit z0 = (t / TUILES) * 256 + bz * 8;
+    soit base = (FELT + t) << 24;
+    pour by dans 0..32 {
+        soit e = @2[base + ((bx << 10) | (by << 5) | bz)];
+        si e >= 16 && e < (1 << 62) {
+            soit n = e - 16;
+            pour w dans 0..64 {
+                soit ms = 0;
+                soit mc = 0;
+                pour j dans 0..8 {
+                    soit v = w * 8 + j;
+                    soit x = x0 + (v >> 6);
+                    soit y = by * 8 + ((v >> 3) & 7);
+                    soit z = z0 + (v & 7);
+                    soit el = @2[base + REP + n * 512 + v];
+                    si el != 0 && ((el >> 2) & 63) != EAU {
+                        si expose(x, y, z) == 1 {
+                            soit nn = normale_de(el);
+                            soit nx = (nn & 255) - 128;
+                            soit ny = ((nn >> 16) & 255) - 128;
+                            soit nz = ((nn >> 32) & 255) - 128;
+                            ms = ms | ((128 | soleil_vu(x, y, z, nx, ny, nz, jeu)) << (j * 8));
+                            si avec_ciel == 1 {
+                                mc = mc | ((128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8));
                             }
                         }
                     }
-                    @2[((FSOL + t) << 24) + n * 64 + w] = ms;
-                    si avec_ciel == 1 {
-                        @2[((FCIEL + t) << 24) + n * 64 + w] = mc;
-                    }
+                }
+                @2[((FSOL + 16 * jeu + t) << 24) + n * 64 + w] = ms;
+                si avec_ciel == 1 {
+                    @2[((FCIEL + t) << 24) + n * 64 + w] = mc;
                 }
             }
         }
     }
 }
 
-// la couleur vue par un rayon : le point touché, éclairé ; l'eau renvoie le monde (profondeur : combien de renvois
-// restent permis). Rend (l'état de la lumière << 24) | 0xRRGGBB ; l'état : 0 inconnu (le ciel), 1 faux (l'ombre), 2
-// vrai (le soleil en plein), 3 variable (la pénombre)
-fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
-    soit t = tracer(ox, oy, oz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
+// ---------------------------------------------------------------------------------------- les étages d'un rayon
+// 0.812 : la couleur vue par un rayon se fait en étages (ceux du tapis) : l'image (le point touché : tracer), l'ombre
+// (ce que le point reçoit), la lumière (la couleur d'un point de terre), Divona (l'eau), la brume. regarder les enchaîne
+// d'un coup ; le tapis les joue chacun à son tour, pour cinq images à la fois. Les mêmes calculs : la même image.
+
+// l'étage de l'ombre : 0 pour le ciel ; sinon 1 | eau << 1 | état << 2 | vus << 4 | ouverts << 8 (vus : la clepsydre ;
+// ouverts : le ciel vu ; l'état : 1 faux, 2 vrai, 3 variable)
+fonction ombrer(ox, oy, oz, dx, dy, dz, t, jeu) {
     si t == MANQUE {
-        retour ciel(dx, dy, dz);
+        retour 0;
     }
     soit px = ox + ((dx * t) .>> 16);
     soit py = oy + ((dy * t) .>> 16);
@@ -1015,8 +1028,9 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
     soit y = py >> 16;
     soit z = pz >> 16;
     soit e = element(x, y, z);
-    soit alb = couleur(x, y, z);
-    soit mat = (e >> 2) & 63;
+    si ((e >> 2) & 63) == EAU {
+        retour 3;
+    }
     soit nx = ((e >> 8) & 255) - 128;
     soit ny = ((e >> 16) & 255) - 128;
     soit nz = ((e >> 24) & 255) - 128;
@@ -1025,87 +1039,120 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
         ny = 127;
         nz = 0;
     }
-    soit lx = @2[SOLEILS + 12];
-    soit ly = @2[SOLEILS + 13];
-    soit lz = @2[SOLEILS + 14];
-    soit etat = 1;
-    soit r = 0;
-    soit g = 0;
-    soit b = 0;
-    si mat == EAU {
-        // l'eau : le monde renvoyé (Divona : le rayon retourné, le monde en miroir sous la surface), ridé par le vent, plus fort en rasant
-        soit rx = dx + ((bruit_lisse((x + temps) & MASQ, z & MASQ, 16) - 32768) ./ 24);
-        soit rz = dz + ((bruit_lisse(x & MASQ, (z + temps * 2) & MASQ, 16) - 32768) ./ 24);
-        soit ry = 0 - dy;
-        soit lg = racine_entiere(rx * rx + ry * ry + rz * rz);
-        rx = (rx * 65536) ./ lg;
-        ry = (ry * 65536) ./ lg;
-        rz = (rz * 65536) ./ lg;
-        soit renvoi = 0;
-        si profondeur > 0 {
-            renvoi = regarder(px, (MER << 16) + 32768, pz, rx, ry, rz, profondeur - 1, temps) & 16777215;
-        } sinon {
-            renvoi = ciel(rx, ry, rz);
+    soit so = SOLEILS + 16 * jeu;
+    // la pente face au soleil
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
+    // 0.810 : la clepsydre et le ciel du point se lisent dans ses calques (rangés) ; un point qui n'y est pas (un
+    // point intérieur, touché par un rayon passé entre deux points par leur arête) se calcule sur place, depuis
+    // l'endroit touché (comme en 0.809 : son centre est dans la matière)
+    soit vus = 0;
+    soit ouverts = 0;
+    soit connu = 0;
+    soit tt = (z >> 8) * TUILES + (x >> 8);
+    soit e0 = @2[((FELT + tt) << 24) + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    si e0 >= 16 && e0 < (1 << 62) {
+        soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
+        soit dec = (iv & 7) * 8;
+        soit sb = (@2[((FSOL + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+        si sb >= 128 {
+            connu = 1;
+            vus = sb & 15;
+            ouverts = (@2[((FCIEL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 15;
         }
-        // la part renvoyée : de 25 % (vu d'en haut) à 85 % (en rasant)
-        soit rasant = 65536 - (0 - dy);
-        si dy .> 0 {
-            rasant = 65536;
-        }
-        soit part = 64 + rasant * rasant / 65536 * 154 / 65536;
-        soit fond_r = ((alb >> 16) & 255);
-        soit fond_g = ((alb >> 8) & 255);
-        soit fond_b = (alb & 255);
-        r = (fond_r * (256 - part) + ((renvoi >> 16) & 255) * part) / 256;
-        g = (fond_g * (256 - part) + ((renvoi >> 8) & 255) * part) / 256;
-        b = (fond_b * (256 - part) + (renvoi & 255) * part) / 256;
-        etat = 2;
-    } sinon {
-        // la pente face au soleil
-        soit nl = (nx * lx + ny * ly + nz * lz) ./ 127;
-        si nl .<= 0 {
-            nl = 0;
-        }
-        // 0.810 : la clepsydre et le ciel du point se lisent dans ses calques (rangés) ; un point qui n'y est pas (un
-        // point intérieur, touché par un rayon passé entre deux points par leur arête) se calcule sur place, depuis
-        // l'endroit touché (comme en 0.809 : son centre est dans la matière)
-        soit vus = 0;
-        soit ouverts = 0;
-        soit connu = 0;
-        soit tt = (z >> 8) * TUILES + (x >> 8);
-        soit e0 = @2[((FELT + tt) << 24) + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
-        si e0 >= 16 && e0 < (1 << 62) {
-            soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
-            soit dec = (iv & 7) * 8;
-            soit sb = (@2[((FSOL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
-            si sb >= 128 {
-                connu = 1;
-                vus = sb & 15;
-                ouverts = (@2[((FCIEL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 15;
-            }
-        }
-        si connu == 0 {
-            vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
-            ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
-        }
-        si nl .> 0 {
-            si vus == 4 {
-                etat = 2;
-            } sinon si vus > 0 {
-                etat = 3;
-            }
-        }
-        // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
-        soit ciel_part = 40 + ouverts * 30;
-        soit soleil = nl * vus / 4 * 256 / 65536;
-        soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
-        soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
-        soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
-        r = ((alb >> 16) & 255) * lr / 200;
-        g = ((alb >> 8) & 255) * lg2 / 200;
-        b = (alb & 255) * lb / 200;
     }
-    // la brume : la distance mêle au ciel de l'horizon
+    si connu == 0 {
+        vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz, jeu);
+        ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
+    }
+    soit etat = 1;
+    si nl .> 0 {
+        si vus == 4 {
+            etat = 2;
+        } sinon si vus > 0 {
+            etat = 3;
+        }
+    }
+    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8);
+}
+
+// l'étage de la lumière : la couleur d'un point de terre (om : ce que l'ombre a rendu), avant la brume ; ses trois voies
+// sur 12 bits (r | g << 12 | b << 24 : elles peuvent dépasser 255 avant la brume)
+fonction eclairer(ox, oy, oz, dx, dy, dz, t, om, jeu) {
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit e = element(x, y, z);
+    soit alb = couleur(x, y, z);
+    soit nx = ((e >> 8) & 255) - 128;
+    soit ny = ((e >> 16) & 255) - 128;
+    soit nz = ((e >> 24) & 255) - 128;
+    si nx == 0 - 128 {
+        nx = 0;
+        ny = 127;
+        nz = 0;
+    }
+    soit so = SOLEILS + 16 * jeu;
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
+    si nl .<= 0 {
+        nl = 0;
+    }
+    soit vus = (om >> 4) & 15;
+    soit ouverts = (om >> 8) & 15;
+    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
+    soit ciel_part = 40 + ouverts * 30;
+    soit soleil = nl * vus / 4 * 256 / 65536;
+    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
+    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
+    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
+    soit r = ((alb >> 16) & 255) * lr / 200;
+    soit g = ((alb >> 8) & 255) * lg2 / 200;
+    soit b = (alb & 255) * lb / 200;
+    retour r | (g << 12) | (b << 24);
+}
+
+// Divona : la couleur d'un point d'eau, avant la brume (trois voies sur 12 bits) : le monde renvoyé (le rayon
+// retourné, le monde en miroir sous la surface), ridé par le vent, plus fort en rasant
+fonction divona(ox, oy, oz, dx, dy, dz, t, profondeur, temps, jeu) {
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit alb = couleur(x, y, z);
+    soit rx = dx + ((bruit_lisse((x + temps) & MASQ, z & MASQ, 16) - 32768) ./ 24);
+    soit rz = dz + ((bruit_lisse(x & MASQ, (z + temps * 2) & MASQ, 16) - 32768) ./ 24);
+    soit ry = 0 - dy;
+    soit lg = racine_entiere(rx * rx + ry * ry + rz * rz);
+    rx = (rx * 65536) ./ lg;
+    ry = (ry * 65536) ./ lg;
+    rz = (rz * 65536) ./ lg;
+    soit renvoi = 0;
+    si profondeur > 0 {
+        renvoi = regarder(px, (MER << 16) + 32768, pz, rx, ry, rz, profondeur - 1, temps, jeu) & 16777215;
+    } sinon {
+        renvoi = ciel(rx, ry, rz, jeu);
+    }
+    // la part renvoyée : de 25 % (vu d'en haut) à 85 % (en rasant)
+    soit rasant = 65536 - (0 - dy);
+    si dy .> 0 {
+        rasant = 65536;
+    }
+    soit part = 64 + rasant * rasant / 65536 * 154 / 65536;
+    soit r = (((alb >> 16) & 255) * (256 - part) + ((renvoi >> 16) & 255) * part) / 256;
+    soit g = (((alb >> 8) & 255) * (256 - part) + ((renvoi >> 8) & 255) * part) / 256;
+    soit b = ((alb & 255) * (256 - part) + (renvoi & 255) * part) / 256;
+    retour r | (g << 12) | (b << 24);
+}
+
+// la brume : la distance mêle au ciel de l'horizon (c : trois voies sur 12 bits) ; rend 0xRRGGBB
+fonction brumer(c, t) {
+    soit r = c & 4095;
+    soit g = (c >> 12) & 4095;
+    soit b = (c >> 24) & 4095;
     soit d = (t >> 16) * RD / RN;
     soit brume = d * d / 1600;
     si brume > 220 {
@@ -1114,7 +1161,22 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
     r = (r * (256 - brume) + 200 * brume) / 256;
     g = (g * (256 - brume) + 214 * brume) / 256;
     b = (b * (256 - brume) + 230 * brume) / 256;
-    retour (etat << 24) | rgb24(r, g, b);
+    retour rgb24(r, g, b);
+}
+
+// la couleur vue par un rayon, tous les étages d'un coup ; l'eau renvoie le monde (profondeur : combien de renvois
+// restent permis). Rend (l'état de la lumière << 24) | 0xRRGGBB ; l'état : 0 inconnu (le ciel), 1 faux (l'ombre), 2
+// vrai (le soleil en plein), 3 variable (la pénombre)
+fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps, jeu) {
+    soit t = tracer(ox, oy, oz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
+    si t == MANQUE {
+        retour ciel(dx, dy, dz, jeu);
+    }
+    soit om = ombrer(ox, oy, oz, dx, dy, dz, t, jeu);
+    si (om & 2) != 0 {
+        retour (2 << 24) | brumer(divona(ox, oy, oz, dx, dy, dz, t, profondeur, temps, jeu), t);
+    }
+    retour (((om >> 2) & 3) << 24) | brumer(eclairer(ox, oy, oz, dx, dy, dz, t, om, jeu), t);
 }
 
 // une image : l'œil en (cx, cy, cz) (en 1/65536 de point), tourné vers l'angle lacet (sur 1024), penché de tangage ;
@@ -1149,7 +1211,7 @@ fonction rendre_cubes(cx, cy, cz, lacet, tangage, temps) {
             dx = (dx * 65536) ./ lg;
             dy = (dy * 65536) ./ lg;
             dz = (dz * 65536) ./ lg;
-            soit v = regarder(cx, cy, cz, dx, dy, dz, 1, temps);
+            soit v = regarder(cx, cy, cz, dx, dy, dz, 1, temps, 0);
             soit etat = v >> 24;
             si etat == 0 {
                 n0 = n0 + 1;

@@ -617,7 +617,11 @@ class Forge(V.Generateur):
         # 0.810 : le réglage de cette boucle (le vergobret mesure : combien de cœurs lui vont le mieux)
         self.nreglages = getattr(self, "nreglages", 0) + 1
         site = f"REGLAGE_{self.nreglages}"
-        self.reglages = getattr(self, "reglages", []) + [site]
+        # 0.812 : la clé de la boucle pour la mémoire du vergobret : son programme, sa ligne et son corps
+        h = 14695981039346656037
+        for o in f"{getattr(self, 'nom_programme', '')}:{ligne}:{notes!r}".encode("utf-8"):
+            h = ((h ^ o) * 1099511628211) & M64
+        self.reglages = getattr(self, "reglages", []) + [(site, h)]
         self.ligne(f"let nt_voulu = if c.ombre.is_none() {{ {site}.coeurs() }} else {{ 1 }};")
         self.ligne("let t_reglage = std::time::Instant::now();")
         self.ligne("if nt_voulu > 1 {")
@@ -1423,6 +1427,7 @@ def programme_rust(src, dossier=None, nom="programme"):
     """Le programme forgé (sans le noyau) : ses mots, ses fonctions, et lancer() qui le joue avec des entrées."""
     g, mots, etiquettes = compiler_arbre(src, dossier)
     fo = Forge(g, etiquettes)
+    fo.nom_programme = nom
     fonctions = fo.forger()
     s = [f"const NOM: &str = {nom!r};".replace("'", '"'),
          f"const FIN_CODE: u128 = {etiquettes['FIN_CODE']};",
@@ -1430,8 +1435,8 @@ def programme_rust(src, dossier=None, nom="programme"):
     s += [x.replace(MARQUE, "") for x in fonctions]
     s.append(code_zones(fo.plan or {}))
     # 0.810 : le réglage de chaque boucle « en bandes » (le vergobret mesure)
-    for r in sorted(set(getattr(fo, "reglages", []))):
-        s.append(f"#[allow(dead_code)]\nstatic {r}: Reglage = Reglage::neuf();")
+    for r, h in sorted(set(getattr(fo, "reglages", []))):
+        s.append(f"#[allow(dead_code)]\nstatic {r}: Reglage = Reglage::neuf({h}u64);")
     for k, spv in enumerate(fo.noyaux):
         mots = [int.from_bytes(spv[i:i + 4], "little") for i in range(0, len(spv), 4)]
         s.append(f"#[allow(dead_code)]\nstatic SPV{k}: [u32; {len(mots)}] = [" + ",".join(map(str, mots)) + "];")
