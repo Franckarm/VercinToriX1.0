@@ -223,3 +223,8 @@ vtxc/vtxc64.mots
 vtxc/vtxc64.vtx
 belenos/cubes_scene.vtx
 belenos/cubes_gif.vtx
+belenos/cubes_film.vtx
+belenos/cubes_grand.vtx
+belenos/cubes_petit.vtx
+belenos/cubes_soleil.vtx
+belenos/cubes_ref.c

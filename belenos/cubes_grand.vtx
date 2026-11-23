@@ -1,0 +1,10 @@
+// machine : lugus
+// Belenos : le même paysage deux fois plus fin (l'échelle 2 : 4 × 4 tuiles, 16 × 2 cubes).
+//     forgé : python forge/forge128.py belenos/cubes_grand.vtx -o cubes_grand.exe ; VTX_GIF=cubes_grand.gif cubes_grand.exe
+constante RN = 2;
+constante RD = 1;
+importer "cubes_film.vtx";
+
+fonction principal() {
+    filmer(0);
+}

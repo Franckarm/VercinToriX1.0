@@ -1,4 +1,4 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.808)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.809)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.809.zip`, `essai-0.809.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.810.zip`, `essai-0.810.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -133,7 +133,9 @@ cœurs moins cher au-delà de 8 cœurs. **0.808 (§91)** : le paysage fait dans 
 (`belenos/cubes_scene.vtx`, `cubes_gif.vtx`) : 2 × 2 tuiles, chacune un cube de texture et un cube d'élément à leurs
 fréquences, seuls les blocs de surface ; rayons, clepsydre, occlusion, reflets de l'eau ; `VTX_GIF` dans la forge ;
 la carte du vergobret sur toutes les fréquences (1024 places étiquetées). Ensuite : voir les cubes lointains par leurs
-blocs (la transition fluide), le rassemblement des cœurs, Taranis. **Prochain** : lire la mesure
+blocs (la transition fluide), le rassemblement des cœurs, Taranis. **0.809 (§92)** : les blocs vides savent leur distance (le film 30 % plus vite, identique), l'échelle
+du cube (`RN / RD` : 1/2, 1, 2 ; `cubes_film.vtx` et quatre programmes courts), le changement de lumière sans coût,
+`belenos/cubes_ref.c` : **vtx forgé égale le C** sur cette scène (un et deux cœurs, la même empreinte). **Prochain** : lire la mesure
 du créateur ; Taranis pour la scène (lectures à adresse calculée, mémoire dans
 les fonctions appelées, l'image), puis la lumière dans le rouleau en 2D (l'idée du créateur), puis le val dans le cube. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.

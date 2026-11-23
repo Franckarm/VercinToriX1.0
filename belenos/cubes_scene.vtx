@@ -10,28 +10,38 @@
 // 512 points sont rangés plus loin, dans la réserve du cube). Un rayon saute un bloc vide d'un coup.
 // Le monde se lit en coordonnées globales : un rayon qui passe d'une tuile à l'autre passe d'un cube (d'une fréquence)
 // à l'autre sans couture.
+// 0.809 : la taille du monde est une échelle RN / RD (posée par le programme principal, avant d'importer ce fichier) :
+// 1/2 (une tuile de 256), 1 (2 × 2 tuiles), 2 (4 × 4 tuiles : le même paysage, deux fois plus fin) ; les blocs vides
+// savent à quelle distance est la matière (en blocs) : un rayon saute d'un coup tout le vide qu'ils promettent ;
+// au-dessus du plus haut point du monde, un rayon qui monte ne lit plus rien.
 // L'image : un rayon par point de l'écran ; l'ombre par la clepsydre (quatre rayons vers les quatre bords du soleil :
 // les quatre en clair, vrai ; aucun, faux ; entre les deux, variable, la pénombre et sa densité) ; quatre rayons courts
 // vers le ciel autour de la normale (l'occlusion) ; l'eau renvoie le monde (l'anti-cube : le rayon retourné), ridée.
 
 constante W = 1280;
 constante H = 720;
-constante TUILES = 2;              // 2 × 2 tuiles
-constante MONDE = 512;             // le côté du monde, en points
-constante FTEX = 1;                // le cube de texture de la tuile t : fréquence FTEX + t
-constante FELT = 5;                // le cube d'élément de la tuile t : fréquence FELT + t
+constante TUILES = 2 * RN / RD;    // TUILES × TUILES tuiles
+constante MONDE = 256 * TUILES;    // le côté du monde, en points
+constante MASQ = MONDE - 1;
+constante NB = MONDE / 8;          // le côté du monde, en blocs
+constante FTEX = 1;                // le cube de texture de la tuile t : fréquence FTEX + t (jusqu'à 16 tuiles)
+constante FELT = 17;               // le cube d'élément de la tuile t : fréquence FELT + t
 constante REP = 32768;             // la réserve d'un cube : après son annuaire
-constante MER = 44;                // le niveau de la mer
+constante MER = 44 * RN / RD;      // le niveau de la mer
+constante VIDE = 9223372036854775808;  // 2 << 62 : un bloc vide ; ses bits bas : à combien de blocs est la matière
+constante LOIN = 8;                // la distance la plus grande notée (en blocs)
 constante MANQUE = 4611686018427387904;  // un rayon qui ne touche rien
 constante HAUT_MAX = 16384000;     // 250 points (en 1/65536) : au-dessus, plus rien
 
 // l'étage 2, fréquence 0 : les tables du programme
 constante SINUS = 0;               // @2[SINUS + a] : 65536 · sin(2π a / 1024), signé
-constante HCOL = 65536;            // @2[HCOL + z·512 + x] : la hauteur du sol, en 1/256 de point
-constante PENTE = 327680;          // @2[PENTE + z·512 + x] : la pente du sol (en 1/256)
-constante GLOB = 600000;           // la hauteur de l'arche ; les tailles des réserves
+constante HCOL = 4194304;          // @2[HCOL + z·MONDE + x] : la hauteur du sol, en 1/256 de point
+constante PENTE = 6291456;         // @2[PENTE + z·MONDE + x] : la pente du sol (en 1/256)
+constante GLOB = 600000;           // la hauteur de l'arche ; les tailles des réserves ; le plus haut point du monde (+ 20)
 constante SOLEILS = 600100;        // les quatre directions de la clepsydre (vers les bords du soleil), puis le soleil
 constante COMPTE = 600200;         // @2[COMPTE + 4 y + e] : les points de la rangée y dans l'état e
+constante DISTA = 1048576;         // la distance au plus proche bloc de matière (en blocs), puis sa copie : deux tableaux
+constante DISTB = 2097152;
 
 // les matières
 constante ROCHE = 1;
@@ -42,11 +52,13 @@ constante EAU = 5;
 constante TERRE = 6;
 constante LANDE = 7;
 
-// l'arche, à cheval sur deux tuiles (x = 256 : la frontière)
-constante ARCHE_X = 256;
-constante ARCHE_Z = 300;
-constante ARCHE_R = 30;            // le rayon de l'arche
-constante ARCHE_E = 7;             // l'épaisseur de sa pierre
+// l'arche, à cheval sur deux tuiles (au milieu du monde : une frontière)
+constante ARCHE_X = 256 * RN / RD;
+constante ARCHE_Z = 300 * RN / RD;
+constante ARCHE_R = 30 * RN / RD;  // le rayon de l'arche
+constante ARCHE_E = 7 * RN / RD;   // l'épaisseur de sa pierre
+constante P3 = 16 * RN / RD;       // la période du bruit du volume
+constante UN = (RN + RD - 1) / RD; // une unité à l'échelle, jamais moins d'un point
 
 // ---------------------------------------------------------------------------------------------------- les tables
 fonction preparer_sinus() {
@@ -71,7 +83,7 @@ fonction cos1024(a) {
 
 // -------------------------------------------------------------------------------------------------- les bruits
 fonction hache(x, z) {
-    soit h = (x & 511) * 374761393 + (z & 511) * 668265263 + 1013904223;
+    soit h = (x & 4095) * 374761393 + (z & 4095) * 668265263 + 1013904223;
     h = (h ^ (h >> 13)) * 1274126177;
     retour (h ^ (h >> 16)) & 65535;
 }
@@ -82,7 +94,7 @@ fonction hache3(x, y, z) {
     retour (h ^ (h >> 16)) & 65535;
 }
 
-// le bruit lisse du plan, à la période p (une puissance de deux), sur un monde de 512 qui se répète
+// le bruit lisse du plan, à la période p (une puissance de deux), sur le monde qui se répète
 fonction bruit_lisse(x, z, p) {
     soit x0 = x / p;
     soit z0 = z / p;
@@ -100,14 +112,14 @@ fonction bruit_lisse(x, z, p) {
     retour (h1 * (256 - sz) + h2 * sz) / 256;
 }
 
-// le bruit lisse du volume, à la période 16 : les huit coins, mêlés en douceur (de 0 à 65535)
+// le bruit lisse du volume, à la période P3 : les huit coins, mêlés en douceur (de 0 à 65535)
 fonction bruit3(x, y, z) {
-    soit x0 = x >> 4;
-    soit y0 = y >> 4;
-    soit z0 = z >> 4;
-    soit fx = (x & 15) * 16;
-    soit fy = (y & 15) * 16;
-    soit fz = (z & 15) * 16;
+    soit x0 = x / P3;
+    soit y0 = y / P3;
+    soit z0 = z / P3;
+    soit fx = (x % P3) * 256 / P3;
+    soit fy = (y % P3) * 256 / P3;
+    soit fz = (z % P3) * 256 / P3;
     soit sx = fx * fx * (768 - 2 * fx) / 65536;
     soit sy = fy * fy * (768 - 2 * fy) / 65536;
     soit sz = fz * fz * (768 - 2 * fz) / 65536;
@@ -125,8 +137,8 @@ fonction bruit3(x, y, z) {
 fonction creer_sol() {
     pour z dans 0..MONDE en bandes {
         pour x dans 0..MONDE {
-            soit h = bruit_lisse(x, z, 256) * 16 + bruit_lisse(x, z, 128) * 8 + bruit_lisse(x, z, 64) * 4
-                     + bruit_lisse(x, z, 32) * 2 + bruit_lisse(x, z, 16);
+            soit h = bruit_lisse(x, z, 256 * RN / RD) * 16 + bruit_lisse(x, z, 128 * RN / RD) * 8
+                     + bruit_lisse(x, z, 64 * RN / RD) * 4 + bruit_lisse(x, z, 32 * RN / RD) * 2 + bruit_lisse(x, z, 16 * RN / RD);
             // les octaves additionnées se moyennent : l'écart au milieu est étiré (fois 2,75), pour des vallées que la mer
             // noie et des monts qui montent jusqu'aux neiges
             soit n = h / 31;
@@ -145,15 +157,21 @@ fonction creer_sol() {
             si m > 65535 {
                 m = 65535;
             }
-            @2[HCOL + z * MONDE + x] = 34 * 256 + n2 * 48 / 256 + m * m / 65536 * 160 / 256;
+            // 0.809 : au-dessus de 100, la pente des monts est divisée par six : le plus haut point reste sous 125 (sous
+            // 250 au double de l'échelle : la hauteur d'un cube)
+            soit hs = 34 * 256 + n2 * 48 / 256 + m * m / 65536 * 160 / 256;
+            si hs > 100 * 256 {
+                hs = 100 * 256 + (hs - 100 * 256) / 6;
+            }
+            @2[HCOL + z * MONDE + x] = hs * RN / RD;
         }
     }
     pour z dans 0..MONDE en bandes {
         pour x dans 0..MONDE {
-            soit hx1 = @2[HCOL + z * MONDE + ((x + 1) & 511)];
-            soit hx0 = @2[HCOL + z * MONDE + ((x + 511) & 511)];
-            soit hz1 = @2[HCOL + ((z + 1) & 511) * MONDE + x];
-            soit hz0 = @2[HCOL + ((z + 511) & 511) * MONDE + x];
+            soit hx1 = @2[HCOL + z * MONDE + ((x + 1) & MASQ)];
+            soit hx0 = @2[HCOL + z * MONDE + ((x + MASQ) & MASQ)];
+            soit hz1 = @2[HCOL + ((z + 1) & MASQ) * MONDE + x];
+            soit hz0 = @2[HCOL + ((z + MASQ) & MASQ) * MONDE + x];
             soit p = 0;
             si hx1 > hx0 { p = p + hx1 - hx0; } sinon { p = p + hx0 - hx1; }
             si hz1 > hz0 { p = p + hz1 - hz0; } sinon { p = p + hz0 - hz1; }
@@ -162,20 +180,38 @@ fonction creer_sol() {
     }
     // l'arche se pose sur le sol, au milieu de ses deux pieds
     @2[GLOB] = (@2[HCOL + ARCHE_Z * MONDE + ARCHE_X - ARCHE_R] + @2[HCOL + ARCHE_Z * MONDE + ARCHE_X + ARCHE_R]) / 512;
+    // le plus haut point du monde (le sol, ses surplombs, l'arche), en points, avec une marge
+    soit haut = 0;
+    pour i dans 0..(MONDE * MONDE) {
+        si @2[HCOL + i] > haut {
+            haut = @2[HCOL + i];
+        }
+    }
+    haut = haut / 256 + 12 * RN / RD;
+    si @2[GLOB] + ARCHE_R + ARCHE_E + 4 > haut {
+        haut = @2[GLOB] + ARCHE_R + ARCHE_E + 4;
+    }
+    @2[GLOB + 20] = haut;
+}
+
+// l'ampleur des surplombs à la hauteur y (en 1/256 de point) : faible en bas, forte sur les hauteurs
+fonction ampleur(y) {
+    soit amp = 384 * RN / RD;
+    si y > 70 * RN / RD && y < 4000 {
+        amp = (384 + (y * RD / RN - 70) * 40) * RN / RD;
+        si amp > 1800 * RN / RD {
+            amp = 1800 * RN / RD;
+        }
+    }
+    retour amp;
 }
 
 // la densité d'un point : positive dans la matière (en 1/256 de point) ; le sol, ses surplombs (le bruit du volume,
 // fort sur les hauteurs : des rochers qui avancent au-dessus du vide), et l'arche
 fonction densite(x, y, z) {
-    soit h = @2[HCOL + (z & 511) * MONDE + (x & 511)];
+    soit h = @2[HCOL + (z & MASQ) * MONDE + (x & MASQ)];
     soit d = h - y * 256 - 128;
-    soit amp = 384;
-    si y > 110 && y < 1000 {
-        amp = 384 + (y - 110) * 40;
-        si amp > 1800 {
-            amp = 1800;
-        }
-    }
+    soit amp = ampleur(y);
     si d .< amp + 512 && d .> 0 - amp - 512 {
         d = d + ((bruit3(x, y, z) - 32768) * amp) ./ 32768;
     }
@@ -183,12 +219,13 @@ fonction densite(x, y, z) {
     soit ax = x - ARCHE_X;
     soit az = z - ARCHE_Z;
     soit ah = y - ay;
-    si ax .> 0 - 48 && ax .< 48 && az .> 0 - 12 && az .< 12 && ah .> 0 - 8 && ah .< 48 {
+    si ax .> 0 - 48 * RN / RD && ax .< 48 * RN / RD && az .> 0 - 12 * RN / RD && az .< 12 * RN / RD && ah .> 0 - 8 * RN / RD
+       && ah .< 48 * RN / RD {
         soit q = racine_entiere((ax * ax + ah * ah) * 65536);
         soit e = q - ARCHE_R * 256;
         soit dist = racine_entiere(e * e + az * az * 65536);
         // la pierre de l'arche n'est pas lisse : le bruit du volume la ronge
-        soit da = ARCHE_E * 256 - dist + ((bruit3(x * 2, y * 2, z * 2) - 32768) * 300) ./ 32768;
+        soit da = ARCHE_E * 256 - dist + ((bruit3(x * 2, y * 2, z * 2) - 32768) * (300 * RN / RD)) ./ 32768;
         si da .> d {
             d = da;
         }
@@ -203,7 +240,7 @@ fonction composer_point(x, y, z) {
     si d0 .<= 0 {
         si y < MER {
             // l'eau : vraie matière, tournée vers le ciel ; sa couleur, plus sombre au large
-            soit fond = (MER * 256 - @2[HCOL + (z & 511) * MONDE + (x & 511)]) ./ 64;
+            soit fond = (MER * 256 - @2[HCOL + (z & MASQ) * MONDE + (x & MASQ)]) ./ (64 * RN / RD);
             si fond .< 0 {
                 fond = 0;
             }
@@ -226,27 +263,27 @@ fonction composer_point(x, y, z) {
         surface = 1;
     }
     // la matière
-    soit col = (z & 511) * MONDE + (x & 511);
+    soit col = (z & MASQ) * MONDE + (x & MASQ);
     soit hs = @2[HCOL + col] / 256;
     soit pente = @2[PENTE + col];
     soit mat = HERBE;
-    si y + 3 < hs {
+    si y + 3 * RN / RD < hs {
         mat = TERRE;
     }
     si dyp .> 0 && surface == 1 {
         // le dessous d'un surplomb, ou un flanc qui ne voit pas le ciel
         mat = ROCHE;
-    } sinon si y <= MER + 1 && y + 1 >= MER {
+    } sinon si y <= MER + UN && y + UN >= MER {
         mat = SABLE;
-    } sinon si y > 128 {
+    } sinon si y > 108 * RN / RD {
         si pente < 300 {
             mat = NEIGE;
         } sinon {
             mat = ROCHE;
         }
-    } sinon si pente > 420 || y > hs + 1 {
+    } sinon si pente > 420 || y > hs + UN {
         mat = ROCHE;
-    } sinon si y > 96 {
+    } sinon si y > 80 * RN / RD {
         mat = LANDE;
     }
     // la couleur : celle de la matière, des taches (le bruit du plan) et un grain (point par point)
@@ -274,7 +311,7 @@ fonction composer_point(x, y, z) {
         g = 118;
         b = 80;
     }
-    soit tache = (bruit_lisse(x & 511, z & 511, 32) / 2048) + (y & 3);
+    soit tache = (bruit_lisse(x & MASQ, z & MASQ, 32 * RN / RD) / 2048) + ((y * RD / RN) & 3);
     soit grain = hache3(x, y, z) & 15;
     r = r + tache + grain;
     g = g + tache + grain;
@@ -330,14 +367,14 @@ fonction classer_blocs() {
         soit t = q >> 10;
         soit bx = q & 31;
         soit bz = (q >> 5) & 31;
-        soit x0 = (t & 1) * 256 + bx * 8;
-        soit z0 = (t >> 1) * 256 + bz * 8;
+        soit x0 = (t % TUILES) * 256 + bx * 8;
+        soit z0 = (t / TUILES) * 256 + bz * 8;
         // le sol le plus bas et le plus haut des colonnes du bloc et de leurs voisines
         soit hmin = 1000000;
         soit hmax = 0;
         pour dz dans 0..10 {
             pour dx dans 0..10 {
-                soit h = @2[HCOL + ((z0 + dz + 511) & 511) * MONDE + ((x0 + dx + 511) & 511)];
+                soit h = @2[HCOL + ((z0 + dz + MASQ) & MASQ) * MONDE + ((x0 + dx + MASQ) & MASQ)];
                 si h < hmin {
                     hmin = h;
                 }
@@ -351,21 +388,16 @@ fonction classer_blocs() {
         // l'arche : les blocs de sa boîte portent une surface
         soit ay = @2[GLOB];
         soit arche_x = 0;
-        si x0 + 8 + 48 > ARCHE_X && x0 < ARCHE_X + 48 && z0 + 8 + 12 > ARCHE_Z && z0 < ARCHE_Z + 12 {
+        si x0 + 8 + 48 * RN / RD > ARCHE_X && x0 < ARCHE_X + 48 * RN / RD && z0 + 8 + 12 * RN / RD > ARCHE_Z
+           && z0 < ARCHE_Z + 12 * RN / RD {
             arche_x = 1;
         }
         pour by dans 0..32 {
             soit y0 = by * 8;
-            soit amp = 384;
-            si y0 + 9 > 110 {
-                amp = 384 + (y0 + 9 - 110) * 40;
-                si amp > 1800 {
-                    amp = 1800;
-                }
-            }
+            soit amp = ampleur(y0 + 9);
             soit b = (bx << 10) | (by << 5) | bz;
             soit e = 1;
-            si arche_x == 1 && y0 + 9 + 8 > ay && y0 < ay + 48 + 1 {
+            si arche_x == 1 && y0 + 9 + 8 * RN / RD > ay && y0 < ay + 48 * RN / RD + 1 {
                 e = 1;
             } sinon si y0 * 256 > hmax + amp + 640 {
                 // au-dessus du sol : l'air, ou l'eau sous la mer
@@ -379,7 +411,7 @@ fonction classer_blocs() {
                 e = 2;
             }
             si e == 0 {
-                @2[base + b] = 0;
+                @2[base + b] = VIDE;
             } sinon si e == 2 {
                 @2[base + b] = (1 << 62) | (TERRE << 2) | 2;
                 @2[tex + b] = rgb24(100, 80, 60);
@@ -415,8 +447,8 @@ fonction remplir_blocs() {
         soit t = q >> 10;
         soit bx = q & 31;
         soit bz = (q >> 5) & 31;
-        soit x0 = (t & 1) * 256 + bx * 8;
-        soit z0 = (t >> 1) * 256 + bz * 8;
+        soit x0 = (t % TUILES) * 256 + bx * 8;
+        soit z0 = (t / TUILES) * 256 + bz * 8;
         soit base = (FELT + t) << 24;
         soit tex = (FTEX + t) << 24;
         pour by dans 0..32 {
@@ -433,12 +465,85 @@ fonction remplir_blocs() {
     }
 }
 
+// 0.809 : les blocs vides savent à quelle distance est la matière : la distance (en blocs, au plus LOIN) au plus proche
+// bloc qui n'est pas vide, dans les 26 directions (le cube de blocs autour) ; calculée sur tout le monde (les tuiles
+// voisines comptent : un rayon passe d'un cube à l'autre) ; chaque tour l'étend d'un bloc (deux tableaux, l'un lu,
+// l'autre écrit : les tours vont en bandes)
+fonction case_bloc(gx, gy, gz) {
+    retour (gy * NB + gz) * NB + gx;
+}
+
+fonction mot_bloc(gx, gy, gz) {
+    soit t = (gz >> 5) * TUILES + (gx >> 5);
+    retour @2[((FELT + t) << 24) + ((gx & 31) << 10) + (gy << 5) + (gz & 31)];
+}
+
+fonction distancer_blocs() {
+    pour q dans 0..(NB * 32) en bandes {
+        soit gy = q / NB;
+        soit gz = q % NB;
+        pour gx dans 0..NB {
+            soit d = 0;
+            si (mot_bloc(gx, gy, gz) >> 62) == 2 {
+                d = LOIN;
+            }
+            @2[DISTA + case_bloc(gx, gy, gz)] = d;
+        }
+    }
+    pour tour dans 0..(LOIN - 1) {
+        soit de = DISTA;
+        soit vers = DISTB;
+        si (tour & 1) == 1 {
+            de = DISTB;
+            vers = DISTA;
+        }
+        pour q2 dans 0..(NB * 32) en bandes {
+            soit gy2 = q2 / NB;
+            soit gz2 = q2 % NB;
+            pour gx2 dans 0..NB {
+                soit d2 = @2[de + case_bloc(gx2, gy2, gz2)];
+                si d2 > 1 {
+                    pour k dans 0..27 {
+                        soit nx = gx2 + (k % 3) - 1;
+                        soit ny = gy2 + ((k / 3) % 3) - 1;
+                        soit nz = gz2 + (k / 9) - 1;
+                        si nx < NB && ny < 32 && nz < NB {
+                            soit v = @2[de + case_bloc(nx, ny, nz)] + 1;
+                            si v < d2 {
+                                d2 = v;
+                            }
+                        }
+                    }
+                }
+                @2[vers + case_bloc(gx2, gy2, gz2)] = d2;
+            }
+        }
+    }
+    // le dernier tableau écrit : DISTB si LOIN - 1 est impair
+    soit fin = DISTA;
+    si ((LOIN - 1) & 1) == 1 {
+        fin = DISTB;
+    }
+    pour q3 dans 0..(NB * 32) en bandes {
+        soit gy3 = q3 / NB;
+        soit gz3 = q3 % NB;
+        pour gx3 dans 0..NB {
+            soit t3 = (gz3 >> 5) * TUILES + (gx3 >> 5);
+            soit a3 = ((FELT + t3) << 24) + ((gx3 & 31) << 10) + (gy3 << 5) + (gz3 & 31);
+            si (@2[a3] >> 62) == 2 {
+                @2[a3] = VIDE | @2[fin + case_bloc(gx3, gy3, gz3)];
+            }
+        }
+    }
+}
+
 fonction creer_monde() {
     preparer_sinus();
     creer_sol();
     classer_blocs();
     placer_blocs();
     remplir_blocs();
+    distancer_blocs();
 }
 
 // ---------------------------------------------------------------------------------------- lire le monde
@@ -449,7 +554,7 @@ fonction element(x, y, z) {
     }
     soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
     soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
-    si e == 0 {
+    si (e >> 62) == 2 {
         retour 0;
     }
     si (e >> 62) == 1 {
@@ -474,11 +579,13 @@ fonction couleur(x, y, z) {
 // dans un bloc porteur, point par point. eau == 0 : l'eau ne compte pas (les rayons d'ombre et de ciel la traversent)
 fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
     soit t = 0;
+    // 0.809 : au-dessus du plus haut point du monde, un rayon qui monte ne touchera plus rien
+    soit plafond = @2[GLOB + 20] << 16;
     tantque t < tmax {
         soit px = ox + ((dx * t) .>> 16);
         soit py = oy + ((dy * t) .>> 16);
         soit pz = oz + ((dz * t) .>> 16);
-        si py .>= HAUT_MAX && dy .>= 0 {
+        si py .>= plafond && dy .>= 0 {
             retour MANQUE;
         }
         si py .< 0 || px .< 0 || pz .< 0 || px .>= MONDE * 65536 || pz .>= MONDE * 65536 || py .>= 256 * 65536 {
@@ -490,7 +597,12 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
         soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
         soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
         soit s = 8;
-        si e != 0 {
+        // la boîte à quitter : le point (s = 1), son bloc, ou (un bloc vide qui sait sa distance d) les d - 1 blocs
+        // autour, tous vides : de (bloc - (d - 1)) · 8 à (bloc + d) · 8 sur chaque axe
+        soit av = 1;
+        si (e >> 62) == 2 {
+            av = e & 255;
+        } sinon {
             si (e >> 62) == 1 {
                 si eau == 1 || ((e >> 2) & 63) != EAU {
                     retour t;
@@ -503,37 +615,41 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
                 s = 1;
             }
         }
+        soit arr = 0;
+        si s == 8 {
+            arr = (av - 1) * 8;
+        }
         // la sortie de la cellule (le bloc, ou le point) : la plus proche des trois faces vers où va le rayon
         soit pas = MANQUE;
         si dx .> 0 {
-            soit ex1 = ((((x | (s - 1)) + 1) << 16) - px) * 65536 / dx;
+            soit ex1 = ((((x | (s - 1)) + 1 + arr) << 16) - px) * 65536 / dx;
             si ex1 < pas {
                 pas = ex1;
             }
         } sinon si dx .< 0 {
-            soit ex2 = ((px - ((x & (0 - s)) << 16)) + 1) * 65536 / (0 - dx);
+            soit ex2 = ((px - (((x & (0 - s)) - arr) << 16)) + 1) * 65536 / (0 - dx);
             si ex2 < pas {
                 pas = ex2;
             }
         }
         si dy .> 0 {
-            soit ey1 = ((((y | (s - 1)) + 1) << 16) - py) * 65536 / dy;
+            soit ey1 = ((((y | (s - 1)) + 1 + arr) << 16) - py) * 65536 / dy;
             si ey1 < pas {
                 pas = ey1;
             }
         } sinon si dy .< 0 {
-            soit ey2 = ((py - ((y & (0 - s)) << 16)) + 1) * 65536 / (0 - dy);
+            soit ey2 = ((py - (((y & (0 - s)) - arr) << 16)) + 1) * 65536 / (0 - dy);
             si ey2 < pas {
                 pas = ey2;
             }
         }
         si dz .> 0 {
-            soit ez1 = ((((z | (s - 1)) + 1) << 16) - pz) * 65536 / dz;
+            soit ez1 = ((((z | (s - 1)) + 1 + arr) << 16) - pz) * 65536 / dz;
             si ez1 < pas {
                 pas = ez1;
             }
         } sinon si dz .< 0 {
-            soit ez2 = ((pz - ((z & (0 - s)) << 16)) + 1) * 65536 / (0 - dz);
+            soit ez2 = ((pz - (((z & (0 - s)) - arr) << 16)) + 1) * 65536 / (0 - dz);
             si ez2 < pas {
                 pas = ez2;
             }
@@ -616,7 +732,7 @@ fonction ciel(dx, dy, dz) {
 // restent permis). Rend (l'état de la lumière << 24) | 0xRRGGBB ; l'état : 0 inconnu (le ciel), 1 faux (l'ombre), 2
 // vrai (le soleil en plein), 3 variable (la pénombre)
 fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
-    soit t = tracer(ox, oy, oz, dx, dy, dz, 1100 * 65536, 1);
+    soit t = tracer(ox, oy, oz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
     si t == MANQUE {
         retour ciel(dx, dy, dz);
     }
@@ -646,8 +762,8 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
     soit b = 0;
     si mat == EAU {
         // l'eau : le monde renvoyé (le rayon retourné : l'anti-cube), ridé par le vent, plus fort en rasant
-        soit rx = dx + ((bruit_lisse((x + temps) & 511, z & 511, 16) - 32768) ./ 24);
-        soit rz = dz + ((bruit_lisse(x & 511, (z + temps * 2) & 511, 16) - 32768) ./ 24);
+        soit rx = dx + ((bruit_lisse((x + temps) & MASQ, z & MASQ, 16) - 32768) ./ 24);
+        soit rz = dz + ((bruit_lisse(x & MASQ, (z + temps * 2) & MASQ, 16) - 32768) ./ 24);
         soit ry = 0 - dy;
         soit lg = racine_entiere(rx * rx + ry * ry + rz * rz);
         rx = (rx * 65536) ./ lg;
@@ -683,7 +799,8 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
         si nl .> 0 {
             // la clepsydre : quatre rayons vers les quatre bords du soleil
             pour k dans 0..4 {
-                si tracer(sx, sy, sz, @2[SOLEILS + 3 * k], @2[SOLEILS + 3 * k + 1], @2[SOLEILS + 3 * k + 2], 700 * 65536, 0) == MANQUE {
+                si tracer(sx, sy, sz, @2[SOLEILS + 3 * k], @2[SOLEILS + 3 * k + 1], @2[SOLEILS + 3 * k + 2], 700 * 65536 * RN / RD, 0)
+                   == MANQUE {
                     vus = vus + 1;
                 }
             }
@@ -748,7 +865,7 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
             soit cx = (n16x * 3 + ex * 4) ./ 5;
             soit cy = (n16y * 3 + ey * 4) ./ 5;
             soit cz = (n16z * 3 + ez * 4) ./ 5;
-            si tracer(sx, sy, sz, cx, cy, cz, 14 * 65536, 0) == MANQUE {
+            si tracer(sx, sy, sz, cx, cy, cz, 14 * 65536 * RN / RD, 0) == MANQUE {
                 ouverts = ouverts + 1;
             }
         }
@@ -763,7 +880,7 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
         b = (alb & 255) * lb / 200;
     }
     // la brume : la distance mêle au ciel de l'horizon
-    soit d = t >> 16;
+    soit d = (t >> 16) * RD / RN;
     soit brume = d * d / 1600;
     si brume > 220 {
         brume = 220;

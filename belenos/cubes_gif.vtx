@@ -1,98 +1,10 @@
 // machine : lugus
-// Belenos : le paysage fait dans le cube, en film (0.808). Le monde est créé dans ses huit cubes (deux par tuile, chacun
-// à sa fréquence), puis l'œil vole du large jusque sous l'arche, posée à cheval sur deux tuiles, et au-delà : il suit la
-// frontière entre deux cubes et en passe une autre. Chaque image est présentée : forgé avec VTX_GIF=fichier.gif, le film s'écrit en GIF
-// (VTX_IMAGES=DOSSIER : des PNG). À chaque image : son temps, la part des états de la lumière (vrai : le soleil en plein ;
-// variable : la pénombre de la clepsydre ; faux : l'ombre ; inconnu : le ciel) ; à la fin, l'empreinte de la dernière.
-importer "cubes_scene.vtx";
-
-constante IMAGES = 48;
-
-fonction empreinte_image() {
-    soit h = 14695981039346656037;
-    pour i dans 0..(W * H) {
-        soit c = @1[i];
-        soit rgb3 = ((c >> 56) & 255) * 65536 + ((c >> 40) & 255) * 256 + ((c >> 24) & 255);
-        h = (h ^ rgb3) * 1099511628211;
-    }
-    retour h;
-}
-
-// l'angle (sur 1024) dont le sinus et le cosinus vont le mieux à (sx, cx) : le plus grand produit scalaire
-fonction angle_vers(sx, cx) {
-    soit meilleur = 0;
-    soit vu = 0 - 4611686018427387904;
-    pour a dans 0..1024 {
-        soit p = sx * sin1024(a) + cx * cos1024(a);
-        si p .> vu {
-            vu = p;
-            meilleur = a;
-        }
-    }
-    retour meilleur;
-}
+// Belenos : le paysage fait dans le cube, en film (l'échelle 1 : 2 × 2 tuiles, 4 × 2 cubes).
+//     forgé : python forge/forge128.py belenos/cubes_gif.vtx -o cubes_gif.exe ; VTX_GIF=cubes_gif.gif cubes_gif.exe
+constante RN = 1;
+constante RD = 1;
+importer "cubes_film.vtx";
 
 fonction principal() {
-    soit t0 = horloge();
-    creer_monde();
-    soit t1 = horloge();
-    afficher("le monde : " + texte(t1 - t0) + " ms ; blocs porteurs d'une surface, par tuile : " + texte(@2[GLOB + 1]) + ", "
-             + texte(@2[GLOB + 2]) + ", " + texte(@2[GLOB + 3]) + ", " + texte(@2[GLOB + 4]));
-    // le soleil : l'après-midi, sur le côté (des ombres longues)
-    preparer_soleil(360, 70);
-    ecran(W, H);
-    cadence(100);
-    soit ay = @2[GLOB];
-    soit total = 0;
-    // le vol : du large (256, 110, 470) jusque sous l'arche (256, ay + 12, 300), puis au-delà (256, 64, 190) ; l'œil
-    // suit exactement x = 256, la frontière entre deux tuiles (deux cubes) ; il passe aussi z = 256, l'autre frontière
-    soit avant = IMAGES * 7 / 12;
-    pour i dans 0..IMAGES {
-        soit cx = 256 * 65536;
-        soit cy = 0;
-        soit cz = 0;
-        si i < avant {
-            cy = 110 * 65536 - ((110 - ay - 12) * 65536 / avant) * i;
-            cz = 470 * 65536 - (170 * 65536 / avant) * i;
-        } sinon {
-            soit j = i - avant;
-            soit reste = IMAGES - avant;
-            cy = (ay + 12) * 65536 + (((64 - ay - 12) * 65536) ./ reste) * j;
-            cz = 300 * 65536 - (110 * 65536 / reste) * j;
-        }
-        // l'œil regarde devant lui (vers -z), vers un point 80 plus loin, à la hauteur du dessous de l'arche
-        soit lacet = 512;
-        soit vy = (ay + 14) * 65536 - cy;
-        soit tangage = 0;
-        soit vu = 0 - 4611686018427387904;
-        pour k dans 0..129 {
-            soit a = (k + 1024 - 64) & 1023;
-            soit p = (vy ./ 256) * sin1024(a) + (80 * 256) * cos1024(a);
-            si p .> vu {
-                vu = p;
-                tangage = a;
-            }
-        }
-        soit ti = horloge();
-        rendre_cubes(cx, cy, cz, lacet, tangage, i * 3);
-        soit tf = horloge();
-        total = total + (tf - ti);
-        soit n0 = 0;
-        soit n1 = 0;
-        soit n2 = 0;
-        soit n3 = 0;
-        pour y dans 0..H {
-            n0 = n0 + @2[COMPTE + 4 * y];
-            n1 = n1 + @2[COMPTE + 4 * y + 1];
-            n2 = n2 + @2[COMPTE + 4 * y + 2];
-            n3 = n3 + @2[COMPTE + 4 * y + 3];
-        }
-        soit tous = W * H;
-        afficher("image " + texte(i + 1) + " : " + texte(tf - ti) + " ms ; tuile " + texte((cz >> 24) * TUILES + (cx >> 24))
-                 + " ; vrai " + texte(n2 * 100 / tous) + " %, variable " + texte(n3 * 100 / tous) + " %, faux "
-                 + texte(n1 * 100 / tous) + " %, inconnu " + texte(n0 * 100 / tous) + " %");
-        presenter();
-    }
-    afficher(texte(IMAGES) + " images en " + texte(total) + " ms (" + texte(total / IMAGES) + " ms par image)");
-    afficher("empreinte : " + texte(empreinte_image()));
+    filmer(0);
 }

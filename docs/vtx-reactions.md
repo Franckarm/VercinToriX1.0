@@ -3995,3 +3995,43 @@ manière de voir les décors entre eux. La clepsydre : des points de référence
   de voir les décors entre eux et la transition fluide d'un cube proche à un cube lointain ; pas de référence en C pour
   cette scène ; le temps réel demandera Taranis. Les deux compilateurs donnent les mêmes mots ; la forge, l'épreuve et
   les cylindres sont conformes.
+
+## 92. Les vides qui savent leur distance, l'échelle du cube, et le C (23 novembre, 0.809)
+
+**Mesuré chez le créateur (0.808)** : le film en 482 ms par image sur 24 fils (2,7 s ici sur deux), la même empreinte.
+**Demandé** : les performances contre le C ; voir en augmentant et en diminuant la taille du cube ; que les points vides
+ne soient pas lus ; vérifier que le changement de lumière et le déplacement des ombres ne ralentissent plus.
+
+- **Les vides qui savent leur distance** (`distancer_blocs`) : chaque bloc vide garde, dans l'annuaire de son cube, la
+  distance (en blocs, jusqu'à 8) au plus proche bloc qui n'est pas vide, dans les 26 directions, sur tout le monde (les
+  cubes voisins comptent). Un rayon dans un bloc vide saute d'un coup toute la boîte vide qu'il promet. Et un rayon qui
+  monte au-dessus du plus haut point du monde s'arrête (le plafond). Le film de l'échelle 1 : **le même, à l'octet
+  près** (la même empreinte), en **1,9 s par image au lieu de 2,7** (ici, deux cœurs).
+- **L'échelle du cube** : la scène se règle par une échelle `RN / RD` posée par le programme principal
+  (`cubes_gif.vtx`, `cubes_grand.vtx`, `cubes_petit.vtx`, `cubes_soleil.vtx` ; le film dans `cubes_film.vtx`). Le même
+  paysage (les bruits sont pris aux mêmes cellules, à l'échelle) :
+
+  | échelle | monde | tuiles | cubes | blocs de surface | le monde | une image | mémoire |
+  |---|---|---|---|---|---|---|---|
+  | 1/2 | 256 | 1 | 2 | 2 535 | 0,1 s | 1,6 s | 113 Mo |
+  | 1 | 512 | 4 | 8 | 11 087 | 0,4 s | 1,9 s | 375 Mo |
+  | 2 | 1024 | 16 | 32 | ~48 700 | 2,1 s | 2,6 s | 1 485 Mo |
+
+  Quatre fois plus de points de surface au double, pour 35 % de temps de plus par image : les sauts dans le vide font
+  que le coût suit ce que l'œil voit, pas la taille du monde. La mémoire, elle, suit le monde : les mots de 128 bits
+  pèsent (deux cubes par tuile).
+- **Le changement de lumière** (`cubes_soleil.vtx` : le soleil tourne et monte à chaque image) : **10 % de plus** que le
+  soleil fixe, et ce n'est pas le changement : le soleil y est plus bas (ses rayons d'ombre vont plus loin). Chaque
+  image refait déjà toutes ses ombres : changer la lumière ne coûte rien de plus. Le freinage du val venait du calque
+  recalculé pour tout le relief, pas de la lumière.
+- **Contre le C** (`belenos/cubes_ref.c` : le même calcul, entier pour entier ; OpenMP pour les rangées ; la même
+  empreinte aux trois échelles) : sur 6 images, **un cœur : C 3,60 s, vtx forgé 3,58 s ; deux cœurs : C 1,80 s, vtx
+  1,74 à 2,11 s**. À l'échelle 1/2 et 2 (deux cœurs) : vtx à 5 à 8 % du C. Sur cette scène, vtx forgé va comme le C.
+- **Deux erreurs de signe trouvées par la petite échelle** (la même famille que les rides de la 0.808) : la rugosité de
+  l'arche (`(bruit - 32768) * 300 * RN / RD` : le `/ RD` sans signe faisait d'un négatif un nombre immense : un mur de
+  points sortait du vide) ; et des marges `RN / RD` qui valaient 0 en entiers à l'échelle 1/2 (remplacées par `UN`,
+  jamais moins d'un point).
+- **Le reflet de l'anti-cube** (remarque du créateur : il semble plus efficace que le tracé de rayons) : c'est un rayon,
+  renvoyé ; il coûte peu parce que les rayons renvoyés montent presque tous vers le ciel, où le plafond et les vides
+  qui savent leur distance les arrêtent tout de suite. Ce qui coûte, ce sont les huit rayons de chaque point de terre
+  (quatre de la clepsydre, quatre du ciel).
