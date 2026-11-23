@@ -1,4 +1,4 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.816)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.817)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.817.zip`, `essai-0.817.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.818.zip`, `essai-0.818.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -159,8 +159,11 @@ dit perdu : décidé avec lui, la partie graphique sur la carte par la machine R
 blocage du 18 n'est pas levé ; il ne saurait pas écrire les routines système). **0.816 (§101)** : le mode pages de
 Taranis (la table des pages, les retours au milieu, la mémoire dans les fonctions, la promesse vérifiée sur la carte),
 le rayon de l'œil sur la carte (`cubes_carte_gif.vtx`, `cubes_carte_mesure.vtx` ; la même empreinte sur SwiftShader),
-le vergobret qui choisit la carte ou le processeur en mesurant (`Choix`). **Prochain** : lire la mesure sur la RTX ;
-le cube gardé sur la carte (seules les pages changées remontent) ; l'écart d'un fil avec le C ; puis lire
+le vergobret qui choisit la carte ou le processeur en mesurant (`Choix`). Chez le créateur (§102) : la carte plus lente que le processeur (165–280 ms contre 56), la même empreinte ; le vergobret a
+choisi le processeur. **0.817 (§103)** : le 64 bits demandé à la carte (`NoyauI64`, `shaderInt64`), la marque une fois
+par page, la résidence (le cube gardé sur la carte : seules les pages changées montent). **Prochain** : lire la mesure
+sur la RTX ; l'idée du créateur (le cache qui part de l'œil, vers l'écran : recomposer cache et image) ; tout le tapis
+sur la carte, l'image montrée par la carte ; l'écart d'un fil avec le C ; puis lire
 la mesure du créateur ; le vergobret qui choisit l'ARN en mesurant (le génome du tapis, si le créateur le veut) ; puis
 les paquets de rayons (un type « quatre voies » dans le mot de 128 bits : à décider) ; puis les coques (le trompe-l'œil du créateur : l'anti-cube à fréquence négative qui
 montre de loin ce qui est dedans ; la transition fluide entre cubes ; Divona qui lit les coques) ; le calque du soleil

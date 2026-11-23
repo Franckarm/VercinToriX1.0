@@ -384,6 +384,19 @@ class Noyau:
         self.derniere_demande = dem
         return mot, dedans, place
 
+    def marquer_lue(self, place):
+        """0.817 : la marque « page lue », écrite seulement quand la page change (la dernière lue est gardée par le fil) :
+        tous les fils écrivaient sans cesse les mêmes mots, la carte les faisait passer un par un"""
+        autre = self.b("INotEqual", place, self.v("Load", self.derniere))
+        oui, fin = self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", autre, oui, fin)
+        self.etiquette(oui)
+        self.e("Store", self.case(self.marques, self.v("ShiftLeftLogical", place, self.c32(1))), self.c32(1))
+        self.e("Store", self.derniere, place)
+        self.aller(fin)
+        self.etiquette(fin)
+
     def drapeau_n(self, n):
         self.e("Store", self.case(self.parametres, self.c32(0)), self.c32(n))
 
@@ -396,7 +409,7 @@ class Noyau:
         k = self.v("ShiftLeftLogical", mot, self.c32(1))
         lo = self.v("Load", self.case(self.fenetre, k))
         hi = self.v("Load", self.case(self.fenetre, self.v("IAdd", k, self.c32(1))))
-        self.e("Store", self.case(self.marques, self.v("ShiftLeftLogical", place, self.c32(1))), self.c32(1))
+        self.marquer_lue(place)
         b_oui = self.bloc
         self.aller(fin)
         self.etiquette(non)
@@ -517,8 +530,7 @@ class Noyau:
             return self.sel(self.booleen(e), self.cst(1), self.cst(0))
         if g == "non":
             self.verifier_type(e[1])
-            x = self.expr(e[1])
-            return (self.v("Not", x[0]), self.v("Not", x[1]))
+            return self.pas(self.expr(e[1]))
         if g == "bin":
             self.verifier_type(e)
             op = e[1]
@@ -533,28 +545,40 @@ class Noyau:
                 return self.bits({"&": "BitwiseAnd", "|": "BitwiseOr", "^": "BitwiseXor"}[op], a, b)
             if op in ("<<", ">>", ".>>"):
                 return self.decaler(op, a, b)
-            zero = self.eq(b, self.cst(0))
-            if op in ("/", "%"):
-                q, r = self.divmod_u(a, self.sel(zero, self.cst(1), b))
-                return self.sel(zero, self.cst(M64) if op == "/" else a, q if op == "/" else r)
-            if op in ("./", ".%"):
-                moins1 = self.eq(b, self.cst(M64))
-                special = self.b("LogicalOr", zero, moins1)
-                na = self.b("SLessThan", a[1], self.c32(0))
-                nb = self.b("SLessThan", b[1], self.c32(0))
-                b1 = self.sel(special, self.cst(1), b)
-                aa = self.sel(na, self.neg(a), a)
-                bb = self.sel(nb, self.neg(b1), b1)
-                q, r = self.divmod_u(aa, bb)
-                if op == "./":
-                    q = self.sel(self.b("LogicalNotEqual", na, nb), self.neg(q), q)
-                    q = self.sel(moins1, self.neg(a), q)
-                    return self.sel(zero, self.cst(M64), q)
-                r = self.sel(na, self.neg(r), r)
-                r = self.sel(moins1, self.cst(0), r)
-                return self.sel(zero, a, r)
+            if op in ("/", "%", "./", ".%"):
+                return self.diviser(op, a, b)
             raise PasPourLaCarte(f"l'opération « {op} »")
         raise PasPourLaCarte(f"l'expression « {g} »")
+
+    def pas(self, x):
+        return (self.v("Not", x[0]), self.v("Not", x[1]))
+
+    def negatif(self, x):
+        return self.b("SLessThan", x[1], self.c32(0))
+
+    def diviser(self, op, a, b):
+        """/ % ./ .% au sens de Lugus (par zéro : le plus grand entier, ou le dividende)"""
+        zero = self.eq(b, self.cst(0))
+        if op in ("/", "%"):
+            q, r = self.divmod_u(a, self.sel(zero, self.cst(1), b))
+            return self.sel(zero, self.cst(M64) if op == "/" else a, q if op == "/" else r)
+        if op in ("./", ".%"):
+            moins1 = self.eq(b, self.cst(M64))
+            special = self.b("LogicalOr", zero, moins1)
+            na = self.negatif(a)
+            nb = self.negatif(b)
+            b1 = self.sel(special, self.cst(1), b)
+            aa = self.sel(na, self.neg(a), a)
+            bb = self.sel(nb, self.neg(b1), b1)
+            q, r = self.divmod_u(aa, bb)
+            if op == "./":
+                q = self.sel(self.b("LogicalNotEqual", na, nb), self.neg(q), q)
+                q = self.sel(moins1, self.neg(a), q)
+                return self.sel(zero, self.cst(M64), q)
+            r = self.sel(na, self.neg(r), r)
+            r = self.sel(moins1, self.cst(0), r)
+            return self.sel(zero, a, r)
+        raise PasPourLaCarte(f"l'opération « {op} »")
 
     # ------------------------------------------------------------ les appels : la fonction recopiée dans le noyau
     def appel(self, e):
@@ -810,6 +834,9 @@ class Noyau:
         self.demandes = param(3)[0]
         # 0.816 : l'auteur d'une écriture : le tour + 1 (sur 31 bits)
         self.moi = self.v("IAdd", self.v("BitwiseAnd", idx[0], self.c32(0x7FFFFFFF)), self.c32(1))
+        # 0.817 : la dernière page lue par ce fil
+        self.derniere = self.var32()
+        self.e("Store", self.derniere, self.c32(0xFFFFFFFF))
         self.ranger(self.nouvelle(self.var), self.add(param(1), idx))
         for k, nom in enumerate(dehors):
             self.ranger(self.nouvelle(nom), param(6 + k))
@@ -826,6 +853,241 @@ class Noyau:
             # l'interface du noyau : toutes les variables globales nommées par le point d'entrée n'est pas exigé en
             # SPIR-V 1.0 (seules les entrées et sorties) ; rien à ajouter
             pass
+        mots = [0x07230203, 0x00010000, 0, self.prochain, 0] + self.tete + self.decor + self.types + self.code \
+            + self.vars_decl + corps
+        mots.append((1 << 16) | OP["FunctionEnd"])
+        return struct.pack("<%dI" % len(mots), *mots), dehors, acces
+
+
+class NoyauI64(Noyau):
+    """0.817 : le mode pages en entiers de 64 bits de la carte (la capacité Int64 : la carte et son pilote font les
+    opérations de 64 bits, au lieu des deux mots de 32 bits de Noyau ; une division est une instruction, et non plus 64
+    tours de boucle). Une valeur est un seul identifiant SPIR-V. Le sens reste celui de Lugus (les mêmes mots)."""
+
+    def __init__(self, forge, var, corps):
+        super().__init__(forge, var, corps, pages=True)
+
+    # ------------------------------------------------------------ les nombres de 64 bits
+    def v64(self, op, *args):
+        return self.v(op, *args, t=self.t64)
+
+    def cst(self, v):
+        v &= M64
+        k = ("q", v)
+        if k not in self.consts:
+            self.consts[k] = self.id()
+            self.i(self.types, "Constant", self.t64, self.consts[k], v & 0xFFFFFFFF, v >> 32)
+        return self.consts[k]
+
+    def sel(self, c, x, y):
+        return self.v64("Select", c, x, y)
+
+    def bits(self, op, x, y):
+        return self.v64(op, x, y)
+
+    def add(self, x, y):
+        return self.v64("IAdd", x, y)
+
+    def sub(self, x, y):
+        return self.v64("ISub", x, y)
+
+    def mul(self, x, y):
+        return self.v64("IMul", x, y)
+
+    def eq(self, x, y):
+        return self.b("IEqual", x, y)
+
+    def ult(self, x, y, signe=False):
+        return self.b("SLessThan" if signe else "ULessThan", x, y)
+
+    def decaler(self, op, x, n):
+        s = self.v64("BitwiseAnd", n, self.cst(63))
+        return self.v64({"<<": "ShiftLeftLogical", ">>": "ShiftRightLogical", ".>>": "ShiftRightArithmetic"}[op], x, s)
+
+    def pas(self, x):
+        return self.v64("Not", x)
+
+    def negatif(self, x):
+        return self.b("SLessThan", x, self.cst(0))
+
+    def diviser(self, op, a, b):
+        zero = self.eq(b, self.cst(0))
+        if op in ("/", "%"):
+            bb = self.sel(zero, self.cst(1), b)
+            if op == "/":
+                return self.sel(zero, self.cst(M64), self.v64("UDiv", a, bb))
+            return self.sel(zero, a, self.v64("UMod", a, bb))
+        moins1 = self.eq(b, self.cst(M64))
+        special = self.b("LogicalOr", zero, moins1)
+        bb = self.sel(special, self.cst(1), b)
+        if op == "./":
+            q = self.sel(moins1, self.neg(a), self.v64("SDiv", a, bb))
+            return self.sel(zero, self.cst(M64), q)
+        r = self.sel(moins1, self.cst(0), self.v64("SRem", a, bb))
+        return self.sel(zero, a, r)
+
+    # ------------------------------------------------------------ les variables
+    def locale(self):
+        v = self.id()
+        self.i(self.vars_decl, "Variable", self.tpf64, v, 7)
+        return v
+
+    def ranger(self, var, x):
+        self.e("Store", var, x)
+
+    def charger(self, var):
+        return self.v64("Load", var)
+
+    # ------------------------------------------------------------ la mémoire par la table des pages
+    def case64(self, tampon, k):
+        return self.v("AccessChain", tampon, self.c32(0), k, t=self.tp64)
+
+    def moities(self, x):
+        lo = self.v("UConvert", x)
+        hi = self.v("UConvert", self.v64("ShiftRightLogical", x, self.cst(32)))
+        return (lo, hi)
+
+    def drapeau_n(self, n):
+        self.e("Store", self.case64(self.parametres, self.c32(0)), self.cst(n))
+
+    def lire_page(self, adr):
+        mot, dedans, place = self.acces_page(self.moities(self.expr(adr)))
+        oui, non, fin = self.id(), self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", dedans, oui, non)
+        self.etiquette(oui)
+        x = self.v64("Load", self.case64(self.fenetre, mot))
+        self.marquer_lue(place)
+        b_oui = self.bloc
+        self.aller(fin)
+        self.etiquette(non)
+        self.drapeau_n(1)
+        self.e("Store", self.case(self.marques, self.derniere_demande), self.c32(1))
+        b_non = self.bloc
+        self.aller(fin)
+        self.etiquette(fin)
+        return self.v64("Phi", x, b_oui, self.cst(0), b_non)
+
+    def ecrire_page(self, adr, valeur):
+        a = self.expr(adr)
+        x = self.expr(valeur)
+        mot, dedans, place = self.acces_page(self.moities(a))
+        oui, non, fin, conflit, apres = self.id(), self.id(), self.id(), self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", dedans, oui, non)
+        self.etiquette(oui)
+        ancien = self.v("AtomicExchange", self.case(self.auteurs, mot), self.c32(1), self.c32(0), self.moi)
+        autre = self.b("LogicalAnd", self.b("INotEqual", ancien, self.c32(0)), self.b("INotEqual", ancien, self.moi))
+        self.e("SelectionMerge", apres, 0)
+        self.e("BranchConditional", autre, conflit, apres)
+        self.etiquette(conflit)
+        self.drapeau_n(2)
+        self.aller(apres)
+        self.etiquette(apres)
+        self.e("Store", self.case64(self.fenetre, mot), x)
+        self.e("Store", self.case(self.marques, self.v("IAdd", self.v("ShiftLeftLogical", place, self.c32(1)), self.c32(1))),
+               self.c32(1))
+        self.aller(fin)
+        self.etiquette(non)
+        self.drapeau_n(1)
+        self.e("Store", self.case(self.marques, self.derniere_demande), self.c32(1))
+        self.aller(fin)
+        self.etiquette(fin)
+
+    # ------------------------------------------------------------ le module
+    def compiler(self):
+        acces = acces_memoire(self.corps, [])
+        if any(k == "?" for k, _, _ in acces):
+            raise PasPourLaCarte("les champs de structure")
+        interieur = declarees(self.corps) | {self.var}
+        dehors = sorted(libres(self.corps) - interieur)
+        for nom in dehors + [self.var]:
+            if self.fo.vtypes.get(nom, "e") != "e":
+                raise PasPourLaCarte(f"« {nom} » n'est pas un entier")
+        for _k, et, _adr in acces:
+            if et != 2:
+                raise PasPourLaCarte("un accès hors de l'étage 2")
+        I = self.i
+        principal, gid = self.id(), self.id()
+        self.t_void, t_fn, self.tbool, self.t32 = self.id(), self.id(), self.id(), self.id()
+        self.t64 = self.id()
+        self.tpaire, t_v3, t_pv3 = self.id(), self.id(), self.id()
+        t_tab, t_bloc, t_pbloc, self.tpu, self.tpf = self.id(), self.id(), self.id(), self.id(), self.id()
+        t_tab64, t_bloc64, t_pbloc64, self.tp64, self.tpf64 = self.id(), self.id(), self.id(), self.id(), self.id()
+        self.fenetre, self.parametres = self.id(), self.id()
+        self.table, self.marques, self.auteurs = self.id(), self.id(), self.id()
+        I(self.tete, "Capability", 1)
+        I(self.tete, "Capability", 11)       # Int64
+        I(self.tete, "MemoryModel", 0, 1)
+        I(self.tete, "EntryPoint", 5, principal, *texte("main"), gid)
+        I(self.tete, "ExecutionMode", principal, 17, LARGEUR, 1, 1)
+        I(self.decor, "Decorate", gid, 11, 28)
+        I(self.decor, "Decorate", t_tab, 6, 4)
+        I(self.decor, "MemberDecorate", t_bloc, 0, 35, 0)
+        I(self.decor, "Decorate", t_bloc, 3)
+        I(self.decor, "Decorate", t_tab64, 6, 8)
+        I(self.decor, "MemberDecorate", t_bloc64, 0, 35, 0)
+        I(self.decor, "Decorate", t_bloc64, 3)
+        for k, t in ((0, self.fenetre), (1, self.parametres), (2, self.table), (3, self.marques), (4, self.auteurs)):
+            I(self.decor, "Decorate", t, 34, 0)
+            I(self.decor, "Decorate", t, 33, k)
+        I(self.types, "TypeVoid", self.t_void)
+        I(self.types, "TypeFunction", t_fn, self.t_void)
+        I(self.types, "TypeBool", self.tbool)
+        I(self.types, "TypeInt", self.t32, 32, 0)
+        I(self.types, "TypeInt", self.t64, 64, 0)
+        I(self.types, "TypeStruct", self.tpaire, self.t32, self.t32)
+        I(self.types, "TypeVector", t_v3, self.t32, 3)
+        I(self.types, "TypePointer", t_pv3, 1, t_v3)
+        I(self.types, "TypeRuntimeArray", t_tab, self.t32)
+        I(self.types, "TypeStruct", t_bloc, t_tab)
+        I(self.types, "TypePointer", t_pbloc, 2, t_bloc)
+        I(self.types, "TypePointer", self.tpu, 2, self.t32)
+        I(self.types, "TypePointer", self.tpf, 7, self.t32)
+        I(self.types, "TypeRuntimeArray", t_tab64, self.t64)
+        I(self.types, "TypeStruct", t_bloc64, t_tab64)
+        I(self.types, "TypePointer", t_pbloc64, 2, t_bloc64)
+        I(self.types, "TypePointer", self.tp64, 2, self.t64)
+        I(self.types, "TypePointer", self.tpf64, 7, self.t64)
+        I(self.types, "Variable", t_pv3, gid, 1)
+        I(self.types, "Variable", t_pbloc64, self.fenetre, 2)
+        I(self.types, "Variable", t_pbloc64, self.parametres, 2)
+        for t in (self.table, self.marques, self.auteurs):
+            I(self.types, "Variable", t_pbloc, t, 2)
+
+        entree = self.id()
+        self.portees.append({})
+
+        def param(k):
+            return self.v64("Load", self.case64(self.parametres, self.c32(k)))
+
+        self.bloc = entree
+        v3 = self.v("Load", gid, t=t_v3)
+        gx = self.v("CompositeExtract", v3, 0)
+        gy = self.v("CompositeExtract", v3, 1)
+        idx = self.add(self.v("UConvert", gx, t=self.t64), self.mul(self.v("UConvert", gy, t=self.t64), param(5)))
+        dans = self.ult(idx, param(2))
+        travail, fin = self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", dans, travail, fin)
+        self.etiquette(travail)
+        self.demandes = self.v("UConvert", param(3))
+        idx32 = self.v("UConvert", idx)
+        self.moi = self.v("IAdd", self.v("BitwiseAnd", idx32, self.c32(0x7FFFFFFF)), self.c32(1))
+        self.derniere = self.var32()
+        self.e("Store", self.derniere, self.c32(0xFFFFFFFF))
+        self.ranger(self.nouvelle(self.var), self.add(param(1), idx))
+        for k, nom in enumerate(dehors):
+            self.ranger(self.nouvelle(nom), param(6 + k))
+        for st in self.corps:
+            self.instr(st)
+        self.aller(fin)
+        self.etiquette(fin)
+        self.e("Return")
+        corps = self.code
+        self.code = []
+        self.i(self.code, "Function", self.t_void, principal, 0, t_fn)
+        self.i(self.code, "Label", entree)
         mots = [0x07230203, 0x00010000, 0, self.prochain, 0] + self.tete + self.decor + self.types + self.code \
             + self.vars_decl + corps
         mots.append((1 << 16) | OP["FunctionEnd"])

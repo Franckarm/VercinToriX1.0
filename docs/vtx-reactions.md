@@ -4365,3 +4365,29 @@ peut-être d'une refonte. Oui : sur le processeur, le cube est en mémoire et l'
 devrait **vivre sur la carte**, l'image **naître et être montrée sur la carte**, et le processeur n'envoyer que l'œil
 (quelques mots par image). Les nombres de la carte : 32 bits, la division native ; la promesse prouvée par la forme du
 noyau (chaque fil n'écrit que son point ; le monde en lecture seule) au lieu d'être vérifiée à chaque accès.
+
+## 103. Le 64 bits demandé à la carte, le cube gardé sur la carte (23 novembre, 0.817)
+
+**Le créateur** : Lugus est en 128 bits, pourquoi la carte en 32 ? Encourager la carte à utiliser le 64. Le vergobret
+reste sur le processeur, pour gérer, le cache peut-être ; le cube à étages reste sur la carte et profite de ses cœurs
+pour le tapis ; le nom de Taranis ? (Gardé : Belenos le moteur, Taranis la carte, Vergobret le chef d'orchestre ; un
+seul langage.) Son idée à creuser : recomposer le rôle du cache et de l'image (le cache qui part de l'œil, vers l'écran).
+
+- **Le 64 bits de la carte** (`NoyauI64` dans `taranis/noyau_vtx.py`) : quand la carte sait faire les entiers de 64
+  bits (`shaderInt64`, demandé à la création de l'appareil ; `carte.int64`), le noyau en pages les prend : une valeur est
+  un seul nombre de 64 bits, une division une instruction (au lieu des deux mots de 32 bits et des 64 tours de boucle).
+  La forge écrit les deux noyaux ; la machine prend le bon. `VTX_INT64=0` : les deux mots. Le même sens que Lugus : les
+  mêmes empreintes. Sur lavapipe (la carte imitée par le processeur) : le calcul 1,5 fois plus rapide (138–149 ms contre
+  205–211 sur le petit film). SwiftShader ne le fait pas : il garde les deux mots.
+- **La marque « page lue » écrite une fois par page** : chaque fil garde la dernière page qu'il a lue et ne l'écrit que
+  quand elle change (tous les fils écrivaient sans cesse les mêmes mots).
+- **La résidence** (`Residence` dans `taranis_vk.rs`, `EtatResidence` dans le noyau de la forge) : le cube gardé sur la
+  carte d'un lancement à l'autre. Un miroir (une mémoire vue des deux) a exactement ce qu'a la carte ; avant chaque
+  lancement, les pages que le noyau a lues ou écrites dans ses 32 derniers lancements sont comparées au miroir, sur tous
+  les cœurs, et seules celles qui ont changé montent ; après, seules les pages écrites redescendent. Une page qui
+  manque : la carte la demande, la boucle est relancée. Un recul (une promesse non tenue) : ce que la carte a écrit
+  n'est plus réputé connu. Sans repère de pages modifiées dans la mémoire de Lugus, comparer est la seule voie sûre (une
+  marque oubliée sur un seul chemin d'écriture donnerait une image fausse sans le dire).
+- **Sur le petit film (320 × 180, lavapipe)** : après les cinq premières images (les places du tapis), plus aucune
+  relance ; par image, 4 pages montent (sur 88 suivies), 3 redescendent, la comparaison 7 à 17 ms sur deux cœurs ;
+  avant : 221 pages montées à chaque image. Les tests de Taranis et des cylindres conformes sur lavapipe et SwiftShader.

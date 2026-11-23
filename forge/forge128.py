@@ -676,6 +676,9 @@ class Forge(V.Generateur):
                 return
             try:
                 spv, dehors, acces = noyau_vtx.Noyau(self, var, corps, pages=True).compiler()
+                # 0.817 : le même noyau en entiers de 64 bits de la carte (pris si la carte les fait)
+                spv64, dehors64, _ = noyau_vtx.NoyauI64(self, var, corps).compiler()
+                assert dehors64 == dehors
                 pages = True
             except noyau_vtx.PasPourLaCarte as e2:
                 if os.environ.get("VTX_TARANIS"):
@@ -687,6 +690,7 @@ class Forge(V.Generateur):
         if pages:
             k = len(self.noyaux)
             self.noyaux.append(spv)
+            self.noyaux.append(spv64)
             v = f"v_{ident(var)}"
             ext = ", ".join(f"v_{ident(n)}" for n in dehors)
             # 0.816 : le vergobret choisit la carte ou le processeur en mesurant (Choix) ; le temps se note à la fin de
@@ -700,7 +704,7 @@ class Forge(V.Generateur):
             self.niveau += 1
             self.ligne(f"let ta: u128 = {self.val(st[2], 'e')};")
             self.ligne(f"let tb: u128 = {self.val(notes[-1][3], 'e')};")
-            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{k}, ta, tb, &[{ext}]) {{")
+            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{k}, &SPV{k + 1}, ta, tb, &[{ext}]) {{")
             self.ligne(f"    fait = true;")
             self.ligne(f"    {v} = tb;")
             self.ligne("}")

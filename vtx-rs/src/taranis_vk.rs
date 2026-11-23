@@ -217,6 +217,8 @@ pub struct Carte {
     groupes_max: u64,
     stockage_max: u64,
     pub nom: String,
+    /// 0.817 : la carte fait les entiers de 64 bits elle-même (shaderInt64, demandé à la création)
+    pub int64: bool,
     dsl: H,
     pl: H,
     pipelines: Vec<(usize, H)>,
@@ -264,7 +266,7 @@ unsafe fn prendre() -> Result<Carte, String> {
         None => return Err("vulkan-1.dll introuvable".into()),
     };
     let mut c = Carte { gipa, instance: null_mut(), pd: null_mut(), dev: null_mut(), file: null_mut(), famille: 0,
-        mp: std::mem::zeroed(), groupes_max: 65535, stockage_max: 1 << 27, nom: String::new(), dsl: 0, pl: 0,
+        mp: std::mem::zeroed(), groupes_max: 65535, stockage_max: 1 << 27, nom: String::new(), int64: false, dsl: 0, pl: 0,
         pipelines: Vec::new(), dsl5: 0, pl5: 0, cpool: 0, cb: null_mut(), fence: 0 };
     let nom = b"Vercintorix Taranis\0";
     let app = ApplicationInfo { sType: ST_APPLICATION_INFO, pNext: null(), pApplicationName: nom.as_ptr() as _,
@@ -298,9 +300,16 @@ unsafe fn prendre() -> Result<Carte, String> {
     c.nom = CStr::from_ptr(b.add(20) as *const c_char).to_string_lossy().into_owned();
     c.groupes_max = *(b.add(296 + 220) as *const u32) as u64;
     c.stockage_max = *(b.add(296 + 28) as *const u32) as u64;
-    // les noyaux de vtx calculent les entiers de 64 bits en deux mots de 32 bits : aucune option de la carte n'est demandée
-    let _ = feats;
-    let voulu = [0u32; 55];
+    // les noyaux de vtx calculent les entiers de 64 bits en deux mots de 32 bits : aucune option de la carte n'est
+    // nécessaire ; 0.817 : si la carte sait faire les entiers de 64 bits (shaderInt64, la 41e option de
+    // VkPhysicalDeviceFeatures), elle est demandée (les noyaux en pages la prennent alors)
+    let mut offertes = [0u32; 55];
+    feats(c.pd, offertes.as_mut_ptr());
+    let mut voulu = [0u32; 55];
+    if offertes[40] != 0 && std::env::var("VTX_INT64").map_or(true, |v| v != "0") {
+        voulu[40] = 1;
+        c.int64 = true;
+    }
     let qf = vkfn!(c, "vkGetPhysicalDeviceQueueFamilyProperties", unsafe extern "system" fn(Ptr, *mut u32, *mut QueueFamilyProperties));
     let mut nq = 0u32;
     qf(c.pd, &mut nq, null_mut());
@@ -663,5 +672,230 @@ impl Carte {
         }
         let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
         Ok(([ms(t0, t1), ms(t1, t2), t2.elapsed().as_secs_f64() * 1e3], marques))
+    }
+}
+
+/// 0.817 : la résidence : le cube gardé sur la carte d'un lancement à l'autre. Les pages vivent dans un tampon de la
+/// carte (une place par page) ; un tampon du processeur, visible des deux, en est le miroir exact (ce que la carte a) :
+/// avant un lancement, seules les places dont la page a changé y sont recopiées et montent ; après, seules les places
+/// écrites redescendent.
+pub struct Residence {
+    pub cap: usize,
+    bdev: H,
+    mdev: H,
+    baut: H,
+    maut: H,
+    bmir: H,
+    mmir: H,
+    pub miroir: *mut u64,
+    bpar: H,
+    mpar: H,
+    vpar: *mut u64,
+    btab: H,
+    mtab: H,
+    vtab: *mut u32,
+    bmar: H,
+    mmar: H,
+    vmar: *mut u32,
+    dp: H,
+    ds: H,
+}
+
+const PARAMS_RES: usize = 512;
+
+impl Carte {
+    /// une résidence d'au moins `cap` places (une nouvelle, vide, si la précédente est trop petite : rend vrai)
+    pub fn residence(&mut self, res: &mut Option<Residence>, cap: usize) -> Result<bool, String> {
+        unsafe { self.residence_(res, cap) }
+    }
+
+    unsafe fn residence_(&mut self, res: &mut Option<Residence>, cap: usize) -> Result<bool, String> {
+        if res.as_ref().map_or(false, |r| r.cap >= cap) {
+            return Ok(false);
+        }
+        if let Some(r) = res.take() {
+            self.liberer(r);
+        }
+        // de la marge (la moitié en plus), sans dépasser ce que la carte prend par tampon
+        let max_places = (self.stockage_max / (65536 * 8)) as usize;
+        let cap = (cap + cap / 2).max(16).min(max_places.max(cap));
+        let tf = (cap * 65536 * 8) as u64;
+        let ta = (cap * 65536 * 4) as u64;
+        if tf > self.stockage_max {
+            return Err(format!("{} pages : {} octets, la carte en prend {} au plus par tampon", cap, tf, self.stockage_max));
+        }
+        let stock = BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST;
+        let (bdev, mdev) = self.tampon(tf, stock, MEM_DEVICE_LOCAL)?;
+        let (baut, maut) = self.tampon(ta, stock, MEM_DEVICE_LOCAL)?;
+        let (bmir, mmir) = match self.tampon(tf, BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT | MEM_HOST_CACHED) {
+            Ok(x) => x,
+            Err(_) => self.tampon(tf, BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?,
+        };
+        let tp = (PARAMS_RES * 8) as u64;
+        let tt = (65536 * 4) as u64;
+        let tm = ((cap * 2 + 65537) * 4) as u64;
+        let (bpar, mpar) = self.tampon(tp, BUFFER_USAGE_STORAGE, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
+        let (btab, mtab) = self.tampon(tt, BUFFER_USAGE_STORAGE, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
+        let (bmar, mmar) = self.tampon(tm, BUFFER_USAGE_STORAGE, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
+        let map = vkfn!(self, "vkMapMemory", unsafe extern "system" fn(Ptr, H, u64, u64, u32, *mut *mut c_void) -> R);
+        let (mut a, mut b, mut c, mut d): (*mut c_void, *mut c_void, *mut c_void, *mut c_void) = (null_mut(), null_mut(), null_mut(), null_mut());
+        verifie(map(self.dev, mmir, 0, tf, 0, &mut a), "vkMapMemory")?;
+        verifie(map(self.dev, mpar, 0, tp, 0, &mut b), "vkMapMemory")?;
+        verifie(map(self.dev, mtab, 0, tt, 0, &mut c), "vkMapMemory")?;
+        verifie(map(self.dev, mmar, 0, tm, 0, &mut d), "vkMapMemory")?;
+        let pl = self.mise_en_page5()?;
+        let _ = pl;
+        let taille_pool = DescriptorPoolSize { ty: DESCRIPTOR_STORAGE_BUFFER, descriptorCount: 5 };
+        let create_dp = vkfn!(self, "vkCreateDescriptorPool", unsafe extern "system" fn(Ptr, *const DescriptorPoolCreateInfo, *const c_void, *mut H) -> R);
+        let dpci = DescriptorPoolCreateInfo { sType: ST_DESCRIPTOR_POOL_CREATE_INFO, pNext: null(), flags: 0, maxSets: 1,
+            poolSizeCount: 1, pPoolSizes: &taille_pool };
+        let mut dp: H = 0;
+        verifie(create_dp(self.dev, &dpci, null(), &mut dp), "vkCreateDescriptorPool")?;
+        let alloc_ds = vkfn!(self, "vkAllocateDescriptorSets", unsafe extern "system" fn(Ptr, *const DescriptorSetAllocateInfo, *mut H) -> R);
+        let dsai = DescriptorSetAllocateInfo { sType: ST_DESCRIPTOR_SET_ALLOCATE_INFO, pNext: null(), descriptorPool: dp,
+            descriptorSetCount: 1, pSetLayouts: &self.dsl5 };
+        let mut ds: H = 0;
+        verifie(alloc_ds(self.dev, &dsai, &mut ds), "vkAllocateDescriptorSets")?;
+        let infos = [DescriptorBufferInfo { buffer: bdev, offset: 0, range: tf },
+                     DescriptorBufferInfo { buffer: bpar, offset: 0, range: tp },
+                     DescriptorBufferInfo { buffer: btab, offset: 0, range: tt },
+                     DescriptorBufferInfo { buffer: bmar, offset: 0, range: tm },
+                     DescriptorBufferInfo { buffer: baut, offset: 0, range: ta }];
+        let ecr = [0u32, 1, 2, 3, 4].map(|k| WriteDescriptorSet { sType: ST_WRITE_DESCRIPTOR_SET, pNext: null(), dstSet: ds,
+            dstBinding: k, dstArrayElement: 0, descriptorCount: 1, descriptorType: DESCRIPTOR_STORAGE_BUFFER,
+            pImageInfo: null(), pBufferInfo: &infos[k as usize], pTexelBufferView: null() });
+        let update_ds = vkfn!(self, "vkUpdateDescriptorSets", unsafe extern "system" fn(Ptr, u32, *const WriteDescriptorSet, u32, *const c_void));
+        update_ds(self.dev, 5, ecr.as_ptr(), 0, null());
+        *res = Some(Residence { cap, bdev, mdev, baut, maut, bmir, mmir, miroir: a as *mut u64, bpar, mpar, vpar: b as *mut u64,
+            btab, mtab, vtab: c as *mut u32, bmar, mmar, vmar: d as *mut u32, dp, ds });
+        Ok(true)
+    }
+
+    unsafe fn liberer(&mut self, r: Residence) {
+        let _ = self.liberer_(r);
+    }
+
+    unsafe fn liberer_(&mut self, r: Residence) -> Result<(), String> {
+        let wait_idle = vkfn!(self, "vkDeviceWaitIdle", unsafe extern "system" fn(Ptr) -> R);
+        let _ = wait_idle(self.dev);
+        let unmap = vkfn!(self, "vkUnmapMemory", unsafe extern "system" fn(Ptr, H));
+        let destroy_b = vkfn!(self, "vkDestroyBuffer", unsafe extern "system" fn(Ptr, H, *const c_void));
+        let free_m = vkfn!(self, "vkFreeMemory", unsafe extern "system" fn(Ptr, H, *const c_void));
+        let destroy_dp = vkfn!(self, "vkDestroyDescriptorPool", unsafe extern "system" fn(Ptr, H, *const c_void));
+        for m in [r.mmir, r.mpar, r.mtab, r.mmar] {
+            unmap(self.dev, m);
+        }
+        destroy_dp(self.dev, r.dp, null());
+        for (b, m) in [(r.bdev, r.mdev), (r.baut, r.maut), (r.bmir, r.mmir), (r.bpar, r.mpar), (r.btab, r.mtab), (r.bmar, r.mmar)] {
+            destroy_b(self.dev, b, null());
+            free_m(self.dev, m, null());
+        }
+        Ok(())
+    }
+
+    /// lancer en résidence : `montees` (des places) montent du miroir ; la table et les paramètres sont recopiés ;
+    /// rend les millisecondes (préparer, la carte) et les marques (lue, écrite par place ; puis les demandes)
+    pub fn lancer_resident(&mut self, r: &mut Residence, spv: &[u32], montees: &[u32], table: &[u32], params: &mut [u64],
+                           fils: u64) -> Result<([f64; 2], Vec<u32>), String> {
+        unsafe { self.lancer_resident_(r, spv, montees, table, params, fils) }
+    }
+
+    unsafe fn lancer_resident_(&mut self, r: &mut Residence, spv: &[u32], montees: &[u32], table: &[u32], params: &mut [u64],
+                               fils: u64) -> Result<([f64; 2], Vec<u32>), String> {
+        let t0 = std::time::Instant::now();
+        if params.len() > PARAMS_RES {
+            return Err("trop de paramètres".into());
+        }
+        let groupes = fils.div_ceil(LARGEUR).max(1);
+        let gx = groupes.min(self.groupes_max);
+        let gy = groupes.div_ceil(gx);
+        if gy > self.groupes_max {
+            return Err("trop de fils".into());
+        }
+        params[5] = gx * LARGEUR;
+        let pl = self.mise_en_page5()?;
+        let pipeline = self.pipeline_avec(spv, pl)?;
+        let nmarques = r.cap * 2 + 65537;
+        std::ptr::copy_nonoverlapping(params.as_ptr(), r.vpar, params.len());
+        std::ptr::copy_nonoverlapping(table.as_ptr(), r.vtab, table.len().min(65536));
+        std::ptr::write_bytes(r.vmar, 0, nmarques);
+        let reset_pool = vkfn!(self, "vkResetCommandPool", unsafe extern "system" fn(Ptr, H, u32) -> R);
+        let begin = vkfn!(self, "vkBeginCommandBuffer", unsafe extern "system" fn(Ptr, *const CommandBufferBeginInfo) -> R);
+        let bind_p = vkfn!(self, "vkCmdBindPipeline", unsafe extern "system" fn(Ptr, u32, H));
+        let bind_ds = vkfn!(self, "vkCmdBindDescriptorSets", unsafe extern "system" fn(Ptr, u32, H, u32, u32, *const H, u32, *const u32));
+        let dispatch = vkfn!(self, "vkCmdDispatch", unsafe extern "system" fn(Ptr, u32, u32, u32));
+        let barrier = vkfn!(self, "vkCmdPipelineBarrier", unsafe extern "system" fn(Ptr, u32, u32, u32, u32, *const MemoryBarrier, u32, *const c_void, u32, *const c_void));
+        let copy = vkfn!(self, "vkCmdCopyBuffer", unsafe extern "system" fn(Ptr, H, H, u32, *const BufferCopy));
+        let fill = vkfn!(self, "vkCmdFillBuffer", unsafe extern "system" fn(Ptr, H, u64, u64, u32));
+        let end = vkfn!(self, "vkEndCommandBuffer", unsafe extern "system" fn(Ptr) -> R);
+        let submit = vkfn!(self, "vkQueueSubmit", unsafe extern "system" fn(Ptr, u32, *const SubmitInfo, H) -> R);
+        let wait = vkfn!(self, "vkWaitForFences", unsafe extern "system" fn(Ptr, u32, *const H, u32, u64) -> R);
+        let reset_f = vkfn!(self, "vkResetFences", unsafe extern "system" fn(Ptr, u32, *const H) -> R);
+        verifie(reset_pool(self.dev, self.cpool, 0), "vkResetCommandPool")?;
+        let cbbi = CommandBufferBeginInfo { sType: ST_COMMAND_BUFFER_BEGIN_INFO, pNext: null(), flags: 1, pInheritanceInfo: null() };
+        verifie(begin(self.cb, &cbbi), "vkBeginCommandBuffer")?;
+        let regions: Vec<BufferCopy> = montees.iter().map(|&s| BufferCopy { srcOffset: s as u64 * 524288,
+            dstOffset: s as u64 * 524288, size: 524288 }).collect();
+        if !regions.is_empty() {
+            copy(self.cb, r.bmir, r.bdev, regions.len() as u32, regions.as_ptr());
+        }
+        fill(self.cb, r.baut, 0, (r.cap * 65536 * 4) as u64, 0);
+        let b1 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE,
+            dstAccessMask: ACCESS_SHADER_READ | ACCESS_SHADER_WRITE };
+        barrier(self.cb, STAGE_TRANSFER, STAGE_COMPUTE_SHADER, 0, 1, &b1, 0, null(), 0, null());
+        bind_p(self.cb, BIND_POINT_COMPUTE, pipeline);
+        bind_ds(self.cb, BIND_POINT_COMPUTE, pl, 0, 1, &r.ds, 0, null());
+        dispatch(self.cb, gx as u32, gy as u32, 1);
+        let b2 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_SHADER_WRITE,
+            dstAccessMask: ACCESS_TRANSFER_READ | ACCESS_HOST_READ };
+        barrier(self.cb, STAGE_COMPUTE_SHADER, STAGE_TRANSFER | STAGE_HOST, 0, 1, &b2, 0, null(), 0, null());
+        verifie(end(self.cb), "vkEndCommandBuffer")?;
+        let si = SubmitInfo { sType: ST_SUBMIT_INFO, pNext: null(), waitSemaphoreCount: 0, pWaitSemaphores: null(),
+            pWaitDstStageMask: null(), commandBufferCount: 1, pCommandBuffers: &self.cb, signalSemaphoreCount: 0,
+            pSignalSemaphores: null() };
+        let t1 = std::time::Instant::now();
+        verifie(submit(self.file, 1, &si, self.fence), "vkQueueSubmit")?;
+        verifie(wait(self.dev, 1, &self.fence, 1, 120_000_000_000), "vkWaitForFences")?;
+        verifie(reset_f(self.dev, 1, &self.fence), "vkResetFences")?;
+        let t2 = std::time::Instant::now();
+        std::ptr::copy_nonoverlapping(r.vpar as *const u64, params.as_mut_ptr(), params.len());
+        let mut marques = vec![0u32; nmarques];
+        std::ptr::copy_nonoverlapping(r.vmar as *const u32, marques.as_mut_ptr(), nmarques);
+        let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
+        Ok(([ms(t0, t1), ms(t1, t2)], marques))
+    }
+
+    /// les places écrites redescendent dans le miroir ; rend les millisecondes
+    pub fn redescendre(&mut self, r: &mut Residence, places: &[u32]) -> Result<f64, String> {
+        unsafe {
+            let t0 = std::time::Instant::now();
+            if places.is_empty() {
+                return Ok(0.0);
+            }
+            let reset_pool = vkfn!(self, "vkResetCommandPool", unsafe extern "system" fn(Ptr, H, u32) -> R);
+            let begin = vkfn!(self, "vkBeginCommandBuffer", unsafe extern "system" fn(Ptr, *const CommandBufferBeginInfo) -> R);
+            let barrier = vkfn!(self, "vkCmdPipelineBarrier", unsafe extern "system" fn(Ptr, u32, u32, u32, u32, *const MemoryBarrier, u32, *const c_void, u32, *const c_void));
+            let copy = vkfn!(self, "vkCmdCopyBuffer", unsafe extern "system" fn(Ptr, H, H, u32, *const BufferCopy));
+            let end = vkfn!(self, "vkEndCommandBuffer", unsafe extern "system" fn(Ptr) -> R);
+            let submit = vkfn!(self, "vkQueueSubmit", unsafe extern "system" fn(Ptr, u32, *const SubmitInfo, H) -> R);
+            let wait = vkfn!(self, "vkWaitForFences", unsafe extern "system" fn(Ptr, u32, *const H, u32, u64) -> R);
+            let reset_f = vkfn!(self, "vkResetFences", unsafe extern "system" fn(Ptr, u32, *const H) -> R);
+            verifie(reset_pool(self.dev, self.cpool, 0), "vkResetCommandPool")?;
+            let cbbi = CommandBufferBeginInfo { sType: ST_COMMAND_BUFFER_BEGIN_INFO, pNext: null(), flags: 1, pInheritanceInfo: null() };
+            verifie(begin(self.cb, &cbbi), "vkBeginCommandBuffer")?;
+            let regions: Vec<BufferCopy> = places.iter().map(|&s| BufferCopy { srcOffset: s as u64 * 524288,
+                dstOffset: s as u64 * 524288, size: 524288 }).collect();
+            copy(self.cb, r.bdev, r.bmir, regions.len() as u32, regions.as_ptr());
+            let b3 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE, dstAccessMask: ACCESS_HOST_READ };
+            barrier(self.cb, STAGE_TRANSFER, STAGE_HOST, 0, 1, &b3, 0, null(), 0, null());
+            verifie(end(self.cb), "vkEndCommandBuffer")?;
+            let si = SubmitInfo { sType: ST_SUBMIT_INFO, pNext: null(), waitSemaphoreCount: 0, pWaitSemaphores: null(),
+                pWaitDstStageMask: null(), commandBufferCount: 1, pCommandBuffers: &self.cb, signalSemaphoreCount: 0,
+                pSignalSemaphores: null() };
+            verifie(submit(self.file, 1, &si, self.fence), "vkQueueSubmit")?;
+            verifie(wait(self.dev, 1, &self.fence, 1, 120_000_000_000), "vkWaitForFences")?;
+            verifie(reset_f(self.dev, 1, &self.fence), "vkResetFences")?;
+            Ok(t0.elapsed().as_secs_f64() * 1e3)
+        }
     }
 }

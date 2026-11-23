@@ -1390,8 +1390,59 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
 /// page absente : la carte le dit) et ici (une page à la fois lue et écrite : refusé) ; si quelque chose manque, la
 /// boucle reste au processeur (fait reste faux : le résultat est toujours celui de Lugus).
 #[allow(dead_code)]
-fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
-    taranis_boucle_pages_(c, spv, a, b, ext, true)
+fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
+    // 0.817 : le noyau en entiers de 64 bits de la carte, si elle les fait
+    let k = match taranis_vk::carte() {
+        Some(k) => k,
+        None => return false,
+    };
+    let choisi = if k.int64 { spv64 } else { spv };
+    taranis_boucle_pages_(c, choisi, a, b, ext, true)
+}
+
+/// 0.817 : la résidence (le cube gardé sur la carte) : quelles pages ont une place sur la carte, lesquelles le miroir
+/// connaît (sa copie est exactement celle de la carte), et quand le noyau a lu ou écrit chacune pour la dernière fois
+#[allow(dead_code)]
+struct EtatResidence {
+    res: Option<taranis_vk::Residence>,
+    places: std::collections::HashMap<u64, u32>,
+    pages_de: Vec<u64>,
+    connu: Vec<bool>,
+    vu: std::collections::HashMap<u64, u32>,
+    appel: u32,
+    premier: bool,
+}
+unsafe impl Send for EtatResidence {}
+
+#[allow(dead_code)]
+fn residence() -> &'static std::sync::Mutex<EtatResidence> {
+    static R: std::sync::OnceLock<std::sync::Mutex<EtatResidence>> = std::sync::OnceLock::new();
+    R.get_or_init(|| std::sync::Mutex::new(EtatResidence { res: None, places: std::collections::HashMap::new(),
+        pages_de: Vec::new(), connu: Vec::new(), vu: std::collections::HashMap::new(), appel: 0, premier: true }))
+}
+
+/// la page du processeur (mots de 128 bits) diffère-t-elle du miroir (mots de 64 bits) ? None : un mot de plus de 64 bits
+#[allow(dead_code)]
+fn page_differe(cpu: *const u128, mir: *const u64) -> Option<bool> {
+    let c = unsafe { std::slice::from_raw_parts(cpu, 65536) };
+    let m = unsafe { std::slice::from_raw_parts(mir, 65536) };
+    let mut diff = false;
+    for k in 0..65536 {
+        let w = c[k];
+        if w >> 64 != 0 {
+            return None;
+        }
+        if w as u64 != m[k] {
+            diff = true;
+            break;
+        }
+    }
+    if diff {
+        if c.iter().any(|&w| w >> 64 != 0) {
+            return None;
+        }
+    }
+    Some(diff)
 }
 
 #[allow(dead_code)]
@@ -1409,6 +1460,9 @@ fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128
     }
     let bavard = taranis_vk::bavard();
     let t0 = std::time::Instant::now();
+    let mut g = residence().lock().unwrap();
+    g.appel += 1;
+    let appel = g.appel;
     let mut liste: Vec<(u64, *mut u128)> = Vec::new();
     for (k, p, brins) in c.m.instantane() {
         if k >> 120 != 2 {
@@ -1424,80 +1478,171 @@ fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128
         liste.push((pg, p));
     }
     liste.sort_by_key(|x| x.0);
-    let np = liste.len();
-    let mut pages = vec![0u64; np.max(1) * 65536];
-    let mut table = vec![0u32; 65536];
-    for (s, &(pg, p)) in liste.iter().enumerate() {
-        table[pg as usize] = s as u32 + 1;
-        let src = unsafe { std::slice::from_raw_parts(p, 65536) };
-        let dst = &mut pages[s * 65536..(s + 1) * 65536];
-        for (d, &w) in dst.iter_mut().zip(src) {
-            if w >> 64 != 0 {
+    for &(pg, _) in &liste {
+        if !g.places.contains_key(&pg) {
+            let s = g.pages_de.len() as u32;
+            g.places.insert(pg, s);
+            g.pages_de.push(pg);
+            g.connu.push(false);
+        }
+    }
+    let np = g.pages_de.len();
+    let neuve = {
+        let EtatResidence { res, .. } = &mut *g;
+        match carte.residence(res, np) {
+            Ok(x) => x,
+            Err(e) => {
+                if bavard {
+                    eprintln!("taranis : {}", e);
+                }
                 return false;
             }
-            *d = w as u64;
         }
+    };
+    if neuve {
+        for x in g.connu.iter_mut() {
+            *x = false;
+        }
+    }
+    let cap = g.res.as_ref().unwrap().cap;
+    let miroir = g.res.as_ref().unwrap().miroir as usize;
+    // les pages suivies : celles que le noyau a lues ou écrites dans ses 32 derniers lancements (toutes, la première fois ;
+    // assez pour les places du tapis, qui reviennent toutes les cinq images)
+    let premier = g.premier;
+    let suivies: Vec<(u64, usize, usize, bool)> = liste.iter().filter(|(pg, _)| premier || g.vu.get(pg)
+        .map_or(false, |&v| v + 32 >= appel)).map(|&(pg, p)| {
+            let s = g.places[&pg] as usize;
+            (pg, p as usize, s, g.connu[s])
+        }).collect();
+    // le miroir comparé à la mémoire, sur tous les cœurs ; une page changée (ou inconnue) y est recopiée et montera
+    let nt = cylindres_voulus().max(1).min(suivies.len().max(1));
+    let morceau = suivies.len().div_ceil(nt).max(1);
+    let resultats: Vec<Option<Vec<u32>>> = std::thread::scope(|sc| {
+        let fils: Vec<_> = suivies.chunks(morceau).map(|ch| sc.spawn(move || {
+            let mut montees = Vec::new();
+            for &(_, p, s, connu) in ch {
+                let mir = (miroir as *mut u64).wrapping_add(s * 65536);
+                let diff = if connu { page_differe(p as *const u128, mir)? } else { true };
+                if diff {
+                    let src = unsafe { std::slice::from_raw_parts(p as *const u128, 65536) };
+                    let dst = unsafe { std::slice::from_raw_parts_mut(mir, 65536) };
+                    for (d, &w) in dst.iter_mut().zip(src) {
+                        if w >> 64 != 0 {
+                            return None;
+                        }
+                        *d = w as u64;
+                    }
+                    montees.push(s as u32);
+                }
+            }
+            Some(montees)
+        })).collect();
+        fils.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let mut montees = Vec::new();
+    for r in resultats {
+        match r {
+            Some(v) => montees.extend(v),
+            None => return false,
+        }
+    }
+    for &s in &montees {
+        g.connu[s as usize] = true;
+    }
+    let mut table = vec![0u32; 65536];
+    for &(pg, _, s, _) in &suivies {
+        table[pg as usize] = s as u32 + 1;
     }
     let t_monte = t0.elapsed().as_secs_f64() * 1e3;
     let mut params = vec![0u64; 6 + ext.len()];
     params[1] = a as u64;
     params[2] = n;
-    params[3] = 2 * np.max(1) as u64;
+    params[3] = 2 * cap as u64;
     for (k, &v) in ext.iter().enumerate() {
         params[6 + k] = v as u64;
     }
-    let (ms, marques) = match carte.lancer_pages(spv, &mut pages, &table, &mut params, n) {
+    let lance = {
+        let EtatResidence { res, .. } = &mut *g;
+        carte.lancer_resident(res.as_mut().unwrap(), spv, &montees, &table, &mut params, n)
+    };
+    let (ms, marques) = match lance {
         Ok(x) => x,
         Err(e) => {
             if bavard {
                 eprintln!("taranis : {}", e);
             }
+            // ce que la carte a pu écrire n'est plus connu du miroir
+            for x in g.connu.iter_mut() {
+                *x = false;
+            }
             return false;
         }
     };
-    if params[0] == 1 && encore {
-        // des pages manquaient (des places pas encore écrites) : elles sont créées, vides, et la boucle relancée une fois
-        let d0 = 2 * np.max(1);
-        let manquent: Vec<u64> = (0..65536u64).filter(|&pg| marques.get(d0 + pg as usize).map_or(false, |&m| m != 0)).collect();
-        if !manquent.is_empty() && marques.get(d0 + 65536).map_or(true, |&m| m == 0) {
-            for &pg in &manquent {
-                let _ = c.m.page_de(etg((pg << 16) as u128, 2));
-            }
-            if bavard {
-                eprintln!("taranis : {} pages manquaient à la carte : créées, la boucle relancée", manquent.len());
-            }
-            return taranis_boucle_pages_(c, spv, a, b, ext, false);
+    let ecrites: Vec<u32> = (0..np as u32).filter(|&s| marques[2 * s as usize + 1] != 0).collect();
+    for s in 0..np {
+        if marques[2 * s] != 0 || marques[2 * s + 1] != 0 {
+            let pg = g.pages_de[s];
+            g.vu.insert(pg, appel);
         }
     }
-    if params[0] != 0 {
+    let lue_et_ecrite = ecrites.iter().any(|&s| marques[2 * s as usize] != 0);
+    if params[0] != 0 || lue_et_ecrite {
+        // la carte a pu écrire : ces places ne sont plus celles du miroir
+        for &s in &ecrites {
+            g.connu[s as usize] = false;
+        }
+        if params[0] == 1 && encore {
+            let d0 = 2 * cap;
+            let manquent: Vec<u64> = (0..65536u64).filter(|&pg| marques.get(d0 + pg as usize).map_or(false, |&m| m != 0)).collect();
+            if !manquent.is_empty() && marques.get(d0 + 65536).map_or(true, |&m| m == 0) {
+                for &pg in &manquent {
+                    let _ = c.m.page_de(etg((pg << 16) as u128, 2));
+                    g.vu.insert(pg, appel);
+                }
+                if bavard {
+                    eprintln!("taranis : {} pages manquaient à la carte : la boucle relancée", manquent.len());
+                }
+                drop(g);
+                return taranis_boucle_pages_(c, spv, a, b, ext, false);
+            }
+        }
         if bavard {
-            eprintln!("taranis : la boucle revient au processeur ({})",
-                      if params[0] == 2 { "deux tours ont écrit le même mot" } else { "une page manquait à la carte" });
+            eprintln!("taranis : la boucle revient au processeur ({})", if lue_et_ecrite { "une page lue et écrite" }
+                      else if params[0] == 2 { "deux tours ont écrit le même mot" } else { "une page manquait à la carte" });
         }
         return false;
     }
-    let t1 = std::time::Instant::now();
-    let mut ecrites = 0;
-    for s in 0..np {
-        if marques[2 * s + 1] != 0 && marques[2 * s] != 0 {
-            if bavard {
-                eprintln!("taranis : la boucle revient au processeur (la page {} a été lue et écrite)", liste[s].0);
+    let t_desc = {
+        let EtatResidence { res, .. } = &mut *g;
+        match carte.redescendre(res.as_mut().unwrap(), &ecrites) {
+            Ok(x) => x,
+            Err(e) => {
+                if bavard {
+                    eprintln!("taranis : {}", e);
+                }
+                for &s in &ecrites {
+                    g.connu[s as usize] = false;
+                }
+                return false;
             }
-            return false;
         }
-    }
-    for s in 0..np {
-        if marques[2 * s + 1] != 0 {
-            ecrites += 1;
-            let dst = unsafe { std::slice::from_raw_parts_mut(liste[s].1, 65536) };
-            for (d, &w) in dst.iter_mut().zip(&pages[s * 65536..(s + 1) * 65536]) {
+    };
+    let t1 = std::time::Instant::now();
+    for &s in &ecrites {
+        let pg = g.pages_de[s as usize];
+        if let Some(&(_, p)) = liste.iter().find(|x| x.0 == pg) {
+            let dst = unsafe { std::slice::from_raw_parts_mut(p, 65536) };
+            let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s as usize * 65536), 65536) };
+            for (d, &w) in dst.iter_mut().zip(src) {
                 *d = w as u128;
             }
         }
     }
+    g.premier = false;
     if bavard {
-        eprintln!("taranis : {} tours sur la carte ({} pages montées, {} écrites) : préparer {:.1} ms, monter et lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
-                  n, np, ecrites, t_monte, ms[0], ms[1], ms[2], t1.elapsed().as_secs_f64() * 1e3);
+        eprintln!("taranis : {} tours sur la carte{} ({} pages suivies, {} montées, {} écrites) : comparer et préparer {:.1} ms, lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
+                  n, if carte.int64 { ", en 64 bits" } else { "" }, suivies.len(), montees.len(), ecrites.len(), t_monte,
+                  ms[0], ms[1], t_desc, t1.elapsed().as_secs_f64() * 1e3);
     }
     true
 }
