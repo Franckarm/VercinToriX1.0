@@ -427,13 +427,13 @@ fonction eclairer_feux() {
 
 // la pyramide de cubes : le premier niveau somme ce que renvoient 2 × 2 cases (l'astre et les feux, sur la couleur
 // propre ; un seul rebond) ; chaque niveau somme 2 × 2 blocs du niveau d'en dessous (les voies tiennent dans 16 bits :
-// au plus 255 × 256) ; puis la redescente. Les niveaux sont petits : un seul cœur (lancer les cœurs coûterait plus)
+// au plus 255 × 256) ; puis la redescente. 0.806 : le premier niveau et la redescente sur l'équipe du vergobret
 fonction construire_pyramide() {
     soit sr = @2[TEINTES + 3];
     soit sg = @2[TEINTES + 4];
     soit sb = @2[TEINTES + 5];
     soit feux = @2[TEINTES + 6];
-    pour qz dans 0..256 {
+    pour qz dans 0..256 en bandes {
         pour qx dans 0..256 {
             soit c0 = 2 * qz * G + 2 * qx;
             soit somme = 0;
@@ -478,7 +478,7 @@ fonction construire_pyramide() {
 
 // un niveau de la redescente : le niveau d'au-dessus (n / 2 blocs) mêlé, plus la somme du niveau · num / den
 fonction descendre(dessus, somme, dessous, n, num, den) {
-    pour dz dans 0..n {
+    pour dz dans 0..n en bandes {
         pour dx dans 0..n {
             soit up = lire_niveau(dessus, n / 2, 1, dx, dz);
             soit sm = @2[somme + dz * n + dx];

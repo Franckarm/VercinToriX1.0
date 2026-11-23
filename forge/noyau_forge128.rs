@@ -483,23 +483,46 @@ fn equipe_jouer<'a>(nt: usize, f: &'a (dyn Fn(usize) -> Recolte + Sync + 'a)) ->
     std::mem::take(&mut fin.1).into_iter().map(|r| r.unwrap()).collect()
 }
 
-/// 0.77 : après une boucle « en bandes » : un cœur a-t-il écrit un mot qu'un autre a lu ou écrit ? (un bit par mot :
-/// les mots écrits de chacun contre les mots lus et écrits de tous les autres). Rend la première page touchée.
+/// 0.77 : après une boucle « en bandes » : un cœur a-t-il écrit un mot qu'un autre a lu ou écrit ? (un bit par mot).
+/// 0.806 : en un seul passage, quel que soit le nombre de cœurs : pour chaque page, les mots écrits par au moins un cœur
+/// (w1), par au moins deux (w2), et lus par un cœur qui ne les a pas écrits lui-même (rx) ; la promesse est rompue là
+/// où w2, ou w1 et rx à la fois. Rend la première page touchée.
 #[allow(dead_code)]
 fn bandes_touchees(recoltes: &[Recolte]) -> Option<u128> {
-    for t in 0..recoltes.len() {
-        for (k, w) in &recoltes[t].ecrits {
-            for (s_, r) in recoltes.iter().enumerate() {
-                if s_ == t {
-                    continue;
-                }
-                let autres = [r.lues.iter().find(|x| x.0 == *k).map(|x| &x.1), r.ecrits.iter().find(|x| x.0 == *k).map(|x| &x.1)];
-                for b in autres.iter().flatten() {
-                    if w.iter().zip(b.iter()).any(|(x, y)| x & y != 0) {
-                        return Some(*k);
-                    }
-                }
+    let mut pages: Vec<(u128, Box<[[u64; 1024]; 3]>)> = Vec::new();
+    fn place(pages: &mut Vec<(u128, Box<[[u64; 1024]; 3]>)>, k: u128) -> usize {
+        match pages.iter().position(|x| x.0 == k) {
+            Some(i) => i,
+            None => {
+                pages.push((k, Box::new([[0u64; 1024]; 3])));
+                pages.len() - 1
             }
+        }
+    }
+    for r in recoltes {
+        for (k, w) in &r.ecrits {
+            let i = place(&mut pages, *k);
+            let p = &mut pages[i].1;
+            for j in 0..1024 {
+                p[1][j] |= p[0][j] & w[j];
+                p[0][j] |= w[j];
+            }
+        }
+    }
+    for r in recoltes {
+        for (k, l) in &r.lues {
+            // une page lue que personne n'a écrite ne peut rien rompre
+            let Some(i) = pages.iter().position(|x| x.0 == *k) else { continue };
+            let propre = r.ecrits.iter().find(|x| x.0 == *k).map(|x| &x.1);
+            let p = &mut pages[i].1;
+            for j in 0..1024 {
+                p[2][j] |= l[j] & !propre.map_or(0, |w| w[j]);
+            }
+        }
+    }
+    for (k, p) in &pages {
+        if (0..1024).any(|j| p[1][j] | (p[0][j] & p[2][j]) != 0) {
+            return Some(*k);
         }
     }
     None

@@ -474,9 +474,10 @@ class Forge(V.Generateur):
         return self.sans_effet(notes[0][4], set())
 
     def part_des_coeurs(self, notes, bandes):
-        """La part de chaque cœur : un fil par cœur et par passage (std::thread::scope). 0.77 : une équipe de fils
-        gardés vivants a été essayée (noyau : equipe_jouer) ; le compilateur Rust alourdissait alors tout le code de la
-        fonction, même joué sur un seul cœur (30 % d'instructions de plus) ; elle attend de trouver pourquoi."""
+        """La part de chaque cœur : un fil par cœur et par passage (std::thread::scope), pour les cylindres en segments et
+        les bandes dont les notes ne sont pas les segments d'une même boucle. 0.806 : les bandes d'une même boucle vont à
+        l'équipe du vergobret (equipe_en_morceaux) ; l'alourdissement vu en 0.77 venait des variables prises par la tâche
+        sans être copiées : copiées (move), la fonction jouée sur un seul cœur ne s'alourdit plus."""
         m = len(notes)
         self.ligne("let recoltes: Vec<Recolte> = std::thread::scope(|sc| {")
         self.niveau += 1
@@ -514,6 +515,65 @@ class Forge(V.Generateur):
         self.niveau -= 1
         self.ligne("});")
 
+    def equipe_en_morceaux(self, notes):
+        """0.806 : le vergobret : la boucle entière [a, b) coupée à l'exécution en morceaux (quatre par cœur, alignés sur
+        le pas) ; l'équipe de cœurs (créée une fois, gardée vivante : equipe_jouer) les prend l'un après l'autre (un
+        compteur partagé) : chaque cœur libre prend le suivant, quel que soit le nombre de cœurs ou le coût de chaque
+        morceau. Les variables de la fonction sont copiées dans la tâche (move) : la fonction jouée sur un seul cœur garde
+        les siennes dans les registres."""
+        st0 = notes[0]
+        var, corps, ln = st0[1], st0[4], st0[5]
+        pas = (st0[6] if len(st0) > 6 else 1) & M64
+        self.ligne(f"let ta: u64 = {self.val(st0[2], 'e')} as u64;")
+        self.ligne(f"let tb: u64 = {self.val(notes[-1][3], 'e')} as u64;")
+        self.ligne(f"let compte: u64 = if tb > ta {{ (tb - ta + {pas - 1}) / {pas} }} else {{ 0 }};")
+        self.ligne("let nk: u64 = ((nt as u64) * 4).min(compte).max(1);")
+        self.ligne("let suivant = std::sync::atomic::AtomicU64::new(0);")
+        self.ligne("let recoltes: Vec<Recolte> = {")
+        self.niveau += 1
+        self.ligne("let inst = &inst; let suivant = &suivant;")
+        if self.toutes:
+            self.ligne(" ".join(f"let w_{ident(v)} = v_{ident(v)};" for v in self.toutes))
+        self.ligne("let tache = move |_t: usize| -> Recolte {")
+        self.niveau += 1
+        self.ligne("let mut c_fils = ctx_bande(inst); let c = &mut c_fils;")
+        if self.toutes:
+            self.ligne(" ".join(f"let mut v_{ident(v)} = w_{ident(v)};" for v in self.toutes))
+        self.ligne("loop {")
+        self.niveau += 1
+        self.ligne("let q = suivant.fetch_add(1, std::sync::atomic::Ordering::Relaxed);")
+        self.ligne("if q >= nk { break; }")
+        self.ligne(f"let lo = ta + compte * q / nk * {pas}; let hi = (ta + compte * (q + 1) / nk * {pas}).min(tb);")
+        self.variable(var, ln)
+        self.nboucle += 1
+        lb, lc = f"'b{self.nboucle}", f"'c{self.nboucle}"
+        v = f"v_{ident(var)}"
+        self.ligne(f"{v} = lo as u128;")
+        self.ligne(f"{lb}: loop {{")
+        self.niveau += 1
+        self.ligne(f"if ({v} as u64) >= hi {{ break; }}")
+        self.ligne(f"{lc}: {{")
+        self.niveau += 1
+        self.boucles.append((f"break {lc}", f"break {lb}"))
+        for x in corps:
+            self.instr(x)
+        self.boucles.pop()
+        self.niveau -= 1
+        self.ligne("}")
+        self.ligne(f"{v} = (({v} as u64).wrapping_add({pas}u64)) as u128;")
+        self.niveau -= 1
+        self.ligne("}")
+        self.niveau -= 1
+        self.ligne("}")
+        if self.toutes:
+            self.ligne(" ".join(f"let _ = v_{ident(v)};" for v in self.toutes))
+        self.ligne("let r = rendre(c); remettre_ctx(c_fils); r")
+        self.niveau -= 1
+        self.ligne("};")
+        self.ligne("equipe_jouer(nt, &tache)")
+        self.niveau -= 1
+        self.ligne("};")
+
     def notes_en_cylindres(self, notes):
         """Les notes d'une mesure jouées ensemble : un cylindre par cœur, chacun des notes qui se suivent, sur son propre
         cube ; puis la fusion (noyau : fusionner) ; si elle refuse, les notes l'une après l'autre."""
@@ -548,14 +608,22 @@ class Forge(V.Generateur):
         qu'un autre a lu ou écrit, la promesse n'est pas tenue : la machine s'arrête et le dit (comme t[i] hors du
         tableau). Une page absente du cube commun passe par une feuille, fondue ensuite."""
         m = len(notes)
+        # 0.806 : les notes sont les segments d'une même boucle (même variable, même corps) : la boucle est coupée à
+        # l'exécution, en petits morceaux (quatre par cœur), pris par l'équipe au fur et à mesure
+        meme = all(st[0] == "pour" and st[1] == notes[0][1] and repr(st[4]) == repr(notes[0][4])
+                   and (st[6] if len(st) > 6 else 1) == (notes[0][6] if len(notes[0]) > 6 else 1) for st in notes)
         self.ligne("{")
         self.niveau += 1
-        self.ligne("if cylindres_voulus() > 1 {")
+        self.ligne("if cylindres_voulus() > 1 && c.ombre.is_none() {")
         self.niveau += 1
         self.ligne("let t0 = std::time::Instant::now();")
         self.ligne("let inst = instantane(c);")
-        self.ligne(f"let nt = cylindres_voulus().min({m});")
-        self.part_des_coeurs(notes, True)
+        if meme:
+            self.ligne("let nt = cylindres_voulus();")
+            self.equipe_en_morceaux(notes)
+        else:
+            self.ligne(f"let nt = cylindres_voulus().min({m});")
+            self.part_des_coeurs(notes, True)
         self.ligne("let t1 = std::time::Instant::now();")
         self.ligne("if recoltes.iter().any(|r| r.danger) || bandes_touchees(&recoltes).is_some() {")
         self.ligne(f"    arreter(c, \"ligne {ligne} : la boucle « en bandes » n'a pas tenu sa promesse : deux cœurs ont touché le "

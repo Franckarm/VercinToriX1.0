@@ -3900,3 +3900,29 @@ bits restent (Lugus, et le plus de hex possible).
   - *La clepsydre* (plutôt qu'une pyramide) : autour d'un point de surface, quatre points au-dessus, vers la source de
     lumière, et quatre points en dessous, pour la projection de l'ombre : deux cônes opposés par la pointe, le point
     de surface au milieu.
+
+## 89. Le vergobret : l'équipe de cœurs, le travail en morceaux (23 novembre, 0.806)
+
+**Mesuré chez le créateur** (`mesure-0.805.bat`, le banc sur 1 à 16 cœurs) : 16,3 ms sur un cœur, 17,5 sur deux (plus
+lent), 13,6 sur quatre, puis plus rien ; la boucle n'était coupée qu'en 12 morceaux, fixés à la compilation ; la
+vérification de la promesse prenait 1,1 ms par boucle (les cœurs comparés deux à deux). **La règle du créateur** : le
+langage doit marcher et s'optimiser sur toutes sortes de processeurs : rien n'est réglé pour une machine.
+
+- **Le travail en morceaux, à l'exécution** (`forge128.py` : `equipe_en_morceaux`) : une boucle « en bandes » (les
+  segments d'une même boucle) est coupée quand elle se joue, en quatre morceaux par cœur, alignés sur son pas ; un
+  compteur partagé les distribue : chaque cœur libre prend le suivant. Le nombre de cœurs est celui que le système
+  donne (`VTX_COEURS` pour le forcer) ; plus de limite à 12. Une colonne de ciel ne retarde plus une colonne de
+  montagne.
+- **L'équipe du vergobret** (`equipe_jouer`, écrite en 0.77) : les cœurs sont créés une fois et gardés vivants ; chaque
+  boucle leur donne sa tâche et attend qu'ils l'aient finie. Le coût de lancer un cœur, qui change d'un système à
+  l'autre, ne compte plus. L'alourdissement vu en 0.77 (30 % d'instructions en plus, même sur un cœur) venait des
+  variables prises par la tâche sans être copiées : copiées dans la tâche, la fonction jouée sur un seul cœur garde les
+  siennes dans les registres. Une boucle en bandes dans une tâche (un cœur de l'équipe) se joue sur ce cœur.
+- **La promesse en un seul passage** (`bandes_touchees`) : pour chaque page, les mots écrits par au moins un cœur, par
+  au moins deux, et lus par un cœur qui ne les a pas écrits ; la promesse est rompue là où un mot est écrit deux fois,
+  ou écrit par l'un et lu par un autre. Le même verdict qu'avant, en un temps qui croît comme le nombre de cœurs, et
+  non plus comme son carré.
+- **La pyramide sur l'équipe** (`val_scene.vtx`) : son premier niveau et sa redescente vont en bandes.
+- **Mesures, ici (deux cœurs)** : le banc de 14 à environ 11,5 ms par image ; la vérification, de 0,3 à 0,2 ms par
+  boucle (à douze cœurs) ; un cœur seul, 15 à 16 ms. Les bandes vérifiées sur 1, 5, 7, 24 et 64 cœurs : la même sortie
+  que Lugus quand la promesse tient, l'arrêt quand elle est rompue. La forge conforme ; l'épreuve conforme.

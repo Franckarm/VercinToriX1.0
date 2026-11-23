@@ -1,11 +1,11 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.805)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.806)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
 
 ## 1. Où en est le projet
 
-- Le dépôt : `github.com/Franckarm/vercintorix1.0`, branche **`vtx-0.6`** (dernier état : la 0.65, vérifiée
+- Le dépôt : `github.com/Franckarm/VercinToriX1.0`, branche **`vtx-0.6`** (dernier état : la 0.65, vérifiée
   « Tout est conforme » ; `essai-0.65.bat` déposé chez le créateur, son essai à lire dans `essai-0.65.log`). Œuvre protégée (`AUTEUR.md`) : rien hors de ses
   dossiers et des artefacts privés.
 - Les machines : **Lugus** (SPU-128, la machine de vtx), **Dunon** (SPU-64, le même travail à 64 bits), Senos (SPU-32,
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.806.zip`, `essai-0.806.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.807.zip`, `essai-0.807.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -122,8 +122,11 @@ empreinte 4981707699916968273. Décidé : le paysage dans le cube viendra après
 (voxels ou polygones). **0.805 (§88)** : le vergobret, premier pas : la carte des pages de l'étage 2 dans la forge
 (`Carte`, `lire2`, `ecrire2` : 42 % des instructions servaient à chercher les pages ; le banc de 27,5 à 19 ms sur un
 cœur). Ensuite : l'équipe de cœurs qui reste en place, les deux calques posés d'un bloc (avec les étages : un cœur
-entre deux étages pour la lumière et l'ombre, l'idée du créateur), puis la clepsydre et le tracé de rayons.
-**Prochain** : lire la mesure
+entre deux étages pour la lumière et l'ombre, l'idée du créateur), puis la clepsydre et le tracé de rayons. **0.806 (§89)** : l'équipe du vergobret (cœurs gardés vivants,
+`equipe_jouer`), les boucles en bandes coupées à l'exécution en quatre morceaux par cœur, la promesse vérifiée en un
+passage ; règle du créateur : rien de réglé pour une machine, tout doit valoir sur tous les processeurs. Le dépôt
+GitHub a changé de nom : `github.com/Franckarm/VercinToriX1.0` (remote mis à jour) ; pousser `vtx-0.6` à chaque
+livraison. **Prochain** : lire la mesure
 du créateur ; Taranis pour la scène (lectures à adresse calculée, mémoire dans
 les fonctions appelées, l'image), puis la lumière dans le rouleau en 2D (l'idée du créateur), puis le val dans le cube. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.
