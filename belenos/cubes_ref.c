@@ -278,8 +278,9 @@ static void placer_et_remplir(void) {
         CIELC[t] = calloc(n * 64 + 1, sizeof(u));
         SOLC[t] = calloc(n * 64 + 1, sizeof(u));
     }
+    long q;
 #pragma omp parallel for schedule(dynamic, 8)
-    for (long q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
+    for (q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
         u t = (u)q >> 10, bx = (u)q & 31, bz = ((u)q >> 5) & 31;
         u x0 = (t % TUILES) * 256 + bx * 8, z0 = (t / TUILES) * 256 + bz * 8;
         for (u by = 0; by < 32; by++) {
@@ -483,8 +484,9 @@ static int expose(u x, u y, u z) {
            element(x, y - 1, z) == 0 || element(x, y, z + 1) == 0 || element(x, y, z - 1) == 0;
 }
 static void ranger_lumiere(int avec_ciel) {
+    long q;
 #pragma omp parallel for schedule(dynamic, 8)
-    for (long q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
+    for (q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
         u t = (u)q >> 10, bx = (u)q & 31, bz = ((u)q >> 5) & 31;
         u x0 = (t % TUILES) * 256 + bx * 8, z0 = (t / TUILES) * 256 + bz * 8;
         for (u by = 0; by < 32; by++) {
@@ -572,8 +574,9 @@ static void rendre_cubes(u cx, u cy, u cz, u lacet, u tangage, u temps) {
     u fx = sdiv(sl * ct, 65536), fy = st, fz = sdiv(cl * ct, 65536);
     u rx = cl, rz = 0 - sl;
     u ux = sdiv(0 - sl * st, 65536), uy = ct, uz = sdiv(0 - cl * st, 65536);
+    long yy;
 #pragma omp parallel for schedule(dynamic, 4)
-    for (long yy = 0; yy < H; yy++) {
+    for (yy = 0; yy < H; yy++) {
         u y = (u)yy, n0 = 0, n1 = 0, n2 = 0, n3 = 0;
         u sy = sdiv((H - 2 * y - 1) * 45889, W);
         for (u x = 0; x < W; x++) {
