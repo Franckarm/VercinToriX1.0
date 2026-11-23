@@ -4270,3 +4270,27 @@ mère gérant ses cubes d'information, mais par étage.
     appelées (le tracé lit le cube partout), la mémoire dans les fonctions appelées, l'image. Ce sont les premiers pas.
   - *ce qu'on peut en attendre* : sans mesure, rien de promis ; un traceur de voxels sur une carte de la classe de la
     RTX 3070 rend d'ordinaire du 720p bien plus vite que 24 fils de processeur : un ordre de grandeur, à vérifier.
+
+## 99. Le C passe devant sur 24 fils : le diagnostic (23 novembre, 0.815)
+
+**Mesuré chez le créateur (0.814, 24 fils)** : le film en 76 ms par image ; **le C (compilé par Microsoft, OpenMP) en
+44 ms**, la même empreinte. La création du monde : vtx 367 ms, le C 167 ; les calques : 99 et 40. Ici, sur deux cœurs,
+vtx était à 8 % du C : **c'est en montant en fils que vtx perd** ; « vtx égale le C » ne valait que sur deux cœurs. Le
+tapis chez lui : le soleil qui tourne, 124 ms sans tapis, **95 ms** avec (23 % de moins) ; les étages mesurés à part :
+l'image 56 ms, Divona 24, la clarté 9, le cache 13 (soleil qui tourne). Le vergobret : il se souvient au second
+lancement (confirmé) ; il ne juge pas les boucles au travail changeant (la création du monde, le tapis qui se remplit).
+
+**Deux soupçons, et le diagnostic pour les départager** (`essai-0.815.bat`, sur 1, 6, 12 et 24 fils) :
+- *la promesse* : dans une boucle en bandes, chaque fil note chaque mot qu'il lit (une carte de 8 Ko par page lue :
+  quelques centaines de pages, donc des mégaoctets de notes par fil, qui débordent de la mémoire rapide des cœurs à 24
+  fils). `VTX_SANS_PROMESSE=1` (un diagnostic du noyau, pas un mode de travail : la promesse n'est plus vérifiée) ne
+  note plus les lectures : ici, deux cœurs, 614 → 571 ms (7 %), la même image ;
+- *les mots de 16 octets* : le monde de Lugus pèse deux fois celui du C (des mots de 128 bits contre 64) ; à 24 fils,
+  la mémoire peut ne plus suivre. `cubes_ref.c -DMOT16` range le monde du C en mots de 16 octets : ici, un fil, 1065 →
+  1152 ms (8 %), deux fils 546 → 583, la même empreinte.
+
+Ce que l'essai dira : si vtx sans la promesse rejoint le C de 8 octets, c'est la promesse (et il faut la rendre moins
+chère : la forge qui prouve que les lectures du cube ne peuvent rencontrer aucune écriture, une boucle de rendu n'écrit
+que l'image et ses comptes) ; s'il rejoint le C de 16 octets, ce sont les mots (et il faut ranger les cubes de la partie
+graphique en mots de 64 bits, ce que le créateur a permis à la partie graphique) ; sinon, un troisième coupable (la carte
+des pages, le partage en morceaux).

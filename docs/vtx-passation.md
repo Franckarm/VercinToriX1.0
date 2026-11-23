@@ -1,4 +1,4 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.814)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.815)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.815.zip`, `essai-0.815.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.816.zip`, `essai-0.816.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -152,7 +152,9 @@ lumière en un étage, la clarté (le tapis à quatre étages, 715 → 678 ms ; 
 (l'ARN muté, l'empreinte pour juge, le savoir par machine). **0.814 (§98)** : la mesure de chaque étage
 (`cubes_tapis_mesure0/1.vtx` : l'image 70 %, Divona 22 %, la clarté 4 %) ; le vergobret ne juge plus une boucle dont le
 travail change d'un passage à l'autre ; le plan du tapis sur la carte (une passe par étage, 32 bits, la même empreinte).
-**Prochain** : lire
+**0.815 (§99)** : chez le créateur, **le C 44 ms, vtx 76 ms sur 24 fils** (vtx perd en montant en fils) ; le diagnostic
+(`VTX_SANS_PROMESSE=1`, `cubes_ref.c -DMOT16`, l'essai sur 1, 6, 12, 24 fils) pour départager la promesse et les mots de
+16 octets. **Prochain** : lire le diagnostic, corriger le coupable ; puis lire
 la mesure du créateur ; le vergobret qui choisit l'ARN en mesurant (le génome du tapis, si le créateur le veut) ; puis
 les paquets de rayons (un type « quatre voies » dans le mot de 128 bits : à décider) ; puis les coques (le trompe-l'œil du créateur : l'anti-cube à fréquence négative qui
 montre de loin ce qui est dedans ; la transition fluide entre cubes ; Divona qui lit les coques) ; le calque du soleil

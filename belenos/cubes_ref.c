@@ -25,6 +25,15 @@
 typedef uint64_t u;
 typedef int64_t s;
 
+/* 0.815 : -DMOT16 : chaque mot du monde (annuaires, réserves, calques) sur 16 octets, comme les mots de Lugus (le
+ * diagnostic : ce que coûte à 24 fils la mémoire deux fois plus grosse) ; sinon 8 octets */
+#ifdef MOT16
+#define PAS 2
+#else
+#define PAS 1
+#endif
+#define IX(i) ((i) * PAS)
+
 /* le compilateur de Microsoft (cl /O2 /openmp) n'a pas clock_gettime : l'horloge du C11 */
 #ifdef _MSC_VER
 #define clock_gettime(c, t) timespec_get((t), TIME_UTC)
@@ -257,13 +266,13 @@ static void classer_blocs(void) {
                 if (y0 >= MER) e = 0;
                 else if (y0 + 8 <= MER) e = 3;
             } else if ((y0 + 9) * 256 + 640 + amp < hmin) e = 2;
-            if (e == 0) DIRE[t][b] = VIDE;
-            else if (e == 2) { DIRE[t][b] = ((u)1 << 62) | (TERRE << 2) | 2; DIRT[t][b] = rgb24(100, 80, 60); }
+            if (e == 0) DIRE[t][IX(b)] = VIDE;
+            else if (e == 2) { DIRE[t][IX(b)] = ((u)1 << 62) | (TERRE << 2) | 2; DIRT[t][IX(b)] = rgb24(100, 80, 60); }
             else if (e == 3) {
                 u c = composer_point(x0 + 4, y0 + 4, z0 + 4);
-                DIRE[t][b] = ((u)1 << 62) | (c & 4294967295u);
-                DIRT[t][b] = c >> 32;
-            } else DIRE[t][b] = 1;
+                DIRE[t][IX(b)] = ((u)1 << 62) | (c & 4294967295u);
+                DIRT[t][IX(b)] = c >> 32;
+            } else DIRE[t][IX(b)] = 1;
         }
     }
 }
@@ -271,12 +280,12 @@ static void classer_blocs(void) {
 static void placer_et_remplir(void) {
     for (u t = 0; t < TUILES * TUILES; t++) {
         u n = 0;
-        for (u b = 0; b < 32768; b++) if (DIRE[t][b] == 1) DIRE[t][b] = 16 + n++;
+        for (u b = 0; b < 32768; b++) if (DIRE[t][IX(b)] == 1) DIRE[t][IX(b)] = 16 + n++;
         GLOB[1 + t] = n;
-        POOLE[t] = calloc(n * 512 + 1, sizeof(u));
-        POOLT[t] = calloc(n * 512 + 1, sizeof(u));
-        CIELC[t] = calloc(n * 64 + 1, sizeof(u));
-        SOLC[t] = calloc(n * 64 + 1, sizeof(u));
+        POOLE[t] = calloc((n * 512 + 1) * PAS, sizeof(u));
+        POOLT[t] = calloc((n * 512 + 1) * PAS, sizeof(u));
+        CIELC[t] = calloc((n * 64 + 1) * PAS, sizeof(u));
+        SOLC[t] = calloc((n * 64 + 1) * PAS, sizeof(u));
     }
     long q;
 #pragma omp parallel for schedule(dynamic, 8)
@@ -284,13 +293,13 @@ static void placer_et_remplir(void) {
         u t = (u)q >> 10, bx = (u)q & 31, bz = ((u)q >> 5) & 31;
         u x0 = (t % TUILES) * 256 + bx * 8, z0 = (t / TUILES) * 256 + bz * 8;
         for (u by = 0; by < 32; by++) {
-            u e = DIRE[t][(bx << 10) | (by << 5) | bz];
+            u e = DIRE[t][IX((bx << 10) | (by << 5) | bz)];
             if (e >= 16 && e < ((u)1 << 62)) {
                 u place = (e - 16) * 512;
                 for (u v = 0; v < 512; v++) {
                     u c = composer_point(x0 + (v >> 6), by * 8 + ((v >> 3) & 7), z0 + (v & 7));
-                    POOLE[t][place + v] = c & 4294967295u;
-                    POOLT[t][place + v] = c >> 32;
+                    POOLE[t][IX(place + v)] = c & 4294967295u;
+                    POOLT[t][IX(place + v)] = c >> 32;
                 }
             }
         }
@@ -300,7 +309,7 @@ static void placer_et_remplir(void) {
 static inline u case_bloc(u gx, u gy, u gz) { return (gy * NB + gz) * NB + gx; }
 static inline u *mot_bloc(u gx, u gy, u gz) {
     u t = (gz >> 5) * TUILES + (gx >> 5);
-    return &DIRE[t][((gx & 31) << 10) + (gy << 5) + (gz & 31)];
+    return &DIRE[t][IX(((gx & 31) << 10) + (gy << 5) + (gz & 31))];
 }
 
 static void distancer_blocs(void) {
@@ -338,17 +347,17 @@ static void distancer_blocs(void) {
 static inline u element(u x, u y, u z) {
     if (x >= MONDE || z >= MONDE || y >= 256) return 0;
     u t = (z >> 8) * TUILES + (x >> 8);
-    u e = DIRE[t][(((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    u e = DIRE[t][IX((((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31))];
     if ((e >> 62) == 2) return 0;
     if ((e >> 62) == 1) return e & 4294967295u;
-    return POOLE[t][(e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+    return POOLE[t][IX((e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7))];
 }
 static inline u couleur(u x, u y, u z) {
     u t = (z >> 8) * TUILES + (x >> 8);
     u b = (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31);
-    u e = DIRE[t][b];
-    if ((e >> 62) == 1) return DIRT[t][b];
-    return POOLT[t][(e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+    u e = DIRE[t][IX(b)];
+    if ((e >> 62) == 1) return DIRT[t][IX(b)];
+    return POOLT[t][IX((e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7))];
 }
 
 static u tracer(u ox, u oy, u oz, u dx, u dy, u dz, u tmax, int eau) {
@@ -365,13 +374,13 @@ static u tracer(u ox, u oy, u oz, u dx, u dy, u dz, u tmax, int eau) {
             return MANQUE;
         u x = px >> 16, y = py >> 16, z = pz >> 16;
         u tl = (z >> 8) * TUILES + (x >> 8);
-        u e = DIRE[tl][(((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+        u e = DIRE[tl][IX((((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31))];
         u sz_ = 8, av = 1;
         if ((e >> 62) == 2) av = e & 255;
         else if ((e >> 62) == 1) {
             if (eau == 1 || ((e >> 2) & 63) != EAU) return t;
         } else {
-            u v = POOLE[tl][(e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+            u v = POOLE[tl][IX((e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7))];
             if (v != 0 && (eau == 1 || ((v >> 2) & 63) != EAU)) return t;
             sz_ = 1;
         }
@@ -490,14 +499,14 @@ static void ranger_lumiere(int avec_ciel) {
         u t = (u)q >> 10, bx = (u)q & 31, bz = ((u)q >> 5) & 31;
         u x0 = (t % TUILES) * 256 + bx * 8, z0 = (t / TUILES) * 256 + bz * 8;
         for (u by = 0; by < 32; by++) {
-            u e = DIRE[t][(bx << 10) | (by << 5) | bz];
+            u e = DIRE[t][IX((bx << 10) | (by << 5) | bz)];
             if (e >= 16 && e < ((u)1 << 62)) {
                 u n = e - 16;
                 for (u w = 0; w < 64; w++) {
                     u ms_ = 0, mc = 0;
                     for (u j = 0; j < 8; j++) {
                         u v = w * 8 + j, x = x0 + (v >> 6), y = by * 8 + ((v >> 3) & 7), z = z0 + (v & 7);
-                        u el = POOLE[t][n * 512 + v];
+                        u el = POOLE[t][IX(n * 512 + v)];
                         if (el != 0 && ((el >> 2) & 63) != EAU && expose(x, y, z)) {
                             u nx = ((el >> 8) & 255) - 128, ny = ((el >> 16) & 255) - 128, nz = ((el >> 24) & 255) - 128;
                             if (nx == 0 - (u)128) { nx = 0; ny = 127; nz = 0; }
@@ -505,8 +514,8 @@ static void ranger_lumiere(int avec_ciel) {
                             if (avec_ciel) mc |= (128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8);
                         }
                     }
-                    SOLC[t][n * 64 + w] = ms_;
-                    if (avec_ciel) CIELC[t][n * 64 + w] = mc;
+                    SOLC[t][IX(n * 64 + w)] = ms_;
+                    if (avec_ciel) CIELC[t][IX(n * 64 + w)] = mc;
                 }
             }
         }
@@ -546,11 +555,11 @@ static u regarder(u ox, u oy, u oz, u dx, u dy, u dz, u profondeur, u temps) {
         u vus = 0, ouverts = 0;
         int connu = 0;
         u tt = (z >> 8) * TUILES + (x >> 8);
-        u e0 = DIRE[tt][(((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+        u e0 = DIRE[tt][IX((((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31))];
         if (e0 >= 16 && e0 < ((u)1 << 62)) {
             u iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7), dec = (iv & 7) * 8;
-            u sb = (SOLC[tt][(e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
-            if (sb >= 128) { connu = 1; vus = sb & 15; ouverts = (CIELC[tt][(e0 - 16) * 64 + (iv >> 3)] >> dec) & 15; }
+            u sb = (SOLC[tt][IX((e0 - 16) * 64 + (iv >> 3))] >> dec) & 255;
+            if (sb >= 128) { connu = 1; vus = sb & 15; ouverts = (CIELC[tt][IX((e0 - 16) * 64 + (iv >> 3))] >> dec) & 15; }
         }
         if (!connu) { vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz); ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz); }
         if (slt(0, nl)) { if (vus == 4) etat = 2; else if (vus > 0) etat = 3; }
@@ -599,7 +608,7 @@ int main(void) {
     u IMAGES = getenv("CUBES_IMAGES") ? (u)atoll(getenv("CUBES_IMAGES")) : 48;
     HCOL = calloc(MONDE * MONDE, sizeof(u));
     PENTE = calloc(MONDE * MONDE, sizeof(u));
-    for (u t = 0; t < TUILES * TUILES; t++) { DIRE[t] = calloc(32768, sizeof(u)); DIRT[t] = calloc(32768, sizeof(u)); }
+    for (u t = 0; t < TUILES * TUILES; t++) { DIRE[t] = calloc(32768 * PAS, sizeof(u)); DIRT[t] = calloc(32768 * PAS, sizeof(u)); }
     struct timespec t0, t1, ti, tf;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     preparer_sinus();

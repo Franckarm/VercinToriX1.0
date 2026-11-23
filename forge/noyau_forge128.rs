@@ -805,6 +805,19 @@ fn rapport_cylindres(n: usize, pages: usize, variables: u64, rejoue: &str) {
     }
 }
 
+/// 0.815 : le diagnostic VTX_SANS_PROMESSE=1 (les lectures des bandes non notées ; dit une fois)
+#[allow(dead_code)]
+fn sans_promesse() -> bool {
+    static S: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *S.get_or_init(|| {
+        let b = std::env::var("VTX_SANS_PROMESSE").map_or(false, |v| v == "1");
+        if b {
+            eprintln!("diagnostic : VTX_SANS_PROMESSE=1 : les lectures des bandes ne sont pas notées ; la promesse n'est pas vérifiée");
+        }
+        b
+    })
+}
+
 /// la case d'une page dans le petit cache (0.73 : 64 cases) : son numéro et son étage mêlés
 #[inline(always)]
 fn case(k: u128) -> usize {
@@ -914,9 +927,16 @@ impl Ctx {
     fn lire_lent(&mut self, a: u128, k: u128, j: usize) -> u128 {
         if self.ombre.is_some() && k >> 120 != 0 {
             let o = self.ombre.as_mut().unwrap();
-            // 0.74c : le mot lu est noté
-            let bits: *mut u64 = o.lus.entry(k).or_insert_with(|| Box::new([0u64; 1024])).as_mut_ptr();
-            unsafe { *bits.add(j >> 6) |= 1u64 << (j & 63) };
+            // 0.74c : le mot lu est noté ; 0.815 : VTX_SANS_PROMESSE=1 (un diagnostic, pour mesurer ce que coûte la
+            // promesse) : dans les bandes, les lectures ne sont plus notées (la promesse n'est plus vérifiée)
+            let bits: *mut u64 = if o.partage && sans_promesse() {
+                std::ptr::null_mut()
+            } else {
+                o.lus.entry(k).or_insert_with(|| Box::new([0u64; 1024])).as_mut_ptr()
+            };
+            if !bits.is_null() {
+                unsafe { *bits.add(j >> 6) |= 1u64 << (j & 63) };
+            }
             // 0.74b : une page que ce cylindre écrit : bloc par bloc (les siens, ouverts ; les autres, du cube commun)
             if let Some(f) = o.feuilles.get(&k) {
                 return f.lire(j);
