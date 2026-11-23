@@ -1,4 +1,4 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.806)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (21 novembre 2026, après la 0.807)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.807.zip`, `essai-0.807.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.808.zip`, `essai-0.808.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -126,7 +126,10 @@ entre deux étages pour la lumière et l'ombre, l'idée du créateur), puis la c
 `equipe_jouer`), les boucles en bandes coupées à l'exécution en quatre morceaux par cœur, la promesse vérifiée en un
 passage ; règle du créateur : rien de réglé pour une machine, tout doit valoir sur tous les processeurs. Le dépôt
 GitHub a changé de nom : `github.com/Franckarm/VercinToriX1.0` (remote mis à jour) ; pousser `vtx-0.6` à chaque
-livraison. **Prochain** : lire la mesure
+livraison. **0.807 (§90)** : le val en 720p (1280 × 720 ; il montre les cases du relief : l'argument pour le
+paysage dans le cube) ; le rapport de fusion en quaternaire. Demandé ensuite : le paysage fait dans le cube (cube de
+texture, cube d'élément, lumière, ombre par la clepsydre, reflets par l'anti-cube), en 720p ; le rassemblement des
+cœurs moins cher au-delà de 8 cœurs. **Prochain** : lire la mesure
 du créateur ; Taranis pour la scène (lectures à adresse calculée, mémoire dans
 les fonctions appelées, l'image), puis la lumière dans le rouleau en 2D (l'idée du créateur), puis le val dans le cube. **Reste** : `f()[i]` ; un LDT sans vérification
 pour le prélude (si jamais il en a besoin) ; Ogmios en vtx qui ne fige pas.

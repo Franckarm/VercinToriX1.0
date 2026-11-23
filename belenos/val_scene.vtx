@@ -13,8 +13,8 @@
 //                                           soleil ; i / k : le monter, le descendre ; Échap : finir)
 // Sans fenêtre (les essais) : --scenario rejoue des touches, et la scène s'arrête à Échap.
 
-constante W = 480;                 // l'image
-constante H = 270;
+constante W = 1280;                // l'image : 0.807, en 720p (480 × 270 jusqu'à la 0.806)
+constante H = 720;
 constante G = 512;                 // la grille du relief : G × G cases (elle se répète : on marche sans bord)
 constante MASQUE = 511;
 constante HAUT = 1048576;          // @2[HAUT + z·G + x] : la hauteur, en 1/256 d'unité
@@ -28,7 +28,8 @@ constante CIEL = 3149312;          // @2[CIEL + y] : 0.78, la couleur du ciel à
 constante ALB = 4194304;           // @2[ALB + z·G + x] : la couleur propre de la case (0xRRGGBB, sans lumière)
 constante NPAS = 400;              // les pas d'un rayon
 constante BANDE = 16;              // les lignes de la grille éclairées de nouveau à chaque image quand le soleil bouge
-constante ECHELLE = 220;           // la hauteur à l'écran d'une unité à une unité de distance
+constante ECHELLE = 587;           // la hauteur à l'écran d'une unité à une unité de distance (220 en 480 × 270 : le même champ)
+constante DISQUE = 24;             // le demi-côté du carré où se cherche le disque du soleil (9 en 480 × 270)
 
 // ------------------------------------------------------------------------------------------------------- le relief
 fonction hache(x, z) {
@@ -834,19 +835,19 @@ fonction rendre(cx, cz, ch, a, hor, az, el) {
     soit astre_az = az;
     soit astre_el = el;
     soit astre_c = rgb(255, 245, 220);
-    soit rayon2 = 64;
+    soit rayon2 = 455;
     si se .< 0 {
         astre_az = (az + 512) & 1023;
         astre_el = 0 - el;
         astre_c = rgb(225, 230, 245);
-        rayon2 = 30;
+        rayon2 = 213;
     }
     soit ase = sin1024(astre_el);
     soit ecart_s = (astre_az - a + 512) & 1023;
     si ecart_s > 512 - 85 && ecart_s < 512 + 85 && ase .> 0 {
         sx = W / 2 + (ecart_s - 512) * (W / 2) ./ 85;
         soit sy_haut = ase * ECHELLE ./ cos1024(astre_el);
-        si sy_haut < hor + 20 {
+        si sy_haut < hor + 53 {
             sy = hor - sy_haut;
             soleil_vu = 1;
         }
@@ -890,9 +891,9 @@ fonction rendre(cx, cz, ch, a, hor, az, el) {
         soit ex = x - sx;
         pour yc dans 0..haut {
             soit pc = @2[CIEL + yc];
-            si soleil_vu == 1 && (ex .< 9 && ex .> 0 - 9) {
+            si soleil_vu == 1 && (ex .< DISQUE && ex .> 0 - DISQUE) {
                 soit ey = yc - sy;
-                si ey .< 9 && ey .> 0 - 9 && ex * ex + ey * ey < rayon2 {
+                si ey .< DISQUE && ey .> 0 - DISQUE && ex * ex + ey * ey < rayon2 {
                     pc = astre_c;
                 }
             }

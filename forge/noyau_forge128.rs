@@ -352,6 +352,30 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
         v
     };
     let variables = travail(&verifier);
+    // 0.807 : sur demande (VTX_CYLINDRES), l'état de chaque mot après le passage, en quaternaire : vrai (une seule
+    // valeur nouvelle, d'un cylindre ou de plusieurs d'accord), variable (deux valeurs) ; le reste est inchangé
+    // (inconnu ; « faux », écrit puis rendu à sa valeur d'avant, ne se distingue pas d'un mot jamais touché)
+    if std::env::var("VTX_CYLINDRES").is_ok() {
+        let compter = |n: usize, t: usize| -> u64 {
+            let fs = feuilles[n];
+            let d = unsafe { std::slice::from_raw_parts(cibles[n].1 as *const u128, MOTS_PAGE) };
+            let mut vrai = 0u64;
+            for b in t * 64..t * 64 + 64 {
+                if !fs.iter().any(|f| f.ouvert(b)) {
+                    continue;
+                }
+                for j in b * 64..b * 64 + 64 {
+                    if fs.iter().filter(|f| f.ouvert(b)).any(|f| f.mots[j] != d[j]) {
+                        vrai += 1;
+                    }
+                }
+            }
+            vrai
+        };
+        let changes = travail(&compter);
+        eprintln!("mots : vrai {} (une valeur nouvelle), variable {} (deux valeurs), le reste inconnu (inchangé)",
+                  changes - variables.min(changes), variables);
+    }
     if variables > 0 {
         for (_, fs) in auteurs {
             for f in fs {

@@ -11,13 +11,14 @@
 typedef uint64_t u;
 typedef int64_t s;
 
-#define W 480
-#define H 270
+#define W 1280
+#define H 720
 #define G 512
 #define MASQUE 511
 #define NPAS 400
 #define BANDE 16
-#define ECHELLE 220
+#define ECHELLE 587
+#define DISQUE 24
 #define IMAGES 12
 
 static u HAUT[G * G], COUL[G * G], ALB[G * G];
@@ -416,14 +417,14 @@ static void rendre(u cx, u cz, u ch, u a, u hor, u az, u el) {
         CIEL[y] = rgb(r, g, b);
     }
     u sx = 0, sy = 0, soleil_vu = 0;
-    u astre_az = az, astre_el = el, astre_c = rgb(255, 245, 220), rayon2 = 64;
-    if (slt(se, 0)) { astre_az = (az + 512) & 1023; astre_el = 0 - el; astre_c = rgb(225, 230, 245); rayon2 = 30; }
+    u astre_az = az, astre_el = el, astre_c = rgb(255, 245, 220), rayon2 = 455;
+    if (slt(se, 0)) { astre_az = (az + 512) & 1023; astre_el = 0 - el; astre_c = rgb(225, 230, 245); rayon2 = 213; }
     u ase = sin1024(astre_el);
     u ecart_s = (astre_az - a + 512) & 1023;
     if (ecart_s > 512 - 85 && ecart_s < 512 + 85 && slt(0, ase)) {
         sx = W / 2 + sdiv((ecart_s - 512) * (W / 2), 85);
         u sy_haut = sdiv(ase * ECHELLE, cos1024(astre_el));
-        if (sy_haut < hor + 20) { sy = hor - sy_haut; soleil_vu = 1; }
+        if (sy_haut < hor + 53) { sy = hor - sy_haut; soleil_vu = 1; }
     }
     u sa = SINUS[a & 1023], ca = SINUS[(a + 256) & 1023];
     for (u x = 0; x < W; x++) {
@@ -450,9 +451,9 @@ static void rendre(u cx, u cz, u ch, u a, u hor, u az, u el) {
         u ex = x - sx;
         for (u yc = 0; yc < haut; yc++) {
             u pc = CIEL[yc];
-            if (soleil_vu == 1 && slt(ex, 9) && slt(0 - 9, ex)) {
+            if (soleil_vu == 1 && slt(ex, DISQUE) && slt(0 - DISQUE, ex)) {
                 u ey = yc - sy;
-                if (slt(ey, 9) && slt(0 - 9, ey) && ex * ex + ey * ey < rayon2) pc = astre_c;
+                if (slt(ey, DISQUE) && slt(0 - DISQUE, ey) && ex * ex + ey * ey < rayon2) pc = astre_c;
             }
             ECRAN[yc * W + x] = pc;
         }

@@ -3926,3 +3926,27 @@ langage doit marcher et s'optimiser sur toutes sortes de processeurs : rien n'es
 - **Mesures, ici (deux cœurs)** : le banc de 14 à environ 11,5 ms par image ; la vérification, de 0,3 à 0,2 ms par
   boucle (à douze cœurs) ; un cœur seul, 15 à 16 ms. Les bandes vérifiées sur 1, 5, 7, 24 et 64 cœurs : la même sortie
   que Lugus quand la promesse tient, l'arrêt quand elle est rompue. La forge conforme ; l'épreuve conforme.
+
+## 90. Le val en 720p, et ce qu'il montre (23 novembre, 0.807)
+
+**Mesuré chez le créateur (0.806, 24 fils)** : 16,1 ms sur un cœur, 15,5 sur deux, 13,5 sur quatre, **10,1 sur huit**,
+10,5 sur seize, 13,3 sur tous. Le détail : une image fait cinq ou six boucles en bandes ; chacune passe 0,3 à 2,6 ms dans
+les cœurs, puis 0,7 à 1,7 ms à rassembler et vérifier. Au-delà de huit cœurs, c'est ce rassemblement qui coûte, pas le
+calcul : le prochain travail du vergobret (rendre moins de cartes de bits, ne vérifier que les pages partagées), sans
+rien régler pour une machine. Noté aussi : quand Taranis prendra l'image, le vergobret gardera des cœurs libres pour les
+autres tâches d'un programme (la marche, le son, les entrées).
+
+- **720p** (`val_scene.vtx`, `val_ref.c`) : 1280 × 720 (480 × 270 jusqu'ici), le même champ (`ECHELLE` 587, le disque
+  du soleil à l'échelle : `DISQUE`). Toute la lumière refaite plus l'image : en C, 13,8 ms (10,4 en 480 × 270) ;
+  forgé, ici, 25 ms sur un cœur, 20 sur deux. Empreinte : 1937855438348925206.
+- **Ce que montre le 720p** : les cases du relief. La grille n'a que 512 × 512 cases, et le rendu prend chaque case
+  telle quelle : de gros carrés de couleur et des marches sur les pentes. En 480 × 270 ça passait ; en 720p, la limite
+  n'est plus l'écran mais le relief. C'est l'argument pour le paysage fait dans le cube (des points de surface plus
+  fins, la couleur et la matière de chacun), plutôt que pour un relief mêlé entre les cases.
+- **Les quatre valeurs de la fusion** (la question du créateur : deux cylindres ne devraient-ils pas avoir 3 ou 4
+  valeurs ?) : après un passage en cylindres, chaque mot est inconnu (personne n'y a touché), faux (écrit puis rendu à
+  sa valeur), vrai (une seule valeur nouvelle, d'un cylindre ou de plusieurs d'accord) ou variable (deux valeurs : la
+  seule qui oblige à rejouer). Le rapport (`VTX_CYLINDRES`) compte désormais vrai et variable ; faux ne se distingue
+  pas d'un mot jamais touché sans noter chaque écriture (ce qui coûterait) ; le compte ne se fait que sur demande.
+- **La clepsydre, précisée par le créateur** : des points de référence pour l'ombre (le point de surface, ses quatre
+  points vers la source, ses quatre points d'ombre), pas un éclairage général.
