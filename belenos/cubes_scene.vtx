@@ -1113,6 +1113,76 @@ fonction eclairer(ox, oy, oz, dx, dy, dz, t, om, jeu) {
     retour r | (g << 12) | (b << 24);
 }
 
+// 0.813 : l'ombre et la lumière d'un même étage (l'idée du créateur) : le point, son élément, sa normale et sa pente
+// face au soleil calculés une seule fois. Rend comme ombrer, et pour un point de terre sa couleur avant la brume au-dessus
+// (om | couleur << 16) : le même résultat que ombrer puis eclairer
+fonction clarte(ox, oy, oz, dx, dy, dz, t, jeu) {
+    si t == MANQUE {
+        retour 0;
+    }
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit e = element(x, y, z);
+    si ((e >> 2) & 63) == EAU {
+        retour 3;
+    }
+    soit nx = ((e >> 8) & 255) - 128;
+    soit ny = ((e >> 16) & 255) - 128;
+    soit nz = ((e >> 24) & 255) - 128;
+    si nx == 0 - 128 {
+        nx = 0;
+        ny = 127;
+        nz = 0;
+    }
+    soit so = SOLEILS + 16 * jeu;
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
+    // l'ombre : la clepsydre et le ciel, lus dans les calques (ou calculés sur place pour un point intérieur)
+    soit vus = 0;
+    soit ouverts = 0;
+    soit connu = 0;
+    soit tt = (z >> 8) * TUILES + (x >> 8);
+    soit e0 = @2[((FELT + tt) << 24) + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    si e0 >= 16 && e0 < (1 << 62) {
+        soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
+        soit dec = (iv & 7) * 8;
+        soit sb = (@2[((FSOL + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+        si sb >= 128 {
+            connu = 1;
+            vus = sb & 15;
+            ouverts = (@2[((FCIEL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 15;
+        }
+    }
+    si connu == 0 {
+        vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz, jeu);
+        ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
+    }
+    soit etat = 1;
+    si nl .> 0 {
+        si vus == 4 {
+            etat = 2;
+        } sinon si vus > 0 {
+            etat = 3;
+        }
+    } sinon {
+        nl = 0;
+    }
+    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
+    soit alb = couleur(x, y, z);
+    soit ciel_part = 40 + ouverts * 30;
+    soit soleil = nl * vus / 4 * 256 / 65536;
+    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
+    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
+    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
+    soit r = ((alb >> 16) & 255) * lr / 200;
+    soit g = ((alb >> 8) & 255) * lg2 / 200;
+    soit b = (alb & 255) * lb / 200;
+    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8) | ((r | (g << 12) | (b << 24)) << 16);
+}
+
 // Divona : la couleur d'un point d'eau, avant la brume (trois voies sur 12 bits) : le monde renvoyé (le rayon
 // retourné, le monde en miroir sous la surface), ridé par le vent, plus fort en rasant
 fonction divona(ox, oy, oz, dx, dy, dz, t, profondeur, temps, jeu) {
@@ -1172,11 +1242,11 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps, jeu) {
     si t == MANQUE {
         retour ciel(dx, dy, dz, jeu);
     }
-    soit om = ombrer(ox, oy, oz, dx, dy, dz, t, jeu);
+    soit om = clarte(ox, oy, oz, dx, dy, dz, t, jeu);
     si (om & 2) != 0 {
         retour (2 << 24) | brumer(divona(ox, oy, oz, dx, dy, dz, t, profondeur, temps, jeu), t);
     }
-    retour (((om >> 2) & 3) << 24) | brumer(eclairer(ox, oy, oz, dx, dy, dz, t, om, jeu), t);
+    retour (((om >> 2) & 3) << 24) | brumer(om >> 16, t);
 }
 
 // une image : l'œil en (cx, cy, cz) (en 1/65536 de point), tourné vers l'angle lacet (sur 1024), penché de tangage ;

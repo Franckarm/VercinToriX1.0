@@ -1,4 +1,4 @@
-# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.812)
+# Passation : pour reprendre Vercintorix dans une nouvelle conversation (23 novembre 2026, après la 0.813)
 
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.813.zip`, `essai-0.813.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.814.zip`, `essai-0.814.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -147,8 +147,10 @@ la promesse jugée passe après) ; le C compilable par MSVC. Chez le créateur :
 tapis à cinq images (`belenos/cubes_tapis.vtx` : cache, image, ombre, lumière, Divona ; une boucle en bandes par tour ;
 trois jeux de soleil), l'ARN du tapis lu par le vergobret (il choisit : déplié quand le soleil bouge, 28 % de moins ; un
 seul étage sinon) ; le vergobret qui apprend (`vergobret.savoir` : il se souvient, devine par un voisin, doute en
-quatre valeurs). Le langage, les compilateurs et Ogmios n'ont pas bougé (la demande du créateur). **Prochain** : lire
-la mesure du créateur ; le vergobret qui choisit l'ARN en mesurant ; puis
+quatre valeurs). Le langage, les compilateurs et Ogmios n'ont pas bougé (la demande du créateur). **0.813 (§97)** : l'ombre et la
+lumière en un étage, la clarté (le tapis à quatre étages, 715 → 678 ms ; la même image) ; proposé : le génome du tapis
+(l'ARN muté, l'empreinte pour juge, le savoir par machine). **Prochain** : lire
+la mesure du créateur ; le vergobret qui choisit l'ARN en mesurant (le génome du tapis, si le créateur le veut) ; puis
 les paquets de rayons (un type « quatre voies » dans le mot de 128 bits : à décider) ; puis les coques (le trompe-l'œil du créateur : l'anti-cube à fréquence négative qui
 montre de loin ce qui est dedans ; la transition fluide entre cubes ; Divona qui lit les coques) ; le calque du soleil
 refait près de l'œil seulement. Ensuite : Taranis pour la scène (lectures à adresse calculée, mémoire dans

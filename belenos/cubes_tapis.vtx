@@ -1,4 +1,6 @@
-// Belenos : le tapis roulant à cinq images (0.812), lu par le vergobret.
+// Belenos : le tapis roulant à cinq images (0.812), lu par le vergobret. 0.813 : l'ombre et la lumière n'y font plus
+// qu'un étage, la clarté (l'idée du créateur) : quatre étages (cache, image, clarté, Divona), une image sort trois tours
+// après son départ ; les places restent cinq.
 //
 // L'idée du créateur : un tapis d'étages ; chaque image passe par cinq étages, un par tour : le cache (le calque du
 // soleil, refait par cinquièmes), l'image (le rayon de l'œil : le point touché), l'ombre (ce que le point reçoit), la
@@ -32,22 +34,23 @@ constante E_OMBRE = 3;
 constante E_LUMIERE = 4;
 constante E_DIVONA = 5;
 constante E_TOUT = 6;              // les quatre derniers d'un coup, pour chaque point
+constante E_CLARTE = 7;            // 0.813 : l'ombre et la lumière en un seul étage
 
 // ------------------------------------------------------------------------------------------------ le vergobret
 // transcrire : le vergobret choisit le tapis selon ce qu'il y a à faire. Du travail pour le cache (le soleil bouge :
-// un calque à refaire) : le tapis à cinq étages, un tour de retard de l'un à l'autre, le calque refait par cinquièmes.
+// un calque à refaire) : le tapis à quatre étages, un tour de retard de l'un à l'autre, le calque refait par cinquièmes.
 // Rien à refaire : un seul étage, tout d'un coup (le rayon, l'ombre, la lumière et Divona pour chaque point, comme
 // rendre_cubes) : mesuré, le tapis y coûte 7 à 9 % de plus (trois mots par point passés d'un étage à l'autre) et n'y
 // gagne rien.
 fonction vergobret_transcrire(travail) {
     si travail == 1 {
-        @2[ARN] = 5;
+        // 0.813 : quatre étages ; l'ombre et la lumière n'en font qu'un (la clarté)
+        @2[ARN] = 4;
         @2[ARN + 1] = E_CACHE;
         @2[ARN + 3] = E_IMAGE;
-        @2[ARN + 5] = E_OMBRE;
-        @2[ARN + 7] = E_LUMIERE;
-        @2[ARN + 9] = E_DIVONA;
-        pour e dans 0..5 {
+        @2[ARN + 5] = E_CLARTE;
+        @2[ARN + 7] = E_DIVONA;
+        pour e dans 0..4 {
             @2[ARN + 2 + 2 * e] = e;
         }
     } sinon {
@@ -92,6 +95,8 @@ fonction vergobret_tour(k, n) {
                     etage_divona(y, i % 5);
                 } sinon si code == E_TOUT {
                     etage_tout(y, i % 5);
+                } sinon si code == E_CLARTE {
+                    etage_clarte(y, i % 5);
                 }
             }
         }
@@ -181,6 +186,21 @@ fonction etage_lumiere(y, s) {
                                 ((d >> 40) & 1048575) - 65536, @2[p], om, jeu);
             @2[p + 2] = om | (col << 16);
         }
+    }
+}
+
+// la clarté : l'ombre et la lumière de chaque point de la rangée, en un seul étage
+fonction etage_clarte(y, s) {
+    soit c = CAMS + 16 * s;
+    soit cx = @2[c];
+    soit cy = @2[c + 1];
+    soit cz = @2[c + 2];
+    soit jeu = @2[c + 12];
+    pour x dans 0..W {
+        soit p = case_tapis(s, x, y);
+        soit d = @2[p + 1];
+        @2[p + 2] = clarte(cx, cy, cz, (d & 1048575) - 65536, ((d >> 20) & 1048575) - 65536, ((d >> 40) & 1048575) - 65536,
+                           @2[p], jeu);
     }
 }
 

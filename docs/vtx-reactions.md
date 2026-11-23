@@ -4208,3 +4208,25 @@ devienne une mini IA.
 - **Ensuite, pour qu'il devienne plus** : qu'il choisisse l'ARN en mesurant (le tapis ou tout d'un coup, essayés et
   retenus), et non par une règle ; qu'il apprenne la taille des morceaux et l'ordre des étages ; le savoir d'une machine
   servant aux programmes nouveaux.
+
+## 97. L'ombre et la lumière en un étage : la clarté (23 novembre, 0.813)
+
+**Le créateur** : et si on fusionnait ombre et lumière, un étage qui régit les deux ? Le vergobret ressemble au cube
+mère gérant ses cubes d'information, mais par étage.
+
+- **La clarté** (`clarte` dans `cubes_scene.vtx`, `E_CLARTE` dans le tapis) : le point touché, son élément, sa
+  normale et sa pente face au soleil se calculaient deux fois (dans `ombrer` puis dans `eclairer`) ; ils se calculent
+  une fois, et le mot de l'ombre ne passe plus d'un tour à l'autre. `regarder` s'en sert aussi. Les mêmes images (les
+  empreintes 7832993576801426321 et -8398956841451395315 inchangées).
+- **Mesuré ici (deux cœurs)** : le soleil qui tourne sur le tapis, **715 → 678 ms** par image ; le tapis a quatre
+  étages, une image sort trois tours après son départ (au lieu de quatre). Le film classique ne change pas de façon
+  mesurable (600–612 ms : le tracé domine).
+- **Pour faire du vergobret une IA, la piste proposée (le génome du tapis)** : l'ARN devient un génome dont les gènes
+  peuvent varier (le nombre d'étages et leurs fusions, leur ordre, leurs retards, le nombre de cœurs, la taille des
+  morceaux, quels calques se refont et à quel rythme) ; à chaque lancement, le vergobret joue le meilleur ARN connu et
+  essaie une mutation sur une petite part des images ; il garde ce qui va plus vite à image égale (l'empreinte comme
+  juge : une mutation qui change l'image est refusée), et le range dans son savoir, par programme et par machine. C'est
+  de la sélection, honnêtement : une recherche avec mémoire (ce que fait FFTW avec sa « sagesse », ou ATLAS) ; la part de
+  vtx : le génome est l'ARN du programme, le juge est l'empreinte, le doute est quaternaire. Ensuite seulement, quand le
+  savoir sera assez grand, une petite règle apprise (un perceptron en entiers, écrit en vtx) pour deviner le bon ARN
+  d'un programme nouveau à partir de ce qu'il lit et écrit (la partition).
