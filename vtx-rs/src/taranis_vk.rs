@@ -220,6 +220,9 @@ pub struct Carte {
     dsl: H,
     pl: H,
     pipelines: Vec<(usize, H)>,
+    // 0.816 : le mode pages (cinq liaisons : les pages, les paramètres, la table, les marques, les auteurs)
+    dsl5: H,
+    pl5: H,
     cpool: H,
     cb: Ptr,
     fence: H,
@@ -262,7 +265,7 @@ unsafe fn prendre() -> Result<Carte, String> {
     };
     let mut c = Carte { gipa, instance: null_mut(), pd: null_mut(), dev: null_mut(), file: null_mut(), famille: 0,
         mp: std::mem::zeroed(), groupes_max: 65535, stockage_max: 1 << 27, nom: String::new(), dsl: 0, pl: 0,
-        pipelines: Vec::new(), cpool: 0, cb: null_mut(), fence: 0 };
+        pipelines: Vec::new(), dsl5: 0, pl5: 0, cpool: 0, cb: null_mut(), fence: 0 };
     let nom = b"Vercintorix Taranis\0";
     let app = ApplicationInfo { sType: ST_APPLICATION_INFO, pNext: null(), pApplicationName: nom.as_ptr() as _,
         applicationVersion: 1, pEngineName: nom.as_ptr() as _, engineVersion: 1, apiVersion: API_1_0 };
@@ -346,6 +349,30 @@ unsafe fn prendre() -> Result<Carte, String> {
 
 impl Carte {
     unsafe fn pipeline(&mut self, spv: &[u32]) -> Result<H, String> {
+        let pl = self.pl;
+        self.pipeline_avec(spv, pl)
+    }
+
+    /// 0.816 : la mise en page à cinq tampons (faite la première fois)
+    unsafe fn mise_en_page5(&mut self) -> Result<H, String> {
+        if self.pl5 != 0 {
+            return Ok(self.pl5);
+        }
+        let liaisons: Vec<DescriptorSetLayoutBinding> = (0..5u32).map(|k| DescriptorSetLayoutBinding { binding: k,
+            descriptorType: DESCRIPTOR_STORAGE_BUFFER, descriptorCount: 1, stageFlags: STAGE_COMPUTE,
+            pImmutableSamplers: null() }).collect();
+        let create_dsl = vkfn!(self, "vkCreateDescriptorSetLayout", unsafe extern "system" fn(Ptr, *const DescriptorSetLayoutCreateInfo, *const c_void, *mut H) -> R);
+        let dslci = DescriptorSetLayoutCreateInfo { sType: ST_DESCRIPTOR_SET_LAYOUT_CREATE_INFO, pNext: null(), flags: 0,
+            bindingCount: 5, pBindings: liaisons.as_ptr() };
+        verifie(create_dsl(self.dev, &dslci, null(), &mut self.dsl5), "vkCreateDescriptorSetLayout")?;
+        let create_pl = vkfn!(self, "vkCreatePipelineLayout", unsafe extern "system" fn(Ptr, *const PipelineLayoutCreateInfo, *const c_void, *mut H) -> R);
+        let plci = PipelineLayoutCreateInfo { sType: ST_PIPELINE_LAYOUT_CREATE_INFO, pNext: null(), flags: 0, setLayoutCount: 1,
+            pSetLayouts: &self.dsl5, pushConstantRangeCount: 0, pPushConstantRanges: null() };
+        verifie(create_pl(self.dev, &plci, null(), &mut self.pl5), "vkCreatePipelineLayout")?;
+        Ok(self.pl5)
+    }
+
+    unsafe fn pipeline_avec(&mut self, spv: &[u32], pl: H) -> Result<H, String> {
         let cle = spv.as_ptr() as usize;
         if let Some(&(_, p)) = self.pipelines.iter().find(|(k, _)| *k == cle) {
             return Ok(p);
@@ -359,7 +386,7 @@ impl Carte {
         let cpci = ComputePipelineCreateInfo { sType: ST_COMPUTE_PIPELINE_CREATE_INFO, pNext: null(), flags: 0,
             stage: PipelineShaderStageCreateInfo { sType: ST_PIPELINE_SHADER_STAGE_CREATE_INFO, pNext: null(), flags: 0,
                 stage: STAGE_COMPUTE, module, pName: b"main\0".as_ptr() as _, pSpecializationInfo: null() },
-            layout: self.pl, basePipelineHandle: 0, basePipelineIndex: -1 };
+            layout: pl, basePipelineHandle: 0, basePipelineIndex: -1 };
         let mut p: H = 0;
         verifie(create_cp(self.dev, 0, 1, &cpci, null(), &mut p), "vkCreateComputePipelines (le SPIR-V refusé ?)")?;
         self.pipelines.push((cle, p));
@@ -503,5 +530,138 @@ impl Carte {
         }
         let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
         Ok([ms(t0, t1), ms(t1, t2), t2.elapsed().as_secs_f64() * 1e3])
+    }
+}
+
+impl Carte {
+    /// 0.816 : le noyau en mode pages sur `fils` fils : les pages montent (et redescendent), la table et les paramètres
+    /// aussi ; les marques (lue, écrite) de chaque page redescendent ; les auteurs restent dans la carte (remis à zéro).
+    /// Rend les millisecondes (préparer et monter, la carte, redescendre) et les marques.
+    pub fn lancer_pages(&mut self, spv: &[u32], pages: &mut [u64], table: &[u32], params: &mut [u64], fils: u64)
+                        -> Result<([f64; 3], Vec<u32>), String> {
+        unsafe { self.lancer_pages_(spv, pages, table, params, fils) }
+    }
+
+    unsafe fn lancer_pages_(&mut self, spv: &[u32], pages: &mut [u64], table: &[u32], params: &mut [u64], fils: u64)
+                            -> Result<([f64; 3], Vec<u32>), String> {
+        let t0 = std::time::Instant::now();
+        let nplaces = pages.len() / 65536;
+        let tf = (pages.len().max(1) * 8) as u64;
+        let tp = (params.len() * 8) as u64;
+        let tt = (table.len() * 4) as u64;
+        // les marques : lue, écrite, pour chaque page ; puis la demande de chaque page absente (65536 + 1)
+        let nmarques = nplaces.max(1) * 2 + 65537;
+        let tm = (nmarques * 4) as u64;
+        let ta = (nplaces.max(1) * 65536 * 4) as u64;
+        if tf > self.stockage_max || ta > self.stockage_max {
+            return Err(format!("pages de {} octets : la carte en prend {} au plus par tampon", tf, self.stockage_max));
+        }
+        let groupes = fils.div_ceil(LARGEUR).max(1);
+        let gx = groupes.min(self.groupes_max);
+        let gy = groupes.div_ceil(gx);
+        if gy > self.groupes_max {
+            return Err("trop de fils".into());
+        }
+        params[5] = gx * LARGEUR;
+        let pl = self.mise_en_page5()?;
+        let pipeline = self.pipeline_avec(spv, pl)?;
+        let stock = BUFFER_USAGE_STORAGE | BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST;
+        let (bdev, mdev) = self.tampon(tf, stock, MEM_DEVICE_LOCAL)?;
+        let (baut, maut) = self.tampon(ta, stock, MEM_DEVICE_LOCAL)?;
+        let (bpas, mpas) = match self.tampon(tf, BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT | MEM_HOST_CACHED) {
+            Ok(x) => x,
+            Err(_) => self.tampon(tf, BUFFER_USAGE_TRANSFER_SRC | BUFFER_USAGE_TRANSFER_DST, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?,
+        };
+        let (bpar, mpar) = self.tampon(tp, BUFFER_USAGE_STORAGE, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
+        let (btab, mtab) = self.tampon(tt, BUFFER_USAGE_STORAGE, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
+        let (bmar, mmar) = self.tampon(tm, BUFFER_USAGE_STORAGE, MEM_HOST_VISIBLE | MEM_HOST_COHERENT)?;
+        let map = vkfn!(self, "vkMapMemory", unsafe extern "system" fn(Ptr, H, u64, u64, u32, *mut *mut c_void) -> R);
+        let (mut vf, mut vp, mut vt, mut vm): (*mut c_void, *mut c_void, *mut c_void, *mut c_void) = (null_mut(), null_mut(), null_mut(), null_mut());
+        verifie(map(self.dev, mpas, 0, tf, 0, &mut vf), "vkMapMemory")?;
+        verifie(map(self.dev, mpar, 0, tp, 0, &mut vp), "vkMapMemory")?;
+        verifie(map(self.dev, mtab, 0, tt, 0, &mut vt), "vkMapMemory")?;
+        verifie(map(self.dev, mmar, 0, tm, 0, &mut vm), "vkMapMemory")?;
+        std::ptr::copy_nonoverlapping(pages.as_ptr(), vf as *mut u64, pages.len());
+        std::ptr::copy_nonoverlapping(params.as_ptr(), vp as *mut u64, params.len());
+        std::ptr::copy_nonoverlapping(table.as_ptr(), vt as *mut u32, table.len());
+        std::ptr::write_bytes(vm as *mut u8, 0, tm as usize);
+        let taille_pool = DescriptorPoolSize { ty: DESCRIPTOR_STORAGE_BUFFER, descriptorCount: 5 };
+        let create_dp = vkfn!(self, "vkCreateDescriptorPool", unsafe extern "system" fn(Ptr, *const DescriptorPoolCreateInfo, *const c_void, *mut H) -> R);
+        let dpci = DescriptorPoolCreateInfo { sType: ST_DESCRIPTOR_POOL_CREATE_INFO, pNext: null(), flags: 0, maxSets: 1,
+            poolSizeCount: 1, pPoolSizes: &taille_pool };
+        let mut dp: H = 0;
+        verifie(create_dp(self.dev, &dpci, null(), &mut dp), "vkCreateDescriptorPool")?;
+        let alloc_ds = vkfn!(self, "vkAllocateDescriptorSets", unsafe extern "system" fn(Ptr, *const DescriptorSetAllocateInfo, *mut H) -> R);
+        let dsai = DescriptorSetAllocateInfo { sType: ST_DESCRIPTOR_SET_ALLOCATE_INFO, pNext: null(), descriptorPool: dp,
+            descriptorSetCount: 1, pSetLayouts: &self.dsl5 };
+        let mut ds: H = 0;
+        verifie(alloc_ds(self.dev, &dsai, &mut ds), "vkAllocateDescriptorSets")?;
+        let infos = [DescriptorBufferInfo { buffer: bdev, offset: 0, range: tf },
+                     DescriptorBufferInfo { buffer: bpar, offset: 0, range: tp },
+                     DescriptorBufferInfo { buffer: btab, offset: 0, range: tt },
+                     DescriptorBufferInfo { buffer: bmar, offset: 0, range: tm },
+                     DescriptorBufferInfo { buffer: baut, offset: 0, range: ta }];
+        let ecr = [0u32, 1, 2, 3, 4].map(|k| WriteDescriptorSet { sType: ST_WRITE_DESCRIPTOR_SET, pNext: null(), dstSet: ds,
+            dstBinding: k, dstArrayElement: 0, descriptorCount: 1, descriptorType: DESCRIPTOR_STORAGE_BUFFER,
+            pImageInfo: null(), pBufferInfo: &infos[k as usize], pTexelBufferView: null() });
+        let update_ds = vkfn!(self, "vkUpdateDescriptorSets", unsafe extern "system" fn(Ptr, u32, *const WriteDescriptorSet, u32, *const c_void));
+        update_ds(self.dev, 5, ecr.as_ptr(), 0, null());
+        let reset_pool = vkfn!(self, "vkResetCommandPool", unsafe extern "system" fn(Ptr, H, u32) -> R);
+        let begin = vkfn!(self, "vkBeginCommandBuffer", unsafe extern "system" fn(Ptr, *const CommandBufferBeginInfo) -> R);
+        let bind_p = vkfn!(self, "vkCmdBindPipeline", unsafe extern "system" fn(Ptr, u32, H));
+        let bind_ds = vkfn!(self, "vkCmdBindDescriptorSets", unsafe extern "system" fn(Ptr, u32, H, u32, u32, *const H, u32, *const u32));
+        let dispatch = vkfn!(self, "vkCmdDispatch", unsafe extern "system" fn(Ptr, u32, u32, u32));
+        let barrier = vkfn!(self, "vkCmdPipelineBarrier", unsafe extern "system" fn(Ptr, u32, u32, u32, u32, *const MemoryBarrier, u32, *const c_void, u32, *const c_void));
+        let copy = vkfn!(self, "vkCmdCopyBuffer", unsafe extern "system" fn(Ptr, H, H, u32, *const BufferCopy));
+        let fill = vkfn!(self, "vkCmdFillBuffer", unsafe extern "system" fn(Ptr, H, u64, u64, u32));
+        let end = vkfn!(self, "vkEndCommandBuffer", unsafe extern "system" fn(Ptr) -> R);
+        let submit = vkfn!(self, "vkQueueSubmit", unsafe extern "system" fn(Ptr, u32, *const SubmitInfo, H) -> R);
+        let wait = vkfn!(self, "vkWaitForFences", unsafe extern "system" fn(Ptr, u32, *const H, u32, u64) -> R);
+        let reset_f = vkfn!(self, "vkResetFences", unsafe extern "system" fn(Ptr, u32, *const H) -> R);
+        verifie(reset_pool(self.dev, self.cpool, 0), "vkResetCommandPool")?;
+        let cbbi = CommandBufferBeginInfo { sType: ST_COMMAND_BUFFER_BEGIN_INFO, pNext: null(), flags: 1, pInheritanceInfo: null() };
+        verifie(begin(self.cb, &cbbi), "vkBeginCommandBuffer")?;
+        let region = BufferCopy { srcOffset: 0, dstOffset: 0, size: tf };
+        copy(self.cb, bpas, bdev, 1, &region);
+        fill(self.cb, baut, 0, ta, 0);
+        let b1 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE,
+            dstAccessMask: ACCESS_SHADER_READ | ACCESS_SHADER_WRITE };
+        barrier(self.cb, STAGE_TRANSFER, STAGE_COMPUTE_SHADER, 0, 1, &b1, 0, null(), 0, null());
+        bind_p(self.cb, BIND_POINT_COMPUTE, pipeline);
+        bind_ds(self.cb, BIND_POINT_COMPUTE, pl, 0, 1, &ds, 0, null());
+        dispatch(self.cb, gx as u32, gy as u32, 1);
+        let b2 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_SHADER_WRITE,
+            dstAccessMask: ACCESS_TRANSFER_READ | ACCESS_HOST_READ };
+        barrier(self.cb, STAGE_COMPUTE_SHADER, STAGE_TRANSFER | STAGE_HOST, 0, 1, &b2, 0, null(), 0, null());
+        copy(self.cb, bdev, bpas, 1, &region);
+        let b3 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE, dstAccessMask: ACCESS_HOST_READ };
+        barrier(self.cb, STAGE_TRANSFER, STAGE_HOST, 0, 1, &b3, 0, null(), 0, null());
+        verifie(end(self.cb), "vkEndCommandBuffer")?;
+        let si = SubmitInfo { sType: ST_SUBMIT_INFO, pNext: null(), waitSemaphoreCount: 0, pWaitSemaphores: null(),
+            pWaitDstStageMask: null(), commandBufferCount: 1, pCommandBuffers: &self.cb, signalSemaphoreCount: 0,
+            pSignalSemaphores: null() };
+        let t1 = std::time::Instant::now();
+        verifie(submit(self.file, 1, &si, self.fence), "vkQueueSubmit")?;
+        verifie(wait(self.dev, 1, &self.fence, 1, 120_000_000_000), "vkWaitForFences")?;
+        verifie(reset_f(self.dev, 1, &self.fence), "vkResetFences")?;
+        let t2 = std::time::Instant::now();
+        std::ptr::copy_nonoverlapping(vf as *const u64, pages.as_mut_ptr(), pages.len());
+        std::ptr::copy_nonoverlapping(vp as *const u64, params.as_mut_ptr(), params.len());
+        let mut marques = vec![0u32; nmarques];
+        std::ptr::copy_nonoverlapping(vm as *const u32, marques.as_mut_ptr(), nmarques);
+        let unmap = vkfn!(self, "vkUnmapMemory", unsafe extern "system" fn(Ptr, H));
+        let destroy_b = vkfn!(self, "vkDestroyBuffer", unsafe extern "system" fn(Ptr, H, *const c_void));
+        let free_m = vkfn!(self, "vkFreeMemory", unsafe extern "system" fn(Ptr, H, *const c_void));
+        let destroy_dp = vkfn!(self, "vkDestroyDescriptorPool", unsafe extern "system" fn(Ptr, H, *const c_void));
+        for m in [mpas, mpar, mtab, mmar] {
+            unmap(self.dev, m);
+        }
+        destroy_dp(self.dev, dp, null());
+        for (b, m) in [(bdev, mdev), (baut, maut), (bpas, mpas), (bpar, mpar), (btab, mtab), (bmar, mmar)] {
+            destroy_b(self.dev, b, null());
+            free_m(self.dev, m, null());
+        }
+        let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
+        Ok(([ms(t0, t1), ms(t1, t2), t2.elapsed().as_secs_f64() * 1e3], marques))
     }
 }

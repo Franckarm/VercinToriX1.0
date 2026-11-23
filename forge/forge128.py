@@ -581,7 +581,7 @@ class Forge(V.Generateur):
         self.ligne("{")
         self.niveau += 1
         self.ligne("let mut fait = false;")
-        self.vers_la_carte(notes)
+        choix = self.vers_la_carte(notes)
         self.ligne("if !fait && cylindres_voulus() > 1 {")
         self.niveau += 1
         self.ligne("let t0 = std::time::Instant::now();")
@@ -599,6 +599,8 @@ class Forge(V.Generateur):
             self.instr(st)
         self.niveau -= 1
         self.ligne("}")
+        if choix:
+            self.ligne(f"if c.ombre.is_none() {{ {choix[0]}.noter(choix_carte, choix_t0.elapsed(), {choix[1]}); }}")
         self.niveau -= 1
         self.ligne("}")
 
@@ -663,12 +665,48 @@ class Forge(V.Generateur):
             return
         st = notes[0]
         var, corps = st[1], st[4]
+        pages = False
         try:
             spv, dehors, acces = noyau_vtx.Noyau(self, var, corps).compiler()
         except noyau_vtx.PasPourLaCarte as e:
+            # 0.816 : sinon, le mode pages (tout l'étage 2 par la table des pages)
+            if os.environ.get("VTX_PAGES") == "0":
+                if os.environ.get("VTX_TARANIS"):
+                    print(f"taranis : la boucle de la ligne {st[5]} reste au processeur : {e}", file=sys.stderr)
+                return
+            try:
+                spv, dehors, acces = noyau_vtx.Noyau(self, var, corps, pages=True).compiler()
+                pages = True
+            except noyau_vtx.PasPourLaCarte as e2:
+                if os.environ.get("VTX_TARANIS"):
+                    print(f"taranis : la boucle de la ligne {st[5]} reste au processeur : {e} ; en pages : {e2}",
+                          file=sys.stderr)
+                return
             if os.environ.get("VTX_TARANIS"):
-                print(f"taranis : la boucle de la ligne {st[5]} reste au processeur : {e}", file=sys.stderr)
-            return
+                print(f"taranis : la boucle de la ligne {st[5]} va à la carte, en pages", file=sys.stderr)
+        if pages:
+            k = len(self.noyaux)
+            self.noyaux.append(spv)
+            v = f"v_{ident(var)}"
+            ext = ", ".join(f"v_{ident(n)}" for n in dehors)
+            # 0.816 : le vergobret choisit la carte ou le processeur en mesurant (Choix) ; le temps se note à la fin de
+            # la boucle (notes_en_cylindres), quel que soit le chemin
+            self.nchoix = getattr(self, "nchoix", 0) + 1
+            site = f"CHOIX_{self.nchoix}"
+            self.choix = getattr(self, "choix", []) + [site]
+            self.ligne(f"let choix_t0 = std::time::Instant::now();")
+            self.ligne(f"let choix_carte = {site}.carte_voulue();")
+            self.ligne("if choix_carte {")
+            self.niveau += 1
+            self.ligne(f"let ta: u128 = {self.val(st[2], 'e')};")
+            self.ligne(f"let tb: u128 = {self.val(notes[-1][3], 'e')};")
+            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{k}, ta, tb, &[{ext}]) {{")
+            self.ligne(f"    fait = true;")
+            self.ligne(f"    {v} = tb;")
+            self.ligne("}")
+            self.niveau -= 1
+            self.ligne("}")
+            return (site, st[5])
         k = len(self.noyaux)
         self.noyaux.append(spv)
         v = f"v_{ident(var)}"
@@ -1437,6 +1475,9 @@ def programme_rust(src, dossier=None, nom="programme"):
     # 0.810 : le réglage de chaque boucle « en bandes » (le vergobret mesure)
     for r, h in sorted(set(getattr(fo, "reglages", []))):
         s.append(f"#[allow(dead_code)]\nstatic {r}: Reglage = Reglage::neuf({h}u64);")
+    # 0.816 : le choix de la carte ou du processeur, pour chaque boucle qui sait aller à la carte
+    for r in sorted(set(getattr(fo, "choix", []))):
+        s.append(f"#[allow(dead_code)]\nstatic {r}: Choix = Choix::neuf();")
     for k, spv in enumerate(fo.noyaux):
         mots = [int.from_bytes(spv[i:i + 4], "little") for i in range(0, len(spv), 4)]
         s.append(f"#[allow(dead_code)]\nstatic SPV{k}: [u32; {len(mots)}] = [" + ",".join(map(str, mots)) + "];")

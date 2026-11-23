@@ -436,6 +436,59 @@ impl Reglage {
     }
 }
 
+/// 0.816 : le vergobret choisit entre la carte graphique et le processeur, pour chaque boucle qui sait aller à la
+/// carte (le mode pages) : un passage sur la carte pour la chauffer (le noyau se prépare, les pages se créent), un
+/// passage sur la carte mesuré, un au processeur mesuré ; puis le plus rapide. VTX_CARTE=1 : toujours la carte ;
+/// VTX_CARTE=0 : jamais ; VTX_REGLAGE=1 : il dit son choix.
+#[allow(dead_code)]
+pub struct Choix {
+    etat: std::sync::Mutex<(u8, f64, f64)>, // (le passage : 0 chauffer, 1 la carte, 2 le processeur, 3 choisi ; carte ; processeur)
+}
+
+#[allow(dead_code)]
+impl Choix {
+    pub const fn neuf() -> Choix {
+        Choix { etat: std::sync::Mutex::new((0, 0.0, 0.0)) }
+    }
+    pub fn carte_voulue(&self) -> bool {
+        match std::env::var("VTX_CARTE").as_deref() {
+            Ok("0") => return false,
+            Ok("1") => return true,
+            _ => {}
+        }
+        let e = self.etat.lock().unwrap();
+        match e.0 {
+            0 | 1 => true,
+            2 => false,
+            _ => e.1 < e.2,
+        }
+    }
+    pub fn noter(&self, carte: bool, duree: std::time::Duration, ligne: u32) {
+        let t = duree.as_secs_f64();
+        let mut e = self.etat.lock().unwrap();
+        match (e.0, carte) {
+            (0, true) => e.0 = 1,
+            (0, false) => e.0 = 3, // pas de carte : rien à choisir
+            (1, true) => {
+                e.1 = t;
+                e.0 = 2;
+            }
+            (2, false) => {
+                e.2 = t;
+                e.0 = 3;
+                let tc = e.1;
+                let la_carte = tc < e.2 * 0.97;
+                if !la_carte {
+                    e.1 = f64::MAX;
+                }
+                dire_reglage(format!("la boucle de la ligne {} : la carte {:.1} ms, le processeur {:.1} ms : {}", ligne,
+                                     tc * 1e3, e.2 * 1e3, if la_carte { "la carte" } else { "le processeur" }));
+            }
+            _ => {}
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn rendre(c: &mut Ctx) -> Recolte {
     let o = c.ombre.take().unwrap();
@@ -1332,6 +1385,123 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
 /// autre expression, ou toutes les écritures sur le même mot, et la boucle reste aux cylindres (l'ordre compterait).
 /// La fenêtre monte en mots de 64 bits (un mot plus large : non), redescend, et seuls les mots changés sont écrits.
 #[allow(dead_code)]
+/// 0.816 : Taranis en mode pages : la boucle entière sur la carte, l'étage 2 monté page par page (la carte du vergobret
+/// sur la carte graphique : une table des pages) ; la promesse vérifiée là-bas (deux tours qui écrivent le même mot, une
+/// page absente : la carte le dit) et ici (une page à la fois lue et écrite : refusé) ; si quelque chose manque, la
+/// boucle reste au processeur (fait reste faux : le résultat est toujours celui de Lugus).
+#[allow(dead_code)]
+fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
+    taranis_boucle_pages_(c, spv, a, b, ext, true)
+}
+
+#[allow(dead_code)]
+fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128], encore: bool) -> bool {
+    let n = (b as u64).wrapping_sub(a as u64);
+    if n == 0 || n > (1u64 << 31) || ext.iter().any(|&v| v >> 64 != 0) {
+        return false;
+    }
+    let carte = match taranis_vk::carte() {
+        Some(k) => k,
+        None => return false,
+    };
+    if c.m.a_des_cubes_sur_disque() {
+        return false;
+    }
+    let bavard = taranis_vk::bavard();
+    let t0 = std::time::Instant::now();
+    let mut liste: Vec<(u64, *mut u128)> = Vec::new();
+    for (k, p, brins) in c.m.instantane() {
+        if k >> 120 != 2 {
+            continue;
+        }
+        let pg = (k & ((1u128 << 120) - 1)) as u64;
+        if pg >= 65536 {
+            continue;
+        }
+        if brins {
+            return false;
+        }
+        liste.push((pg, p));
+    }
+    liste.sort_by_key(|x| x.0);
+    let np = liste.len();
+    let mut pages = vec![0u64; np.max(1) * 65536];
+    let mut table = vec![0u32; 65536];
+    for (s, &(pg, p)) in liste.iter().enumerate() {
+        table[pg as usize] = s as u32 + 1;
+        let src = unsafe { std::slice::from_raw_parts(p, 65536) };
+        let dst = &mut pages[s * 65536..(s + 1) * 65536];
+        for (d, &w) in dst.iter_mut().zip(src) {
+            if w >> 64 != 0 {
+                return false;
+            }
+            *d = w as u64;
+        }
+    }
+    let t_monte = t0.elapsed().as_secs_f64() * 1e3;
+    let mut params = vec![0u64; 6 + ext.len()];
+    params[1] = a as u64;
+    params[2] = n;
+    params[3] = 2 * np.max(1) as u64;
+    for (k, &v) in ext.iter().enumerate() {
+        params[6 + k] = v as u64;
+    }
+    let (ms, marques) = match carte.lancer_pages(spv, &mut pages, &table, &mut params, n) {
+        Ok(x) => x,
+        Err(e) => {
+            if bavard {
+                eprintln!("taranis : {}", e);
+            }
+            return false;
+        }
+    };
+    if params[0] == 1 && encore {
+        // des pages manquaient (des places pas encore écrites) : elles sont créées, vides, et la boucle relancée une fois
+        let d0 = 2 * np.max(1);
+        let manquent: Vec<u64> = (0..65536u64).filter(|&pg| marques.get(d0 + pg as usize).map_or(false, |&m| m != 0)).collect();
+        if !manquent.is_empty() && marques.get(d0 + 65536).map_or(true, |&m| m == 0) {
+            for &pg in &manquent {
+                let _ = c.m.page_de(etg((pg << 16) as u128, 2));
+            }
+            if bavard {
+                eprintln!("taranis : {} pages manquaient à la carte : créées, la boucle relancée", manquent.len());
+            }
+            return taranis_boucle_pages_(c, spv, a, b, ext, false);
+        }
+    }
+    if params[0] != 0 {
+        if bavard {
+            eprintln!("taranis : la boucle revient au processeur ({})",
+                      if params[0] == 2 { "deux tours ont écrit le même mot" } else { "une page manquait à la carte" });
+        }
+        return false;
+    }
+    let t1 = std::time::Instant::now();
+    let mut ecrites = 0;
+    for s in 0..np {
+        if marques[2 * s + 1] != 0 && marques[2 * s] != 0 {
+            if bavard {
+                eprintln!("taranis : la boucle revient au processeur (la page {} a été lue et écrite)", liste[s].0);
+            }
+            return false;
+        }
+    }
+    for s in 0..np {
+        if marques[2 * s + 1] != 0 {
+            ecrites += 1;
+            let dst = unsafe { std::slice::from_raw_parts_mut(liste[s].1, 65536) };
+            for (d, &w) in dst.iter_mut().zip(&pages[s * 65536..(s + 1) * 65536]) {
+                *d = w as u128;
+            }
+        }
+    }
+    if bavard {
+        eprintln!("taranis : {} tours sur la carte ({} pages montées, {} écrites) : préparer {:.1} ms, monter et lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
+                  n, np, ecrites, t_monte, ms[0], ms[1], ms[2], t1.elapsed().as_secs_f64() * 1e3);
+    }
+    true
+}
+
 fn taranis_boucle(c: &mut Ctx, spv: &[u32], a: u128, b: u128, acces: &[(bool, u128, u128, u128, u32)], ext: &[u128]) -> bool {
     const M62: u64 = (1u64 << 62) - 1;
     let n = (b as u64).wrapping_sub(a as u64);

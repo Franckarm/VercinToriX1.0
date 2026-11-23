@@ -1,0 +1,11 @@
+// machine : lugus
+// Belenos : le paysage dans le cube, le tapis avec l'image (le rayon de l'œil) sur la carte graphique (0.816).
+//     forgé : python forge/forge128.py belenos/cubes_carte_gif.vtx -o cubes_carte_gif.exe ; VTX_CARTE=1 : toujours la carte ;
+//     VTX_CARTE=0 : jamais ; sinon le vergobret choisit en mesurant ; VTX_TARANIS=1 : ce que fait la carte
+constante RN = 1;
+constante RD = 1;
+importer "cubes_tapis.vtx";
+
+fonction principal() {
+    filmer_tapis_carte(0, 0);
+}

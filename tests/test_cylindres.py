@@ -34,8 +34,13 @@ for prog, attendu in ((os.path.join(racine, "exemples128", "cylindres.vtx"), ["p
     if f.returncode:
         continue
     ref = subprocess.run([lugus, prog], capture_output=True, text=True, cwd=d).stdout.strip()
+    # 0.816 : avec une carte graphique, ces boucles iraient à la carte (le mode pages) : ce test-ci est celui des
+    # cylindres, ils se jouent sans la carte ; la carte, elle, doit rendre la même sortie
+    carte = subprocess.run([exe], capture_output=True, text=True, cwd=d, env=dict(os.environ, VTX_COEURS="2"))
+    verifier(f"{nom} avec la carte (s'il y en a une) : la sortie de Lugus", carte.stdout.strip() == ref,
+             f"{carte.stdout.strip()} / {ref}")
     for n in (1, 2, 3):
-        env = dict(os.environ, VTX_COEURS=str(n), VTX_CYLINDRES="1")
+        env = dict(os.environ, VTX_COEURS=str(n), VTX_CYLINDRES="1", VTX_CARTE="0")
         r = subprocess.run([exe], capture_output=True, text=True, cwd=d, env=env)
         verifier(f"{nom} sur {n} cylindre(s) : la sortie de Lugus", r.stdout.strip() == ref, f"{r.stdout.strip()} / {ref}")
         if n > 1:

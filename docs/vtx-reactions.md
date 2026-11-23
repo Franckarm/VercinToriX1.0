@@ -4312,3 +4312,35 @@ fil, donc ici (le profil, instruction par instruction, vtx contre le C).
 
 Le créateur dit ne plus savoir où l'on va : la base était le langage et la technique, la partie graphique est devenue
 une extension. Bilan à faire, et la direction à reprendre avec lui.
+
+## 101. Le rayon de l'œil sur la carte graphique (23 novembre, 0.816)
+
+**Le créateur** : si la partie graphique sans carte rivalise avec un système semblable, la carte sera plus efficace ?
+L'autonomie de vtx, la sécurité est-elle levée ? Puis : d'accord pour la carte par la machine Rust ; il ne saurait pas
+écrire les routines système.
+
+- **L'autonomie** : rien ne dit que le blocage du 18 soit levé ; le code machine des appels au système (fichiers,
+  fenêtre, carte) n'est pas repris par l'IA, sous aucune forme. L'autonomie complète attend ; elle ne bloque pas la
+  partie graphique, qui passe par la machine Rust (Taranis y parle déjà à la carte, par Vulkan).
+- **Le mode pages de Taranis** (`taranis/noyau_vtx.py`, `Noyau(..., pages=True)`) : quand la fenêtre ne se calcule
+  pas, le noyau lit et écrit tout l'étage 2 par une **table des pages** (la carte du vergobret sur la carte graphique :
+  pour chaque page, sa place dans le tampon des pages). Les adresses peuvent dépendre de tout, les fonctions appelées
+  lire la mémoire, et un `retour` se trouver n'importe où (`sans_retours` : il devient un drapeau ; ce qui suit ne se
+  fait que si la fonction n'a pas fini ; ses boucles s'arrêtent). Les entiers restent de 64 bits (en deux mots de 32).
+- **La promesse sur la carte** : chaque mot écrit garde son auteur (un échange atomique : le tour + 1) ; deux tours qui
+  écrivent le même mot : la carte le dit, la boucle revient au processeur ; chaque page note qu'elle a été lue ou écrite,
+  et une page lue et écrite fait revenir la boucle au processeur. Essayé : les deux cas reviennent bien, avec la sortie
+  de Lugus. Une page absente (une place du tapis jamais écrite) : la carte la demande, le processeur la crée vide, la
+  boucle est relancée une fois.
+- **Le rayon de l'œil** (`etage_image_carte` dans `cubes_tapis.vtx`, l'étage `E_IMAGE_CARTE` de l'ARN) : une boucle en
+  segments sur les 921 600 points, que la forge envoie à la carte ; la clarté et Divona restent au processeur. Sur
+  SwiftShader (la carte imitée par le processeur, ici) : **la même empreinte**, en 320 × 180 comme en 1280 × 720 ; ses
+  temps ne disent rien d'une vraie carte.
+- **Le vergobret choisit la carte ou le processeur en mesurant** (`Choix` dans le noyau de la forge) : un passage sur la
+  carte pour la chauffer, un mesuré, un au processeur mesuré, puis le plus rapide ; sinon, une boucle qu'un mode pages
+  aurait envoyée à la carte sur une machine qui en a une pourrait devenir plus lente (monter le cube à chaque appel).
+  Ici (SwiftShader) : la carte 2078 ms, le processeur 43 ms : le processeur. `VTX_CARTE=1` : toujours la carte.
+- **Ce qui coûte encore** : tout l'étage 2 monte à chaque appel (ici 221 pages, 116 Mo : préparer 70 ms, monter 70 ms)
+  et redescend ; c'est à corriger ensuite (le cube gardé sur la carte d'une image à l'autre, seules les pages changées
+  remontent). Le test des cylindres se joue désormais sans la carte (il éprouve les cylindres), et vérifie que la carte
+  rend la sortie de Lugus.

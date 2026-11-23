@@ -37,6 +37,8 @@ constante E_LUMIERE = 4;
 constante E_DIVONA = 5;
 constante E_TOUT = 6;              // les quatre derniers d'un coup, pour chaque point
 constante E_CLARTE = 7;            // 0.813 : l'ombre et la lumière en un seul étage
+constante E_IMAGE_CARTE = 8;       // 0.816 : l'image (le rayon de l'œil) sur la carte graphique, hors des bandes
+constante CARTE = 604160;          // 0.816 : 1 si le tapis envoie l'image à la carte graphique
 
 // ------------------------------------------------------------------------------------------------ le vergobret
 // transcrire : le vergobret choisit le tapis selon ce qu'il y a à faire. Du travail pour le cache (le soleil bouge :
@@ -45,6 +47,19 @@ constante E_CLARTE = 7;            // 0.813 : l'ombre et la lumière en un seul 
 // rendre_cubes) : mesuré, le tapis y coûte 7 à 9 % de plus (trois mots par point passés d'un étage à l'autre) et n'y
 // gagne rien.
 fonction vergobret_transcrire(travail) {
+    si @2[CARTE] == 1 {
+        // 0.816 : l'image sur la carte graphique (sa propre boucle, en segments : un fil de la carte par point) ; la
+        // clarté et Divona au processeur, en bandes ; toujours déplié (la carte et le processeur ont chacun leur part)
+        @2[ARN] = 4;
+        @2[ARN + 1] = E_CACHE;
+        @2[ARN + 3] = E_IMAGE_CARTE;
+        @2[ARN + 5] = E_CLARTE;
+        @2[ARN + 7] = E_DIVONA;
+        pour e dans 0..4 {
+            @2[ARN + 2 + 2 * e] = e;
+        }
+        retour 0;
+    }
     si travail == 1 {
         // 0.813 : quatre étages ; l'ombre et la lumière n'en font qu'un (la clarté)
         @2[ARN] = 4;
@@ -79,6 +94,13 @@ fonction vergobret_retard() {
 // l'ARN, chacun pour l'image qui y est (k - son retard)
 fonction vergobret_tour(k, n) {
     soit ne = @2[ARN];
+    // 0.816 : d'abord ce qui va à la carte graphique (hors des bandes)
+    pour e0 dans 0..ne {
+        soit rc = @2[ARN + 2 + 2 * e0];
+        si @2[ARN + 1 + 2 * e0] == E_IMAGE_CARTE && k >= rc && k - rc < n {
+            etage_image_carte((k - rc) % 5);
+        }
+    }
     pour y dans 0..H en bandes {
         pour e dans 0..ne {
             soit code = @2[ARN + 1 + 2 * e];
@@ -115,6 +137,9 @@ fonction vergobret_tour_mesure(k, n) {
         si k >= retard && k - retard < n {
             soit i = k - retard;
             soit h0 = horloge();
+            si code == E_IMAGE_CARTE {
+                etage_image_carte(i % 5);
+            }
             pour y dans 0..H en bandes {
                 si code == E_CACHE {
                     etage_cache(y, k);
@@ -186,6 +211,40 @@ fonction etage_image(y, s) {
         soit p = case_tapis(s, x, y);
         @2[p] = tracer(cx, cy, cz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
         @2[p + 1] = plier_dir(dx, dy, dz);
+    }
+}
+
+// 0.816 : l'image sur la carte graphique : une boucle sur tous les points de l'écran, en segments ; la forge l'envoie à
+// la carte (un fil par point, le cube monté par sa table des pages), sinon elle reste au processeur ; les mêmes calculs
+// que etage_image, donc la même image
+fonction etage_image_carte(s) {
+    soit c = CAMS + 16 * s;
+    soit cx = @2[c];
+    soit cy = @2[c + 1];
+    soit cz = @2[c + 2];
+    soit fx = @2[c + 3];
+    soit fy = @2[c + 4];
+    soit fz = @2[c + 5];
+    soit rx = @2[c + 6];
+    soit rz = @2[c + 7];
+    soit ux = @2[c + 8];
+    soit uy = @2[c + 9];
+    soit uz = @2[c + 10];
+    soit base = (FTAP + s) << 24;
+    pour p dans 0..(W * H) en segments {
+        soit x = p % W;
+        soit y = p / W;
+        soit sy = ((H - 2 * y - 1) * 45889) ./ W;
+        soit sx = ((2 * x + 1 - W) * 45889) ./ W;
+        soit dx = fx + (rx * sx + ux * sy) ./ 65536;
+        soit dy = fy + (uy * sy) ./ 65536;
+        soit dz = fz + (rz * sx + uz * sy) ./ 65536;
+        soit lg = racine_entiere(dx * dx + dy * dy + dz * dz);
+        dx = (dx * 65536) ./ lg;
+        dy = (dy * 65536) ./ lg;
+        dz = (dz * 65536) ./ lg;
+        @2[base + p * 3] = tracer(cx, cy, cz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
+        @2[base + p * 3 + 1] = (dx + 65536) | ((dy + 65536) << 20) | ((dz + 65536) << 40);
     }
 }
 
@@ -453,15 +512,25 @@ fonction filmer_tapis(tourne) {
     afficher("empreinte : " + texte(empreinte_image()));
     si @2[MESURE] == 1 {
         afficher("les étages, par image (en moyenne) : cache " + texte(@2[MESURE + E_CACHE] / IMAGES) + " ms, image "
-                 + texte(@2[MESURE + E_IMAGE] / IMAGES) + " ms, clarté " + texte(@2[MESURE + E_CLARTE] / IMAGES)
+                 + texte((@2[MESURE + E_IMAGE] + @2[MESURE + E_IMAGE_CARTE]) / IMAGES) + " ms, clarté " + texte(@2[MESURE + E_CLARTE] / IMAGES)
                  + " ms, Divona " + texte(@2[MESURE + E_DIVONA] / IMAGES) + " ms");
+    }
+}
+
+// 0.816 : le film sur le tapis, l'image sur la carte graphique (mesure == 1 : chaque étage mesuré à part)
+fonction filmer_tapis_carte(tourne, mesure) {
+    @2[CARTE] = 1;
+    si mesure == 1 {
+        filmer_tapis_mesure(tourne);
+    } sinon {
+        filmer_tapis(tourne);
     }
 }
 
 // 0.814 : le film sur le tapis déplié, chaque étage mesuré à part
 fonction filmer_tapis_mesure(tourne) {
     @2[MESURE] = 1;
-    pour c dans 1..8 {
+    pour c dans 1..9 {
         @2[MESURE + c] = 0;
     }
     filmer_tapis(tourne);

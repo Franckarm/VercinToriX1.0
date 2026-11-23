@@ -14,6 +14,16 @@ variables, soit, l'affectation, si / sinon, tantque, pour (au pas constant), les
 le noyau ; leur « retour » à la fin seulement), @2[adresse] en lecture et en écriture dans le corps de la boucle (une
 adresse qui ne dépend que de la variable de boucle et de variables d'avant la boucle : la fenêtre se calcule).
 
+0.816 : le mode « pages » (la carte du vergobret sur la carte graphique), quand la fenêtre ne se calcule pas : le
+noyau lit et écrit tout l'étage 2 par une table des pages (liaison 2 : pour chaque page p < 65536, sa place + 1 dans
+le tampon des pages, 0 : absente) ; les adresses peuvent dépendre de tout, les fonctions appelées lire la mémoire, et
+un « retour » se trouver n'importe où (changé en un drapeau : la fonction finit, ses boucles s'arrêtent). La promesse
+est vérifiée sur la carte : chaque mot écrit garde l'auteur de son écriture (liaison 4 : le tour + 1, échangé d'un
+coup) ; deux tours qui écrivent le même mot : drapeau 2 ; une page absente : drapeau 1 ; chaque page note qu'elle a
+été lue ou écrite (liaison 3), et une page à la fois lue et écrite fait rejouer la boucle au processeur. Liaison 0 =
+les pages (mots de 64 bits), liaison 1 = les paramètres (p[0] le drapeau, p[1] le début, p[2] le nombre de tours,
+p[5] le nombre de fils d'une rangée, p[6...] les variables d'avant la boucle).
+
 Interface du noyau : liaison 0 = la fenêtre (mots de 64 bits) ; liaison 1 = les paramètres (mots de 64 bits) :
 p[0] le drapeau (0 : tout va bien), p[1] le début de la boucle, p[2] le nombre de tours, p[3] la première adresse de la
 fenêtre (dans l'étage), p[4] sa longueur, p[5] le nombre de fils d'une rangée de groupes, p[6...] les variables d'avant
@@ -37,7 +47,7 @@ OP = {
     "SLessThanEqual": 179, "ShiftRightLogical": 194, "ShiftRightArithmetic": 195, "ShiftLeftLogical": 196,
     "BitwiseOr": 197, "BitwiseXor": 198, "BitwiseAnd": 199, "Not": 200, "Phi": 245, "LoopMerge": 246,
     "SelectionMerge": 247, "Label": 248, "Branch": 249, "BranchConditional": 250, "Return": 253,
-    "LogicalNotEqual": 165, "UMulExtended": 151, "CompositeConstruct": 80,
+    "LogicalNotEqual": 165, "UMulExtended": 151, "CompositeConstruct": 80, "AtomicExchange": 229,
 }
 M64 = (1 << 64) - 1
 MASQUE62 = (1 << 62) - 1
@@ -106,12 +116,63 @@ def acces_memoire(st, acc):
     return acc
 
 
+def sans_retours(corps, fini, rv):
+    """0.816 : un corps de fonction sans « retour » avant la fin : « retour e » devient rv = e ; fini = 1 ; ce qui suit un
+    morceau qui a pu finir ne se fait que si fini == 0 ; une boucle qui contient un retour s'arrête dès fini == 1.
+    -> (le nouveau corps, s'il a pu finir)"""
+    pas_fini = ("bin", "==", ("var", fini, 0), ("nombre", 0))
+
+    def instr(s):
+        g = s[0]
+        if g == "retour":
+            e = s[1] if len(s) > 1 and s[1] is not None else ("nombre", 0)
+            return [("affecter", rv, e, 0), ("affecter", fini, ("nombre", 1), 0)], True
+        if g == "si":
+            a, ra = liste(s[2])
+            b, rb = liste(s[3]) if s[3] else (s[3], False)
+            return [("si", s[1], a, b) + tuple(s[4:])], ra or rb
+        if g == "tantque":
+            c, r = liste(s[2])
+            if r:
+                return [("tantque_fini", s[1], c, fini)], True
+            return [s], False
+        if g == "pour" and len(s) > 4 and isinstance(s[4], list):
+            c, r = liste(s[4])
+            if r:
+                return [s[:4] + ([("si", pas_fini, c, None, 0)],) + s[5:]], True
+            return [s], False
+        if g == "bloc":
+            c, r = liste(s[1])
+            return [("bloc", c) + tuple(s[2:])], r
+        return [s], False
+
+    def liste(stmts):
+        out = []
+        for k, st in enumerate(stmts):
+            if not isinstance(st, tuple):
+                out.append(st)
+                continue
+            n, r = instr(st)
+            out.extend(n)
+            if r:
+                reste = stmts[k + 1:]
+                if reste:
+                    rr, _ = liste(reste)
+                    out.append(("si", pas_fini, rr, None, 0))
+                return out, True
+        return out, False
+
+    return liste(list(corps))
+
+
 class Noyau:
     """Une valeur entière du noyau est une paire (bas, haut) d'identifiants SPIR-V de mots de 32 bits."""
 
-    def __init__(self, forge, var, corps):
+    def __init__(self, forge, var, corps, pages=False):
         self.fo = forge
         self.var, self.corps = var, corps
+        self.pages = pages         # 0.816 : la mémoire par la table des pages
+        self.nappels = 0
         self.prochain = 1
         self.tete, self.decor, self.types, self.vars_decl, self.code = [], [], [], [], []
         self.consts = {}
@@ -308,9 +369,77 @@ class Noyau:
     def drapeau(self):
         self.e("Store", self.case(self.parametres, self.c32(0)), self.c32(1))
 
+    def acces_page(self, adr):
+        """0.816 : (l'indice du mot bas dans le tampon des pages, la page est-elle là, la place de la page)"""
+        hi16 = self.v("BitwiseAnd", adr[1], self.c32(0xFFFF))
+        petit = self.b("IEqual", hi16, self.c32(0))
+        pg = self.v("Select", petit, self.v("ShiftRightLogical", adr[0], self.c32(16)), self.c32(0))
+        place1 = self.v("Load", self.case(self.table, pg))
+        dedans = self.b("LogicalAnd", petit, self.b("INotEqual", place1, self.c32(0)))
+        place = self.v("ISub", self.v("Select", dedans, place1, self.c32(1)), self.c32(1))
+        mot = self.v("IAdd", self.v("ShiftLeftLogical", place, self.c32(16)), self.v("BitwiseAnd", adr[0], self.c32(0xFFFF)))
+        # la demande d'une page absente : marques[p3 + page] (p3 : après les marques des pages) ; une adresse hors de la
+        # table : la case 65536 de la demande
+        dem = self.v("IAdd", self.demandes, self.v("Select", petit, pg, self.c32(65536)))
+        self.derniere_demande = dem
+        return mot, dedans, place
+
+    def drapeau_n(self, n):
+        self.e("Store", self.case(self.parametres, self.c32(0)), self.c32(n))
+
+    def lire_page(self, adr):
+        mot, dedans, place = self.acces_page(self.expr(adr))
+        oui, non, fin = self.id(), self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", dedans, oui, non)
+        self.etiquette(oui)
+        k = self.v("ShiftLeftLogical", mot, self.c32(1))
+        lo = self.v("Load", self.case(self.fenetre, k))
+        hi = self.v("Load", self.case(self.fenetre, self.v("IAdd", k, self.c32(1))))
+        self.e("Store", self.case(self.marques, self.v("ShiftLeftLogical", place, self.c32(1))), self.c32(1))
+        b_oui = self.bloc
+        self.aller(fin)
+        self.etiquette(non)
+        self.drapeau_n(1)
+        self.e("Store", self.case(self.marques, self.derniere_demande), self.c32(1))
+        b_non = self.bloc
+        self.aller(fin)
+        self.etiquette(fin)
+        return (self.v("Phi", lo, b_oui, self.c32(0), b_non), self.v("Phi", hi, b_oui, self.c32(0), b_non))
+
+    def ecrire_page(self, adr, valeur):
+        a = self.expr(adr)
+        x = self.expr(valeur)
+        mot, dedans, place = self.acces_page(a)
+        oui, non, fin, conflit, apres = self.id(), self.id(), self.id(), self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", dedans, oui, non)
+        self.etiquette(oui)
+        ancien = self.v("AtomicExchange", self.case(self.auteurs, mot), self.c32(1), self.c32(0), self.moi)
+        autre = self.b("LogicalAnd", self.b("INotEqual", ancien, self.c32(0)), self.b("INotEqual", ancien, self.moi))
+        self.e("SelectionMerge", apres, 0)
+        self.e("BranchConditional", autre, conflit, apres)
+        self.etiquette(conflit)
+        self.drapeau_n(2)
+        self.aller(apres)
+        self.etiquette(apres)
+        k = self.v("ShiftLeftLogical", mot, self.c32(1))
+        self.e("Store", self.case(self.fenetre, k), x[0])
+        self.e("Store", self.case(self.fenetre, self.v("IAdd", k, self.c32(1))), x[1])
+        self.e("Store", self.case(self.marques, self.v("IAdd", self.v("ShiftLeftLogical", place, self.c32(1)), self.c32(1))),
+               self.c32(1))
+        self.aller(fin)
+        self.etiquette(non)
+        self.drapeau_n(1)
+        self.e("Store", self.case(self.marques, self.derniere_demande), self.c32(1))
+        self.aller(fin)
+        self.etiquette(fin)
+
     def lire(self, et, adr):
         if et != 2:
             raise PasPourLaCarte("une lecture hors de l'étage 2")
+        if self.pages:
+            return self.lire_page(adr)
         k, dedans = self.acces(self.expr(adr))
         oui, non, fin = self.id(), self.id(), self.id()
         self.e("SelectionMerge", fin, 0)
@@ -330,6 +459,8 @@ class Noyau:
     def ecrire(self, et, adr, valeur):
         if et != 2:
             raise PasPourLaCarte("une écriture hors de l'étage 2")
+        if self.pages:
+            return self.ecrire_page(adr, valeur)
         a = self.expr(adr)
         x = self.expr(valeur)
         k, dedans = self.acces(a)
@@ -437,14 +568,25 @@ class Noyau:
             raise PasPourLaCarte(f"« {nom} » : des paramètres ou un retour qui ne sont pas des entiers")
         corps = list(f.corps)
         fin = None
+        fini = rv = None
         if corps and corps[-1][0] == "retour":
             fin = corps.pop()
         if any(x[0] == "retour" for x in self.instructions(corps)):
-            raise PasPourLaCarte(f"« {nom} » : un retour avant la fin")
-        if acces_memoire(corps, []) or (fin and acces_memoire(fin, [])):
+            if not self.pages:
+                raise PasPourLaCarte(f"« {nom} » : un retour avant la fin")
+            # 0.816 : les retours au milieu changés en un drapeau
+            self.nappels += 1
+            fini, rv = f"__fini{self.nappels}", f"__rv{self.nappels}"
+            if fin is not None:
+                corps.append(fin)
+            corps, _ = sans_retours(corps, fini, rv)
+            fin = ("retour", ("var", rv, 0))
+        if not self.pages and (acces_memoire(corps, []) or (fin and acces_memoire(fin, []))):
             raise PasPourLaCarte(f"« {nom} » touche la mémoire (seul le corps de la boucle y a droit)")
         valeurs = [self.expr(a) for a in args]
         vtypes = self.types_de(f)
+        if fini is not None:
+            vtypes[fini] = vtypes[rv] = "e"
         if any(t != "e" for t in vtypes.values()):
             raise PasPourLaCarte(f"« {nom} » a des variables qui ne sont pas des entiers")
         ancien = self.fo.vtypes
@@ -454,6 +596,9 @@ class Noyau:
         try:
             for p, v in zip(f.params, valeurs):
                 self.ranger(self.nouvelle(p), v)
+            if fini is not None:
+                self.ranger(self.nouvelle(fini), self.cst(0))
+                self.ranger(self.nouvelle(rv), self.cst(0))
             for s in corps:
                 self.instr(s)
             r = self.expr(fin[1]) if fin is not None and len(fin) > 1 and fin[1] is not None else self.cst(0)
@@ -526,6 +671,24 @@ class Noyau:
                     self.instr(x)
                 self.aller(fin)
             self.etiquette(fin)
+        elif g == "tantque_fini":
+            # 0.816 : une boucle qui s'arrête aussi quand la fonction a fini (son retour)
+            tete, test, dedans, suite, fin = self.id(), self.id(), self.id(), self.id(), self.id()
+            self.aller(tete)
+            self.etiquette(tete)
+            self.e("LoopMerge", fin, suite, 0)
+            self.aller(test)
+            self.etiquette(test)
+            c = self.booleen(s[1])
+            pas_fini = self.eq(self.charger(self.cherche(s[3])), self.cst(0))
+            self.e("BranchConditional", self.b("LogicalAnd", c, pas_fini), dedans, fin)
+            self.etiquette(dedans)
+            for x in s[2]:
+                self.instr(x)
+            self.aller(suite)
+            self.etiquette(suite)
+            self.aller(tete)
+            self.etiquette(fin)
         elif g in ("tantque", "pour"):
             if g == "pour":
                 if len(s) < 6 or not isinstance(s[4], list):
@@ -575,10 +738,12 @@ class Noyau:
             if self.fo.vtypes.get(nom, "e") != "e":
                 raise PasPourLaCarte(f"« {nom} » n'est pas un entier")
         for _k, et, adr in acces:
-            if libres(adr) & (interieur - {self.var}):
-                raise PasPourLaCarte("une adresse qui dépend d'une variable du corps (la fenêtre ne se calcule pas)")
             if et != 2:
                 raise PasPourLaCarte("un accès hors de l'étage 2")
+            if self.pages:
+                continue
+            if libres(adr) & (interieur - {self.var}):
+                raise PasPourLaCarte("une adresse qui dépend d'une variable du corps (la fenêtre ne se calcule pas)")
             if self.contient_appel(adr):
                 raise PasPourLaCarte("une adresse qui lit la mémoire ou appelle une fonction")
         I = self.i
@@ -587,6 +752,7 @@ class Noyau:
         self.tpaire, t_v3, t_pv3 = self.id(), self.id(), self.id()
         t_tab, t_bloc, t_pbloc, self.tpu, self.tpf = self.id(), self.id(), self.id(), self.id(), self.id()
         self.fenetre, self.parametres = self.id(), self.id()
+        self.table, self.marques, self.auteurs = self.id(), self.id(), self.id()
         I(self.tete, "Capability", 1)
         I(self.tete, "MemoryModel", 0, 1)
         I(self.tete, "EntryPoint", 5, principal, *texte("main"), gid)
@@ -599,6 +765,10 @@ class Noyau:
         I(self.decor, "Decorate", self.fenetre, 33, 0)
         I(self.decor, "Decorate", self.parametres, 34, 0)
         I(self.decor, "Decorate", self.parametres, 33, 1)
+        if self.pages:
+            for k, t in ((2, self.table), (3, self.marques), (4, self.auteurs)):
+                I(self.decor, "Decorate", t, 34, 0)
+                I(self.decor, "Decorate", t, 33, k)
         I(self.types, "TypeVoid", self.t_void)
         I(self.types, "TypeFunction", t_fn, self.t_void)
         I(self.types, "TypeBool", self.tbool)
@@ -614,6 +784,9 @@ class Noyau:
         I(self.types, "Variable", t_pv3, gid, 1)
         I(self.types, "Variable", t_pbloc, self.fenetre, 2)
         I(self.types, "Variable", t_pbloc, self.parametres, 2)
+        if self.pages:
+            for t in (self.table, self.marques, self.auteurs):
+                I(self.types, "Variable", t_pbloc, t, 2)
 
         entree = self.id()
         self.portees.append({})
@@ -634,6 +807,9 @@ class Noyau:
         self.e("BranchConditional", dans, travail, fin)
         self.etiquette(travail)
         self.base, self.longueur = param(3), param(4)
+        self.demandes = param(3)[0]
+        # 0.816 : l'auteur d'une écriture : le tour + 1 (sur 31 bits)
+        self.moi = self.v("IAdd", self.v("BitwiseAnd", idx[0], self.c32(0x7FFFFFFF)), self.c32(1))
         self.ranger(self.nouvelle(self.var), self.add(param(1), idx))
         for k, nom in enumerate(dehors):
             self.ranger(self.nouvelle(nom), param(6 + k))
@@ -646,6 +822,10 @@ class Noyau:
         self.code = []
         self.i(self.code, "Function", self.t_void, principal, 0, t_fn)
         self.i(self.code, "Label", entree)
+        if self.pages:
+            # l'interface du noyau : toutes les variables globales nommées par le point d'entrée n'est pas exigé en
+            # SPIR-V 1.0 (seules les entrées et sorties) ; rien à ajouter
+            pass
         mots = [0x07230203, 0x00010000, 0, self.prochain, 0] + self.tete + self.decor + self.types + self.code \
             + self.vars_decl + corps
         mots.append((1 << 16) | OP["FunctionEnd"])
