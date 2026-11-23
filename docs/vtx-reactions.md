@@ -4230,3 +4230,43 @@ mère gérant ses cubes d'information, mais par étage.
   vtx : le génome est l'ARN du programme, le juge est l'empreinte, le doute est quaternaire. Ensuite seulement, quand le
   savoir sera assez grand, une petite règle apprise (un perceptron en entiers, écrit en vtx) pour deviner le bon ARN
   d'un programme nouveau à partir de ce qu'il lit et écrit (la partition).
+
+## 98. Ce que coûte chaque étage, et le tapis sur la carte graphique (23 novembre, 0.814)
+
+**Le créateur** : les performances des étages et de l'ensemble ? Et comment adapter ceci à la carte graphique ?
+
+- **La mesure des étages** (`cubes_tapis_mesure0.vtx` : soleil fixe ; `cubes_tapis_mesure1.vtx` : le soleil qui
+  tourne) : le tapis déplié, chaque étage dans sa propre boucle et sa propre horloge (les barrières en plus : un peu plus
+  lent que le vrai tapis). Ici, deux cœurs, par image :
+
+  | étage | soleil fixe | soleil qui tourne | part |
+  |---|---|---|---|
+  | cache (le cinquième du calque) | 0 ms | 69 ms | 0 / 11 % |
+  | image (le rayon de l'œil) | 440–462 ms | 421 ms | ≈ 70 % |
+  | clarté (ombre et lumière) | 24 ms | 23 ms | ≈ 4 % |
+  | Divona (l'eau, le reflet) | 143–148 ms | 138 ms | ≈ 22 % |
+
+  Ce qu'elle dit : les calques ont fait de l'ombre et de la lumière presque rien (4 %) ; le rayon de l'œil est le
+  travail (70 %) ; Divona coûte un quart, pour seulement l'eau (un rayon renvoyé entier, avec sa propre clarté).
+- **Une faute du vergobret, trouvée par cette mesure** : la boucle de mesure est une seule boucle qui joue tour à tour
+  des étages de coûts très différents ; il avait comparé des passages légers à des lourds et choisi 1 cœur (l'image à
+  778 ms au lieu de 440). Corrigé à sa façon : si deux passages du même essai diffèrent de plus du double, le travail
+  change d'un passage à l'autre : le temps ne peut pas juger (variable) ; il garde tous les fils et ne retient rien. Le
+  vrai tapis est jugé ainsi aussi (ses premiers tours, quand il se remplit, sont plus légers).
+- **Sur la carte graphique (Taranis), la façon proposée** :
+  - *les cubes* : l'annuaire et la réserve de chaque tuile tiennent dans des tampons de la carte, chargés une fois
+    (les blocs de 8³ sont la forme que prennent les grands traceurs de voxels sur carte) ; les calques aussi ;
+  - *chaque étage est une passe* : un fil par point de l'écran (l'image, la clarté), les mots d'une image restant sur la
+    carte d'une passe à l'autre ; Divona ne lance de fils que pour les points d'eau (une liste dressée par la clarté,
+    puis une passe indirecte) ; le cache, un fil par colonne de blocs ;
+  - *le tapis* : les cartes graphiques le font déjà sous un autre nom (plusieurs images en vol) ; les passes d'images
+    différentes se recouvrent dans ses files ; le vergobret, sur le processeur, lit l'ARN et envoie les passes ;
+  - *les nombres* : la carte calcule en 32 bits ; les entiers de 64 bits y sont lents. Le tracé en 1/65536 de point
+    tient dans 32 bits pour la position (un monde de 1024 points = 2^26) ; les produits ont besoin du haut d'une
+    multiplication 32 × 32, que SPIR-V donne en une instruction (OpUMulExtended). La pente apprise (2^40 / d) devra être
+    refaite pour 32 bits. Le but : que la carte rende **la même empreinte** que le processeur, comme Taranis l'a déjà fait
+    pour ses boucles ;
+  - *ce qui manque à Taranis aujourd'hui* (noté depuis la 0.809) : les lectures à adresse calculée dans les fonctions
+    appelées (le tracé lit le cube partout), la mémoire dans les fonctions appelées, l'image. Ce sont les premiers pas.
+  - *ce qu'on peut en attendre* : sans mesure, rien de promis ; un traceur de voxels sur une carte de la classe de la
+    RTX 3070 rend d'ordinaire du 720p bien plus vite que 24 fils de processeur : un ordre de grandeur, à vérifier.

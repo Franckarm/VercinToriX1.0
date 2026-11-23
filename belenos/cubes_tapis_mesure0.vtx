@@ -1,0 +1,9 @@
+// machine : lugus
+// Belenos : le tapis déplié, chaque étage mesuré à part (0.814) ; le soleil fixe.
+constante RN = 1;
+constante RD = 1;
+importer "cubes_tapis.vtx";
+
+fonction principal() {
+    filmer_tapis_mesure(0);
+}

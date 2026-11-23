@@ -231,3 +231,5 @@ belenos/cubes_ref.c
 belenos/cubes_tapis.vtx
 belenos/cubes_tapis_gif.vtx
 belenos/cubes_tapis_soleil.vtx
+belenos/cubes_tapis_mesure0.vtx
+belenos/cubes_tapis_mesure1.vtx

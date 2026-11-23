@@ -238,6 +238,7 @@ struct EtatReglage {
     essai: usize,        // le nombre de cœurs essayé maintenant
     mesures: u32,        // les passages mesurés de cet essai
     temps: f64,          // le meilleur temps de cet essai
+    pire: f64,           // le pire temps de cet essai (0.814 : un travail qui change d'un passage à l'autre)
     meilleur: usize,     // le meilleur nombre trouvé
     t_meilleur: f64,
     t_tous: f64,         // le temps sur tous les fils (ce qui caractérise la boucle : sa « signature » de coût)
@@ -310,7 +311,7 @@ fn dire_reglage(m: String) {
 #[allow(dead_code)]
 impl Reglage {
     pub const fn neuf(cle: u64) -> Reglage {
-        Reglage { cle, etat: std::sync::Mutex::new(EtatReglage { essai: 0, mesures: 0, temps: f64::MAX, meilleur: 0,
+        Reglage { cle, etat: std::sync::Mutex::new(EtatReglage { essai: 0, mesures: 0, temps: f64::MAX, pire: 0.0, meilleur: 0,
             t_meilleur: f64::MAX, t_tous: 0.0, fige: false, confiance: Confiance::Inconnu, deviner: 0, pret: false }) }
     }
     pub fn coeurs(&self) -> usize {
@@ -348,12 +349,27 @@ impl Reglage {
         if t < e.temps {
             e.temps = t;
         }
+        if t > e.pire {
+            e.pire = t;
+        }
         if e.mesures < 2 {
             return;
         }
-        let (essai, temps) = (e.essai, e.temps);
+        let (essai, temps, pire) = (e.essai, e.temps, e.pire);
         e.mesures = 0;
         e.temps = f64::MAX;
+        e.pire = 0.0;
+        // 0.814 : deux passages du même essai à plus du double l'un de l'autre : le travail de cette boucle change d'un
+        // passage à l'autre (une même boucle qui joue des étages différents) ; le temps ne peut pas juger : variable ;
+        // il garde tous les fils (ce qui ne perd jamais beaucoup) et ne retient rien
+        if pire > 2.0 * temps && e.deviner != usize::MAX {
+            e.confiance = Confiance::Variable;
+            e.fige = true;
+            e.meilleur = tous;
+            dire_reglage(format!("la boucle de la ligne {} : son travail change d'un passage à l'autre ({:.1} à {:.1} ms) ; \
+                                  le temps ne peut pas juger : tous les fils ({})", ligne, temps * 1e3, pire * 1e3, tous));
+            return;
+        }
         // un souvenir mis à l'épreuve : le temps doit rester celui retenu (à 30 % près)
         if e.deviner == usize::MAX {
             if temps <= e.t_meilleur * 1.3 {
