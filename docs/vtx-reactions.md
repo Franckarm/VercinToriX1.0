@@ -4344,3 +4344,24 @@ L'autonomie de vtx, la sécurité est-elle levée ? Puis : d'accord pour la cart
   et redescend ; c'est à corriger ensuite (le cube gardé sur la carte d'une image à l'autre, seules les pages changées
   remontent). Le test des cylindres se joue désormais sans la carte (il éprouve les cylindres), et vérifie que la carte
   rend la sortie de Lugus.
+
+## 102. La carte chez le créateur : plus lente que le processeur ; l'argument d'une refonte (23 novembre)
+
+**Mesuré sur la RTX 3070 (0.816)** : la même empreinte partout (7832993576801426321). Mais le rayon de l'œil sur la
+carte : **165 à 280 ms de calcul** par image, contre **56 ms** sur les 24 fils du processeur ; plus 140 ms de transferts
+(préparer 66, monter 33, redescendre 40 : 433 pages, 227 Mo). Le vergobret, seul, a choisi le processeur (174 contre
+690 ms) : il a eu raison.
+
+**Pourquoi, honnêtement** : la carte joue le code du processeur, traduit tel quel, et ce code n'est pas fait pour elle :
+- des entiers de 64 bits en deux mots de 32 (chaque addition, décalage, comparaison, plusieurs instructions) ;
+- des divisions en 64 tours de boucle (la normalisation de la direction, la racine, la pente apprise : quelques
+  centaines de tours par point avant même de tracer) ;
+- chaque lecture passe par la table des pages, puis **écrit une marque** (« page lue ») : tous les fils écrivent sans
+  cesse les mêmes quelques mots ; la carte les sérialise ;
+- le cube entier traverse le bus à chaque image, et l'image remonte au processeur pour être montrée.
+
+**Le créateur** : le chemin du processeur vers l'image n'est pas celui de la carte vers l'image ; la solution vient
+peut-être d'une refonte. Oui : sur le processeur, le cube est en mémoire et l'image en sort ; sur la carte, le cube
+devrait **vivre sur la carte**, l'image **naître et être montrée sur la carte**, et le processeur n'envoyer que l'œil
+(quelques mots par image). Les nombres de la carte : 32 bits, la division native ; la promesse prouvée par la forme du
+noyau (chaque fil n'écrit que son point ; le monde en lecture seule) au lieu d'être vérifiée à chaque accès.
