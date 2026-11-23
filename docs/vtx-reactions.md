@@ -4294,3 +4294,21 @@ chère : la forge qui prouve que les lectures du cube ne peuvent rencontrer aucu
 que l'image et ses comptes) ; s'il rejoint le C de 16 octets, ce sont les mots (et il faut ranger les cubes de la partie
 graphique en mots de 64 bits, ce que le créateur a permis à la partie graphique) ; sinon, un troisième coupable (la carte
 des pages, le partage en morceaux).
+
+## 100. Le diagnostic chez le créateur, et un temps pour s'orienter (23 novembre)
+
+| fils | vtx | vtx sans la promesse | C 8 octets | C 16 octets |
+|---|---|---|---|---|
+| 1 | 892 ms | 889 | 652 | 674 |
+| 6 | 177 | 167 | 113 | 120 |
+| 12 | 100 | 95 | 67 | 70 |
+| 24 | 72 | 66 | 47 | 48 |
+
+Toutes les empreintes égales. Ce qu'il dit : **ni la promesse (0 à 8 %) ni les mots de 16 octets (2 à 5 % pour le C)** ;
+vtx et le C montent en fils de la même façon (× 12,4 et × 13,9 de 1 à 24 fils). **L'écart est déjà là sur un seul fil
+(892 contre 652 ms, 37 %)** : c'est la qualité du code forgé lui-même (la carte des pages à chaque lecture de l'étage 2,
+le passage du contexte, ce que Rust en fait sous Windows face au compilateur de Microsoft). Le chercher se fait sur un
+fil, donc ici (le profil, instruction par instruction, vtx contre le C).
+
+Le créateur dit ne plus savoir où l'on va : la base était le langage et la technique, la partie graphique est devenue
+une extension. Bilan à faire, et la direction à reprendre avec lui.
