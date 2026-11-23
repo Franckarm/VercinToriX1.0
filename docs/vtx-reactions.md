@@ -4035,3 +4035,39 @@ ne soient pas lus ; vérifier que le changement de lumière et le déplacement d
   renvoyé ; il coûte peu parce que les rayons renvoyés montent presque tous vers le ciel, où le plafond et les vides
   qui savent leur distance les arrêtent tout de suite. Ce qui coûte, ce sont les huit rayons de chaque point de terre
   (quatre de la clepsydre, quatre du ciel).
+
+## 93. Divona, et les mesures de la 0.809 chez le créateur (23 novembre)
+
+**Le créateur** : un deuxième cube, l'anti-cube rangé, aurait été préférable ; le coût le vaut-il, ou le laisser en
+option ? D'accord pour Divona. La technique n'est-elle pas banale ?
+
+- **Divona** (la source sacrée, l'eau qui renvoie le monde) nomme le reflet : au point d'eau, le rayon de l'œil a sa
+  composante verticale retournée ; c'est la même chose que de suivre le rayon tout droit dans le monde retourné sous la
+  surface. Le mot « anti » reste à ce qu'il était (le complément, l'échange de Belnap, l'antimatière qui creuse).
+- **Banale, oui** : le rayon renvoyé est le reflet de Whitted (1980) ; le monde retourné rangé à part est le « reflet
+  plan » des jeux (la pièce dupliquée derrière le miroir de Duke Nukem 3D, la caméra retournée des moteurs d'eau). Ce
+  qui est à vtx, c'est la façon de les servir : les vides qui savent leur distance et le plafond qui arrêtent les
+  rayons renvoyés vers le ciel, et les états de Belnap comptés.
+- **L'anti-cube rangé** : pour un miroir plat, il donne exactement la même image que le rayon retourné, pour le même
+  tracé, et il double la mémoire (375 Mo → 750 Mo à l'échelle 1, 1,5 → 3 Go au double). Il ne vaut que si le monde
+  reflété **diffère** du monde (un reflet enchanté, un autre monde sous l'eau), ou s'il est **plus grossier** (les rides
+  floutent le reflet : un anti-cube à moitié de finesse coûterait un huitième de la mémoire). Décision : une option,
+  pas le défaut ; et la version grossière viendra plutôt des blocs grossiers du cube lui-même (la transition des
+  cubes), sans rien ranger de plus.
+- **Mesures chez le créateur (24 fils)**, les quatre empreintes égales à celles d'ici :
+
+  | film | 0.808 | 0.809 |
+  |---|---|---|
+  | échelle 1 | 482 ms | **315 ms** |
+  | double | | 457 ms |
+  | moitié | | 261 ms |
+  | soleil qui tourne | | 330 ms |
+
+  Le monde quatre fois plus fin coûte 45 % de plus ; le soleil qui tourne, 5 % (et 20 % sur les premières images, où le
+  soleil est bas : les rayons d'ombre vont loin). D'ici (deux cœurs, 1,9 s) à chez lui (24 fils, 315 ms) : un facteur
+  6, pour 12 cœurs réels : la moitié du parallélisme se perd (les fils jumeaux d'un cœur, la mémoire).
+- **Ce qui reste loin** : 3 images par seconde en 720p. Environ dix rayons par pixel (l'œil, quatre d'ombre, quatre du
+  ciel, le reflet) : environ 30 millions de rayons par seconde. L'occlusion du ciel ne dépend ni du soleil ni de l'œil :
+  la recalculer à chaque image est un gaspillage ; elle se range une fois dans le cube d'éléments. Et l'ombre du soleil
+  se range de même par point de surface (le calque de la 0.804, mais dans le cube), refaite seulement quand le soleil
+  bouge.

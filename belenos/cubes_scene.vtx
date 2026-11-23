@@ -16,7 +16,7 @@
 // au-dessus du plus haut point du monde, un rayon qui monte ne lit plus rien.
 // L'image : un rayon par point de l'écran ; l'ombre par la clepsydre (quatre rayons vers les quatre bords du soleil :
 // les quatre en clair, vrai ; aucun, faux ; entre les deux, variable, la pénombre et sa densité) ; quatre rayons courts
-// vers le ciel autour de la normale (l'occlusion) ; l'eau renvoie le monde (l'anti-cube : le rayon retourné), ridée.
+// vers le ciel autour de la normale (l'occlusion) ; l'eau renvoie le monde (Divona : le rayon retourné), ridée.
 
 constante W = 1280;
 constante H = 720;
@@ -761,7 +761,7 @@ fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
     soit g = 0;
     soit b = 0;
     si mat == EAU {
-        // l'eau : le monde renvoyé (le rayon retourné : l'anti-cube), ridé par le vent, plus fort en rasant
+        // l'eau : le monde renvoyé (Divona : le rayon retourné, le monde en miroir sous la surface), ridé par le vent, plus fort en rasant
         soit rx = dx + ((bruit_lisse((x + temps) & MASQ, z & MASQ, 16) - 32768) ./ 24);
         soit rz = dz + ((bruit_lisse(x & MASQ, (z + temps * 2) & MASQ, 16) - 32768) ./ 24);
         soit ry = 0 - dy;
