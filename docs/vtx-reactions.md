@@ -4391,3 +4391,37 @@ seul langage.) Son idée à creuser : recomposer le rôle du cache et de l'image
 - **Sur le petit film (320 × 180, lavapipe)** : après les cinq premières images (les places du tapis), plus aucune
   relance ; par image, 4 pages montent (sur 88 suivies), 3 redescendent, la comparaison 7 à 17 ms sur deux cœurs ;
   avant : 221 pages montées à chaque image. Les tests de Taranis et des cylindres conformes sur lavapipe et SwiftShader.
+
+## 104. Les blocs creusés ; les rôles du créateur sur le tapis (23 novembre, 0.818)
+
+**Le profil d'abord** (des compteurs dans le C) : un rayon fait 11 pas dans le vide (les briques vides se sautent
+d'un coup), mais 38 pas de voxel dans les briques de surface, un voxel à la fois, même là où la brique est presque
+vide. C'était là que l'image passait son temps, pas dans la promesse ni dans les mots de 16 octets.
+
+- **Les blocs creusés** (`FCREUX = 110`, `creuser_blocs()` à la création du monde, en bandes) : pour chaque brique
+  8³ du pool, un mot de 64 bits ; un bit par sous-bloc 2³, rangés par 8 dans chaque sous-bloc 4³. Dans `tracer`, un
+  voxel vide regarde son 4³ (s'il est vide, le rayon saute 4), puis son 2³ (il saute 2). Même chose dans `cubes_ref.c`.
+- **Le résultat** : 38 → 11 pas de voxel par rayon. Ici : le C 535 → 257 ms par image, vtx (`cubes_gif`) 600 →
+  346 ms. 3 points sur 921 600 changent (au plus 29 sur une couleur : les rayons rasants qui traversaient un coin).
+  Nouvelle empreinte à l'échelle 1 : **4430286082495688754**, la même en C et en vtx.
+
+**Les rôles du créateur** (« les rayons sont dans image alors qu'ils devraient être dans clarté… ils devraient se
+retrouver dans le cache pour apparaître ensuite à l'écran… moins d'étages, plus de rapidité ») : un ARN de 3 étages
+au lieu de 4.
+- **Rayons et clarté** (`E_RAYONS`, ou `E_RAYONS_CARTE` sur la carte) : un seul étage trace le rayon et décide la
+  clarté (l'ombre et la lumière) au même point, dans la même passe ; il écrit les trois mots du point.
+- **Divona** (`E_EAU`) : ne fait plus que l'eau (la couleur des points d'eau).
+- **Le cache** (`E_ECRAN`) : compose (le ciel, la brume, la couleur) et pose l'image à l'écran.
+- `filmer_roles(tourne, carte, mesure)` ; les temps des étages au dixième de ms. Les mains :
+  `cubes_roles_mesure`, `cubes_roles_carte_mesure`, `cubes_roles_gif`.
+
+**Un piège trouvé en route** : la boucle du vergobret n'était plus jouée en bandes (647 ms au lieu de 359). Deux
+appels écrits l'un après l'autre dans une branche (`etage_cache(y, k); etage_ecran(y, …);`) formaient un accord, et
+un accord n'entre pas dans les bandes : la boucle tombait en segments, un seul cœur. Liés par une valeur, ils
+restent une seule note. Honnêtement : c'est une limite de la forge, pas du programme ; à corriger dans la forge un
+jour (accepter les accords sans effet dans les bandes).
+
+**Mesures ici (2 cœurs, pas chez le créateur)** : ancien tapis 356 ms par image, nouveaux rôles 366 ms (rayons et
+clarté 275,9, Divona 80,5, cache 9,8). Pas plus rapide : la fusion retire un passage, pas le travail du rayon.
+Sur lavapipe (petit film 320 × 180), les rayons et la clarté sur la carte donnent la même empreinte que le processeur.
+Les tests de Taranis, des cylindres, l'épreuve et les mêmes mots : conformes.

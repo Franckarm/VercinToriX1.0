@@ -352,7 +352,10 @@ class Noyau:
         return v
 
     def verifier_type(self, e):
-        t = self.fo.typ(e)
+        try:
+            t = self.fo.typ(e)
+        except Exception as x:
+            raise PasPourLaCarte(f"un type que le noyau ne sait pas lire ({x})")
         if t != "e":
             raise PasPourLaCarte(f"type {t} : le noyau ne connaît que l'entier")
 
@@ -648,6 +651,10 @@ class Noyau:
         sauve = self.fo.vtypes
         vt = dict(zip(f.params, f.ptypes))
         self.fo.vtypes = vt
+        # 0.818 : locales se souvient des corps de boucle déjà vus (les segments d'une boucle partagent un corps) ; ici,
+        # la fonction est relue en entier : ce souvenir repart de zéro le temps de la lecture
+        vus = self.fo.__dict__.get("_corps_vus")
+        self.fo._corps_vus = set()
         try:
             loc = []
             self.fo.locales(f.corps, loc)
@@ -658,6 +665,10 @@ class Noyau:
                     vt[nom] = st[4] if len(st) > 4 and st[4] else self.fo.typ(st[2])
         finally:
             self.fo.vtypes = sauve
+            if vus is None:
+                del self.fo._corps_vus
+            else:
+                self.fo._corps_vus = vus
         return vt
 
     # ------------------------------------------------------------ les instructions

@@ -30,6 +30,9 @@ constante FTEX = 1;                // le cube de texture de la tuile t : fréque
 constante FELT = 17;               // le cube d'élément de la tuile t : fréquence FELT + t
 constante FCIEL = 33;              // 0.810 : le calque du ciel de la tuile t (fréquence FCIEL + t) : ce que chaque point
                                    // de surface voit du ciel, rangé une fois (un octet par point, huit points par mot)
+constante FCREUX = 110;            // 0.818 : les blocs creusés de la tuile t (fréquence FCREUX + t) : pour chaque bloc
+                                   // porteur, un mot de 64 bits : un bit par sous-bloc de 2³ (rangés par sous-bloc de
+                                   // 4³ : 8 bits chacun) ; 0 : tout vide, le rayon le traverse d'un pas
 constante FSOL = 49;               // 0.810 : le calque du soleil de la tuile t (fréquence FSOL + t) : la clepsydre de
                                    // chaque point de surface, refaite seulement quand le soleil bouge
                                    // 0.812 : trois jeux de soleil (jeu 0, 1, 2 : FSOL + 16 · jeu + t ; ses directions
@@ -552,6 +555,31 @@ fonction creer_monde() {
     placer_blocs();
     remplir_blocs();
     distancer_blocs();
+    creuser_blocs();
+}
+
+// 0.818 : les blocs creusés. Un rayon passait les trois quarts de ses pas point par point dans les blocs porteurs d'une
+// surface (38 pas sur 49 en moyenne : un bloc qui porte un peu de terrain est surtout du vide au-dessus) ; chaque bloc
+// porteur garde la carte de ses sous-blocs vides (de 4³ et de 2³), et le rayon les traverse d'un seul pas (38 → 11)
+fonction creuser_blocs() {
+    pour t dans 0..(TUILES * TUILES) {
+        soit n = @2[GLOB + 1 + t];
+        soit base = (FELT + t) << 24;
+        pour b dans 0..n en bandes {
+            soit m = 0;
+            pour v dans 0..512 {
+                si @2[base + REP + b * 512 + v] != 0 {
+                    soit lx = v >> 6;
+                    soit ly = (v >> 3) & 7;
+                    soit lz = v & 7;
+                    soit s4 = ((lx >> 2) << 2) | ((ly >> 2) << 1) | (lz >> 2);
+                    soit s2 = (((lx >> 1) & 1) << 2) | (((ly >> 1) & 1) << 1) | ((lz >> 1) & 1);
+                    m = m | (1 << (s4 * 8 + s2));
+                }
+            }
+            @2[((FCREUX + t) << 24) + b] = m;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------- lire le monde
@@ -641,6 +669,19 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
                     retour t;
                 }
                 s = 1;
+                // 0.818 : un point vide : son sous-bloc de 4³, ou de 2³, est-il tout vide ? (les blocs creusés)
+                si v == 0 {
+                    soit cm = @2[((FCREUX + (z >> 8) * TUILES + (x >> 8)) << 24) + e - 16];
+                    soit cx4 = (((x >> 2) & 1) << 2) | (((y >> 2) & 1) << 1) | ((z >> 2) & 1);
+                    si ((cm >> (cx4 * 8)) & 255) == 0 {
+                        s = 4;
+                    } sinon {
+                        soit cx2 = (((x >> 1) & 1) << 2) | (((y >> 1) & 1) << 1) | ((z >> 1) & 1);
+                        si ((cm >> (cx4 * 8 + cx2)) & 1) == 0 {
+                            s = 2;
+                        }
+                    }
+                }
             }
         }
         soit arr = 0;

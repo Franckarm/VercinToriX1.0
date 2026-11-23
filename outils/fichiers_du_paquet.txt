@@ -235,3 +235,6 @@ belenos/cubes_tapis_mesure0.vtx
 belenos/cubes_tapis_mesure1.vtx
 belenos/cubes_carte_gif.vtx
 belenos/cubes_carte_mesure.vtx
+belenos/cubes_roles_mesure.vtx
+belenos/cubes_roles_carte_mesure.vtx
+belenos/cubes_roles_gif.vtx

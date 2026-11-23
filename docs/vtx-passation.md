@@ -202,3 +202,14 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
    un seul arrondi ; un vrai port Arduino.
 
 **Après** : la mémoire du cube pour l'IA (la direction du créateur : éviter la coupure entre deux conversations).
+
+## 0.818 (23 novembre)
+- Blocs creusés (FCREUX=110, un mot 64 bits par brique 8³ : sauts de 4 et de 2 dans tracer, et dans cubes_ref.c) :
+  38 → 11 pas de voxel par rayon ; C 535 → 257 ms, vtx 600 → 346 ms ici. Empreinte échelle 1 : 4430286082495688754.
+- Rôles du créateur (filmer_roles) : ARN de 3 étages, rayons+clarté (E_RAYONS / E_RAYONS_CARTE), Divona pour l'eau
+  (E_EAU), le cache compose vers l'écran (E_ECRAN, qui appelle aussi etage_cache).
+- Piège : deux appels consécutifs dans une branche du tapis = un accord = pas de bandes (un cœur). Les lier par une
+  valeur (`soit fait = etage_cache(..); etage_ecran(y, s + fait * 0);`). À corriger dans la forge.
+- Noyau Taranis : types_de remet `_corps_vus` autour des locales ; verifier_type rend PasPourLaCarte.
+- Prochaine livraison : vtx-0.819.zip / essai-0.819.bat.
+- À discuter : une nouvelle répartition (carte et processeur ensemble sur des rangées) ; l'écart par fil vtx/C.

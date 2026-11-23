@@ -1,4 +1,4 @@
-/* Belenos : le paysage fait dans le cube, écrit en C pour comparer (0.809 ; 0.810 : les calques de lumière ; 0.811 : la pente apprise). Le même calcul que cubes_scene.vtx et
+/* Belenos : le paysage fait dans le cube, écrit en C pour comparer (0.809 ; 0.810 : les calques de lumière ; 0.811 : la pente apprise ; 0.818 : les blocs creusés). Le même calcul que cubes_scene.vtx et
  * cubes_film.vtx, entier pour entier : la même empreinte. Sans GIF (les images sont calculées, pas écrites).
  *     cc -O2 -o cubes_ref belenos/cubes_ref.c                      (l'échelle 1, un cœur)
  *     cc -O2 -fopenmp -o cubes_ref belenos/cubes_ref.c             (les rangées de l'image sur tous les cœurs)
@@ -69,7 +69,7 @@ static inline u sar(u a, int n) { return (u)((s)a >> n); }
 static inline int slt(u a, u b) { return (s)a < (s)b; }
 
 static u SINUS[1024], *HCOL, *PENTE, GLOB[64], SOLEILS[16];
-static u *DIRE[16], *DIRT[16], *POOLE[16], *POOLT[16], *CIELC[16], *SOLC[16];
+static u *DIRE[16], *DIRT[16], *POOLE[16], *POOLT[16], *CIELC[16], *SOLC[16], *CREUX[16];
 static u *DISTA, *DISTB;
 static u ECRAN[W * H];
 static u COMPTE[4 * H];
@@ -286,6 +286,7 @@ static void placer_et_remplir(void) {
         POOLT[t] = calloc((n * 512 + 1) * PAS, sizeof(u));
         CIELC[t] = calloc((n * 64 + 1) * PAS, sizeof(u));
         SOLC[t] = calloc((n * 64 + 1) * PAS, sizeof(u));
+        CREUX[t] = calloc(n + 1, sizeof(u));
     }
     long q;
 #pragma omp parallel for schedule(dynamic, 8)
@@ -302,6 +303,22 @@ static void placer_et_remplir(void) {
                     POOLT[t][IX(place + v)] = c >> 32;
                 }
             }
+        }
+    }
+    /* 0.818 : les blocs creusés (un bit par sous-bloc de 2³, rangés par sous-bloc de 4³) */
+    for (u t = 0; t < TUILES * TUILES; t++) {
+        u n = GLOB[1 + t];
+        for (u b = 0; b < n; b++) {
+            u m = 0;
+            for (u v = 0; v < 512; v++) {
+                if (POOLE[t][IX(b * 512 + v)] != 0) {
+                    u x = v >> 6, y = (v >> 3) & 7, z = v & 7;
+                    u s4 = ((x >> 2) << 2) | ((y >> 2) << 1) | (z >> 2);
+                    u s2 = (((x >> 1) & 1) << 2) | (((y >> 1) & 1) << 1) | ((z >> 1) & 1);
+                    m |= (u)1 << (s4 * 8 + s2);
+                }
+            }
+            CREUX[t][b] = m;
         }
     }
 }
@@ -383,6 +400,15 @@ static u tracer(u ox, u oy, u oz, u dx, u dy, u dz, u tmax, int eau) {
             u v = POOLE[tl][IX((e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7))];
             if (v != 0 && (eau == 1 || ((v >> 2) & 63) != EAU)) return t;
             sz_ = 1;
+            if (v == 0) {
+                u m = CREUX[tl][e - 16];
+                u s4 = (((x >> 2) & 1) << 2) | (((y >> 2) & 1) << 1) | ((z >> 2) & 1);
+                if (((m >> (s4 * 8)) & 255) == 0) sz_ = 4;
+                else {
+                    u s2 = (((x >> 1) & 1) << 2) | (((y >> 1) & 1) << 1) | ((z >> 1) & 1);
+                    if (((m >> (s4 * 8 + s2)) & 1) == 0) sz_ = 2;
+                }
+            }
         }
         u arr = sz_ == 8 ? (av - 1) * 8 : 0;
         u pas = MANQUE;
