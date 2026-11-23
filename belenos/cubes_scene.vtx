@@ -1,0 +1,827 @@
+// Belenos : le paysage fait dans le cube (0.808).
+//
+// Le monde est fait de 2 × 2 tuiles ; chaque tuile a deux cubes, chacun à sa fréquence dans l'étage 2 :
+//     le cube de texture  (fréquence FTEX + tuile) : la couleur de chaque point (0xRRGGBB)
+//     le cube d'élément   (fréquence FELT + tuile) : ce qu'est chaque point : son état de Belnap (inconnu : vide ;
+//                         vrai : matière), sa matière (roche, herbe, neige, eau…) et, pour un point de surface, son
+//                         orientation (la normale)
+// Un cube ne garde que ses points de surface : il est rangé en blocs de 8 × 8 × 8 ; son annuaire (les 32 768 premiers
+// mots) dit pour chaque bloc s'il est vide, plein d'une même chose (un mot suffit) ou s'il porte une surface (alors ses
+// 512 points sont rangés plus loin, dans la réserve du cube). Un rayon saute un bloc vide d'un coup.
+// Le monde se lit en coordonnées globales : un rayon qui passe d'une tuile à l'autre passe d'un cube (d'une fréquence)
+// à l'autre sans couture.
+// L'image : un rayon par point de l'écran ; l'ombre par la clepsydre (quatre rayons vers les quatre bords du soleil :
+// les quatre en clair, vrai ; aucun, faux ; entre les deux, variable, la pénombre et sa densité) ; quatre rayons courts
+// vers le ciel autour de la normale (l'occlusion) ; l'eau renvoie le monde (l'anti-cube : le rayon retourné), ridée.
+
+constante W = 1280;
+constante H = 720;
+constante TUILES = 2;              // 2 × 2 tuiles
+constante MONDE = 512;             // le côté du monde, en points
+constante FTEX = 1;                // le cube de texture de la tuile t : fréquence FTEX + t
+constante FELT = 5;                // le cube d'élément de la tuile t : fréquence FELT + t
+constante REP = 32768;             // la réserve d'un cube : après son annuaire
+constante MER = 44;                // le niveau de la mer
+constante MANQUE = 4611686018427387904;  // un rayon qui ne touche rien
+constante HAUT_MAX = 16384000;     // 250 points (en 1/65536) : au-dessus, plus rien
+
+// l'étage 2, fréquence 0 : les tables du programme
+constante SINUS = 0;               // @2[SINUS + a] : 65536 · sin(2π a / 1024), signé
+constante HCOL = 65536;            // @2[HCOL + z·512 + x] : la hauteur du sol, en 1/256 de point
+constante PENTE = 327680;          // @2[PENTE + z·512 + x] : la pente du sol (en 1/256)
+constante GLOB = 600000;           // la hauteur de l'arche ; les tailles des réserves
+constante SOLEILS = 600100;        // les quatre directions de la clepsydre (vers les bords du soleil), puis le soleil
+constante COMPTE = 600200;         // @2[COMPTE + 4 y + e] : les points de la rangée y dans l'état e
+
+// les matières
+constante ROCHE = 1;
+constante HERBE = 2;
+constante NEIGE = 3;
+constante SABLE = 4;
+constante EAU = 5;
+constante TERRE = 6;
+constante LANDE = 7;
+
+// l'arche, à cheval sur deux tuiles (x = 256 : la frontière)
+constante ARCHE_X = 256;
+constante ARCHE_Z = 300;
+constante ARCHE_R = 30;            // le rayon de l'arche
+constante ARCHE_E = 7;             // l'épaisseur de sa pierre
+
+// ---------------------------------------------------------------------------------------------------- les tables
+fonction preparer_sinus() {
+    pour a dans 0..1024 {
+        soit u = a & 511;
+        soit v = 4 * u * (512 - u) * 65536 / (327680 - u * (512 - u));
+        si a >= 512 {
+            @2[SINUS + a] = 0 - v;
+        } sinon {
+            @2[SINUS + a] = v;
+        }
+    }
+}
+
+fonction sin1024(a) {
+    retour @2[SINUS + (a & 1023)];
+}
+
+fonction cos1024(a) {
+    retour @2[SINUS + ((a + 256) & 1023)];
+}
+
+// -------------------------------------------------------------------------------------------------- les bruits
+fonction hache(x, z) {
+    soit h = (x & 511) * 374761393 + (z & 511) * 668265263 + 1013904223;
+    h = (h ^ (h >> 13)) * 1274126177;
+    retour (h ^ (h >> 16)) & 65535;
+}
+
+fonction hache3(x, y, z) {
+    soit h = (x & 1023) * 374761393 + (y & 1023) * 668265263 + (z & 1023) * 2246822519 + 1013904223;
+    h = (h ^ (h >> 13)) * 1274126177;
+    retour (h ^ (h >> 16)) & 65535;
+}
+
+// le bruit lisse du plan, à la période p (une puissance de deux), sur un monde de 512 qui se répète
+fonction bruit_lisse(x, z, p) {
+    soit x0 = x / p;
+    soit z0 = z / p;
+    soit fx = (x % p) * 256 / p;
+    soit fz = (z % p) * 256 / p;
+    soit sx = fx * fx * (768 - 2 * fx) / 65536;
+    soit sz = fz * fz * (768 - 2 * fz) / 65536;
+    soit n = MONDE / p;
+    soit a = hache(x0 % n, z0 % n);
+    soit b = hache((x0 + 1) % n, z0 % n);
+    soit c = hache(x0 % n, (z0 + 1) % n);
+    soit d = hache((x0 + 1) % n, (z0 + 1) % n);
+    soit h1 = (a * (256 - sx) + b * sx) / 256;
+    soit h2 = (c * (256 - sx) + d * sx) / 256;
+    retour (h1 * (256 - sz) + h2 * sz) / 256;
+}
+
+// le bruit lisse du volume, à la période 16 : les huit coins, mêlés en douceur (de 0 à 65535)
+fonction bruit3(x, y, z) {
+    soit x0 = x >> 4;
+    soit y0 = y >> 4;
+    soit z0 = z >> 4;
+    soit fx = (x & 15) * 16;
+    soit fy = (y & 15) * 16;
+    soit fz = (z & 15) * 16;
+    soit sx = fx * fx * (768 - 2 * fx) / 65536;
+    soit sy = fy * fy * (768 - 2 * fy) / 65536;
+    soit sz = fz * fz * (768 - 2 * fz) / 65536;
+    soit a0 = (hache3(x0, y0, z0) * (256 - sx) + hache3(x0 + 1, y0, z0) * sx) / 256;
+    soit a1 = (hache3(x0, y0 + 1, z0) * (256 - sx) + hache3(x0 + 1, y0 + 1, z0) * sx) / 256;
+    soit a2 = (hache3(x0, y0, z0 + 1) * (256 - sx) + hache3(x0 + 1, y0, z0 + 1) * sx) / 256;
+    soit a3 = (hache3(x0, y0 + 1, z0 + 1) * (256 - sx) + hache3(x0 + 1, y0 + 1, z0 + 1) * sx) / 256;
+    soit b0 = (a0 * (256 - sy) + a1 * sy) / 256;
+    soit b1 = (a2 * (256 - sy) + a3 * sy) / 256;
+    retour (b0 * (256 - sz) + b1 * sz) / 256;
+}
+
+// ------------------------------------------------------------------------------------------------------ le sol
+// la hauteur de chaque colonne du monde (en 1/256 de point) : des collines, des vallées que la mer noie, des monts
+fonction creer_sol() {
+    pour z dans 0..MONDE en bandes {
+        pour x dans 0..MONDE {
+            soit h = bruit_lisse(x, z, 256) * 16 + bruit_lisse(x, z, 128) * 8 + bruit_lisse(x, z, 64) * 4
+                     + bruit_lisse(x, z, 32) * 2 + bruit_lisse(x, z, 16);
+            // les octaves additionnées se moyennent : l'écart au milieu est étiré (fois 2,75), pour des vallées que la mer
+            // noie et des monts qui montent jusqu'aux neiges
+            soit n = h / 31;
+            soit e = ((n - 32768) * 11) ./ 4;
+            soit n2 = 32768 + e;
+            si n2 .< 0 {
+                n2 = 0;
+            }
+            si n2 > 65535 {
+                n2 = 65535;
+            }
+            soit m = 0;
+            si n2 > 34000 {
+                m = (n2 - 34000) * 65536 / 31535;
+            }
+            si m > 65535 {
+                m = 65535;
+            }
+            @2[HCOL + z * MONDE + x] = 34 * 256 + n2 * 48 / 256 + m * m / 65536 * 160 / 256;
+        }
+    }
+    pour z dans 0..MONDE en bandes {
+        pour x dans 0..MONDE {
+            soit hx1 = @2[HCOL + z * MONDE + ((x + 1) & 511)];
+            soit hx0 = @2[HCOL + z * MONDE + ((x + 511) & 511)];
+            soit hz1 = @2[HCOL + ((z + 1) & 511) * MONDE + x];
+            soit hz0 = @2[HCOL + ((z + 511) & 511) * MONDE + x];
+            soit p = 0;
+            si hx1 > hx0 { p = p + hx1 - hx0; } sinon { p = p + hx0 - hx1; }
+            si hz1 > hz0 { p = p + hz1 - hz0; } sinon { p = p + hz0 - hz1; }
+            @2[PENTE + z * MONDE + x] = p / 2;
+        }
+    }
+    // l'arche se pose sur le sol, au milieu de ses deux pieds
+    @2[GLOB] = (@2[HCOL + ARCHE_Z * MONDE + ARCHE_X - ARCHE_R] + @2[HCOL + ARCHE_Z * MONDE + ARCHE_X + ARCHE_R]) / 512;
+}
+
+// la densité d'un point : positive dans la matière (en 1/256 de point) ; le sol, ses surplombs (le bruit du volume,
+// fort sur les hauteurs : des rochers qui avancent au-dessus du vide), et l'arche
+fonction densite(x, y, z) {
+    soit h = @2[HCOL + (z & 511) * MONDE + (x & 511)];
+    soit d = h - y * 256 - 128;
+    soit amp = 384;
+    si y > 110 && y < 1000 {
+        amp = 384 + (y - 110) * 40;
+        si amp > 1800 {
+            amp = 1800;
+        }
+    }
+    si d .< amp + 512 && d .> 0 - amp - 512 {
+        d = d + ((bruit3(x, y, z) - 32768) * amp) ./ 32768;
+    }
+    soit ay = @2[GLOB];
+    soit ax = x - ARCHE_X;
+    soit az = z - ARCHE_Z;
+    soit ah = y - ay;
+    si ax .> 0 - 48 && ax .< 48 && az .> 0 - 12 && az .< 12 && ah .> 0 - 8 && ah .< 48 {
+        soit q = racine_entiere((ax * ax + ah * ah) * 65536);
+        soit e = q - ARCHE_R * 256;
+        soit dist = racine_entiere(e * e + az * az * 65536);
+        // la pierre de l'arche n'est pas lisse : le bruit du volume la ronge
+        soit da = ARCHE_E * 256 - dist + ((bruit3(x * 2, y * 2, z * 2) - 32768) * 300) ./ 32768;
+        si da .> d {
+            d = da;
+        }
+    }
+    retour d;
+}
+
+// ce qu'est un point du monde : (sa couleur << 32) | son mot d'élément (l'état de Belnap sur 2 bits, la matière sur 6,
+// la normale sur 24 : nx + 128, ny + 128, nz + 128) ; 0 : vide (inconnu)
+fonction composer_point(x, y, z) {
+    soit d0 = densite(x, y, z);
+    si d0 .<= 0 {
+        si y < MER {
+            // l'eau : vraie matière, tournée vers le ciel ; sa couleur, plus sombre au large
+            soit fond = (MER * 256 - @2[HCOL + (z & 511) * MONDE + (x & 511)]) ./ 64;
+            si fond .< 0 {
+                fond = 0;
+            }
+            si fond > 120 {
+                fond = 120;
+            }
+            soit ce = rgb24(40 - fond / 6, 96 - fond / 3, 104 - fond / 5);
+            retour (ce << 32) | (normale_mot(0, 127, 0) << 8) | (EAU << 2) | 2;
+        }
+        retour 0;
+    }
+    soit dxm = densite(x - 1, y, z);
+    soit dxp = densite(x + 1, y, z);
+    soit dym = densite(x, y - 1, z);
+    soit dyp = densite(x, y + 1, z);
+    soit dzm = densite(x, y, z - 1);
+    soit dzp = densite(x, y, z + 1);
+    soit surface = 0;
+    si dxm .<= 0 || dxp .<= 0 || dym .<= 0 || dyp .<= 0 || dzm .<= 0 || dzp .<= 0 {
+        surface = 1;
+    }
+    // la matière
+    soit col = (z & 511) * MONDE + (x & 511);
+    soit hs = @2[HCOL + col] / 256;
+    soit pente = @2[PENTE + col];
+    soit mat = HERBE;
+    si y + 3 < hs {
+        mat = TERRE;
+    }
+    si dyp .> 0 && surface == 1 {
+        // le dessous d'un surplomb, ou un flanc qui ne voit pas le ciel
+        mat = ROCHE;
+    } sinon si y <= MER + 1 && y + 1 >= MER {
+        mat = SABLE;
+    } sinon si y > 128 {
+        si pente < 300 {
+            mat = NEIGE;
+        } sinon {
+            mat = ROCHE;
+        }
+    } sinon si pente > 420 || y > hs + 1 {
+        mat = ROCHE;
+    } sinon si y > 96 {
+        mat = LANDE;
+    }
+    // la couleur : celle de la matière, des taches (le bruit du plan) et un grain (point par point)
+    soit r = 78;
+    soit g = 120;
+    soit b = 58;
+    si mat == ROCHE {
+        r = 120;
+        g = 114;
+        b = 106;
+    } sinon si mat == NEIGE {
+        r = 236;
+        g = 240;
+        b = 246;
+    } sinon si mat == SABLE {
+        r = 196;
+        g = 182;
+        b = 140;
+    } sinon si mat == TERRE {
+        r = 100;
+        g = 80;
+        b = 60;
+    } sinon si mat == LANDE {
+        r = 128;
+        g = 118;
+        b = 80;
+    }
+    soit tache = (bruit_lisse(x & 511, z & 511, 32) / 2048) + (y & 3);
+    soit grain = hache3(x, y, z) & 15;
+    r = r + tache + grain;
+    g = g + tache + grain;
+    b = b + tache / 2 + grain;
+    soit c = rgb24(r, g, b);
+    soit nm = 0;
+    si surface == 1 {
+        // l'orientation : contre la pente de la densité
+        soit nx = dxm - dxp;
+        soit ny = dym - dyp;
+        soit nz = dzm - dzp;
+        soit lg = racine_entiere(nx * nx + ny * ny + nz * nz);
+        si lg == 0 {
+            nm = normale_mot(0, 127, 0);
+        } sinon {
+            nm = normale_mot((nx * 127) ./ lg, (ny * 127) ./ lg, (nz * 127) ./ lg);
+        }
+    }
+    retour (c << 32) | (nm << 8) | (mat << 2) | 2;
+}
+
+fonction rgb24(r, g, b) {
+    si r .< 0 {
+        r = 0;
+    }
+    si g .< 0 {
+        g = 0;
+    }
+    si b .< 0 {
+        b = 0;
+    }
+    si r > 255 {
+        r = 255;
+    }
+    si g > 255 {
+        g = 255;
+    }
+    si b > 255 {
+        b = 255;
+    }
+    retour (r << 16) | (g << 8) | b;
+}
+
+fonction normale_mot(nx, ny, nz) {
+    retour ((nx + 128) & 255) | (((ny + 128) & 255) << 8) | (((nz + 128) & 255) << 16);
+}
+
+// ---------------------------------------------------------------------------------------- les cubes des tuiles
+// premier passage : chaque bloc de chaque tuile est classé : vide (0), plein d'une même chose (1 << 62 | le mot), ou
+// porteur d'une surface (1 : à remplir) ; le sol de ses colonnes et le bruit du volume suffisent à le dire
+fonction classer_blocs() {
+    pour q dans 0..(TUILES * TUILES * 1024) en bandes {
+        soit t = q >> 10;
+        soit bx = q & 31;
+        soit bz = (q >> 5) & 31;
+        soit x0 = (t & 1) * 256 + bx * 8;
+        soit z0 = (t >> 1) * 256 + bz * 8;
+        // le sol le plus bas et le plus haut des colonnes du bloc et de leurs voisines
+        soit hmin = 1000000;
+        soit hmax = 0;
+        pour dz dans 0..10 {
+            pour dx dans 0..10 {
+                soit h = @2[HCOL + ((z0 + dz + 511) & 511) * MONDE + ((x0 + dx + 511) & 511)];
+                si h < hmin {
+                    hmin = h;
+                }
+                si h > hmax {
+                    hmax = h;
+                }
+            }
+        }
+        soit base = (FELT + t) << 24;
+        soit tex = (FTEX + t) << 24;
+        // l'arche : les blocs de sa boîte portent une surface
+        soit ay = @2[GLOB];
+        soit arche_x = 0;
+        si x0 + 8 + 48 > ARCHE_X && x0 < ARCHE_X + 48 && z0 + 8 + 12 > ARCHE_Z && z0 < ARCHE_Z + 12 {
+            arche_x = 1;
+        }
+        pour by dans 0..32 {
+            soit y0 = by * 8;
+            soit amp = 384;
+            si y0 + 9 > 110 {
+                amp = 384 + (y0 + 9 - 110) * 40;
+                si amp > 1800 {
+                    amp = 1800;
+                }
+            }
+            soit b = (bx << 10) | (by << 5) | bz;
+            soit e = 1;
+            si arche_x == 1 && y0 + 9 + 8 > ay && y0 < ay + 48 + 1 {
+                e = 1;
+            } sinon si y0 * 256 > hmax + amp + 640 {
+                // au-dessus du sol : l'air, ou l'eau sous la mer
+                si y0 >= MER {
+                    e = 0;
+                } sinon si y0 + 8 <= MER {
+                    e = 3;
+                }
+            } sinon si (y0 + 9) * 256 + 640 + amp < hmin {
+                // sous le sol, loin de toute surface : la terre
+                e = 2;
+            }
+            si e == 0 {
+                @2[base + b] = 0;
+            } sinon si e == 2 {
+                @2[base + b] = (1 << 62) | (TERRE << 2) | 2;
+                @2[tex + b] = rgb24(100, 80, 60);
+            } sinon si e == 3 {
+                soit c = composer_point(x0 + 4, y0 + 4, z0 + 4);
+                @2[base + b] = (1 << 62) | (c & 4294967295);
+                @2[tex + b] = c >> 32;
+            } sinon {
+                @2[base + b] = 1;
+            }
+        }
+    }
+}
+
+// deuxième passage (un seul cœur) : chaque bloc porteur d'une surface reçoit sa place dans la réserve de son cube
+fonction placer_blocs() {
+    pour t dans 0..(TUILES * TUILES) {
+        soit base = (FELT + t) << 24;
+        soit n = 0;
+        pour b dans 0..32768 {
+            si @2[base + b] == 1 {
+                @2[base + b] = 16 + n;
+                n = n + 1;
+            }
+        }
+        @2[GLOB + 1 + t] = n;
+    }
+}
+
+// troisième passage : les 512 points de chaque bloc porteur, dans les deux cubes (chaque bloc écrit sa seule place)
+fonction remplir_blocs() {
+    pour q dans 0..(TUILES * TUILES * 1024) en bandes {
+        soit t = q >> 10;
+        soit bx = q & 31;
+        soit bz = (q >> 5) & 31;
+        soit x0 = (t & 1) * 256 + bx * 8;
+        soit z0 = (t >> 1) * 256 + bz * 8;
+        soit base = (FELT + t) << 24;
+        soit tex = (FTEX + t) << 24;
+        pour by dans 0..32 {
+            soit e = @2[base + ((bx << 10) | (by << 5) | bz)];
+            si e >= 16 && e < (1 << 62) {
+                soit place = REP + (e - 16) * 512;
+                pour v dans 0..512 {
+                    soit c = composer_point(x0 + (v >> 6), by * 8 + ((v >> 3) & 7), z0 + (v & 7));
+                    @2[base + place + v] = c & 4294967295;
+                    @2[tex + place + v] = c >> 32;
+                }
+            }
+        }
+    }
+}
+
+fonction creer_monde() {
+    preparer_sinus();
+    creer_sol();
+    classer_blocs();
+    placer_blocs();
+    remplir_blocs();
+}
+
+// ---------------------------------------------------------------------------------------- lire le monde
+// le mot d'élément d'un point (x, y, z dans le monde) : 0 si vide ou hors du monde
+fonction element(x, y, z) {
+    si x >= MONDE || z >= MONDE || y >= 256 {
+        retour 0;
+    }
+    soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
+    soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    si e == 0 {
+        retour 0;
+    }
+    si (e >> 62) == 1 {
+        retour e & 4294967295;
+    }
+    retour @2[base + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+}
+
+// la couleur d'un point (du cube de texture)
+fonction couleur(x, y, z) {
+    soit t = (z >> 8) * TUILES + (x >> 8);
+    soit b = (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31);
+    soit e = @2[((FELT + t) << 24) + b];
+    si (e >> 62) == 1 {
+        retour @2[((FTEX + t) << 24) + b];
+    }
+    retour @2[((FTEX + t) << 24) + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+}
+
+// la marche d'un rayon : de (ox, oy, oz) dans la direction (dx, dy, dz) (en 1/65536, de longueur 65536), jusqu'à la
+// distance tmax ; rend la distance du premier point touché (en 1/65536), ou MANQUE. Un bloc vide se saute d'un coup ;
+// dans un bloc porteur, point par point. eau == 0 : l'eau ne compte pas (les rayons d'ombre et de ciel la traversent)
+fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
+    soit t = 0;
+    tantque t < tmax {
+        soit px = ox + ((dx * t) .>> 16);
+        soit py = oy + ((dy * t) .>> 16);
+        soit pz = oz + ((dz * t) .>> 16);
+        si py .>= HAUT_MAX && dy .>= 0 {
+            retour MANQUE;
+        }
+        si py .< 0 || px .< 0 || pz .< 0 || px .>= MONDE * 65536 || pz .>= MONDE * 65536 || py .>= 256 * 65536 {
+            retour MANQUE;
+        }
+        soit x = px >> 16;
+        soit y = py >> 16;
+        soit z = pz >> 16;
+        soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
+        soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+        soit s = 8;
+        si e != 0 {
+            si (e >> 62) == 1 {
+                si eau == 1 || ((e >> 2) & 63) != EAU {
+                    retour t;
+                }
+            } sinon {
+                soit v = @2[base + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+                si v != 0 && (eau == 1 || ((v >> 2) & 63) != EAU) {
+                    retour t;
+                }
+                s = 1;
+            }
+        }
+        // la sortie de la cellule (le bloc, ou le point) : la plus proche des trois faces vers où va le rayon
+        soit pas = MANQUE;
+        si dx .> 0 {
+            soit ex1 = ((((x | (s - 1)) + 1) << 16) - px) * 65536 / dx;
+            si ex1 < pas {
+                pas = ex1;
+            }
+        } sinon si dx .< 0 {
+            soit ex2 = ((px - ((x & (0 - s)) << 16)) + 1) * 65536 / (0 - dx);
+            si ex2 < pas {
+                pas = ex2;
+            }
+        }
+        si dy .> 0 {
+            soit ey1 = ((((y | (s - 1)) + 1) << 16) - py) * 65536 / dy;
+            si ey1 < pas {
+                pas = ey1;
+            }
+        } sinon si dy .< 0 {
+            soit ey2 = ((py - ((y & (0 - s)) << 16)) + 1) * 65536 / (0 - dy);
+            si ey2 < pas {
+                pas = ey2;
+            }
+        }
+        si dz .> 0 {
+            soit ez1 = ((((z | (s - 1)) + 1) << 16) - pz) * 65536 / dz;
+            si ez1 < pas {
+                pas = ez1;
+            }
+        } sinon si dz .< 0 {
+            soit ez2 = ((pz - ((z & (0 - s)) << 16)) + 1) * 65536 / (0 - dz);
+            si ez2 < pas {
+                pas = ez2;
+            }
+        }
+        t = t + pas + 1;
+    }
+    retour MANQUE;
+}
+
+// ---------------------------------------------------------------------------------------------------- la lumière
+// le soleil (az, el sur 1024) et les quatre directions de la clepsydre : vers les quatre bords du disque du soleil (un
+// disque élargi, à 2 degrés : la pénombre se voit)
+fonction preparer_soleil(az, el) {
+    soit lx = (cos1024(el) * sin1024(az)) ./ 65536;
+    soit ly = sin1024(el);
+    soit lz = (cos1024(el) * cos1024(az)) ./ 65536;
+    @2[SOLEILS + 12] = lx;
+    @2[SOLEILS + 13] = ly;
+    @2[SOLEILS + 14] = lz;
+    // deux directions perpendiculaires : u (horizontale), v = u × l
+    soit ul = racine_entiere(lx * lx + lz * lz);
+    soit ux = (lz * 65536) ./ ul;
+    soit uz = (0 - lx) * 65536 ./ ul;
+    soit vx = (0 - uz * ly) ./ 65536;
+    soit vy = (uz * lx - ux * lz) ./ 65536;
+    soit vz = (ux * ly) ./ 65536;
+    pour k dans 0..4 {
+        soit ex = 0;
+        soit ey = 0;
+        soit ez = 0;
+        si k == 0 {
+            ex = ux;
+            ez = uz;
+        } sinon si k == 1 {
+            ex = 0 - ux;
+            ez = 0 - uz;
+        } sinon si k == 2 {
+            ex = vx;
+            ey = vy;
+            ez = vz;
+        } sinon {
+            ex = 0 - vx;
+            ey = 0 - vy;
+            ez = 0 - vz;
+        }
+        soit sx = lx + (ex * 2300) ./ 65536;
+        soit sy = ly + (ey * 2300) ./ 65536;
+        soit sz = lz + (ez * 2300) ./ 65536;
+        soit lg = racine_entiere(sx * sx + sy * sy + sz * sz);
+        @2[SOLEILS + 3 * k] = (sx * 65536) ./ lg;
+        @2[SOLEILS + 3 * k + 1] = (sy * 65536) ./ lg;
+        @2[SOLEILS + 3 * k + 2] = (sz * 65536) ./ lg;
+    }
+}
+
+// le ciel dans la direction d : du bleu en haut au clair de l'horizon, le disque du soleil et sa lueur
+fonction ciel(dx, dy, dz) {
+    soit hy = dy;
+    si hy .< 0 {
+        hy = 0;
+    }
+    soit t = hy * 256 / 65536;
+    soit r = (200 * (256 - t) + 92 * t) / 256;
+    soit g = (214 * (256 - t) + 128 * t) / 256;
+    soit b = (230 * (256 - t) + 184 * t) / 256;
+    soit cs = (dx * @2[SOLEILS + 12] + dy * @2[SOLEILS + 13] + dz * @2[SOLEILS + 14]) ./ 65536;
+    si cs .> 65500 {
+        retour rgb24(255, 248, 228);
+    }
+    si cs .> 60000 {
+        soit lueur = (cs - 60000) * 90 / 5500;
+        r = r + lueur;
+        g = g + lueur * 3 / 4;
+        b = b + lueur / 3;
+    }
+    retour rgb24(r, g, b);
+}
+
+// la couleur vue par un rayon : le point touché, éclairé ; l'eau renvoie le monde (profondeur : combien de renvois
+// restent permis). Rend (l'état de la lumière << 24) | 0xRRGGBB ; l'état : 0 inconnu (le ciel), 1 faux (l'ombre), 2
+// vrai (le soleil en plein), 3 variable (la pénombre)
+fonction regarder(ox, oy, oz, dx, dy, dz, profondeur, temps) {
+    soit t = tracer(ox, oy, oz, dx, dy, dz, 1100 * 65536, 1);
+    si t == MANQUE {
+        retour ciel(dx, dy, dz);
+    }
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit e = element(x, y, z);
+    soit alb = couleur(x, y, z);
+    soit mat = (e >> 2) & 63;
+    soit nx = ((e >> 8) & 255) - 128;
+    soit ny = ((e >> 16) & 255) - 128;
+    soit nz = ((e >> 24) & 255) - 128;
+    si nx == 0 - 128 {
+        nx = 0;
+        ny = 127;
+        nz = 0;
+    }
+    soit lx = @2[SOLEILS + 12];
+    soit ly = @2[SOLEILS + 13];
+    soit lz = @2[SOLEILS + 14];
+    soit etat = 1;
+    soit r = 0;
+    soit g = 0;
+    soit b = 0;
+    si mat == EAU {
+        // l'eau : le monde renvoyé (le rayon retourné : l'anti-cube), ridé par le vent, plus fort en rasant
+        soit rx = dx + ((bruit_lisse((x + temps) & 511, z & 511, 16) - 32768) ./ 24);
+        soit rz = dz + ((bruit_lisse(x & 511, (z + temps * 2) & 511, 16) - 32768) ./ 24);
+        soit ry = 0 - dy;
+        soit lg = racine_entiere(rx * rx + ry * ry + rz * rz);
+        rx = (rx * 65536) ./ lg;
+        ry = (ry * 65536) ./ lg;
+        rz = (rz * 65536) ./ lg;
+        soit renvoi = 0;
+        si profondeur > 0 {
+            renvoi = regarder(px, (MER << 16) + 32768, pz, rx, ry, rz, profondeur - 1, temps) & 16777215;
+        } sinon {
+            renvoi = ciel(rx, ry, rz);
+        }
+        // la part renvoyée : de 25 % (vu d'en haut) à 85 % (en rasant)
+        soit rasant = 65536 - (0 - dy);
+        si dy .> 0 {
+            rasant = 65536;
+        }
+        soit part = 64 + rasant * rasant / 65536 * 154 / 65536;
+        soit fond_r = ((alb >> 16) & 255);
+        soit fond_g = ((alb >> 8) & 255);
+        soit fond_b = (alb & 255);
+        r = (fond_r * (256 - part) + ((renvoi >> 16) & 255) * part) / 256;
+        g = (fond_g * (256 - part) + ((renvoi >> 8) & 255) * part) / 256;
+        b = (fond_b * (256 - part) + (renvoi & 255) * part) / 256;
+        etat = 2;
+    } sinon {
+        // la pente face au soleil
+        soit nl = (nx * lx + ny * ly + nz * lz) ./ 127;
+        soit vus = 0;
+        // le point de départ des rayons : un peu au-dessus de la surface, le long de la normale
+        soit sx = px + nx * 600;
+        soit sy = py + ny * 600;
+        soit sz = pz + nz * 600;
+        si nl .> 0 {
+            // la clepsydre : quatre rayons vers les quatre bords du soleil
+            pour k dans 0..4 {
+                si tracer(sx, sy, sz, @2[SOLEILS + 3 * k], @2[SOLEILS + 3 * k + 1], @2[SOLEILS + 3 * k + 2], 700 * 65536, 0) == MANQUE {
+                    vus = vus + 1;
+                }
+            }
+            si vus == 4 {
+                etat = 2;
+            } sinon si vus > 0 {
+                etat = 3;
+            }
+        } sinon {
+            nl = 0;
+        }
+        // le ciel vu : quatre rayons courts autour de la normale (la normale penchée vers deux directions
+        // perpendiculaires, dans les deux sens)
+        soit n16x = nx * 516;
+        soit n16y = ny * 516;
+        soit n16z = nz * 516;
+        // t1 : perpendiculaire à la normale (sa composante la plus faible mise à part)
+        soit t1x = 0;
+        soit t1y = 0;
+        soit t1z = 0;
+        soit ay_ = ny;
+        si ay_ .< 0 {
+            ay_ = 0 - ay_;
+        }
+        si ay_ .< 90 {
+            // une paroi : t1 = n × (0, 1, 0)
+            t1x = 0 - n16z;
+            t1z = n16x;
+        } sinon {
+            // un replat : t1 = n × (1, 0, 0)
+            t1y = n16z;
+            t1z = 0 - n16y;
+        }
+        soit l1 = racine_entiere(t1x * t1x + t1y * t1y + t1z * t1z);
+        si l1 == 0 {
+            l1 = 1;
+        }
+        t1x = (t1x * 65536) ./ l1;
+        t1y = (t1y * 65536) ./ l1;
+        t1z = (t1z * 65536) ./ l1;
+        soit t2x = (n16y * t1z - n16z * t1y) ./ 65536;
+        soit t2y = (n16z * t1x - n16x * t1z) ./ 65536;
+        soit t2z = (n16x * t1y - n16y * t1x) ./ 65536;
+        soit ouverts = 0;
+        pour k dans 0..4 {
+            soit ex = t1x;
+            soit ey = t1y;
+            soit ez = t1z;
+            si k == 1 {
+                ex = 0 - t1x;
+                ey = 0 - t1y;
+                ez = 0 - t1z;
+            } sinon si k == 2 {
+                ex = t2x;
+                ey = t2y;
+                ez = t2z;
+            } sinon si k == 3 {
+                ex = 0 - t2x;
+                ey = 0 - t2y;
+                ez = 0 - t2z;
+            }
+            soit cx = (n16x * 3 + ex * 4) ./ 5;
+            soit cy = (n16y * 3 + ey * 4) ./ 5;
+            soit cz = (n16z * 3 + ez * 4) ./ 5;
+            si tracer(sx, sy, sz, cx, cy, cz, 14 * 65536, 0) == MANQUE {
+                ouverts = ouverts + 1;
+            }
+        }
+        // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
+        soit ciel_part = 40 + ouverts * 30;
+        soit soleil = nl * vus / 4 * 256 / 65536;
+        soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
+        soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
+        soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
+        r = ((alb >> 16) & 255) * lr / 200;
+        g = ((alb >> 8) & 255) * lg2 / 200;
+        b = (alb & 255) * lb / 200;
+    }
+    // la brume : la distance mêle au ciel de l'horizon
+    soit d = t >> 16;
+    soit brume = d * d / 1600;
+    si brume > 220 {
+        brume = 220;
+    }
+    r = (r * (256 - brume) + 200 * brume) / 256;
+    g = (g * (256 - brume) + 214 * brume) / 256;
+    b = (b * (256 - brume) + 230 * brume) / 256;
+    retour (etat << 24) | rgb24(r, g, b);
+}
+
+// une image : l'œil en (cx, cy, cz) (en 1/65536 de point), tourné vers l'angle lacet (sur 1024), penché de tangage ;
+// chaque rangée de l'écran va à un cœur
+fonction rendre_cubes(cx, cy, cz, lacet, tangage, temps) {
+    soit sl = sin1024(lacet);
+    soit cl = cos1024(lacet);
+    soit st = sin1024(tangage);
+    soit ct = cos1024(tangage);
+    // l'avant, la droite et le haut de l'œil
+    soit fx = (sl * ct) ./ 65536;
+    soit fy = st;
+    soit fz = (cl * ct) ./ 65536;
+    soit rx = cl;
+    soit rz = 0 - sl;
+    soit ux = (0 - sl * st) ./ 65536;
+    soit uy = ct;
+    soit uz = (0 - cl * st) ./ 65536;
+    pour y dans 0..H en bandes {
+        soit n0 = 0;
+        soit n1 = 0;
+        soit n2 = 0;
+        soit n3 = 0;
+        // tan(35°) · 65536 = 45889 : le champ de 70 degrés en largeur
+        soit sy = ((H - 2 * y - 1) * 45889) ./ W;
+        pour x dans 0..W {
+            soit sx = ((2 * x + 1 - W) * 45889) ./ W;
+            soit dx = fx + (rx * sx + ux * sy) ./ 65536;
+            soit dy = fy + (uy * sy) ./ 65536;
+            soit dz = fz + (rz * sx + uz * sy) ./ 65536;
+            soit lg = racine_entiere(dx * dx + dy * dy + dz * dz);
+            dx = (dx * 65536) ./ lg;
+            dy = (dy * 65536) ./ lg;
+            dz = (dz * 65536) ./ lg;
+            soit v = regarder(cx, cy, cz, dx, dy, dz, 1, temps);
+            soit etat = v >> 24;
+            si etat == 0 {
+                n0 = n0 + 1;
+            } sinon si etat == 1 {
+                n1 = n1 + 1;
+            } sinon si etat == 2 {
+                n2 = n2 + 1;
+            } sinon {
+                n3 = n3 + 1;
+            }
+            @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+        }
+        @2[COMPTE + 4 * y] = n0;
+        @2[COMPTE + 4 * y + 1] = n1;
+        @2[COMPTE + 4 * y + 2] = n2;
+        @2[COMPTE + 4 * y + 3] = n3;
+    }
+}

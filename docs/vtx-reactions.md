@@ -3950,3 +3950,48 @@ autres tâches d'un programme (la marche, le son, les entrées).
   pas d'un mot jamais touché sans noter chaque écriture (ce qui coûterait) ; le compte ne se fait que sur demande.
 - **La clepsydre, précisée par le créateur** : des points de référence pour l'ombre (le point de surface, ses quatre
   points vers la source, ses quatre points d'ombre), pas un éclairage général.
+
+## 91. Le paysage fait dans le cube, en film (23 novembre, 0.808)
+
+**Demandé par le créateur** : voir la qualité en 720p, avec un paysage fait via le cube, qui colle au cube de texture,
+au cube d'élément, à la lumière, à l'ombre et aux reflets ; en GIF (une image fixe de qualité plutôt que le temps
+réel, qui demandera la carte graphique) ; ne pas oublier les fréquences ; penser la transition entre les cubes et la
+manière de voir les décors entre eux. La clepsydre : des points de référence pour l'ombre.
+
+- **Le monde en cubes** (`belenos/cubes_scene.vtx`) : 2 × 2 tuiles de 256 points de côté ; chaque tuile a **deux
+  cubes, chacun à sa fréquence** dans l'étage 2 : le **cube de texture** (fréquence 1 + tuile : la couleur de chaque
+  point) et le **cube d'élément** (fréquence 5 + tuile : l'état de Belnap sur 2 bits, inconnu pour le vide, vrai pour
+  la matière ; la matière sur 6 bits : roche, herbe, neige, sable, eau, terre, lande ; l'orientation des points de
+  surface sur 24 bits). Une adresse : `(fréquence << 24) | #XXYYZZ`.
+- **Seuls les points de surface** : chaque cube est rangé en blocs de 8 × 8 × 8. Son annuaire (ses 32 768 premiers
+  mots) dit pour chaque bloc s'il est vide (0, inconnu), plein d'une même chose (un mot : la terre profonde, l'eau du
+  fond) ou porteur d'une surface (sa place dans la réserve du cube, où sont ses 512 points). Environ 2 700 blocs
+  porteurs par tuile sur 32 768 : 8 % du cube. Le monde se crée en trois passages : classer les blocs (en bandes),
+  leur donner une place (un cœur), les remplir (en bandes : chaque bloc écrit sa seule place). **0,36 s** forgé.
+- **La forme** : une densité (positive dans la matière) : le sol (des bruits du plan, l'écart étiré : des îles, la
+  mer, des monts), des surplombs (le bruit du volume, fort sur les hauteurs), et une **arche** posée à cheval sur deux
+  tuiles (x = 256 : sur la frontière entre deux cubes), rongée par le bruit. Une carte de hauteurs ne saurait pas la
+  faire. L'orientation de chaque point de surface vient de la pente de la densité.
+- **Les rayons** : un par point de l'écran (1280 × 720), en coordonnées globales : en passant d'une tuile à l'autre,
+  un rayon passe d'une fréquence à l'autre, sans couture (c'est la transition entre les cubes : le monde se lit comme
+  un seul). Un bloc vide se saute d'un coup ; dans un bloc porteur, point par point.
+- **La lumière** : l'ombre par **la clepsydre** : du point de surface, quatre rayons vers les quatre bords du soleil
+  (un disque élargi à 2 degrés) : les quatre en clair, vrai ; aucun, faux ; entre les deux, variable (la pénombre et
+  sa densité). Puis quatre rayons courts autour de la normale, vers le ciel (l'occlusion : un creux voit moins de
+  ciel). **L'eau** renvoie le monde (l'anti-cube : le rayon retourné), ridée par le vent, plus fort en rasant ; les
+  îles et l'arche s'y reflètent. La brume avec la distance.
+- **Le film** (`belenos/cubes_gif.vtx`) : 48 images ; l'œil vient du large, suit exactement x = 256 (la frontière entre
+  deux cubes), passe **sous l'arche**, puis passe z = 256 (l'autre frontière). Chaque image dit son temps et la part
+  des états de la lumière. **La forge écrit le GIF** : `VTX_GIF=fichier.gif` (nouveau dans `noyau_forge128.rs` : la
+  sortie « animation » de la machine, au délai de la cadence du programme ; l'horloge reste la vraie). Ici, deux
+  cœurs : **2,7 s par image** en moyenne (de 1,2 à 4,3 s selon la vue), 5,4 Mo. Empreinte de la dernière image :
+  1498412181256801585.
+- **La carte du vergobret couvre toutes les fréquences** : en 0.805, elle ne voyait que les 256 pages de la fréquence
+  0 ; les cubes des tuiles repassaient par la recherche de page. Elle a maintenant 1024 places, chaque page à la place
+  que donne son numéro mêlé, avec son étiquette. Gain mesuré sur les mêmes 6 images, en alternant : **5 %** (2,87 s →
+  2,71 s) ; sur la val, rien au-delà du bruit. (Un premier chiffre de 35 % venait du bruit de la machine : retiré.)
+- **Ce qui reste, honnêtement** : de près, on voit les points du cube (les marches de l'arche, le bord du sable) ;
+  rien encore pour voir de loin un cube par sa forme grossière (ses blocs : son ombre), ce qui serait la vraie manière
+  de voir les décors entre eux et la transition fluide d'un cube proche à un cube lointain ; pas de référence en C pour
+  cette scène ; le temps réel demandera Taranis. Les deux compilateurs donnent les mêmes mots ; la forge, l'épreuve et
+  les cylindres sont conformes.

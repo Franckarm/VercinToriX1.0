@@ -41,25 +41,30 @@ struct Ctx {
     carte: Box<Carte>,
 }
 
-const CARTE: usize = 256;      // les pages de l'étage 2 dans la carte : 256 × 65536 mots (16 millions)
+const CARTE: usize = 1024;     // 0.808 : les places de la carte (chaque page à la place que donne son numéro mêlé)
 
 struct Carte {
+    k: [u64; CARTE],           // 0.808 : l'étiquette de chaque place : le numéro de la page + 1 (0 : place libre)
     l: [*mut u128; CARTE],
     e: [*mut u128; CARTE],
     r: [*mut u64; CARTE],
     w: [*mut u64; CARTE],
 }
 
+/// 0.808 : la place d'une page de l'étage 2 dans la carte : son numéro mêlé (les pages des cubes de fréquences
+/// différentes, qui ont les mêmes 8 bits bas, ne tombent pas à la même place)
+#[inline(always)]
+fn place_carte(pg: u64) -> usize {
+    ((pg ^ (pg >> 8).wrapping_mul(0x9E37) ^ (pg >> 18)) as usize) & (CARTE - 1)
+}
+
 impl Carte {
     fn neuve() -> Box<Carte> {
-        Box::new(Carte { l: [std::ptr::null_mut(); CARTE], e: [std::ptr::null_mut(); CARTE],
+        Box::new(Carte { k: [0; CARTE], l: [std::ptr::null_mut(); CARTE], e: [std::ptr::null_mut(); CARTE],
                          r: [std::ptr::null_mut(); CARTE], w: [std::ptr::null_mut(); CARTE] })
     }
     fn oublier(&mut self) {
-        self.l = [std::ptr::null_mut(); CARTE];
-        self.e = [std::ptr::null_mut(); CARTE];
-        self.r = [std::ptr::null_mut(); CARTE];
-        self.w = [std::ptr::null_mut(); CARTE];
+        self.k = [0; CARTE];
     }
 }
 
@@ -587,12 +592,13 @@ impl Ctx {
     #[inline(always)]
     fn lire2(&mut self, a: u128) -> u128 {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
-        let pg = (idx >> 16) as usize;
-        if pg < CARTE {
-            let p = self.carte.l[pg];
+        let pg = idx >> 16;
+        let h = place_carte(pg);
+        if self.carte.k[h] == pg + 1 {
+            let p = self.carte.l[h];
             if !p.is_null() {
                 let j = (idx & 65535) as usize;
-                let b = self.carte.r[pg];
+                let b = self.carte.r[h];
                 if !b.is_null() {
                     unsafe { *b.add(j >> 6) |= 1u64 << (j & 63) };
                 }
@@ -606,14 +612,21 @@ impl Ctx {
         let a = etg(idx as u128, 2);
         let v = self.lire(a);
         // la page vient d'entrer dans le petit cache (sauf une feuille de cylindre, ou une page absente) : elle entre
-        // dans la carte ; hors des bandes, un cylindre (en segments) garde son chemin
-        let pg = (idx >> 16) as usize;
-        if pg < CARTE && self.ombre.as_ref().map_or(true, |o| o.partage) {
+        // dans la carte (à sa place : la page qui l'occupait en sort) ; hors des bandes, un cylindre (en segments) garde
+        // son chemin
+        let pg = idx >> 16;
+        if self.ombre.as_ref().map_or(true, |o| o.partage) {
             let (k, _) = Spu128::cle_page(a);
             let h = case(k);
             if self.cl[h] == k {
-                self.carte.l[pg] = self.pl[h];
-                self.carte.r[pg] = self.rb[h];
+                let q = place_carte(pg);
+                if self.carte.k[q] != pg + 1 {
+                    self.carte.k[q] = pg + 1;
+                    self.carte.e[q] = std::ptr::null_mut();
+                    self.carte.w[q] = std::ptr::null_mut();
+                }
+                self.carte.l[q] = self.pl[h];
+                self.carte.r[q] = self.rb[h];
             }
         }
         v
@@ -622,12 +635,13 @@ impl Ctx {
     #[inline(always)]
     fn ecrire2(&mut self, a: u128, v: u128) {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
-        let pg = (idx >> 16) as usize;
-        if pg < CARTE {
-            let p = self.carte.e[pg];
+        let pg = idx >> 16;
+        let h = place_carte(pg);
+        if self.carte.k[h] == pg + 1 {
+            let p = self.carte.e[h];
             if !p.is_null() {
                 let j = (idx & 65535) as usize;
-                let w = self.carte.w[pg];
+                let w = self.carte.w[h];
                 if !w.is_null() {
                     unsafe { *w.add(j >> 6) |= 1u64 << (j & 63) };
                 }
@@ -642,13 +656,19 @@ impl Ctx {
         let a = etg(idx as u128, 2);
         self.ecrire(a, v);
         // une page écrite directement (sans brin, pas une feuille de cylindre) entre dans la carte
-        let pg = (idx >> 16) as usize;
-        if pg < CARTE && self.ombre.as_ref().map_or(true, |o| o.partage) {
+        let pg = idx >> 16;
+        if self.ombre.as_ref().map_or(true, |o| o.partage) {
             let (k, _) = Spu128::cle_page(a);
             let h = case(k);
             if self.ce[h] == k && self.pb[h].is_null() {
-                self.carte.e[pg] = self.pe[h];
-                self.carte.w[pg] = self.wb[h];
+                let q = place_carte(pg);
+                if self.carte.k[q] != pg + 1 {
+                    self.carte.k[q] = pg + 1;
+                    self.carte.l[q] = std::ptr::null_mut();
+                    self.carte.r[q] = std::ptr::null_mut();
+                }
+                self.carte.e[q] = self.pe[h];
+                self.carte.w[q] = self.wb[h];
             }
         }
     }
@@ -1017,12 +1037,17 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     m.dossier = std::env::current_dir().ok();
     // 0.78 : la fenêtre du programme (ou VTX_IMAGES=DOSSIER : les images en fichiers PNG), ouverte à la première image
     hote::remettre();
-    match std::env::var("VTX_IMAGES") {
-        Ok(d) => {
+    // 0.808 : VTX_GIF=FICHIER : les images en une animation GIF (au délai de la cadence du programme ; l'horloge reste la
+    // vraie : un film se mesure)
+    match (std::env::var("VTX_GIF"), std::env::var("VTX_IMAGES")) {
+        (Ok(g), _) => {
+            sortie::installer(Some(sortie::animation(&g, 1, sortie::MAX_IMAGES)));
+        }
+        (_, Ok(d)) => {
             hote::HORLOGE_IMAGES.store(true, std::sync::atomic::Ordering::Relaxed);
             sortie::installer(Some(sortie::fichiers(&d, 1, usize::MAX)));
         }
-        Err(_) => sortie::installer(sortie::fenetre(nom)),
+        _ => sortie::installer(sortie::fenetre(nom)),
     }
     m.presenter = Some(Box::new(presenter_forge));
     // VTX_SCENARIO=FICHIER : les touches d'un scénario (« N appui CODE », « N touche CODE »…), comme vtx toile128

@@ -221,3 +221,5 @@ vtxc/vtxc128.mots
 vtxc/vtxc128.vtx
 vtxc/vtxc64.mots
 vtxc/vtxc64.vtx
+belenos/cubes_scene.vtx
+belenos/cubes_gif.vtx
