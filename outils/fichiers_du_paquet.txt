@@ -246,3 +246,7 @@ tests/taranis_divisions.vtx
 belenos/gergovie_scene.vtx
 belenos/gergovie_etages.vtx
 belenos/gergovie_ref.cpp
+gutuater/gutuater.vtx
+gutuater/synapse.vtx
+tests/test_gutuater.py
+docs/gutuater-druide-conception.md

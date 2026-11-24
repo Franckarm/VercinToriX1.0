@@ -4612,3 +4612,26 @@ le jour), le vergobret y fait ses essais (ils ne cassent plus le vol).
 
 **Ici** (lavapipe, demi-échelle) : « 5 noyau(x) » d'un seul envoi ; la même image partout (le C++, le processeur, un
 noyau, les étages en lot, avec ou sans lot). Le gain du lot se verra sur la RTX (quatre attentes de moins par image).
+
+## 111. Gutuater, le socle : le carnet, la synapse quaternaire, l'ARN (24 novembre, 0.825)
+
+**Chez le créateur, la 0.824** : le lot rend aux étages 63 % (26,1 → 42,6 images par seconde), la mise en place efface
+l'accroc du jour (465 ms → 37 ms). Mais les étages coûtent deux fois plus sur la carte que le noyau unique (≈ 8 ms
+contre 4 à 5 : chaque étage écrit puis relit en mémoire), et plus de la moitié de l'image se passe hors de la carte
+(redescendre, poser). Le polysome (deux images en vol) ne ferait que cacher le processeur ; le cache qui affiche
+lui-même le supprimerait.
+
+**Décision du créateur** : de nouveaux agents. Gutuater (le prêtre-invocateur) du côté du code machine : la forge et la
+garde ; le Druide : les conseils, les potions (préparer, corriger), la bibliothèque ; le choix des 32 ou 64 bits sur la
+carte reste au vergobret. Les trois peuvent s'écrire en vtx.
+
+**La synapse quaternaire, c'est Belnap** : deux compteurs (preuves pour, preuves contre) ; inconnu (rien), vrai, faux,
+variable (contradiction : cela dépend de la scène ou de la machine). Une contradiction ne se moyenne pas. Une preuve
+demande un écart de plus de 5 % ; un côté l'emporte à trois contre un ; au-delà de 8 preuves, l'usure divise par deux.
+
+**L'épigénétique** : le programme (l'ADN) ne change pas ; le carnet choisit quels gènes s'expriment. Le premier gène est
+le lot, déjà là : la machinerie est vérifiée sur ce qu'on sait, avant d'apprendre ce qu'on ne sait pas (fondre).
+
+**Vérifié** : les mêmes mots pour gutuater.vtx ; les quatre états, le bruit, l'usure, les mesures effacées
+(`tests/test_gutuater.py`) ; Gergovie à demi-échelle donne la même empreinte avec le lot exprimé, tu, mesuré, et sans
+Gutuater ; noyaux, cylindres, Taranis direct et l'épreuve d'Alésia conformes.

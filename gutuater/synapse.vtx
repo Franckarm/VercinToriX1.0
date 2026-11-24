@@ -1,0 +1,57 @@
+// machine : lugus
+// La synapse quaternaire de Gutuater (0.825) : deux compteurs, les preuves pour et les preuves contre ; l'état est
+// celui de Belnap : inconnu (rien de su), vrai, faux, variable (les preuves se contredisent : cela dépend de la scène
+// ou de la machine). Une contradiction ne se moyenne pas : elle devient variable, et c'est une information.
+
+constante SEUIL = 5;            // une preuve : un écart de plus de 5 % ; en dessous, le bruit (rien n'est appris)
+constante PLEIN = 8;            // l'usure : au-delà de 8 preuves, les deux compteurs sont divisés par 2
+constante DOMINE = 3;           // un côté l'emporte s'il a au moins trois fois les preuves de l'autre
+
+// une mesure de deux variantes (en microsecondes ; plus petit est meilleur) : 2 une preuve pour la variante a, 1 une
+// preuve contre (b gagne), 0 rien (l'écart est dans le bruit)
+fonction preuve(a, b) {
+    si a * 100 + SEUIL * b <= b * 100 {
+        retour 2;
+    }
+    si b * 100 + SEUIL * a <= a * 100 {
+        retour 1;
+    }
+    retour 0;
+}
+
+fonction etat_synapse(npour, ncontre): logique {
+    si npour == 0 && ncontre == 0 {
+        retour inconnu;
+    }
+    si npour >= DOMINE * ncontre {
+        retour vrai;
+    }
+    si ncontre >= DOMINE * npour {
+        retour faux;
+    }
+    retour variable;
+}
+
+// l'usure : une machine ou une scène nouvelle peut renverser une vieille croyance
+fonction user_pour(npour, ncontre) {
+    si npour + ncontre > PLEIN {
+        retour npour / 2;
+    }
+    retour npour;
+}
+fonction user_contre(npour, ncontre) {
+    si npour + ncontre > PLEIN {
+        retour ncontre / 2;
+    }
+    retour ncontre;
+}
+
+fonction nom_etat(l: logique): texte {
+    selon l {
+        vrai { retour "vrai"; }
+        faux { retour "faux"; }
+        inconnu { retour "inconnu"; }
+        variable { retour "variable"; }
+    }
+    retour "inconnu";
+}

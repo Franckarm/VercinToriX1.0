@@ -1433,7 +1433,7 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
 /// boucle reste au processeur (fait reste faux : le résultat est toujours celui de Lugus).
 #[allow(dead_code)]
 fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &'static [u32], a: u128, b: u128, ext: &[u128],
-                        region: usize, differe: bool) -> bool {
+                        region: usize, differe: bool, lieu: u32) -> bool {
     // 0.817 : le noyau en entiers de 64 bits de la carte, si elle les fait
     let k = match taranis_vk::carte() {
         Some(k) => k,
@@ -1445,10 +1445,141 @@ fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &'stati
         // 0.821 : Taranis, le noyau de la carte
         // 0.824 : VTX_LOT=0 : chaque boucle part seule (sans lot)
         let differe = differe && std::env::var("VTX_LOT").map_or(true, |v| v != "0");
-        return taranis_direct(c, spv64r, a, b, ext, region, differe);
+        // 0.825 : le gène « lot » : Gutuater (son ARN) dit s'il s'exprime ; inconnu ou variable : le vergobret mesure
+        // le lot avec et sans, et note ses mesures pour Gutuater
+        if lieu == 0 {
+            return taranis_direct(c, spv64r, a, b, ext, region, differe);
+        }
+        let dernier = !differe;
+        let avec = gene_lot_debut(lieu, region == 0);
+        let fait = taranis_direct(c, spv64r, a, b, ext, region, differe && avec);
+        if dernier {
+            gene_lot_fin(lieu);
+        }
+        return fait;
     }
     let choisi = if k.int64 { spv64 } else { spv };
     taranis_boucle_pages_(c, choisi, a, b, ext, true, false)
+}
+
+/// 0.825 : Gutuater, le gène « lot ». Son ARN (gutuater.arn, à côté du programme) dit, pour chaque lot (la ligne de
+/// sa première boucle) : vrai, le lot s'exprime ; faux, il est tu (chaque boucle part seule) ; inconnu ou variable, le
+/// vergobret le mesure : un passage pour chauffer, puis sans, avec, sans, avec (le meilleur de chaque), et il garde le
+/// plus rapide pour la suite ; ses mesures vont dans gutuater.mesures, que Gutuater lira. VTX_GUTUATER=0 : rien de
+/// tout cela (le lot, toujours, comme en 0.824).
+#[allow(dead_code)]
+struct GeneLot {
+    passe: u32,
+    avec: bool,             // ce passage : le lot exprimé ?
+    t0: Option<std::time::Instant>,
+    t_avec: f64,
+    t_sans: f64,
+    choisi: Option<bool>,   // le choix pour ce qui reste de l'exécution
+}
+
+#[allow(dead_code)]
+fn dossier_gutuater() -> Option<std::path::PathBuf> {
+    if std::env::var("VTX_GUTUATER").map_or(false, |v| v == "0") {
+        return None;
+    }
+    std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf()))
+}
+
+/// l'ARN : (gène, lieu) → l'état (0 inconnu, 1 faux, 2 vrai, 3 variable)
+#[allow(dead_code)]
+fn arn_gutuater() -> &'static std::collections::HashMap<(String, u32), u8> {
+    static A: std::sync::OnceLock<std::collections::HashMap<(String, u32), u8>> = std::sync::OnceLock::new();
+    A.get_or_init(|| {
+        let mut a = std::collections::HashMap::new();
+        if let Some(d) = dossier_gutuater() {
+            if let Ok(t) = std::fs::read_to_string(d.join("gutuater.arn")) {
+                for l in t.lines() {
+                    let m: Vec<&str> = l.split_whitespace().collect();
+                    if m.len() >= 3 && !m[0].starts_with('#') {
+                        if let Ok(lieu) = m[1].parse::<u32>() {
+                            let e = match m[2] { "faux" => 1, "vrai" => 2, "variable" => 3, _ => 0 };
+                            a.insert((m[0].to_string(), lieu), e);
+                        }
+                    }
+                }
+            }
+        }
+        a
+    })
+}
+
+#[allow(dead_code)]
+fn genes_lot() -> &'static std::sync::Mutex<std::collections::HashMap<u32, GeneLot>> {
+    static G: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u32, GeneLot>>> = std::sync::OnceLock::new();
+    G.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// au début de chaque boucle d'un lot : le lot s'exprime-t-il à ce passage ? (décidé à sa première boucle)
+#[allow(dead_code)]
+fn gene_lot_debut(lieu: u32, premiere: bool) -> bool {
+    if dossier_gutuater().is_none() {
+        return true;
+    }
+    let mut gs = genes_lot().lock().unwrap();
+    let g = gs.entry(lieu).or_insert_with(|| {
+        let e = arn_gutuater().get(&("lot".to_string(), lieu)).copied().unwrap_or(0);
+        let choisi = match e { 2 => Some(true), 1 => Some(false), _ => None };
+        match e {
+            2 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit vrai : il s'exprime, sans essai", lieu)),
+            1 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit faux : il est tu, sans essai", lieu)),
+            3 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit variable : je mesure encore", lieu)),
+            _ => dire_reglage(format!("le lot de la ligne {} : Gutuater ne sait pas : je mesure", lieu)),
+        }
+        GeneLot { passe: 0, avec: true, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi }
+    });
+    if premiere {
+        g.avec = match g.choisi {
+            Some(x) => x,
+            None => !matches!(g.passe, 1 | 3),   // 0 chauffer (avec), 1 sans, 2 avec, 3 sans, 4 avec
+        };
+        g.t0 = Some(std::time::Instant::now());
+    }
+    g.avec
+}
+
+/// à la fin de la dernière boucle d'un lot : la mesure de ce passage
+#[allow(dead_code)]
+fn gene_lot_fin(lieu: u32) {
+    if dossier_gutuater().is_none() {
+        return;
+    }
+    let mut gs = genes_lot().lock().unwrap();
+    let g = match gs.get_mut(&lieu) {
+        Some(g) => g,
+        None => return,
+    };
+    if g.choisi.is_some() {
+        return;
+    }
+    let t = match g.t0.take() {
+        Some(t0) => t0.elapsed().as_secs_f64(),
+        None => return,
+    };
+    if g.passe >= 1 {
+        if g.avec {
+            g.t_avec = g.t_avec.min(t);
+        } else {
+            g.t_sans = g.t_sans.min(t);
+        }
+    }
+    g.passe += 1;
+    if g.passe == 5 {
+        let avec = g.t_avec <= g.t_sans;
+        g.choisi = Some(avec);
+        dire_reglage(format!("le lot de la ligne {} : avec {:.1} ms, sans {:.1} ms : {} ; noté pour Gutuater", lieu,
+                             g.t_avec * 1e3, g.t_sans * 1e3, if avec { "le lot" } else { "chaque boucle seule" }));
+        if let Some(d) = dossier_gutuater() {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
+                let _ = writeln!(f, "mesure lot {} {} {}", lieu, (g.t_avec * 1e6) as u64, (g.t_sans * 1e6) as u64);
+            }
+        }
+    }
 }
 
 /// 0.821 : Taranis. Le monde (l'étage 2) rangé sur la carte, chaque fréquence d'un seul tenant (la place 0 : une page de

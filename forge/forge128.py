@@ -716,6 +716,10 @@ class Forge(V.Generateur):
                 # 0.820 : l'épissage rapide (le modèle classique : la promesse n'est pas vérifiée sur la carte)
                 # 0.821 : c'est Taranis, le noyau de la carte (le monde d'un seul tenant, les divisions épissées)
                 region = min(getattr(self, "lot_pos", 0), 7)
+                # 0.825 : le lieu du lot (la ligne de sa première boucle) : c'est là que Gutuater et le vergobret le
+                # reconnaissent, d'un passage à l'autre
+                if getattr(self, "lot_pos", 0) == 0:
+                    self.lot_tete = st[5]
                 spv64r, dehors64r, _ = noyau_vtx.NoyauTaranis(self, var, corps, region=region).compiler()
                 assert dehors64r == dehors
                 pages = True
@@ -745,7 +749,7 @@ class Forge(V.Generateur):
             self.niveau += 1
             self.ligne(f"let ta: u128 = {self.val(st[2], 'e')};")
             self.ligne(f"let tb: u128 = {self.val(notes[-1][3], 'e')};")
-            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{k}, &SPV{k + 1}, &SPV{k + 2}, ta, tb, &[{ext}], {region}, {'true' if getattr(self, 'lot_suite', False) else 'false'}) {{")
+            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{k}, &SPV{k + 1}, &SPV{k + 2}, ta, tb, &[{ext}], {region}, {'true' if getattr(self, 'lot_suite', False) else 'false'}, {getattr(self, 'lot_tete', 0) if dans_lot else 0}) {{")
             self.ligne(f"    fait = true;")
             self.ligne(f"    {v} = tb;")
             self.ligne("}")

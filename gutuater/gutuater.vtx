@@ -1,0 +1,131 @@
+// machine : lugus
+// Gutuater (0.825), le prêtre-invocateur : celui qui prononce les paroles justes. Il tient le carnet (l'épigénétique)
+// et en tire l'ARN, le plan que lit le vergobret ; le programme (l'ADN) ne change jamais.
+//
+//     lugus gutuater/gutuater.vtx      (il lit une ligne : le dossier du programme forgé)
+//
+// Dans ce dossier : gutuater.mesures (écrit par le vergobret : « mesure GENE LIEU A B », deux temps en microsecondes :
+// la variante exprimée, puis la variante tue), gutuater.carnet (ses synapses : « gene GENE LIEU POUR CONTRE ETAT »),
+// gutuater.arn (le plan : « GENE LIEU ETAT »). Les mesures lues sont effacées : chacune ne compte qu'une fois.
+
+importer "synapse.vtx";
+
+fonction lire_fichier(nom: texte): texte {
+    soit canal = ouvrir_lecture(nom);
+    si canal == 18446744073709551615 {
+        retour "";
+    }
+    soit cs = tableau(0);
+    soit ch = lire_car(canal);
+    tantque ch != 18446744073709551615 {
+        si ch != 13 {
+            ajouter(cs, ch);
+        }
+        ch = lire_car(canal);
+    }
+    fermer(canal);
+    soit r = texte_neuf(longueur(cs));
+    pour i dans 0..longueur(cs) {
+        changer_car(r, i, cs[i]);
+    }
+    retour r;
+}
+
+fonction principal() {
+    soit dossier = lire_ligne();
+    // la fin de ligne de Windows, et les blancs de la fin
+    tantque longueur(dossier) > 0 && (car(dossier, longueur(dossier) - 1) == 13 || car(dossier, longueur(dossier) - 1) == 32) {
+        dossier = sous_texte(dossier, 0, longueur(dossier) - 1);
+    }
+    si longueur(dossier) > 0 && finit_par(dossier, "/") == 0 && finit_par(dossier, "\\") == 0 {
+        dossier = dossier + "/";
+    }
+    // le carnet, en mémoire : un gène par place (son nom, son lieu, ses preuves, le dernier gain en pour mille + 1000)
+    soit noms = ["lot"];
+    soit lieux = [0];
+    soit vp = [0];
+    soit vc = [0];
+    soit gains = [0];
+    retirer(noms);
+    retirer(lieux);
+    retirer(vp);
+    retirer(vc);
+    retirer(gains);
+    // 1. le carnet d'avant, puis 2. les mesures du vergobret (une mesure : une preuve, ou rien dans le bruit)
+    soit nm = 0;
+    soit textes = [lire_fichier(dossier + "gutuater.carnet"), lire_fichier(dossier + "gutuater.mesures")];
+    pour quel dans 0..2 {
+        pour l dans decouper(textes[quel], "\n") {
+            soit m = mots(l);
+            si longueur(m) >= 5 {
+                si (quel == 0 && m[0] == "gene") || (quel == 1 && m[0] == "mesure") {
+                    soit nom = m[1];
+                    soit lieu = nombre(m[2]);
+                    soit j = longueur(noms);
+                    pour k dans 0..longueur(noms) {
+                        si noms[k] == nom && lieux[k] == lieu {
+                            j = k;
+                        }
+                    }
+                    si j == longueur(noms) {
+                        ajouter(noms, nom);
+                        ajouter(lieux, lieu);
+                        ajouter(vp, 0);
+                        ajouter(vc, 0);
+                        ajouter(gains, 0);
+                    }
+                    soit a = nombre(m[3]);
+                    soit b = nombre(m[4]);
+                    si quel == 0 {
+                        vp[j] = a;
+                        vc[j] = b;
+                    } sinon {
+                        soit pv = preuve(a, b);
+                        si pv == 2 {
+                            vp[j] = vp[j] + 1;
+                        }
+                        si pv == 1 {
+                            vc[j] = vc[j] + 1;
+                        }
+                        si b > 0 && a <= b {
+                            gains[j] = 1000 + ((b - a) * 1000) / b;
+                        }
+                        si b > 0 && a > b {
+                            gains[j] = 1;
+                            si (a - b) * 1000 / b < 999 {
+                                gains[j] = 1000 - ((a - b) * 1000) / b;
+                            }
+                        }
+                        nm = nm + 1;
+                    }
+                }
+            }
+        }
+    }
+    // 3. l'usure, puis le carnet et l'ARN
+    soit carnet = ouvrir_ecriture(dossier + "gutuater.carnet");
+    soit arn = ouvrir_ecriture(dossier + "gutuater.arn");
+    ecrire_texte(carnet, "# carnet de Gutuater : gene, lieu (la ligne), preuves pour, preuves contre, etat\n");
+    ecrire_texte(arn, "# ARN de Gutuater, lu par le vergobret : gene, lieu, etat (vrai : exprime ; faux : tu ; inconnu, variable : a mesurer)\n");
+    pour k dans 0..longueur(noms) {
+        soit np = user_pour(vp[k], vc[k]);
+        soit nc = user_contre(vp[k], vc[k]);
+        soit e = nom_etat(etat_synapse(np, nc));
+        soit lieu_t = texte(lieux[k]);
+        ecrire_texte(carnet, "gene " + noms[k] + " " + lieu_t + " " + texte(np) + " " + texte(nc) + " " + e + "\n");
+        ecrire_texte(arn, noms[k] + " " + lieu_t + " " + e + "\n");
+        soit dit = "gutuater : " + noms[k] + " ligne " + lieu_t + " : pour " + texte(np) + ", contre " + texte(nc) + " : " + e;
+        si gains[k] >= 1000 {
+            dit = dit + " (dernière mesure : exprimé, il gagne " + texte((gains[k] - 1000) / 10) + " %)";
+        } sinon si gains[k] > 0 {
+            dit = dit + " (dernière mesure : exprimé, il coûte " + texte((1000 - gains[k]) / 10) + " % de plus)";
+        }
+        afficher(dit);
+    }
+    fermer(carnet);
+    fermer(arn);
+    // les mesures lues sont effacées
+    soit vide = ouvrir_ecriture(dossier + "gutuater.mesures");
+    fermer(vide);
+    afficher("gutuater : " + texte(nm) + " mesure(s) lue(s), " + texte(longueur(noms)) + " gène(s) au carnet");
+}

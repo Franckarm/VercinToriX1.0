@@ -270,3 +270,22 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - À venir (décidé) : les deux groupes avec un cycle d'avance (les images en vol) ; le cache qui montre l'image ; le duel
   au processeur (l'épissage rapide du processeur, contre le C++) ; le duel sur la carte (GLSL, avec le Vulkan SDK, plus
   tard). Prochaine livraison : vtx-0.825.zip / essai-0.825.bat.
+
+## 0.825 (24 novembre) : Gutuater, le socle
+- Chez le créateur, la 0.824 : le lot fait passer les étages de 26,1 à 42,6 images par seconde ; la mise en place
+  supprime l'accroc du jour (noyau unique : le jour 32,4, pire 37 ms) ; mais les étages restent derrière le noyau
+  unique (55,2) : la carte 8,2 ms pour les cinq étages (contre 4 à 5 en un noyau), redescendre 6 ms, le reste au
+  processeur 8 ms.
+- Décidé : trois agents, tous écrits en vtx à terme. **Vergobret** à l'exécution (carte ou processeur, les fils, et
+  aussi les 32 ou 64 bits sur la carte) ; **Gutuater** côté code machine : la forge (les gènes) et la garde (les mêmes
+  mots, les variantes fidèles), d'autres tâches hors du graphique à trouver ; **le Druide** : les conseils, les potions
+  (il les prépare et surtout les corrige), la bibliothèque. Conception : `docs/gutuater-druide-conception.md`.
+- Fait : `gutuater/gutuater.vtx` et `gutuater/synapse.vtx` (en vtx) : le carnet (synapses de Belnap, pour/contre,
+  seuil 5 %, usure au-delà de 8 preuves, un côté l'emporte à trois contre un), l'ARN. Le premier gène : `lot`. Le
+  vergobret (noyau_forge128.rs : `gene_lot_debut`, `gene_lot_fin`, `arn_gutuater`) lit l'ARN ; inconnu ou variable :
+  il mesure le lot avec et sans (chauffer, sans, avec, sans, avec), garde le meilleur, écrit `gutuater.mesures`. La forge
+  passe le lieu du lot (la ligne de sa première boucle, `lot_tete`). `VTX_GUTUATER=0` : comme en 0.824.
+  Test : `tests/test_gutuater.py`. Sur lavapipe le lot ne gagne que 4 % (le bruit) : Gutuater reste « inconnu ».
+- Prochain : le gène `fondre` (deux boucles sur le même intervalle en un noyau ; le gain mesurable : les étages contre
+  le noyau unique) ; la garde des mêmes mots, automatique ; le Druide. En attente : le cache qui montre l'image
+  (swapchain), les duels. Prochaine livraison : vtx-0.826.zip / essai-0.826.bat.
