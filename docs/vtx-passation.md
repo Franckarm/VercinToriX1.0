@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.820.zip`, `essai-0.820.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.821.zip`, `essai-0.821.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -211,7 +211,7 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Piège : deux appels consécutifs dans une branche du tapis = un accord = pas de bandes (un cœur). Les lier par une
   valeur (`soit fait = etage_cache(..); etage_ecran(y, s + fait * 0);`). À corriger dans la forge.
 - Noyau Taranis : types_de remet `_corps_vus` autour des locales ; verifier_type rend PasPourLaCarte.
-- Prochaine livraison : vtx-0.820.zip / essai-0.820.bat.
+- Prochaine livraison : vtx-0.821.zip / essai-0.821.bat (après la 0.820).
 - À discuter : une nouvelle répartition (carte et processeur ensemble sur des rangées) ; l'écart par fil vtx/C.
 
 ## 0.819 (24 novembre) : la partie graphique renaît
@@ -222,4 +222,13 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   pour les quatre : 8987854166678181011 et 1907865044188733942).
 - Prochain : le modèle classique sur la carte (la scène résidente, en 64 bits, l'image gardée par la carte), mesuré
   dans Gergovie ; puis l'ombre quaternaire (prioritaire).
-- Prochaine livraison : vtx-0.820.zip / essai-0.820.bat.
+- Prochaine livraison : vtx-0.821.zip / essai-0.821.bat (après la 0.820).
+
+## 0.820 (24 novembre) : le modèle classique sur la carte
+- `belenos/gergovie_carte.vtx` (un fil par point, `regarder_1`/`regarder_0` sans récursion, `FIMAGE = 120`) ;
+  `VTX_EPISSAGE=rapide` : `SALES` (les pages changées marquées, plus de comparaison), le noyau sans auteurs
+  (`NoyauI64(..., rapide=True)`, troisième SPIR-V : `taranis_boucle_pages(c, spv, spv64, spv64r, ...)`) ;
+  `VTX_CARTE_VERIF=1` : le filet. La mise en place (une image) n'est plus comptée dans Gergovie.
+- Le C et le C++ ne sont plus joués (le créateur) ; Rust reste la référence.
+- Prochain : lire la mesure de la RTX ; la clepsydre sur la carte (le jour) ; l'image montrée par la carte ;
+  l'ombre quaternaire (prioritaire).

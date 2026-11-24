@@ -4451,3 +4451,33 @@ Ici (2 cœurs, 24 et 6 images) : les quatre donnent les mêmes empreintes (le vo
 1907865044188733942) ; le C 4,4 images par seconde, Rust 4,9, vtx 3,0 (sa première image est la plus lente : le
 réglage et la mise en place des pages ; le 1 % bas le montre). Honnêtement : le C++ ira comme le C (le même code, le
 même compilateur) ; un moteur C++ gagne par son organisation, pas par son langage.
+
+## 106. Le modèle classique sur la carte, mesuré dans Gergovie (24 novembre, 0.820)
+
+**Chez le créateur, la 0.819** (24 fils) : le C 36,2 images par seconde au vol (1 % bas 30,0), le C++ pareil, Rust à
+la main 29,7 (24,9), vtx 21,8 (14,4) ; le jour : le C 22,4, Rust 16,2, vtx 13,4. Les mêmes empreintes pour les quatre.
+vtx accrochait (pire image 71 ms) : sa première image (la mise en place) et le vergobret qui essayait des fils pendant
+le vol. Décidé par le créateur : le C et le C++ ne sont plus joués (Rust reste la référence écrite à la main).
+
+**La mise en place** n'est plus comptée (comme le chargement d'un jeu) : une première image avant le vol, dans les trois
+versions (gergovie.vtx, gergovie_carte.vtx, gergovie.rs ; et cubes_ref.c).
+
+**Le modèle classique** (`belenos/gergovie_carte.vtx`, `VTX_EPISSAGE=rapide`) :
+- **un fil de la carte par point de l'image** : une boucle en segments sur W × H ; tout le regard dans le fil (le
+  rayon, la clarté, Divona, la brume) ; le regard sans appel de soi-même (la carte n'a pas de pile : `regarder_1`
+  appelle `regarder_0`) ; le point rendu dans le cube de l'image (`FIMAGE = 120`), puis posé à l'écran en bandes ;
+- **seul ce qui change monte** (`SALES` dans le noyau de la forge) : chaque page de l'étage 2 est marquée quand elle
+  entre dans le chemin d'écriture d'une machine (le processeur, les bandes) et à la fusion des cylindres ; à chaque
+  lancement, la carte oublie les chemins de la machine (la prochaine écriture marque de nouveau). Plus rien n'est
+  comparé : ne montent que les pages marquées. `VTX_CARTE_VERIF=1` compare tout de même et dit chaque page changée sans
+  marque (le filet : aucune sur Gergovie) ;
+- **l'épissage rapide** : le noyau n'échange plus l'auteur de chaque mot écrit (la promesse n'est pas vérifiée sur la
+  carte ; le programme écrit chaque point une fois, à sa place, comme sur toute carte) ; une page lue et écrite n'est
+  plus refusée. Sans `VTX_EPISSAGE=rapide`, tout est comme avant (la promesse vérifiée).
+
+**Ici** (lavapipe, la carte imitée par le processeur, petit film 320 × 180) : préparer un lancement passe de 15 ms à
+2 ms (au vol : une seule page monte par image, celle des temps) ; la même empreinte que le processeur sur les deux
+épreuves ; le vergobret choisit déjà la carte (29,7 ms contre 32,2), alors que lavapipe n'est qu'un processeur. La
+vraie mesure est celle de la RTX. **Ce qui reste au processeur** : le jour, la clepsydre (`ranger_lumiere`) refaite à
+chaque image ; elle ira sur la carte ensuite ; et l'image qui redescend pour être montrée (la carte qui la montre
+elle-même viendra avec la fenêtre de la carte).

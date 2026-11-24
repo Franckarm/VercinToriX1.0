@@ -683,6 +683,7 @@ static void gergovie(void) {
     /* épreuve 1, le vol : l'œil bouge, le soleil est fixe */
     preparer_soleil(360, 70);
     ranger_lumiere(1);
+    { u cx, cy, cz, tg; camera(0, n1, &cx, &cy, &cz, &tg); rendre_cubes(cx, cy, cz, 512, tg, 0); }  /* la mise en place */
     for (u i = 0; i < n1; i++) {
         u cx, cy, cz, tg;
         clock_gettime(CLOCK_MONOTONIC, &ti);

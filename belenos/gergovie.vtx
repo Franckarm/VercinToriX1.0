@@ -95,6 +95,8 @@ fonction principal() {
     // l'épreuve 1, le vol
     preparer_soleil(360, 70, 0);
     ranger_lumiere(1, 0);
+    // la mise en place (comme le chargement d'un jeu : pas comptée) : une première image, qui installe tout
+    image_gergovie(0, VOL);
     pour i dans 0..VOL {
         soit ti = horloge();
         image_gergovie(i, VOL);

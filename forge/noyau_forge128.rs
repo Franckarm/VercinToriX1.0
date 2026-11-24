@@ -41,6 +41,31 @@ struct Ctx {
     carte: Box<Carte>,
 }
 
+/// 0.820 : les pages de l'étage 2 changées par le processeur depuis leur dernière montée sur la carte (un bit par page,
+/// pages 0 à 65535) : le modèle classique sait ce qui a changé sans comparer (marqué à l'entrée d'une page dans le chemin
+/// d'écriture d'une machine, et à la fusion des cylindres ; la carte oublie les chemins de la machine à chaque lancement)
+static SALES: [std::sync::atomic::AtomicU64; 1024] = [const { std::sync::atomic::AtomicU64::new(0) }; 1024];
+
+#[inline(always)]
+fn salir(k: u128) {
+    if k >> 120 == 2 {
+        let pg = (k & ((1u128 << 120) - 1)) as u64;
+        if pg < 65536 {
+            SALES[(pg >> 6) as usize].fetch_or(1u64 << (pg & 63), std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn sale(pg: u64) -> bool {
+    SALES[(pg >> 6) as usize].load(std::sync::atomic::Ordering::Relaxed) >> (pg & 63) & 1 == 1
+}
+
+#[allow(dead_code)]
+fn nettoyer(pg: u64) {
+    SALES[(pg >> 6) as usize].fetch_and(!(1u64 << (pg & 63)), std::sync::atomic::Ordering::Relaxed);
+}
+
 const CARTE: usize = 1024;     // 0.808 : les places de la carte (chaque page à la place que donne son numéro mêlé)
 
 struct Carte {
@@ -581,6 +606,9 @@ fn fusionner(c: &mut Ctx, _inst: &Instantane, recoltes: Vec<Recolte>) -> bool {
     // les pages du cube commun où poser, puis le travail en tranches de 64 blocs (4 096 mots), partagé entre les cœurs
     let cibles: Vec<(usize, usize)> = ordre.iter().enumerate()
         .map(|(n, k)| (n, c.m.page_de(adresse_page(*k)).0 as usize)).collect();
+    for k in &ordre {
+        salir(*k);
+    }
     let feuilles: Vec<&Vec<Box<Feuille>>> = ordre.iter().map(|k| &auteurs[k]).collect();
     let tranches: Vec<(usize, usize)> = (0..ordre.len()).flat_map(|n| (0..16).map(move |t| (n, t))).collect();
     let nt = cylindres_voulus().max(1).min(tranches.len().max(1));
@@ -1048,6 +1076,7 @@ impl Ctx {
     }
     #[inline(never)]
     fn ecrire_lent(&mut self, a: u128, v: u128, k: u128) {
+        salir(k);
         if self.ombre.is_some() {
             let o = self.ombre.as_mut().unwrap();
             if k >> 120 == 0 {
@@ -1390,14 +1419,31 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
 /// page absente : la carte le dit) et ici (une page à la fois lue et écrite : refusé) ; si quelque chose manque, la
 /// boucle reste au processeur (fait reste faux : le résultat est toujours celui de Lugus).
 #[allow(dead_code)]
-fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
+fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
     // 0.817 : le noyau en entiers de 64 bits de la carte, si elle les fait
     let k = match taranis_vk::carte() {
         Some(k) => k,
         None => return false,
     };
-    let choisi = if k.int64 { spv64 } else { spv };
-    taranis_boucle_pages_(c, choisi, a, b, ext, true)
+    // 0.820 : l'épissage rapide (VTX_EPISSAGE=rapide : le modèle classique), avec le 64 bits de la carte
+    let rapide = k.int64 && epissage_rapide();
+    let choisi = if rapide { spv64r } else if k.int64 { spv64 } else { spv };
+    taranis_boucle_pages_(c, choisi, a, b, ext, true, rapide)
+}
+
+/// 0.820 : VTX_EPISSAGE=rapide : sur la carte, la promesse n'est pas vérifiée (le programme répond de ses écritures)
+/// et rien n'est comparé : ne montent que les pages que le processeur a changées (SALES). VTX_CARTE_VERIF=1 compare
+/// tout de même, et dit chaque page changée qui n'était pas marquée (le filet).
+#[allow(dead_code)]
+fn epissage_rapide() -> bool {
+    static R: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *R.get_or_init(|| std::env::var("VTX_EPISSAGE").map_or(false, |v| v == "rapide"))
+}
+
+#[allow(dead_code)]
+fn verif_carte() -> bool {
+    static R: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *R.get_or_init(|| std::env::var("VTX_CARTE_VERIF").map_or(false, |v| v == "1"))
 }
 
 /// 0.817 : la résidence (le cube gardé sur la carte) : quelles pages ont une place sur la carte, lesquelles le miroir
@@ -1446,7 +1492,7 @@ fn page_differe(cpu: *const u128, mir: *const u64) -> Option<bool> {
 }
 
 #[allow(dead_code)]
-fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128], encore: bool) -> bool {
+fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128], encore: bool, rapide: bool) -> bool {
     let n = (b as u64).wrapping_sub(a as u64);
     if n == 0 || n > (1u64 << 31) || ext.iter().any(|&v| v >> 64 != 0) {
         return false;
@@ -1460,6 +1506,8 @@ fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128
     }
     let bavard = taranis_vk::bavard();
     let t0 = std::time::Instant::now();
+    // 0.820 : les chemins d'écriture de la machine sont oubliés : la prochaine écriture de chaque page la marque
+    c.oublier_pages();
     let mut g = residence().lock().unwrap();
     g.appel += 1;
     let appel = g.appel;
@@ -1517,12 +1565,28 @@ fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128
     // le miroir comparé à la mémoire, sur tous les cœurs ; une page changée (ou inconnue) y est recopiée et montera
     let nt = cylindres_voulus().max(1).min(suivies.len().max(1));
     let morceau = suivies.len().div_ceil(nt).max(1);
+    let verif = verif_carte();
     let resultats: Vec<Option<Vec<u32>>> = std::thread::scope(|sc| {
         let fils: Vec<_> = suivies.chunks(morceau).map(|ch| sc.spawn(move || {
             let mut montees = Vec::new();
-            for &(_, p, s, connu) in ch {
+            for &(pg, p, s, connu) in ch {
                 let mir = (miroir as *mut u64).wrapping_add(s * 65536);
-                let diff = if connu { page_differe(p as *const u128, mir)? } else { true };
+                let diff = if !connu {
+                    true
+                } else if rapide {
+                    let marquee = sale(pg);
+                    if !marquee && verif {
+                        let d = page_differe(p as *const u128, mir)?;
+                        if d {
+                            eprintln!("taranis : le filet : la page {:#x} a changé sans être marquée", pg);
+                        }
+                        d
+                    } else {
+                        marquee
+                    }
+                } else {
+                    page_differe(p as *const u128, mir)?
+                };
                 if diff {
                     let src = unsafe { std::slice::from_raw_parts(p as *const u128, 65536) };
                     let dst = unsafe { std::slice::from_raw_parts_mut(mir, 65536) };
@@ -1548,6 +1612,9 @@ fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128
     }
     for &s in &montees {
         g.connu[s as usize] = true;
+    }
+    for &(pg, _, _, _) in &suivies {
+        nettoyer(pg);
     }
     let mut table = vec![0u32; 65536];
     for &(pg, _, s, _) in &suivies {
@@ -1585,7 +1652,7 @@ fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128
             g.vu.insert(pg, appel);
         }
     }
-    let lue_et_ecrite = ecrites.iter().any(|&s| marques[2 * s as usize] != 0);
+    let lue_et_ecrite = !rapide && ecrites.iter().any(|&s| marques[2 * s as usize] != 0);
     if params[0] != 0 || lue_et_ecrite {
         // la carte a pu écrire : ces places ne sont plus celles du miroir
         for &s in &ecrites {
@@ -1603,7 +1670,7 @@ fn taranis_boucle_pages_(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128
                     eprintln!("taranis : {} pages manquaient à la carte : la boucle relancée", manquent.len());
                 }
                 drop(g);
-                return taranis_boucle_pages_(c, spv, a, b, ext, false);
+                return taranis_boucle_pages_(c, spv, a, b, ext, false, rapide);
             }
         }
         if bavard {

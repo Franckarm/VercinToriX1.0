@@ -965,6 +965,9 @@ fn main() {
         let (n1, n2) = (nombre("GERGOVIE_VOL", 240), nombre("GERGOVIE_JOUR", 120));
         m.preparer_soleil(360, 70);
         m.ranger_lumiere(true);
+        // la mise en place (pas comptée) : une première image
+        let (cx, cy, cz, tg) = m.camera(0, n1);
+        m.rendre(&mut ecran, cx, cy, cz, 512, tg, 0);
         let mut t = Vec::new();
         for i in 0..n1 {
             let ti = Instant::now();

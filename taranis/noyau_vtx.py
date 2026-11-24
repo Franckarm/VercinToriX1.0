@@ -875,8 +875,11 @@ class NoyauI64(Noyau):
     opérations de 64 bits, au lieu des deux mots de 32 bits de Noyau ; une division est une instruction, et non plus 64
     tours de boucle). Une valeur est un seul identifiant SPIR-V. Le sens reste celui de Lugus (les mêmes mots)."""
 
-    def __init__(self, forge, var, corps):
+    def __init__(self, forge, var, corps, rapide=False):
         super().__init__(forge, var, corps, pages=True)
+        # 0.820 : l'épissage rapide (le modèle classique) : la promesse n'est pas vérifiée sur la carte (pas d'auteur
+        # échangé à chaque mot écrit) ; le programme répond de ses écritures, comme sur toute carte graphique
+        self.rapide = rapide
 
     # ------------------------------------------------------------ les nombres de 64 bits
     def v64(self, op, *args):
@@ -987,14 +990,15 @@ class NoyauI64(Noyau):
         self.e("SelectionMerge", fin, 0)
         self.e("BranchConditional", dedans, oui, non)
         self.etiquette(oui)
-        ancien = self.v("AtomicExchange", self.case(self.auteurs, mot), self.c32(1), self.c32(0), self.moi)
-        autre = self.b("LogicalAnd", self.b("INotEqual", ancien, self.c32(0)), self.b("INotEqual", ancien, self.moi))
-        self.e("SelectionMerge", apres, 0)
-        self.e("BranchConditional", autre, conflit, apres)
-        self.etiquette(conflit)
-        self.drapeau_n(2)
-        self.aller(apres)
-        self.etiquette(apres)
+        if not self.rapide:
+            ancien = self.v("AtomicExchange", self.case(self.auteurs, mot), self.c32(1), self.c32(0), self.moi)
+            autre = self.b("LogicalAnd", self.b("INotEqual", ancien, self.c32(0)), self.b("INotEqual", ancien, self.moi))
+            self.e("SelectionMerge", apres, 0)
+            self.e("BranchConditional", autre, conflit, apres)
+            self.etiquette(conflit)
+            self.drapeau_n(2)
+            self.aller(apres)
+            self.etiquette(apres)
         self.e("Store", self.case64(self.fenetre, mot), x)
         self.e("Store", self.case(self.marques, self.v("IAdd", self.v("ShiftLeftLogical", place, self.c32(1)), self.c32(1))),
                self.c32(1))

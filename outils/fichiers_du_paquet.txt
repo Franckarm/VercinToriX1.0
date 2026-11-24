@@ -240,3 +240,4 @@ belenos/cubes_roles_carte_mesure.vtx
 belenos/cubes_roles_gif.vtx
 belenos/gergovie.vtx
 belenos/gergovie.rs
+belenos/gergovie_carte.vtx
