@@ -413,3 +413,19 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   3. le compilateur des noyaux de Taranis en vtx (les mêmes mots SPIR-V que noyau_vtx.py) ;
   4. les décisions du vergobret en vtx ; 5. la forge en vtx ;
   6. puis le cache qui montre l'image, et le monde d'un seul tenant au processeur.
+
+## Lugus en 128 : le chantier (branche `lugus-128`, en cours)
+- Fait dans vtx128.py : `ENTIER_LARGE_DEFAUT = True` ; MASK de 128 bits, SIGNE = 1 << 127 ; `charger` pose une constante
+  de 128 bits (LDI + LDIH) et ne prend plus 2^64 - 1 pour -1 ; `lugus_asm` : les opérations entières (ENTIERS_LARGES :
+  ADD … MULHU, LDIS, LDIU, COMPTE) à toute la largeur ; ITOF, ITOFS, FTOI, FROUND depuis et vers l'entier entier ;
+  restent à 64 bits : ETG, ETGX (l'adresse courte), les quits, GDOT, GEMV, les flottants de 64 bits. Le pliage des
+  constantes (`ce`) à 128 bits.
+- Résultat : les 34 exemples de exemples128 donnent la même sortie qu'avant, sauf `cylindres` (son hachage déborde
+  maintenant à 128 bits : voulu) et `cube_mere` (il relit ses fichiers d'un passage d'avant : pas une différence).
+  afficher(0 - 3) = -3 ; 2^64 - 1 s'affiche tel quel ; pi, 2.5, 1 << 100 justes.
+- Reste : vtxc128 (les mêmes mots) : `lugus_large64` (les codes 1-9, 12-27, 30, 76-78, 80 à toute la largeur), les
+  conversions 72-75, SEXT32 sans ZEXT.64, `charger` (LDIH au-delà de 64 bits), `SIGNE` (constante 341), le lexique (128
+  bits : `big_entier` sur 8 limbes, les trois « trop grand pour 64 bits », le quaternaire `(v >> 62)`), `entier(w)`
+  (ZEXT.64, ligne ~10227) ; puis vtxc lui-même compilé à 128 bits (ses hachages qui comptaient sur 64 bits : à
+  chercher) ; renouveler (point fixe) ; le prélude (ses hachages : hasard, dictionnaires, empreintes de modules) ; la
+  forge (u128) ; le passage Dunon (Gergovie) ; verifier.py.

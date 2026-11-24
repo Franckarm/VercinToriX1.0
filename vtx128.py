@@ -34,7 +34,10 @@ import spu128 as _spu128  # noqa: E402
 from qflot import Q32, Q64, Q128  # noqa: E402
 from fractions import Fraction  # noqa: E402
 
-MASK = (1 << 64) - 1
+# 0.833 : l'entier par défaut a 128 bits (ENTIER_LARGE, plus bas : lugus_asm) ; MASK est le masque de l'entier
+ENTIER_LARGE_DEFAUT = True
+MASK = (1 << 128) - 1 if ENTIER_LARGE_DEFAUT else (1 << 64) - 1
+MASK64 = (1 << 64) - 1
 MASK32 = 0xFFFFFFFF
 STACK_TOP = _spu64.PILE
 FLAG = 16777215  # drapeau d'initialisation des données : étage 3, dernière case du cube 0
@@ -67,6 +70,17 @@ CONVERSIONS = {"ITOF": "ITOF.64 {},#1", "ITOFS": "ITOFS.64 {},#1", "FTOI": "FTOI
                "STOF": "FCONV.64 {},#2", "FTOS": "FCONV.32 {},#1", "ZEXT32": "ZEXT.32 {}"}
 
 
+# 0.833 : l'entier par défaut de Lugus a 128 bits (la décision du créateur, 24 novembre) : ses opérations se font à
+# toute la largeur ; restent à 64 bits ce qui porte une adresse courte (l'étage dans les bits 63-62 : ETG, ETGX), les
+# quits (LDQ, STQ, ET4…, rangés 32 par mot), les produits scalaires des voies (GDOT, GEMV) et les flottants de 64 bits.
+# ENTIER_LARGE = False rend l'entier de 64 bits d'avant (pour comparer).
+ENTIER_LARGE = ENTIER_LARGE_DEFAUT
+ENTIERS_LARGES = {"ADD", "SUB", "MUL", "SHL4", "SHR4", "ADDI", "SUBI", "SHL", "SHR", "DIV", "MOD", "CMP", "CMPI", "MIN",
+                  "MAX", "CMP3", "ADDM4", "AND", "OR", "XOR", "SAR", "LDIS", "LDIU", "DIVS", "MODS", "MULHS", "ADC",
+                  "SBC", "MULHU", "COMPTE"}
+CONVERSIONS_LARGES = {"ITOF": "ITOF {},#1", "ITOFS": "ITOFS {},#1", "FTOI": "FTOI {},#1", "FROUND": "FROUND {},#1"}
+
+
 def lugus_asm(texte):
     """L'assembleur du SPU-64 (celui du générateur) traduit pour Lugus, ligne à ligne ; les étiquettes, les mots (.mot)
     et les instructions sans largeur (MOV, LD, ST, sauts, pile…) passent tels quels."""
@@ -85,6 +99,10 @@ def lugus_asm(texte):
         if "." in mn and not mn.startswith("."):
             # écrite par le générateur pour Lugus : .L toute la largeur (128 bits), .64 et .32 telles quelles
             sortie.append(f"{tete}    {mn[:-2] if mn.endswith('.L') else mn} {args}")
+        elif ENTIER_LARGE and mn in ENTIERS_LARGES:
+            sortie.append(f"{tete}    {mn} {args}")
+        elif ENTIER_LARGE and mn in CONVERSIONS_LARGES:
+            sortie.append(f"{tete}    " + CONVERSIONS_LARGES[mn].format(args))
         elif mn in A_LA_LARGEUR_64:
             sortie.append(f"{tete}    {mn}.64 {args}")
         elif mn in FAMILLE_S:
@@ -359,7 +377,7 @@ def lexer(src, compat=None):
             else:
                 v = int(texte.replace("_", ""))
             if v > MASK:
-                raise VtxError(f"ligne {ligne} : nombre trop grand pour 64 bits")
+                raise VtxError(f"ligne {ligne} : nombre trop grand pour {MASK.bit_length()} bits")
             jetons.append(("num", v, ligne))
     if len(jetons.bruts) < len(jetons):
         jetons.bruts.append(texte)
@@ -417,7 +435,7 @@ BITS_V, BITS_F = 0xAAAAAAAAAAAAAAAA, 0x5555555555555555
 RANGES = ("quits", "logique")      # tableaux rangés 32 par mot
 QPM, QSH = 64, 6                   # quits par mot (le mot de Lugus entier : 128 bits), et son logarithme
 VECTORISER = True                  # réécrire les boucles élément par élément en boucles de 32 éléments d'un coup
-SIGNE = 1 << 63
+SIGNE = 1 << (MASK.bit_length() - 1)
 
 
 def contient_appel(e):
@@ -1923,7 +1941,7 @@ class Analyseur:
             a, b, op = self.ce(e[2], l), self.ce(e[3], l), e[1]
             f = {"+": lambda: (a + b) & MASK, "-": lambda: (a - b) & MASK, "*": lambda: (a * b) & MASK,
                  "/": lambda: a // b if b else MASK, "%": lambda: a % b if b else a,
-                 "<<": lambda: (a << (b & 63)) & MASK, ">>": lambda: a >> (b & 63),
+                 "<<": lambda: (a << (b & (MASK.bit_length() - 1))) & MASK, ">>": lambda: a >> (b & (MASK.bit_length() - 1)),
                  "&": lambda: a & b, "|": lambda: a | b, "^": lambda: a ^ b,
                  "<<q": lambda: (a << (2 * b)) & MASK, ">>q": lambda: a >> (2 * b)}
             if op in f:
@@ -10305,25 +10323,29 @@ class Generateur:
         """Une constante de 128 bits : celle de 64 bits si elle y tient, LDIS sur 128 bits si elle est un petit négatif,
         sinon LDI (les 64 bits bas) puis LDIH (les 64 bits hauts)."""
         v &= (1 << 128) - 1
-        if v <= MASK:
+        if v <= MASK64 and not (ENTIER_LARGE and MASK64 - (1 << 31) < v):
             self.charger(reg, v)
         elif v >= (1 << 128) - (1 << 31):
             self.emettre(f"LDIS.L {reg},#{v - (1 << 128)}")
         else:
-            self.emettre(f"LDI {reg},{v & MASK}")
+            self.emettre(f"LDI {reg},{v & MASK64}")
             self.emettre(f"LDIH {reg},{v >> 64}")
 
     def charger(self, reg, v):
-        """Une constante de 64 bits dans un registre : LDIS (32 bits signés), LDIU (32 bits sans signe) ou LDI."""
+        """Une constante de l'entier dans un registre : LDIS (32 bits signés), LDIU (32 bits sans signe) ou LDI (et LDIH
+        pour les 64 bits hauts d'une constante de 128 bits : 0.833, l'entier par défaut a 128 bits)."""
         v &= MASK
         if v < 1 << 31:
             self.emettre(f"LDIS {reg},#{v}")
-        elif v >= (1 << 64) - (1 << 31):
-            self.emettre(f"LDIS {reg},#{v - (1 << 64)}")
+        elif v >= (MASK + 1) - (1 << 31):
+            self.emettre(f"LDIS {reg},#{v - (MASK + 1)}")
         elif v <= MASK32:
             self.emettre(f"LDIU {reg},#{v}")
-        else:
+        elif v <= MASK64:
             self.emettre(f"LDI {reg},{v}")
+        else:
+            self.emettre(f"LDI {reg},{v & MASK64}")
+            self.emettre(f"LDIH {reg},{v >> 64}")
 
     # ---------------------------------------------------------------- fonctions et variables
     def locales(self, instr, acc):
@@ -10473,7 +10495,7 @@ class Generateur:
         """Calcule l'adresse longue de @et[adr] : rend (registre, décalage) pour LD/ST registre,#décalage. et : un
         étage (0 à 3), None (@[adr] : l'adresse telle quelle) ou une expression (@(x)[adr])."""
         if isinstance(et, int) and adr[0] == "nombre":
-            v = (adr[1] & ~(3 << 62) & MASK) | (et << 62)
+            v = (adr[1] & ~(3 << 62) & MASK64) | (et << 62)
             if et == 0 and v < 1 << 31:
                 return "R0", v                       # l'étage 0 et une petite adresse : directement dans l'instruction
             self.charger("R1", v)
@@ -10512,7 +10534,7 @@ class Generateur:
             raise VtxError(f"ligne {ligne} : un {NOM_TYPE[t]} occupe deux mots : écrivez bas(x) et haut(x) séparément")
         if isinstance(et, int) and adr[0] == "nombre":
             self.expr(val)
-            v = (adr[1] & ~(3 << 62) & MASK) | (et << 62)
+            v = (adr[1] & ~(3 << 62) & MASK64) | (et << 62)
             if et == 0 and v < 1 << 31:
                 self.emettre(f"ST R0,R1,#{v}")
                 return
@@ -11144,7 +11166,9 @@ class Generateur:
             return
         if g in ("nombre", "qnombre", "blit"):
             v = (e[2] if g == "blit" else e[1]) & MASK
-            if v in (BITS_F, BITS_V, MASK):
+            if g == "blit" or (g == "qnombre" and v in (BITS_F, BITS_V, MASK64)):
+                v &= MASK64
+            if v in (BITS_F, BITS_V, MASK64) and g != "nombre":
                 self.charger_l("R1", v | (v << 64))
             else:
                 self.charger("R1", v)
@@ -11847,7 +11871,7 @@ def injecter_donnees(fs, donnees):
     lignes = []
     for i, (et, adr, vals) in enumerate(donnees):
         if vals:  # copie en assembleur : une boucle par bloc, l'adresse de destination est longue (étage dedans)
-            lignes += [f"    LDI R1,DONNEES{i}", f"    LDI R2,{(adr & ~(3 << 62) & MASK) | (et << 62)}", f"    LDI R3,{len(vals)}",
+            lignes += [f"    LDI R1,DONNEES{i}", f"    LDI R2,{(adr & ~(3 << 62) & MASK64) | (et << 62)}", f"    LDI R3,{len(vals)}",
                        f"LCOPIE{i}:", "    LD R5,R1,#0", "    ST R2,R5,#0", "    ADDI R1,R1,#1",
                        "    ADDI R2,R2,#1", "    SUBI R3,R3,#1", f"    JNZ LCOPIE{i}"]
     corps = [("asm", lignes)]
