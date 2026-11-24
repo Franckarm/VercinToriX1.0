@@ -1767,14 +1767,39 @@ fonction point_vu(i, cx, cy, cz, lacet, tangage, temps) {
 // point : inconnu le ciel, faux l'ombre, vrai le soleil en plein, variable la pénombre), la lumière (la couleur d'un
 // point de terre), le reflet (Divona, pour les seuls points d'eau), le cache (la composition, la brume : l'image).
 
+// 0.827 : l'ordre des fils sur la carte (BLOCS, dans le programme principal) : 0, ligne par ligne (le point i est le
+// pixel i) ; 1, par blocs de 8 × 4 pixels (32 fils : une vague de la carte), les blocs ligne par ligne. Une vague voit
+// alors un petit carré de l'image, et non une ligne de 32 pixels : ses rayons sont voisins, ils lisent les mêmes cases
+// du cube (le cache de la carte sert mieux) et prennent les mêmes chemins (le ciel, l'eau, la terre : moins de
+// divergence). L'image est la même, point pour point : seul l'ordre change.
+fonction pixel_de(q) {
+    si BLOCS == 0 {
+        retour q;
+    }
+    soit b = q >> 5;
+    soit r = q & 31;
+    soit by = b / (W / 8);
+    soit bx = b - by * (W / 8);
+    retour (by * 4 + (r >> 3)) * W + bx * 8 + (r & 7);
+}
+
+// le rang du fil qui fait le pixel (x, y)
+fonction rang_de(x, y) {
+    si BLOCS == 0 {
+        retour y * W + x;
+    }
+    retour (((y >> 2) * (W / 8) + (x >> 3)) << 5) + ((y & 3) << 3) + (x & 7);
+}
+
 // la direction du rayon de l'œil du point i, normée, rangée en un mot (trois nombres signés de 21 bits)
 fonction direction_vue(i, cx, cy, cz, lacet, tangage) {
     soit sl = sin1024(lacet);
     soit cl = cos1024(lacet);
     soit st = sin1024(tangage);
     soit ct = cos1024(tangage);
-    soit iy = i / W;
-    soit ix = i - iy * W;
+    soit pv = pixel_de(i);
+    soit iy = pv / W;
+    soit ix = pv - iy * W;
     soit sy = ((H - 2 * iy - 1) * 45889) ./ W;
     soit sx = ((2 * ix + 1 - W) * 45889) ./ W;
     soit dx = (sl * ct) ./ 65536 + (cl * sx + ((0 - sl * st) ./ 65536) * sy) ./ 65536;
@@ -1861,7 +1886,7 @@ fonction image_etages(cx, cy, cz, lacet, tangage, temps) {
     }
     pour y dans 0..H en bandes {
         pour x dans 0..W {
-            soit v = @2[(FIMAGE << 24) + y * W + x];
+            soit v = @2[(FIMAGE << 24) + rang_de(x, y)];
             @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
         }
     }
@@ -1944,11 +1969,11 @@ fonction image_processeur(cx, cy, cz, lacet, tangage, temps) {
 // une image sur la carte : un fil par point (Taranis), le point rendu dans FIMAGE, puis posé à l'écran
 fonction image_carte(cx, cy, cz, lacet, tangage, temps) {
     pour i dans 0..(W * H) en segments {
-        @2[(FIMAGE << 24) + i] = point_vu(i, cx, cy, cz, lacet, tangage, temps);
+        @2[(FIMAGE << 24) + i] = point_vu(pixel_de(i), cx, cy, cz, lacet, tangage, temps);
     }
     pour y dans 0..H en bandes {
         pour x dans 0..W {
-            soit v = @2[(FIMAGE << 24) + y * W + x];
+            soit v = @2[(FIMAGE << 24) + rang_de(x, y)];
             @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
         }
     }

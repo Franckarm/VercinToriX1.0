@@ -253,3 +253,5 @@ docs/gutuater-druide-conception.md
 tests/test_fondre.py
 tests/fondre/fidele.vtx
 tests/fondre/infidele.vtx
+belenos/gergovie_carte_blocs.vtx
+belenos/gergovie_etages_blocs.vtx

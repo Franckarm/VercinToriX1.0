@@ -4,6 +4,7 @@
 //     python forge/forge128.py belenos/gergovie_carte.vtx -o gergovie_carte ; VTX_EPISSAGE=rapide VTX_CARTE=1 gergovie_carte
 constante RN = 1;
 constante RD = 1;
+constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne
 importer "gergovie_scene.vtx";
 
 fonction principal() {

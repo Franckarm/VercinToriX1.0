@@ -4661,3 +4661,15 @@ inconnu ou variable. Et l'ordre des mesures est tiré au hasard, pour qu'aucune 
 faire trembler un seuil, il n'apporte rien de plus qu'un bon pseudo-hasard, qui a un avantage : la même graine refait la
 même décision (on peut la vérifier). La source reste un choix ouvert (`graine`, `bruit`) ; un générateur quantique
 pourrait s'y brancher plus tard.
+
+## 113. Les fils par blocs (24 novembre, 0.827)
+
+**Chez le créateur, la 0.826** : Gutuater a fait son travail : le noyau fondu perd 7 à 11 % sur la RTX, et il
+l'apprend seul (deux petites preuves contre ; au prochain passage, faux). Probablement trop de registres dans un noyau
+qui porte cinq étages (moins de fils à la fois) ; non mesuré.
+
+**La demande** : un fait scientifique sur les cubes pour calculer et accélérer les données. Le plus solide est la
+localité : une vague de la carte (32 fils) partage tout, ses lectures comme ses chemins. Ligne par ligne, elle voit 32
+pixels en ligne ; par blocs de 8 × 4, elle voit un petit carré : ses rayons sont voisins, lisent les mêmes cases du cube
+(le cache de la carte sert mieux) et touchent ensemble le ciel, l'eau ou la terre (moins de divergence). C'est le même
+principe que la courbe de Morton, déjà dans le vocabulaire du cube. L'image est la même, point pour point.

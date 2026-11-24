@@ -5,6 +5,7 @@
 //     python forge/forge128.py belenos/gergovie.vtx -o gergovie_vtx ; gergovie_vtx
 constante RN = 1;
 constante RD = 1;
+constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne
 importer "gergovie_scene.vtx";
 
 fonction principal() {

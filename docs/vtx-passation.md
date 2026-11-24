@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.827.zip`, `essai-0.827.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.828.zip`, `essai-0.828.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -308,3 +308,16 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Prochain : lire la RTX (fondre gagne-t-il ? sur lavapipe il perd 14 %) ; selon : fondre par morceaux (1+2, 4+5),
   le tableau mort (les intermédiaires dans les registres) ; la garde des mêmes mots ; le Druide. En attente : le cache
   qui montre l'image, les duels.
+
+## 0.827 (24 novembre) : l'ordre des fils par blocs
+- Chez le créateur, la 0.826 : fondre perd 7 à 11 % sur la RTX (19,5 contre 17,5 ms) ; Gutuater a deux petites preuves
+  contre (il en faut 3) : il le taira au prochain passage. Le noyau unique écrit à la main reste devant (55,5).
+- `BLOCS` (dans le programme principal ; 0 dans les anciens) : `pixel_de(q)`, `rang_de(x, y)` dans gergovie_scene.vtx ;
+  une vague de 32 fils fait un bloc de 8 × 4 pixels. Mains : `gergovie_carte_blocs.vtx`, `gergovie_etages_blocs.vtx`.
+  La même empreinte (vérifié à demi-échelle). Attention : le lieu d'un gène est sa ligne ; toucher la scène change les
+  lignes (le carnet repart à inconnu).
+- Décidé avec le créateur (à faire) : le filtrage stochastique des calques (ombre, ciel : une lecture qui tremble, Pharr
+  et al., I3D 2024), en option à côté de l'image témoin, avec le même bruit dans le C++ ; puis le calque de lumière à
+  résolution réduite (le jour) ; puis son idée des étages en cube qui se fondent d'une image à l'autre (la fusion
+  temporelle : rien ne se déplace, l'image suivante reprend ce que la précédente a fait) ; le bruit aux passages ADN →
+  ARN → ADN (la vérification au hasard des transferts, à la manière de Freivalds).
