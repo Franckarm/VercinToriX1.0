@@ -2,6 +2,8 @@
 // Belenos : le banc du rouleau de lumière (sans fenêtre). La coupe se prépare, le soleil (bas-droite) et le feu
 // éclairent 300 pas ; à la fin, l'empreinte de l'image vue (FNV-1a) et le temps d'un pas.
 //     lugus belenos/rouleau_banc.vtx
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 importer "rouleau_scene.vtx";
 
 constante PAS_BANC = 300;

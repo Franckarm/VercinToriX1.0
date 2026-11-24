@@ -1,6 +1,8 @@
 // machine : lugus
 // Belenos : le film à l'échelle 1, le soleil tournant et montant à chaque image (le changement de lumière).
 //     forgé : python forge/forge128.py belenos/cubes_soleil.vtx -o cubes_soleil.exe ; VTX_GIF=cubes_soleil.gif cubes_soleil.exe
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 1;
 importer "cubes_film.vtx";

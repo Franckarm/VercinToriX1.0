@@ -1,0 +1,36 @@
+// machine : lugus
+// 0.833 : entier128.vtx en Dunon : « dunon; » en tête, tout le programme compte en 64 bits (le graphique)
+dunon;
+// (le texte d'entier128.vtx :) l'entier par défaut de Lugus a 128 bits (la décision du créateur, 24 novembre) : le hex, l'ADN, l'ARN et
+// le cube chromatique comptent à toute la largeur du mot. Ce programme montre ce qui dépasse 64 bits ; le même avec
+// « dunon; » en tête (entier128_dunon.vtx) compte en 64 bits, comme le graphique (Taranis, le C++ de référence).
+//     lugus exemples128/entier128_dunon.vtx
+//     python3 forge/forge128.py exemples128/entier128_dunon.vtx -o entier128_dunon ; entier128_dunon
+
+fonction factorielle(n) {
+    soit r = 1;
+    pour i dans 1..n + 1 { r = r * i; }
+    retour r;
+}
+
+fonction principal() {
+    ecrire("la largeur de l'entier : ");
+    afficher(nb_bits(0 - 1));
+    ecrire("factorielle de 30 : ");
+    afficher(factorielle(30));
+    ecrire("2 puissance 100 : ");
+    afficher(1 << 100);
+    ecrire("moins un, en hex : ");
+    ecrire_hexa(1, 0 - 1);
+    ecrire_car(1, 10);
+    ecrire("un FNV-1a sur « Gergovie » : ");
+    soit h = 14695981039346656037;
+    pour c dans [71, 101, 114, 103, 111, 118, 105, 101] { h = (h ^ c) * 1099511628211; }
+    afficher(h);
+    ecrire("le bit le plus haut, tourné d'un cran : ");
+    afficher(tourner_gauche(1 << (nb_bits(0 - 1) - 1), 1));
+    ecrire("zéros en tête de 1 : ");
+    afficher(zeros_en_tete(1));
+    ecrire("flottant(2 puissance 100) : ");
+    afficher(flottant(1 << 100));
+}

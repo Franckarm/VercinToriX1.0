@@ -3,6 +3,8 @@
 // projette sur l'écran, le plus proche gagne (garder le minimum) ; un pixel où rien ne tombe lance un rayon. Une autre
 // image que le rayon (les points sont des carrés à l'écran) : à voir, et à mesurer.
 //     python forge/forge128.py belenos/gergovie_projection.vtx -o gergovie_projection
+// 0.833 : le graphique compte en 64 bits (comme Taranis et le C++ de référence) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 1;
 constante BLOCS = 0;

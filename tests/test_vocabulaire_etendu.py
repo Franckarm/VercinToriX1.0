@@ -92,8 +92,9 @@ sortie_l = jouer("lugus", os.path.join(VOC, "commun.vtx"))
 verifier("Lugus : chaque mot rend la valeur gardée (plus de 190 mots, 113 lignes)", sortie_l == attendu,
          next((f"« {a} » au lieu de « {b} »" for a, b in zip(sortie_l.split("\n"), attendu.split("\n")) if a != b), ""))
 sortie_d = jouer("vtx64", os.path.join(VOC, "commun.vtx"))
-ok, det = proches(sortie_d, attendu, 1e-13)
-verifier("Dunon : le même programme rend ce que rend Lugus (à 10⁻¹³ près : son flottant a 52 bits)", ok, det)
+# 0.833 : l'entier de Lugus a 128 bits, celui de Dunon 64 : Dunon a son attendu (les entiers à 64 bits)
+ok, det = proches(sortie_d, open(os.path.join(VOC, "commun64.attendu"), encoding="utf-8").read(), 1e-13)
+verifier("Dunon : le même programme rend ce qu'il rendait (à 10⁻¹³ près : son flottant a 52 bits ; ses entiers de 64 bits)", ok, det)
 
 # les flottants, contre la bibliothèque de Python (à la précision du flottant de 64 bits de Python)
 lignes = {l.split(" ")[0]: [nombre(t) for t in l.split(" ")[1:]] for l in sortie_l.split("\n") if l}

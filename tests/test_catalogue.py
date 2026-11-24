@@ -170,7 +170,9 @@ for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py
     suivante = "393" if machine == "lugus" else "394"
     verifier(f"le service 29 sur {machine.capitalize()}, en Rust et en Python : le cube choisi à sa fréquence, sa queue lue "
              f"à son adresse, le second à la suivante ; pas un cube : faux",
-             t1 == t2 and t1.startswith(f"392 {adn.QUEUE_CATALOGUE} 3 {suivante} -2"), f"{t1!r} / {t2!r}")
+             t1 == t2 and t1.startswith(f"392 {adn.QUEUE_CATALOGUE} 3 {suivante} " +
+                                        ("18446744073709551614" if machine == "lugus" else "-2")),   # 0.833 : -2 du service, sur 64 bits
+             f"{t1!r} / {t2!r}")
 verifier(f"le catalogue : {len(vibs)} molécules, autant de vibrations différentes", len(set(vibs)) == len(vibs))
 h_outil = next(l.split("|")[2] for l in vtx_cat.split("\n") if l.startswith("module|outil.vtx|"))
 

@@ -1,4 +1,6 @@
 // machine : lugus
+// 0.833 : envoyé à Taranis (qui compte en 64 bits) : Dunon
+dunon;
 constante N = 4096;
 fonction premier(i) {
     @2[(200 << 24) + i] = i * 3 + 1;

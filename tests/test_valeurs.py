@@ -91,6 +91,8 @@ verifier("la carte : carre a sa molécule, « appelée par __appeler »", "appel
 # Gobannos : l'appel par valeur traduit (sous Linux, l'exécutable est lancé ; sous Windows aussi)
 GOB = os.path.join(racine, "gobannos", "gobannos.vtx")
 mots = os.path.join(d, "ex.mots")
+# 0.833 : Gobannos traduit les programmes en Dunon (la division de 128 bits n'est pas encore traduite)
+open(os.path.join(d, "ex.vtx"), "w", encoding="utf-8").write("dunon;\n" + open(EX, encoding="utf-8").read())
 lugus("compiler", os.path.join(d, "ex.vtx"), mots)
 exe = os.path.join(d, "ex" + (".exe" if WIN else ".elf"))
 r = lugus(GOB, entree=f"{mots}\n{exe}\n{'windows' if WIN else 'linux'}\n")

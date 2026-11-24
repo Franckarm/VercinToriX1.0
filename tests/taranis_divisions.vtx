@@ -1,4 +1,6 @@
 // machine : lugus
+// 0.833 : envoyé à Taranis (qui compte en 64 bits) : Dunon
+dunon;
 constante N = 200000;
 constante F = 3;
 fonction principal() {

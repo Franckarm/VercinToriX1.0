@@ -93,6 +93,7 @@ flottant quaternaire de 128 bits par défaut, 64 et 32 au choix, le point de mat
 la machine Rust de Lugus elle-même (`spu128.rs`, `qflot128.rs`, `miroir.rs`, `hote.rs`, recopiés dans le noyau
 `noyau_forge128.rs`) : mémoire, brin ADN, cubes sur disque, services. Un petit cache de 16 pages évite la table de
 pages à chaque accès.
+**0.833** : l'entier par défaut est forgé en u128 (u64 pour un programme `dunon;`) ; seule la forge d'un programme `dunon;` envoie des boucles à Taranis.
 
 Vérification : `forge/test_forge128.py N` forge la suite de vtx128.py dans les deux langages (celui de Lugus et celui du
 SPU-64) et N programmes au hasard, tous dans un seul programme Rust, et compare sorties, texte et mémoire finale à Lugus

@@ -110,6 +110,7 @@ appel de fonction), et chaque valeur prend deux fois plus de place en mémoire e
 tailles : 64 bits suffisent toujours. Le 128 est là pour ce qui en a besoin : les points de matière, le flottant
 quaternaire, l'ADN de 64 bases, les grands nombres. Un entier de 64 bits occupe la moitié basse d'un registre ou d'un
 mot ; plus tard, un tableau d'entiers de 64 bits pourra en ranger deux par mot.
+**0.833 (24 novembre), décision du créateur** : l'entier par défaut passe à 128 bits ; le graphique garde 64 bits par `dunon;` (Dunon), Taranis reste en 64.
 
 ## 4. Le jeu d'instructions
 

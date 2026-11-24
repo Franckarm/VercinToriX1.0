@@ -4,6 +4,8 @@
 // huit points se calcule d'abord aux bouts et au centre. Une autre image que gergovie.vtx au jour (l'ombre suit le
 // soleil avec un peu de retard) ; le vol est le même. La référence : gergovie_ref.cpp avec -DPROGRESSIF.
 //     python forge/forge128.py belenos/gergovie_carte_progressif.vtx -o gergovie_carte_progressif
+// 0.833 : le graphique compte en 64 bits (comme Taranis et le C++ de référence) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 1;
 constante BLOCS = 0;

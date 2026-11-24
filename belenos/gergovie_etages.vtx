@@ -3,6 +3,8 @@
 // matériaux, l'ombre, la lumière, le reflet, le cache) ; leurs cubes (fréquences 200 et plus) restent sur la carte. La
 // même image que gergovie.vtx et gergovie_carte.vtx. À lancer avec VTX_EPISSAGE=rapide (Taranis).
 //     python forge/forge128.py belenos/gergovie_etages.vtx -o gergovie_etages ; VTX_EPISSAGE=rapide VTX_CARTE=1 gergovie_etages
+// 0.833 : le graphique compte en 64 bits (comme Taranis et le C++ de référence) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 1;
 constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne

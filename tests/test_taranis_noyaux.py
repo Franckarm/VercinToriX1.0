@@ -109,7 +109,7 @@ if not WIN and "VK_ICD_FILENAMES" not in env:
     icd = sorted(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux64/vk_swiftshader_icd.json"))
     if icd:
         env["VK_ICD_FILENAMES"] = icd[-1]
-src = programme()
+src = "// 0.833 : Taranis compte en 64 bits : le programme est en Dunon\ndunon;\n" + programme()
 tmp = tempfile.mkdtemp(prefix="taranis_noyaux_")
 chemin = os.path.join(tmp, "noyaux.vtx")
 open(chemin, "w", encoding="utf-8").write(src)

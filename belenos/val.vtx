@@ -5,6 +5,8 @@
 //                                           nuit) ; n : le jour ou la nuit d'un coup ; f : les feux ; Échap : finir)
 // La scène elle-même (le relief, la lumière, le rendu) est dans val_scene.vtx ; le banc de mesure dans val_banc.vtx,
 // et le même calcul en C dans val_ref.c (la même image au point près : on compare les temps à armes égales).
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 importer "val_scene.vtx";
 
 fonction principal() {

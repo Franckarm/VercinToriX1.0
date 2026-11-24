@@ -49,8 +49,28 @@ def forger(prog, systeme):
     return exe, r.stdout.decode("utf-8", "replace")
 
 
+def en_dunon(prog):
+    """0.833 : Gobannos traduit les mots d'un programme en Dunon (l'entier de 64 bits) ; la division de 128 bits n'est
+    pas encore traduite. Une copie du programme, « dunon; » en tête (après ses commentaires), à côté de lui."""
+    s = open(prog, encoding="utf-8").read()
+    l = s.split("\n")
+    i = 0
+    while i < len(l) and l[i].startswith("//"):
+        i += 1
+    if "dunon;" not in l:
+        l.insert(i, "dunon;")
+    c = os.path.join(os.path.dirname(prog), "dunon_" + os.path.basename(prog))
+    open(c, "w", encoding="utf-8").write("\n".join(l))
+    COPIES.append(c)
+    return c
+
+
+COPIES = []
+
+
 def comparer(prog, entree="", clavier=False):
     systeme = "windows" if WIN else "linux"
+    prog = en_dunon(prog)
     exe, info = forger(prog, systeme)
     if exe is None:
         return False, info
@@ -102,16 +122,26 @@ verifier("le clavier : les lignes, les accents, une réponse à quatre valeurs, 
 FLOT = "fonction principal() {\n    afficher(\"avant\");\n    soit x = 1.5;\n    afficher(x * 2.0);\n}\n"
 p = os.path.join(d, "flot.vtx")
 open(p, "w", encoding="utf-8").write(FLOT)
-exe, info = forger(p, "windows" if WIN else "linux")
+exe, info = forger(en_dunon(p), "windows" if WIN else "linux")
 r = lancer([exe]) if exe else None
 verifier("un flottant (pas encore traduit) : « avant » écrit, puis l'arrêt dit (code 3), rien de faux",
          r is not None and r.returncode == 3 and r.stdout.decode("utf-8").replace("\r\n", "\n") == "avant\n"
          and "pas encore traduite par Gobannos" in r.stderr.decode("utf-8"),
          info if r is None else f"{r.returncode} {r.stdout!r} {r.stderr!r}")
 
+# 4 bis. 0.833 : un programme à 128 bits (sans « dunon; ») : sa division de 128 bits n'est pas encore traduite ;
+# l'exécutable s'arrête en le disant (code 3), sans rien écrire de faux
+p = os.path.join(d, "large.vtx")
+open(p, "w", encoding="utf-8").write("fonction principal() {\n    afficher(1 << 100);\n}\n")
+exe, info = forger(p, "windows" if WIN else "linux")
+r = lancer([exe]) if exe else None
+verifier("l'entier de 128 bits (la division pas encore traduite) : l'arrêt dit (code 3), rien de faux",
+         r is not None and r.returncode == 3 and r.stdout == b"" and "pas encore traduite par Gobannos" in r.stderr.decode("utf-8"),
+         info if r is None else f"{r.returncode} {r.stdout!r} {r.stderr!r}")
+
 # 5. l'exécutable Windows (vérifié sous Linux) : PE32+, une section, KERNEL32 et ses sept fonctions
 if not WIN:
-    exe, info = forger(os.path.join(E, "supposons.vtx"), "windows")
+    exe, info = forger(en_dunon(os.path.join(E, "supposons.vtx")), "windows")
     ok = exe is not None
     if ok:
         b = open(exe, "rb").read()
@@ -127,4 +157,7 @@ if not WIN:
 import shutil  # noqa: E402
 shutil.rmtree(d, ignore_errors=True)
 print("Gobannos : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))
+for c in COPIES:
+    if os.path.exists(c):
+        os.remove(c)
 sys.exit(1 if echecs else 0)

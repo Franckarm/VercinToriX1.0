@@ -43,6 +43,11 @@ FMT = {"f": "Q64", "s": "Q32", "x": "Q128"}
 OP_RS = {"==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">="}
 
 
+def L():
+    """0.833 : l'entier par défaut du programme forgé a 128 bits (Lugus) ; 64 avec « dunon; »"""
+    return V.ENTIER_LARGE
+
+
 def lit(v):
     return f"{v & ((1 << 128) - 1)}u128"
 
@@ -57,6 +62,7 @@ def compiler_arbre(src, dossier=None, partition=True):
     if "importer" in src:
         lignes, _ = V.resoudre_carte(src, dossier, "programme")
         src = "\n".join(lignes)
+    V.regler_largeur(V.ENTIER_LARGE_DEFAUT and not V.COMPAT_64)
     a = V.Analyseur(V.lexer(src))
     a.compat = V.COMPAT_64
     fs = a.programme()
@@ -538,8 +544,8 @@ class Forge(V.Generateur):
         """0.826 : le lot (les accords aux places dites) fondu en un noyau, si la forge sait le faire : le même intervalle
         pour toutes les boucles ; chaque écriture à une fréquence connue ((F << 24) + x) ; le noyau fondu se compile pour
         Taranis. Il est écrit à côté du lot séparé ; le vergobret choisit (gene_fondre_debut). Faux : rien n'est écrit."""
-        if os.environ.get("VTX_CARTE") == "0":
-            return False
+        if os.environ.get("VTX_CARTE") == "0" or L():
+            return False                         # 0.833 : Taranis compte en 64 bits : seul un programme « dunon; » y va
         valeurs = {}
         for s in corps[:places[-1] + 1]:
             if s[0] == "soit" and self.pur(s[2], set()):
@@ -850,8 +856,8 @@ class Forge(V.Generateur):
         """Taranis : la boucle entière (toutes les notes) sur la carte graphique, si son corps sait y aller (le SPIR-V
         de taranis/noyau_vtx.py) ; la fenêtre de l'étage 2 se calcule ici, aux tours a, a + 1 et b - 1 ; si la carte
         manque ou refuse, ou si un accès sort de la fenêtre, les cylindres prennent la boucle (fait reste faux)."""
-        if os.environ.get("VTX_CARTE") == "0":
-            return
+        if os.environ.get("VTX_CARTE") == "0" or L():
+            return                               # 0.833 : Taranis compte en 64 bits : seul un programme « dunon; » y va
         st = notes[0]
         var, corps = st[1], st[4]
         pages = False
@@ -1055,7 +1061,7 @@ class Forge(V.Generateur):
             return f"(({v} as u64) & 0x3FFF_FFFF_FFFF_FFFF != 0)"
         if t == "s":
             return f"(({v} as u64) & 0x3FFF_FFFF != 0)"
-        if t == "w":
+        if t == "w" or (L() and t != "i"):
             return f"({v} != 0)"
         return f"(({v} as u64) != 0)"
 
@@ -1084,6 +1090,10 @@ class Forge(V.Generateur):
             return self.b([pa, pb], "({0} as i128) " + OP_RS[o] + " ({1} as i128)")
         if signe and t == "i":
             return self.b([pa, pb], "({0} as u32 as i32) " + OP_RS[o] + " ({1} as u32 as i32)")
+        if L():
+            if signe:
+                return self.b([pa, pb], "({0} as i128) " + OP_RS[o] + " ({1} as i128)")
+            return self.b([pa, pb], "{0} " + OP_RS[o] + " {1}")
         if signe:
             return self.b([pa, pb], "({0} as u64 as i64) " + OP_RS[o] + " ({1} as u64 as i64)")
         return self.b([pa, pb], "({0} as u64) " + OP_RS[o] + " ({1} as u64)")
@@ -1093,10 +1103,14 @@ class Forge(V.Generateur):
         if t == voulu or (voulu == "e" and t == "i") or (voulu == "w" and t in V.ENTIERS):
             return code
         if voulu == "f" and t in V.ENTIERS:
+            if L() and t != "i":
+                return f"Q64.de_entier({code}, 128, false)"
             return f"Q64.de_entier(({code}) & M64, 64, false)"
         if voulu == "f" and t == "s":
             return f"Q32.vers(&Q64, ({code}) & M32)"
         if voulu == "s" and t in V.ENTIERS:
+            if L() and t != "i":
+                return f"Q64.vers(&Q32, Q64.de_entier({code}, 128, false))"
             return f"Q64.vers(&Q32, Q64.de_entier(({code}) & M64, 64, false))"
         if voulu == "i" and t == "e":
             return code
@@ -1175,6 +1189,8 @@ class Forge(V.Generateur):
         if g == "non":
             t = self.typ(e[1])
             v = self.val(e[1])
+            if L() and t != "i":
+                return f"(!{v})"
             return f"((!({v} as u64) & {'0xFFFF_FFFF' if t == 'i' else 'u64::MAX'}) as u128)"
         if g == "non_log":
             return f"({self.cond(e[1])} as u128 ^ 1)"
@@ -1191,6 +1207,8 @@ class Forge(V.Generateur):
             if op in ("<<q", ">>q"):
                 sh = "<<" if op == "<<q" else ">>"
                 forme = "((({0} as u64) " + sh + " ((({1} as u64).wrapping_add({1} as u64)) & 63)) as u128)"
+                if L() and t != "i":
+                    forme = "({0} " + sh + " ({1}.wrapping_add({1}) & 127))"
                 if t == "i" and op == "<<q":
                     forme = "(" + forme + " & M32)"
                 return self.b([a, b], forme)
@@ -1206,6 +1224,12 @@ class Forge(V.Generateur):
                      "<<": "((({0} as u64) << (({1} as u64) & 63)) as u128)",
                      ">>": "((({0} as u64) >> (({1} as u64) & 63)) as u128)",
                      "./": "divs64({0}, {1})", ".%": "mods64({0}, {1})", ".>>": "sar64({0}, {1})"}[op]
+            if L() and t != "i":
+                forme = {"+": "{0}.wrapping_add({1})", "-": "{0}.wrapping_sub({1})", "*": "{0}.wrapping_mul({1})",
+                         "/": "divu128({0}, {1})", "%": "modu128({0}, {1})",
+                         "&": "({0} & {1})", "|": "({0} | {1})", "^": "({0} ^ {1})",
+                         "<<": "({0} << ({1} & 127))", ">>": "({0} >> ({1} & 127))",
+                         "./": "divs128l({0}, {1})", ".%": "mods128l({0}, {1})", ".>>": "sar128({0}, {1})"}[op]
             if t == "i" and op in ("+", "-", "*", "<<", "/"):
                 forme = "(" + forme + " & M32)"
             return self.b([a, b], forme)
@@ -1294,6 +1318,16 @@ class Forge(V.Generateur):
                 return f"(({x} as u64) & 3) as u128"
             return f"(if ({x} as u64) == 0 {{ 1u128 }} else {{ 2u128 }})"
         parts = [self.val(args[0], t)] + ([self.val(args[1], t)] if OPS_LOGIQUES[nom] == 2 else [])
+        if L() and t == "e":
+            if nom in ("et4", "ou4"):
+                return self.b(parts, f"{nom}_128({{0}}, {{1}})")
+            if nom == "fusion":
+                return self.b(parts, "({0} | {1})")
+            if nom == "consensus":
+                return self.b(parts, "({0} & {1})")
+            if nom == "anti":
+                return self.b(parts, "anti_128({0})")
+            return self.b(parts, "non4_128({0})")
         if nom in ("et4", "ou4"):
             return self.b(parts, f"{nom}_64({{0}}, {{1}})")
         if nom == "fusion":
@@ -1357,6 +1391,8 @@ class Forge(V.Generateur):
         if nom == "entrée":
             return "c.m.entree.pop_front().unwrap_or(0)"
         if nom == "cmp3":
+            if L():
+                return self.b([e1()], "(!{0})")
             return self.b([e1()], "((!({0} as u64)) as u128)")
         if nom == "lire_car":
             return self.b([e1()], "(c.m.lire_canal({0}) & M64)")
@@ -1373,13 +1409,19 @@ class Forge(V.Generateur):
         if nom == "__service":
             return self.b([e1(), self.val(a[1], "e")], "c.sys({0}, {1})")
         if nom == "nb_bits":
+            if L():
+                return self.b([e1()], "({0}.count_ones() as u128)")
             return self.b([e1()], "(({0} as u64).count_ones() as u128)")
         if nom == "qegal":
-            return self.b([e1(), self.val(a[1], "e")], "qegal_64({0}, {1})")
+            return self.b([e1(), self.val(a[1], "e")], ("qegal_128" if L() else "qegal_64") + "({0}, {1})")
         if nom in ("min4", "max4", "addm4"):
-            return self.b([e1(), self.val(a[1], "e")], "quits_64({0}, {1}, " + str({"min4": 0, "max4": 1, "addm4": 2}[nom]) + ")")
+            return self.b([e1(), self.val(a[1], "e")], ("quits_128" if L() else "quits_64") + "({0}, {1}, " + str({"min4": 0, "max4": 1, "addm4": 2}[nom]) + ")")
         if nom == "gdot":
             return self.b([e1(), self.val(a[1], "e")], "gdot_64({0}, {1})")
+        if nom == "mul_haut" and L():
+            return self.b([e1(), self.val(a[1], "e")], "mulhu128({0}, {1})")
+        if nom == "mul_haut_signe" and L():
+            return self.b([e1(), self.val(a[1], "e")], "mulhs128l({0}, {1})")
         if nom == "mul_haut":
             return self.b([e1(), self.val(a[1], "e")], "((({0} as u64 as u128) * ({1} as u64 as u128)) >> 64)")
         if nom == "mul_haut_signe":
@@ -1434,7 +1476,7 @@ class Forge(V.Generateur):
         if nom in ("flottant_petuar", "flottant_128"):
             if t not in V.X_DEPUIS:
                 interdit()
-            return {"x": v(), "e": f"Q128.de_entier({v()}, 64, false)", "i": f"Q128.de_entier({v()}, 32, false)",
+            return {"x": v(), "e": f"Q128.de_entier({v()}, {128 if L() else 64}, false)", "i": f"Q128.de_entier({v()}, 32, false)",
                     "f": f"Q64.vers(&Q128, {v()} & M64)", "s": f"Q32.vers(&Q128, {v()} & M32)",
                     "w": f"Q128.de_entier({v()}, 128, true)"}[t]
         if nom == "comme_flottant_petuar":
@@ -1446,7 +1488,7 @@ class Forge(V.Generateur):
         if nom == "flottant_petuar_signe":
             if t not in V.ENTIERS:
                 interdit()
-            return f"Q128.de_entier({v()}, {64 if t == 'e' else 32}, true)"
+            return f"Q128.de_entier({v()}, {(128 if L() else 64) if t == 'e' else 32}, true)"
         if nom == "vers_ieee128":
             if t != "x":
                 interdit()
@@ -1462,18 +1504,23 @@ class Forge(V.Generateur):
             return {"racine": f"Q128.racine({c})", "flottant": f"Q128.vers(&Q64, {c})",
                     "flottant_64": f"Q128.vers(&Q64, {c})", "flottant_32": f"Q128.vers(&Q32, {c})",
                     "entier_128": f"Q128.vers_entier({c}, false, 128)", "entier_petuar": f"Q128.vers_entier({c}, false, 128)",
-                    "entier": f"Q128.vers_entier({c}, false, 64)", "arrondi": f"Q128.vers_entier({c}, true, 64)",
+                    "entier": f"Q128.vers_entier({c}, false, {128 if L() else 64})",
+                    "arrondi": f"Q128.vers_entier({c}, true, {128 if L() else 64})",
                     "entier_32": f"(Q128.vers_entier({c}, false, 128) & M32)"}.get(nom) or interdit()
         if nom in ("flottant", "flottant_64"):
             if t == "w":
                 return f"Q128.vers(&Q64, Q128.de_entier({v()}, 128, true))"
             if t not in ("e", "i", "f", "s"):
                 interdit()
+            if L() and t == "e":
+                return f"Q64.de_entier({v()}, 128, false)"
             return {"e": f"Q64.de_entier({v()} & M64, 64, false)", "i": f"Q64.de_entier({v()} & M64, 64, false)",
                     "s": f"Q32.vers(&Q64, {v()} & M32)", "f": v()}[t]
         if nom == "flottant_32":
             if t not in ("e", "i", "f", "s"):
                 interdit()
+            if L() and t == "e":
+                return f"Q64.vers(&Q32, Q64.de_entier({v()}, 128, false))"
             return {"e": f"Q64.vers(&Q32, Q64.de_entier({v()} & M64, 64, false))",
                     "i": f"Q64.vers(&Q32, Q64.de_entier({v()} & M64, 64, false))",
                     "f": f"Q64.vers(&Q32, {v()} & M64)", "s": v()}[t]
@@ -1482,21 +1529,24 @@ class Forge(V.Generateur):
                 interdit()
             if t == "i":
                 return f"Q64.de_entier(sext32({v()}), 64, true)"
+            if L():
+                return f"Q64.de_entier({v()}, 128, true)"
             return f"Q64.de_entier({v()} & M64, 64, true)"
         if nom in ("entier", "entier_32"):
             c = v()
+            n = 128 if L() else 64
             if t == "w":
-                c = f"({c} & M64)"
+                c = c if L() else f"({c} & M64)"
             elif t == "s":
-                c = f"Q64.vers_entier(Q32.vers(&Q64, {c} & M32), false, 64)"
+                c = f"Q64.vers_entier(Q32.vers(&Q64, {c} & M32), false, {n})"
             elif t == "f":
-                c = f"Q64.vers_entier({c} & M64, false, 64)"
+                c = f"Q64.vers_entier({c} & M64, false, {n})"
             return f"({c} & M32)" if nom == "entier_32" else c
         if nom == "arrondi":
             if t == "s":
-                return f"Q64.vers_entier(Q32.vers(&Q64, {v()} & M32), true, 64)"
+                return f"Q64.vers_entier(Q32.vers(&Q64, {v()} & M32), true, {128 if L() else 64})"
             if t == "f":
-                return f"Q64.vers_entier({v()} & M64, true, 64)"
+                return f"Q64.vers_entier({v()} & M64, true, {128 if L() else 64})"
             interdit()
         if nom == "racine":
             if t == "s":
@@ -1654,7 +1704,8 @@ def planifier_zones(fonctions, ecrits, _blobs_presents, blobs):
         if vus and all(isinstance(v, int) for v in vus):
             m = max(vus)
             ty = "u8" if m < 1 << 8 else "u16" if m < 1 << 16 else "u32" if m < 1 << 32 else "u64" if m < 1 << 64 else "u128"
-        elif all(isinstance(v, int) and v < 1 << 64 or v in TYPES_64 for v in vus):
+        elif all(isinstance(v, int) and v < 1 << 64 or v in TYPES_64 and not (v == "e" and L()) for v in vus):
+            # 0.833 : l'entier par défaut a 128 bits : un tableau d'entiers reste en u128 (u64 avec « dunon; »)
             ty = "u64"
         else:
             ty = "u128"

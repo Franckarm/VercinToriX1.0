@@ -90,6 +90,7 @@ largeur : 63-62 à la largeur 64, l'adresse courte), LDQ et STQ (L / 2 quits par
 bits). MOV, LD, ST, LDX, STX, LDF, STF, PUSH, POP, IN, OUT et SEXT gardent les 128 bits. Pour une opération flottante, `w` choisit le format
 (section 4.4). L'entier par défaut du langage étant de 64 bits, la plupart des opérations du code compilé ont w = 1 :
 une seule instruction, sans masque.
+**0.833 (24 novembre)** : l'entier par défaut a désormais 128 bits (w = 0) ; un programme qui commence par `dunon;` garde l'entier de 64 bits (w = 1), pour le graphique (voir vtx-passation.md, 0.833).
 
 `imm` est lu signé (sext) pour ADDI, SUBI, CMPI, LDIS, LD, ST, LDF, STF, MARQUE, et sans signe pour les sauts, LDIU et
 les champs de sélection (voie, codon, poids). **LDI** prend la demi-instruction suivante comme constante de 64 bits

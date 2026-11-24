@@ -4688,3 +4688,24 @@ peut échapper aux références ; c'est donc une option, l'image entière reste 
 même image donne la même lumière, et le C++ fait le même tirage (la même empreinte, vérifiée).
 
 **Sur lavapipe** (demi-échelle) : le jour passe de 3,7 à 13,4 images par seconde ; le C++ de 18 à 41 (ce conteneur a peu de cœurs ; la RTX dira le vrai gain).
+
+## 115. Lugus en 128, le graphique en Dunon (24 novembre, 0.833)
+
+**La décision** est celle du créateur : le hex, l'ADN, l'ARN, le cube chromatique comptent à toute la largeur du mot de
+Lugus. L'entier par défaut avait 64 bits depuis le 25 octobre, par une proposition à moi (« pour la rapidité ») ;
+c'était une économie, pas une nécessité : la machine, ses registres et ses flottants étaient déjà de 128 bits.
+
+**Ce qui a changé** : les deux compilateurs donnent les opérations entières à toute la largeur, le prélude ne dépend
+plus de la largeur (il la demande : `nb_bits(0 - 1)`), la forge calcule en u128. Ce qui garde 64 bits a une raison :
+l'adresse (une adresse reste sous 2^64), le quit d'un mot rangé, les services de la machine (leurs sentinelles), les
+hachages dont les valeurs sont écrites ailleurs (dictionnaires, catalogue, empreintes de modules).
+
+**Dunon** : le graphique ne passe pas en 128 bits, parce que sa référence (le C++) et la carte (Taranis) comptent en 64 ;
+un programme qui commence par `dunon;` compte en 64 bits, tout entier. C'est une frontière déclarée, pas devinée : la
+forge n'envoie à la carte que les boucles d'un tel programme, puisqu'une boucle d'un programme à 128 bits y donnerait
+d'autres nombres que le processeur. Gergovie garde ainsi ses empreintes, au processeur comme sur la carte.
+
+**Ce que l'on paie** : une opération de 128 bits coûte plus cher au processeur hôte (deux mots de 64 bits pour une
+addition, bien plus pour une division). Et `0 - 1` n'est plus 18446744073709551615 : un programme qui comparait son
+propre -1 à ce nombre doit écrire `0 - 1`. « On trouvera une méthode » pour la vitesse : la plus simple est déjà là,
+Dunon, là où la largeur ne sert pas.

@@ -5923,34 +5923,36 @@ fonction lire_flottant(t): flottant {
 // -- famille « entiers et bits » (Rust u64, Arduino) : l'entier de 64 bits
 // compter_uns, compter_zeros, zeros_en_tete, zeros_en_queue : Rust count_ones, count_zeros, leading_zeros, trailing_zeros
 fonction compter_uns(x) { retour nb_bits(x); }
-fonction compter_zeros(x) { retour 64 - nb_bits(x); }
+// 0.833 : la largeur de l'entier (128 sur Lugus, 64 sur Dunon ou avec « dunon; ») : nb_bits(0 - 1)
+fonction compter_zeros(x) { retour nb_bits(0 - 1) - nb_bits(x); }
 fonction zeros_en_tete(x) {
-    si x == 0 { retour 64; }
+    si x == 0 { retour nb_bits(0 - 1); }
     soit n = 0;
     soit v = x;
-    tantque (v & 9223372036854775808) == 0 { n = n + 1; v = v << 1; }
+    soit haut = 1 << (nb_bits(0 - 1) - 1);
+    tantque (v & haut) == 0 { n = n + 1; v = v << 1; }
     retour n;
 }
 fonction zeros_en_queue(x) {
-    si x == 0 { retour 64; }
+    si x == 0 { retour nb_bits(0 - 1); }
     soit n = 0;
     soit v = x;
     tantque (v & 1) == 0 { n = n + 1; v = v >> 1; }
     retour n;
 }
 // tourner_gauche, tourner_droite, inverser_bits, echanger_octets : Rust rotate_left, rotate_right, reverse_bits, swap_bytes
-fonction tourner_gauche(x, n) { soit k = n & 63; si k == 0 { retour x; } retour (x << k) | (x >> (64 - k)); }
-fonction tourner_droite(x, n) { soit k = n & 63; si k == 0 { retour x; } retour (x >> k) | (x << (64 - k)); }
+fonction tourner_gauche(x, n) { soit l = nb_bits(0 - 1); soit k = n % l; si k == 0 { retour x; } retour (x << k) | (x >> (l - k)); }
+fonction tourner_droite(x, n) { soit l = nb_bits(0 - 1); soit k = n % l; si k == 0 { retour x; } retour (x >> k) | (x << (l - k)); }
 fonction inverser_bits(x) {
     soit r = 0;
     soit v = x;
-    pour i dans 0..64 { r = (r << 1) | (v & 1); v = v >> 1; }
+    pour i dans 0..nb_bits(0 - 1) { r = (r << 1) | (v & 1); v = v >> 1; }
     retour r;
 }
 fonction echanger_octets(x) {
     soit r = 0;
     soit v = x;
-    pour i dans 0..8 { r = (r << 8) | (v & 255); v = v >> 8; }
+    pour i dans 0..nb_bits(0 - 1) / 8 { r = (r << 8) | (v & 255); v = v >> 8; }
     retour r;
 }
 // est_puissance_de_deux, puissance_de_deux_suivante : Rust is_power_of_two, next_power_of_two (0 si elle dépasse 64 bits)
@@ -5962,7 +5964,7 @@ fonction puissance_de_deux_suivante(x) {
     retour p;
 }
 // log2_entier, log10_entier, racine_entiere : Rust ilog2, ilog10, isqrt (log de 0 : 18446744073709551615, comme « absent »)
-fonction log2_entier(x) { si x == 0 { retour 18446744073709551615; } retour 63 - zeros_en_tete(x); }
+fonction log2_entier(x) { si x == 0 { retour 18446744073709551615; } retour nb_bits(0 - 1) - 1 - zeros_en_tete(x); }
 fonction log10_entier(x) {
     si x == 0 { retour 18446744073709551615; }
     soit n = 0;
@@ -6007,14 +6009,14 @@ fonction est_impair(x): logique { retour logique((x & 1) == 1); }
 // addition_saturee, soustraction_saturee, multiplication_saturee, deborde_addition, deborde_multiplication : Rust
 // saturating_add, saturating_sub, saturating_mul (bornés à 0 et au plus grand entier) ; overflowing_add, overflowing_mul (vrai si
 // le calcul déborde)
-fonction addition_saturee(a, b) { soit s = a + b; si s < a { retour 18446744073709551615; } retour s; }
+fonction addition_saturee(a, b) { soit s = a + b; si s < a { retour 0 - 1; } retour s; }
 fonction soustraction_saturee(a, b) { si b > a { retour 0; } retour a - b; }
 fonction multiplication_saturee(a, b) {
-    si a != 0 && b > 18446744073709551615 / a { retour 18446744073709551615; }
+    si a != 0 && b > (0 - 1) / a { retour 0 - 1; }
     retour a * b;
 }
 fonction deborde_addition(a, b): logique { retour logique(a + b < a); }
-fonction deborde_multiplication(a, b): logique { retour logique(a != 0 && b > 18446744073709551615 / a); }
+fonction deborde_multiplication(a, b): logique { retour logique(a != 0 && b > (0 - 1) / a); }
 // lire_bit, poser_bit, effacer_bit, ecrire_bit, basculer_bit, masque_bit : Arduino bitRead, bitSet, bitClear, bitWrite, bit()
 fonction lire_bit(x, n) { retour (x >> n) & 1; }
 fonction poser_bit(x, n) { retour x | (1 << n); }
@@ -6745,7 +6747,7 @@ fonction coord_z(a) { retour a & 255; }
 // voisin : le point d'à côté sur un axe (0 : x, 1 : y, 2 : z), dans un sens (1 ou 18446744073709551615), le cube refermé
 fonction voisin(a, axe, sens) {
     soit d = 1;
-    si sens .< 0 { d = 255; }
+    si sens .< 0 || sens == 18446744073709551615 { d = 255; }
     si axe == 0 { retour adresse_point(coord_x(a) + d, coord_y(a), coord_z(a)); }
     si axe == 1 { retour adresse_point(coord_x(a), coord_y(a) + d, coord_z(a)); }
     retour adresse_point(coord_x(a), coord_y(a), coord_z(a) + d);
@@ -6772,20 +6774,21 @@ fonction distance_cube(a, b) {
     retour ecart(coord_x(a), coord_x(b)) + ecart(coord_y(a), coord_y(b)) + ecart(coord_z(a), coord_z(b));
 }
 
-// -- famille « codes » : l'ADN d'un entier de 64 bits (32 bases, A C G T : 0 1 2 3, la première au poids fort)
+// -- famille « codes » : l'ADN d'un entier (A C G T : 0 1 2 3, la première au poids fort) ; 0.833 : 64 bases sur Lugus,
+// 32 sur Dunon ou en « dunon; » (nb_bits(0 - 1) / 2)
 // complement_adn, inverser_bases, anti_sens : A↔T, C↔G (3 − q) ; les bases lues à l'envers ; le brin d'en face
 fonction complement_adn(x) { retour ~x; }
 fonction inverser_bases(x) {
     soit r = 0;
     soit v = x;
-    pour i dans 0..32 { r = (r << 2) | (v & 3); v = v >> 2; }
+    pour i dans 0..nb_bits(0 - 1) / 2 { r = (r << 2) | (v & 3); v = v >> 2; }
     retour r;
 }
 fonction anti_sens(x) { retour inverser_bases(~x); }
 // compter_base, teneur_gc, ecart_bases : combien de fois une base, les G et les C, les bases qui diffèrent
-fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * 6148914691236517205)); }
+fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * ((0 - 1) / 3))); }
 fonction teneur_gc(x) { retour compter_base(x, 1) + compter_base(x, 2); }
-fonction ecart_bases(a, b) { retour 32 - nb_bits(qegal(a, b)); }
+fonction ecart_bases(a, b) { retour nb_bits(0 - 1) / 2 - nb_bits(qegal(a, b)); }
 
 // -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
 // transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :

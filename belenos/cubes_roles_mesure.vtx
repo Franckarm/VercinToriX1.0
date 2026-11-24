@@ -1,6 +1,8 @@
 // machine : lugus
 // Belenos : le paysage dans le cube, le tapis avec les rôles du créateur (0.818 : les rayons dans la clarté, Divona
 // pour l'eau, le cache qui compose l'image et la pose à l'écran) ; au processeur, chaque étage mesuré.
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 1;
 importer "cubes_tapis.vtx";

@@ -413,3 +413,53 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   3. le compilateur des noyaux de Taranis en vtx (les mêmes mots SPIR-V que noyau_vtx.py) ;
   4. les décisions du vergobret en vtx ; 5. la forge en vtx ;
   6. puis le cache qui montre l'image, et le monde d'un seul tenant au processeur.
+
+## 0.833 (24 novembre) : Lugus en 128
+- **L'entier par défaut de Lugus a 128 bits**, dans les deux compilateurs (vtx128.py et vtxc128 : les mêmes mots, point
+  fixe), le prélude et la forge. À toute la largeur : l'arithmétique, les comparaisons, LDIS / LDIU / LDI + LDIH, COMPTE,
+  MULHU, MULHS, et (0.833) QEGAL, ET4, OU4, NON4, ANTI. Restent à 64 bits : ETG, ETGX (l'adresse courte : une adresse
+  reste sous 2^64), EXQ, LDQ, STQ (le quit d'un mot rangé), GDOT, GEMV, SYS (un service rend 2^64 - 1 en cas d'échec :
+  les sentinelles 18446744073709551615 du prélude restent justes), les flottants de 64 bits. Conversions : `flottant(e)`
+  lit les 128 bits (ITOF.L #0), `flottant_64(e)` aussi (ITOF.64 #0), `entier(x)` sature à 128 bits.
+- **Le prélude ne dépend plus de la largeur** : `nb_bits(0 - 1)` (128 sur Lugus, 64 sur Dunon ou en `dunon;`) dans
+  zeros_en_tete, zeros_en_queue, compter_zeros, tourner_gauche, tourner_droite, inverser_bits, echanger_octets,
+  log2_entier ; les saturations rendent `0 - 1`. Le texte vient de `vtxc/vocabulaire.py` (ne pas retoucher vtx128.py à
+  la main : il est réécrit). Les hachages de 64 bits (les dictionnaires, le catalogue, les tables de vtxc, les empreintes
+  de modules) sont masqués à 64 bits : les mêmes valeurs qu'avant. `hasard` garde le même xorshift de 64 bits.
+  `ecrire_hexa` : 16 chiffres si le nombre tient en 64 bits, 32 sinon.
+- **Dunon : `dunon;`** en tête d'un programme (avant ses fonctions) : tout le programme, prélude compris, compte en 64
+  bits (comme avant la 0.833). C'est le passage au graphique : Gergovie (ses huit programmes principaux) et les tests de
+  la carte le portent ; leurs empreintes sont celles de la 0.832 (vérifié à demi-échelle : vol -2747819110214049570,
+  jour 1331348773709531791, au processeur et sur la carte). vtx128.py : `regler_largeur`, la marque « ; dunon » lue par
+  `lugus_asm` ; vtxc128 : `c.dunon`, `masque(c, v)`.
+- **Taranis reste en 64 bits** : la forge n'envoie à la carte que les boucles d'un programme `dunon;` (une boucle d'un
+  programme à 128 bits y donnerait d'autres nombres) ; ailleurs elle reste au processeur.
+- **La forge** : l'entier en u128 (divu128, divs128l, sar128, quits_128, mulhu128…), u64 en `dunon;` ; ses tableaux
+  serrés d'entiers en u128. `forge/test_forge128.py` : 94 programmes conformes à Lugus émulé.
+- **Défauts trouvés et corrigés en chemin** : `charger_l` de vtxc (des moitiés de plus de 64 bits) ; les masques
+  internes BITS_V / BITS_F (répétés sur 128 bits pour un mot de 64 logiques) ; le pliage `<<q` / `>>q` (64 quits) ;
+  la réduction `min` part de 2^128 - 1 ; ma première table des conversions (un flottant de 128 bits depuis un entier de
+  64 : faux, corrigé).
+- **À savoir** : `0 - 1` vaut maintenant 2^128 - 1 ; un programme qui compare son propre -1 à 18446744073709551615 doit
+  écrire `0 - 1`. `1 << 100` est juste en 128 ; en `dunon;`, le décalage se prend modulo 64 (comme Rust et le C).
+  Exemples : `exemples128/entier128.vtx` et `entier128_dunon.vtx`.
+- **Passent aussi en Dunon** (ils comptent sur 64 bits par nature) : le langage du SPU-64 sur Lugus (`COMPAT_64`,
+  les suites de vtx64), le lecteur d'ADN (`chimie/adn.vtx` : ses signatures et neutrons sont ceux de adn.rs),
+  tout Belenos (le fluide : par `belenos/fabriquer_fluide.py`, le tableau, les cubes), la bibliothèque des flottants de
+  Gobannos (ses règles : ni / ni % sur 128 bits). En `dunon;`, un nombre écrit de plus de 64 bits est refusé.
+- **Corrigés au second tour** : la place d'un souvenir (l'épigénome) se calculait sur les bits forts d'un mot de 64
+  bits ; `__empreinte` (vers_logique) à 64 bits ; l'ADN d'un entier a 64 bases sur Lugus, 32 sur Dunon
+  (compter_base, ecart_bases, inverser_bases) ; le duel (le plan d'expert de 64 portes) ; le lecteur d'ADN embarqué
+  (`lugus compiler ../chimie/adn.vtx lecteur_adn.mots` après chaque changement de vtxc128).
+- **Gobannos** traduit les programmes en Dunon (ADDI, SUBI, CMPI à 128 bits ajoutés) ; la division et le modulo de 128
+  bits (#0C, #0D, et ce qui en dépend) ne sont pas encore traduits : un programme à 128 bits s'arrête en le disant
+  (code 3), rien de faux. À faire : une division longue de 128 bits en x86.
+- **Les sentinelles** : un service de la machine rend ses codes sur 64 bits (`SYS`) : -1 vaut 18446744073709551615,
+  -2 vaut 18446744073709551614 (affichés ainsi sur Lugus) ; « absent » (rang_si, chercher…) reste 18446744073709551615.
+  Question au créateur : les étendre par le signe (-1 sur toute la largeur), ce qui change ces comparaisons partout.
+- **Le coût** (forgé, une boucle de hachage avec multiplications, divisions, modulos) : 0,21 s en 128 bits contre 0,07
+  s en Dunon (×3 : la division de 128 bits est une routine) ; sur l'émulateur Lugus, presque rien.
+- Branche `lugus-128`, fusionnée dans vtx-0.6 à la livraison.
+- **Prochain (décidé)** : traduire en vtx ce qui peut l'être : le compilateur des noyaux de Taranis (les mêmes mots SPIR-V
+  que taranis/noyau_vtx.py), les décisions du vergobret, la forge ; puis le cache qui montre l'image, et le monde d'un
+  seul tenant au processeur.
