@@ -1,0 +1,28 @@
+// machine : lugus
+constante N = 4096;
+fonction premier(i) {
+    @2[(200 << 24) + i] = i * 3 + 1;
+}
+fonction second(i) {
+    @2[(120 << 24) + i] = @2[(200 << 24) + ((i + 1) % N)] + 7;
+}
+fonction passe() {
+    pour i dans 0..N en segments {
+        premier(i);
+    }
+    pour j dans 0..N en segments {
+        second(j);
+    }
+}
+fonction principal() {
+    soit s = 0;
+    pour z dans 0..N {
+        @2[(200 << 24) + z] = 0;
+        @2[(120 << 24) + z] = 0;
+    }
+    pour k dans 0..8 {
+        passe();
+        s = s + @2[(120 << 24) + 5] + @2[(120 << 24) + (N - 1)];
+    }
+    afficher(s);
+}

@@ -3,44 +3,50 @@
 // celui de Belnap : inconnu (rien de su), vrai, faux, variable (les preuves se contredisent : cela dépend de la scène
 // ou de la machine). Une contradiction ne se moyenne pas : elle devient variable, et c'est une information.
 
-constante SEUIL = 5;            // une preuve : un écart de plus de 5 % ; en dessous, le bruit (rien n'est appris)
-constante PLEIN = 8;            // l'usure : au-delà de 8 preuves, les deux compteurs sont divisés par 2
-constante DOMINE = 3;           // un côté l'emporte s'il a au moins trois fois les preuves de l'autre
+constante SUR = 3;              // 0.826 : le poids qu'il faut d'un côté pour croire (une preuve forte, ou trois petites)
+constante PLEIN = 24;           // l'usure : au-delà de 24 (en poids), les deux compteurs sont divisés par 2
+constante DOMINE = 3;           // un côté l'emporte s'il a au moins trois fois le poids de l'autre
+constante DEFINITIF = 64;       // 0.826 : une variante infidèle : tant de preuves contre, que l'usure ne touche pas
 
-// une mesure de deux variantes (en microsecondes ; plus petit est meilleur) : 2 une preuve pour la variante a, 1 une
-// preuve contre (b gagne), 0 rien (l'écart est dans le bruit)
-fonction preuve(a, b) {
-    si a * 100 + SEUIL * b <= b * 100 {
-        retour 2;
+// 0.826 : la preuve tremblée (le bruit mis à profit : la résonance stochastique, l'arrondi stochastique). Un seuil
+// fixe de 5 % jette pour toujours un vrai gain de 4 % : il n'apprend jamais (la stagnation de l'arrondi au plus près).
+// Ici le seuil tremble, tiré au hasard entre 0,1 % et 10 % (r, en pour mille, de 1 à 100) : un gain g donne une petite
+// preuve (un poids de 1) avec la chance g / 10 % ; au-delà de 10 %, toujours une preuve forte (un poids de SUR, qui
+// suffit seule). En moyenne, le poids des preuves suit le gain : un petit gain réel s'accumule ; le bruit pur donne
+// autant de pour que de contre, et reste inconnu ou variable : il n'est jamais pris pour un gain.
+// Deux temps mesurés (en microsecondes ; plus petit est meilleur) : le poids de la preuve pour a (contre : échanger)
+fonction preuve_pour(a, b, r) {
+    si a * 1000 + 100 * b <= b * 1000 {
+        retour SUR;
     }
-    si b * 100 + SEUIL * a <= a * 100 {
+    si a * 1000 + r * b <= b * 1000 {
         retour 1;
     }
     retour 0;
 }
 
 fonction etat_synapse(npour, ncontre): logique {
-    si npour == 0 && ncontre == 0 {
+    si npour < SUR && ncontre < SUR {
         retour inconnu;
     }
-    si npour >= DOMINE * ncontre {
+    si npour >= SUR && npour >= DOMINE * ncontre {
         retour vrai;
     }
-    si ncontre >= DOMINE * npour {
+    si ncontre >= SUR && ncontre >= DOMINE * npour {
         retour faux;
     }
     retour variable;
 }
 
-// l'usure : une machine ou une scène nouvelle peut renverser une vieille croyance
+// l'usure : une machine ou une scène nouvelle peut renverser une vieille croyance (une infidélité, jamais)
 fonction user_pour(npour, ncontre) {
-    si npour + ncontre > PLEIN {
+    si npour + ncontre > PLEIN && ncontre < DEFINITIF {
         retour npour / 2;
     }
     retour npour;
 }
 fonction user_contre(npour, ncontre) {
-    si npour + ncontre > PLEIN {
+    si npour + ncontre > PLEIN && ncontre < DEFINITIF {
         retour ncontre / 2;
     }
     retour ncontre;

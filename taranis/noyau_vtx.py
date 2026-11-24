@@ -1092,7 +1092,9 @@ class NoyauI64(Noyau):
         self.moi = self.v("IAdd", self.v("BitwiseAnd", idx32, self.c32(0x7FFFFFFF)), self.c32(1))
         self.derniere = self.var32()
         self.e("Store", self.derniere, self.c32(0xFFFFFFFF))
-        self.ranger(self.nouvelle(self.var), self.add(param(1), idx))
+        # 0.826 : le tour de ce fil (la garde du noyau fondu le compare aux adresses)
+        self.tour = self.add(param(1), idx)
+        self.ranger(self.nouvelle(self.var), self.tour)
         for k, nom in enumerate(dehors):
             self.ranger(self.nouvelle(nom), param(6 + k))
         for st in self.corps:
@@ -1155,12 +1157,33 @@ class NoyauTaranis(NoyauI64):
     128 bits), par une puissance de deux un décalage ; les autres divisions passent en 32 bits quand les deux nombres y
     tiennent (la carte divise en 32 bits bien plus vite), sinon en 64 bits."""
 
-    def __init__(self, forge, var, corps, region=0):
+    def __init__(self, forge, var, corps, region=0, garde=None):
         super().__init__(forge, var, corps, rapide=True)
         self.valeur_de = {}
         self.t_prod = None
         # 0.824 : la région de ses paramètres (sa place dans le lot de la carte)
         self.region = region
+        # 0.826 : la garde du noyau fondu (le gène « fondre » de Gutuater) : les fréquences que les étages fondus
+        # écrivent ; un fil ne doit y toucher que sa propre case (l'adresse (f << 24) + son tour) ; sinon, l'ordre des
+        # étages compterait et le noyau fondu ne serait plus fidèle : le drapeau 2 (infidèle) se lève
+        self.garde = sorted(garde) if garde else None
+
+    def garder(self, a, f32):
+        if not self.garde:
+            return
+        dans = None
+        for g in self.garde:
+            x = self.b("IEqual", f32, self.c32(g))
+            dans = x if dans is None else self.b("LogicalOr", dans, x)
+        autre = self.b("INotEqual", self.v64("BitwiseAnd", a, self.cst(0xFFFFFF)), self.tour)
+        danger = self.b("LogicalAnd", dans, autre)
+        oui, fin = self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", danger, oui, fin)
+        self.etiquette(oui)
+        self.drapeau_n(2)
+        self.aller(fin)
+        self.etiquette(fin)
 
     def drapeau_n(self, n):
         self.e("Store", self.case64(self.parametres, self.c32(self.region * 64)), self.cst(n))
@@ -1183,7 +1206,9 @@ class NoyauTaranis(NoyauI64):
         return mot, ok, f32
 
     def lire_page(self, adr):
-        mot, _ok, _f = self.direct(self.expr(adr))
+        a = self.expr(adr)
+        mot, _ok, f32 = self.direct(a)
+        self.garder(a, f32)
         # le mot 0 du monde est toujours nul : une adresse hors du monde y lit 0, sans embranchement
         return self.v64("Load", self.case64(self.fenetre, mot))
 
@@ -1191,6 +1216,7 @@ class NoyauTaranis(NoyauI64):
         a = self.expr(adr)
         x = self.expr(valeur)
         mot, ok, f32 = self.direct(a)
+        self.garder(a, f32)
         oui, non, fin = self.id(), self.id(), self.id()
         self.e("SelectionMerge", fin, 0)
         self.e("BranchConditional", ok, oui, non)

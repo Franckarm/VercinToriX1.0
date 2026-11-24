@@ -85,6 +85,21 @@ def compiler_arbre(src, dossier=None, partition=True):
 
 
 # ------------------------------------------------------------------------------------------------------------------
+def appels_dans(e, acc=None):
+    """0.826 : les noms des fonctions appelées dans un morceau d'arbre"""
+    if acc is None:
+        acc = set()
+    if isinstance(e, tuple):
+        if e and e[0] == "appel" and isinstance(e[1], str):
+            acc.add(e[1])
+        for x in e:
+            appels_dans(x, acc)
+    elif isinstance(e, list):
+        for x in e:
+            appels_dans(x, acc)
+    return acc
+
+
 class Forge(V.Generateur):
     """Le Generateur de vtx128.py pour les types et les règles ; chaque expression devient une expression Rust sur des
     mots de 128 bits (u128)."""
@@ -185,7 +200,16 @@ class Forge(V.Generateur):
         # dernière attendent (lot_suite) ; tout autre code vide le lot d'abord (taranis_vider)
         corps_f = list(f.corps)
         pos = 0
+        # 0.826 : le gène « fondre » de Gutuater : un lot dont les boucles ont le même intervalle devient aussi un seul
+        # noyau (les corps à la suite) ; le vergobret choisit entre les deux d'après l'ARN, ou les mesure
+        groupes = self.groupes_du_lot(corps_f) if os.environ.get("VTX_FONDRE") != "0" else {}
+        passer = set()
         for k, s in enumerate(corps_f):
+            if k in passer:
+                continue
+            if k in groupes and self.fondre(corps_f, groupes[k]):
+                passer.update(range(k, groupes[k][-1] + 1))
+                continue
             # le suivant : par-dessus les « soit » purs (les bornes d'une boucle, sans mémoire ni appel)
             j = k + 1
             while j < len(corps_f) and corps_f[j][0] == "soit" and self.pur(corps_f[j][2], set()):
@@ -484,6 +508,133 @@ class Forge(V.Generateur):
                         return False
             return all(self.sans_effet(x, vus) for x in n[1:])
         return all(self.sans_effet(x, vus) for x in n)
+
+    def groupes_du_lot(self, corps):
+        """0.826 : les lots de la carte d'un corps : {première place : [places des accords]} (deux accords au moins,
+        huit au plus, rien entre eux que des « soit » purs)"""
+        groupes = {}
+        k = 0
+        while k < len(corps):
+            if not self.accord_carte(corps[k]):
+                k += 1
+                continue
+            g = [k]
+            j = k + 1
+            while j < len(corps) and len(g) < 8:
+                if corps[j][0] == "soit" and self.pur(corps[j][2], set()):
+                    j += 1
+                    continue
+                if self.accord_carte(corps[j]):
+                    g.append(j)
+                    j += 1
+                    continue
+                break
+            if len(g) >= 2:
+                groupes[k] = g
+            k = g[-1] + 1
+        return groupes
+
+    def fondre(self, corps, places):
+        """0.826 : le lot (les accords aux places dites) fondu en un noyau, si la forge sait le faire : le même intervalle
+        pour toutes les boucles ; chaque écriture à une fréquence connue ((F << 24) + x) ; le noyau fondu se compile pour
+        Taranis. Il est écrit à côté du lot séparé ; le vergobret choisit (gene_fondre_debut). Faux : rien n'est écrit."""
+        if os.environ.get("VTX_CARTE") == "0":
+            return False
+        valeurs = {}
+        for s in corps[:places[-1] + 1]:
+            if s[0] == "soit" and self.pur(s[2], set()):
+                valeurs[s[1]] = s[2]
+
+        def norme(e):
+            if isinstance(e, tuple):
+                if len(e) >= 2 and e[0] == "var":
+                    return norme(valeurs[e[1]]) if e[1] in valeurs else ("var", e[1])
+                return tuple(norme(x) for x in e if not isinstance(x, int) or e[0] == "nombre")
+            if isinstance(e, list):
+                return [norme(x) for x in e]
+            return e
+
+        membres = []
+        for k in places:
+            notes = [st for mesure in corps[k][2] for st, _n, _m in mesure]
+            membres.append(notes)
+        tete = membres[0]
+        intervalle = (norme(tete[0][2]), norme(tete[-1][3]))
+        if any((norme(n[0][2]), norme(n[-1][3])) != intervalle for n in membres):
+            return False
+        var = tete[0][1]
+
+        def renommer(e, ancien):
+            if isinstance(e, tuple):
+                if len(e) >= 2 and e[0] == "var" and e[1] == ancien:
+                    return ("var", var) + tuple(e[2:])
+                return tuple(renommer(x, ancien) for x in e)
+            if isinstance(e, list):
+                return [renommer(x, ancien) for x in e]
+            return e
+
+        corps_fondu = []
+        for n in membres:
+            corps_fondu += renommer(list(n[0][4]), n[0][1])
+        # les écritures, par tout l'arbre des appels : chacune à une fréquence connue
+        garde, vues, a_voir = set(), set(), [corps_fondu]
+        while a_voir:
+            morceau = a_voir.pop()
+            for genre, et, adr in noyau_vtx.acces_memoire(morceau, []):
+                if genre == "?":
+                    return False
+                if genre == "E":
+                    if not (isinstance(adr, tuple) and adr[0] == "bin" and adr[1] == "+" and adr[2][0] == "bin"
+                            and adr[2][1] == "<<" and adr[2][2][0] == "nombre" and adr[2][3] == ("nombre", 24)):
+                        return False
+                    garde.add(adr[2][2][1])
+            for nom in appels_dans(morceau):
+                g = self.fonctions.get(nom)
+                if g is not None and nom not in vues:
+                    vues.add(nom)
+                    a_voir.append(list(g.corps))
+        if not garde:
+            return False
+        try:
+            spv, dehors, _ = noyau_vtx.NoyauTaranis(self, var, corps_fondu, region=0, garde=garde).compiler()
+        except noyau_vtx.PasPourLaCarte as e:
+            if os.environ.get("VTX_TARANIS"):
+                print(f"taranis : le lot de la ligne {tete[0][5]} ne se fond pas : {e}", file=sys.stderr)
+            return False
+        lieu = tete[0][5]
+        if os.environ.get("VTX_TARANIS"):
+            print(f"taranis : le lot de la ligne {lieu} se fond aussi en un noyau ({len(places)} boucles ; la garde : "
+                  f"{sorted(garde)})", file=sys.stderr)
+        k = len(self.noyaux)
+        self.noyaux.append(spv)
+        # les « soit » purs du lot d'abord (les bornes des boucles), puis l'une ou l'autre forme
+        for s in corps[places[0]:places[-1] + 1]:
+            if s[0] == "soit":
+                self.instr(s)
+        self.ligne("taranis_vider(c);")
+        self.ligne("{")
+        self.niveau += 1
+        self.ligne("let mut fondu = false;")
+        self.ligne(f"if gene_fondre_debut({lieu}) {{")
+        self.niveau += 1
+        self.ligne(f"let ta: u128 = {self.val(tete[0][2], 'e')};")
+        self.ligne(f"let tb: u128 = {self.val(tete[-1][3], 'e')};")
+        ext = ", ".join(f"v_{ident(n)}" for n in dehors)
+        self.ligne(f"fondu = (tb as u64) > (ta as u64) && taranis_fondre(c, &SPV{k}, ta, tb, &[{ext}], {lieu});")
+        self.niveau -= 1
+        self.ligne("}")
+        self.ligne("if !fondu {")
+        self.niveau += 1
+        for j, k2 in enumerate(places):
+            self.lot_pos, self.lot_suite = j, j < len(places) - 1
+            self.instr(corps[k2])
+        self.lot_pos, self.lot_suite = 0, False
+        self.niveau -= 1
+        self.ligne("}")
+        self.ligne(f"gene_fondre_fin({lieu}, fondu);")
+        self.niveau -= 1
+        self.ligne("}")
+        return True
 
     def accord_carte(self, s):
         """0.824 : un accord qui peut aller à la carte dans un lot : des segments d'une même boucle (pas une boucle en

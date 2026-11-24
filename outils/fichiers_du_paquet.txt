@@ -250,3 +250,6 @@ gutuater/gutuater.vtx
 gutuater/synapse.vtx
 tests/test_gutuater.py
 docs/gutuater-druide-conception.md
+tests/test_fondre.py
+tests/fondre/fidele.vtx
+tests/fondre/infidele.vtx

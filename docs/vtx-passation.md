@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.826.zip`, `essai-0.826.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.827.zip`, `essai-0.827.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -289,3 +289,22 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Prochain : le gène `fondre` (deux boucles sur le même intervalle en un noyau ; le gain mesurable : les étages contre
   le noyau unique) ; la garde des mêmes mots, automatique ; le Druide. En attente : le cache qui montre l'image
   (swapchain), les duels. Prochaine livraison : vtx-0.826.zip / essai-0.826.bat.
+
+## 0.826 (24 novembre) : le gène « fondre », la garde, le seuil qui tremble
+- Chez le créateur, la 0.825 : le cercle marche (le lot mesuré 18,2 contre 29,7 ms, vrai dès la première preuve ; au
+  passage suivant, sans essai) ; la vitesse est celle de la 0.824 (le lot y était déjà).
+- `fondre` : la forge (`groupes_du_lot`, `fondre`, `appels_dans`) écrit, à côté du lot séparé, le même lot fondu en un
+  noyau (les corps à la suite, le même intervalle, chaque écriture à une fréquence connue) ; le vergobret
+  (`gene_fondre_debut`, `gene_fondre_fin`, `taranis_fondre`) suit l'ARN ou mesure (chauffer l'un et l'autre, puis
+  l'un et l'autre en alternance, dans un ordre tiré au hasard). `VTX_FONDRE=0` (à la forge) : pas de forme fondue.
+- La garde du noyau fondu (`NoyauTaranis(..., garde=...)`, `garder`) : dans les fréquences que le lot écrit, un fil ne
+  touche que sa case ((f << 24) + son tour) ; sinon le drapeau 2 : la machine s'arrête, note « infidele fondre LIEU » ;
+  Gutuater tait le gène pour toujours (64 preuves contre, que l'usure ne touche pas). Test : `tests/test_fondre.py`
+  (`tests/fondre/fidele.vtx`, `infidele.vtx`).
+- Le seuil qui tremble (`preuve_pour`, synapse.vtx) : le seuil d'une petite preuve tiré entre 0,1 et 10 % (la
+  résonance stochastique, l'arrondi stochastique) ; au-delà de 10 %, une preuve forte (poids 3, qui suffit) ; croire
+  demande un poids de 3 d'un côté (`SUR`) ; l'usure au-delà de 24. La graine vient des mesures (la même entrée, la même
+  décision).
+- Prochain : lire la RTX (fondre gagne-t-il ? sur lavapipe il perd 14 %) ; selon : fondre par morceaux (1+2, 4+5),
+  le tableau mort (les intermédiaires dans les registres) ; la garde des mêmes mots ; le Druide. En attente : le cache
+  qui montre l'image, les duels.

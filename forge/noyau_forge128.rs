@@ -1475,6 +1475,13 @@ struct GeneLot {
     t_avec: f64,
     t_sans: f64,
     choisi: Option<bool>,   // le choix pour ce qui reste de l'exécution
+    inverse: bool,          // 0.826 : l'ordre des mesures, tiré au hasard
+}
+
+/// 0.826 : un bit tiré au hasard (le temps de la machine, à la nanoseconde)
+#[allow(dead_code)]
+fn bit_au_hasard() -> bool {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(false, |d| (d.subsec_nanos() >> 7) & 1 == 1)
 }
 
 #[allow(dead_code)]
@@ -1530,12 +1537,14 @@ fn gene_lot_debut(lieu: u32, premiere: bool) -> bool {
             3 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit variable : je mesure encore", lieu)),
             _ => dire_reglage(format!("le lot de la ligne {} : Gutuater ne sait pas : je mesure", lieu)),
         }
-        GeneLot { passe: 0, avec: true, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi }
+        GeneLot { passe: 0, avec: true, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi, inverse: bit_au_hasard() }
     });
     if premiere {
         g.avec = match g.choisi {
             Some(x) => x,
-            None => !matches!(g.passe, 1 | 3),   // 0 chauffer (avec), 1 sans, 2 avec, 3 sans, 4 avec
+            // 0 chauffer (avec), puis sans et avec en alternance ; 0.826 : l'ordre tiré au hasard (au temps de la
+            // machine), pour qu'aucune variante ne passe toujours la première (un biais : le cache, la chaleur)
+            None => g.passe == 0 || ((g.passe % 2 == 0) != g.inverse),
         };
         g.t0 = Some(std::time::Instant::now());
     }
@@ -1577,6 +1586,106 @@ fn gene_lot_fin(lieu: u32) {
             use std::io::Write;
             if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
                 let _ = writeln!(f, "mesure lot {} {} {}", lieu, (g.t_avec * 1e6) as u64, (g.t_sans * 1e6) as u64);
+            }
+        }
+    }
+}
+
+/// 0.826 : le gène « fondre » : le lot de la ligne `lieu` en un seul noyau. Comme pour le lot : l'ARN de Gutuater dit
+/// vrai (fondu, sans essai), faux (séparé, sans essai) ; inconnu ou variable : le vergobret mesure (séparé pour chauffer,
+/// fondu pour chauffer, puis séparé, fondu, séparé, fondu) et garde le meilleur. Le noyau fondu ne va qu'à la carte, avec
+/// l'épissage rapide (Taranis) ; sinon, le lot séparé.
+static FONDRE_LIEU: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+#[allow(dead_code)]
+fn taranis_fondre(c: &mut Ctx, spv: &'static [u32], a: u128, b: u128, ext: &[u128], lieu: u32) -> bool {
+    match taranis_vk::carte() {
+        Some(k) if k.int64 && epissage_rapide() => {}
+        _ => return false,
+    }
+    if std::env::var("VTX_CARTE").map_or(false, |v| v == "0") {
+        return false;
+    }
+    taranis_vider(c);
+    FONDRE_LIEU.store(lieu, std::sync::atomic::Ordering::Relaxed);
+    taranis_direct(c, spv, a, b, ext, 0, false)
+}
+
+#[allow(dead_code)]
+fn genes_fondre() -> &'static std::sync::Mutex<std::collections::HashMap<u32, GeneLot>> {
+    static G: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u32, GeneLot>>> = std::sync::OnceLock::new();
+    G.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// ce passage : fondu ? (vrai : le noyau fondu est essayé ; s'il refuse, le lot séparé se joue)
+#[allow(dead_code)]
+fn gene_fondre_debut(lieu: u32) -> bool {
+    if dossier_gutuater().is_none() || !epissage_rapide() || std::env::var("VTX_CARTE").map_or(false, |v| v == "0") {
+        return false;
+    }
+    let mut gs = genes_fondre().lock().unwrap();
+    let g = gs.entry(lieu).or_insert_with(|| {
+        let e = arn_gutuater().get(&("fondre".to_string(), lieu)).copied().unwrap_or(0);
+        let choisi = match e { 2 => Some(true), 1 => Some(false), _ => None };
+        match e {
+            2 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit fondre vrai : un seul noyau, sans essai", lieu)),
+            1 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit fondre faux : les étages séparés, sans essai", lieu)),
+            3 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit fondre variable : je mesure encore", lieu)),
+            _ => dire_reglage(format!("le lot de la ligne {} : fondre, Gutuater ne sait pas : je mesure", lieu)),
+        }
+        GeneLot { passe: 0, avec: false, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi, inverse: bit_au_hasard() }
+    });
+    g.avec = match g.choisi {
+        Some(x) => x,
+        // 0 séparé (chauffer), 1 fondu (chauffer), puis l'un et l'autre en alternance, dans un ordre tiré au hasard
+        None => if g.passe < 2 { g.passe == 1 } else { (g.passe % 2 == 1) != g.inverse },
+    };
+    g.t0 = Some(std::time::Instant::now());
+    g.avec
+}
+
+#[allow(dead_code)]
+fn gene_fondre_fin(lieu: u32, fondu: bool) {
+    if dossier_gutuater().is_none() {
+        return;
+    }
+    let mut gs = genes_fondre().lock().unwrap();
+    let g = match gs.get_mut(&lieu) {
+        Some(g) => g,
+        None => return,
+    };
+    let t = match g.t0.take() {
+        Some(t0) => t0.elapsed().as_secs_f64(),
+        None => return,
+    };
+    if g.avec && !fondu {
+        // le noyau fondu a été refusé (la carte, un tour trop grand…) : les étages séparés, pour la suite
+        if g.choisi != Some(false) {
+            dire_reglage(format!("le lot de la ligne {} : le noyau fondu est refusé ; les étages séparés", lieu));
+        }
+        g.choisi = Some(false);
+        return;
+    }
+    if g.choisi.is_some() {
+        return;
+    }
+    if g.passe >= 2 {
+        if g.avec {
+            g.t_avec = g.t_avec.min(t);
+        } else {
+            g.t_sans = g.t_sans.min(t);
+        }
+    }
+    g.passe += 1;
+    if g.passe == 6 {
+        let fondre = g.t_avec <= g.t_sans;
+        g.choisi = Some(fondre);
+        dire_reglage(format!("le lot de la ligne {} : fondu {:.1} ms, séparé {:.1} ms : {} ; noté pour Gutuater", lieu,
+                             g.t_avec * 1e3, g.t_sans * 1e3, if fondre { "un seul noyau" } else { "les étages séparés" }));
+        if let Some(d) = dossier_gutuater() {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
+                let _ = writeln!(f, "mesure fondre {} {} {}", lieu, (g.t_avec * 1e6) as u64, (g.t_sans * 1e6) as u64);
             }
         }
     }
@@ -1850,6 +1959,20 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
             return None;
         }
     };
+    // 0.826 : le noyau fondu n'a pas tenu sa garde (un fil a touché la case d'un autre dans ce que les étages
+    // écrivent) : il n'est pas fidèle ; Gutuater le saura (une preuve contre définitive), et l'image n'est pas sûre
+    if lot.iter().any(|&(_, _, _, r)| params[r * 64] == 2) {
+        let lieu = FONDRE_LIEU.load(std::sync::atomic::Ordering::Relaxed);
+        if let Some(d) = dossier_gutuater() {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
+                let _ = writeln!(f, "infidele fondre {}", lieu);
+            }
+        }
+        eprintln!("gutuater : le lot de la ligne {} fondu en un noyau n'est pas fidèle (un fil a touché la case d'un \
+                   autre) ; noté pour Gutuater, qui le taira ; relancer", lieu);
+        std::process::exit(3);
+    }
     if lot.iter().any(|&(_, _, _, r)| params[r * 64] != 0) {
         if bavard {
             eprintln!("taranis : la boucle revient au processeur (une écriture hors du monde)");

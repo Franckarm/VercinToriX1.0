@@ -28,13 +28,13 @@ Chaque connaissance porte deux compteurs : les preuves pour et les preuves contr
 
 | État | Quand | Action |
 |---|---|---|
-| **inconnu** | aucune preuve | il demande une mesure |
-| **vrai** | pour ≥ 3 × contre | il exprime le gène |
-| **faux** | contre ≥ 3 × pour | il tait le gène |
+| **inconnu** | moins de 3 (en poids) de chaque côté | il demande une mesure |
+| **vrai** | pour ≥ 3 (en poids) et pour ≥ 3 × contre | il exprime le gène |
+| **faux** | contre ≥ 3 (en poids) et contre ≥ 3 × pour ; ou une infidélité (64 contre, pour toujours) | il tait le gène |
 | **variable** | des preuves des deux côtés, sans que l'un l'emporte | les preuves se contredisent : le vergobret mesure et choisit à l'exécution |
 
-- **Le seuil.** Une preuve ne compte que si l'écart mesuré dépasse le bruit, soit plus de 5 %. En dessous, Gutuater n'apprend rien.
-- **L'usure.** Au-delà de 8 preuves, les deux compteurs sont divisés par 2, pour qu'une machine ou une scène nouvelle puisse renverser une vieille croyance.
+- **Le seuil qui tremble (0.826).** Un seuil fixe (5 % en 0.825) jetait pour toujours un vrai petit gain. Le seuil d'une petite preuve est maintenant tiré au hasard entre 0,1 et 10 % : c'est la résonance stochastique (Gammaitoni et al., *Rev. Mod. Phys.* 70, 223, 1998) et l'arrondi stochastique (Croci et al., *R. Soc. Open Sci.* 9, 211631, 2022). Une petite preuve pèse 1, une preuve forte (plus de 10 %) pèse 3 ; il faut un poids de 3 d'un côté pour croire. La graine vient des mesures elles-mêmes : la même entrée donne la même décision.
+- **L'usure.** Au-delà d'un poids de 24, les deux compteurs sont divisés par 2 (jamais une infidélité), pour qu'une machine ou une scène nouvelle puisse renverser une vieille croyance.
 - **Une contradiction ne se moyenne pas** : elle devient variable, et cette contradiction est elle-même une information.
 - **Plus tard, un apprentissage hebbien.** Un trait du code (une division par une constante, une boucle pure, un étage court, un accès au même indice…) qui revient avec un gain renforcera la synapse « trait → gène ».
 
@@ -50,7 +50,7 @@ Il lit le programme forgé et repère les traits du code : les boucles pures, le
 | Gène | Variante | Légal si |
 |---|---|---|
 | `lot` | les boucles de la carte en un seul envoi | (0.824 ; gène de Gutuater depuis la 0.825) |
-| `fondre` | deux boucles consécutives sur le même intervalle → un seul noyau | à l'itération i, la boucle 2 ne lit de la boucle 1 que l'élément i |
+| `fondre` | les boucles d'un lot, sur le même intervalle → un seul noyau (0.826) | chaque écriture à une fréquence connue (forge) ; dans ces fréquences, un fil ne touche que sa case (la garde, sur la carte) |
 | `tableau_mort` | un intermédiaire qui n'est plus lu ailleurs reste dans les registres | `fondre` est exprimé, et la fréquence n'est lue nulle part ailleurs |
 | `epissage` | rapide ou par pages | (existe) |
 
@@ -102,7 +102,7 @@ Le Druide **prépare les potions et surtout les corrige**. Il propose le code co
 ## 4. L'ordre de travail
 
 1. **Gutuater, le socle (fait, 0.825).** `gutuater/gutuater.vtx` et `gutuater/synapse.vtx`, en vtx : le carnet, les synapses, l'ARN. Le premier gène est `lot`, déjà connu, pour vérifier la machinerie sur ce qu'on sait. Le vergobret lit l'ARN, mesure ce qui est inconnu ou variable, et écrit ses mesures. Se coupe avec `VTX_GUTUATER=0`. Test : `tests/test_gutuater.py`.
-2. **Gutuater, le gène `fondre`**, avec la garde des variantes. Il faut vérifier sur Gergovie que les étages rattrapent ou dépassent le noyau unique.
+2. **Gutuater, le gène `fondre` (fait, 0.826)**, avec sa garde : dans ce que le lot écrit, un fil ne touche que sa case, vérifié sur la carte à chaque accès ; une trahison arrête la machine et tait le gène pour toujours. Test : `tests/test_fondre.py`. Reste à lire la RTX : les étages fondus rattrapent-ils le noyau unique ?
 3. **La garde des mêmes mots**, automatique.
 4. **Le Druide, conseils et potions**, d'abord dans la console, puis dans l'atelier.
 5. **Le Druide, la bibliothèque.**

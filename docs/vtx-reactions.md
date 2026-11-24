@@ -4635,3 +4635,29 @@ le lot, déjà là : la machinerie est vérifiée sur ce qu'on sait, avant d'app
 **Vérifié** : les mêmes mots pour gutuater.vtx ; les quatre états, le bruit, l'usure, les mesures effacées
 (`tests/test_gutuater.py`) ; Gergovie à demi-échelle donne la même empreinte avec le lot exprimé, tu, mesuré, et sans
 Gutuater ; noyaux, cylindres, Taranis direct et l'épreuve d'Alésia conformes.
+
+## 112. Le gène « fondre », sa garde, et le bruit mis à profit (24 novembre, 0.826)
+
+**Chez le créateur, la 0.825** : le cercle de Gutuater marche ; la vitesse ne bouge pas (le lot était déjà là). Le gain
+ne peut venir que d'un gène qu'on ne connaît pas encore : fondre les étages en un noyau.
+
+**Fondre** : la forge écrit les deux formes, le vergobret choisit. Ce qui rend la fusion sûre, c'est une garde exacte,
+et non une analyse qui devinerait : dans les fréquences que le lot écrit (toutes connues à la forge), un fil ne touche
+que sa propre case. C'est la condition même pour que l'ordre « étage par étage » et l'ordre « point par point » donnent
+le même résultat. La garde est vérifiée sur la carte, à chaque accès, et une trahison arrête tout (l'image ne serait pas
+sûre) et fait taire le gène pour toujours. Sur Gergovie, les cinq étages se fondent (la garde : 120, 200 à 204) et
+donnent la même empreinte.
+
+**Le bruit, demandé par le créateur** (« mettre à profit le bruit… pour corriger le défaut ») : le défaut était le seuil
+fixe de 5 %, qui jetait pour toujours un vrai gain de 4 % (comme l'arrondi au plus près fait stagner une somme). La
+réponse de la physique est la résonance stochastique (Gammaitoni, Hänggi, Jung, Marchesoni, *Reviews of Modern
+Physics* 70, 223, 1998) : dans un système à seuil, du bruit ajouté rend visible un signal trop faible pour passer seul.
+Celle du calcul est l'arrondi stochastique (Croci, Fasi, Higham, Mary, Mikaitis, *Royal Society Open Science* 9,
+211631, 2022) : arrondir au hasard, avec une chance qui suit la distance, rend l'erreur juste en moyenne. Ici : le seuil
+tremble (tiré entre 0,1 et 10 %), une petite preuve pèse 1, une forte 3 ; un vrai 4 % s'accumule, le bruit pur reste
+inconnu ou variable. Et l'ordre des mesures est tiré au hasard, pour qu'aucune variante ne passe toujours la première.
+
+**Le quantique, honnêtement** : un hasard quantique est imprévisible par nature, ce qui compte en cryptographie. Pour
+faire trembler un seuil, il n'apporte rien de plus qu'un bon pseudo-hasard, qui a un avantage : la même graine refait la
+même décision (on peut la vérifier). La source reste un choix ouvert (`graine`, `bruit`) ; un générateur quantique
+pourrait s'y brancher plus tard.
