@@ -443,6 +443,22 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **À savoir** : `0 - 1` vaut maintenant 2^128 - 1 ; un programme qui compare son propre -1 à 18446744073709551615 doit
   écrire `0 - 1`. `1 << 100` est juste en 128 ; en `dunon;`, le décalage se prend modulo 64 (comme Rust et le C).
   Exemples : `exemples128/entier128.vtx` et `entier128_dunon.vtx`.
+- **Passent aussi en Dunon** (ils comptent sur 64 bits par nature) : le langage du SPU-64 sur Lugus (`COMPAT_64`,
+  les suites de vtx64), le lecteur d'ADN (`chimie/adn.vtx` : ses signatures et neutrons sont ceux de adn.rs),
+  tout Belenos (le fluide : par `belenos/fabriquer_fluide.py`, le tableau, les cubes), la bibliothèque des flottants de
+  Gobannos (ses règles : ni / ni % sur 128 bits). En `dunon;`, un nombre écrit de plus de 64 bits est refusé.
+- **Corrigés au second tour** : la place d'un souvenir (l'épigénome) se calculait sur les bits forts d'un mot de 64
+  bits ; `__empreinte` (vers_logique) à 64 bits ; l'ADN d'un entier a 64 bases sur Lugus, 32 sur Dunon
+  (compter_base, ecart_bases, inverser_bases) ; le duel (le plan d'expert de 64 portes) ; le lecteur d'ADN embarqué
+  (`lugus compiler ../chimie/adn.vtx lecteur_adn.mots` après chaque changement de vtxc128).
+- **Gobannos** traduit les programmes en Dunon (ADDI, SUBI, CMPI à 128 bits ajoutés) ; la division et le modulo de 128
+  bits (#0C, #0D, et ce qui en dépend) ne sont pas encore traduits : un programme à 128 bits s'arrête en le disant
+  (code 3), rien de faux. À faire : une division longue de 128 bits en x86.
+- **Les sentinelles** : un service de la machine rend ses codes sur 64 bits (`SYS`) : -1 vaut 18446744073709551615,
+  -2 vaut 18446744073709551614 (affichés ainsi sur Lugus) ; « absent » (rang_si, chercher…) reste 18446744073709551615.
+  Question au créateur : les étendre par le signe (-1 sur toute la largeur), ce qui change ces comparaisons partout.
+- **Le coût** (forgé, une boucle de hachage avec multiplications, divisions, modulos) : 0,21 s en 128 bits contre 0,07
+  s en Dunon (×3 : la division de 128 bits est une routine) ; sur l'émulateur Lugus, presque rien.
 - Branche `lugus-128`, fusionnée dans vtx-0.6 à la livraison.
 - **Prochain (décidé)** : traduire en vtx ce qui peut l'être : le compilateur des noyaux de Taranis (les mêmes mots SPIR-V
   que taranis/noyau_vtx.py), les décisions du vergobret, la forge ; puis le cache qui montre l'image, et le monde d'un
