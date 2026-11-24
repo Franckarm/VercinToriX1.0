@@ -911,9 +911,39 @@ class Forge(V.Generateur):
             self.niveau -= 1
             self.ligne("}")
             return (site, st[5])
+        # 0.832 : avec l'épissage rapide, une boucle simple va aussi à Taranis (et pas au vieux chemin de la fenêtre) :
+        # les fréquences de la carte (200 et plus) n'y vivent que sur la carte ; la fenêtre écrivait dans la copie du
+        # processeur, et la carte ne le voyait pas (la projection ne vidait pas ses pixels : l'image coulait)
+        try:
+            spv_p, dehors_p, _ = noyau_vtx.Noyau(self, var, corps, pages=True).compiler()
+            spv64_p, _, _ = noyau_vtx.NoyauI64(self, var, corps).compiler()
+            region = min(getattr(self, "lot_pos", 0), 7)
+            if getattr(self, "lot_pos", 0) == 0:
+                self.lot_tete = st[5]
+            spv64r_p, dehors_r, _ = noyau_vtx.NoyauTaranis(self, var, corps, region=region, atomique=True).compiler()
+            rapide_ok = dehors_p == dehors and dehors_r == dehors
+        except noyau_vtx.PasPourLaCarte:
+            rapide_ok = False
+        v = f"v_{ident(var)}"
+        if rapide_ok:
+            kr = len(self.noyaux)
+            self.noyaux += [spv_p, spv64_p, spv64r_p]
+            dans_lot = getattr(self, "lot_pos", 0) > 0 or getattr(self, "lot_suite", False)
+            ext_r = ", ".join(f"v_{ident(n)}" for n in dehors)
+            self.ligne("if epissage_rapide() {")
+            self.niveau += 1
+            self.ligne(f"let ta: u128 = {self.val(st[2], 'e')};")
+            self.ligne(f"let tb: u128 = {self.val(notes[-1][3], 'e')};")
+            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{kr}, &SPV{kr + 1}, &SPV{kr + 2}, ta, tb, &[{ext_r}], {region}, {'true' if getattr(self, 'lot_suite', False) else 'false'}, {getattr(self, 'lot_tete', 0) if dans_lot else 0}) {{")
+            self.ligne(f"    fait = true;")
+            self.ligne(f"    {v} = tb;")
+            self.ligne("}")
+            self.niveau -= 1
+            self.ligne("}")
+            self.ligne("if !fait {")
+            self.niveau += 1
         k = len(self.noyaux)
         self.noyaux.append(spv)
-        v = f"v_{ident(var)}"
         cles = []
         self.ligne("taranis_rapatrier(c);")
         self.ligne("{")
@@ -940,6 +970,9 @@ class Forge(V.Generateur):
         self.ligne("}")
         self.niveau -= 1
         self.ligne("}")
+        if rapide_ok:
+            self.niveau -= 1
+            self.ligne("}")
 
     def parallele_possible(self, meta):
         _, red, var, a_, b_, corps_, s_ = meta

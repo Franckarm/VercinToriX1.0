@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.832.zip`, `essai-0.832.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.833.zip`, `essai-0.833.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -380,3 +380,16 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Piège trouvé : `constante VIDE` existait déjà (un bloc vide) ; une seconde `constante VIDE` a été acceptée sans un
   mot et a cassé le monde (le pixel vide s'appelle `PIXEL_VIDE`). À donner au Druide : une constante définie deux fois.
 - Fondre : refusé à la forge pour une écriture à une case calculée (la projection écrit où tombe le point).
+
+## 0.832 (24 novembre) : la projection ne coule plus ; les trois à chaque essai
+- Chez le créateur, la 0.831 : la projection 24 à 25 images par seconde au vol (le rayon 55), et l'image « coule » : les
+  pixels n'étaient pas vidés sur la carte. La cause : une boucle simple (vider FPROJ) prenait le vieux chemin de la
+  fenêtre, qui écrit la copie du processeur ; FPROJ (205) ne vit que sur la carte. Corrigé dans la forge : avec
+  l'épissage rapide, une boucle simple va aussi à Taranis (`vers_la_carte` : `rapide_ok`). Vérifié : le film de la
+  projection est le même sur la carte et au processeur (là où le minimum se garde point après point).
+- Règle du créateur : chaque essai joue les trois : le C++ (processeur), vtx au processeur, Taranis (la carte).
+- La chaîne du créateur pour la suite : Lugus (le code, 128 bits) → Gutuater (traduit les boucles du graphique en Dunon,
+  64 bits) → Vergobret (la carte ou le processeur, les fils) → Taranis (la carte). Les fréquences 200 et plus sont l'ARN
+  (des données de passage, refaites à chaque image) ; le monde est l'ADN.
+- Prochain : le gène « Dunon » de Gutuater (les boucles du graphique forgées en 64 bits au processeur, avec la garde des
+  mêmes mots sur les premières images).
