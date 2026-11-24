@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.830.zip`, `essai-0.830.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.831.zip`, `essai-0.831.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -347,3 +347,17 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   `gergovie_progressif.vtx`. L'essai : le C++ contre vtx au processeur (à armes égales), Taranis à part.
 - Prochain (proposé) : le duel au processeur (l'épissage rapide du processeur : le monde d'un seul tenant, comme
   Taranis, pour la forge au processeur) ; les points qui émettent vers l'écran (atomicMin de 64 bits).
+
+## 0.830 (24 novembre) : l'épissage rapide du processeur, géré par Gutuater
+- Le gène `carte_directe` (choisi à la forge : `carte_directe()` dans forge128.py ; `VTX_CARTE_DIRECTE=1/0` l'impose,
+  sinon l'ARN de Gutuater à côté du programme forgé) : la carte du vergobret à 65 536 places, une par page des 256
+  premières fréquences, sans mêler ni chasser (`CARTE_DIRECTE`, `place_carte`). La carte s'oublie par génération
+  (`gen`, `etiquette`) : plus de remise à zéro.
+- Un gène de la forge se mesure par le temps du programme entier : `VTX_GUTUATER_TEMPS=1` fait écrire « temps
+  carte_directe 0 VARIANTE µs » ; Gutuater met en face la variante exprimée et la tue (une moitié attend sa paire).
+  Test : `tests/test_gutuater.py` (5).
+- Attention : avec la carte directe, une machine neuve pèse 2,6 Mo ; dans `tests/test_cylindres.py`, la boucle
+  « mauvais » (100 000 tours) peut finir sur un seul cœur avant que les autres ne commencent : rien n'est rompu (la sortie
+  est juste), et la promesse est bien vue sur une boucle plus longue (vérifié sur 20 millions de tours).
+- Prochain (demandé) : les points qui émettent vers l'écran (Schütz, Kerbl, Wimmer) : il faut d'abord au langage un
+  minimum atomique sur un mot de l'étage 2 (les deux compilateurs, Lugus, la forge, Taranis : OpAtomicUMin 64 bits).

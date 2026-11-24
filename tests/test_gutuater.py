@@ -83,5 +83,15 @@ r, arn, carnet = digerer("mesure fondre 50 100 900\n" * 3)
 verifier("puis trois gains : toujours faux (l'usure ne touche pas une infidélité)",
          arn.get(("fondre", 50)) == "faux" and carnet.get(("fondre", 50)) == (9, 64), str(carnet))
 
+# 5. 0.830 : un gène de la forge : deux temps (la variante exprimée, la tue) font une mesure ; une moitié attend
+r, arn, carnet = digerer("temps carte_directe 0 1 15000000\n")
+reste = open(os.path.join(D, "gutuater.mesures"), encoding="utf-8").read()
+verifier("un temps seul attend sa paire", "temps carte_directe 0 1 15000000" in reste and ("carte_directe", 0) not in carnet, reste)
+with open(os.path.join(D, "gutuater.mesures"), "a", encoding="utf-8") as f:
+    f.write("temps carte_directe 0 0 19000000\n")
+r = subprocess.run([LUGUS, GUT], input=D + "\n", capture_output=True, text=True, encoding="utf-8")
+arn_t = open(os.path.join(D, "gutuater.arn"), encoding="utf-8").read()
+verifier("la paire : 15 s contre 19 s, la carte directe : vrai", "carte_directe 0 vrai" in arn_t, arn_t + r.stdout)
+
 print("Tout est conforme" if not echecs else f"{len(echecs)} échec(s)")
 sys.exit(1 if echecs else 0)

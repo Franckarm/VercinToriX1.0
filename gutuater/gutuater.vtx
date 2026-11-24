@@ -53,6 +53,15 @@ fonction principal() {
     retirer(vp);
     retirer(vc);
     retirer(gains);
+    // 0.830 : les temps des gènes de la forge, en attendant leur paire
+    soit tnoms = ["carte_directe"];
+    soit tlieux = [0];
+    soit tun = [0];
+    soit tzero = [0];
+    retirer(tnoms);
+    retirer(tlieux);
+    retirer(tun);
+    retirer(tzero);
     // 1. le carnet d'avant, puis 2. les mesures du vergobret (une mesure : une preuve, ou rien dans le bruit)
     soit nm = 0;
     soit textes = [lire_fichier(dossier + "gutuater.carnet"), lire_fichier(dossier + "gutuater.mesures")];
@@ -87,6 +96,31 @@ fonction principal() {
                     vp[ji] = 0;
                     vc[ji] = DEFINITIF;
                     nm = nm + 1;
+                }
+            }
+            // 0.830 : « temps GENE LIEU VARIANTE MICROSECONDES » : un gène choisi à la forge ; chaque programme forgé
+            // dit son temps entier et sa variante (1 exprimée, 0 tue) ; deux temps, une de chaque, font une mesure
+            si quel == 1 && longueur(m) >= 5 {
+                si m[0] == "temps" {
+                    soit nom_t = m[1];
+                    soit lieu_t2 = nombre(m[2]);
+                    soit jt = longueur(tnoms);
+                    pour kt dans 0..longueur(tnoms) {
+                        si tnoms[kt] == nom_t && tlieux[kt] == lieu_t2 {
+                            jt = kt;
+                        }
+                    }
+                    si jt == longueur(tnoms) {
+                        ajouter(tnoms, nom_t);
+                        ajouter(tlieux, lieu_t2);
+                        ajouter(tun, 0);
+                        ajouter(tzero, 0);
+                    }
+                    si nombre(m[3]) == 1 {
+                        tun[jt] = nombre(m[4]);
+                    } sinon {
+                        tzero[jt] = nombre(m[4]);
+                    }
                 }
             }
             si longueur(m) >= 5 {
@@ -130,6 +164,41 @@ fonction principal() {
             }
         }
     }
+    // 0.830 : chaque paire de temps (la variante exprimée, la variante tue) devient une mesure ; une moitié attend
+    soit reste = "";
+    pour kp dans 0..longueur(tnoms) {
+        si tun[kp] > 0 && tzero[kp] > 0 {
+            soit jp = longueur(noms);
+            pour kq dans 0..longueur(noms) {
+                si noms[kq] == tnoms[kp] && lieux[kq] == tlieux[kp] {
+                    jp = kq;
+                }
+            }
+            si jp == longueur(noms) {
+                ajouter(noms, tnoms[kp]);
+                ajouter(lieux, tlieux[kp]);
+                ajouter(vp, 0);
+                ajouter(vc, 0);
+                ajouter(gains, 0);
+            }
+            soit rp = 1 + hasard(100);
+            vp[jp] = vp[jp] + preuve_pour(tun[kp], tzero[kp], rp);
+            vc[jp] = vc[jp] + preuve_pour(tzero[kp], tun[kp], rp);
+            si tun[kp] <= tzero[kp] {
+                gains[jp] = 1000 + ((tzero[kp] - tun[kp]) * 1000) / tzero[kp];
+            } sinon {
+                gains[jp] = 1;
+                si (tun[kp] - tzero[kp]) * 1000 / tzero[kp] < 999 {
+                    gains[jp] = 1000 - ((tun[kp] - tzero[kp]) * 1000) / tzero[kp];
+                }
+            }
+            nm = nm + 1;
+        } sinon si tun[kp] > 0 {
+            reste = reste + "temps " + tnoms[kp] + " " + texte(tlieux[kp]) + " 1 " + texte(tun[kp]) + "\n";
+        } sinon si tzero[kp] > 0 {
+            reste = reste + "temps " + tnoms[kp] + " " + texte(tlieux[kp]) + " 0 " + texte(tzero[kp]) + "\n";
+        }
+    }
     // 3. l'usure, puis le carnet et l'ARN
     soit carnet = ouvrir_ecriture(dossier + "gutuater.carnet");
     soit arn = ouvrir_ecriture(dossier + "gutuater.arn");
@@ -155,8 +224,9 @@ fonction principal() {
     }
     fermer(carnet);
     fermer(arn);
-    // les mesures lues sont effacées
+    // les mesures lues sont effacées (un temps sans sa paire reste)
     soit vide = ouvrir_ecriture(dossier + "gutuater.mesures");
+    ecrire_texte(vide, reste);
     fermer(vide);
     afficher("gutuater : " + texte(nm) + " mesure(s) lue(s), " + texte(longueur(noms)) + " gène(s) au carnet");
 }

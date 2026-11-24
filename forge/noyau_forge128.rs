@@ -66,10 +66,16 @@ fn nettoyer(pg: u64) {
     SALES[(pg >> 6) as usize].fetch_and(!(1u64 << (pg & 63)), std::sync::atomic::Ordering::Relaxed);
 }
 
-const CARTE: usize = 1024;     // 0.808 : les places de la carte (chaque page à la place que donne son numéro mêlé)
+// 0.830 : le gène « carte_directe » de Gutuater (choisi à la forge : @CARTE_DIRECTE@) : vrai, la carte a une place
+// par page des 256 premières fréquences (65 536 places : la page f << 8 | q à la place f << 8 | q, sans mêler ni
+// chasser : l'épissage rapide du processeur, comme le monde d'un seul tenant de Taranis) ; faux, 1 024 places mêlées.
+const CARTE_DIRECTE: bool = false;
+const CARTE: usize = if CARTE_DIRECTE { 65536 } else { 1024 };
 
 struct Carte {
-    k: [u64; CARTE],           // 0.808 : l'étiquette de chaque place : le numéro de la page + 1 (0 : place libre)
+    k: [u64; CARTE],           // 0.808 : l'étiquette de chaque place : le numéro de la page + 1 (0 : place libre) ; 0.830 :
+                               // plus la génération (oublier la carte ne la remet plus à zéro : la génération change)
+    gen: u64,
     l: [*mut u128; CARTE],
     e: [*mut u128; CARTE],
     r: [*mut u64; CARTE],
@@ -80,16 +86,27 @@ struct Carte {
 /// différentes, qui ont les mêmes 8 bits bas, ne tombent pas à la même place)
 #[inline(always)]
 fn place_carte(pg: u64) -> usize {
+    if CARTE_DIRECTE {
+        return (pg as usize) & (CARTE - 1);
+    }
     ((pg ^ (pg >> 8).wrapping_mul(0x9E37) ^ (pg >> 18)) as usize) & (CARTE - 1)
 }
 
 impl Carte {
     fn neuve() -> Box<Carte> {
-        Box::new(Carte { k: [0; CARTE], l: [std::ptr::null_mut(); CARTE], e: [std::ptr::null_mut(); CARTE],
+        Box::new(Carte { k: [0; CARTE], gen: 1, l: [std::ptr::null_mut(); CARTE], e: [std::ptr::null_mut(); CARTE],
                          r: [std::ptr::null_mut(); CARTE], w: [std::ptr::null_mut(); CARTE] })
     }
     fn oublier(&mut self) {
-        self.k = [0; CARTE];
+        self.gen += 1;
+        if self.gen >= 1 << 23 {
+            self.k = [0; CARTE];
+            self.gen = 1;
+        }
+    }
+    #[inline(always)]
+    fn etiquette(&self, pg: u64) -> u64 {
+        (pg + 1) | (self.gen << 40)
     }
 }
 
@@ -926,7 +943,7 @@ impl Ctx {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
         let pg = idx >> 16;
         let h = place_carte(pg);
-        if self.carte.k[h] == pg + 1 {
+        if self.carte.k[h] == self.carte.etiquette(pg) {
             let p = self.carte.l[h];
             if !p.is_null() {
                 let j = (idx & 65535) as usize;
@@ -952,8 +969,8 @@ impl Ctx {
             let h = case(k);
             if self.cl[h] == k {
                 let q = place_carte(pg);
-                if self.carte.k[q] != pg + 1 {
-                    self.carte.k[q] = pg + 1;
+                if self.carte.k[q] != self.carte.etiquette(pg) {
+                    self.carte.k[q] = self.carte.etiquette(pg);
                     self.carte.e[q] = std::ptr::null_mut();
                     self.carte.w[q] = std::ptr::null_mut();
                 }
@@ -969,7 +986,7 @@ impl Ctx {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
         let pg = idx >> 16;
         let h = place_carte(pg);
-        if self.carte.k[h] == pg + 1 {
+        if self.carte.k[h] == self.carte.etiquette(pg) {
             let p = self.carte.e[h];
             if !p.is_null() {
                 let j = (idx & 65535) as usize;
@@ -994,8 +1011,8 @@ impl Ctx {
             let h = case(k);
             if self.ce[h] == k && self.pb[h].is_null() {
                 let q = place_carte(pg);
-                if self.carte.k[q] != pg + 1 {
-                    self.carte.k[q] = pg + 1;
+                if self.carte.k[q] != self.carte.etiquette(pg) {
+                    self.carte.k[q] = self.carte.etiquette(pg);
                     self.carte.l[q] = std::ptr::null_mut();
                     self.carte.r[q] = std::ptr::null_mut();
                 }
@@ -1417,6 +1434,16 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     sortie::finir();
     if std::env::var("FORGE_TEMPS").is_ok() {
         eprintln!("{} : {:.3} s", nom, duree.as_secs_f64());
+    }
+    // 0.830 : un gène choisi à la forge (la carte directe) : le temps du programme entier, pour Gutuater, qui le mettra
+    // en face de celui de l'autre variante (« temps GENE LIEU VARIANTE MICROSECONDES »)
+    if let Some(d) = dossier_gutuater() {
+        if std::env::var("VTX_GUTUATER_TEMPS").map_or(false, |v| v == "1") {
+            use std::io::Write;
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
+                let _ = writeln!(f, "temps carte_directe 0 {} {}", if CARTE_DIRECTE { 1 } else { 0 }, duree.as_micros());
+            }
+        }
     }
 }
 

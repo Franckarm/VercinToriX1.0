@@ -1652,13 +1652,33 @@ MODULES = ["qflot128", "spu128", "hote", "miroir", "taranis_vk", "gif", "sortie"
 # (0.78 : gif et sortie, la fenêtre : un programme forgé présente lui-même ses images)
 
 
-def noyau():
+def carte_directe(sortie=None):
+    """0.830 : le gène « carte_directe » (Gutuater, à la forge) : VTX_CARTE_DIRECTE=1 ou 0 l'impose ; sinon l'ARN de
+    Gutuater à côté du programme forgé (« carte_directe 0 vrai ») ; sinon faux (la carte mêlée, comme avant)"""
+    v = os.environ.get("VTX_CARTE_DIRECTE")
+    if v in ("0", "1"):
+        return v == "1"
+    if sortie and os.environ.get("VTX_GUTUATER") != "0":
+        arn = os.path.join(os.path.dirname(os.path.abspath(sortie)), "gutuater.arn")
+        if os.path.exists(arn):
+            for l in open(arn, encoding="utf-8"):
+                m = l.split()
+                if len(m) >= 3 and m[0] == "carte_directe" and m[1] == "0":
+                    print(f"gutuater : la carte directe : {m[2]} ({'65 536 places' if m[2] == 'vrai' else '1 024 places mêlées'})",
+                          file=sys.stderr)
+                    return m[2] == "vrai"
+    return False
+
+
+def noyau(sortie=None):
     src = os.path.join(racine, "vtx-rs", "src")
     mods = []
     for m in MODULES:
         texte = open(os.path.join(src, m + ".rs"), encoding="utf-8").read()
         mods.append(f"#[allow(dead_code, unused_imports, unused_variables)]\nmod {m} {{\n{texte}\n}}\n")
     n = open(os.path.join(ici, "noyau_forge128.rs"), encoding="utf-8").read()
+    if carte_directe(sortie):
+        n = n.replace("const CARTE_DIRECTE: bool = false;", "const CARTE_DIRECTE: bool = true;", 1)
     return ATTRIBUTS + "\n" + n.replace("// @MODULES@", "\n".join(mods), 1)
 
 
@@ -1702,11 +1722,11 @@ def programme_rust(src, dossier=None, nom="programme"):
     return "\n".join(s), mots
 
 
-def source_rust(src, dossier=None, nom="programme"):
+def source_rust(src, dossier=None, nom="programme", sortie=None):
     """Le programme Rust complet d'un programme vtx."""
     prog, mots = programme_rust(src, dossier, nom)
     main = "\nfn main() {\n    let a: Vec<String> = std::env::args().collect();\n    lancer(&a[1..]);\n}\n"
-    return noyau() + "\n" + prog + main, mots
+    return noyau(sortie) + "\n" + prog + main, mots
 
 
 def rustc_options(natif=False):
@@ -1718,9 +1738,10 @@ def rustc_options(natif=False):
 
 def forger_fichier(chemin, sortie=None, rs=None, natif=False):
     src = open(chemin, encoding="utf-8").read()
-    code, _ = source_rust(src, os.path.dirname(os.path.abspath(chemin)), os.path.splitext(os.path.basename(chemin))[0])
     ext = ".exe" if os.name == "nt" else ""
     sortie = sortie or os.path.splitext(chemin)[0] + ".lugus" + ext
+    code, _ = source_rust(src, os.path.dirname(os.path.abspath(chemin)), os.path.splitext(os.path.basename(chemin))[0],
+                          sortie)
     garder = rs is not None
     rs = rs or os.path.join(tempfile.mkdtemp(prefix="forge128-"), "programme.rs")
     with open(rs, "w", encoding="utf-8") as f:
