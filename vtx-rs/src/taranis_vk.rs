@@ -219,6 +219,8 @@ pub struct Carte {
     pub nom: String,
     /// 0.817 : la carte fait les entiers de 64 bits elle-même (shaderInt64, demandé à la création)
     pub int64: bool,
+    /// 0.831 : la carte garde le minimum d'un mot de 64 bits d'un seul geste (VK_KHR_shader_atomic_int64)
+    pub atomique64: bool,
     dsl: H,
     pl: H,
     pipelines: Vec<(usize, H)>,
@@ -266,7 +268,7 @@ unsafe fn prendre() -> Result<Carte, String> {
         None => return Err("vulkan-1.dll introuvable".into()),
     };
     let mut c = Carte { gipa, instance: null_mut(), pd: null_mut(), dev: null_mut(), file: null_mut(), famille: 0,
-        mp: std::mem::zeroed(), groupes_max: 65535, stockage_max: 1 << 27, nom: String::new(), int64: false, dsl: 0, pl: 0,
+        mp: std::mem::zeroed(), groupes_max: 65535, stockage_max: 1 << 27, nom: String::new(), int64: false, atomique64: false, dsl: 0, pl: 0,
         pipelines: Vec::new(), dsl5: 0, pl5: 0, cpool: 0, cb: null_mut(), fence: 0 };
     let nom = b"Vercintorix Taranis\0";
     let app = ApplicationInfo { sType: ST_APPLICATION_INFO, pNext: null(), pApplicationName: nom.as_ptr() as _,
@@ -319,9 +321,32 @@ unsafe fn prendre() -> Result<Carte, String> {
     let prio = 1.0f32;
     let dq = DeviceQueueCreateInfo { sType: ST_DEVICE_QUEUE_CREATE_INFO, pNext: null(), flags: 0, queueFamilyIndex: c.famille,
         queueCount: 1, pQueuePriorities: &prio };
-    let dci = DeviceCreateInfo { sType: ST_DEVICE_CREATE_INFO, pNext: null(), flags: 0, queueCreateInfoCount: 1,
-        pQueueCreateInfos: &dq, enabledLayerCount: 0, ppEnabledLayerNames: null(), enabledExtensionCount: 0,
-        ppEnabledExtensionNames: null(), pEnabledFeatures: voulu.as_ptr() as *const c_void };
+    // 0.831 : le minimum atomique de 64 bits (la projection des points : le plus proche gagne), si la carte le sait
+    let enum_ext = vkfn!(c, "vkEnumerateDeviceExtensionProperties", unsafe extern "system" fn(Ptr, *const c_char, *mut u32, *mut u8) -> R);
+    let nom_ext = b"VK_KHR_shader_atomic_int64\0";
+    let mut n_ext = 0u32;
+    let mut a_l_atome = false;
+    if enum_ext(c.pd, null(), &mut n_ext, null_mut()) == 0 && n_ext > 0 {
+        let mut exts = vec![0u8; 260 * n_ext as usize];
+        if enum_ext(c.pd, null(), &mut n_ext, exts.as_mut_ptr()) == 0 {
+            for k in 0..n_ext as usize {
+                let nom = CStr::from_ptr(exts.as_ptr().add(260 * k) as *const c_char);
+                if nom.to_bytes() == &nom_ext[..nom_ext.len() - 1] {
+                    a_l_atome = true;
+                }
+            }
+        }
+    }
+    a_l_atome = a_l_atome && c.int64 && std::env::var("VTX_ATOMIQUE64").map_or(true, |v| v != "0");
+    #[repr(C)]
+    struct Atome64 { sType: u32, pNext: *const c_void, buffer: u32, partage: u32 }
+    let atome = Atome64 { sType: 1000180000, pNext: null(), buffer: 1, partage: 0 };
+    let noms_ext = [nom_ext.as_ptr() as *const c_char];
+    let dci = DeviceCreateInfo { sType: ST_DEVICE_CREATE_INFO,
+        pNext: if a_l_atome { &atome as *const Atome64 as *const c_void } else { null() }, flags: 0, queueCreateInfoCount: 1,
+        pQueueCreateInfos: &dq, enabledLayerCount: 0, ppEnabledLayerNames: null(), enabledExtensionCount: if a_l_atome { 1 } else { 0 },
+        ppEnabledExtensionNames: if a_l_atome { noms_ext.as_ptr() } else { null() }, pEnabledFeatures: voulu.as_ptr() as *const c_void };
+    c.atomique64 = a_l_atome;
     let create_device = vkfn!(c, "vkCreateDevice", unsafe extern "system" fn(Ptr, *const DeviceCreateInfo, *const c_void, *mut Ptr) -> R);
     verifie(create_device(c.pd, &dci, null(), &mut c.dev), "vkCreateDevice")?;
     let get_queue = vkfn!(c, "vkGetDeviceQueue", unsafe extern "system" fn(Ptr, u32, u32, *mut Ptr));

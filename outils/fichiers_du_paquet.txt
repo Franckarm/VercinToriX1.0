@@ -257,3 +257,6 @@ belenos/gergovie_carte_blocs.vtx
 belenos/gergovie_etages_blocs.vtx
 belenos/gergovie_carte_progressif.vtx
 belenos/gergovie_progressif.vtx
+belenos/gergovie_projection.vtx
+tests/test_minimum.py
+tests/minimum/minimum.vtx

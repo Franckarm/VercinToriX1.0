@@ -1,0 +1,29 @@
+// machine : lugus
+// 0.831 : garder le minimum (« si x < @2[a] { @2[a] = x; } ») : 200 000 points tombent dans 1 000 cases ; dans chaque
+// case, le plus petit gagne, quel que soit l'ordre. Lugus le joue point après point ; la carte, tous à la fois (le
+// minimum atomique) : la même somme.
+constante N = 200000;
+constante CASES = 1000;
+
+fonction tomber(i) {
+    soit h = (i * 2654435761) % 4294967291;
+    soit a = (150 << 24) + (h % CASES);
+    soit cle = ((h >> 7) << 20) | i;
+    si cle < @2[a] {
+        @2[a] = cle;
+    }
+}
+
+fonction principal() {
+    pour z dans 0..CASES {
+        @2[(150 << 24) + z] = 18446744073709551615;
+    }
+    pour i dans 0..N en segments {
+        tomber(i);
+    }
+    soit s = 0;
+    pour z2 dans 0..CASES {
+        s = (s * 31 + @2[(150 << 24) + z2]) % 1000000007;
+    }
+    afficher(s);
+}

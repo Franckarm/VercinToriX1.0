@@ -48,6 +48,7 @@ OP = {
     "BitwiseOr": 197, "BitwiseXor": 198, "BitwiseAnd": 199, "Not": 200, "Phi": 245, "LoopMerge": 246,
     "SelectionMerge": 247, "Label": 248, "Branch": 249, "BranchConditional": 250, "Return": 253,
     "LogicalNotEqual": 165, "UMulExtended": 151, "SMulExtended": 152, "SConvert": 114, "CompositeConstruct": 80, "AtomicExchange": 229,
+    "AtomicUMin": 237,
 }
 M64 = (1 << 64) - 1
 MASQUE62 = (1 << 62) - 1
@@ -1112,6 +1113,37 @@ class NoyauI64(Noyau):
         return struct.pack("<%dI" % len(mots), *mots), dehors, acces
 
 
+def sans_lignes(e):
+    """un morceau d'arbre sans ses numéros de ligne (pour comparer deux expressions)"""
+    if isinstance(e, tuple):
+        if e and e[0] == "var":
+            return ("var", e[1])
+        if e and e[0] == "nombre":
+            return e[:2]
+        return tuple(sans_lignes(x) for x in e if not isinstance(x, int))
+    if isinstance(e, list):
+        return [sans_lignes(x) for x in e]
+    return e
+
+
+def minimum_garde(s):
+    """0.831 : « si x < @2[a] { @2[a] = x; } » (sans « sinon ») : (a, x), sinon None"""
+    if not (isinstance(s, tuple) and s and s[0] == "si" and len(s) >= 4 and not s[3] and len(s[2]) == 1):
+        return None
+    c, w = s[1], s[2][0]
+    if not (isinstance(c, tuple) and c[0] == "bin" and c[1] == "<" and isinstance(c[3], tuple) and c[3][0] == "lire"
+            and c[3][1] == 2):
+        return None
+    if not (isinstance(w, tuple) and w[0] == "ecrire" and w[1] == 2):
+        return None
+    if sans_lignes(w[2]) != sans_lignes(c[3][2]) or sans_lignes(w[3]) != sans_lignes(c[2]):
+        return None
+    # la valeur gardée ne doit pas relire la mémoire (elle est calculée une fois)
+    if acces_memoire(c[2], []):
+        return None
+    return (w[2], w[3])
+
+
 # ---------------------------------------------------------------- 0.821 : Taranis, le noyau de la carte
 M63 = 1 << 63
 
@@ -1157,7 +1189,7 @@ class NoyauTaranis(NoyauI64):
     128 bits), par une puissance de deux un décalage ; les autres divisions passent en 32 bits quand les deux nombres y
     tiennent (la carte divise en 32 bits bien plus vite), sinon en 64 bits."""
 
-    def __init__(self, forge, var, corps, region=0, garde=None):
+    def __init__(self, forge, var, corps, region=0, garde=None, atomique=False):
         super().__init__(forge, var, corps, rapide=True)
         self.valeur_de = {}
         self.t_prod = None
@@ -1167,6 +1199,41 @@ class NoyauTaranis(NoyauI64):
         # écrivent ; un fil ne doit y toucher que sa propre case (l'adresse (f << 24) + son tour) ; sinon, l'ordre des
         # étages compterait et le noyau fondu ne serait plus fidèle : le drapeau 2 (infidèle) se lève
         self.garde = sorted(garde) if garde else None
+        # 0.831 : le minimum atomique (la forge le demande seulement si la carte le sait : un second noyau sinon)
+        self.atomique = atomique
+        self.capacite_atome = False
+
+    # ------------------------------------------------------------ 0.831 : garder le minimum
+    def instr(self, s):
+        """« si x < @2[a] { @2[a] = x; } » : garder le plus petit, quel que soit l'ordre des fils (la projection des
+        points : le plus proche gagne). Joué l'un après l'autre (Lugus, le processeur), c'est exactement ce que dit le
+        texte ; sur la carte, un seul geste atomique (OpAtomicUMin de 64 bits) le rend vrai pour des fils en même temps."""
+        x = minimum_garde(s)
+        if x is not None and self.atomique:
+            return self.garder_minimum(x[0], x[1])
+        return super().instr(s)
+
+    def garder_minimum(self, adr, valeur):
+        if not self.capacite_atome:
+            pre = []
+            self.i(pre, "Capability", 12)       # Int64Atomics
+            self.tete[0:0] = pre
+            self.capacite_atome = True
+        a = self.expr(adr)
+        x = self.expr(valeur)
+        mot, ok, f32 = self.direct(a)
+        self.garder(a, f32)
+        oui, non, fin = self.id(), self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", ok, oui, non)
+        self.etiquette(oui)
+        self.v64("AtomicUMin", self.case64(self.fenetre, mot), self.c32(1), self.c32(0), x)
+        self.e("Store", self.case(self.marques, f32), self.c32(1))
+        self.aller(fin)
+        self.etiquette(non)
+        self.drapeau_n(1)
+        self.aller(fin)
+        self.etiquette(fin)
 
     def garder(self, a, f32):
         if not self.garde:

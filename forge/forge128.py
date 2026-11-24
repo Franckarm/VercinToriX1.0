@@ -587,6 +587,10 @@ class Forge(V.Generateur):
                     if not (isinstance(adr, tuple) and adr[0] == "bin" and adr[1] == "+" and adr[2][0] == "bin"
                             and adr[2][1] == "<<" and adr[2][2][0] == "nombre" and adr[2][3] == ("nombre", 24)):
                         return False
+                    # 0.831 : et à une case nommée (le tour, ou le paramètre qui le reçoit) : une case calculée (la
+                    # projection des points, qui écrit où tombe le point) ne se fond pas
+                    if not (isinstance(adr[3], tuple) and adr[3][0] == "var"):
+                        return False
                     garde.add(adr[2][2][1])
             for nom in appels_dans(morceau):
                 g = self.fonctions.get(nom)
@@ -871,7 +875,7 @@ class Forge(V.Generateur):
                 # reconnaissent, d'un passage à l'autre
                 if getattr(self, "lot_pos", 0) == 0:
                     self.lot_tete = st[5]
-                spv64r, dehors64r, _ = noyau_vtx.NoyauTaranis(self, var, corps, region=region).compiler()
+                spv64r, dehors64r, _ = noyau_vtx.NoyauTaranis(self, var, corps, region=region, atomique=True).compiler()
                 assert dehors64r == dehors
                 pages = True
             except noyau_vtx.PasPourLaCarte as e2:

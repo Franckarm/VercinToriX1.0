@@ -1,0 +1,14 @@
+// machine : lugus
+// Belenos : l'épreuve de Gergovie sur la carte, par la projection des points hex (0.831) : chaque point de surface se
+// projette sur l'écran, le plus proche gagne (garder le minimum) ; un pixel où rien ne tombe lance un rayon. Une autre
+// image que le rayon (les points sont des carrés à l'écran) : à voir, et à mesurer.
+//     python forge/forge128.py belenos/gergovie_projection.vtx -o gergovie_projection
+constante RN = 1;
+constante RD = 1;
+constante BLOCS = 0;
+constante PROGRESSIF = 0;
+importer "gergovie_scene.vtx";
+
+fonction principal() {
+    epreuve(240, 120, 3);
+}

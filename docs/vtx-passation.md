@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.831.zip`, `essai-0.831.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.832.zip`, `essai-0.832.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -361,3 +361,22 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   est juste), et la promesse est bien vue sur une boucle plus longue (vérifié sur 20 millions de tours).
 - Prochain (demandé) : les points qui émettent vers l'écran (Schütz, Kerbl, Wimmer) : il faut d'abord au langage un
   minimum atomique sur un mot de l'étage 2 (les deux compilateurs, Lugus, la forge, Taranis : OpAtomicUMin 64 bits).
+
+## 0.831 (24 novembre) : la projection des points hex, garder le minimum
+- Chez le créateur, la 0.830 : la carte directe gagne environ 3 % (vol 19,3 contre 18,7 ; jour 11,7 contre 11,2) ;
+  Gutuater reste « inconnu » (de petites preuves, au hasard : il lui faut plusieurs essais). L'empreinte du film de vtx
+  au processeur est celle du C++, image par image.
+- Garder le minimum : la forme « si x < @2[a] { @2[a] = x; } » (aucun mot nouveau : les deux compilateurs donnent les
+  mêmes mots ; Lugus la joue telle quelle) devient sur la carte un seul geste atomique (OpAtomicUMin de 64 bits,
+  `minimum_garde`, `NoyauTaranis.garder_minimum`, Capability Int64Atomics) ; taranis_vk demande
+  VK_KHR_shader_atomic_int64 (`atomique64` ; `VTX_ATOMIQUE64=0` l'éteint) ; un noyau qui en a besoin ne va pas à une
+  carte qui ne le sait pas. Test : `tests/test_minimum.py`.
+- La projection (`image_projection`, `projeter_mot`, `projeter_point`, `resoudre` ; `FPROJ = 205` ; mode 3 ;
+  `gergovie_projection.vtx`) : chaque point de surface (la terre au calque du soleil, le dessus de l'eau), poussé d'un
+  demi-point le long de sa normale, se projette ; un carré à sa taille à l'écran (sa hauteur suit le cosinus avec le
+  regard) ; la clé : profondeur << 32 | le point (hex) ; un pixel inconnu, ou d'eau, lance le rayon. Vérifié : l'image
+  est très proche de celle du rayon (640 × 360 : décalage d'au plus un pixel, quelques fentes claires) ; la
+  projection exacte d'un point touché tombe sur son pixel.
+- Piège trouvé : `constante VIDE` existait déjà (un bloc vide) ; une seconde `constante VIDE` a été acceptée sans un
+  mot et a cassé le monde (le pixel vide s'appelle `PIXEL_VIDE`). À donner au Druide : une constante définie deux fois.
+- Fondre : refusé à la forge pour une écriture à une case calculée (la projection écrit où tombe le point).

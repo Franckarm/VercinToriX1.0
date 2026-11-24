@@ -46,6 +46,8 @@ constante FMAT = 201;              // l'étage des matériaux : la distance du p
 constante FOMB = 202;              // l'étage de l'ombre : l'état quaternaire, la clepsydre, le ciel vu (ombrer)
 constante FLUM = 203;              // l'étage de la lumière : la couleur d'un point de terre avant la brume
 constante FREF = 204;              // l'étage du reflet : la couleur d'un point d'eau (Divona) avant la brume
+constante FPROJ = 205;             // 0.831 : la projection des points : pour chaque pixel, la profondeur et le point (le plus proche)
+constante PIXEL_VIDE = 18446744073709551615;   // 0.831 : un pixel où rien n'est tombé
 
 // les matières
 constante ROCHE = 1;
@@ -2088,13 +2090,180 @@ fonction empreinte_image() {
 // le survol, image i sur n : au-dessus des armées, puis du camp, jusqu'à la rive du lac, face au grand puy (son
 // reflet dans le lac) ; l'œil descend un peu et se redresse ; sur_carte : 0 le processeur, 1 la carte d'un seul
 // noyau, 2 la carte par les étages
+// ---------------------------------------------------------------------- 0.831 : la projection des points hex
+// L'inverse du rayon (l'idée du créateur : « une fréquence, une couleur, une intensité » ; la technique de Schütz,
+// Kerbl et Wimmer, TU Wien) : chaque point de surface du cube, connu par son adresse (son hex), se projette sur l'écran,
+// et dans chaque pixel le plus proche gagne (« garder le minimum » : la profondeur et le point dans un mot de 64 bits).
+// Puis chaque pixel s'éclaire depuis le point qui l'a gagné (la même lumière que le rayon : celle du point). Un pixel où
+// rien n'est tombé reste inconnu : lui seul lance un rayon (le ciel, ou un trou de près) ; l'eau aussi (Divona).
+fonction image_projection(cx, cy, cz, lacet, tangage, temps) {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    pour i dans 0..(W * H) en segments {
+        @2[(FPROJ << 24) + i] = PIXEL_VIDE;
+    }
+    pour q dans 0..total en segments {
+        projeter_mot(q, cx, cy, cz, lacet, tangage);
+    }
+    pour i2 dans 0..(W * H) en segments {
+        @2[(FIMAGE << 24) + i2] = resoudre(i2, cx, cy, cz, lacet, tangage, temps);
+    }
+    pour y dans 0..H en bandes {
+        pour x dans 0..W {
+            soit v = @2[(FIMAGE << 24) + y * W + x];
+            @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+        }
+    }
+}
+
+// les huit points du mot q du calque (une ligne le long de z) : chacun qui est une surface (la terre exposée au
+// calque du soleil, ou le dessus de l'eau) se projette
+fonction projeter_mot(q, cx, cy, cz, lacet, tangage) {
+    soit t = 0;
+    soit r = q;
+    soit cherche = 1;
+    pour k dans 0..(TUILES * TUILES) {
+        si cherche == 1 {
+            soit nk = @2[GLOB + 1 + k] * 64;
+            si r < nk {
+                t = k;
+                cherche = 0;
+            } sinon {
+                r = r - nk;
+            }
+        }
+    }
+    soit n = r >> 6;
+    soit w = r & 63;
+    soit b = @2[((FINV + t) << 24) + n];
+    soit x0 = (t % TUILES) * 256 + (b >> 10) * 8;
+    soit y0 = ((b >> 5) & 31) * 8;
+    soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
+    soit ms = @2[((FSOL + t) << 24) + n * 64 + w];
+    soit base = (FELT + t) << 24;
+    // la caméra : devant, à droite, en haut (16.16), comme direction_vue
+    soit sl = sin1024(lacet);
+    soit cl = cos1024(lacet);
+    soit st = sin1024(tangage);
+    soit ct = cos1024(tangage);
+    soit fx = (sl * ct) ./ 65536;
+    soit fz = (cl * ct) ./ 65536;
+    soit ux = (0 - sl * st) ./ 65536;
+    soit uz = (0 - cl * st) ./ 65536;
+    pour j dans 0..8 {
+        soit v = w * 8 + j;
+        soit x = x0 + (v >> 6);
+        soit y = y0 + ((v >> 3) & 7);
+        soit z = z0 + (v & 7);
+        soit terre = 0;
+        si ((ms >> (j * 8)) & 255) >= 128 {
+            terre = 1;
+        }
+        soit eau = 0;
+        soit el = @2[base + REP + n * 512 + v];
+        si el != 0 && ((el >> 2) & 63) == EAU {
+            si element(x, y + 1, z) == 0 {
+                eau = 1;
+            }
+        }
+        si terre == 1 || eau == 1 {
+            // le point visé : le centre du point, poussé d'un demi-point le long de sa normale (sa face vue, là où le
+            // rayon le touche) ; l'eau : le dessus
+            soit nx = ((el >> 8) & 255) - 128;
+            soit ny = ((el >> 16) & 255) - 128;
+            soit nz = ((el >> 24) & 255) - 128;
+            si nx == 0 - 128 || eau == 1 {
+                nx = 0;
+                ny = 127;
+                nz = 0;
+            }
+            projeter_point(x, y, z, eau, nx * 258, ny * 258, nz * 258, cx, cy, cz, fx, st, fz, cl, sl, ux, ct, uz);
+        }
+    }
+}
+
+fonction projeter_point(x, y, z, eau, ex, ey, ez, cx, cy, cz, fx, fy, fz, rx, sl, ux, uy, uz) {
+    soit vx = x * 65536 + 32768 + ex - cx;
+    soit vy = y * 65536 + 32768 + ey - cy;
+    soit vz = z * 65536 + 32768 + ez - cz;
+    soit zc = (vx * fx + vy * fy + vz * fz) .>> 16;
+    si zc .> 65536 {
+        soit xc = (vx * rx - vz * sl) .>> 16;
+        soit yc = (vx * ux + vy * uy + vz * uz) .>> 16;
+        soit inv = 4294967296 ./ zc;
+        soit sx = (xc * inv) .>> 16;
+        soit sy = (yc * inv) .>> 16;
+        soit px = ((sx * W) ./ 45889 + W) .>> 1;
+        soit py = (H - (sy * W) ./ 45889) .>> 1;
+        // la taille du point à l'écran (en pixels) : W · 0,714 / sa profondeur (en points)
+        soit taille = (W * 46797) ./ zc;
+        soit rr = (taille + 1) >> 1;
+        // la face vue de biais (un sol au loin) est plus basse que large : la hauteur du carré suit le cosinus entre
+        // la normale et le regard (sinon le point déborde sur ce qui est derrière lui)
+        soit ndv = (ex * vx + ey * vy + ez * vz) .>> 15;
+        si ndv .< 0 {
+            ndv = 0 - ndv;
+        }
+        soit lv = racine_entiere((vx .>> 8) * (vx .>> 8) + (vy .>> 8) * (vy .>> 8) + (vz .>> 8) * (vz .>> 8)) << 8;
+        soit ry = rr;
+        si lv > 0 {
+            ry = (rr * ((ndv * 512) / lv) + 255) >> 8;
+        }
+        si ry > rr {
+            ry = rr;
+        }
+        si rr <= 24 {
+            soit cle = (zc << 32) | (eau << 30) | (x << 20) | (y << 10) | z;
+            pour dy dans 0..(2 * ry + 1) {
+                soit yy = py + dy - ry;
+                si yy .>= 0 && yy .< H {
+                    pour dx dans 0..(2 * rr + 1) {
+                        soit xx = px + dx - rr;
+                        si xx .>= 0 && xx .< W {
+                            soit a = (FPROJ << 24) + yy * W + xx;
+                            si cle < @2[a] {
+                                @2[a] = cle;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// le pixel i : depuis le point qui l'a gagné (la lumière de ce point, la brume de sa profondeur) ; rien (inconnu) ou
+// l'eau : le rayon
+fonction resoudre(i, cx, cy, cz, lacet, tangage, temps) {
+    soit k = @2[(FPROJ << 24) + i];
+    si k == PIXEL_VIDE {
+        retour point_vu(i, cx, cy, cz, lacet, tangage, temps);
+    }
+    si ((k >> 30) & 1) == 1 {
+        retour point_vu(i, cx, cy, cz, lacet, tangage, temps);
+    }
+    soit x = (k >> 20) & 1023;
+    soit y = (k >> 10) & 1023;
+    soit z = k & 1023;
+    soit ox = x * 65536 + 32768;
+    soit oy = y * 65536 + 32768;
+    soit oz = z * 65536 + 32768;
+    soit om = ombrer(ox, oy, oz, 0, 0, 0, 0, 0);
+    soit c = eclairer(ox, oy, oz, 0, 0, 0, 0, om, 0);
+    retour brumer(c, (k >> 32) & 4294967295);
+}
+
 fonction image_gergovie(i, n, temps, sur_carte) {
     soit cx = (176 * 65536 + (96 * 65536 / n) * i) * RN / RD;
     soit cy = (84 * 65536 - (24 * 65536 / n) * i) * RN / RD;
     soit cz = (470 * 65536 - (160 * 65536 / n) * i) * RN / RD;
     soit lacet = (504 + (16 * i) / n) & 1023;
     soit tangage = (978 + (32 * i) / n) & 1023;
-    si sur_carte == 2 {
+    si sur_carte == 3 {
+        image_projection(cx, cy, cz, lacet, tangage, temps);
+    } sinon si sur_carte == 2 {
         image_etages(cx, cy, cz, lacet, tangage, temps);
     } sinon si sur_carte == 1 {
         image_carte(cx, cy, cz, lacet, tangage, temps);
@@ -2163,6 +2332,7 @@ fonction epreuve(vol, jour, sur_carte) {
         @2[(FOMB << 24) + i] = 0;
         @2[(FLUM << 24) + i] = 0;
         @2[(FREF << 24) + i] = 0;
+        @2[(FPROJ << 24) + i] = PIXEL_VIDE;
     }
     preparer_soleil(360, 70, 0);
     ranger_lumiere(1, 0);
@@ -2186,6 +2356,8 @@ fonction epreuve(vol, jour, sur_carte) {
         lieu = " (sur la carte, un noyau)";
     } sinon si sur_carte == 2 {
         lieu = " (sur la carte, les étages)";
+    } sinon si sur_carte == 3 {
+        lieu = " (sur la carte, la projection des points)";
     }
     // 0.829 : l'empreinte du film entier (chaque image comptée, hors du chronomètre) : la dernière image ne suffit pas
     // à juger une lumière qui change d'une image à l'autre

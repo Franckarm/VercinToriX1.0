@@ -1802,6 +1802,13 @@ fn taranis_direct(c: &mut Ctx, spv: &'static [u32], a: u128, b: u128, ext: &[u12
     if c.m.a_des_cubes_sur_disque() {
         return false;
     }
+    // 0.831 : un noyau qui garde le minimum (Capability Int64Atomics) ne va qu'à une carte qui le sait
+    if !carte.atomique64 && spv.windows(2).take(16).any(|w| w[0] == ((2 << 16) | 17) && w[1] == 12) {
+        if taranis_vk::bavard() {
+            eprintln!("taranis : la carte ne garde pas le minimum de 64 bits : la boucle reste au processeur");
+        }
+        return false;
+    }
     let bavard = taranis_vk::bavard();
     let t0 = std::time::Instant::now();
     c.oublier_pages();
