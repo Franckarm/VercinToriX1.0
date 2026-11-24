@@ -1,0 +1,1866 @@
+// Belenos : la scène de l'épreuve de Gergovie (0.822), la demande du créateur : la plaine auvergnate, la chaîne des puys
+// au fond (un grand volcan et son cratère, deux petits), un lac où tout se reflète, un camp romain grossier (le castrum :
+// ses murs crénelés, ses tours, sa porte, un temple à colonnes et des tentes), et deux armées de mannequins face à face
+// dans la plaine, les Romains en rangs (tunique rouge, bouclier rectangulaire, casque) et les Gaulois moins alignés
+// (tartan, bouclier rond, cheveux blonds), chacun sa lance. Un test plus chargé : plus d'ombres (des objets fins sous
+// un soleil bas), des reflets plus techniques (le volcan, le camp dans le lac).
+//
+// Le moteur est celui du paysage dans le cube (0.808 à 0.818) : 2 × 2 tuiles, chacune un cube de texture et un cube
+// d'élément à leurs fréquences, les seuls blocs de surface, les blocs vides qui savent leur distance, les blocs creusés,
+// les calques de lumière (le ciel une fois, la clepsydre quand le soleil bouge), Divona pour l'eau.
+// 0.822 : les rayons sont normés sans divisions répétées (un seul inverse par rayon, puis des multiplications) ; le
+// regard est écrit une fois pour le processeur et pour la carte (regarder_1 appelle regarder_0 : la carte n'a pas de
+// pile) ; le programme principal pose l'échelle (RN, RD) et importe ce fichier.
+
+constante W = 1280;
+constante H = 720;
+constante TUILES = 2 * RN / RD;    // TUILES × TUILES tuiles
+constante MONDE = 256 * TUILES;    // le côté du monde, en points
+constante MASQ = MONDE - 1;
+constante NB = MONDE / 8;          // le côté du monde, en blocs
+constante FTEX = 1;                // le cube de texture de la tuile t : fréquence FTEX + t
+constante FELT = 17;               // le cube d'élément de la tuile t : fréquence FELT + t
+constante FCIEL = 33;              // le calque du ciel de la tuile t
+constante FCREUX = 110;            // les blocs creusés de la tuile t
+constante FSOL = 49;               // le calque du soleil de la tuile t (FSOL + 16 · jeu + t)
+constante REP = 32768;             // la réserve d'un cube : après son annuaire
+constante MER = 44 * RN / RD;      // le niveau du lac
+constante VIDE = 9223372036854775808;
+constante LOIN = 8;
+constante MANQUE = 4611686018427387904;
+constante SINUS = 0;
+constante HCOL = 4194304;
+constante PENTE = 6291456;
+constante GLOB = 600000;           // + 1… : les tailles des réserves ; + 20 : le plus haut point ; + 30 : le sol du camp ;
+                                   // + 31 : le sol des armées
+constante SOLEILS = 600100;
+constante COMPTE = 600200;
+constante DISTA = 1048576;
+constante DISTB = 2097152;
+constante FIMAGE = 120;            // le cube de l'image (le point i : 0xRRGGBB), où la carte rend
+
+// les matières
+constante ROCHE = 1;
+constante HERBE = 2;
+constante NEIGE = 3;
+constante SABLE = 4;
+constante EAU = 5;
+constante TERRE = 6;
+constante LANDE = 7;
+constante PIERRE = 8;
+constante TUILE = 9;
+constante MARBRE = 10;
+constante ROMAIN = 11;
+constante GAULOIS = 12;
+constante ECU_ROMAIN = 13;
+constante ECU_GAULOIS = 14;
+constante METAL = 15;
+constante BOIS = 16;
+constante PEAU = 17;
+constante CHEVEUX = 18;
+constante BRAIES = 19;
+constante TOILE = 20;
+constante SCORIE = 21;
+
+// les lieux (à l'échelle)
+constante PUY_X = 256 * RN / RD;   // le grand puy, au fond
+constante PUY_Z = 70 * RN / RD;
+constante PUY_R = 125 * RN / RD;
+constante LAC_X = 300 * RN / RD;   // le lac
+constante LAC_Z = 245 * RN / RD;
+constante LAC_RX = 112 * RN / RD;
+constante LAC_RZ = 70 * RN / RD;
+constante CAMP_X0 = 140 * RN / RD; // le camp romain
+constante CAMP_X1 = 200 * RN / RD;
+constante CAMP_Z0 = 310 * RN / RD;
+constante CAMP_Z1 = 350 * RN / RD;
+constante ARM_X0 = 136 * RN / RD;  // la plaine des armées
+constante ARM_X1 = 196 * RN / RD;
+constante ARM_Z0 = 386 * RN / RD;
+constante ARM_Z1 = 434 * RN / RD;
+constante P3 = 16 * RN / RD;
+constante UN = (RN + RD - 1) / RD;
+
+fonction preparer_sinus() {
+    pour a dans 0..1024 {
+        soit u = a & 511;
+        soit v = 4 * u * (512 - u) * 65536 / (327680 - u * (512 - u));
+        si a >= 512 {
+            @2[SINUS + a] = 0 - v;
+        } sinon {
+            @2[SINUS + a] = v;
+        }
+    }
+}
+
+fonction sin1024(a) {
+    retour @2[SINUS + (a & 1023)];
+}
+
+fonction cos1024(a) {
+    retour @2[SINUS + ((a + 256) & 1023)];
+}
+
+// -------------------------------------------------------------------------------------------------- les bruits
+fonction hache(x, z) {
+    soit h = (x & 4095) * 374761393 + (z & 4095) * 668265263 + 1013904223;
+    h = (h ^ (h >> 13)) * 1274126177;
+    retour (h ^ (h >> 16)) & 65535;
+}
+
+fonction hache3(x, y, z) {
+    soit h = (x & 1023) * 374761393 + (y & 1023) * 668265263 + (z & 1023) * 2246822519 + 1013904223;
+    h = (h ^ (h >> 13)) * 1274126177;
+    retour (h ^ (h >> 16)) & 65535;
+}
+
+// le bruit lisse du plan, à la période p (une puissance de deux), sur le monde qui se répète
+fonction bruit_lisse(x, z, p) {
+    soit x0 = x / p;
+    soit z0 = z / p;
+    soit fx = (x % p) * 256 / p;
+    soit fz = (z % p) * 256 / p;
+    soit sx = fx * fx * (768 - 2 * fx) / 65536;
+    soit sz = fz * fz * (768 - 2 * fz) / 65536;
+    soit n = MONDE / p;
+    soit a = hache(x0 % n, z0 % n);
+    soit b = hache((x0 + 1) % n, z0 % n);
+    soit c = hache(x0 % n, (z0 + 1) % n);
+    soit d = hache((x0 + 1) % n, (z0 + 1) % n);
+    soit h1 = (a * (256 - sx) + b * sx) / 256;
+    soit h2 = (c * (256 - sx) + d * sx) / 256;
+    retour (h1 * (256 - sz) + h2 * sz) / 256;
+}
+
+// le bruit lisse du volume, à la période P3 : les huit coins, mêlés en douceur (de 0 à 65535)
+fonction bruit3(x, y, z) {
+    soit x0 = x / P3;
+    soit y0 = y / P3;
+    soit z0 = z / P3;
+    soit fx = (x % P3) * 256 / P3;
+    soit fy = (y % P3) * 256 / P3;
+    soit fz = (z % P3) * 256 / P3;
+    soit sx = fx * fx * (768 - 2 * fx) / 65536;
+    soit sy = fy * fy * (768 - 2 * fy) / 65536;
+    soit sz = fz * fz * (768 - 2 * fz) / 65536;
+    soit a0 = (hache3(x0, y0, z0) * (256 - sx) + hache3(x0 + 1, y0, z0) * sx) / 256;
+    soit a1 = (hache3(x0, y0 + 1, z0) * (256 - sx) + hache3(x0 + 1, y0 + 1, z0) * sx) / 256;
+    soit a2 = (hache3(x0, y0, z0 + 1) * (256 - sx) + hache3(x0 + 1, y0, z0 + 1) * sx) / 256;
+    soit a3 = (hache3(x0, y0 + 1, z0 + 1) * (256 - sx) + hache3(x0 + 1, y0 + 1, z0 + 1) * sx) / 256;
+    soit b0 = (a0 * (256 - sy) + a1 * sy) / 256;
+    soit b1 = (a2 * (256 - sy) + a3 * sy) / 256;
+    retour (b0 * (256 - sz) + b1 * sz) / 256;
+}
+
+// ------------------------------------------------------------------------------------------------------ le sol
+
+// -------------------------------------------------------------------------------------------------------- le sol
+// un puy (cône de centre cx, cz, de rayon r et de hauteur h, en points ; cratère de rayon rc) : sa hauteur en
+// (x, z), en 1/256 de point
+fonction puy(x, z, cx, cz, r, h, rc) {
+    soit ax = x - cx;
+    soit az = z - cz;
+    soit d = racine_entiere((ax * ax + az * az) * 65536);
+    si d >= r * 256 {
+        retour 0;
+    }
+    // u : de 0 au pied à 65536 au sommet ; le flanc se creuse un peu (u · (u + 1/2) / (3/2))
+    soit u = ((r * 256 - d) * 65536) / (r * 256);
+    soit hp = ((h * 256 * u) >> 16) * (u + 32768) / 98304;
+    si rc > 0 && d < rc * 256 {
+        hp = hp - (rc * 256 - d) * 2;
+    }
+    retour hp;
+}
+
+// la hauteur de chaque colonne du monde (en 1/256 de point) : la plaine qui ondule, les puys, le lac creusé, le sol
+// aplani du camp et de la plaine des armées
+fonction creer_sol() {
+    pour z dans 0..MONDE en bandes {
+        pour x dans 0..MONDE {
+            soit b1 = bruit_lisse(x, z, 128 * RN / RD);
+            soit b2 = bruit_lisse(x, z, 32 * RN / RD);
+            soit hs = 52 * 256 + ((b1 - 32768) * 3) ./ 64 + (b2 - 32768) ./ 128;
+            // la chaîne des puys : le grand (et son cratère), deux petits sur les côtés ; leur pierre est ridée
+            // (les hauteurs en points du monde à l'échelle 1 : tout le sol est mis à l'échelle à la fin)
+            soit p = puy(x, z, PUY_X, PUY_Z, PUY_R, 138, 20 * RN / RD);
+            p = p + puy(x, z, 70 * RN / RD, 120 * RN / RD, 70 * RN / RD, 62, 7 * RN / RD);
+            p = p + puy(x, z, 445 * RN / RD, 105 * RN / RD, 58 * RN / RD, 50, 0);
+            si p > 0 {
+                p = p + ((bruit_lisse(x, z, 16 * RN / RD) - 32768) * (p >> 6)) ./ 32768;
+                si p .< 0 {
+                    p = 0;
+                }
+            }
+            hs = hs + p;
+            // le lac : une cuvette en ellipse (e : 0 au milieu, 65536 au bord de l'ellipse)
+            soit ex = ((x - LAC_X) * 65536) ./ LAC_RX;
+            soit ez = ((z - LAC_Z) * 65536) ./ LAC_RZ;
+            soit e = racine_entiere(ex * ex + ez * ez);
+            // le creux du lac : 22 points au milieu, rien au bord de l'ellipse (fondu : pas de falaise)
+            si e < 65536 {
+                soit f = 65536 - e;
+                hs = hs - (22 * 256 * ((f * (131072 - f)) >> 16)) / 65536;
+            }
+            @2[HCOL + z * MONDE + x] = (hs * RN) / RD;
+        }
+    }
+    // le sol du camp et celui des armées : la hauteur en leur milieu, puis aplanis (fondus sur 8 points autour)
+    @2[GLOB + 30] = @2[HCOL + ((CAMP_Z0 + CAMP_Z1) / 2) * MONDE + (CAMP_X0 + CAMP_X1) / 2];
+    @2[GLOB + 31] = @2[HCOL + ((ARM_Z0 + ARM_Z1) / 2) * MONDE + (ARM_X0 + ARM_X1) / 2];
+    pour z2 dans 0..MONDE en bandes {
+        pour x2 dans 0..MONDE {
+            soit h2 = @2[HCOL + z2 * MONDE + x2];
+            h2 = aplanir(h2, x2, z2, CAMP_X0, CAMP_X1, CAMP_Z0, CAMP_Z1, @2[GLOB + 30]);
+            h2 = aplanir(h2, x2, z2, ARM_X0, ARM_X1, ARM_Z0, ARM_Z1, @2[GLOB + 31]);
+            @2[HCOL + z2 * MONDE + x2] = h2;
+        }
+    }
+    pour z dans 0..MONDE en bandes {
+        pour x dans 0..MONDE {
+            soit hx1 = @2[HCOL + z * MONDE + ((x + 1) & MASQ)];
+            soit hx0 = @2[HCOL + z * MONDE + ((x + MASQ) & MASQ)];
+            soit hz1 = @2[HCOL + ((z + 1) & MASQ) * MONDE + x];
+            soit hz0 = @2[HCOL + ((z + MASQ) & MASQ) * MONDE + x];
+            soit pe = 0;
+            si hx1 > hx0 { pe = pe + hx1 - hx0; } sinon { pe = pe + hx0 - hx1; }
+            si hz1 > hz0 { pe = pe + hz1 - hz0; } sinon { pe = pe + hz0 - hz1; }
+            @2[PENTE + z * MONDE + x] = pe / 2;
+        }
+    }
+    soit haut = 0;
+    pour i dans 0..(MONDE * MONDE) {
+        si @2[HCOL + i] > haut {
+            haut = @2[HCOL + i];
+        }
+    }
+    haut = haut / 256 + 12 * RN / RD;
+    si @2[GLOB + 30] / 256 + 20 > haut {
+        haut = @2[GLOB + 30] / 256 + 20;
+    }
+    @2[GLOB + 20] = haut;
+}
+
+// la hauteur h aplanie à hp dans le rectangle [x0, x1] × [z0, z1], fondue sur 8 points autour
+fonction aplanir(h, x, z, x0, x1, z0, z1, hp) {
+    soit dx = 0;
+    si x < x0 {
+        dx = x0 - x;
+    } sinon si x > x1 {
+        dx = x - x1;
+    }
+    soit dz = 0;
+    si z < z0 {
+        dz = z0 - z;
+    } sinon si z > z1 {
+        dz = z - z1;
+    }
+    soit k = dx;
+    si dz > k {
+        k = dz;
+    }
+    si k >= 8 {
+        retour h;
+    }
+    retour (hp * (8 - k) + h * k) / 8;
+}
+
+// l'ampleur des surplombs à la hauteur y : faible dans la plaine, forte sur les puys (la pierre volcanique)
+fonction ampleur(y) {
+    soit amp = 256 * RN / RD;
+    si y > 110 * RN / RD && y < 4000 {
+        amp = (256 + (y * RD / RN - 110) * 10) * RN / RD;
+        si amp > 900 * RN / RD {
+            amp = 900 * RN / RD;
+        }
+    }
+    retour amp;
+}
+
+// ------------------------------------------------------------------------------------------------- les objets
+// la matière d'un objet au point (x, y, z), 0 s'il n'y en a pas : le camp romain, puis les deux armées
+fonction objet(x, y, z) {
+    si x >= CAMP_X0 && x <= CAMP_X1 && z >= CAMP_Z0 && z <= CAMP_Z1 {
+        retour camp(x - CAMP_X0, y - (@2[GLOB + 30] - 129) / 256 - 1, z - CAMP_Z0);
+    }
+    si x >= ARM_X0 && x <= ARM_X1 && z >= ARM_Z0 && z <= ARM_Z1 {
+        retour armees(x, y - (@2[GLOB + 31] - 129) / 256 - 1, z);
+    }
+    retour 0;
+}
+
+// le camp (lx, lz depuis son coin, ly depuis le sol : 0 est le premier point au-dessus) : murs, tours, porte, temple,
+// tentes. Les dimensions sont en points, à toute échelle (un mannequin reste un mannequin)
+fonction camp(lx, ly, lz) {
+    si ly .< 0 || ly > 14 {
+        retour 0;
+    }
+    soit lxm = CAMP_X1 - CAMP_X0;
+    soit lzm = CAMP_Z1 - CAMP_Z0;
+    // les tours, aux quatre coins (7 × 7, 12 de haut, crénelées)
+    soit coinx = 0;
+    si lx < 7 || lx > lxm - 7 {
+        coinx = 1;
+    }
+    soit coinz = 0;
+    si lz < 7 || lz > lzm - 7 {
+        coinz = 1;
+    }
+    si coinx == 1 && coinz == 1 {
+        si ly <= 11 {
+            retour PIERRE;
+        }
+        si ly == 12 && ((lx + lz) & 2) == 0 {
+            retour PIERRE;
+        }
+        retour 0;
+    }
+    // les murs (3 d'épaisseur, 8 de haut, des créneaux), la porte au milieu du mur de devant (vers +z)
+    soit mur = 0;
+    si lx < 3 || lx > lxm - 3 || lz < 3 || lz > lzm - 3 {
+        mur = 1;
+    }
+    si mur == 1 {
+        soit milieu = lxm / 2;
+        si lz > lzm - 3 && lx + 4 > milieu && lx < milieu + 4 && ly <= 6 {
+            retour 0;
+        }
+        si ly <= 8 {
+            retour PIERRE;
+        }
+        si ly == 9 && ((lx + lz) & 2) == 0 {
+            retour PIERRE;
+        }
+        retour 0;
+    }
+    // le temple : un socle, deux rangs de colonnes, le toit de tuiles en pente
+    soit tx = lx - (lxm / 2 - 10);
+    soit tz = lz - 10;
+    si tx >= 0 && tx <= 20 && tz >= 0 && tz <= 12 {
+        si ly <= 1 {
+            retour PIERRE;
+        }
+        si ly <= 8 && (tz == 1 || tz == 11) && (tx % 3) == 1 {
+            retour MARBRE;
+        }
+        si ly == 9 || ly == 10 {
+            retour TUILE;
+        }
+        si ly == 11 && tz >= 3 && tz <= 9 {
+            retour TUILE;
+        }
+        si ly == 12 && tz >= 5 && tz <= 7 {
+            retour TUILE;
+        }
+        retour 0;
+    }
+    // les tentes : en rangs, sur les côtés (4 × 3, le faîte au milieu)
+    soit cote = 0;
+    si lx >= 4 && lx <= 18 {
+        cote = 4;
+    } sinon si lx + 18 >= lxm && lx + 4 <= lxm {
+        cote = lxm - 18;
+    }
+    si cote > 0 && lz >= 4 && lz <= lzm - 5 {
+        soit ux = (lx - cote) % 6;
+        soit uz = (lz - 4) % 6;
+        si ux <= 3 && uz <= 2 {
+            soit pente = uz;
+            si uz == 2 {
+                pente = 0;
+            }
+            si ly <= 1 + pente {
+                retour TOILE;
+            }
+        }
+    }
+    retour 0;
+}
+
+// les deux armées face à face : les Romains (vers +x) en rangs, les Gaulois (vers -x) moins alignés
+fonction armees(x, ly, z) {
+    si ly .< 0 || ly > 11 {
+        retour 0;
+    }
+    soit pas_x = 5 * RN / RD;
+    soit pas_z = 4 * RN / RD;
+    si pas_x < 2 {
+        pas_x = 2;
+    }
+    si pas_z < 2 {
+        pas_z = 2;
+    }
+    // les Romains : trois rangs, dix files
+    soit rx0 = ARM_X0 + 6 * RN / RD;
+    soit milieu = (ARM_X0 + ARM_X1) / 2;
+    si x < milieu {
+        soit i = (x - rx0 + pas_x * 3 / 2) / pas_x;
+        si i > 2 {
+            i = 2;
+        }
+        soit j = (z - ARM_Z0 - 2 + pas_z / 2) / pas_z;
+        si j > 9 {
+            j = 9;
+        }
+        soit sx = rx0 + i * pas_x;
+        soit sz = ARM_Z0 + 4 + j * pas_z;
+        retour mannequin(x - sx, ly, z - sz, 0);
+    }
+    // les Gaulois : trois rangs, dix files, chacun un peu de travers (± 1 point)
+    soit gx0 = ARM_X1 - 6 * RN / RD;
+    soit i2 = (gx0 - x + pas_x * 3 / 2) / pas_x;
+    si i2 > 2 {
+        i2 = 2;
+    }
+    soit j2 = (z - ARM_Z0 - 2 + pas_z / 2) / pas_z;
+    si j2 > 9 {
+        j2 = 9;
+    }
+    soit dec = (hache(i2 + 17, j2 + 41) % 3) - 1;
+    soit sx2 = gx0 - i2 * pas_x + dec;
+    soit sz2 = ARM_Z0 + 4 + j2 * pas_z;
+    retour mannequin(sx2 - x, ly, z - sz2, 1);
+}
+
+// un mannequin (fx : vers l'avant, depuis son milieu ; ly : depuis le sol ; fz : sur le côté) ; gaulois == 1 : un
+// Gaulois. Les jambes, le torse, la tête (casque ou cheveux), le bouclier devant, la lance à droite
+fonction mannequin(fx, ly, fz, gaulois) {
+    // la lance : un fût de bois, la pointe de fer
+    si fx == 0 && fz == 1 {
+        si ly <= 9 {
+            retour BOIS;
+        }
+        si ly <= 11 {
+            retour METAL;
+        }
+        retour 0;
+    }
+    // le bouclier, devant
+    si fx == 1 && ly >= 1 && ly <= 5 && fz .>= 0 - 2 && fz .<= 1 {
+        si gaulois == 1 {
+            // rond : sans ses coins
+            si (ly == 1 || ly == 5) && (fz == 0 - 2 || fz == 1) {
+                retour 0;
+            }
+            si ly == 3 && (fz == 0 - 1 || fz == 0) {
+                retour METAL;
+            }
+            retour ECU_GAULOIS;
+        }
+        si ly == 3 && (fz == 0 - 1 || fz == 0) {
+            retour METAL;
+        }
+        retour ECU_ROMAIN;
+    }
+    si fz .< 0 - 1 || fz .> 0 {
+        retour 0;
+    }
+    // les jambes
+    si ly <= 2 && fx == 0 {
+        si gaulois == 1 {
+            retour BRAIES;
+        }
+        retour PEAU;
+    }
+    // le torse
+    si ly >= 3 && ly <= 5 && (fx == 0 || fx == 0 - 1) {
+        si gaulois == 1 {
+            retour GAULOIS;
+        }
+        retour ROMAIN;
+    }
+    // la tête : le visage, puis le casque ou les cheveux
+    si ly >= 6 && ly <= 7 && (fx == 0 || fx == 0 - 1) {
+        si ly == 7 {
+            si gaulois == 1 {
+                retour CHEVEUX;
+            }
+            retour METAL;
+        }
+        retour PEAU;
+    }
+    si ly == 8 && gaulois == 0 && fx == 0 - 1 && fz == 0 {
+        // le cimier du casque romain
+        retour ROMAIN;
+    }
+    retour 0;
+}
+
+// la densité d'un point : positive dans la matière (en 1/256 de point) ; le sol et ses surplombs ; un objet est plein
+fonction densite(x, y, z) {
+    si objet(x, y, z) != 0 {
+        retour 256;
+    }
+    soit h = @2[HCOL + (z & MASQ) * MONDE + (x & MASQ)];
+    soit d = h - y * 256 - 128;
+    soit amp = ampleur(y);
+    si d .< amp + 512 && d .> 0 - amp - 512 {
+        d = d + ((bruit3(x, y, z) - 32768) * amp) ./ 32768;
+    }
+    retour d;
+}
+
+// ce qu'est un point du monde : (sa couleur << 32) | son mot d'élément ; 0 : vide (inconnu)
+fonction composer_point(x, y, z) {
+    soit ob = objet(x, y, z);
+    si ob != 0 {
+        retour composer_objet(x, y, z, ob);
+    }
+    soit d0 = densite(x, y, z);
+    si d0 .<= 0 {
+        si y < MER {
+            // l'eau du lac : sa couleur, plus sombre au large
+            soit fond = (MER * 256 - @2[HCOL + (z & MASQ) * MONDE + (x & MASQ)]) ./ (64 * RN / RD);
+            si fond .< 0 {
+                fond = 0;
+            }
+            si fond > 120 {
+                fond = 120;
+            }
+            soit ce = rgb24(34 - fond / 6, 84 - fond / 3, 100 - fond / 5);
+            retour (ce << 32) | (normale_mot(0, 127, 0) << 8) | (EAU << 2) | 2;
+        }
+        retour 0;
+    }
+    soit dxm = densite(x - 1, y, z);
+    soit dxp = densite(x + 1, y, z);
+    soit dym = densite(x, y - 1, z);
+    soit dyp = densite(x, y + 1, z);
+    soit dzm = densite(x, y, z - 1);
+    soit dzp = densite(x, y, z + 1);
+    soit surface = 0;
+    si dxm .<= 0 || dxp .<= 0 || dym .<= 0 || dyp .<= 0 || dzm .<= 0 || dzp .<= 0 {
+        surface = 1;
+    }
+    soit col = (z & MASQ) * MONDE + (x & MASQ);
+    soit hs = @2[HCOL + col] / 256;
+    soit pente = @2[PENTE + col];
+    soit mat = HERBE;
+    si y + 3 * RN / RD < hs {
+        mat = TERRE;
+    }
+    si dyp .> 0 && surface == 1 {
+        mat = ROCHE;
+    } sinon si y <= MER + UN && y + UN >= MER {
+        mat = SABLE;
+    } sinon si y > 168 * RN / RD {
+        mat = SCORIE;
+    } sinon si pente > 420 || y > hs + UN {
+        mat = ROCHE;
+    } sinon si y > 72 * RN / RD {
+        mat = LANDE;
+    }
+    // le sol battu du camp et de la plaine des armées
+    si mat == HERBE && ((x + 6 >= CAMP_X0 && x <= CAMP_X1 + 6 && z + 6 >= CAMP_Z0 && z <= CAMP_Z1 + 6)
+       || (x + 4 >= ARM_X0 && x <= ARM_X1 + 4 && z + 4 >= ARM_Z0 && z <= ARM_Z1 + 4)) {
+        mat = TERRE;
+    }
+    soit r = 78;
+    soit g = 120;
+    soit b = 58;
+    si mat == HERBE {
+        // la plaine en champs : des verts, du blé, des labours
+        soit champ = hache(x / (24 * RN / RD + 1), z / (20 * RN / RD + 1)) & 7;
+        si champ == 1 {
+            r = 98;
+            g = 134;
+            b = 62;
+        } sinon si champ == 2 {
+            r = 66;
+            g = 108;
+            b = 50;
+        } sinon si champ == 3 {
+            r = 176;
+            g = 158;
+            b = 86;
+        } sinon si champ == 4 {
+            r = 122;
+            g = 98;
+            b = 68;
+        } sinon si champ == 5 {
+            r = 112;
+            g = 142;
+            b = 72;
+        }
+    } sinon si mat == ROCHE {
+        // la pierre volcanique, sombre
+        r = 82;
+        g = 76;
+        b = 74;
+    } sinon si mat == SCORIE {
+        r = 116;
+        g = 66;
+        b = 50;
+    } sinon si mat == SABLE {
+        r = 186;
+        g = 172;
+        b = 134;
+    } sinon si mat == TERRE {
+        r = 112;
+        g = 92;
+        b = 68;
+    } sinon si mat == LANDE {
+        r = 110;
+        g = 104;
+        b = 70;
+    }
+    soit tache = (bruit_lisse(x & MASQ, z & MASQ, 32 * RN / RD) / 2048) + ((y * RD / RN) & 3);
+    soit grain = hache3(x, y, z) & 15;
+    r = r + tache + grain;
+    g = g + tache + grain;
+    b = b + tache / 2 + grain;
+    soit c = rgb24(r, g, b);
+    soit nm = 0;
+    si surface == 1 {
+        soit nx = dxm - dxp;
+        soit ny = dym - dyp;
+        soit nz = dzm - dzp;
+        soit lg = racine_entiere(nx * nx + ny * ny + nz * nz);
+        si lg == 0 {
+            nm = normale_mot(0, 127, 0);
+        } sinon {
+            nm = normale_mot((nx * 127) ./ lg, (ny * 127) ./ lg, (nz * 127) ./ lg);
+        }
+    }
+    retour (c << 32) | (nm << 8) | (mat << 2) | 2;
+}
+
+// un point d'objet : sa matière, sa couleur, sa normale (par ses voisins pleins : des faces franches)
+fonction plein(x, y, z) {
+    si densite(x, y, z) .> 0 {
+        retour 1;
+    }
+    retour 0;
+}
+
+fonction composer_objet(x, y, z, ob) {
+    soit nx = plein(x - 1, y, z) - plein(x + 1, y, z);
+    soit ny = plein(x, y - 1, z) - plein(x, y + 1, z);
+    soit nz = plein(x, y, z - 1) - plein(x, y, z + 1);
+    soit surface = 1 - plein(x - 1, y, z) * plein(x + 1, y, z) * plein(x, y - 1, z) * plein(x, y + 1, z)
+                   * plein(x, y, z - 1) * plein(x, y, z + 1);
+    soit r = 150;
+    soit g = 150;
+    soit b = 156;
+    si ob == PIERRE {
+        // la pierre du camp, en assises (les joints plus sombres)
+        r = 194;
+        g = 178;
+        b = 148;
+        si (y % 3) == 0 || ((x + z + (y / 3) * 2) % 6) == 0 {
+            r = 160;
+            g = 146;
+            b = 120;
+        }
+    } sinon si ob == TUILE {
+        r = 168;
+        g = 72;
+        b = 50;
+        si (x & 1) == 0 {
+            r = 150;
+            g = 62;
+            b = 44;
+        }
+    } sinon si ob == MARBRE {
+        r = 228;
+        g = 224;
+        b = 214;
+    } sinon si ob == ROMAIN {
+        r = 170;
+        g = 30;
+        b = 34;
+    } sinon si ob == GAULOIS {
+        // le tartan : deux couleurs en damier
+        r = 40;
+        g = 98;
+        b = 70;
+        si ((x + y + z) & 1) == 1 {
+            r = 64;
+            g = 72;
+            b = 136;
+        }
+    } sinon si ob == ECU_ROMAIN {
+        r = 152;
+        g = 26;
+        b = 28;
+    } sinon si ob == ECU_GAULOIS {
+        r = 50;
+        g = 86;
+        b = 150;
+    } sinon si ob == BOIS {
+        r = 108;
+        g = 76;
+        b = 46;
+    } sinon si ob == PEAU {
+        r = 204;
+        g = 152;
+        b = 118;
+    } sinon si ob == CHEVEUX {
+        r = 198;
+        g = 162;
+        b = 82;
+    } sinon si ob == BRAIES {
+        r = 124;
+        g = 94;
+        b = 62;
+    } sinon si ob == TOILE {
+        r = 216;
+        g = 206;
+        b = 182;
+    }
+    soit grain = hache3(x, y, z) & 7;
+    soit c = rgb24(r + grain, g + grain, b + grain);
+    soit nm = 0;
+    si surface == 1 {
+        si nx == 0 && ny == 0 && nz == 0 {
+            nm = normale_mot(0, 127, 0);
+        } sinon {
+            soit lg = racine_entiere((nx * nx + ny * ny + nz * nz) * 16129);
+            nm = normale_mot((nx * 16129) ./ lg, (ny * 16129) ./ lg, (nz * 16129) ./ lg);
+        }
+    }
+    retour (c << 32) | (nm << 8) | (ob << 2) | 2;
+}
+
+fonction rgb24(r, g, b) {
+    si r .< 0 {
+        r = 0;
+    }
+    si g .< 0 {
+        g = 0;
+    }
+    si b .< 0 {
+        b = 0;
+    }
+    si r > 255 {
+        r = 255;
+    }
+    si g > 255 {
+        g = 255;
+    }
+    si b > 255 {
+        b = 255;
+    }
+    retour (r << 16) | (g << 8) | b;
+}
+
+fonction normale_mot(nx, ny, nz) {
+    retour ((nx + 128) & 255) | (((ny + 128) & 255) << 8) | (((nz + 128) & 255) << 16);
+}
+
+// ---------------------------------------------------------------------------------------- les cubes des tuiles
+// premier passage : chaque bloc de chaque tuile est classé : vide (0), plein d'une même chose (1 << 62 | le mot), ou
+// porteur d'une surface (1 : à remplir) ; le sol de ses colonnes et le bruit du volume suffisent à le dire
+
+// ---------------------------------------------------------------------------------------- les cubes des tuiles
+// premier passage : chaque bloc est classé : vide (0), plein d'une même chose (1 << 62 | le mot), ou porteur d'une
+// surface (1 : à remplir) ; le sol de ses colonnes, le bruit du volume et les boîtes des objets suffisent à le dire
+fonction classer_blocs() {
+    pour q dans 0..(TUILES * TUILES * 1024) en bandes {
+        soit t = q >> 10;
+        soit bx = q & 31;
+        soit bz = (q >> 5) & 31;
+        soit x0 = (t % TUILES) * 256 + bx * 8;
+        soit z0 = (t / TUILES) * 256 + bz * 8;
+        soit hmin = 1000000;
+        soit hmax = 0;
+        pour dz dans 0..10 {
+            pour dx dans 0..10 {
+                soit h = @2[HCOL + ((z0 + dz + MASQ) & MASQ) * MONDE + ((x0 + dx + MASQ) & MASQ)];
+                si h < hmin {
+                    hmin = h;
+                }
+                si h > hmax {
+                    hmax = h;
+                }
+            }
+        }
+        soit base = (FELT + t) << 24;
+        soit tex = (FTEX + t) << 24;
+        // les objets : les blocs de leurs boîtes (et un bloc autour) portent une surface, jusqu'à 16 points du sol
+        soit dans_objet = 0;
+        si x0 + 9 >= CAMP_X0 && x0 <= CAMP_X1 + 1 && z0 + 9 >= CAMP_Z0 && z0 <= CAMP_Z1 + 1 {
+            dans_objet = 1;
+        }
+        si x0 + 9 >= ARM_X0 && x0 <= ARM_X1 + 1 && z0 + 9 >= ARM_Z0 && z0 <= ARM_Z1 + 1 {
+            dans_objet = 1;
+        }
+        pour by dans 0..32 {
+            soit y0 = by * 8;
+            soit amp = ampleur(y0 + 9);
+            soit b = (bx << 10) | (by << 5) | bz;
+            soit e = 1;
+            si dans_objet == 1 && y0 * 256 <= hmax + 16 * 256 && (y0 + 9) * 256 + 640 + amp >= hmin {
+                e = 1;
+            } sinon si y0 * 256 > hmax + amp + 640 {
+                si y0 >= MER {
+                    e = 0;
+                } sinon si y0 + 8 <= MER {
+                    e = 3;
+                }
+            } sinon si (y0 + 9) * 256 + 640 + amp < hmin {
+                e = 2;
+            }
+            si e == 0 {
+                @2[base + b] = VIDE;
+            } sinon si e == 2 {
+                @2[base + b] = (1 << 62) | (TERRE << 2) | 2;
+                @2[tex + b] = rgb24(112, 92, 68);
+            } sinon si e == 3 {
+                soit c = composer_point(x0 + 4, y0 + 4, z0 + 4);
+                @2[base + b] = (1 << 62) | (c & 4294967295);
+                @2[tex + b] = c >> 32;
+            } sinon {
+                @2[base + b] = 1;
+            }
+        }
+    }
+}
+
+// deuxième passage (un seul cœur) : chaque bloc porteur d'une surface reçoit sa place dans la réserve de son cube
+fonction placer_blocs() {
+    pour t dans 0..(TUILES * TUILES) {
+        soit base = (FELT + t) << 24;
+        soit n = 0;
+        pour b dans 0..32768 {
+            si @2[base + b] == 1 {
+                @2[base + b] = 16 + n;
+                n = n + 1;
+            }
+        }
+        @2[GLOB + 1 + t] = n;
+    }
+}
+
+// troisième passage : les 512 points de chaque bloc porteur, dans les deux cubes (chaque bloc écrit sa seule place)
+fonction remplir_blocs() {
+    pour q dans 0..(TUILES * TUILES * 1024) en bandes {
+        soit t = q >> 10;
+        soit bx = q & 31;
+        soit bz = (q >> 5) & 31;
+        soit x0 = (t % TUILES) * 256 + bx * 8;
+        soit z0 = (t / TUILES) * 256 + bz * 8;
+        soit base = (FELT + t) << 24;
+        soit tex = (FTEX + t) << 24;
+        pour by dans 0..32 {
+            soit e = @2[base + ((bx << 10) | (by << 5) | bz)];
+            si e >= 16 && e < (1 << 62) {
+                soit place = REP + (e - 16) * 512;
+                pour v dans 0..512 {
+                    soit c = composer_point(x0 + (v >> 6), by * 8 + ((v >> 3) & 7), z0 + (v & 7));
+                    @2[base + place + v] = c & 4294967295;
+                    @2[tex + place + v] = c >> 32;
+                }
+            }
+        }
+    }
+}
+
+// 0.809 : les blocs vides savent à quelle distance est la matière : la distance (en blocs, au plus LOIN) au plus proche
+// bloc qui n'est pas vide, dans les 26 directions (le cube de blocs autour) ; calculée sur tout le monde (les tuiles
+// voisines comptent : un rayon passe d'un cube à l'autre) ; chaque tour l'étend d'un bloc (deux tableaux, l'un lu,
+// l'autre écrit : les tours vont en bandes)
+fonction case_bloc(gx, gy, gz) {
+    retour (gy * NB + gz) * NB + gx;
+}
+
+fonction mot_bloc(gx, gy, gz) {
+    soit t = (gz >> 5) * TUILES + (gx >> 5);
+    retour @2[((FELT + t) << 24) + ((gx & 31) << 10) + (gy << 5) + (gz & 31)];
+}
+
+fonction distancer_blocs() {
+    pour q dans 0..(NB * 32) en bandes {
+        soit gy = q / NB;
+        soit gz = q % NB;
+        pour gx dans 0..NB {
+            soit d = 0;
+            si (mot_bloc(gx, gy, gz) >> 62) == 2 {
+                d = LOIN;
+            }
+            @2[DISTA + case_bloc(gx, gy, gz)] = d;
+        }
+    }
+    pour tour dans 0..(LOIN - 1) {
+        soit de = DISTA;
+        soit vers = DISTB;
+        si (tour & 1) == 1 {
+            de = DISTB;
+            vers = DISTA;
+        }
+        pour q2 dans 0..(NB * 32) en bandes {
+            soit gy2 = q2 / NB;
+            soit gz2 = q2 % NB;
+            pour gx2 dans 0..NB {
+                soit d2 = @2[de + case_bloc(gx2, gy2, gz2)];
+                si d2 > 1 {
+                    pour k dans 0..27 {
+                        soit nx = gx2 + (k % 3) - 1;
+                        soit ny = gy2 + ((k / 3) % 3) - 1;
+                        soit nz = gz2 + (k / 9) - 1;
+                        si nx < NB && ny < 32 && nz < NB {
+                            soit v = @2[de + case_bloc(nx, ny, nz)] + 1;
+                            si v < d2 {
+                                d2 = v;
+                            }
+                        }
+                    }
+                }
+                @2[vers + case_bloc(gx2, gy2, gz2)] = d2;
+            }
+        }
+    }
+    // le dernier tableau écrit : DISTB si LOIN - 1 est impair
+    soit fin = DISTA;
+    si ((LOIN - 1) & 1) == 1 {
+        fin = DISTB;
+    }
+    pour q3 dans 0..(NB * 32) en bandes {
+        soit gy3 = q3 / NB;
+        soit gz3 = q3 % NB;
+        pour gx3 dans 0..NB {
+            soit t3 = (gz3 >> 5) * TUILES + (gx3 >> 5);
+            soit a3 = ((FELT + t3) << 24) + ((gx3 & 31) << 10) + (gy3 << 5) + (gz3 & 31);
+            si (@2[a3] >> 62) == 2 {
+                @2[a3] = VIDE | @2[fin + case_bloc(gx3, gy3, gz3)];
+            }
+        }
+    }
+}
+
+
+fonction creer_monde() {
+    preparer_sinus();
+    creer_sol();
+    classer_blocs();
+    placer_blocs();
+    remplir_blocs();
+    distancer_blocs();
+    creuser_blocs();
+}
+
+
+// 0.818 : les blocs creusés. Un rayon passait les trois quarts de ses pas point par point dans les blocs porteurs d'une
+// surface (38 pas sur 49 en moyenne : un bloc qui porte un peu de terrain est surtout du vide au-dessus) ; chaque bloc
+// porteur garde la carte de ses sous-blocs vides (de 4³ et de 2³), et le rayon les traverse d'un seul pas (38 → 11)
+fonction creuser_blocs() {
+    pour t dans 0..(TUILES * TUILES) {
+        soit n = @2[GLOB + 1 + t];
+        soit base = (FELT + t) << 24;
+        pour b dans 0..n en bandes {
+            soit m = 0;
+            pour v dans 0..512 {
+                si @2[base + REP + b * 512 + v] != 0 {
+                    soit lx = v >> 6;
+                    soit ly = (v >> 3) & 7;
+                    soit lz = v & 7;
+                    soit s4 = ((lx >> 2) << 2) | ((ly >> 2) << 1) | (lz >> 2);
+                    soit s2 = (((lx >> 1) & 1) << 2) | (((ly >> 1) & 1) << 1) | ((lz >> 1) & 1);
+                    m = m | (1 << (s4 * 8 + s2));
+                }
+            }
+            @2[((FCREUX + t) << 24) + b] = m;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------- lire le monde
+// le mot d'élément d'un point (x, y, z dans le monde) : 0 si vide ou hors du monde
+fonction element(x, y, z) {
+    si x >= MONDE || z >= MONDE || y >= 256 {
+        retour 0;
+    }
+    soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
+    soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    si (e >> 62) == 2 {
+        retour 0;
+    }
+    si (e >> 62) == 1 {
+        retour e & 4294967295;
+    }
+    retour @2[base + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+}
+
+// la couleur d'un point (du cube de texture)
+fonction couleur(x, y, z) {
+    soit t = (z >> 8) * TUILES + (x >> 8);
+    soit b = (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31);
+    soit e = @2[((FELT + t) << 24) + b];
+    si (e >> 62) == 1 {
+        retour @2[((FTEX + t) << 24) + b];
+    }
+    retour @2[((FTEX + t) << 24) + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+}
+
+// la marche d'un rayon : de (ox, oy, oz) dans la direction (dx, dy, dz) (en 1/65536, de longueur 65536), jusqu'à la
+// distance tmax ; rend la distance du premier point touché (en 1/65536), ou MANQUE. Un bloc vide se saute d'un coup ;
+// dans un bloc porteur, point par point. eau == 0 : l'eau ne compte pas (les rayons d'ombre et de ciel la traversent)
+fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
+    soit t = 0;
+    // 0.809 : au-dessus du plus haut point du monde, un rayon qui monte ne touchera plus rien
+    soit plafond = @2[GLOB + 20] << 16;
+    // 0.811 : le rayon apprend sa pente une fois : l'inverse de chaque direction (2^40 / |d|) ; chaque pas multiplie au
+    // lieu de diviser (trois divisions de moins par pas : la division est l'opération la plus lente du processeur)
+    soit ix = 0;
+    soit iy = 0;
+    soit iz = 0;
+    si dx .> 0 {
+        ix = 1099511627776 / dx;
+    } sinon si dx .< 0 {
+        ix = 1099511627776 / (0 - dx);
+    }
+    si dy .> 0 {
+        iy = 1099511627776 / dy;
+    } sinon si dy .< 0 {
+        iy = 1099511627776 / (0 - dy);
+    }
+    si dz .> 0 {
+        iz = 1099511627776 / dz;
+    } sinon si dz .< 0 {
+        iz = 1099511627776 / (0 - dz);
+    }
+    tantque t < tmax {
+        soit px = ox + ((dx * t) .>> 16);
+        soit py = oy + ((dy * t) .>> 16);
+        soit pz = oz + ((dz * t) .>> 16);
+        si py .>= plafond && dy .>= 0 {
+            retour MANQUE;
+        }
+        si py .< 0 || px .< 0 || pz .< 0 || px .>= MONDE * 65536 || pz .>= MONDE * 65536 || py .>= 256 * 65536 {
+            retour MANQUE;
+        }
+        soit x = px >> 16;
+        soit y = py >> 16;
+        soit z = pz >> 16;
+        soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
+        soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+        soit s = 8;
+        // la boîte à quitter : le point (s = 1), son bloc, ou (un bloc vide qui sait sa distance d) les d - 1 blocs
+        // autour, tous vides : de (bloc - (d - 1)) · 8 à (bloc + d) · 8 sur chaque axe
+        soit av = 1;
+        si (e >> 62) == 2 {
+            av = e & 255;
+        } sinon {
+            si (e >> 62) == 1 {
+                si eau == 1 || ((e >> 2) & 63) != EAU {
+                    retour t;
+                }
+            } sinon {
+                soit v = @2[base + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+                si v != 0 && (eau == 1 || ((v >> 2) & 63) != EAU) {
+                    retour t;
+                }
+                s = 1;
+                // 0.818 : un point vide : son sous-bloc de 4³, ou de 2³, est-il tout vide ? (les blocs creusés)
+                si v == 0 {
+                    soit cm = @2[((FCREUX + (z >> 8) * TUILES + (x >> 8)) << 24) + e - 16];
+                    soit cx4 = (((x >> 2) & 1) << 2) | (((y >> 2) & 1) << 1) | ((z >> 2) & 1);
+                    si ((cm >> (cx4 * 8)) & 255) == 0 {
+                        s = 4;
+                    } sinon {
+                        soit cx2 = (((x >> 1) & 1) << 2) | (((y >> 1) & 1) << 1) | ((z >> 1) & 1);
+                        si ((cm >> (cx4 * 8 + cx2)) & 1) == 0 {
+                            s = 2;
+                        }
+                    }
+                }
+            }
+        }
+        soit arr = 0;
+        si s == 8 {
+            arr = (av - 1) * 8;
+        }
+        // la sortie de la cellule (le bloc, ou le point) : la plus proche des trois faces vers où va le rayon
+        soit pas = MANQUE;
+        si dx .> 0 {
+            soit ex1 = (((((x | (s - 1)) + 1 + arr) << 16) - px) * ix) >> 24;
+            si ex1 < pas {
+                pas = ex1;
+            }
+        } sinon si dx .< 0 {
+            soit ex2 = (((px - (((x & (0 - s)) - arr) << 16)) + 1) * ix) >> 24;
+            si ex2 < pas {
+                pas = ex2;
+            }
+        }
+        si dy .> 0 {
+            soit ey1 = (((((y | (s - 1)) + 1 + arr) << 16) - py) * iy) >> 24;
+            si ey1 < pas {
+                pas = ey1;
+            }
+        } sinon si dy .< 0 {
+            soit ey2 = (((py - (((y & (0 - s)) - arr) << 16)) + 1) * iy) >> 24;
+            si ey2 < pas {
+                pas = ey2;
+            }
+        }
+        si dz .> 0 {
+            soit ez1 = (((((z | (s - 1)) + 1 + arr) << 16) - pz) * iz) >> 24;
+            si ez1 < pas {
+                pas = ez1;
+            }
+        } sinon si dz .< 0 {
+            soit ez2 = (((pz - (((z & (0 - s)) - arr) << 16)) + 1) * iz) >> 24;
+            si ez2 < pas {
+                pas = ez2;
+            }
+        }
+        t = t + pas + 1;
+    }
+    retour MANQUE;
+}
+
+// ---------------------------------------------------------------------------------------------------- la lumière
+// le soleil (az, el sur 1024) et les quatre directions de la clepsydre : vers les quatre bords du disque du soleil (un
+// disque élargi, à 2 degrés : la pénombre se voit)
+fonction preparer_soleil(az, el, jeu) {
+    soit so = SOLEILS + 16 * jeu;
+    soit lx = (cos1024(el) * sin1024(az)) ./ 65536;
+    soit ly = sin1024(el);
+    soit lz = (cos1024(el) * cos1024(az)) ./ 65536;
+    @2[so + 12] = lx;
+    @2[so + 13] = ly;
+    @2[so + 14] = lz;
+    // deux directions perpendiculaires : u (horizontale), v = u × l
+    soit ul = racine_entiere(lx * lx + lz * lz);
+    soit ux = (lz * 65536) ./ ul;
+    soit uz = (0 - lx) * 65536 ./ ul;
+    soit vx = (0 - uz * ly) ./ 65536;
+    soit vy = (uz * lx - ux * lz) ./ 65536;
+    soit vz = (ux * ly) ./ 65536;
+    pour k dans 0..4 {
+        soit ex = 0;
+        soit ey = 0;
+        soit ez = 0;
+        si k == 0 {
+            ex = ux;
+            ez = uz;
+        } sinon si k == 1 {
+            ex = 0 - ux;
+            ez = 0 - uz;
+        } sinon si k == 2 {
+            ex = vx;
+            ey = vy;
+            ez = vz;
+        } sinon {
+            ex = 0 - vx;
+            ey = 0 - vy;
+            ez = 0 - vz;
+        }
+        soit sx = lx + (ex * 2300) ./ 65536;
+        soit sy = ly + (ey * 2300) ./ 65536;
+        soit sz = lz + (ez * 2300) ./ 65536;
+        soit lg = racine_entiere(sx * sx + sy * sy + sz * sz);
+        @2[so + 3 * k] = (sx * 65536) ./ lg;
+        @2[so + 3 * k + 1] = (sy * 65536) ./ lg;
+        @2[so + 3 * k + 2] = (sz * 65536) ./ lg;
+    }
+}
+
+// le ciel dans la direction d : du bleu en haut au clair de l'horizon, le disque du soleil et sa lueur
+fonction ciel(dx, dy, dz, jeu) {
+    soit hy = dy;
+    si hy .< 0 {
+        hy = 0;
+    }
+    soit t = hy * 256 / 65536;
+    soit r = (200 * (256 - t) + 92 * t) / 256;
+    soit g = (214 * (256 - t) + 128 * t) / 256;
+    soit b = (230 * (256 - t) + 184 * t) / 256;
+    soit so = SOLEILS + 16 * jeu;
+    soit cs = (dx * @2[so + 12] + dy * @2[so + 13] + dz * @2[so + 14]) ./ 65536;
+    si cs .> 65500 {
+        retour rgb24(255, 248, 228);
+    }
+    si cs .> 60000 {
+        soit lueur = (cs - 60000) * 90 / 5500;
+        r = r + lueur;
+        g = g + lueur * 3 / 4;
+        b = b + lueur / 3;
+    }
+    retour rgb24(r, g, b);
+}
+
+// ---------------------------------------------------------------------------------------- les calques de lumière
+// 0.810 : la lumière d'un point de surface se calcule depuis son centre (pas depuis l'endroit où le rayon de l'œil l'a
+// touché) : elle ne dépend plus de l'œil, elle se range dans le cube. Le ciel ne dépend ni de l'œil ni du soleil : il se
+// range une fois ; la clepsydre dépend du soleil : elle se refait quand il bouge, et l'œil qui vole n'en paie rien.
+
+// le départ des rayons d'un point de surface : son centre, poussé le long de la normale (d'une demi-maille et 1,16 :
+// comme depuis sa face, en 0.809) ; si ce départ tombe dans la matière (une arête, une marche : la normale penche vers
+// un voisin plein), le centre du voisin vide le mieux tourné vers la normale. Rend 6 (le départ le long de la normale)
+// ou le voisin choisi : 0 +x, 1 -x, 2 +y, 3 -y, 4 +z, 5 -z
+fonction depart(x, y, z, nx, ny, nz) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    si element(sx >> 16, sy >> 16, sz >> 16) != 0 {
+        soit meilleur = 6;
+        soit note = 0 - 1000;
+        pour k dans 0..6 {
+            soit vx = x;
+            soit vy = y;
+            soit vz = z;
+            soit nk = nx;
+            si k == 0 {
+                vx = x + 1;
+            } sinon si k == 1 {
+                vx = x - 1;
+                nk = 0 - nx;
+            } sinon si k == 2 {
+                vy = y + 1;
+                nk = ny;
+            } sinon si k == 3 {
+                vy = y - 1;
+                nk = 0 - ny;
+            } sinon si k == 4 {
+                vz = z + 1;
+                nk = nz;
+            } sinon {
+                vz = z - 1;
+                nk = 0 - nz;
+            }
+            si element(vx, vy, vz) == 0 && nk .> note {
+                note = nk;
+                meilleur = k;
+            }
+        }
+        retour meilleur;
+    }
+    retour 6;
+}
+
+// la clepsydre d'un point : combien des quatre rayons vers les bords du soleil passent (0 si la pente lui tourne le dos)
+fonction soleil_depuis(sx, sy, sz, nx, ny, nz, jeu) {
+    soit so = SOLEILS + 16 * jeu;
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
+    si nl .<= 0 {
+        retour 0;
+    }
+    soit vus = 0;
+    pour k dans 0..4 {
+        si tracer(sx, sy, sz, @2[so + 3 * k], @2[so + 3 * k + 1], @2[so + 3 * k + 2], 700 * 65536 * RN / RD, 0)
+           == MANQUE {
+            vus = vus + 1;
+        }
+    }
+    retour vus;
+}
+
+// le ciel vu d'un point : quatre rayons courts autour de la normale (la normale penchée vers deux directions
+// perpendiculaires, dans les deux sens) ; combien passent
+fonction ciel_depuis(sx, sy, sz, nx, ny, nz) {
+    soit n16x = nx * 516;
+    soit n16y = ny * 516;
+    soit n16z = nz * 516;
+    // t1 : perpendiculaire à la normale (sa composante la plus faible mise à part)
+    soit t1x = 0;
+    soit t1y = 0;
+    soit t1z = 0;
+    soit ay_ = ny;
+    si ay_ .< 0 {
+        ay_ = 0 - ay_;
+    }
+    si ay_ .< 90 {
+        // une paroi : t1 = n × (0, 1, 0)
+        t1x = 0 - n16z;
+        t1z = n16x;
+    } sinon {
+        // un replat : t1 = n × (1, 0, 0)
+        t1y = n16z;
+        t1z = 0 - n16y;
+    }
+    soit l1 = racine_entiere(t1x * t1x + t1y * t1y + t1z * t1z);
+    si l1 == 0 {
+        l1 = 1;
+    }
+    t1x = (t1x * 65536) ./ l1;
+    t1y = (t1y * 65536) ./ l1;
+    t1z = (t1z * 65536) ./ l1;
+    soit t2x = (n16y * t1z - n16z * t1y) ./ 65536;
+    soit t2y = (n16z * t1x - n16x * t1z) ./ 65536;
+    soit t2z = (n16x * t1y - n16y * t1x) ./ 65536;
+    soit ouverts = 0;
+    pour k dans 0..4 {
+        soit ex = t1x;
+        soit ey = t1y;
+        soit ez = t1z;
+        si k == 1 {
+            ex = 0 - t1x;
+            ey = 0 - t1y;
+            ez = 0 - t1z;
+        } sinon si k == 2 {
+            ex = t2x;
+            ey = t2y;
+            ez = t2z;
+        } sinon si k == 3 {
+            ex = 0 - t2x;
+            ey = 0 - t2y;
+            ez = 0 - t2z;
+        }
+        soit cx = (n16x * 3 + ex * 4) ./ 5;
+        soit cy = (n16y * 3 + ey * 4) ./ 5;
+        soit cz = (n16z * 3 + ez * 4) ./ 5;
+        si tracer(sx, sy, sz, cx, cy, cz, 14 * 65536 * RN / RD, 0) == MANQUE {
+            ouverts = ouverts + 1;
+        }
+    }
+    retour ouverts;
+}
+
+// la clepsydre et le ciel d'un point de surface, depuis son centre (ou son voisin vide) : ce qui se range
+fonction soleil_vu(x, y, z, nx, ny, nz, jeu) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    soit dp = depart(x, y, z, nx, ny, nz);
+    si dp < 6 {
+        sx = (x << 16) + 32768;
+        sy = (y << 16) + 32768;
+        sz = (z << 16) + 32768;
+        si dp == 0 {
+            sx = sx + 65536;
+        } sinon si dp == 1 {
+            sx = sx - 65536;
+        } sinon si dp == 2 {
+            sy = sy + 65536;
+        } sinon si dp == 3 {
+            sy = sy - 65536;
+        } sinon si dp == 4 {
+            sz = sz + 65536;
+        } sinon {
+            sz = sz - 65536;
+        }
+    }
+    retour soleil_depuis(sx, sy, sz, nx, ny, nz, jeu);
+}
+
+fonction ciel_ouvert(x, y, z, nx, ny, nz) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    soit dp = depart(x, y, z, nx, ny, nz);
+    si dp < 6 {
+        sx = (x << 16) + 32768;
+        sy = (y << 16) + 32768;
+        sz = (z << 16) + 32768;
+        si dp == 0 {
+            sx = sx + 65536;
+        } sinon si dp == 1 {
+            sx = sx - 65536;
+        } sinon si dp == 2 {
+            sy = sy + 65536;
+        } sinon si dp == 3 {
+            sy = sy - 65536;
+        } sinon si dp == 4 {
+            sz = sz + 65536;
+        } sinon {
+            sz = sz - 65536;
+        }
+    }
+    retour ciel_depuis(sx, sy, sz, nx, ny, nz);
+}
+
+// la normale d'un mot d'élément, en trois nombres signés (rangés en un : x | y << 16 | z << 32, chacun + 128)
+fonction normale_de(e) {
+    soit nx = ((e >> 8) & 255);
+    si nx == 0 {
+        retour 128 | (255 << 16) | (128 << 32);
+    }
+    retour nx | (((e >> 16) & 255) << 16) | (((e >> 24) & 255) << 32);
+}
+
+// un point de surface : de la matière (pas de l'eau) avec, à côté, un point vide (par où un rayon peut l'atteindre)
+fonction expose(x, y, z) {
+    si element(x + 1, y, z) == 0 || element(x - 1, y, z) == 0 || element(x, y + 1, z) == 0 {
+        retour 1;
+    }
+    si element(x, y - 1, z) == 0 || element(x, y, z + 1) == 0 || element(x, y, z - 1) == 0 {
+        retour 1;
+    }
+    retour 0;
+}
+
+// ranger les calques : pour chaque point de surface de chaque bloc porteur, sa clepsydre (et, avec_ciel == 1, son ciel) ;
+// un octet par point (128 | la valeur : 128 dit « rangé »), huit points par mot, à la place du bloc dans la réserve ;
+// chaque colonne de blocs écrit ses seules places (en bandes)
+fonction ranger_lumiere(avec_ciel, jeu) {
+    pour q dans 0..(TUILES * TUILES * 1024) en bandes {
+        ranger_colonne(q, avec_ciel, jeu);
+    }
+}
+
+// une colonne de blocs (q : la tuile et la place du bloc dans la tuile) : ses calques ; elle n'écrit que ses places
+fonction ranger_colonne(q, avec_ciel, jeu) {
+    soit t = q >> 10;
+    soit bx = q & 31;
+    soit bz = (q >> 5) & 31;
+    soit x0 = (t % TUILES) * 256 + bx * 8;
+    soit z0 = (t / TUILES) * 256 + bz * 8;
+    soit base = (FELT + t) << 24;
+    pour by dans 0..32 {
+        soit e = @2[base + ((bx << 10) | (by << 5) | bz)];
+        si e >= 16 && e < (1 << 62) {
+            soit n = e - 16;
+            pour w dans 0..64 {
+                soit ms = 0;
+                soit mc = 0;
+                pour j dans 0..8 {
+                    soit v = w * 8 + j;
+                    soit x = x0 + (v >> 6);
+                    soit y = by * 8 + ((v >> 3) & 7);
+                    soit z = z0 + (v & 7);
+                    soit el = @2[base + REP + n * 512 + v];
+                    si el != 0 && ((el >> 2) & 63) != EAU {
+                        si expose(x, y, z) == 1 {
+                            soit nn = normale_de(el);
+                            soit nx = (nn & 255) - 128;
+                            soit ny = ((nn >> 16) & 255) - 128;
+                            soit nz = ((nn >> 32) & 255) - 128;
+                            ms = ms | ((128 | soleil_vu(x, y, z, nx, ny, nz, jeu)) << (j * 8));
+                            si avec_ciel == 1 {
+                                mc = mc | ((128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8));
+                            }
+                        }
+                    }
+                }
+                @2[((FSOL + 16 * jeu + t) << 24) + n * 64 + w] = ms;
+                si avec_ciel == 1 {
+                    @2[((FCIEL + t) << 24) + n * 64 + w] = mc;
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------- les étages d'un rayon
+// 0.812 : la couleur vue par un rayon se fait en étages (ceux du tapis) : l'image (le point touché : tracer), l'ombre
+// (ce que le point reçoit), la lumière (la couleur d'un point de terre), Divona (l'eau), la brume. regarder les enchaîne
+// d'un coup ; le tapis les joue chacun à son tour, pour cinq images à la fois. Les mêmes calculs : la même image.
+
+// l'étage de l'ombre : 0 pour le ciel ; sinon 1 | eau << 1 | état << 2 | vus << 4 | ouverts << 8 (vus : la clepsydre ;
+// ouverts : le ciel vu ; l'état : 1 faux, 2 vrai, 3 variable)
+fonction ombrer(ox, oy, oz, dx, dy, dz, t, jeu) {
+    si t == MANQUE {
+        retour 0;
+    }
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit e = element(x, y, z);
+    si ((e >> 2) & 63) == EAU {
+        retour 3;
+    }
+    soit nx = ((e >> 8) & 255) - 128;
+    soit ny = ((e >> 16) & 255) - 128;
+    soit nz = ((e >> 24) & 255) - 128;
+    si nx == 0 - 128 {
+        nx = 0;
+        ny = 127;
+        nz = 0;
+    }
+    soit so = SOLEILS + 16 * jeu;
+    // la pente face au soleil
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
+    // 0.810 : la clepsydre et le ciel du point se lisent dans ses calques (rangés) ; un point qui n'y est pas (un
+    // point intérieur, touché par un rayon passé entre deux points par leur arête) se calcule sur place, depuis
+    // l'endroit touché (comme en 0.809 : son centre est dans la matière)
+    soit vus = 0;
+    soit ouverts = 0;
+    soit connu = 0;
+    soit tt = (z >> 8) * TUILES + (x >> 8);
+    soit e0 = @2[((FELT + tt) << 24) + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    si e0 >= 16 && e0 < (1 << 62) {
+        soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
+        soit dec = (iv & 7) * 8;
+        soit sb = (@2[((FSOL + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+        si sb >= 128 {
+            connu = 1;
+            vus = sb & 15;
+            ouverts = (@2[((FCIEL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 15;
+        }
+    }
+    si connu == 0 {
+        vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz, jeu);
+        ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
+    }
+    soit etat = 1;
+    si nl .> 0 {
+        si vus == 4 {
+            etat = 2;
+        } sinon si vus > 0 {
+            etat = 3;
+        }
+    }
+    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8);
+}
+
+// l'étage de la lumière : la couleur d'un point de terre (om : ce que l'ombre a rendu), avant la brume ; ses trois voies
+// sur 12 bits (r | g << 12 | b << 24 : elles peuvent dépasser 255 avant la brume)
+fonction eclairer(ox, oy, oz, dx, dy, dz, t, om, jeu) {
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit e = element(x, y, z);
+    soit alb = couleur(x, y, z);
+    soit nx = ((e >> 8) & 255) - 128;
+    soit ny = ((e >> 16) & 255) - 128;
+    soit nz = ((e >> 24) & 255) - 128;
+    si nx == 0 - 128 {
+        nx = 0;
+        ny = 127;
+        nz = 0;
+    }
+    soit so = SOLEILS + 16 * jeu;
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
+    si nl .<= 0 {
+        nl = 0;
+    }
+    soit vus = (om >> 4) & 15;
+    soit ouverts = (om >> 8) & 15;
+    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
+    soit ciel_part = 40 + ouverts * 30;
+    soit soleil = nl * vus / 4 * 256 / 65536;
+    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
+    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
+    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
+    soit r = ((alb >> 16) & 255) * lr / 200;
+    soit g = ((alb >> 8) & 255) * lg2 / 200;
+    soit b = (alb & 255) * lb / 200;
+    retour r | (g << 12) | (b << 24);
+}
+
+// 0.813 : l'ombre et la lumière d'un même étage (l'idée du créateur) : le point, son élément, sa normale et sa pente
+// face au soleil calculés une seule fois. Rend comme ombrer, et pour un point de terre sa couleur avant la brume au-dessus
+// (om | couleur << 16) : le même résultat que ombrer puis eclairer
+fonction clarte(ox, oy, oz, dx, dy, dz, t, jeu) {
+    si t == MANQUE {
+        retour 0;
+    }
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit e = element(x, y, z);
+    si ((e >> 2) & 63) == EAU {
+        retour 3;
+    }
+    soit nx = ((e >> 8) & 255) - 128;
+    soit ny = ((e >> 16) & 255) - 128;
+    soit nz = ((e >> 24) & 255) - 128;
+    si nx == 0 - 128 {
+        nx = 0;
+        ny = 127;
+        nz = 0;
+    }
+    soit so = SOLEILS + 16 * jeu;
+    soit nl = (nx * @2[so + 12] + ny * @2[so + 13] + nz * @2[so + 14]) ./ 127;
+    // l'ombre : la clepsydre et le ciel, lus dans les calques (ou calculés sur place pour un point intérieur)
+    soit vus = 0;
+    soit ouverts = 0;
+    soit connu = 0;
+    soit tt = (z >> 8) * TUILES + (x >> 8);
+    soit e0 = @2[((FELT + tt) << 24) + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    si e0 >= 16 && e0 < (1 << 62) {
+        soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
+        soit dec = (iv & 7) * 8;
+        soit sb = (@2[((FSOL + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+        si sb >= 128 {
+            connu = 1;
+            vus = sb & 15;
+            ouverts = (@2[((FCIEL + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 15;
+        }
+    }
+    si connu == 0 {
+        vus = soleil_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz, jeu);
+        ouverts = ciel_depuis(px + nx * 600, py + ny * 600, pz + nz * 600, nx, ny, nz);
+    }
+    soit etat = 1;
+    si nl .> 0 {
+        si vus == 4 {
+            etat = 2;
+        } sinon si vus > 0 {
+            etat = 3;
+        }
+    } sinon {
+        nl = 0;
+    }
+    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
+    soit alb = couleur(x, y, z);
+    soit ciel_part = 40 + ouverts * 30;
+    soit soleil = nl * vus / 4 * 256 / 65536;
+    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
+    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
+    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
+    soit r = ((alb >> 16) & 255) * lr / 200;
+    soit g = ((alb >> 8) & 255) * lg2 / 200;
+    soit b = (alb & 255) * lb / 200;
+    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8) | ((r | (g << 12) | (b << 24)) << 16);
+}
+
+
+// la brume : la distance mêle au ciel de l'horizon (c : trois voies sur 12 bits) ; rend 0xRRGGBB
+fonction brumer(c, t) {
+    soit r = c & 4095;
+    soit g = (c >> 12) & 4095;
+    soit b = (c >> 24) & 4095;
+    soit d = (t >> 16) * RD / RN;
+    soit brume = d * d / 1600;
+    si brume > 220 {
+        brume = 220;
+    }
+    r = (r * (256 - brume) + 200 * brume) / 256;
+    g = (g * (256 - brume) + 214 * brume) / 256;
+    b = (b * (256 - brume) + 230 * brume) / 256;
+    retour rgb24(r, g, b);
+}
+
+// la couleur vue par un rayon, tous les étages d'un coup ; l'eau renvoie le monde (profondeur : combien de renvois
+// restent permis). Rend (l'état de la lumière << 24) | 0xRRGGBB ; l'état : 0 inconnu (le ciel), 1 faux (l'ombre), 2
+// vrai (le soleil en plein), 3 variable (la pénombre)
+
+// ---------------------------------------------------------------------------------------------------- le regard
+// 0.822 : le regard sans appel de soi-même (la carte n'a pas de pile) et sans divisions répétées : l'œil (regarder_1),
+// puis le renvoi du lac (regarder_0, qui ne renvoie que le ciel). Une direction se norme par un seul inverse :
+// inv = 2^48 / longueur, puis chaque composante × inv >> 32 (une division au lieu de trois). Le processeur et la carte
+// jouent ces mêmes fonctions : la même image.
+fonction inverse_longueur(x, y, z) {
+    retour 281474976710656 / racine_entiere(x * x + y * y + z * z);
+}
+
+fonction divona_0(ox, oy, oz, dx, dy, dz, t, temps) {
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit alb = couleur(x, y, z);
+    soit rx = dx + ((bruit_lisse((x + temps) & MASQ, z & MASQ, 16) - 32768) ./ 24);
+    soit rz = dz + ((bruit_lisse(x & MASQ, (z + temps * 2) & MASQ, 16) - 32768) ./ 24);
+    soit ry = 0 - dy;
+    soit inv = inverse_longueur(rx, ry, rz);
+    rx = (rx * inv) .>> 32;
+    ry = (ry * inv) .>> 32;
+    rz = (rz * inv) .>> 32;
+    soit renvoi = ciel(rx, ry, rz, 0);
+    soit rasant = 65536 - (0 - dy);
+    si dy .> 0 {
+        rasant = 65536;
+    }
+    soit part = 64 + rasant * rasant / 65536 * 154 / 65536;
+    soit r = (((alb >> 16) & 255) * (256 - part) + ((renvoi >> 16) & 255) * part) / 256;
+    soit g = (((alb >> 8) & 255) * (256 - part) + ((renvoi >> 8) & 255) * part) / 256;
+    soit b = ((alb & 255) * (256 - part) + (renvoi & 255) * part) / 256;
+    retour r | (g << 12) | (b << 24);
+}
+
+fonction regarder_0(ox, oy, oz, dx, dy, dz, temps) {
+    soit t = tracer(ox, oy, oz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
+    si t == MANQUE {
+        retour ciel(dx, dy, dz, 0);
+    }
+    soit om = clarte(ox, oy, oz, dx, dy, dz, t, 0);
+    si (om & 2) != 0 {
+        retour (2 << 24) | brumer(divona_0(ox, oy, oz, dx, dy, dz, t, temps), t);
+    }
+    retour (((om >> 2) & 3) << 24) | brumer(om >> 16, t);
+}
+
+fonction divona_1(ox, oy, oz, dx, dy, dz, t, temps) {
+    soit px = ox + ((dx * t) .>> 16);
+    soit py = oy + ((dy * t) .>> 16);
+    soit pz = oz + ((dz * t) .>> 16);
+    soit x = px >> 16;
+    soit y = py >> 16;
+    soit z = pz >> 16;
+    soit alb = couleur(x, y, z);
+    soit rx = dx + ((bruit_lisse((x + temps) & MASQ, z & MASQ, 16) - 32768) ./ 24);
+    soit rz = dz + ((bruit_lisse(x & MASQ, (z + temps * 2) & MASQ, 16) - 32768) ./ 24);
+    soit ry = 0 - dy;
+    soit inv = inverse_longueur(rx, ry, rz);
+    rx = (rx * inv) .>> 32;
+    ry = (ry * inv) .>> 32;
+    rz = (rz * inv) .>> 32;
+    soit renvoi = regarder_0(px, (MER << 16) + 32768, pz, rx, ry, rz, temps) & 16777215;
+    soit rasant = 65536 - (0 - dy);
+    si dy .> 0 {
+        rasant = 65536;
+    }
+    soit part = 64 + rasant * rasant / 65536 * 154 / 65536;
+    soit r = (((alb >> 16) & 255) * (256 - part) + ((renvoi >> 16) & 255) * part) / 256;
+    soit g = (((alb >> 8) & 255) * (256 - part) + ((renvoi >> 8) & 255) * part) / 256;
+    soit b = ((alb & 255) * (256 - part) + (renvoi & 255) * part) / 256;
+    retour r | (g << 12) | (b << 24);
+}
+
+fonction regarder_1(ox, oy, oz, dx, dy, dz, temps) {
+    soit t = tracer(ox, oy, oz, dx, dy, dz, 1100 * 65536 * RN / RD, 1);
+    si t == MANQUE {
+        retour ciel(dx, dy, dz, 0);
+    }
+    soit om = clarte(ox, oy, oz, dx, dy, dz, t, 0);
+    si (om & 2) != 0 {
+        retour (2 << 24) | brumer(divona_1(ox, oy, oz, dx, dy, dz, t, temps), t);
+    }
+    retour (((om >> 2) & 3) << 24) | brumer(om >> 16, t);
+}
+
+// le regard du point i de l'écran (i = y · W + x), l'œil en (cx, cy, cz), tourné (lacet) et penché (tangage) : rend
+// 0xRRGGBB
+fonction point_vu(i, cx, cy, cz, lacet, tangage, temps) {
+    soit sl = sin1024(lacet);
+    soit cl = cos1024(lacet);
+    soit st = sin1024(tangage);
+    soit ct = cos1024(tangage);
+    soit iy = i / W;
+    soit ix = i - iy * W;
+    // tan(35°) · 65536 = 45889 : le champ de 70 degrés en largeur
+    soit sy = ((H - 2 * iy - 1) * 45889) ./ W;
+    soit sx = ((2 * ix + 1 - W) * 45889) ./ W;
+    soit dx = (sl * ct) ./ 65536 + (cl * sx + ((0 - sl * st) ./ 65536) * sy) ./ 65536;
+    soit dy = st + (ct * sy) ./ 65536;
+    soit dz = (cl * ct) ./ 65536 + ((0 - sl) * sx + ((0 - cl * st) ./ 65536) * sy) ./ 65536;
+    soit inv = inverse_longueur(dx, dy, dz);
+    dx = (dx * inv) .>> 32;
+    dy = (dy * inv) .>> 32;
+    dz = (dz * inv) .>> 32;
+    retour regarder_1(cx, cy, cz, dx, dy, dz, temps) & 16777215;
+}
+
+// une image au processeur : chaque rangée à un cœur
+fonction image_processeur(cx, cy, cz, lacet, tangage, temps) {
+    pour y dans 0..H en bandes {
+        pour x dans 0..W {
+            soit v = point_vu(y * W + x, cx, cy, cz, lacet, tangage, temps);
+            @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+        }
+    }
+}
+
+// une image sur la carte : un fil par point (Taranis), le point rendu dans FIMAGE, puis posé à l'écran
+fonction image_carte(cx, cy, cz, lacet, tangage, temps) {
+    pour i dans 0..(W * H) en segments {
+        @2[(FIMAGE << 24) + i] = point_vu(i, cx, cy, cz, lacet, tangage, temps);
+    }
+    pour y dans 0..H en bandes {
+        pour x dans 0..W {
+            soit v = @2[(FIMAGE << 24) + y * W + x];
+            @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------------------------- l'épreuve
+fonction empreinte_image() {
+    soit h = 14695981039346656037;
+    pour i dans 0..(W * H) {
+        soit c = @1[i];
+        soit rgb3 = ((c >> 56) & 255) * 65536 + ((c >> 40) & 255) * 256 + ((c >> 24) & 255);
+        h = (h ^ rgb3) * 1099511628211;
+    }
+    retour h;
+}
+
+// le survol, image i sur n : au-dessus des armées, puis du camp, jusqu'à la rive du lac, face au grand puy (son
+// reflet dans le lac) ; l'œil descend un peu et se redresse ; sur_carte == 1 : l'image est faite sur la carte
+fonction image_gergovie(i, n, temps, sur_carte) {
+    soit cx = (176 * 65536 + (96 * 65536 / n) * i) * RN / RD;
+    soit cy = (84 * 65536 - (24 * 65536 / n) * i) * RN / RD;
+    soit cz = (470 * 65536 - (160 * 65536 / n) * i) * RN / RD;
+    soit lacet = (504 + (16 * i) / n) & 1023;
+    soit tangage = (978 + (32 * i) / n) & 1023;
+    si sur_carte == 1 {
+        image_carte(cx, cy, cz, lacet, tangage, temps);
+    } sinon {
+        image_processeur(cx, cy, cz, lacet, tangage, temps);
+    }
+}
+
+fonction en_dixiemes(d): texte {
+    retour texte(d / 10) + "," + texte(d % 10);
+}
+
+// le bilan d'une épreuve de n images (les temps, en ms, dans @2[TEMPS + i])
+constante TEMPS = 605000;
+
+fonction bilan(nom: texte, n) {
+    soit total = 0;
+    soit pire = 0;
+    pour i dans 0..n {
+        total = total + @2[TEMPS + i];
+        si @2[TEMPS + i] > pire {
+            pire = @2[TEMPS + i];
+        }
+    }
+    soit k = n / 100;
+    si k == 0 {
+        k = 1;
+    }
+    soit lents = 0;
+    pour j dans 0..k {
+        soit m = 0;
+        soit place = 0;
+        pour i dans 0..n {
+            si @2[TEMPS + i] >= m {
+                m = @2[TEMPS + i];
+                place = i;
+            }
+        }
+        lents = lents + m;
+        @2[TEMPS + place] = 0;
+    }
+    si total == 0 {
+        total = 1;
+    }
+    si lents == 0 {
+        lents = 1;
+    }
+    afficher("gergovie : " + nom + " : " + texte(n) + " images, " + en_dixiemes(10000 * n / total)
+             + " images par seconde en moyenne, 1 % bas " + en_dixiemes(10000 * k / lents) + ", pire image "
+             + texte(pire) + " ms ; empreinte " + texte(empreinte_image()));
+}
+
+// l'épreuve : le monde, la mise en place (pas comptée), le vol (vol images, le soleil fixe), le jour (jour images,
+// le soleil bouge : la clepsydre refaite à chaque image) ; sur_carte : 0 le processeur, 1 la carte
+fonction epreuve(vol, jour, sur_carte) {
+    soit t0 = horloge();
+    creer_monde();
+    afficher("le monde : " + texte(horloge() - t0) + " ms ; blocs porteurs d'une surface, par tuile : "
+             + texte(@2[GLOB + 1]) + ", " + texte(@2[GLOB + 2]) + ", " + texte(@2[GLOB + 3]) + ", " + texte(@2[GLOB + 4]));
+    ecran(W, H);
+    pour i dans 0..(W * H) {
+        @2[(FIMAGE << 24) + i] = 0;
+    }
+    preparer_soleil(360, 70, 0);
+    ranger_lumiere(1, 0);
+    image_gergovie(0, vol, 0, sur_carte);
+    soit lieu = " (au processeur)";
+    si sur_carte == 1 {
+        lieu = " (sur la carte)";
+    }
+    pour i dans 0..vol {
+        soit ti = horloge();
+        image_gergovie(i, vol, i * 3, sur_carte);
+        @2[TEMPS + i] = horloge() - ti;
+        presenter();
+    }
+    bilan("le vol" + lieu, vol);
+    pour i dans 0..jour {
+        soit tj = horloge();
+        preparer_soleil(300 + i * 3, 50 + i, 0);
+        ranger_lumiere(0, 0);
+        image_gergovie(i, jour, i * 3, sur_carte);
+        @2[TEMPS + i] = horloge() - tj;
+        presenter();
+    }
+    bilan("le jour" + lieu, jour);
+}

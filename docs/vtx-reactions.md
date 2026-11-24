@@ -4513,3 +4513,40 @@ la même empreinte que le processeur ; préparer un lancement sous 1 ms (contre 
 22 à 31 ms contre 27 à 34. Lavapipe calcule le 64 bits sur le processeur : le gain des divisions s'y voit peu ; c'est sur
 la RTX qu'il doit compter. **Pas encore fait** : les vagues en carrés de 8 × 8 points (elles restent de 64 points sur une
 ligne) ; la clepsydre sur la carte (le jour) ; l'image montrée par la carte.
+
+## 108. La nouvelle épreuve de Gergovie : la plaine auvergnate (24 novembre, 0.822)
+
+**Chez le créateur, la 0.821** (RTX 3070) : Taranis 53,8 images par seconde au vol (1 % bas 30,3, pire image 38 ms),
+contre 22,1 pour vtx au processeur, 30,0 pour Rust et 8,9 pour l'ancien chemin de la carte ; **la carte 4 ms par image**
+(contre 58 à 121). Le temps restant : redescendre l'image (environ 7 ms) et la poser au processeur. Le jour : 16,1 (la
+clepsydre au processeur). Le vergobret choisit la carte (13,9 ms contre 151,9), mais son essai au processeur accroche
+le vol (1 % bas 11,2).
+
+**Décidé avec le créateur** : la suite en trois livraisons : la nouvelle scène (celle-ci) ; les étages sur la carte
+(matériaux, ombre, lumière, reflet ; le cache qui compose ; le tapis roulant des images en vol, dont le vergobret fait
+la logistique : le rendu différé des moteurs) ; le cache qui montre l'image lui-même. Les divisions : les retirer du
+moteur plutôt que les accélérer (le quaternaire : des échelles en puissances de 4, des inverses).
+
+**La scène** (`belenos/gergovie_scene.vtx`, l'idée du créateur : un test plus chargé) :
+- la plaine auvergnate en champs (des verts, du blé, des labours), qui ondule ;
+- la chaîne des puys au fond : le grand puy et son cratère (la scorie au sommet, la pierre sombre sur les flancs
+  raides), deux petits ; la pierre ridée par le bruit ;
+- le lac, une cuvette fondue (le premier essai rabotait le pied du volcan : une falaise de 15 points, une bande sombre
+  vue de loin ; trouvée en lisant la hauteur du sol, colonne par colonne) ; le puy s'y reflète tout entier ;
+- le camp romain (le castrum) : des murs crénelés en assises, quatre tours, une porte, un temple (socle, colonnes de
+  marbre, toit de tuiles en pente), des rangs de tentes ;
+- deux armées de mannequins face à face : trente Romains en rangs (tunique rouge, bouclier, casque à cimier), trente
+  Gaulois de travers (tartan, bouclier rond, cheveux blonds, braies), chacun sa lance ; leurs ombres au soleil bas.
+
+Les objets sont des matières pleines (`objet` : le camp, les armées) ; leur normale vient de leurs voisins pleins (des
+faces franches) ; leurs blocs portent une surface (`classer_blocs`). Le moteur reste celui du paysage dans le cube.
+
+**Le regard** est écrit une fois pour le processeur et la carte (`point_vu`, `regarder_1` → `regarder_0`) ; **une
+direction se norme par un seul inverse** (`inverse_longueur` : 2⁴⁸ / longueur, puis chaque composante × inverse >> 32 :
+une division au lieu de trois, pour l'œil et pour Divona). `epreuve(vol, jour, sur_carte)` : le monde, la mise en place,
+le vol, le jour ; `gergovie.vtx` (le processeur), `gergovie_carte.vtx` (la carte). Le C, le C++ et Rust ne sont plus
+joués (le Rust de l'ancienne scène reste dans le dépôt).
+
+**Ici** (demi-échelle, 320 × 180, lavapipe) : la même empreinte au processeur, par Taranis et par l'ancien chemin de la
+carte (le vol 6019321734554019523, le jour 8971656942411583848) ; les mêmes mots pour les deux compilateurs ; l'épreuve
+d'Alésia conforme. L'empreinte à pleine échelle se lit chez le créateur (la même au processeur et sur la carte).

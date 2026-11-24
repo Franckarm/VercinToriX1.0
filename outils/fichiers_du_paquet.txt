@@ -243,3 +243,4 @@ belenos/gergovie.rs
 belenos/gergovie_carte.vtx
 tests/test_taranis_direct.py
 tests/taranis_divisions.vtx
+belenos/gergovie_scene.vtx

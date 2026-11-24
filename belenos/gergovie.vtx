@@ -1,117 +1,12 @@
 // machine : lugus
-// Belenos : l'épreuve de Gergovie (0.819), le banc d'essai : le même paysage et le même trajet de l'œil que
-// cubes_ref.c (le C, le C++) et gergovie.rs (Rust écrit à la main). Deux épreuves : le vol (l'œil bouge, le soleil est
-// fixe : GERGOVIE_VOL images), puis le jour (le soleil bouge aussi : la lumière refaite à chaque image). Pour chacune :
-// les images par seconde en moyenne, le 1 % bas (la moyenne des 1 % d'images les plus lentes : la fluidité), la pire
-// image, et l'empreinte de la dernière (la même partout : l'image est juste).
+// Belenos : l'épreuve de Gergovie au processeur (0.822 : la plaine auvergnate, le puy, le lac, le camp romain, les
+// armées ; gergovie_scene.vtx). Le vol (240 images, l'œil bouge), puis le jour (120 images, le soleil bouge aussi) :
+// la moyenne, le 1 % bas (la fluidité), la pire image, l'empreinte (la même que sur la carte : gergovie_carte.vtx).
 //     python forge/forge128.py belenos/gergovie.vtx -o gergovie_vtx ; gergovie_vtx
 constante RN = 1;
 constante RD = 1;
-importer "cubes_film.vtx";
-
-constante VOL = 240;
-constante JOUR = 120;
-constante TEMPS = 605000;           // @2[TEMPS + i] : le temps de l'image i (en ms)
-
-// l'œil, image i sur n : le même trajet que le film (rendu sur l'écran)
-fonction image_gergovie(i, n) {
-    soit ay = @2[GLOB];
-    soit avant = n * 7 / 12;
-    soit cx = ARCHE_X * 65536;
-    soit cy = 0;
-    soit cz = 0;
-    si i < avant {
-        cy = 110 * 65536 * RN / RD - ((110 * RN / RD - ay - 12 * RN / RD) * 65536 / avant) * i;
-        cz = 470 * 65536 * RN / RD - (170 * 65536 * RN / RD / avant) * i;
-    } sinon {
-        soit j = i - avant;
-        soit reste = n - avant;
-        cy = (ay + 12 * RN / RD) * 65536 + (((64 * RN / RD - ay - 12 * RN / RD) * 65536) ./ reste) * j;
-        cz = ARCHE_Z * 65536 - (110 * 65536 * RN / RD / reste) * j;
-    }
-    soit vy = (ay + 14 * RN / RD) * 65536 - cy;
-    soit tangage = 0;
-    soit vu = 0 - 4611686018427387904;
-    pour k dans 0..129 {
-        soit a = (k + 1024 - 64) & 1023;
-        soit p = (vy ./ 256) * sin1024(a) + (80 * 256 * RN / RD) * cos1024(a);
-        si p .> vu {
-            vu = p;
-            tangage = a;
-        }
-    }
-    rendre_cubes(cx, cy, cz, 512, tangage, i * 3);
-}
-
-// un nombre en dixièmes : « 12,3 »
-fonction en_dixiemes(d): texte {
-    retour texte(d / 10) + "," + texte(d % 10);
-}
-
-// le bilan d'une épreuve de n images (les temps en @2[TEMPS + i])
-fonction bilan(nom: texte, n) {
-    soit total = 0;
-    soit pire = 0;
-    pour i dans 0..n {
-        total = total + @2[TEMPS + i];
-        si @2[TEMPS + i] > pire {
-            pire = @2[TEMPS + i];
-        }
-    }
-    // le 1 % bas : les k images les plus lentes (chacune prise une fois, la plus lente qui reste)
-    soit k = n / 100;
-    si k == 0 {
-        k = 1;
-    }
-    soit lents = 0;
-    pour j dans 0..k {
-        soit m = 0;
-        soit place = 0;
-        pour i dans 0..n {
-            si @2[TEMPS + i] >= m {
-                m = @2[TEMPS + i];
-                place = i;
-            }
-        }
-        lents = lents + m;
-        @2[TEMPS + place] = 0;
-    }
-    si total == 0 {
-        total = 1;
-    }
-    si lents == 0 {
-        lents = 1;
-    }
-    afficher("gergovie : " + nom + " : " + texte(n) + " images, " + en_dixiemes(10000 * n / total)
-             + " images par seconde en moyenne, 1 % bas " + en_dixiemes(10000 * k / lents) + ", pire image "
-             + texte(pire) + " ms ; empreinte " + texte(empreinte_image()));
-}
+importer "gergovie_scene.vtx";
 
 fonction principal() {
-    soit t0 = horloge();
-    creer_monde();
-    afficher("le monde : " + texte(horloge() - t0) + " ms");
-    ecran(W, H);
-    // l'épreuve 1, le vol
-    preparer_soleil(360, 70, 0);
-    ranger_lumiere(1, 0);
-    // la mise en place (comme le chargement d'un jeu : pas comptée) : une première image, qui installe tout
-    image_gergovie(0, VOL);
-    pour i dans 0..VOL {
-        soit ti = horloge();
-        image_gergovie(i, VOL);
-        @2[TEMPS + i] = horloge() - ti;
-        presenter();
-    }
-    bilan("le vol (l'oeil bouge)", VOL);
-    // l'épreuve 2, le jour
-    pour i dans 0..JOUR {
-        soit tj = horloge();
-        preparer_soleil(300 + i * 3, 50 + i, 0);
-        ranger_lumiere(0, 0);
-        image_gergovie(i, JOUR);
-        @2[TEMPS + i] = horloge() - tj;
-        presenter();
-    }
-    bilan("le jour (le soleil bouge aussi)", JOUR);
+    epreuve(240, 120, 0);
 }

@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.822.zip`, `essai-0.822.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.823.zip`, `essai-0.823.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -241,3 +241,14 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Décidé : Taranis est le noyau, Belenos le moteur ; le 64 bits reste ; les étages reviendront après.
 - Prochain : lire la RTX ; les vagues en 8 × 8 ; la clepsydre sur la carte ; l'image montrée par la carte ; l'ombre
   quaternaire. Prochaine livraison : vtx-0.822.zip / essai-0.822.bat.
+
+## 0.822 (24 novembre) : la nouvelle Gergovie
+- `belenos/gergovie_scene.vtx` : la plaine auvergnate, le grand puy et son cratère (deux petits), le lac, le camp romain,
+  les armées romaine et gauloise (mannequins) ; `point_vu` (le regard du point i, pour le processeur et la carte),
+  `inverse_longueur` (une division par direction), `epreuve(vol, jour, sur_carte)`. Mains : `gergovie.vtx`,
+  `gergovie_carte.vtx`. Tester à demi-échelle sur lavapipe (RD = 2, W = 320, H = 180).
+- Chez le créateur, la 0.821 : Taranis 53,8 images par seconde (la carte 4 ms ; le reste : redescendre et poser).
+- Prochain (décidé) : les étages sur la carte (matériaux, ombre, lumière, reflet ; le cache compose ; le tapis des
+  images en vol, le vergobret en logistique) ; puis le cache qui montre l'image (Vulkan, la fenêtre) ; l'ombre
+  quaternaire (un mot de 64 bits par vague de 32 points) ; le vergobret qui apprend pendant la mise en place.
+  Prochaine livraison : vtx-0.823.zip / essai-0.823.bat.
