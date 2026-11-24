@@ -393,3 +393,23 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   (des données de passage, refaites à chaque image) ; le monde est l'ADN.
 - Prochain : le gène « Dunon » de Gutuater (les boucles du graphique forgées en 64 bits au processeur, avec la garde des
   mêmes mots sur les premières images).
+
+## Décision du 24 novembre (soir) : Lugus en 128 bits, le graphique en Dunon
+- **Décidé par le créateur** : l'entier par défaut de Lugus passe à 128 bits (« le hex, l'ADN, l'ARN, le cube chromatique
+  lui-même : je le voulais en 128 ») ; plus lent : « on trouvera une méthode ». La traduction en 64 bits se fait au
+  passage du graphique, par Dunon (Gutuater) ; Taranis reste en 64 bits. Et tout ce qui peut l'être est traduit en vtx.
+- **Ce qui existe** : la machine Lugus est déjà de 128 bits (mots, registres, mémoire ; le flottant par défaut, l'entier_128,
+  le point natifs) ; l'entier par défaut était de 64 bits par choix (« l'adresse courte », 25 octobre). L'adresse courte
+  reste valable : une adresse reste sous 2^64 (ses 64 bits hauts nuls).
+- **Essai fait** (vtx128.py : les opérations entières à toute la largeur au lieu de .64) : sur les 34 exemples de
+  exemples128, 26 donnent la même sortie ; 8 changent : 6 tournent sans fin (le prélude compte sur 64 bits : l'affichage
+  des flottants, les sentinelles 18446744073709551615 = -1 en 64 bits, 57 fois dans le prélude), `cylindres` donne un
+  autre hachage (voulu : il déborde maintenant à 128 bits), `chute` (ses exemples).
+- **Le chemin, par étapes** :
+  1. le prélude propre en 128 (les sentinelles, l'affichage, les nombres), les deux compilateurs (vtx128.py et vtxc128 :
+     la même table de largeur), la forge (u128 au lieu de u64 pour l'entier), la vérification complète ;
+  2. le passage Dunon : un module (ou une fonction) calculé en 64 bits (`importer "…" en dunon` ou équivalent, à
+     choisir) ; Gergovie y passe et garde ses empreintes (celles du C++) ; Taranis inchangé ;
+  3. le compilateur des noyaux de Taranis en vtx (les mêmes mots SPIR-V que noyau_vtx.py) ;
+  4. les décisions du vergobret en vtx ; 5. la forge en vtx ;
+  6. puis le cache qui montre l'image, et le monde d'un seul tenant au processeur.
