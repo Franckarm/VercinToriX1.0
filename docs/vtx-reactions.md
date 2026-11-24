@@ -4687,4 +4687,4 @@ bord d'ombre qui passe entre eux les fait tous calculer). Le reste du calque gar
 peut échapper aux références ; c'est donc une option, l'image entière reste le témoin. Le tirage est un hachage : la
 même image donne la même lumière, et le C++ fait le même tirage (la même empreinte, vérifiée).
 
-**Sur lavapipe** (demi-échelle) : le jour passe de 3,7 à 13,4 images par seconde ; le C++ progressif de 1 à 43,6.
+**Sur lavapipe** (demi-échelle) : le jour passe de 3,7 à 13,4 images par seconde ; le C++ de 18 à 41 (ce conteneur a peu de cœurs ; la RTX dira le vrai gain).
