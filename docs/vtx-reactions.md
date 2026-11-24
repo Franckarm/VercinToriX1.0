@@ -4481,3 +4481,35 @@ versions (gergovie.vtx, gergovie_carte.vtx, gergovie.rs ; et cubes_ref.c).
 vraie mesure est celle de la RTX. **Ce qui reste au processeur** : le jour, la clepsydre (`ranger_lumiere`) refaite à
 chaque image ; elle ira sur la carte ensuite ; et l'image qui redescend pour être montrée (la carte qui la montre
 elle-même viendra avec la fenêtre de la carte).
+
+## 107. Taranis, le noyau de la carte (24 novembre, 0.821)
+
+**Chez le créateur, la 0.820** (RTX 3070) : la carte 9,2 images par seconde au vol, plus lente que vtx au processeur
+(21,8) ; les transferts réglés (préparer 5 ms, redescendre 5 ms) mais **le calcul sur la carte 58 à 121 ms** par image,
+là où une 3070 devrait en prendre quelques-unes. Le créateur : « je pensais que Taranis faisait son boulot ». Honnêtement :
+depuis la 0.816, ce que j'appelais « le mode pages » était la façon de travailler de Lugus imitée sur la carte (sa
+mémoire en pages, la table, les marques, les demandes, la promesse) ; je ne l'ai pas dit en ces mots. Les freins : chaque
+lecture passait par la table et ses marques ; tout en 64 bits, divisions comprises (une division de 64 bits est une
+longue routine sur une GeForce) ; la cascade des pages manquantes le jour (trois images retombées au processeur).
+
+**Décidé avec le créateur** : Taranis est le noyau, Belenos le moteur ; le 64 bits reste, et Taranis ajoute ce qui
+manque au 64 bits sur une carte. On reviendra aux étages ensuite.
+
+**Taranis** (`NoyauTaranis` dans `taranis/noyau_vtx.py`, `taranis_direct` dans le noyau de la forge ; `VTX_EPISSAGE=rapide`) :
+- **le monde d'un seul tenant** : l'étage 2 rangé sur la carte, chaque fréquence d'un bloc (la place 0 : une page de
+  zéros) ; l'adresse `(f << 24) + i` se lit au mot `base[f] + i`, sans table de pages, sans marque, sans demande, sans
+  embranchement (une adresse hors du monde lit 0, comme une case jamais écrite) ; une écriture note sa fréquence (ce qui
+  redescend) ; tout le monde monte une fois, puis seules les pages marquées (SALES) ; plus de cascade de pages manquantes ;
+- **les divisions épissées**, en 64 bits exacts : par une puissance de deux, un décalage (signé : avec le biais qui
+  arrondit vers zéro) ; par une autre constante, une multiplication par le nombre magique (le haut du produit de 128 bits,
+  `UMulExtended` / `SMulExtended` : Granlund et Montgomery, Hacker's Delight 10-1 ; vérifié sur deux millions de cas en
+  Python) ; par un nombre, en 32 bits quand les deux y tiennent (la carte divise en 32 bits bien plus vite), sinon en 64 ;
+  par 0 et par -1, le sens de Lugus ;
+- `tests/test_taranis_direct.py` (`tests/taranis_divisions.vtx`) : une boucle pleine de divisions, la même empreinte au
+  processeur et sur la carte par Taranis.
+
+**Ici** (lavapipe, à demi-échelle : le monde entier ne tient pas dans ses 128 Mo par tampon ; la RTX en prend bien plus) :
+la même empreinte que le processeur ; préparer un lancement sous 1 ms (contre 8 à 9 par l'ancien chemin) ; la carte
+22 à 31 ms contre 27 à 34. Lavapipe calcule le 64 bits sur le processeur : le gain des divisions s'y voit peu ; c'est sur
+la RTX qu'il doit compter. **Pas encore fait** : les vagues en carrés de 8 × 8 points (elles restent de 64 points sur une
+ligne) ; la clepsydre sur la carte (le jour) ; l'image montrée par la carte.

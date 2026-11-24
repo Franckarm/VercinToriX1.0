@@ -47,7 +47,7 @@ OP = {
     "SLessThanEqual": 179, "ShiftRightLogical": 194, "ShiftRightArithmetic": 195, "ShiftLeftLogical": 196,
     "BitwiseOr": 197, "BitwiseXor": 198, "BitwiseAnd": 199, "Not": 200, "Phi": 245, "LoopMerge": 246,
     "SelectionMerge": 247, "Label": 248, "Branch": 249, "BranchConditional": 250, "Return": 253,
-    "LogicalNotEqual": 165, "UMulExtended": 151, "CompositeConstruct": 80, "AtomicExchange": 229,
+    "LogicalNotEqual": 165, "UMulExtended": 151, "SMulExtended": 152, "SConvert": 114, "CompositeConstruct": 80, "AtomicExchange": 229,
 }
 M64 = (1 << 64) - 1
 MASQUE62 = (1 << 62) - 1
@@ -1107,3 +1107,175 @@ class NoyauI64(Noyau):
             + self.vars_decl + corps
         mots.append((1 << 16) | OP["FunctionEnd"])
         return struct.pack("<%dI" % len(mots), *mots), dehors, acces
+
+
+# ---------------------------------------------------------------- 0.821 : Taranis, le noyau de la carte
+M63 = 1 << 63
+
+
+def magie_non_signee(d):
+    """la multiplication qui remplace la division par d (d > 1, pas une puissance de deux) : (m, l) ; le quotient est
+    (t + ((a - t) >> 1)) >> (l - 1), t = haut(m × a) (Granlund et Montgomery ; vérifié sur des millions de cas)"""
+    l = (d - 1).bit_length()
+    return (((1 << 64) * ((1 << l) - d)) // d + 1) & M64, l
+
+
+def magie_signee(d):
+    """(m, s) pour la division signée par la constante d (|d| > 1, pas une puissance de deux ; Hacker's Delight 10-1)"""
+    ad = abs(d)
+    t = M63 + ((d & M64) >> 63)
+    anc = t - 1 - t % ad
+    p = 63
+    q1, r1 = M63 // anc, M63 - (M63 // anc) * anc
+    q2, r2 = M63 // ad, M63 - (M63 // ad) * ad
+    while True:
+        p += 1
+        q1, r1 = q1 * 2, r1 * 2
+        if r1 >= anc:
+            q1, r1 = q1 + 1, r1 - anc
+        q2, r2 = q2 * 2, r2 * 2
+        if r2 >= ad:
+            q2, r2 = q2 + 1, r2 - ad
+        delta = ad - r2
+        if not (q1 < delta or (q1 == delta and r1 == 0)):
+            break
+    m = q2 + 1
+    if d < 0:
+        m = -m
+    return m & M64, p - 64
+
+
+class NoyauTaranis(NoyauI64):
+    """0.821 : Taranis, le noyau de la carte (et non plus Lugus imité sur la carte). La mémoire est le monde rangé une
+    fois sur la carte, chaque fréquence de l'étage 2 d'un seul tenant : l'adresse (f << 24) + i se lit au mot base[f] + i,
+    sans table de pages, sans marque, sans demande (une adresse hors du monde lit 0, comme une case jamais écrite de
+    Lugus). Une écriture note sa fréquence (ce qui redescend). Les entiers restent de 64 bits ; Taranis y ajoute ce qui
+    leur manque sur une carte : la division par une constante devient une multiplication exacte (le haut du produit de
+    128 bits), par une puissance de deux un décalage ; les autres divisions passent en 32 bits quand les deux nombres y
+    tiennent (la carte divise en 32 bits bien plus vite), sinon en 64 bits."""
+
+    def __init__(self, forge, var, corps):
+        super().__init__(forge, var, corps, rapide=True)
+        self.valeur_de = {}
+        self.t_prod = None
+
+    def cst(self, v):
+        r = super().cst(v)
+        self.valeur_de[r] = v & M64
+        return r
+
+    # ------------------------------------------------------------ la mémoire : le monde d'un seul tenant
+    def direct(self, a):
+        f = self.v64("ShiftRightLogical", a, self.cst(24))
+        ok_f = self.ult(f, self.cst(256))
+        f32 = self.v("UConvert", self.v64("BitwiseAnd", f, self.cst(255)))
+        i32 = self.v("UConvert", self.v64("BitwiseAnd", a, self.cst(0xFFFFFF)))
+        base = self.v("Load", self.case(self.table, f32))
+        taille = self.v("Load", self.case(self.table, self.v("IAdd", f32, self.c32(256))))
+        ok = self.b("LogicalAnd", ok_f, self.b("ULessThan", i32, taille))
+        mot = self.v("Select", ok, self.v("IAdd", base, i32), self.c32(0))
+        return mot, ok, f32
+
+    def lire_page(self, adr):
+        mot, _ok, _f = self.direct(self.expr(adr))
+        # le mot 0 du monde est toujours nul : une adresse hors du monde y lit 0, sans embranchement
+        return self.v64("Load", self.case64(self.fenetre, mot))
+
+    def ecrire_page(self, adr, valeur):
+        a = self.expr(adr)
+        x = self.expr(valeur)
+        mot, ok, f32 = self.direct(a)
+        oui, non, fin = self.id(), self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", ok, oui, non)
+        self.etiquette(oui)
+        self.e("Store", self.case64(self.fenetre, mot), x)
+        self.e("Store", self.case(self.marques, f32), self.c32(1))
+        self.aller(fin)
+        self.etiquette(non)
+        self.drapeau_n(1)
+        self.aller(fin)
+        self.etiquette(fin)
+
+    # ------------------------------------------------------------ les divisions
+    def haut(self, op, x, y):
+        if self.t_prod is None:
+            self.t_prod = self.id()
+            self.i(self.types, "TypeStruct", self.t_prod, self.t64, self.t64)
+        p = self.v(op, x, y, t=self.t_prod)
+        return self.v64("CompositeExtract", p, 1)
+
+    def par_constante(self, op, a, d):
+        """la division (ou le reste) par la constante d non nulle, au sens de Lugus ; None : pas de raccourci"""
+        if op in ("/", "%"):
+            if d & (d - 1) == 0:
+                k = d.bit_length() - 1
+                if op == "/":
+                    return self.v64("ShiftRightLogical", a, self.cst(k)) if k else a
+                return self.v64("BitwiseAnd", a, self.cst(d - 1))
+            m, l = magie_non_signee(d)
+            t = self.haut("UMulExtended", self.cst(m), a)
+            q = self.v64("ShiftRightLogical", self.add(t, self.v64("ShiftRightLogical", self.sub(a, t), self.cst(1))),
+                         self.cst(l - 1))
+            return q if op == "/" else self.sub(a, self.mul(q, self.cst(d)))
+        ds = d - (1 << 64) if d >> 63 else d
+        if ds in (1, -1):
+            return None
+        ad = abs(ds)
+        if ad & (ad - 1) == 0:
+            k = ad.bit_length() - 1
+            signe = self.v64("ShiftRightArithmetic", a, self.cst(63))
+            biais = self.v64("ShiftRightLogical", signe, self.cst(64 - k))
+            q = self.v64("ShiftRightArithmetic", self.add(a, biais), self.cst(k))
+        else:
+            m, sh = magie_signee(ds)
+            q = self.haut("SMulExtended", self.cst(m), a)
+            ms = m - (1 << 64) if m >> 63 else m
+            if ds > 0 and ms < 0:
+                q = self.add(q, a)
+            if ds < 0 and ms > 0:
+                q = self.sub(q, a)
+            if sh:
+                q = self.v64("ShiftRightArithmetic", q, self.cst(sh))
+            q = self.add(q, self.v64("ShiftRightLogical", q, self.cst(63)))
+            if ad & (ad - 1) == 0:
+                pass
+        if ad & (ad - 1) == 0 and ds < 0:
+            q = self.neg(q)
+        if op == "./":
+            return q
+        return self.sub(a, self.mul(q, self.cst(d)))
+
+    def diviser(self, op, a, b):
+        d = self.valeur_de.get(b)
+        if d is not None and d != 0:
+            r = self.par_constante(op, a, d)
+            if r is not None:
+                return r
+        # en 32 bits quand les deux nombres y tiennent (et le diviseur n'est ni 0 ni -1) ; sinon en 64 bits
+        if op in ("/", "%"):
+            petit = self.eq(self.v64("ShiftRightLogical", self.v64("BitwiseOr", a, b), self.cst(32)), self.cst(0))
+            vite_ok = self.b("LogicalAnd", petit, self.b("INotEqual", b, self.cst(0)))
+            op32 = "UDiv" if op == "/" else "UMod"
+            conv = "UConvert"
+        else:
+            def dans32(x):
+                return self.eq(self.v64("ShiftRightLogical", self.add(x, self.cst(1 << 31)), self.cst(32)), self.cst(0))
+            vite_ok = self.b("LogicalAnd", self.b("LogicalAnd", dans32(a), dans32(b)),
+                             self.b("LogicalAnd", self.b("INotEqual", b, self.cst(0)), self.b("INotEqual", b, self.cst(M64))))
+            op32 = "SDiv" if op == "./" else "SRem"
+            conv = "SConvert"
+        vite, lent, fin = self.id(), self.id(), self.id()
+        self.e("SelectionMerge", fin, 0)
+        self.e("BranchConditional", vite_ok, vite, lent)
+        self.etiquette(vite)
+        r32 = self.v(op32, self.v("UConvert", a), self.v("UConvert", b))
+        r1 = self.v64(conv, r32)
+        b1 = self.bloc
+        self.aller(fin)
+        self.etiquette(lent)
+        r2 = NoyauI64.diviser(self, op, a, b)
+        b2 = self.bloc
+        self.aller(fin)
+        self.etiquette(fin)
+        return self.v64("Phi", r1, b1, r2, b2)

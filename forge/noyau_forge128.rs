@@ -1427,8 +1427,213 @@ fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &[u32],
     };
     // 0.820 : l'épissage rapide (VTX_EPISSAGE=rapide : le modèle classique), avec le 64 bits de la carte
     let rapide = k.int64 && epissage_rapide();
-    let choisi = if rapide { spv64r } else if k.int64 { spv64 } else { spv };
-    taranis_boucle_pages_(c, choisi, a, b, ext, true, rapide)
+    if rapide {
+        // 0.821 : Taranis, le noyau de la carte
+        return taranis_direct(c, spv64r, a, b, ext);
+    }
+    let choisi = if k.int64 { spv64 } else { spv };
+    taranis_boucle_pages_(c, choisi, a, b, ext, true, false)
+}
+
+/// 0.821 : Taranis. Le monde (l'étage 2) rangé sur la carte, chaque fréquence d'un seul tenant (la place 0 : une page de
+/// zéros, où lit toute adresse hors du monde) ; la table dit, pour chaque fréquence f, son premier mot (table[f]) et sa
+/// taille (table[256 + f]) ; ne montent que les pages marquées (SALES) ; ne redescendent que les fréquences écrites.
+struct EtatTaranis {
+    res: Option<taranis_vk::Residence>,
+    freq: Vec<(u32, u32)>,          // pour chaque fréquence : (première place, nombre de places) ; (0, 0) : absente
+    pret: bool,
+}
+unsafe impl Send for EtatTaranis {}
+
+#[allow(dead_code)]
+fn etat_taranis() -> &'static std::sync::Mutex<EtatTaranis> {
+    static R: std::sync::OnceLock<std::sync::Mutex<EtatTaranis>> = std::sync::OnceLock::new();
+    R.get_or_init(|| std::sync::Mutex::new(EtatTaranis { res: None, freq: vec![(0, 0); 256], pret: false }))
+}
+
+#[allow(dead_code)]
+fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
+    let n = (b as u64).wrapping_sub(a as u64);
+    if n == 0 || n > (1u64 << 31) || ext.iter().any(|&v| v >> 64 != 0) {
+        return false;
+    }
+    let carte = match taranis_vk::carte() {
+        Some(k) => k,
+        None => return false,
+    };
+    if c.m.a_des_cubes_sur_disque() {
+        return false;
+    }
+    let bavard = taranis_vk::bavard();
+    let t0 = std::time::Instant::now();
+    c.oublier_pages();
+    let mut g = etat_taranis().lock().unwrap();
+    // les pages de l'étage 2 du processeur, par fréquence
+    let mut liste: Vec<(u64, *mut u128)> = Vec::new();
+    for (k, p, brins) in c.m.instantane() {
+        if k >> 120 != 2 {
+            continue;
+        }
+        let pg = (k & ((1u128 << 120) - 1)) as u64;
+        if pg >= 65536 {
+            continue;
+        }
+        if brins {
+            return false;
+        }
+        liste.push((pg, p));
+    }
+    let mut besoin = vec![0u32; 256];
+    for &(pg, _) in &liste {
+        let (f, q) = ((pg >> 8) as usize, (pg & 255) as u32);
+        besoin[f] = besoin[f].max(q + 1);
+    }
+    // le rangement : refait (tout monte) si une fréquence est nouvelle ou a grandi
+    let refaire = !g.pret || (0..256).any(|f| besoin[f] > g.freq[f].1);
+    let mut montees: Vec<u32> = Vec::new();
+    if refaire {
+        let mut place = 1u32;
+        for f in 0..256 {
+            if besoin[f] > 0 {
+                g.freq[f] = (place, besoin[f]);
+                place += besoin[f];
+            } else {
+                g.freq[f] = (0, 0);
+            }
+        }
+        let cap = place as usize;
+        let EtatTaranis { res, .. } = &mut *g;
+        if let Err(e) = carte.residence(res, cap) {
+            if bavard {
+                eprintln!("taranis : {}", e);
+            }
+            return false;
+        }
+        let mir = g.res.as_ref().unwrap().miroir;
+        unsafe { std::ptr::write_bytes(mir, 0, cap * 65536) };
+        montees = (0..cap as u32).collect();
+        g.pret = true;
+    }
+    let miroir = g.res.as_ref().unwrap().miroir as usize;
+    let mut a_copier: Vec<(usize, *mut u128)> = Vec::new();
+    for &(pg, p) in &liste {
+        let (f, q) = ((pg >> 8) as usize, (pg & 255) as u32);
+        if refaire || sale(pg) {
+            let s = (g.freq[f].0 + q) as usize;
+            a_copier.push((s, p));
+            if !refaire {
+                montees.push(s as u32);
+            }
+        }
+        nettoyer(pg);
+    }
+    // la copie vers le miroir, sur tous les cœurs (un mot de plus de 64 bits : la boucle reste au processeur)
+    let nt = cylindres_voulus().max(1).min(a_copier.len().max(1));
+    let morceau = a_copier.len().div_ceil(nt).max(1);
+    let a_copier_u: Vec<(usize, usize)> = a_copier.iter().map(|&(s, p)| (s, p as usize)).collect();
+    let bon = std::thread::scope(|sc| {
+        let fils: Vec<_> = a_copier_u.chunks(morceau).map(|ch| sc.spawn(move || {
+            for &(s, p) in ch {
+                let src = unsafe { std::slice::from_raw_parts(p as *const u128, 65536) };
+                let dst = unsafe { std::slice::from_raw_parts_mut((miroir as *mut u64).add(s * 65536), 65536) };
+                for (d, &w) in dst.iter_mut().zip(src) {
+                    if w >> 64 != 0 {
+                        return false;
+                    }
+                    *d = w as u64;
+                }
+            }
+            true
+        })).collect();
+        fils.into_iter().all(|h| h.join().unwrap())
+    });
+    if !bon {
+        g.pret = false;
+        return false;
+    }
+    let mut table = vec![0u32; 512];
+    for f in 0..256 {
+        table[f] = g.freq[f].0.wrapping_mul(65536);
+        table[256 + f] = g.freq[f].1.wrapping_mul(65536);
+    }
+    let t_monte = t0.elapsed().as_secs_f64() * 1e3;
+    let mut params = vec![0u64; 6 + ext.len()];
+    params[1] = a as u64;
+    params[2] = n;
+    for (k, &v) in ext.iter().enumerate() {
+        params[6 + k] = v as u64;
+    }
+    let lance = {
+        let EtatTaranis { res, .. } = &mut *g;
+        carte.lancer_resident(res.as_mut().unwrap(), spv, &montees, &table, &mut params, n)
+    };
+    let (ms, marques) = match lance {
+        Ok(x) => x,
+        Err(e) => {
+            if bavard {
+                eprintln!("taranis : {}", e);
+            }
+            g.pret = false;
+            return false;
+        }
+    };
+    if params[0] != 0 {
+        if bavard {
+            eprintln!("taranis : la boucle revient au processeur (une écriture hors du monde)");
+        }
+        return false;
+    }
+    // ce qui redescend : les fréquences écrites
+    let mut ecrites: Vec<u32> = Vec::new();
+    let mut fs: Vec<usize> = Vec::new();
+    for f in 0..256 {
+        if marques[f] != 0 && g.freq[f].1 > 0 {
+            fs.push(f);
+            for q in 0..g.freq[f].1 {
+                ecrites.push(g.freq[f].0 + q);
+            }
+        }
+    }
+    let t_desc = {
+        let EtatTaranis { res, .. } = &mut *g;
+        match carte.redescendre(res.as_mut().unwrap(), &ecrites) {
+            Ok(x) => x,
+            Err(e) => {
+                if bavard {
+                    eprintln!("taranis : {}", e);
+                }
+                g.pret = false;
+                return false;
+            }
+        }
+    };
+    let t1 = std::time::Instant::now();
+    for &f in &fs {
+        for q in 0..g.freq[f].1 {
+            let s = (g.freq[f].0 + q) as usize;
+            let pg = ((f as u64) << 8) | q as u64;
+            let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s * 65536), 65536) };
+            let p = match liste.iter().find(|x| x.0 == pg) {
+                Some(&(_, p)) => p,
+                None => {
+                    if src.iter().all(|&w| w == 0) {
+                        continue;
+                    }
+                    c.m.page_de(adresse_page((2u128 << 120) | pg as u128)).0
+                }
+            };
+            let dst = unsafe { std::slice::from_raw_parts_mut(p, 65536) };
+            for (d, &w) in dst.iter_mut().zip(src) {
+                *d = w as u128;
+            }
+        }
+    }
+    if bavard {
+        eprintln!("taranis : {} tours, le noyau Taranis ({} places, {} montées, {} redescendues) : préparer {:.1} ms, lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
+                  n, g.res.as_ref().unwrap().cap, montees.len(), ecrites.len(), t_monte, ms[0], ms[1], t_desc,
+                  t1.elapsed().as_secs_f64() * 1e3);
+    }
+    true
 }
 
 /// 0.820 : VTX_EPISSAGE=rapide : sur la carte, la promesse n'est pas vérifiée (le programme répond de ses écritures)

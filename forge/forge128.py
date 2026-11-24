@@ -680,7 +680,8 @@ class Forge(V.Generateur):
                 spv64, dehors64, _ = noyau_vtx.NoyauI64(self, var, corps).compiler()
                 assert dehors64 == dehors
                 # 0.820 : l'épissage rapide (le modèle classique : la promesse n'est pas vérifiée sur la carte)
-                spv64r, dehors64r, _ = noyau_vtx.NoyauI64(self, var, corps, rapide=True).compiler()
+                # 0.821 : c'est Taranis, le noyau de la carte (le monde d'un seul tenant, les divisions épissées)
+                spv64r, dehors64r, _ = noyau_vtx.NoyauTaranis(self, var, corps).compiler()
                 assert dehors64r == dehors
                 pages = True
             except noyau_vtx.PasPourLaCarte as e2:

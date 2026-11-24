@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.821.zip`, `essai-0.821.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.822.zip`, `essai-0.822.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -232,3 +232,12 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Le C et le C++ ne sont plus joués (le créateur) ; Rust reste la référence.
 - Prochain : lire la mesure de la RTX ; la clepsydre sur la carte (le jour) ; l'image montrée par la carte ;
   l'ombre quaternaire (prioritaire).
+
+## 0.821 (24 novembre) : Taranis, le noyau de la carte
+- Avant (0.816–0.820), la carte jouait Lugus imité (pages, table, marques, demandes) : 58–121 ms par image sur la RTX.
+- `NoyauTaranis` (le monde d'un seul tenant par fréquence, base[f] + i ; les divisions épissées en 64 bits exacts) et
+  `taranis_direct` (EtatTaranis : le rangement, SALES, les fréquences écrites qui redescendent) ; `VTX_EPISSAGE=rapide`.
+  Test : `tests/test_taranis_direct.py`. Lavapipe : 128 Mo par tampon, tester à demi-échelle (RD = 2).
+- Décidé : Taranis est le noyau, Belenos le moteur ; le 64 bits reste ; les étages reviendront après.
+- Prochain : lire la RTX ; les vagues en 8 × 8 ; la clepsydre sur la carte ; l'image montrée par la carte ; l'ombre
+  quaternaire. Prochaine livraison : vtx-0.822.zip / essai-0.822.bat.

@@ -1,0 +1,27 @@
+// machine : lugus
+constante N = 200000;
+constante F = 3;
+fonction principal() {
+    pour i dans 0..N {
+        @2[(F << 24) + i] = 0;
+        @2[(5 << 24) + i] = N - 1 - i;
+    }
+    soit graine = 88172645463325252;
+    soit k = 7;
+    pour i dans 0..N en segments {
+        soit x = i * 2654435761 + 12345;
+        soit x2 = x * x * 3 + i;
+        soit y = (x2 >> (i & 63)) | 1;
+        soit s = 0 - (x2 >> (i % 40));
+        soit v = x2 / 24 + x2 / 65536 + x2 % 1600 + (s ./ 24) + (s ./ 65536) + (s .% 127) + (s ./ (0 - 3))
+            + (x2 / y) + (x2 % y) + ((i * 7) / (i % 13 + 1)) + ((s >> 40) ./ (i % 9 + 1)) + ((0 - i) ./ (i % 5 + 2))
+            + (s ./ y) + (s .% y) + (x ./ 1) + (s ./ (0 - 1)) + (x / 1) + (i / 0) + (i % 0) + (s ./ 0) + (s .% 0)
+            + (s ./ 45889) + (x2 / 1099511627783) + (s ./ (0 - 65536)) + (s .% 4096);
+        @2[(F << 24) + @2[(5 << 24) + i]] = v;
+    }
+    soit h = 14695981039346656037;
+    pour i dans 0..N {
+        h = (h ^ @2[(F << 24) + i]) * 1099511628211;
+    }
+    afficher("empreinte : " + texte(h));
+}

@@ -241,3 +241,5 @@ belenos/cubes_roles_gif.vtx
 belenos/gergovie.vtx
 belenos/gergovie.rs
 belenos/gergovie_carte.vtx
+tests/test_taranis_direct.py
+tests/taranis_divisions.vtx
