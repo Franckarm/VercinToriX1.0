@@ -180,8 +180,26 @@ class Forge(V.Generateur):
         self.cadre_actif = (self.ramasse is not None and n > 0
                             and any(x in self.ramasse for x in self.graphe.get(f.nom, ())))
         self.lignes, self.niveau = [], 1
-        for s in f.corps:
+        # 0.824 : le lot de la carte : des boucles en segments qui se suivent dans le corps d'une fonction (rien entre
+        # elles) partent sur la carte d'un seul envoi ; chacune sa place dans le lot (lot_pos), et toutes sauf la
+        # dernière attendent (lot_suite) ; tout autre code vide le lot d'abord (taranis_vider)
+        corps_f = list(f.corps)
+        pos = 0
+        for k, s in enumerate(corps_f):
+            # le suivant : par-dessus les « soit » purs (les bornes d'une boucle, sans mémoire ni appel)
+            j = k + 1
+            while j < len(corps_f) and corps_f[j][0] == "soit" and self.pur(corps_f[j][2], set()):
+                j += 1
+            suivant = corps_f[j] if j < len(corps_f) else None
+            if s[0] == "accord":
+                self.lot_pos = pos
+                self.lot_suite = (suivant is not None and self.accord_carte(suivant) and self.accord_carte(s) and pos < 7)
+            elif not (s[0] == "soit" and self.pur(s[2], set())):
+                self.lot_pos, self.lot_suite, pos = 0, False, 0
             self.instr(s)
+            if s[0] == "accord":
+                pos = pos + 1 if self.lot_suite else 0
+        self.lot_pos, self.lot_suite = 0, False
         corps = self.lignes
         self.graphe[f.nom] = self.appelees
         nom = ident(f.nom)
@@ -333,6 +351,9 @@ class Forge(V.Generateur):
                 self.instr(x)
             self.instr(("pour", s[1], ("var", f"__sa{s[7]}", s[5]), ("var", f"__sb{s[7]}", s[5]), s[4], s[5], 1))
         elif g == "accord":
+            # 0.824 : ce qui reste du lot de la carte part avant tout autre travail (sauf une boucle du lot elle-même)
+            if not (getattr(self, "lot_pos", 0) > 0 or getattr(self, "lot_suite", False)):
+                self.ligne("taranis_vider(c);")
             # les segments d'une boucle : la partition les range en mesures (une par segment quand elle ne prouve pas
             # qu'ils sont indépendants, par exemple quand ils écrivent le cube à une adresse calculée) ; les cylindres
             # le vérifient en jouant (fusionner), et rejouent dans l'ordre si besoin : toutes les notes, dans l'ordre
@@ -464,6 +485,17 @@ class Forge(V.Generateur):
             return all(self.sans_effet(x, vus) for x in n[1:])
         return all(self.sans_effet(x, vus) for x in n)
 
+    def accord_carte(self, s):
+        """0.824 : un accord qui peut aller à la carte dans un lot : des segments d'une même boucle (pas une boucle en
+        bandes, qui reste aux cœurs du processeur)"""
+        if s[0] != "accord":
+            return False
+        ligne_acc = V.DERNIERE_PARTITION["accords"][s[1]]["ligne"] if s[1] < len(V.DERNIERE_PARTITION["accords"]) else None
+        if ligne_acc in V.LIGNES_BANDES:
+            return False
+        toutes = [st for mesure in s[2] for st, _note, _nom in mesure]
+        return self.cylindres_possibles(toutes)
+
     def cylindres_possibles(self, notes):
         """Une mesure jouée par des cylindres : au moins deux notes, toutes des segments d'une même boucle (la même
         variable, le même corps), et un corps qui ne touche que le cube."""
@@ -582,6 +614,8 @@ class Forge(V.Generateur):
         self.niveau += 1
         self.ligne("let mut fait = false;")
         choix = self.vers_la_carte(notes)
+        # 0.824 : la boucle se joue au processeur : le lot de la carte part, et ce qu'elle tient seule redescend
+        self.ligne("if !fait { taranis_rapatrier(c); }")
         self.ligne("if !fait && cylindres_voulus() > 1 {")
         self.niveau += 1
         self.ligne("let t0 = std::time::Instant::now();")
@@ -681,7 +715,8 @@ class Forge(V.Generateur):
                 assert dehors64 == dehors
                 # 0.820 : l'épissage rapide (le modèle classique : la promesse n'est pas vérifiée sur la carte)
                 # 0.821 : c'est Taranis, le noyau de la carte (le monde d'un seul tenant, les divisions épissées)
-                spv64r, dehors64r, _ = noyau_vtx.NoyauTaranis(self, var, corps).compiler()
+                region = min(getattr(self, "lot_pos", 0), 7)
+                spv64r, dehors64r, _ = noyau_vtx.NoyauTaranis(self, var, corps, region=region).compiler()
                 assert dehors64r == dehors
                 pages = True
             except noyau_vtx.PasPourLaCarte as e2:
@@ -704,24 +739,24 @@ class Forge(V.Generateur):
             site = f"CHOIX_{self.nchoix}"
             self.choix = getattr(self, "choix", []) + [site]
             self.ligne(f"let choix_t0 = std::time::Instant::now();")
-            self.ligne(f"let choix_carte = {site}.carte_voulue();")
+            dans_lot = getattr(self, "lot_pos", 0) > 0 or getattr(self, "lot_suite", False)
+            self.ligne(f"let choix_carte = {site}.{'carte_voulue_lot' if dans_lot else 'carte_voulue'}();")
             self.ligne("if choix_carte {")
             self.niveau += 1
             self.ligne(f"let ta: u128 = {self.val(st[2], 'e')};")
             self.ligne(f"let tb: u128 = {self.val(notes[-1][3], 'e')};")
-            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{k}, &SPV{k + 1}, &SPV{k + 2}, ta, tb, &[{ext}]) {{")
+            self.ligne(f"if (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &SPV{k}, &SPV{k + 1}, &SPV{k + 2}, ta, tb, &[{ext}], {region}, {'true' if getattr(self, 'lot_suite', False) else 'false'}) {{")
             self.ligne(f"    fait = true;")
             self.ligne(f"    {v} = tb;")
             self.ligne("}")
             self.niveau -= 1
             self.ligne("}")
-            # 0.823 : la boucle se joue au processeur : ce que la carte tient seule redescend d'abord
-            self.ligne("if !fait { taranis_rapatrier(c); }")
             return (site, st[5])
         k = len(self.noyaux)
         self.noyaux.append(spv)
         v = f"v_{ident(var)}"
         cles = []
+        self.ligne("taranis_rapatrier(c);")
         self.ligne("{")
         self.niveau += 1
         self.ligne(f"let ta: u128 = {self.val(st[2], 'e')};")

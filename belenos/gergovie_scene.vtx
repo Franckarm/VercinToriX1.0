@@ -2046,7 +2046,17 @@ fonction epreuve(vol, jour, sur_carte) {
     }
     preparer_soleil(360, 70, 0);
     ranger_lumiere(1, 0);
-    image_gergovie(0, vol, 0, sur_carte);
+    // 0.824 : la mise en place (pas comptée) : trois images et trois clepsydres (pour le même soleil : la même
+    // lumière) ; chaque noyau de la carte s'y compile, et le vergobret y fait ses essais (la carte ou le processeur,
+    // combien de cœurs) : rien de cela ne tombe plus pendant le vol ni le jour
+    pour mise dans 0..3 {
+        image_gergovie(0, vol, 0, sur_carte);
+        si sur_carte == 0 {
+            ranger_lumiere(0, 0);
+        } sinon {
+            ranger_lumiere_carte(0, 0);
+        }
+    }
     soit lieu = " (au processeur)";
     si sur_carte == 1 {
         lieu = " (sur la carte, un noyau)";

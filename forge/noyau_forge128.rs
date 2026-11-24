@@ -488,6 +488,19 @@ impl Choix {
             _ => e.1 < e.2,
         }
     }
+    /// 0.824 : une boucle d'un lot de la carte : le lot ne se coupe pas (chacune de ses boucles mesurée seule ne dit
+    /// rien : celles qui attendent ne coûtent rien, la dernière porte tout le lot) : avec Taranis, elle reste à la carte
+    pub fn carte_voulue_lot(&self) -> bool {
+        match std::env::var("VTX_CARTE").as_deref() {
+            Ok("0") => return false,
+            Ok("1") => return true,
+            _ => {}
+        }
+        if epissage_rapide() && std::env::var("VTX_LOT").map_or(true, |v| v != "0") {
+            return true;
+        }
+        self.carte_voulue()
+    }
     pub fn noter(&self, carte: bool, duree: std::time::Duration, ligne: u32) {
         let t = duree.as_secs_f64();
         let mut e = self.etat.lock().unwrap();
@@ -1419,7 +1432,8 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
 /// page absente : la carte le dit) et ici (une page à la fois lue et écrite : refusé) ; si quelque chose manque, la
 /// boucle reste au processeur (fait reste faux : le résultat est toujours celui de Lugus).
 #[allow(dead_code)]
-fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
+fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &'static [u32], a: u128, b: u128, ext: &[u128],
+                        region: usize, differe: bool) -> bool {
     // 0.817 : le noyau en entiers de 64 bits de la carte, si elle les fait
     let k = match taranis_vk::carte() {
         Some(k) => k,
@@ -1429,7 +1443,9 @@ fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &[u32],
     let rapide = k.int64 && epissage_rapide();
     if rapide {
         // 0.821 : Taranis, le noyau de la carte
-        return taranis_direct(c, spv64r, a, b, ext);
+        // 0.824 : VTX_LOT=0 : chaque boucle part seule (sans lot)
+        let differe = differe && std::env::var("VTX_LOT").map_or(true, |v| v != "0");
+        return taranis_direct(c, spv64r, a, b, ext, region, differe);
     }
     let choisi = if k.int64 { spv64 } else { spv };
     taranis_boucle_pages_(c, choisi, a, b, ext, true, false)
@@ -1446,6 +1462,13 @@ struct EtatTaranis {
     pages: Vec<usize>,
     // 0.823 : les fréquences de la carte (200 et plus) écrites par la carte et pas encore redescendues
     perimees: Vec<bool>,
+    // 0.824 : le lot qui attend : (noyau, sa longueur, ses tours, sa région) ; les pages à monter ; la table ; les
+    // paramètres de toutes les régions ; le temps de préparer
+    lot: Vec<(usize, usize, u64, usize)>,
+    lot_montees: Vec<u32>,
+    table_lot: Vec<u32>,
+    params_lot: Vec<u64>,
+    t_monte: f64,
 }
 
 /// 0.823 : les fréquences 200 et plus sont celles de la carte : ce qu'elle y écrit reste sur la carte
@@ -1456,13 +1479,15 @@ unsafe impl Send for EtatTaranis {}
 fn etat_taranis() -> &'static std::sync::Mutex<EtatTaranis> {
     static R: std::sync::OnceLock<std::sync::Mutex<EtatTaranis>> = std::sync::OnceLock::new();
     R.get_or_init(|| std::sync::Mutex::new(EtatTaranis { res: None, freq: vec![(0, 0); 256], pret: false, pages: Vec::new(),
-        perimees: vec![false; 256] }))
+        perimees: vec![false; 256], lot: Vec::new(), lot_montees: Vec::new(), table_lot: Vec::new(), params_lot: vec![0; 512],
+        t_monte: 0.0 }))
 }
 
 /// 0.823 : avant qu'une boucle ne se joue au processeur, ce que la carte tient seule (les fréquences de la carte
 /// qu'elle a écrites) redescend : le processeur lit alors ce que la carte a fait
 #[allow(dead_code)]
 fn taranis_rapatrier(c: &mut Ctx) {
+    taranis_vider(c);
     let mut g = etat_taranis().lock().unwrap();
     if !g.pret || !g.perimees.iter().any(|&x| x) {
         return;
@@ -1498,7 +1523,7 @@ fn taranis_rapatrier(c: &mut Ctx) {
 }
 
 #[allow(dead_code)]
-fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> bool {
+fn taranis_direct(c: &mut Ctx, spv: &'static [u32], a: u128, b: u128, ext: &[u128], region: usize, differe: bool) -> bool {
     let n = (b as u64).wrapping_sub(a as u64);
     if n == 0 || n > (1u64 << 31) || ext.iter().any(|&v| v >> 64 != 0) {
         return false;
@@ -1538,11 +1563,16 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
     }
     // le rangement : refait (tout monte) si une fréquence est nouvelle ou a grandi
     let refaire = !rien && (!g.pret || (0..256).any(|f| besoin[f] > g.freq[f].1));
+    if refaire && !g.lot.is_empty() {
+        drop(g);
+        taranis_vider(c);
+        return taranis_direct(c, spv, a, b, ext, region, differe);
+    }
     if refaire && g.pret && g.perimees.iter().any(|&x| x) {
         // le rangement va être refait (tout remonte du processeur) : ce que la carte tient seule redescend d'abord
         drop(g);
         taranis_rapatrier(c);
-        return taranis_direct(c, spv, a, b, ext);
+        return taranis_direct(c, spv, a, b, ext, region, differe);
     }
     let mut montees: Vec<u32> = Vec::new();
     if refaire {
@@ -1620,15 +1650,64 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
         table[256 + f] = g.freq[f].1.wrapping_mul(65536);
     }
     let t_monte = t0.elapsed().as_secs_f64() * 1e3;
-    let mut params = vec![0u64; 6 + ext.len()];
-    params[1] = a as u64;
-    params[2] = n;
-    for (k, &v) in ext.iter().enumerate() {
-        params[6 + k] = v as u64;
+    // 0.824 : la boucle entre dans le lot (ses paramètres dans sa région) ; elle part maintenant, avec celles qui
+    // attendaient, sauf si une autre boucle de la carte la suit (differe)
+    let base = region * 64;
+    for k in 0..64 {
+        g.params_lot[base + k] = 0;
     }
+    g.params_lot[base + 1] = a as u64;
+    g.params_lot[base + 2] = n;
+    for (k, &v) in ext.iter().enumerate() {
+        g.params_lot[base + 6 + k] = v as u64;
+    }
+    g.lot.push((spv.as_ptr() as usize, spv.len(), n, region));
+    g.lot_montees.extend(montees);
+    g.table_lot = table;
+    g.t_monte += t_monte;
+    if differe {
+        return true;
+    }
+    let seul = g.lot.len() == 1;
+    match taranis_envoyer(c, &mut *g, bavard) {
+        Some(true) => true,
+        Some(false) if seul => false,
+        _ => {
+            eprintln!("taranis : un lot de la carte a échoué (une écriture hors du monde) ; relancer avec VTX_LOT=0");
+            std::process::exit(3);
+        }
+    }
+}
+
+/// 0.824 : vide le lot de la carte (s'il attend) : il part, ce qu'il a écrit redescend
+#[allow(dead_code)]
+fn taranis_vider(c: &mut Ctx) {
+    let mut g = etat_taranis().lock().unwrap();
+    if g.lot.is_empty() {
+        return;
+    }
+    let bavard = taranis_vk::bavard();
+    if taranis_envoyer(c, &mut *g, bavard) != Some(true) {
+        eprintln!("taranis : un lot de la carte a échoué (une écriture hors du monde) ; relancer avec VTX_LOT=0");
+        std::process::exit(3);
+    }
+}
+
+/// 0.824 : envoie le lot (un envoi, une attente) ; Some(vrai) : fait ; Some(faux) : une boucle a écrit hors du monde ;
+/// None : la carte a refusé
+#[allow(dead_code)]
+fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<bool> {
+    let carte = taranis_vk::carte()?;
+    let lot: Vec<(usize, usize, u64, usize)> = std::mem::take(&mut g.lot);
+    let montees: Vec<u32> = std::mem::take(&mut g.lot_montees);
+    let t_monte = std::mem::replace(&mut g.t_monte, 0.0);
+    let items: Vec<(&[u32], u64, usize)> = lot.iter()
+        .map(|&(p, l, n, r)| (unsafe { std::slice::from_raw_parts(p as *const u32, l) }, n, r)).collect();
+    let mut params = g.params_lot.clone();
+    let table = g.table_lot.clone();
     let lance = {
         let EtatTaranis { res, .. } = &mut *g;
-        carte.lancer_resident(res.as_mut().unwrap(), spv, &montees, &table, &mut params, n)
+        carte.lancer_lot(res.as_mut().unwrap(), &items, &montees, &table, &mut params)
     };
     let (ms, marques) = match lance {
         Ok(x) => x,
@@ -1637,21 +1716,22 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
                 eprintln!("taranis : {}", e);
             }
             g.pret = false;
-            return false;
+            return None;
         }
     };
-    if params[0] != 0 {
+    if lot.iter().any(|&(_, _, _, r)| params[r * 64] != 0) {
         if bavard {
             eprintln!("taranis : la boucle revient au processeur (une écriture hors du monde)");
         }
-        return false;
+        g.pret = false;
+        return Some(false);
     }
-    // ce qui redescend : les fréquences écrites
+    let miroir = g.res.as_ref().unwrap().miroir as usize;
+    // ce qui redescend : les fréquences écrites (celles de la carte restent sur la carte)
     let mut ecrites: Vec<u32> = Vec::new();
     let mut fs: Vec<usize> = Vec::new();
     for f in 0..256 {
         if marques[f] != 0 && g.freq[f].1 > 0 && f >= FREQ_CARTE {
-            // 0.823 : une fréquence de la carte reste sur la carte (le processeur ne l'a plus à jour)
             g.perimees[f] = true;
             continue;
         }
@@ -1671,7 +1751,7 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
                     eprintln!("taranis : {}", e);
                 }
                 g.pret = false;
-                return false;
+                return None;
             }
         }
     };
@@ -1682,14 +1762,17 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
             let pg = ((f as u64) << 8) | q as u64;
             let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s * 65536), 65536) };
             let connue = g.pages.get(s).copied().unwrap_or(0);
-            let p = match liste.iter().find(|x| x.0 == pg).map(|x| x.1).or(if connue != 0 { Some(connue as *mut u128) } else { None }) {
-                Some(p) => p,
-                None => {
-                    if src.iter().all(|&w| w == 0) {
-                        continue;
-                    }
-                    c.m.page_de(adresse_page((2u128 << 120) | pg as u128)).0
+            let p = if connue != 0 {
+                connue as *mut u128
+            } else {
+                if src.iter().all(|&w| w == 0) {
+                    continue;
                 }
+                let p = c.m.page_de(adresse_page((2u128 << 120) | pg as u128)).0;
+                if s < g.pages.len() {
+                    g.pages[s] = p as usize;
+                }
+                p
             };
             let dst = unsafe { std::slice::from_raw_parts_mut(p, 65536) };
             for (d, &w) in dst.iter_mut().zip(src) {
@@ -1698,11 +1781,11 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
         }
     }
     if bavard {
-        eprintln!("taranis : {} tours, le noyau Taranis ({} places, {} montées, {} redescendues) : préparer {:.1} ms, lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
-                  n, g.res.as_ref().unwrap().cap, montees.len(), ecrites.len(), t_monte, ms[0], ms[1], t_desc,
-                  t1.elapsed().as_secs_f64() * 1e3);
+        eprintln!("taranis : {} noyau(x), {} tours, Taranis ({} places, {} montées, {} redescendues) : préparer {:.1} ms, lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
+                  lot.len(), lot.iter().map(|x| x.2).sum::<u64>(), g.res.as_ref().unwrap().cap, montees.len(), ecrites.len(),
+                  t_monte, ms[0], ms[1], t_desc, t1.elapsed().as_secs_f64() * 1e3);
     }
-    true
+    Some(true)
 }
 
 /// 0.820 : VTX_EPISSAGE=rapide : sur la carte, la promesse n'est pas vérifiée (le programme répond de ses écritures)

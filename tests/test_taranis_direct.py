@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory() as d:
     env["VTX_TARANIS"] = "1"
     r = subprocess.run([exe], env=env, capture_output=True, text=True)
     carte = r.stdout.strip().splitlines()[-1]
-    par_taranis = "le noyau Taranis" in r.stderr
+    par_taranis = "noyau(x)" in r.stderr
     if cpu != carte or not par_taranis:
         print("taranis direct : DIFFÉRENT", cpu, carte, "(Taranis a joué)" if par_taranis else "(Taranis n'a pas joué)")
         print(r.stderr[-2000:])

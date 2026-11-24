@@ -1074,7 +1074,8 @@ class NoyauI64(Noyau):
         self.portees.append({})
 
         def param(k):
-            return self.v64("Load", self.case64(self.parametres, self.c32(k)))
+            # 0.824 : chaque noyau d'un lot lit ses paramètres dans sa région (64 mots)
+            return self.v64("Load", self.case64(self.parametres, self.c32(getattr(self, "region", 0) * 64 + k)))
 
         self.bloc = entree
         v3 = self.v("Load", gid, t=t_v3)
@@ -1154,10 +1155,15 @@ class NoyauTaranis(NoyauI64):
     128 bits), par une puissance de deux un décalage ; les autres divisions passent en 32 bits quand les deux nombres y
     tiennent (la carte divise en 32 bits bien plus vite), sinon en 64 bits."""
 
-    def __init__(self, forge, var, corps):
+    def __init__(self, forge, var, corps, region=0):
         super().__init__(forge, var, corps, rapide=True)
         self.valeur_de = {}
         self.t_prod = None
+        # 0.824 : la région de ses paramètres (sa place dans le lot de la carte)
+        self.region = region
+
+    def drapeau_n(self, n):
+        self.e("Store", self.case64(self.parametres, self.c32(self.region * 64)), self.cst(n))
 
     def cst(self, v):
         r = super().cst(v)

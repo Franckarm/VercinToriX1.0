@@ -4585,3 +4585,30 @@ plus lents qu'un seul noyau (23,9 contre 40,4 images par seconde) et la clepsydr
 imite une carte, chaque lancement lui coûte, et ses « fils » divergents se paient cher. Sur la RTX, je ne sais pas
 d'avance : c'est la mesure du créateur qui dira si les étages paient (des noyaux plus petits, l'eau à part) ou non (cinq
 lancements, cinq relectures).
+
+## 110. Le tapis vers le cache : le lot de la carte ; la mise en place (24 novembre, 0.824)
+
+**Chez le créateur, la 0.823** : le C++ 32,6 images par seconde au vol (1 % bas 22,7, pire 45 ms), vtx au processeur
+18,9, **Taranis en un noyau 55,1 (1 % bas 41,6, pire 25 ms)** ; le jour, Taranis 28,5 en moyenne mais un accroc de 465 ms
+(la clepsydre de la carte compilée à sa première image) ; **les étages 26,1** (chaque étage 4 à 7 ms : le lancement et
+son attente, pas le calcul). Le créateur : Taranis contre le C++, ce n'est pas à armes égales (la carte contre le
+processeur) ; vtx est lent au processeur. Décidé : finir le tapis vers le cache et la compilation ; plus tard, le duel
+au processeur (l'épissage rapide du processeur) et le duel sur la carte (GLSL, quand le créateur aura le Vulkan SDK).
+
+**L'idée du créateur** : le vergobret transcrit l'ARN du tapis (la suite des étages) en un lot ; les molécules sont les
+noyaux compilés ; les hex, les places du cube où chaque étage range son résultat ; deux groupes alignés sur un étage du
+cube, avec des cycles d'avance (les images en vol des moteurs) : le second temps, à venir.
+
+**Le lot** (0.824) : des boucles en segments qui se suivent dans le corps d'une fonction (rien entre elles que les
+bornes des boucles, des « soit » purs) partent sur la carte d'un seul envoi : chaque noyau lit ses paramètres dans sa
+région (64 mots, `NoyauTaranis(region=…)`), une barrière entre deux noyaux, une seule attente (`lancer_lot`). La forge
+les repère (`lot_pos`, `lot_suite`) ; tout autre code vide le lot d'abord (`taranis_vider`, et `taranis_rapatrier` avant
+une boucle jouée au processeur). Les boucles d'un lot restent à la carte ensemble (`carte_voulue_lot` : mesurées une à
+une, celles qui attendent ne coûtent rien et la dernière porte tout le lot ; le vergobret coupait le lot à tort).
+`VTX_LOT=0` : chaque boucle part seule.
+
+**La mise en place** : trois images et trois clepsydres avant le chronomètre : chaque noyau s'y compile (plus d'accroc
+le jour), le vergobret y fait ses essais (ils ne cassent plus le vol).
+
+**Ici** (lavapipe, demi-échelle) : « 5 noyau(x) » d'un seul envoi ; la même image partout (le C++, le processeur, un
+noyau, les étages en lot, avec ou sans lot). Le gain du lot se verra sur la RTX (quatre attentes de moins par image).

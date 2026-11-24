@@ -865,6 +865,88 @@ impl Carte {
         Ok(([ms(t0, t1), ms(t1, t2)], marques))
     }
 
+    /// 0.824 : le lot : plusieurs noyaux d'un seul envoi (les pages à monter d'abord, puis chaque noyau, une barrière
+    /// entre deux : chacun voit ce que le précédent a écrit), une seule attente. Chaque noyau lit ses paramètres dans sa
+    /// région de 64 mots (params[64 · région …]) ; rend les millisecondes et les marques
+    pub fn lancer_lot(&mut self, r: &mut Residence, lot: &[(&[u32], u64, usize)], montees: &[u32], table: &[u32],
+                      params: &mut [u64]) -> Result<([f64; 2], Vec<u32>), String> {
+        unsafe { self.lancer_lot_(r, lot, montees, table, params) }
+    }
+
+    unsafe fn lancer_lot_(&mut self, r: &mut Residence, lot: &[(&[u32], u64, usize)], montees: &[u32], table: &[u32],
+                          params: &mut [u64]) -> Result<([f64; 2], Vec<u32>), String> {
+        let t0 = std::time::Instant::now();
+        if params.len() > PARAMS_RES {
+            return Err("trop de paramètres".into());
+        }
+        let pl = self.mise_en_page5()?;
+        let mut envois = Vec::new();
+        for &(spv, fils, region) in lot {
+            let groupes = fils.div_ceil(LARGEUR).max(1);
+            let gx = groupes.min(self.groupes_max);
+            let gy = groupes.div_ceil(gx);
+            if gy > self.groupes_max {
+                return Err("trop de fils".into());
+            }
+            params[region * 64 + 5] = gx * LARGEUR;
+            let pipeline = self.pipeline_avec(spv, pl)?;
+            envois.push((pipeline, gx, gy));
+        }
+        let nmarques = r.cap * 2 + 65537;
+        std::ptr::copy_nonoverlapping(params.as_ptr(), r.vpar, params.len());
+        std::ptr::copy_nonoverlapping(table.as_ptr(), r.vtab, table.len().min(65536));
+        std::ptr::write_bytes(r.vmar, 0, nmarques);
+        let reset_pool = vkfn!(self, "vkResetCommandPool", unsafe extern "system" fn(Ptr, H, u32) -> R);
+        let begin = vkfn!(self, "vkBeginCommandBuffer", unsafe extern "system" fn(Ptr, *const CommandBufferBeginInfo) -> R);
+        let bind_p = vkfn!(self, "vkCmdBindPipeline", unsafe extern "system" fn(Ptr, u32, H));
+        let bind_ds = vkfn!(self, "vkCmdBindDescriptorSets", unsafe extern "system" fn(Ptr, u32, H, u32, u32, *const H, u32, *const u32));
+        let dispatch = vkfn!(self, "vkCmdDispatch", unsafe extern "system" fn(Ptr, u32, u32, u32));
+        let barrier = vkfn!(self, "vkCmdPipelineBarrier", unsafe extern "system" fn(Ptr, u32, u32, u32, u32, *const MemoryBarrier, u32, *const c_void, u32, *const c_void));
+        let copy = vkfn!(self, "vkCmdCopyBuffer", unsafe extern "system" fn(Ptr, H, H, u32, *const BufferCopy));
+        let end = vkfn!(self, "vkEndCommandBuffer", unsafe extern "system" fn(Ptr) -> R);
+        let submit = vkfn!(self, "vkQueueSubmit", unsafe extern "system" fn(Ptr, u32, *const SubmitInfo, H) -> R);
+        let wait = vkfn!(self, "vkWaitForFences", unsafe extern "system" fn(Ptr, u32, *const H, u32, u64) -> R);
+        let reset_f = vkfn!(self, "vkResetFences", unsafe extern "system" fn(Ptr, u32, *const H) -> R);
+        verifie(reset_pool(self.dev, self.cpool, 0), "vkResetCommandPool")?;
+        let cbbi = CommandBufferBeginInfo { sType: ST_COMMAND_BUFFER_BEGIN_INFO, pNext: null(), flags: 1, pInheritanceInfo: null() };
+        verifie(begin(self.cb, &cbbi), "vkBeginCommandBuffer")?;
+        let regions: Vec<BufferCopy> = montees.iter().map(|&s| BufferCopy { srcOffset: s as u64 * 524288,
+            dstOffset: s as u64 * 524288, size: 524288 }).collect();
+        if !regions.is_empty() {
+            copy(self.cb, r.bmir, r.bdev, regions.len() as u32, regions.as_ptr());
+        }
+        let b1 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE,
+            dstAccessMask: ACCESS_SHADER_READ | ACCESS_SHADER_WRITE };
+        barrier(self.cb, STAGE_TRANSFER, STAGE_COMPUTE_SHADER, 0, 1, &b1, 0, null(), 0, null());
+        let bc = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_SHADER_WRITE,
+            dstAccessMask: ACCESS_SHADER_READ | ACCESS_SHADER_WRITE };
+        for (k, &(pipeline, gx, gy)) in envois.iter().enumerate() {
+            if k > 0 {
+                barrier(self.cb, STAGE_COMPUTE_SHADER, STAGE_COMPUTE_SHADER, 0, 1, &bc, 0, null(), 0, null());
+            }
+            bind_p(self.cb, BIND_POINT_COMPUTE, pipeline);
+            bind_ds(self.cb, BIND_POINT_COMPUTE, pl, 0, 1, &r.ds, 0, null());
+            dispatch(self.cb, gx as u32, gy as u32, 1);
+        }
+        let b2 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_SHADER_WRITE,
+            dstAccessMask: ACCESS_TRANSFER_READ | ACCESS_HOST_READ };
+        barrier(self.cb, STAGE_COMPUTE_SHADER, STAGE_TRANSFER | STAGE_HOST, 0, 1, &b2, 0, null(), 0, null());
+        verifie(end(self.cb), "vkEndCommandBuffer")?;
+        let si = SubmitInfo { sType: ST_SUBMIT_INFO, pNext: null(), waitSemaphoreCount: 0, pWaitSemaphores: null(),
+            pWaitDstStageMask: null(), commandBufferCount: 1, pCommandBuffers: &self.cb, signalSemaphoreCount: 0,
+            pSignalSemaphores: null() };
+        let t1 = std::time::Instant::now();
+        verifie(submit(self.file, 1, &si, self.fence), "vkQueueSubmit")?;
+        verifie(wait(self.dev, 1, &self.fence, 1, 120_000_000_000), "vkWaitForFences")?;
+        verifie(reset_f(self.dev, 1, &self.fence), "vkResetFences")?;
+        let t2 = std::time::Instant::now();
+        std::ptr::copy_nonoverlapping(r.vpar as *const u64, params.as_mut_ptr(), params.len());
+        let mut marques = vec![0u32; nmarques];
+        std::ptr::copy_nonoverlapping(r.vmar as *const u32, marques.as_mut_ptr(), nmarques);
+        let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
+        Ok(([ms(t0, t1), ms(t1, t2)], marques))
+    }
+
     /// les places écrites redescendent dans le miroir ; rend les millisecondes
     pub fn redescendre(&mut self, r: &mut Residence, places: &[u32]) -> Result<f64, String> {
         unsafe {
