@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.828.zip`, `essai-0.828.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.829.zip`, `essai-0.829.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -321,3 +321,18 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   résolution réduite (le jour) ; puis son idée des étages en cube qui se fondent d'une image à l'autre (la fusion
   temporelle : rien ne se déplace, l'image suivante reprend ce que la précédente a fait) ; le bruit aux passages ADN →
   ARN → ADN (la vérification au hasard des transferts, à la manière de Freivalds).
+
+## 0.828 (24 novembre) : la clepsydre progressive (option)
+- Chez le créateur, la 0.827 : les blocs de 8 × 4 perdent environ 5 % (un noyau 52 contre 55) : la carte n'est pas le
+  goulot, et le processeur relit l'image dans un ordre haché. `BLOCS = 0` reste la règle.
+- `PROGRESSIF` (dans le programme principal ; 0 dans les anciens) : `ranger_lumiere_progressive(jeu, image)`,
+  `ranger_mot_tire`, `tirage(t, n, g, image)`, `ranger_mot_tnw(t, n, w, avec_ciel, jeu, refs)` : au jour, un mot sur
+  quatre par image (tiré par son lieu : tuile, bloc, groupe de quatre), et les références du créateur (la ligne de huit
+  points : les bouts et le centre ; s'ils voient le même soleil, les autres le reçoivent). Main :
+  `gergovie_carte_progressif.vtx` ; le C++ : `gergovie_ref.cpp -DPROGRESSIF` (`ranger_lumiere_p`). Le vol : la même
+  empreinte ; le jour : une autre, la même pour vtx et le C++ (vérifié à demi-échelle : -7787085414147578818 pour 12 et
+  8 images ; le témoin : 8984151156866620437).
+- Le créateur a écrit à Anthropic (le blocage du 18).
+- À discuter : autre chose qu'un rayon (le créateur : « une fréquence, une couleur, une intensité ») : la projection des
+  points vers l'écran (le point émet, l'écran reçoit ; le plus proche gagne : atomicMin de 64 bits, Schütz, Kerbl,
+  Wimmer, 2021 et 2022) ; un pixel où rien ne tombe reste inconnu, et lui seul lance un rayon.

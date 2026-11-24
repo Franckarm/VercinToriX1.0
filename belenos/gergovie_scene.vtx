@@ -1904,6 +1904,47 @@ fonction ranger_lumiere_carte(avec_ciel, jeu) {
     }
 }
 
+// 0.828 : la clepsydre progressive (PROGRESSIF, dans le programme principal ; l'idée du créateur : les étages qui se
+// fondent au fur et à mesure, les points hex retrouvés dans le bruit). Quand le soleil bouge, chaque image ne refait
+// qu'un mot du calque sur quatre : dans chaque groupe de quatre mots voisins, celui que tire le hachage de son lieu
+// dans le cube (sa tuile, son bloc, son groupe) décalé du numéro de l'image ; en quatre images, chaque mot est refait
+// une fois, chacun à son tour. Le reste garde sa lumière d'avant (l'ombre suit le soleil avec au plus trois images de
+// retard). Le tirage est un hachage : la même image donne la même lumière (l'empreinte reste vérifiable).
+fonction ranger_lumiere_progressive(jeu, image) {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    soit quart = total / 4;
+    pour m dans 0..quart en segments {
+        ranger_mot_tire(m, jeu, image);
+    }
+}
+
+fonction tirage(t, n, g, image) {
+    retour (((((t * 1031 + n) * 16 + g) * 2654435761) >> 13) + image) & 3;
+}
+
+fonction ranger_mot_tire(m, jeu, image) {
+    soit t = 0;
+    soit r = m * 4;
+    soit cherche = 1;
+    pour k dans 0..(TUILES * TUILES) {
+        si cherche == 1 {
+            soit nk = @2[GLOB + 1 + k] * 64;
+            si r < nk {
+                t = k;
+                cherche = 0;
+            } sinon {
+                r = r - nk;
+            }
+        }
+    }
+    soit n = r >> 6;
+    soit g = (r & 63) >> 2;
+    ranger_mot_tnw(t, n, g * 4 + tirage(t, n, g, image), 0, jeu, 1);
+}
+
 // le mot q du calque (toutes les tuiles à la suite) : sa tuile, sa place dans la réserve, son mot (huit points)
 fonction ranger_mot(q, avec_ciel, jeu) {
     soit t = 0;
@@ -1920,8 +1961,15 @@ fonction ranger_mot(q, avec_ciel, jeu) {
             }
         }
     }
-    soit n = r >> 6;
-    soit w = r & 63;
+    ranger_mot_tnw(t, r >> 6, r & 63, avec_ciel, jeu, 0);
+}
+
+// le mot w du bloc n de la tuile t : huit points en ligne droite (le long de z). 0.828 : refs = 1 (la clepsydre
+// progressive) : l'idée du créateur des points de référence et des lignes droites : la lumière se calcule d'abord aux
+// deux bouts et au centre de la ligne ; s'ils voient tous le même soleil (le même nombre de ses quatre points), les
+// autres points de la surface sur cette ligne le reçoivent sans calcul ; sinon (un bord d'ombre passe), chacun se
+// calcule.
+fonction ranger_mot_tnw(t, n, w, avec_ciel, jeu, refs) {
     soit b = @2[((FINV + t) << 24) + n];
     soit bx = b >> 10;
     soit by = (b >> 5) & 31;
@@ -1931,21 +1979,56 @@ fonction ranger_mot(q, avec_ciel, jeu) {
     soit base = (FELT + t) << 24;
     soit ms = 0;
     soit mc = 0;
+    // les références : j = 0, 4, 7 (les bouts et le centre) ; leur valeur, ou 9 : pas une surface ; 10 : elles diffèrent
+    soit commun = 9;
+    soit faits = 0;
+    si refs == 1 {
+        pour jr dans 0..3 {
+            soit j1 = (jr * 4) - (jr >> 1);
+            soit v1 = w * 8 + j1;
+            soit x1 = x0 + (v1 >> 6);
+            soit y1 = by * 8 + ((v1 >> 3) & 7);
+            soit z1 = z0 + (v1 & 7);
+            soit e1 = @2[base + REP + n * 512 + v1];
+            si e1 != 0 && ((e1 >> 2) & 63) != EAU {
+                si expose(x1, y1, z1) == 1 {
+                    soit n1 = normale_de(e1);
+                    soit sv = soleil_vu(x1, y1, z1, (n1 & 255) - 128, ((n1 >> 16) & 255) - 128, ((n1 >> 32) & 255) - 128, jeu);
+                    ms = ms | ((128 | sv) << (j1 * 8));
+                    faits = faits | (1 << j1);
+                    si commun == 9 {
+                        commun = sv;
+                    } sinon si commun != sv {
+                        commun = 10;
+                    }
+                }
+            }
+        }
+        si commun == 9 {
+            commun = 10;
+        }
+    }
     pour j dans 0..8 {
-        soit v = w * 8 + j;
-        soit x = x0 + (v >> 6);
-        soit y = by * 8 + ((v >> 3) & 7);
-        soit z = z0 + (v & 7);
-        soit el = @2[base + REP + n * 512 + v];
-        si el != 0 && ((el >> 2) & 63) != EAU {
-            si expose(x, y, z) == 1 {
-                soit nn = normale_de(el);
-                soit nx = (nn & 255) - 128;
-                soit ny = ((nn >> 16) & 255) - 128;
-                soit nz = ((nn >> 32) & 255) - 128;
-                ms = ms | ((128 | soleil_vu(x, y, z, nx, ny, nz, jeu)) << (j * 8));
-                si avec_ciel == 1 {
-                    mc = mc | ((128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8));
+        si ((faits >> j) & 1) == 0 {
+            soit v = w * 8 + j;
+            soit x = x0 + (v >> 6);
+            soit y = by * 8 + ((v >> 3) & 7);
+            soit z = z0 + (v & 7);
+            soit el = @2[base + REP + n * 512 + v];
+            si el != 0 && ((el >> 2) & 63) != EAU {
+                si expose(x, y, z) == 1 {
+                    soit nn = normale_de(el);
+                    soit nx = (nn & 255) - 128;
+                    soit ny = ((nn >> 16) & 255) - 128;
+                    soit nz = ((nn >> 32) & 255) - 128;
+                    soit sj = commun;
+                    si commun >= 9 {
+                        sj = soleil_vu(x, y, z, nx, ny, nz, jeu);
+                    }
+                    ms = ms | ((128 | sj) << (j * 8));
+                    si avec_ciel == 1 {
+                        mc = mc | ((128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8));
+                    }
                 }
             }
         }
@@ -2079,6 +2162,10 @@ fonction epreuve(vol, jour, sur_carte) {
         si sur_carte == 0 {
             ranger_lumiere(0, 0);
         } sinon {
+            // la clepsydre progressive se compile ici aussi ; puis le calque entier (le vol garde la lumière exacte)
+            si PROGRESSIF == 1 {
+                ranger_lumiere_progressive(0, mise);
+            }
             ranger_lumiere_carte(0, 0);
         }
     }
@@ -2100,6 +2187,8 @@ fonction epreuve(vol, jour, sur_carte) {
         preparer_soleil(300 + i * 3, 50 + i, 0);
         si sur_carte == 0 {
             ranger_lumiere(0, 0);
+        } sinon si PROGRESSIF == 1 && i > 0 {
+            ranger_lumiere_progressive(0, i);
         } sinon {
             ranger_lumiere_carte(0, 0);
         }

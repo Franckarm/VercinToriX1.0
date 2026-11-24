@@ -745,6 +745,59 @@ static void ranger_lumiere(int avec_ciel) {
     }
 }
 
+#ifdef PROGRESSIF
+/* 0.828 : la clepsydre progressive (comme ranger_lumiere_progressive de gergovie_scene.vtx) : dans chaque groupe de
+   quatre mots, celui que tire le hachage de son lieu, décalé du numéro de l'image ; la lumière d'une ligne de huit
+   points se calcule d'abord aux bouts et au centre (j = 0, 4, 7) ; s'ils voient le même soleil, les autres le reçoivent */
+static u tirage(u t, u n, u g, u image) {
+    return (((((t * 1031 + n) * 16 + g) * 2654435761u) >> 13) + image) & 3;
+}
+static void ranger_lumiere_p(u image) {
+    long q;
+#pragma omp parallel for schedule(dynamic, 8)
+    for (q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
+        u t = (u)q >> 10, bx = (u)q & 31, bz = ((u)q >> 5) & 31;
+        u x0 = (t % TUILES) * 256 + bx * 8, z0 = (t / TUILES) * 256 + bz * 8;
+        for (u by = 0; by < 32; by++) {
+            u e = DIRE[t][IX((bx << 10) | (by << 5) | bz)];
+            if (e >= 16 && e < ((u)1 << 62)) {
+                u n = e - 16;
+                for (u g = 0; g < 16; g++) {
+                    u w = g * 4 + tirage(t, n, g, image);
+                    u ms_ = 0, faits = 0, commun = 9;
+                    for (u jr = 0; jr < 3; jr++) {
+                        u j = jr * 4 - (jr >> 1);
+                        u v = w * 8 + j, x = x0 + (v >> 6), y = by * 8 + ((v >> 3) & 7), z = z0 + (v & 7);
+                        u el = POOLE[t][IX(n * 512 + v)];
+                        if (el != 0 && ((el >> 2) & 63) != EAU && expose(x, y, z)) {
+                            u nx = ((el >> 8) & 255) - 128, ny = ((el >> 16) & 255) - 128, nz = ((el >> 24) & 255) - 128;
+                            if (nx == 0 - (u)128) { nx = 0; ny = 127; nz = 0; }
+                            u sv = soleil_vu(x, y, z, nx, ny, nz);
+                            ms_ |= (128 | sv) << (j * 8);
+                            faits |= (u)1 << j;
+                            if (commun == 9) commun = sv; else if (commun != sv) commun = 10;
+                        }
+                    }
+                    if (commun == 9) commun = 10;
+                    for (u j = 0; j < 8; j++) {
+                        if ((faits >> j) & 1) continue;
+                        u v = w * 8 + j, x = x0 + (v >> 6), y = by * 8 + ((v >> 3) & 7), z = z0 + (v & 7);
+                        u el = POOLE[t][IX(n * 512 + v)];
+                        if (el != 0 && ((el >> 2) & 63) != EAU && expose(x, y, z)) {
+                            u nx = ((el >> 8) & 255) - 128, ny = ((el >> 16) & 255) - 128, nz = ((el >> 24) & 255) - 128;
+                            if (nx == 0 - (u)128) { nx = 0; ny = 127; nz = 0; }
+                            u sj = commun < 9 ? commun : soleil_vu(x, y, z, nx, ny, nz);
+                            ms_ |= (128 | sj) << (j * 8);
+                        }
+                    }
+                    SOLC[t][IX(n * 64 + w)] = ms_;
+                }
+            }
+        }
+    }
+}
+#endif
+
 static u brumer(u c, u t) {
     u r = c & 4095, g = (c >> 12) & 4095, b = (c >> 24) & 4095;
     u d = (t >> 16) * RD / RN;
@@ -898,12 +951,20 @@ int main(void) {
     for (u i = 0; i < n2; i++) {
         clock_gettime(CLOCK_MONOTONIC, &ti);
         preparer_soleil(300 + i * 3, 50 + i);
+#ifdef PROGRESSIF
+        if (i > 0) ranger_lumiere_p(i); else ranger_lumiere(0);
+#else
         ranger_lumiere(0);
+#endif
         image_gergovie(i, n2, i * 3);
         clock_gettime(CLOCK_MONOTONIC, &tf);
         t[i] = ms(ti, tf);
     }
+    #ifdef PROGRESSIF
+    bilan("le jour (en C++, la clepsydre progressive)", t, n2);
+#else
     bilan("le jour (en C++)", t, n2);
+#endif
     free(t);
     return 0;
 }

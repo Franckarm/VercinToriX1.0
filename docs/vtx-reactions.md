@@ -4673,3 +4673,18 @@ localité : une vague de la carte (32 fils) partage tout, ses lectures comme ses
 pixels en ligne ; par blocs de 8 × 4, elle voit un petit carré : ses rayons sont voisins, lisent les mêmes cases du cube
 (le cache de la carte sert mieux) et touchent ensemble le ciel, l'eau ou la terre (moins de divergence). C'est le même
 principe que la courbe de Morton, déjà dans le vocabulaire du cube. L'image est la même, point pour point.
+
+## 114. La clepsydre progressive, les points de référence (24 novembre, 0.828)
+
+**L'idée du créateur** : les étages qui se fondent au fur et à mesure, les points hex retrouvés dans le bruit, et des
+points de référence de lumière et d'ombre reliés par des lignes droites autour d'un point central. Ce qui en est fait :
+quand le soleil bouge, chaque image refait un mot du calque sur quatre, tiré par son lieu dans le cube (le hachage spatial
+tremblé de Binder, Fricke et Keller, SIGGRAPH 2018) ; un mot est une ligne droite de huit points : sa lumière se calcule
+d'abord aux deux bouts et au centre, et si les trois voient le même soleil, les cinq autres le reçoivent sans calcul (un
+bord d'ombre qui passe entre eux les fait tous calculer). Le reste du calque garde sa lumière de l'image d'avant.
+
+**Ce que l'on paie** : l'ombre suit le soleil avec au plus trois images de retard, et une ombre plus fine qu'un demi-mot
+peut échapper aux références ; c'est donc une option, l'image entière reste le témoin. Le tirage est un hachage : la
+même image donne la même lumière, et le C++ fait le même tirage (la même empreinte, vérifiée).
+
+**Sur lavapipe** (demi-échelle) : le jour passe de 3,7 à 13,4 images par seconde ; le C++ progressif de 1 à 43,6.
