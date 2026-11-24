@@ -715,6 +715,8 @@ class Forge(V.Generateur):
             self.ligne("}")
             self.niveau -= 1
             self.ligne("}")
+            # 0.823 : la boucle se joue au processeur : ce que la carte tient seule redescend d'abord
+            self.ligne("if !fait { taranis_rapatrier(c); }")
             return (site, st[5])
         k = len(self.noyaux)
         self.noyaux.append(spv)

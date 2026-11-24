@@ -1442,13 +1442,59 @@ struct EtatTaranis {
     res: Option<taranis_vk::Residence>,
     freq: Vec<(u32, u32)>,          // pour chaque fréquence : (première place, nombre de places) ; (0, 0) : absente
     pret: bool,
+    // 0.823 : la page du processeur de chaque place (pour redescendre sans relire toutes les pages)
+    pages: Vec<usize>,
+    // 0.823 : les fréquences de la carte (200 et plus) écrites par la carte et pas encore redescendues
+    perimees: Vec<bool>,
 }
+
+/// 0.823 : les fréquences 200 et plus sont celles de la carte : ce qu'elle y écrit reste sur la carte
+const FREQ_CARTE: usize = 200;
 unsafe impl Send for EtatTaranis {}
 
 #[allow(dead_code)]
 fn etat_taranis() -> &'static std::sync::Mutex<EtatTaranis> {
     static R: std::sync::OnceLock<std::sync::Mutex<EtatTaranis>> = std::sync::OnceLock::new();
-    R.get_or_init(|| std::sync::Mutex::new(EtatTaranis { res: None, freq: vec![(0, 0); 256], pret: false }))
+    R.get_or_init(|| std::sync::Mutex::new(EtatTaranis { res: None, freq: vec![(0, 0); 256], pret: false, pages: Vec::new(),
+        perimees: vec![false; 256] }))
+}
+
+/// 0.823 : avant qu'une boucle ne se joue au processeur, ce que la carte tient seule (les fréquences de la carte
+/// qu'elle a écrites) redescend : le processeur lit alors ce que la carte a fait
+#[allow(dead_code)]
+fn taranis_rapatrier(c: &mut Ctx) {
+    let mut g = etat_taranis().lock().unwrap();
+    if !g.pret || !g.perimees.iter().any(|&x| x) {
+        return;
+    }
+    let carte = match taranis_vk::carte() {
+        Some(k) => k,
+        None => return,
+    };
+    let fs: Vec<usize> = (0..256).filter(|&f| g.perimees[f]).collect();
+    let places: Vec<u32> = fs.iter().flat_map(|&f| (0..g.freq[f].1).map(move |q| (f, q))).map(|(f, q)| g.freq[f].0 + q).collect();
+    let ok = {
+        let EtatTaranis { res, .. } = &mut *g;
+        carte.redescendre(res.as_mut().unwrap(), &places).is_ok()
+    };
+    let miroir = g.res.as_ref().unwrap().miroir as usize;
+    for &f in &fs {
+        for q in 0..g.freq[f].1 {
+            let s = (g.freq[f].0 + q) as usize;
+            let pg = ((f as u64) << 8) | q as u64;
+            let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s * 65536), 65536) };
+            let p = if g.pages[s] != 0 { g.pages[s] as *mut u128 } else { c.m.page_de(adresse_page((2u128 << 120) | pg as u128)).0 };
+            let dst = unsafe { std::slice::from_raw_parts_mut(p, 65536) };
+            for (d, &w) in dst.iter_mut().zip(src) {
+                *d = if ok { w as u128 } else { *d };
+            }
+        }
+        g.perimees[f] = false;
+    }
+    if !ok {
+        g.pret = false;
+    }
+    c.oublier_pages();
 }
 
 #[allow(dead_code)]
@@ -1468,9 +1514,11 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
     let t0 = std::time::Instant::now();
     c.oublier_pages();
     let mut g = etat_taranis().lock().unwrap();
+    // 0.823 : rien de changé depuis le dernier lancement (aucune page marquée) : rien à relire, rien ne monte
+    let rien = g.pret && SALES.iter().all(|w| w.load(std::sync::atomic::Ordering::Relaxed) == 0);
     // les pages de l'étage 2 du processeur, par fréquence
     let mut liste: Vec<(u64, *mut u128)> = Vec::new();
-    for (k, p, brins) in c.m.instantane() {
+    for (k, p, brins) in if rien { Vec::new() } else { c.m.instantane() } {
         if k >> 120 != 2 {
             continue;
         }
@@ -1489,7 +1537,13 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
         besoin[f] = besoin[f].max(q + 1);
     }
     // le rangement : refait (tout monte) si une fréquence est nouvelle ou a grandi
-    let refaire = !g.pret || (0..256).any(|f| besoin[f] > g.freq[f].1);
+    let refaire = !rien && (!g.pret || (0..256).any(|f| besoin[f] > g.freq[f].1));
+    if refaire && g.pret && g.perimees.iter().any(|&x| x) {
+        // le rangement va être refait (tout remonte du processeur) : ce que la carte tient seule redescend d'abord
+        drop(g);
+        taranis_rapatrier(c);
+        return taranis_direct(c, spv, a, b, ext);
+    }
     let mut montees: Vec<u32> = Vec::new();
     if refaire {
         let mut place = 1u32;
@@ -1513,13 +1567,22 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
         unsafe { std::ptr::write_bytes(mir, 0, cap * 65536) };
         montees = (0..cap as u32).collect();
         g.pret = true;
+        g.pages = vec![0; cap];
+        g.perimees = vec![false; 256];
     }
     let miroir = g.res.as_ref().unwrap().miroir as usize;
     let mut a_copier: Vec<(usize, *mut u128)> = Vec::new();
     for &(pg, p) in &liste {
         let (f, q) = ((pg >> 8) as usize, (pg & 255) as u32);
+        let s = (g.freq[f].0 + q) as usize;
+        if s < g.pages.len() {
+            g.pages[s] = p as usize;
+        }
         if refaire || sale(pg) {
-            let s = (g.freq[f].0 + q) as usize;
+            if f >= FREQ_CARTE && g.perimees[f] && !refaire {
+                // le processeur a écrit une page de la carte qu'il n'avait pas : la carte la prend telle quelle
+                g.perimees[f] = false;
+            }
             a_copier.push((s, p));
             if !refaire {
                 montees.push(s as u32);
@@ -1587,6 +1650,11 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
     let mut ecrites: Vec<u32> = Vec::new();
     let mut fs: Vec<usize> = Vec::new();
     for f in 0..256 {
+        if marques[f] != 0 && g.freq[f].1 > 0 && f >= FREQ_CARTE {
+            // 0.823 : une fréquence de la carte reste sur la carte (le processeur ne l'a plus à jour)
+            g.perimees[f] = true;
+            continue;
+        }
         if marques[f] != 0 && g.freq[f].1 > 0 {
             fs.push(f);
             for q in 0..g.freq[f].1 {
@@ -1613,8 +1681,9 @@ fn taranis_direct(c: &mut Ctx, spv: &[u32], a: u128, b: u128, ext: &[u128]) -> b
             let s = (g.freq[f].0 + q) as usize;
             let pg = ((f as u64) << 8) | q as u64;
             let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s * 65536), 65536) };
-            let p = match liste.iter().find(|x| x.0 == pg) {
-                Some(&(_, p)) => p,
+            let connue = g.pages.get(s).copied().unwrap_or(0);
+            let p = match liste.iter().find(|x| x.0 == pg).map(|x| x.1).or(if connue != 0 { Some(connue as *mut u128) } else { None }) {
+                Some(p) => p,
                 None => {
                     if src.iter().all(|&w| w == 0) {
                         continue;

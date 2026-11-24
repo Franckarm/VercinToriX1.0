@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.823.zip`, `essai-0.823.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.824.zip`, `essai-0.824.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -252,3 +252,13 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   images en vol, le vergobret en logistique) ; puis le cache qui montre l'image (Vulkan, la fenêtre) ; l'ombre
   quaternaire (un mot de 64 bits par vague de 32 points) ; le vergobret qui apprend pendant la mise en place.
   Prochaine livraison : vtx-0.823.zip / essai-0.823.bat.
+
+## 0.823 (24 novembre) : les étages sur la carte, la référence C++
+- `belenos/gergovie_ref.cpp` (la nouvelle scène en C++, même empreinte) ; `image_etages` (matériaux, ombre, lumière,
+  reflet, cache : cinq noyaux), `gergovie_etages.vtx` ; `epreuve(vol, jour, sur_carte)` : 0 processeur, 1 un noyau,
+  2 les étages ; la clepsydre sur la carte (`ranger_lumiere_carte`, `ranger_mot`, `FINV`).
+- Noyau de la forge : `FREQ_CARTE = 200` (les fréquences de la carte ne redescendent pas ; `taranis_rapatrier` avant une
+  boucle jouée au processeur et avant un nouveau rangement) ; préparer sans relire quand rien n'a changé.
+- Prochain : lire la RTX (les étages paient-ils ?) ; le cache qui montre l'image (Vulkan, la fenêtre) ; l'ombre à
+  résolution réduite (l'indicateur du créateur) ; le tapis des images en vol ; l'ombre quaternaire en un mot par vague.
+  Prochaine livraison : vtx-0.824.zip / essai-0.824.bat.

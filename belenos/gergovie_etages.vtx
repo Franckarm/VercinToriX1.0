@@ -1,0 +1,12 @@
+// machine : lugus
+// Belenos : l'épreuve de Gergovie sur la carte, par les étages (0.823) : chaque image en cinq passes de Taranis (les
+// matériaux, l'ombre, la lumière, le reflet, le cache) ; leurs cubes (fréquences 200 et plus) restent sur la carte. La
+// même image que gergovie.vtx et gergovie_carte.vtx. À lancer avec VTX_EPISSAGE=rapide (Taranis).
+//     python forge/forge128.py belenos/gergovie_etages.vtx -o gergovie_etages ; VTX_EPISSAGE=rapide VTX_CARTE=1 gergovie_etages
+constante RN = 1;
+constante RD = 1;
+importer "gergovie_scene.vtx";
+
+fonction principal() {
+    epreuve(240, 120, 2);
+}

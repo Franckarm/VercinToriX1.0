@@ -4550,3 +4550,38 @@ joués (le Rust de l'ancienne scène reste dans le dépôt).
 **Ici** (demi-échelle, 320 × 180, lavapipe) : la même empreinte au processeur, par Taranis et par l'ancien chemin de la
 carte (le vol 6019321734554019523, le jour 8971656942411583848) ; les mêmes mots pour les deux compilateurs ; l'épreuve
 d'Alésia conforme. L'empreinte à pleine échelle se lit chez le créateur (la même au processeur et sur la carte).
+
+## 109. Les étages sur la carte ; la référence en C++ (24 novembre, 0.823)
+
+**Chez le créateur, la 0.822** (la nouvelle scène, plus chargée) : vtx au processeur 19,5 images par seconde (22,1 sur
+l'ancienne) ; **Taranis 53,8, 1 % bas 45,4, pire image 22 ms** (presque régulier) ; le jour 14,1 (la clepsydre au
+processeur). Demandé : les étages, et le C++ remis pour comparer.
+
+**La référence en C++** (`belenos/gergovie_ref.cpp`) : la nouvelle Gergovie écrite à la main, entier pour entier, à
+partir de `cubes_ref.c` (déjà vérifié au mot près) ; les rangées sur tous les cœurs (OpenMP) ; `cl /O2 /openmp /EHsc /TP`.
+Ici : la même empreinte que vtx sur les deux épreuves (6019321734554019523, 8971656942411583848, à demi-échelle).
+
+**Les étages** (`image_etages`, `gergovie_etages.vtx`, l'idée du créateur : le rendu différé des moteurs) : cinq
+passes de Taranis, chacune son noyau :
+- **les matériaux** : le rayon de l'œil (sa direction rangée en un mot : trois nombres signés de 21 bits), la distance
+  du point touché ;
+- **l'ombre** : `ombrer`, l'état quaternaire du point (inconnu le ciel, faux l'ombre, vrai le soleil en plein, variable
+  la pénombre), la clepsydre et le ciel vu ;
+- **la lumière** : `eclairer`, la couleur d'un point de terre ;
+- **le reflet** : Divona, pour les seuls points d'eau ;
+- **le cache** : la composition (le ciel, la brume) : le point de l'image.
+
+Leurs cubes (fréquences 200 à 204) **restent sur la carte** (`FREQ_CARTE` dans le noyau de la forge : la carte ne les
+redescend pas) ; une boucle qui retombe au processeur les fait d'abord redescendre (`taranis_rapatrier`, et avant un
+nouveau rangement) : le processeur lit toujours ce que la carte a fait. **Préparer un lancement ne relit plus rien**
+quand aucune page n'a changé (0,0 ms entre deux étages).
+
+**La clepsydre sur la carte** (le jour) : un fil par mot du calque (huit points de surface ; le chemin inverse place →
+bloc, `FINV`), 156 736 fils à demi-échelle (une colonne de blocs par fil n'en faisait que 1 024, chacun trop chargé) ;
+`expose` et `depart` sans court-circuit autour des appels (la carte le refuse ; le même sens).
+
+**Ici** (lavapipe, demi-échelle) : la même image au processeur, en un noyau, par les étages et en C++. Les étages y sont
+plus lents qu'un seul noyau (23,9 contre 40,4 images par seconde) et la clepsydre aussi : lavapipe est un processeur qui
+imite une carte, chaque lancement lui coûte, et ses « fils » divergents se paient cher. Sur la RTX, je ne sais pas
+d'avance : c'est la mesure du créateur qui dira si les étages paient (des noyaux plus petits, l'eau à part) ou non (cinq
+lancements, cinq relectures).

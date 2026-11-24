@@ -37,7 +37,15 @@ constante SOLEILS = 600100;
 constante COMPTE = 600200;
 constante DISTA = 1048576;
 constante DISTB = 2097152;
+constante FINV = 140;              // 0.823 : le bloc de chaque place de la réserve de la tuile t (FINV + t)
 constante FIMAGE = 120;            // le cube de l'image (le point i : 0xRRGGBB), où la carte rend
+// 0.823 : les étages de la carte, chacun son cube (le point i à sa place) ; les fréquences 200 et plus sont celles de la
+// carte : elles restent sur la carte (le processeur ne les lit que par une boucle de la carte)
+constante FDIR = 200;              // la direction du rayon de l'œil (trois nombres de 21 bits)
+constante FMAT = 201;              // l'étage des matériaux : la distance du point touché (MANQUE : le ciel)
+constante FOMB = 202;              // l'étage de l'ombre : l'état quaternaire, la clepsydre, le ciel vu (ombrer)
+constante FLUM = 203;              // l'étage de la lumière : la couleur d'un point de terre avant la brume
+constante FREF = 204;              // l'étage du reflet : la couleur d'un point d'eau (Divona) avant la brume
 
 // les matières
 constante ROCHE = 1;
@@ -825,6 +833,8 @@ fonction placer_blocs() {
         pour b dans 0..32768 {
             si @2[base + b] == 1 {
                 @2[base + b] = 16 + n;
+                // 0.823 : le chemin inverse (la place n dans la réserve → le bloc b), pour la clepsydre sur la carte
+                @2[((FINV + t) << 24) + n] = b;
                 n = n + 1;
             }
         }
@@ -1220,9 +1230,11 @@ fonction depart(x, y, z, nx, ny, nz) {
                 vz = z - 1;
                 nk = 0 - nz;
             }
-            si element(vx, vy, vz) == 0 && nk .> note {
-                note = nk;
-                meilleur = k;
+            si nk .> note {
+                si element(vx, vy, vz) == 0 {
+                    note = nk;
+                    meilleur = k;
+                }
             }
         }
         retour meilleur;
@@ -1372,10 +1384,23 @@ fonction normale_de(e) {
 
 // un point de surface : de la matière (pas de l'eau) avec, à côté, un point vide (par où un rayon peut l'atteindre)
 fonction expose(x, y, z) {
-    si element(x + 1, y, z) == 0 || element(x - 1, y, z) == 0 || element(x, y + 1, z) == 0 {
+    // 0.823 : sans court-circuit autour des appels (la carte le refuse) : un appel par test, le même sens
+    si element(x + 1, y, z) == 0 {
         retour 1;
     }
-    si element(x, y - 1, z) == 0 || element(x, y, z + 1) == 0 || element(x, y, z - 1) == 0 {
+    si element(x - 1, y, z) == 0 {
+        retour 1;
+    }
+    si element(x, y + 1, z) == 0 {
+        retour 1;
+    }
+    si element(x, y - 1, z) == 0 {
+        retour 1;
+    }
+    si element(x, y, z + 1) == 0 {
+        retour 1;
+    }
+    si element(x, y, z - 1) == 0 {
         retour 1;
     }
     retour 0;
@@ -1736,6 +1761,176 @@ fonction point_vu(i, cx, cy, cz, lacet, tangage, temps) {
     retour regarder_1(cx, cy, cz, dx, dy, dz, temps) & 16777215;
 }
 
+// ---------------------------------------------------------------------------------------- les étages (0.823)
+// La même image que point_vu, faite en cinq passes sur la carte, chacune son noyau (l'idée du créateur, le rendu
+// différé des moteurs) : les matériaux (le rayon de l'œil : la distance du point touché), l'ombre (l'état quaternaire du
+// point : inconnu le ciel, faux l'ombre, vrai le soleil en plein, variable la pénombre), la lumière (la couleur d'un
+// point de terre), le reflet (Divona, pour les seuls points d'eau), le cache (la composition, la brume : l'image).
+
+// la direction du rayon de l'œil du point i, normée, rangée en un mot (trois nombres signés de 21 bits)
+fonction direction_vue(i, cx, cy, cz, lacet, tangage) {
+    soit sl = sin1024(lacet);
+    soit cl = cos1024(lacet);
+    soit st = sin1024(tangage);
+    soit ct = cos1024(tangage);
+    soit iy = i / W;
+    soit ix = i - iy * W;
+    soit sy = ((H - 2 * iy - 1) * 45889) ./ W;
+    soit sx = ((2 * ix + 1 - W) * 45889) ./ W;
+    soit dx = (sl * ct) ./ 65536 + (cl * sx + ((0 - sl * st) ./ 65536) * sy) ./ 65536;
+    soit dy = st + (ct * sy) ./ 65536;
+    soit dz = (cl * ct) ./ 65536 + ((0 - sl) * sx + ((0 - cl * st) ./ 65536) * sy) ./ 65536;
+    soit inv = inverse_longueur(dx, dy, dz);
+    dx = (dx * inv) .>> 32;
+    dy = (dy * inv) .>> 32;
+    dz = (dz * inv) .>> 32;
+    retour (dx & 2097151) | ((dy & 2097151) << 21) | ((dz & 2097151) << 42);
+}
+
+fonction dir_x(w) {
+    retour (w << 43) .>> 43;
+}
+
+fonction dir_y(w) {
+    retour (w << 22) .>> 43;
+}
+
+fonction dir_z(w) {
+    retour (w << 1) .>> 43;
+}
+
+// l'étage des matériaux : le rayon de l'œil jusqu'au point touché
+fonction etage_materiaux(i, cx, cy, cz, lacet, tangage) {
+    soit w = direction_vue(i, cx, cy, cz, lacet, tangage);
+    @2[(FDIR << 24) + i] = w;
+    @2[(FMAT << 24) + i] = tracer(cx, cy, cz, dir_x(w), dir_y(w), dir_z(w), 1100 * 65536 * RN / RD, 1);
+}
+
+// l'étage de l'ombre : ce que le point reçoit (ombrer : 1 | eau << 1 | état << 2 | vus << 4 | ouverts << 8 ; 0 le ciel)
+fonction etage_ombre(i, cx, cy, cz) {
+    soit w = @2[(FDIR << 24) + i];
+    @2[(FOMB << 24) + i] = ombrer(cx, cy, cz, dir_x(w), dir_y(w), dir_z(w), @2[(FMAT << 24) + i], 0);
+}
+
+// l'étage de la lumière : la couleur d'un point de terre (rien pour le ciel et l'eau)
+fonction etage_lumiere(i, cx, cy, cz) {
+    soit om = @2[(FOMB << 24) + i];
+    si (om & 1) == 1 && (om & 2) == 0 {
+        soit w = @2[(FDIR << 24) + i];
+        @2[(FLUM << 24) + i] = eclairer(cx, cy, cz, dir_x(w), dir_y(w), dir_z(w), @2[(FMAT << 24) + i], om, 0);
+    }
+}
+
+// l'étage du reflet : Divona, pour les seuls points d'eau
+fonction etage_reflet(i, cx, cy, cz, temps) {
+    si (@2[(FOMB << 24) + i] & 2) != 0 {
+        soit w = @2[(FDIR << 24) + i];
+        @2[(FREF << 24) + i] = divona_1(cx, cy, cz, dir_x(w), dir_y(w), dir_z(w), @2[(FMAT << 24) + i], temps);
+    }
+}
+
+// le cache : la composition (le ciel, la brume) : le point de l'image
+fonction etage_cache(i) {
+    soit t = @2[(FMAT << 24) + i];
+    soit w = @2[(FDIR << 24) + i];
+    si t == MANQUE {
+        @2[(FIMAGE << 24) + i] = ciel(dir_x(w), dir_y(w), dir_z(w), 0) & 16777215;
+    } sinon si (@2[(FOMB << 24) + i] & 2) != 0 {
+        @2[(FIMAGE << 24) + i] = brumer(@2[(FREF << 24) + i], t);
+    } sinon {
+        @2[(FIMAGE << 24) + i] = brumer(@2[(FLUM << 24) + i], t);
+    }
+}
+
+// une image par les étages, sur la carte (chaque étage une boucle en segments : un noyau de Taranis)
+fonction image_etages(cx, cy, cz, lacet, tangage, temps) {
+    pour i dans 0..(W * H) en segments {
+        etage_materiaux(i, cx, cy, cz, lacet, tangage);
+    }
+    pour i2 dans 0..(W * H) en segments {
+        etage_ombre(i2, cx, cy, cz);
+    }
+    pour i3 dans 0..(W * H) en segments {
+        etage_lumiere(i3, cx, cy, cz);
+    }
+    pour i4 dans 0..(W * H) en segments {
+        etage_reflet(i4, cx, cy, cz, temps);
+    }
+    pour i5 dans 0..(W * H) en segments {
+        etage_cache(i5);
+    }
+    pour y dans 0..H en bandes {
+        pour x dans 0..W {
+            soit v = @2[(FIMAGE << 24) + y * W + x];
+            @1[y * W + x] = rgb((v >> 16) & 255, (v >> 8) & 255, v & 255);
+        }
+    }
+}
+
+// la clepsydre sur la carte (le jour) : un fil par mot du calque (huit points de surface), sur toutes les tuiles : des
+// centaines de milliers de fils (une colonne de blocs par fil n'en faisait que 1024, chacun trop chargé)
+fonction ranger_lumiere_carte(avec_ciel, jeu) {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    pour q dans 0..total en segments {
+        ranger_mot(q, avec_ciel, jeu);
+    }
+}
+
+// le mot q du calque (toutes les tuiles à la suite) : sa tuile, sa place dans la réserve, son mot (huit points)
+fonction ranger_mot(q, avec_ciel, jeu) {
+    soit t = 0;
+    soit r = q;
+    soit cherche = 1;
+    pour k dans 0..(TUILES * TUILES) {
+        si cherche == 1 {
+            soit nk = @2[GLOB + 1 + k] * 64;
+            si r < nk {
+                t = k;
+                cherche = 0;
+            } sinon {
+                r = r - nk;
+            }
+        }
+    }
+    soit n = r >> 6;
+    soit w = r & 63;
+    soit b = @2[((FINV + t) << 24) + n];
+    soit bx = b >> 10;
+    soit by = (b >> 5) & 31;
+    soit bz = b & 31;
+    soit x0 = (t % TUILES) * 256 + bx * 8;
+    soit z0 = (t / TUILES) * 256 + bz * 8;
+    soit base = (FELT + t) << 24;
+    soit ms = 0;
+    soit mc = 0;
+    pour j dans 0..8 {
+        soit v = w * 8 + j;
+        soit x = x0 + (v >> 6);
+        soit y = by * 8 + ((v >> 3) & 7);
+        soit z = z0 + (v & 7);
+        soit el = @2[base + REP + n * 512 + v];
+        si el != 0 && ((el >> 2) & 63) != EAU {
+            si expose(x, y, z) == 1 {
+                soit nn = normale_de(el);
+                soit nx = (nn & 255) - 128;
+                soit ny = ((nn >> 16) & 255) - 128;
+                soit nz = ((nn >> 32) & 255) - 128;
+                ms = ms | ((128 | soleil_vu(x, y, z, nx, ny, nz, jeu)) << (j * 8));
+                si avec_ciel == 1 {
+                    mc = mc | ((128 | ciel_ouvert(x, y, z, nx, ny, nz)) << (j * 8));
+                }
+            }
+        }
+    }
+    @2[((FSOL + 16 * jeu + t) << 24) + n * 64 + w] = ms;
+    si avec_ciel == 1 {
+        @2[((FCIEL + t) << 24) + n * 64 + w] = mc;
+    }
+}
+
 // une image au processeur : chaque rangée à un cœur
 fonction image_processeur(cx, cy, cz, lacet, tangage, temps) {
     pour y dans 0..H en bandes {
@@ -1771,14 +1966,17 @@ fonction empreinte_image() {
 }
 
 // le survol, image i sur n : au-dessus des armées, puis du camp, jusqu'à la rive du lac, face au grand puy (son
-// reflet dans le lac) ; l'œil descend un peu et se redresse ; sur_carte == 1 : l'image est faite sur la carte
+// reflet dans le lac) ; l'œil descend un peu et se redresse ; sur_carte : 0 le processeur, 1 la carte d'un seul
+// noyau, 2 la carte par les étages
 fonction image_gergovie(i, n, temps, sur_carte) {
     soit cx = (176 * 65536 + (96 * 65536 / n) * i) * RN / RD;
     soit cy = (84 * 65536 - (24 * 65536 / n) * i) * RN / RD;
     soit cz = (470 * 65536 - (160 * 65536 / n) * i) * RN / RD;
     soit lacet = (504 + (16 * i) / n) & 1023;
     soit tangage = (978 + (32 * i) / n) & 1023;
-    si sur_carte == 1 {
+    si sur_carte == 2 {
+        image_etages(cx, cy, cz, lacet, tangage, temps);
+    } sinon si sur_carte == 1 {
         image_carte(cx, cy, cz, lacet, tangage, temps);
     } sinon {
         image_processeur(cx, cy, cz, lacet, tangage, temps);
@@ -1830,7 +2028,8 @@ fonction bilan(nom: texte, n) {
 }
 
 // l'épreuve : le monde, la mise en place (pas comptée), le vol (vol images, le soleil fixe), le jour (jour images,
-// le soleil bouge : la clepsydre refaite à chaque image) ; sur_carte : 0 le processeur, 1 la carte
+// le soleil bouge : la clepsydre refaite à chaque image, sur la carte quand l'image y est faite) ; sur_carte : 0 le
+// processeur, 1 la carte d'un seul noyau, 2 la carte par les étages
 fonction epreuve(vol, jour, sur_carte) {
     soit t0 = horloge();
     creer_monde();
@@ -1839,13 +2038,20 @@ fonction epreuve(vol, jour, sur_carte) {
     ecran(W, H);
     pour i dans 0..(W * H) {
         @2[(FIMAGE << 24) + i] = 0;
+        @2[(FDIR << 24) + i] = 0;
+        @2[(FMAT << 24) + i] = 0;
+        @2[(FOMB << 24) + i] = 0;
+        @2[(FLUM << 24) + i] = 0;
+        @2[(FREF << 24) + i] = 0;
     }
     preparer_soleil(360, 70, 0);
     ranger_lumiere(1, 0);
     image_gergovie(0, vol, 0, sur_carte);
     soit lieu = " (au processeur)";
     si sur_carte == 1 {
-        lieu = " (sur la carte)";
+        lieu = " (sur la carte, un noyau)";
+    } sinon si sur_carte == 2 {
+        lieu = " (sur la carte, les étages)";
     }
     pour i dans 0..vol {
         soit ti = horloge();
@@ -1857,7 +2063,11 @@ fonction epreuve(vol, jour, sur_carte) {
     pour i dans 0..jour {
         soit tj = horloge();
         preparer_soleil(300 + i * 3, 50 + i, 0);
-        ranger_lumiere(0, 0);
+        si sur_carte == 0 {
+            ranger_lumiere(0, 0);
+        } sinon {
+            ranger_lumiere_carte(0, 0);
+        }
         image_gergovie(i, jour, i * 3, sur_carte);
         @2[TEMPS + i] = horloge() - tj;
         presenter();
