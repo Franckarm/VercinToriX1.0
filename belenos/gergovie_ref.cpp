@@ -938,6 +938,7 @@ int main(void) {
     printf("le monde : %.0f ms ; blocs porteurs d'une surface, par tuile : %llu, %llu, %llu, %llu\n", ms(t0, t1),
            (unsigned long long)GLOB[1], (unsigned long long)GLOB[2], (unsigned long long)GLOB[3], (unsigned long long)GLOB[4]);
     double *t = (double *)calloc(n1 + n2 + 1, sizeof(double));
+    u film = 14695981039346656037u;   /* 0.829 : l'empreinte du film entier */
     preparer_soleil(360, 70);
     ranger_lumiere(1);
     image_gergovie(0, n1, 0);  /* la mise en place */
@@ -946,8 +947,11 @@ int main(void) {
         image_gergovie(i, n1, i * 3);
         clock_gettime(CLOCK_MONOTONIC, &tf);
         t[i] = ms(ti, tf);
+        film = (film ^ empreinte()) * 1099511628211u;
     }
     bilan("le vol (en C++)", t, n1);
+    printf("gergovie : le vol (en C++) : le film entier, empreinte %lld\n", (long long)film);
+    film = 14695981039346656037u;
     for (u i = 0; i < n2; i++) {
         clock_gettime(CLOCK_MONOTONIC, &ti);
         preparer_soleil(300 + i * 3, 50 + i);
@@ -959,11 +963,14 @@ int main(void) {
         image_gergovie(i, n2, i * 3);
         clock_gettime(CLOCK_MONOTONIC, &tf);
         t[i] = ms(ti, tf);
+        film = (film ^ empreinte()) * 1099511628211u;
     }
     #ifdef PROGRESSIF
     bilan("le jour (en C++, la clepsydre progressive)", t, n2);
+    printf("gergovie : le jour (en C++, la clepsydre progressive) : le film entier, empreinte %lld\n", (long long)film);
 #else
     bilan("le jour (en C++)", t, n2);
+    printf("gergovie : le jour (en C++) : le film entier, empreinte %lld\n", (long long)film);
 #endif
     free(t);
     return 0;

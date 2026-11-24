@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.829.zip`, `essai-0.829.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.830.zip`, `essai-0.830.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -336,3 +336,14 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - À discuter : autre chose qu'un rayon (le créateur : « une fréquence, une couleur, une intensité ») : la projection des
   points vers l'écran (le point émet, l'écran reçoit ; le plus proche gagne : atomicMin de 64 bits, Schütz, Kerbl,
   Wimmer, 2021 et 2022) ; un pixel où rien ne tombe reste inconnu, et lui seul lance un rayon.
+
+## 0.829 (24 novembre) : à armes égales, l'empreinte du film
+- Chez le créateur, la 0.828 : la clepsydre progressive : le C++ au jour 19,8 → 27,0 (+36 %) ; Taranis 32,4 → 35,8
+  (+10 % : sur la carte, la clepsydre n'est pas le plus lourd). La dernière image du jour progressif a la même empreinte
+  que le témoin (le nombre de points du soleil vus change peu en trois images) : la dernière image ne suffit pas.
+- L'empreinte du film entier (chaque image, hors du chronomètre ; vtx `epreuve`, C++ `main`) : vérifiée à demi-échelle,
+  la même pour le C++, vtx au processeur et Taranis, forme par forme (le témoin et la progressive).
+- vtx au processeur avec la clepsydre progressive : `ranger_lumiere_progressive_processeur` (en bandes),
+  `gergovie_progressif.vtx`. L'essai : le C++ contre vtx au processeur (à armes égales), Taranis à part.
+- Prochain (proposé) : le duel au processeur (l'épissage rapide du processeur : le monde d'un seul tenant, comme
+  Taranis, pour la forge au processeur) ; les points qui émettent vers l'écran (atomicMin de 64 bits).
