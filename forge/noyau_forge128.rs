@@ -1330,6 +1330,97 @@ fn gdot_64(a: u128, b: u128) -> u128 {
     s & M64
 }
 
+// --- 0.833 : l'entier par défaut à 128 bits (le sens des instructions de Lugus à toute la largeur)
+const V128: u128 = 0xAAAA_AAAA_AAAA_AAAA_AAAA_AAAA_AAAA_AAAA;
+const F128: u128 = 0x5555_5555_5555_5555_5555_5555_5555_5555;
+#[allow(dead_code)]
+#[inline(always)]
+fn divu128(a: u128, b: u128) -> u128 {
+    if b == 0 { u128::MAX } else { a / b }
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn modu128(a: u128, b: u128) -> u128 {
+    if b == 0 { a } else { a % b }
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn divs128l(a: u128, b: u128) -> u128 {
+    // DIVS à 128 bits : par zéro, tous les bits ; le plus petit par -1, lui-même
+    if b == 0 { u128::MAX } else if a as i128 == i128::MIN && b as i128 == -1 { a } else { ((a as i128) / (b as i128)) as u128 }
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn mods128l(a: u128, b: u128) -> u128 {
+    if b == 0 { a } else if a as i128 == i128::MIN && b as i128 == -1 { 0 } else { ((a as i128) % (b as i128)) as u128 }
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn sar128(a: u128, b: u128) -> u128 {
+    ((a as i128) >> (b & 127)) as u128
+}
+/// l'entier_32 étendu par le signe sur 128 bits (SEXT.32)
+#[allow(dead_code)]
+#[inline(always)]
+fn sext32l(a: u128) -> u128 {
+    (a as u32 as i32 as i128) as u128
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn et4_128(a: u128, b: u128) -> u128 {
+    ((a & b) & V128) | ((a | b) & F128)
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn ou4_128(a: u128, b: u128) -> u128 {
+    ((a | b) & V128) | ((a & b) & F128)
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn non4_128(a: u128) -> u128 {
+    ((a & V128) >> 1) | ((a & F128) << 1)
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn anti_128(a: u128) -> u128 {
+    non4_128(a) ^ u128::MAX
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn qegal_128(a: u128, b: u128) -> u128 {
+    let x = a ^ b;
+    !(x | (x >> 1)) & F128
+}
+#[allow(dead_code)]
+fn quits_128(a: u128, b: u128, op: u32) -> u128 {
+    let mut r = 0u128;
+    for k in 0..64 {
+        let (x, y) = ((a >> (2 * k)) & 3, (b >> (2 * k)) & 3);
+        let q = match op {
+            0 => x.min(y),
+            1 => x.max(y),
+            _ => (x + y) & 3,
+        };
+        r |= q << (2 * k);
+    }
+    r
+}
+#[allow(dead_code)]
+fn mulhu128(a: u128, b: u128) -> u128 {
+    qflot128::U256::mul(a, b).hi
+}
+#[allow(dead_code)]
+fn mulhs128l(a: u128, b: u128) -> u128 {
+    let (a, b) = (a as i128, b as i128);
+    let neg = (a < 0) != (b < 0);
+    let p = qflot128::U256::mul(a.unsigned_abs(), b.unsigned_abs());
+    if !neg {
+        return p.hi;
+    }
+    let lo = (!p.lo).wrapping_add(1);
+    (!p.hi).wrapping_add((lo == 0) as u128)
+}
+
 // --- le point de matière
 #[inline(always)]
 fn mate(p: u128, v: u128, dec: u32, nb: u32) -> u128 {

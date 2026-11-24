@@ -3,6 +3,8 @@
 // armées ; gergovie_scene.vtx). Le vol (240 images, l'œil bouge), puis le jour (120 images, le soleil bouge aussi) :
 // la moyenne, le 1 % bas (la fluidité), la pire image, l'empreinte (la même que sur la carte : gergovie_carte.vtx).
 //     python forge/forge128.py belenos/gergovie.vtx -o gergovie_vtx ; gergovie_vtx
+// 0.833 : le graphique compte en 64 bits (comme Taranis et le C++ de référence) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 1;
 constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne

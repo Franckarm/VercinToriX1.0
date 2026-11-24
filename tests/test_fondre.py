@@ -42,7 +42,7 @@ def jouer(exe):
 
 dossier, exe, dit, attendu = forger("fidele")
 verifier("la forge fond le lot fidèle (la garde : 120 et 200)", "se fond aussi en un noyau" in dit and "[120, 200]" in dit, dit[-300:])
-open(os.path.join(dossier, "gutuater.arn"), "w").write("fondre 10 vrai\n")
+open(os.path.join(dossier, "gutuater.arn"), "w").write("fondre 12 vrai\n")
 rc, sortie, err = jouer(exe)
 if "pas de carte" in err:
     print("pas de carte : rien d'autre n'est joué")
@@ -51,14 +51,14 @@ verifier(f"fondu, le même résultat que Lugus ({attendu})", rc == 0 and sortie 
 verifier("le vergobret a suivi l'ARN (fondu, sans essai)", "fondre vrai" in err or rc == 0, err[-200:])
 
 dossier, exe, dit, attendu = forger("infidele")
-open(os.path.join(dossier, "gutuater.arn"), "w").write("fondre 10 vrai\n")
+open(os.path.join(dossier, "gutuater.arn"), "w").write("fondre 12 vrai\n")
 rc, sortie, err = jouer(exe)
 verifier("infidèle : la garde arrête la machine", rc == 3 and "pas fidèle" in err, f"{rc} {err[-300:]}")
 mes = open(os.path.join(dossier, "gutuater.mesures")).read() if os.path.exists(os.path.join(dossier, "gutuater.mesures")) else ""
-verifier("et le note pour Gutuater", "infidele fondre 10" in mes, mes)
+verifier("et le note pour Gutuater", "infidele fondre 12" in mes, mes)
 r = subprocess.run([LUGUS, GUT], input=dossier + "\n", capture_output=True, text=True, encoding="utf-8")
 arn = open(os.path.join(dossier, "gutuater.arn")).read()
-verifier("Gutuater le tait pour toujours", "fondre 10 faux" in arn and "infidèle" in r.stdout, r.stdout + arn)
+verifier("Gutuater le tait pour toujours", "fondre 12 faux" in arn and "infidèle" in r.stdout, r.stdout + arn)
 rc, sortie, err = jouer(exe)
 verifier(f"relancé : le lot séparé, le résultat de Lugus ({attendu})", rc == 0 and sortie == attendu, f"{rc} {sortie} {err[-200:]}")
 

@@ -2,6 +2,8 @@
 // 0.831 : garder le minimum (« si x < @2[a] { @2[a] = x; } ») : 200 000 points tombent dans 1 000 cases ; dans chaque
 // case, le plus petit gagne, quel que soit l'ordre. Lugus le joue point après point ; la carte, tous à la fois (le
 // minimum atomique) : la même somme.
+// 0.833 : envoyé à Taranis (qui compte en 64 bits) : Dunon
+dunon;
 constante N = 200000;
 constante CASES = 1000;
 
