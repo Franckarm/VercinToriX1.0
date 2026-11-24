@@ -77,14 +77,16 @@ CONVERSIONS = {"ITOF": "ITOF.64 {},#1", "ITOFS": "ITOFS.64 {},#1", "FTOI": "FTOI
 ENTIER_LARGE = ENTIER_LARGE_DEFAUT
 ENTIERS_LARGES = {"ADD", "SUB", "MUL", "SHL4", "SHR4", "ADDI", "SUBI", "SHL", "SHR", "DIV", "MOD", "CMP", "CMPI", "MIN",
                   "MAX", "CMP3", "ADDM4", "AND", "OR", "XOR", "SAR", "LDIS", "LDIU", "DIVS", "MODS", "MULHS", "ADC",
-                  "SBC", "MULHU", "COMPTE"}
-CONVERSIONS_LARGES = {"ITOF": "ITOF {},#1", "ITOFS": "ITOFS {},#1", "FTOI": "FTOI {},#1", "FROUND": "FROUND {},#1"}
+                  "SBC", "MULHU", "COMPTE", "QEGAL", "ET4", "OU4", "NON4", "ANTI"}
+# le flottant de 64 bits depuis ou vers l'entier de 128 bits (#0) ; avec « dunon; », CONVERSIONS (l'entier de 64 bits, #1)
+CONVERSIONS_LARGES = {"ITOF": "ITOF.64 {},#0", "ITOFS": "ITOFS.64 {},#0", "FTOI": "FTOI.64 {},#0", "FROUND": "FROUND.64 {},#0"}
 
 
 def lugus_asm(texte):
     """L'assembleur du SPU-64 (celui du générateur) traduit pour Lugus, ligne à ligne ; les étiquettes, les mots (.mot)
     et les instructions sans largeur (MOV, LD, ST, sauts, pile…) passent tels quels."""
     sortie = []
+    large = ENTIER_LARGE_DEFAUT and not texte.lstrip().startswith("; dunon")
     for l in texte.splitlines():
         code = l.split(";")[0]
         tete = ""
@@ -99,9 +101,9 @@ def lugus_asm(texte):
         if "." in mn and not mn.startswith("."):
             # écrite par le générateur pour Lugus : .L toute la largeur (128 bits), .64 et .32 telles quelles
             sortie.append(f"{tete}    {mn[:-2] if mn.endswith('.L') else mn} {args}")
-        elif ENTIER_LARGE and mn in ENTIERS_LARGES:
+        elif large and mn in ENTIERS_LARGES:
             sortie.append(f"{tete}    {mn} {args}")
-        elif ENTIER_LARGE and mn in CONVERSIONS_LARGES:
+        elif large and mn in CONVERSIONS_LARGES:
             sortie.append(f"{tete}    " + CONVERSIONS_LARGES[mn].format(args))
         elif mn in A_LA_LARGEUR_64:
             sortie.append(f"{tete}    {mn}.64 {args}")
@@ -110,10 +112,11 @@ def lugus_asm(texte):
         elif mn in CONVERSIONS:
             sortie.append(f"{tete}    " + CONVERSIONS[mn].format(args))
         elif mn == "SEXT32":
-            # étendu par le signe de 32 à 64 bits (les 64 bits hauts restent nuls)
+            # étendu par le signe de 32 bits ; 0.833 : à toute la largeur (avant : à 64, les 64 bits hauts nuls)
             d = args.split(",")[0].strip()
             sortie.append(f"{tete}    SEXT.32 {args}")
-            sortie.append(f"    ZEXT.64 {d},{d}")
+            if not large:
+                sortie.append(f"    ZEXT.64 {d},{d}")
         else:
             sortie.append(f"{tete}    {mn} {args}")
     return "\n".join(sortie) + "\n"
@@ -376,8 +379,8 @@ def lexer(src, compat=None):
                 v = int(texte[2:].replace("_", ""), 16)
             else:
                 v = int(texte.replace("_", ""))
-            if v > MASK:
-                raise VtxError(f"ligne {ligne} : nombre trop grand pour {MASK.bit_length()} bits")
+            if v > (1 << 128) - 1:
+                raise VtxError(f"ligne {ligne} : nombre trop grand pour 128 bits")
             jetons.append(("num", v, ligne))
     if len(jetons.bruts) < len(jetons):
         jetons.bruts.append(texte)
@@ -436,6 +439,15 @@ RANGES = ("quits", "logique")      # tableaux rangés 32 par mot
 QPM, QSH = 64, 6                   # quits par mot (le mot de Lugus entier : 128 bits), et son logarithme
 VECTORISER = True                  # réécrire les boucles élément par élément en boucles de 32 éléments d'un coup
 SIGNE = 1 << (MASK.bit_length() - 1)
+
+
+def regler_largeur(large):
+    """0.833 : la largeur de l'entier par défaut du programme compilé : 128 bits (Lugus), ou 64 avec « dunon; » (le
+    passage au graphique : Taranis compte en 64, le C++ de référence aussi). Chaque compilation repart de 128."""
+    global ENTIER_LARGE, MASK, SIGNE
+    ENTIER_LARGE = large
+    MASK = (1 << 128) - 1 if large else (1 << 64) - 1
+    SIGNE = 1 << (MASK.bit_length() - 1)
 
 
 def contient_appel(e):
@@ -1236,7 +1248,7 @@ class Molecule:
                                      ("soit", s_, ("appel", ctor, [("appel", "longueur", [v_(tt)], l)], l), l, None)]
                         else:
                             # somme (min, max) pour chaque x dans t : une liaison
-                            init = {"somme": 0, "min": (1 << 64) - 1, "max": 0}[red]
+                            init = {"somme": 0, "min": MASK, "max": 0}[red]
                             if red == "somme":
                                 tour = [("affecter", s_, ("bin", "+", v_(s_), corps_), l)]
                             else:
@@ -1252,7 +1264,7 @@ class Molecule:
                 if a.genre == "chaque":
                     red, var, a_, b_, corps_ = a.quoi
                     s_ = a.sorties[0] if a.sorties else f"__chaque{l}"
-                    init = {"somme": 0, "min": (1 << 64) - 1, "max": 0}[red]
+                    init = {"somme": 0, "min": MASK, "max": 0}[red]
                     tmp = f"{s_}__x"
                     if red == "somme":
                         tour = [("affecter", s_, ("bin", "+", ("var", s_, l), corps_), l)]
@@ -1971,6 +1983,14 @@ class Analyseur:
                 self.attendre("}")
                 self.fin()
                 self.donnees.append((m[1], self.ce(m[2], l), vals))
+                continue
+            if k == "id" and v == "dunon" and self.regard(1)[:2] == ("op", ";"):
+                # 0.833 : « dunon; » : tout le programme (prélude compris) compte en 64 bits, comme Taranis et le C++
+                if fonctions:
+                    raise VtxError(f"ligne {l} : « dunon; » se met au début du programme, avant les fonctions")
+                self.suivant()
+                self.fin()
+                regler_largeur(False)
                 continue
             if k == "id" and v == "structure":
                 self.suivant()
@@ -3348,7 +3368,7 @@ fonction __hyp_annuler(p0) {
 fonction divs(a, b) { retour a ./ b; }
 fonction mods(a, b) { retour a .% b; }
 fonction asr(a, n) { retour a .>> n; }
-fonction signe(x) { si x == 0 { retour 0; } si x .< 0 { retour 18446744073709551615; } retour 1; }
+fonction signe(x) { si x == 0 { retour 0; } si x .< 0 { retour 0 - 1; } retour 1; }
 fonction min(a, b) { si a < b { retour a; } retour b; }
 fonction max(a, b) { si a > b { retour a; } retour b; }
 fonction poids(ecart, temperature) {
@@ -3784,7 +3804,9 @@ fonction ecrire_entier(c, n) {
     __mettre_nombre(c, n);
 }
 fonction ecrire_hexa(c, n) {
+    // 0.833 : l'entier a 128 bits ; seize chiffres s'il tient en 64 bits (comme avant), trente-deux sinon
     __mettre(c, 35);
+    si n > 18446744073709551615 { __hexa16(c, n >> 64); }
     __hexa16(c, n);
 }
 fonction __hexa16(c, n) {
@@ -4890,11 +4912,11 @@ fonction __qshl(a: entier_128, n): entier_128 {
     soit lo = bas(a);
     soit hi = haut(a);
     si k >= 64 {
-        hi = lo << (k - 64);
+        hi = (lo << (k - 64)) & 18446744073709551615;
         lo = 0;
     } sinon si k > 0 {
         hi = (hi << k) | (lo >> (64 - k));
-        lo = lo << k;
+        lo = (lo << k) & 18446744073709551615;
     }
     retour entier_128_de(hi, lo);
 }
@@ -4904,11 +4926,11 @@ fonction __qshr_rempli(a: entier_128, n, s): entier_128 {
     soit hi = haut(a);
     si k >= 64 {
         soit j = k - 64;
-        si j == 0 { lo = hi; } sinon { lo = (hi >> j) | (s << (64 - j)); }
+        si j == 0 { lo = hi; } sinon { lo = ((hi >> j) | (s << (64 - j))) & 18446744073709551615; }
         hi = s;
     } sinon si k > 0 {
-        lo = (lo >> k) | (hi << (64 - k));
-        hi = (hi >> k) | (s << (64 - k));
+        lo = ((lo >> k) | (hi << (64 - k))) & 18446744073709551615;
+        hi = ((hi >> k) | (s << (64 - k))) & 18446744073709551615;
     }
     retour entier_128_de(hi, lo);
 }
@@ -5523,9 +5545,11 @@ fonction graine(n) {
 fonction hasard_mot() {
     soit x = @3[14680057];
     si x == 0 { x = 88172645463325252; }
-    x = x ^ (x << 13);
+    // le xorshift de 64 bits (0.833 : l'entier a 128 bits ; le générateur reste celui de 64 bits : la même graine, la
+    // même suite qu'avant)
+    x = (x ^ (x << 13)) & 18446744073709551615;
     x = x ^ (x >> 7);
-    x = x ^ (x << 17);
+    x = (x ^ (x << 17)) & 18446744073709551615;
     @3[14680057] = x;
     retour x;
 }
@@ -6808,7 +6832,7 @@ fonction trier(t) {
 fonction __hache(t) {
     soit h = 14695981039346656037;
     pour i dans 0..longueur(t) {
-        h = (h ^ car(t, i)) * 1099511628211;
+        h = ((h ^ car(t, i)) * 1099511628211) & 18446744073709551615;
     }
     retour h;
 }
@@ -8108,34 +8132,36 @@ fonction lire_flottant(t): flottant_petuar {
 // -- famille « entiers et bits » (Rust u64, Arduino) : l'entier de 64 bits
 // compter_uns, compter_zeros, zeros_en_tete, zeros_en_queue : Rust count_ones, count_zeros, leading_zeros, trailing_zeros
 fonction compter_uns(x) { retour nb_bits(x); }
-fonction compter_zeros(x) { retour 64 - nb_bits(x); }
+// 0.833 : la largeur de l'entier (128 sur Lugus, 64 sur Dunon ou avec « dunon; ») : nb_bits(0 - 1)
+fonction compter_zeros(x) { retour nb_bits(0 - 1) - nb_bits(x); }
 fonction zeros_en_tete(x) {
-    si x == 0 { retour 64; }
+    si x == 0 { retour nb_bits(0 - 1); }
     soit n = 0;
     soit v = x;
-    tantque (v & 9223372036854775808) == 0 { n = n + 1; v = v << 1; }
+    soit haut = 1 << (nb_bits(0 - 1) - 1);
+    tantque (v & haut) == 0 { n = n + 1; v = v << 1; }
     retour n;
 }
 fonction zeros_en_queue(x) {
-    si x == 0 { retour 64; }
+    si x == 0 { retour nb_bits(0 - 1); }
     soit n = 0;
     soit v = x;
     tantque (v & 1) == 0 { n = n + 1; v = v >> 1; }
     retour n;
 }
 // tourner_gauche, tourner_droite, inverser_bits, echanger_octets : Rust rotate_left, rotate_right, reverse_bits, swap_bytes
-fonction tourner_gauche(x, n) { soit k = n & 63; si k == 0 { retour x; } retour (x << k) | (x >> (64 - k)); }
-fonction tourner_droite(x, n) { soit k = n & 63; si k == 0 { retour x; } retour (x >> k) | (x << (64 - k)); }
+fonction tourner_gauche(x, n) { soit l = nb_bits(0 - 1); soit k = n % l; si k == 0 { retour x; } retour (x << k) | (x >> (l - k)); }
+fonction tourner_droite(x, n) { soit l = nb_bits(0 - 1); soit k = n % l; si k == 0 { retour x; } retour (x >> k) | (x << (l - k)); }
 fonction inverser_bits(x) {
     soit r = 0;
     soit v = x;
-    pour i dans 0..64 { r = (r << 1) | (v & 1); v = v >> 1; }
+    pour i dans 0..nb_bits(0 - 1) { r = (r << 1) | (v & 1); v = v >> 1; }
     retour r;
 }
 fonction echanger_octets(x) {
     soit r = 0;
     soit v = x;
-    pour i dans 0..8 { r = (r << 8) | (v & 255); v = v >> 8; }
+    pour i dans 0..nb_bits(0 - 1) / 8 { r = (r << 8) | (v & 255); v = v >> 8; }
     retour r;
 }
 // est_puissance_de_deux, puissance_de_deux_suivante : Rust is_power_of_two, next_power_of_two (0 si elle dépasse 64 bits)
@@ -8147,7 +8173,7 @@ fonction puissance_de_deux_suivante(x) {
     retour p;
 }
 // log2_entier, log10_entier, racine_entiere : Rust ilog2, ilog10, isqrt (log de 0 : 18446744073709551615, comme « absent »)
-fonction log2_entier(x) { si x == 0 { retour 18446744073709551615; } retour 63 - zeros_en_tete(x); }
+fonction log2_entier(x) { si x == 0 { retour 18446744073709551615; } retour nb_bits(0 - 1) - 1 - zeros_en_tete(x); }
 fonction log10_entier(x) {
     si x == 0 { retour 18446744073709551615; }
     soit n = 0;
@@ -8192,14 +8218,14 @@ fonction est_impair(x): logique { retour logique((x & 1) == 1); }
 // addition_saturee, soustraction_saturee, multiplication_saturee, deborde_addition, deborde_multiplication : Rust
 // saturating_add, saturating_sub, saturating_mul (bornés à 0 et au plus grand entier) ; overflowing_add, overflowing_mul (vrai si
 // le calcul déborde)
-fonction addition_saturee(a, b) { soit s = a + b; si s < a { retour 18446744073709551615; } retour s; }
+fonction addition_saturee(a, b) { soit s = a + b; si s < a { retour 0 - 1; } retour s; }
 fonction soustraction_saturee(a, b) { si b > a { retour 0; } retour a - b; }
 fonction multiplication_saturee(a, b) {
-    si a != 0 && b > 18446744073709551615 / a { retour 18446744073709551615; }
+    si a != 0 && b > (0 - 1) / a { retour 0 - 1; }
     retour a * b;
 }
 fonction deborde_addition(a, b): logique { retour logique(a + b < a); }
-fonction deborde_multiplication(a, b): logique { retour logique(a != 0 && b > 18446744073709551615 / a); }
+fonction deborde_multiplication(a, b): logique { retour logique(a != 0 && b > (0 - 1) / a); }
 // lire_bit, poser_bit, effacer_bit, ecrire_bit, basculer_bit, masque_bit : Arduino bitRead, bitSet, bitClear, bitWrite, bit()
 fonction lire_bit(x, n) { retour (x >> n) & 1; }
 fonction poser_bit(x, n) { retour x | (1 << n); }
@@ -8930,7 +8956,7 @@ fonction coord_z(a) { retour a & 255; }
 // voisin : le point d'à côté sur un axe (0 : x, 1 : y, 2 : z), dans un sens (1 ou 18446744073709551615), le cube refermé
 fonction voisin(a, axe, sens) {
     soit d = 1;
-    si sens .< 0 { d = 255; }
+    si sens .< 0 || sens == 18446744073709551615 { d = 255; }
     si axe == 0 { retour adresse_point(coord_x(a) + d, coord_y(a), coord_z(a)); }
     si axe == 1 { retour adresse_point(coord_x(a), coord_y(a) + d, coord_z(a)); }
     retour adresse_point(coord_x(a), coord_y(a), coord_z(a) + d);
@@ -10043,6 +10069,8 @@ class Generateur:
         return f"{base}{self.n}"
 
     def generer(self):
+        if not ENTIER_LARGE:
+            self.sortie.append("; dunon : l'entier a 64 bits")   # lu par lugus_asm (0.833)
         self.sortie.append("; programme généré par vtx128 0.5 pour Lugus (le SPU-128)")
         self.charger("R14", STACK_TOP)
         # le brin : le code, les textes écrits et les données du programme sont de l'ADN (fixés) : une écriture dessus
@@ -10323,7 +10351,7 @@ class Generateur:
         """Une constante de 128 bits : celle de 64 bits si elle y tient, LDIS sur 128 bits si elle est un petit négatif,
         sinon LDI (les 64 bits bas) puis LDIH (les 64 bits hauts)."""
         v &= (1 << 128) - 1
-        if v <= MASK64 and not (ENTIER_LARGE and MASK64 - (1 << 31) < v):
+        if v <= MASK64:
             self.charger(reg, v)
         elif v >= (1 << 128) - (1 << 31):
             self.emettre(f"LDIS.L {reg},#{v - (1 << 128)}")
@@ -11168,7 +11196,7 @@ class Generateur:
             v = (e[2] if g == "blit" else e[1]) & MASK
             if g == "blit" or (g == "qnombre" and v in (BITS_F, BITS_V, MASK64)):
                 v &= MASK64
-            if v in (BITS_F, BITS_V, MASK64) and g != "nombre":
+            if v in (BITS_F, BITS_V, MASK64):
                 self.charger_l("R1", v | (v << 64))
             else:
                 self.charger("R1", v)
@@ -11534,7 +11562,8 @@ class Generateur:
                 interdit()
             self.expr(x)
             if X_DEPUIS[t]:
-                self.emettre(X_DEPUIS[t])
+                # 0.833 : l'entier a 128 bits (#0) ; 64 avec « dunon; » (#1)
+                self.emettre("ITOF.L R1,R1,#0" if t == "e" and ENTIER_LARGE else X_DEPUIS[t])
             return
         if nom == "comme_flottant_petuar":
             if t not in ("w", "e", "i", "x"):
@@ -11548,7 +11577,7 @@ class Generateur:
             if t not in ENTIERS:
                 interdit()
             self.expr(x)
-            self.emettre(f"ITOFS.L R1,R1,#{1 if t == 'e' else 2}")
+            self.emettre(f"ITOFS.L R1,R1,#{(0 if ENTIER_LARGE else 1) if t == 'e' else 2}")
             return
         if nom == "vers_ieee128":
             if t != "x":
@@ -11576,9 +11605,10 @@ class Generateur:
             elif nom in ("entier_128", "entier_petuar"):
                 self.emettre("FTOI.L R1,R1,#0")      # tronqué, saturé aux entiers signés de 128 bits
             elif nom == "entier":
-                self.emettre("FTOI.L R1,R1,#1")      # tronqué, saturé aux entiers signés de 64 bits (comme entier(flottant))
+                # tronqué, saturé aux entiers signés de l'entier (128 bits ; 64 avec « dunon; »)
+                self.emettre(f"FTOI.L R1,R1,#{0 if ENTIER_LARGE else 1}")
             elif nom == "arrondi":
-                self.emettre("FROUND.L R1,R1,#1")    # vers un entier signé de 64 bits, au plus proche pair, saturé
+                self.emettre(f"FROUND.L R1,R1,#{0 if ENTIER_LARGE else 1}")    # au plus proche pair, saturé
             elif nom == "entier_32":
                 self.emettre("FTOI.L R1,R1,#0")
                 self.emettre("ZEXT.32 R1,R1")
@@ -11616,7 +11646,8 @@ class Generateur:
         elif nom in ("entier", "entier_32"):
             if t == "w":
                 self.expr(x)
-                self.emettre("ZEXT.64 R1,R1")        # les 64 bits bas
+                if not ENTIER_LARGE:
+                    self.emettre("ZEXT.64 R1,R1")    # les 64 bits bas (0.833 : l'entier a 128 bits, rien à couper)
             else:
                 self.expr(x)
                 if t == "s":
@@ -12607,6 +12638,7 @@ def verifier_exemples(src, exemples, prelude, optim):
 def _compiler(src, prelude=True, optim=True, partition=True, melange=None, remplacer=None):
     if remplacer is None:
         PROVENANCE_PLACE[0] = PROVENANCE_DEBUT
+    regler_largeur(ENTIER_LARGE_DEFAUT)
     a = Analyseur(lexer(src))
     a.compat = COMPAT_64
     fs = a.programme()
