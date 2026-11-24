@@ -6774,20 +6774,21 @@ fonction distance_cube(a, b) {
     retour ecart(coord_x(a), coord_x(b)) + ecart(coord_y(a), coord_y(b)) + ecart(coord_z(a), coord_z(b));
 }
 
-// -- famille « codes » : l'ADN d'un entier de 64 bits (32 bases, A C G T : 0 1 2 3, la première au poids fort)
+// -- famille « codes » : l'ADN d'un entier (A C G T : 0 1 2 3, la première au poids fort) ; 0.833 : 64 bases sur Lugus,
+// 32 sur Dunon ou en « dunon; » (nb_bits(0 - 1) / 2)
 // complement_adn, inverser_bases, anti_sens : A↔T, C↔G (3 − q) ; les bases lues à l'envers ; le brin d'en face
 fonction complement_adn(x) { retour ~x; }
 fonction inverser_bases(x) {
     soit r = 0;
     soit v = x;
-    pour i dans 0..32 { r = (r << 2) | (v & 3); v = v >> 2; }
+    pour i dans 0..nb_bits(0 - 1) / 2 { r = (r << 2) | (v & 3); v = v >> 2; }
     retour r;
 }
 fonction anti_sens(x) { retour inverser_bases(~x); }
 // compter_base, teneur_gc, ecart_bases : combien de fois une base, les G et les C, les bases qui diffèrent
-fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * 6148914691236517205)); }
+fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * ((0 - 1) / 3))); }
 fonction teneur_gc(x) { retour compter_base(x, 1) + compter_base(x, 2); }
-fonction ecart_bases(a, b) { retour 32 - nb_bits(qegal(a, b)); }
+fonction ecart_bases(a, b) { retour nb_bits(0 - 1) / 2 - nb_bits(qegal(a, b)); }
 
 // -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
 // transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :

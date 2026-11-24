@@ -4,6 +4,8 @@
 // image (FNV-1a sur ses points). Les mêmes nombres partout : Lugus, la machine en Python, le .exe traduit en x86, et
 // la même scène écrite dans un autre langage (pour la comparer) doivent donner la même empreinte.
 //     LUGUS_TEMPS=1 lugus belenos/val_banc.vtx        (le temps et les instructions)
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 importer "val_scene.vtx";
 
 constante IMAGES = 12;

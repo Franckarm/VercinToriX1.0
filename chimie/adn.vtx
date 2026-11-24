@@ -12,6 +12,8 @@
 // au-delà de ses témoins, 0 : illisible). Un ADN variable n'est pas réécrit : il est gardé tel qu'il a été lu.
 //
 // La mémoire (étage 2) : les mots (deux moitiés de 64 bits), les témoins, GF(256), les brouillons du décodage.
+// 0.833 : le format de l'ADN compte en 64 bits (ses signatures, ses neutrons : ceux de vtx-rs/src/adn.rs) : Dunon
+dunon;
 
 constante MH = 0;                // les mots : les 64 bits hauts
 constante MB = 1000000;          // les 64 bits bas

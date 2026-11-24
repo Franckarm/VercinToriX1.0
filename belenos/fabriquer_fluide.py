@@ -64,6 +64,8 @@ def entete():
     return f"""// Le fluide (Boltzmann sur réseau, D2Q9) : {NX} × {NY} cellules, bouclé, en entiers à virgule fixe (24 bits) ;
 // une couche de cisaillement (deux courants opposés, une petite perturbation) : des tourbillons doivent naître.
 // Fabriqué par belenos/fabriquer_fluide.py (la collision est la même dans les deux versions).
+// 0.833 : le graphique compte en 64 bits (comme la référence en Python) : Dunon
+dunon;
 constante NX = {NX};
 constante N = {N};
 constante Y1 = {NY // 4};

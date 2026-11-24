@@ -119,7 +119,7 @@ fonction principal() {
         soit t = vb[w];
         c_fausses = c_fausses + nb_bits(o & ~z & ~t);
         c_manquees = c_manquees + nb_bits(z & ~o & t);
-        c_inconnus = c_inconnus + nb_bits(~(o | z));
+        c_inconnus = c_inconnus + nb_bits(~(o | z) & 18446744073709551615);   // 0.833 : un plan de 64 portes (l'entier a 128 bits)
         c_contra = c_contra + nb_bits(o & z);
     }
     soit c_instr = instructions() - i0;

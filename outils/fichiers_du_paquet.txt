@@ -260,3 +260,5 @@ belenos/gergovie_progressif.vtx
 belenos/gergovie_projection.vtx
 tests/test_minimum.py
 tests/minimum/minimum.vtx
+exemples128/entier128.vtx
+exemples128/entier128_dunon.vtx

@@ -22,20 +22,20 @@ presque_egal vrai faux variable
 enrouler 10.0 350.0 0.5 7.5
 douceurs 0.125 0.875 0.0625 0.9375
 lire_flottant 3.25 -150.0 inconnu variable 0.002
-bits 8 56 63 3 64
-tourner 8 -9223372036854775808 1
-inverser -9223372036854775808 144396663052566528
+bits 8 120 127 3 128
+tourner 8 -170141183460469231731687303715884105728 18446744073709551616
+inverser -170141183460469231731687303715884105728 2663648288428366573436144616889909248
 puissances vrai faux 128 1
-logs 9 3 2 -1 9 10
+logs 9 3 2 18446744073709551615 9 10
 euclide 2 -3 1 -2
 divisions 4 15 15 15
 parite vrai faux faux
-saturees -1 0 -1 12
-debordements vrai faux vrai
+saturees 18446744073709551620 0 18446744073709551616 12
+debordements faux faux faux
 arduino 1 16 14 7 8 1024
 octets 52 18 2 4660
 est_vide 1 0 0 1
-chercher 1 0 4 -1
+chercher 1 0 4 18446744073709551615
 [a b  ] [  a b]
 Toutatis fichier abc
 a+b-c
@@ -44,9 +44,9 @@ mots <le> <chat> <noir>
 couper <cle> <valeur=x>
 caracteres 65 233
 Vtx
-casse 1 0 -1 1 0
+casse 1 0 18446744073709551615 1 0
 classes 1 1 1 0 1 1 0 1
-chiffres 15 -1 98 -1
+chiffres 15 18446744073709551615 98 18446744073709551615
 ff 101 0 255 5
 00042 ab..
 premier 3 6 0
@@ -56,7 +56,7 @@ tourner_tableau 3 4 5 1 2
 tourner_droite 1 2 3 4 5
 trie 1 0
 decroissant 9 6 5 4 3 2 1 1
-dichotomie 3 -1
+dichotomie 3 18446744073709551615
 statistiques 24 2.5 3.0 2.5 inconnu
 cumul 1 3 6 10
 differences 3 5 7
@@ -72,7 +72,7 @@ intervalle_pas 10 7 4 1
 zipper [1,4] [2,5]
 entrelacer 1 7 2 3
 cartesien [1,3] [1,4] [2,3] [2,4]
-positions 5 1 3 -1
+positions 5 1 3 18446744073709551615
 tronquer 1 2
 redimensionner 1 2 9 9
 repeter_tableau 1 2 1 2 1 2
@@ -112,5 +112,5 @@ srgb 0.21404114048223244240308035247766543 0.4999999999999995220278115645579822 
 cube 16744449 255 128 1 32769 16744448
 morton 4 16777215 200 17 3
 distance_cube 12
-adn 28 2 2 1 1
-anti_sens 1 1
+adn 60 2 2 1 0
+anti_sens 0 0

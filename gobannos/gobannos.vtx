@@ -893,9 +893,27 @@ fonction traduire_un(p) {
         }
         retour suivant;
     }
-    si wl == 0 && (op == 0x01 || op == 0x02 || op == 0x0E || op == 0x14 || op == 0x15 || op == 0x16) {
+    si wl == 0 && (op == 0x01 || op == 0x02 || op == 0x0E || op == 0x14 || op == 0x15 || op == 0x16
+                   || op == 0x06 || op == 0x07 || op == 0x0F) {
         charger(s, RAX, RDX);
-        charger(t, RCX, R8);
+        si op == 0x06 || op == 0x07 || op == 0x0F {
+            // 0.833 : ADDI, SUBI, CMPI sur tout le mot (l'entier a 128 bits) : l'immédiat étendu par le signe
+            mov_ri(RCX, si_);
+            si imm >= 2147483648 {
+                mov_ri(R8, 0xFFFFFFFFFFFFFFFF);
+            } sinon {
+                mov_ri(R8, 0);
+            }
+            si op == 0x06 {
+                op = 0x01;
+            } sinon si op == 0x07 {
+                op = 0x02;
+            } sinon {
+                op = 0x0E;
+            }
+        } sinon {
+            charger(t, RCX, R8);
+        }
         si op == 0x01 {
             op_rr(0x01, RAX, RCX);
             op_rr(0x11, RDX, R8);

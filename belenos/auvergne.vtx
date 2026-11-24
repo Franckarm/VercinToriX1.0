@@ -24,6 +24,8 @@
 // Tout est en entiers (les mêmes nombres sur Lugus et forgé). L'image est rangée dans l'étage 2, puis écrite en PNG par
 // le programme lui-même (CRC-32, Adler-32, blocs « stockés ») dans un fichier d'octets.
 //     lugus belenos/auvergne.vtx            -> belenos/auvergne.png (2048 × 1080, le 2K du cinéma)
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 
 constante K = 1;                   // 1 : le 2K (2048 × 1080) ; 2 : le 4K du cinéma (4096 × 2160)
 constante W = 2048 * K;

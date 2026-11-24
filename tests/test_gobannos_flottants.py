@@ -51,8 +51,28 @@ def forger(prog, systeme):
     return exe, r.stdout.decode("utf-8", "replace")
 
 
+def en_dunon(prog):
+    """0.833 : Gobannos traduit les mots d'un programme en Dunon (l'entier de 64 bits) ; la division de 128 bits n'est
+    pas encore traduite. Une copie du programme, « dunon; » en tête (après ses commentaires), à côté de lui."""
+    s = open(prog, encoding="utf-8").read()
+    l = s.split("\n")
+    i = 0
+    while i < len(l) and l[i].startswith("//"):
+        i += 1
+    if "dunon;" not in l:
+        l.insert(i, "dunon;")
+    c = os.path.join(os.path.dirname(prog), "dunon_" + os.path.basename(prog))
+    open(c, "w", encoding="utf-8").write("\n".join(l))
+    COPIES.append(c)
+    return c
+
+
+COPIES = []
+
+
 def comparer(prog, entree="", clavier=False):
     systeme = "windows" if WIN else "linux"
+    prog = en_dunon(prog)
     exe, info = forger(prog, systeme)
     if exe is None:
         return False, info
@@ -196,4 +216,7 @@ verifier("sans la bibliothèque : l'instruction flottante arrête l'exécutable 
 import shutil  # noqa: E402
 shutil.rmtree(d, ignore_errors=True)
 print("les flottants de Gobannos : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))
+for c in COPIES:
+    if os.path.exists(c):
+        os.remove(c)
 sys.exit(1 if echecs else 0)

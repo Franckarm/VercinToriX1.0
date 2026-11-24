@@ -1515,7 +1515,8 @@ class Molecule:
         # les deux places : l'empreinte mélangée (le nombre d'or) ; la première, ses quatre bits forts ; la seconde, les
         # quatre suivants (une seconde pièce, indépendante de la première) ; si elles tombent au même endroit, le miroir
         nom_m, nom_r, nom_r2 = f"__souv{base}_m", f"__souv{base}_r", f"__souv{base}_r2"
-        st.append(("soit", nom_m, ("bin", "*", h, ("nombre", 0x9E3779B97F4A7C15)), l, "e"))
+        # 0.833 : l'empreinte ramenée à 64 bits (ses bits forts donnent la place : l'entier a 128 bits)
+        st.append(("soit", nom_m, ("bin", "&", ("bin", "*", h, ("nombre", 0x9E3779B97F4A7C15)), ("nombre", MASK64)), l, "e"))
         st.append(("soit", nom_r, ("bin", ">>", ("var", nom_m, l), ("nombre", 64 - SOUVENIR_BITS)), l, "e"))
         st.append(("soit", nom_r2, ("bin", "&", ("bin", ">>", ("var", nom_m, l), ("nombre", 64 - 2 * SOUVENIR_BITS)),
                                     ("nombre", SOUVENIR_PLACES - 1)), l, "e"))
@@ -3224,6 +3225,8 @@ class Analyseur:
         k, v, l = self.regard()
         if k == "num":
             self.suivant()
+            if v > MASK:
+                raise VtxError(f"ligne {l} : nombre trop grand pour 64 bits")   # 0.833 : « dunon; »
             return ("nombre", v)
         if k == "flt":
             self.suivant()
@@ -7344,9 +7347,10 @@ fonction de_preuves(des_oui, des_non): logique {
 }
 fonction __empreinte(t: texte) {
     // l'empreinte d'un mot (les lettres en base 257) : le prélude ne garde aucun texte, qui irait dans chaque programme
+    // 0.833 : à 64 bits (les empreintes écrites plus bas sont celles de 64 bits ; l'entier a 128 bits)
     soit x = 0;
     pour i dans 0..longueur(t) {
-        x = x * 257 + car(t, i);
+        x = (x * 257 + car(t, i)) & 18446744073709551615;
     }
     retour x;
 }
@@ -8983,20 +8987,21 @@ fonction distance_cube(a, b) {
     retour ecart(coord_x(a), coord_x(b)) + ecart(coord_y(a), coord_y(b)) + ecart(coord_z(a), coord_z(b));
 }
 
-// -- famille « codes » : l'ADN d'un entier de 64 bits (32 bases, A C G T : 0 1 2 3, la première au poids fort)
+// -- famille « codes » : l'ADN d'un entier (A C G T : 0 1 2 3, la première au poids fort) ; 0.833 : 64 bases sur Lugus,
+// 32 sur Dunon ou en « dunon; » (nb_bits(0 - 1) / 2)
 // complement_adn, inverser_bases, anti_sens : A↔T, C↔G (3 − q) ; les bases lues à l'envers ; le brin d'en face
 fonction complement_adn(x) { retour ~x; }
 fonction inverser_bases(x) {
     soit r = 0;
     soit v = x;
-    pour i dans 0..32 { r = (r << 2) | (v & 3); v = v >> 2; }
+    pour i dans 0..nb_bits(0 - 1) / 2 { r = (r << 2) | (v & 3); v = v >> 2; }
     retour r;
 }
 fonction anti_sens(x) { retour inverser_bases(~x); }
 // compter_base, teneur_gc, ecart_bases : combien de fois une base, les G et les C, les bases qui diffèrent
-fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * 6148914691236517205)); }
+fonction compter_base(x, b) { retour nb_bits(qegal(x, (b & 3) * ((0 - 1) / 3))); }
 fonction teneur_gc(x) { retour compter_base(x, 1) + compter_base(x, 2); }
-fonction ecart_bases(a, b) { retour 32 - nb_bits(qegal(a, b)); }
+fonction ecart_bases(a, b) { retour nb_bits(0 - 1) / 2 - nb_bits(qegal(a, b)); }
 
 // -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
 // transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :
@@ -12638,7 +12643,7 @@ def verifier_exemples(src, exemples, prelude, optim):
 def _compiler(src, prelude=True, optim=True, partition=True, melange=None, remplacer=None):
     if remplacer is None:
         PROVENANCE_PLACE[0] = PROVENANCE_DEBUT
-    regler_largeur(ENTIER_LARGE_DEFAUT)
+    regler_largeur(ENTIER_LARGE_DEFAUT and not COMPAT_64)   # le langage du SPU-64 sur Lugus : l'entier de Dunon
     a = Analyseur(lexer(src))
     a.compat = COMPAT_64
     fs = a.programme()

@@ -62,7 +62,7 @@ def compiler_arbre(src, dossier=None, partition=True):
     if "importer" in src:
         lignes, _ = V.resoudre_carte(src, dossier, "programme")
         src = "\n".join(lignes)
-    V.regler_largeur(V.ENTIER_LARGE_DEFAUT)
+    V.regler_largeur(V.ENTIER_LARGE_DEFAUT and not V.COMPAT_64)
     a = V.Analyseur(V.lexer(src))
     a.compat = V.COMPAT_64
     fs = a.programme()

@@ -11,6 +11,8 @@
 // Les règles d'écriture (ce que Gobannos traduit, et l'entier_128 de Lugus) : les valeurs gardées sous 2^127 (les
 // comparaisons de l'entier_128 sont signées), un décalage toujours de moins de 128 places, ni / ni % sur 128 bits
 // (Gobannos ne les traduit pas), aucune mémoire hors de la pile (la bibliothèque vit à côté du programme).
+// 0.833 : ses règles (ni / ni % sur 128 bits) supposent l'entier de 64 bits : Dunon
+dunon;
 
 fonction f_p(w) {
     si w == 1 { retour 52; }

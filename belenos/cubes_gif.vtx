@@ -1,6 +1,8 @@
 // machine : lugus
 // Belenos : le paysage fait dans le cube, en film (l'échelle 1 : 2 × 2 tuiles, 4 × 2 cubes).
 //     forgé : python forge/forge128.py belenos/cubes_gif.vtx -o cubes_gif.exe ; VTX_GIF=cubes_gif.gif cubes_gif.exe
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 1;
 importer "cubes_film.vtx";

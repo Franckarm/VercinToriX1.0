@@ -1,6 +1,8 @@
 // machine : lugus
 // Belenos : le même paysage deux fois moins fin (l'échelle 1/2 : une tuile, 2 cubes).
 //     forgé : python forge/forge128.py belenos/cubes_petit.vtx -o cubes_petit.exe ; VTX_GIF=cubes_petit.gif cubes_petit.exe
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 constante RN = 1;
 constante RD = 2;
 importer "cubes_film.vtx";

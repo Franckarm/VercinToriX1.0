@@ -4,6 +4,8 @@
 // o / p : le soleil d'une direction à l'autre (du ras de l'horizon à gauche au ras de l'horizon à droite) ;
 // i / k : le soleil plus fort, plus faible (jusqu'à la nuit) ; f : le feu ; Échap : finir.
 // La lumière met une centaine de pas à traverser la coupe : on la voit couler, puis se poser.
+// 0.833 : le graphique compte en 64 bits (comme Taranis et les références) : Dunon
+dunon;
 importer "rouleau_scene.vtx";
 
 constante ZOOM = 3;

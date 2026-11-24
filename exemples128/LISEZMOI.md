@@ -3,6 +3,7 @@
 Des programmes écrits dans le langage de Lugus : le flottant par défaut a 128 bits (quaternaire, 112 bits de
 mantisse), l'entier par défaut reste de 64 bits, l'`entier_petuar` en a 128, et une couleur écrite (`#FF8000`) est un
 point de matière : trois couleurs de 32 bits et sa matière (état, reflet, lumière, transparence, profondeur, rugosité).
+**0.833** : l'entier par défaut a maintenant 128 bits ; `dunon;` en tête d'un programme le ramène à 64 (le graphique). Voir `entier128.vtx` et `entier128_dunon.vtx`.
 
 La première ligne `// machine : lugus` fait ouvrir le programme sur Lugus dans l'atelier (les fichiers de ce dossier
 s'y ouvrent de toute façon).

@@ -414,18 +414,36 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   4. les décisions du vergobret en vtx ; 5. la forge en vtx ;
   6. puis le cache qui montre l'image, et le monde d'un seul tenant au processeur.
 
-## Lugus en 128 : le chantier (branche `lugus-128`, en cours)
-- Fait dans vtx128.py : `ENTIER_LARGE_DEFAUT = True` ; MASK de 128 bits, SIGNE = 1 << 127 ; `charger` pose une constante
-  de 128 bits (LDI + LDIH) et ne prend plus 2^64 - 1 pour -1 ; `lugus_asm` : les opérations entières (ENTIERS_LARGES :
-  ADD … MULHU, LDIS, LDIU, COMPTE) à toute la largeur ; ITOF, ITOFS, FTOI, FROUND depuis et vers l'entier entier ;
-  restent à 64 bits : ETG, ETGX (l'adresse courte), les quits, GDOT, GEMV, les flottants de 64 bits. Le pliage des
-  constantes (`ce`) à 128 bits.
-- Résultat : les 34 exemples de exemples128 donnent la même sortie qu'avant, sauf `cylindres` (son hachage déborde
-  maintenant à 128 bits : voulu) et `cube_mere` (il relit ses fichiers d'un passage d'avant : pas une différence).
-  afficher(0 - 3) = -3 ; 2^64 - 1 s'affiche tel quel ; pi, 2.5, 1 << 100 justes.
-- Reste : vtxc128 (les mêmes mots) : `lugus_large64` (les codes 1-9, 12-27, 30, 76-78, 80 à toute la largeur), les
-  conversions 72-75, SEXT32 sans ZEXT.64, `charger` (LDIH au-delà de 64 bits), `SIGNE` (constante 341), le lexique (128
-  bits : `big_entier` sur 8 limbes, les trois « trop grand pour 64 bits », le quaternaire `(v >> 62)`), `entier(w)`
-  (ZEXT.64, ligne ~10227) ; puis vtxc lui-même compilé à 128 bits (ses hachages qui comptaient sur 64 bits : à
-  chercher) ; renouveler (point fixe) ; le prélude (ses hachages : hasard, dictionnaires, empreintes de modules) ; la
-  forge (u128) ; le passage Dunon (Gergovie) ; verifier.py.
+## 0.833 (24 novembre) : Lugus en 128
+- **L'entier par défaut de Lugus a 128 bits**, dans les deux compilateurs (vtx128.py et vtxc128 : les mêmes mots, point
+  fixe), le prélude et la forge. À toute la largeur : l'arithmétique, les comparaisons, LDIS / LDIU / LDI + LDIH, COMPTE,
+  MULHU, MULHS, et (0.833) QEGAL, ET4, OU4, NON4, ANTI. Restent à 64 bits : ETG, ETGX (l'adresse courte : une adresse
+  reste sous 2^64), EXQ, LDQ, STQ (le quit d'un mot rangé), GDOT, GEMV, SYS (un service rend 2^64 - 1 en cas d'échec :
+  les sentinelles 18446744073709551615 du prélude restent justes), les flottants de 64 bits. Conversions : `flottant(e)`
+  lit les 128 bits (ITOF.L #0), `flottant_64(e)` aussi (ITOF.64 #0), `entier(x)` sature à 128 bits.
+- **Le prélude ne dépend plus de la largeur** : `nb_bits(0 - 1)` (128 sur Lugus, 64 sur Dunon ou en `dunon;`) dans
+  zeros_en_tete, zeros_en_queue, compter_zeros, tourner_gauche, tourner_droite, inverser_bits, echanger_octets,
+  log2_entier ; les saturations rendent `0 - 1`. Le texte vient de `vtxc/vocabulaire.py` (ne pas retoucher vtx128.py à
+  la main : il est réécrit). Les hachages de 64 bits (les dictionnaires, le catalogue, les tables de vtxc, les empreintes
+  de modules) sont masqués à 64 bits : les mêmes valeurs qu'avant. `hasard` garde le même xorshift de 64 bits.
+  `ecrire_hexa` : 16 chiffres si le nombre tient en 64 bits, 32 sinon.
+- **Dunon : `dunon;`** en tête d'un programme (avant ses fonctions) : tout le programme, prélude compris, compte en 64
+  bits (comme avant la 0.833). C'est le passage au graphique : Gergovie (ses huit programmes principaux) et les tests de
+  la carte le portent ; leurs empreintes sont celles de la 0.832 (vérifié à demi-échelle : vol -2747819110214049570,
+  jour 1331348773709531791, au processeur et sur la carte). vtx128.py : `regler_largeur`, la marque « ; dunon » lue par
+  `lugus_asm` ; vtxc128 : `c.dunon`, `masque(c, v)`.
+- **Taranis reste en 64 bits** : la forge n'envoie à la carte que les boucles d'un programme `dunon;` (une boucle d'un
+  programme à 128 bits y donnerait d'autres nombres) ; ailleurs elle reste au processeur.
+- **La forge** : l'entier en u128 (divu128, divs128l, sar128, quits_128, mulhu128…), u64 en `dunon;` ; ses tableaux
+  serrés d'entiers en u128. `forge/test_forge128.py` : 94 programmes conformes à Lugus émulé.
+- **Défauts trouvés et corrigés en chemin** : `charger_l` de vtxc (des moitiés de plus de 64 bits) ; les masques
+  internes BITS_V / BITS_F (répétés sur 128 bits pour un mot de 64 logiques) ; le pliage `<<q` / `>>q` (64 quits) ;
+  la réduction `min` part de 2^128 - 1 ; ma première table des conversions (un flottant de 128 bits depuis un entier de
+  64 : faux, corrigé).
+- **À savoir** : `0 - 1` vaut maintenant 2^128 - 1 ; un programme qui compare son propre -1 à 18446744073709551615 doit
+  écrire `0 - 1`. `1 << 100` est juste en 128 ; en `dunon;`, le décalage se prend modulo 64 (comme Rust et le C).
+  Exemples : `exemples128/entier128.vtx` et `entier128_dunon.vtx`.
+- Branche `lugus-128`, fusionnée dans vtx-0.6 à la livraison.
+- **Prochain (décidé)** : traduire en vtx ce qui peut l'être : le compilateur des noyaux de Taranis (les mêmes mots SPIR-V
+  que taranis/noyau_vtx.py), les décisions du vergobret, la forge ; puis le cache qui montre l'image, et le monde d'un
+  seul tenant au processeur.
