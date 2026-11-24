@@ -282,11 +282,11 @@ static void placer_et_remplir(void) {
         u n = 0;
         for (u b = 0; b < 32768; b++) if (DIRE[t][IX(b)] == 1) DIRE[t][IX(b)] = 16 + n++;
         GLOB[1 + t] = n;
-        POOLE[t] = calloc((n * 512 + 1) * PAS, sizeof(u));
-        POOLT[t] = calloc((n * 512 + 1) * PAS, sizeof(u));
-        CIELC[t] = calloc((n * 64 + 1) * PAS, sizeof(u));
-        SOLC[t] = calloc((n * 64 + 1) * PAS, sizeof(u));
-        CREUX[t] = calloc(n + 1, sizeof(u));
+        POOLE[t] = (u *)calloc((n * 512 + 1) * PAS, sizeof(u));
+        POOLT[t] = (u *)calloc((n * 512 + 1) * PAS, sizeof(u));
+        CIELC[t] = (u *)calloc((n * 64 + 1) * PAS, sizeof(u));
+        SOLC[t] = (u *)calloc((n * 64 + 1) * PAS, sizeof(u));
+        CREUX[t] = (u *)calloc(n + 1, sizeof(u));
     }
     long q;
 #pragma omp parallel for schedule(dynamic, 8)
@@ -330,8 +330,8 @@ static inline u *mot_bloc(u gx, u gy, u gz) {
 }
 
 static void distancer_blocs(void) {
-    DISTA = calloc(NB * NB * 32, sizeof(u));
-    DISTB = calloc(NB * NB * 32, sizeof(u));
+    DISTA = (u *)calloc(NB * NB * 32, sizeof(u));
+    DISTB = (u *)calloc(NB * NB * 32, sizeof(u));
     for (u gy = 0; gy < 32; gy++)
         for (u gz = 0; gz < NB; gz++)
             for (u gx = 0; gx < NB; gx++) DISTA[case_bloc(gx, gy, gz)] = ((*mot_bloc(gx, gy, gz) >> 62) == 2) ? LOIN : 0;
@@ -630,11 +630,88 @@ static void rendre_cubes(u cx, u cy, u cz, u lacet, u tangage, u temps) {
 
 static double ms(struct timespec a, struct timespec b) { return (b.tv_sec - a.tv_sec) * 1e3 + (b.tv_nsec - a.tv_nsec) / 1e6; }
 
+/* le trajet de l'œil, image i sur n (le même que le film) */
+static void camera(u i, u n, u *pcx, u *pcy, u *pcz, u *ptg) {
+    u ay = GLOB[0], avant = n * 7 / 12;
+    u cx = ARCHE_X * 65536, cy, cz;
+    if (i < avant) {
+        cy = (u)110 * 65536 * RN / RD - (((u)110 * RN / RD - ay - (u)12 * RN / RD) * 65536 / avant) * i;
+        cz = (u)470 * 65536 * RN / RD - ((u)170 * 65536 * RN / RD / avant) * i;
+    } else {
+        u j = i - avant, reste = n - avant;
+        cy = (ay + (u)12 * RN / RD) * 65536 + sdiv(((u)64 * RN / RD - ay - (u)12 * RN / RD) * 65536, reste) * j;
+        cz = ARCHE_Z * 65536 - ((u)110 * 65536 * RN / RD / reste) * j;
+    }
+    u vy = (ay + (u)14 * RN / RD) * 65536 - cy;
+    u tangage = 0, vu = 0 - ((u)1 << 62);
+    for (u k = 0; k < 129; k++) {
+        u a = (k + 1024 - 64) & 1023;
+        u p = sdiv(vy, 256) * sin1024(a) + ((u)80 * 256 * RN / RD) * cos1024(a);
+        if (slt(vu, p)) { vu = p; tangage = a; }
+    }
+    *pcx = cx; *pcy = cy; *pcz = cz; *ptg = tangage;
+}
+
+static u empreinte(void) {
+    u h = 14695981039346656037u;
+    for (u i = 0; i < W * H; i++) h = (h ^ ECRAN[i]) * 1099511628211u;
+    return h;
+}
+
+static int plus_petit(const void *a, const void *b) {
+    double x = *(const double *)a, y = *(const double *)b;
+    return x < y ? -1 : x > y;
+}
+
+/* 0.819 : l'épreuve de Gergovie (le banc d'essai) : la moyenne, le 1 % bas (la fluidité), la pire image, l'empreinte */
+static void bilan(const char *nom, double *t, u n) {
+    double total = 0;
+    for (u i = 0; i < n; i++) total += t[i];
+    qsort(t, n, sizeof(double), plus_petit);
+    u k = n / 100; if (k == 0) k = 1;
+    double lents = 0;
+    for (u i = n - k; i < n; i++) lents += t[i];
+    printf("gergovie : %s : %llu images, %.1f images par seconde en moyenne, 1 %% bas %.1f, pire image %.1f ms ; empreinte %lld\n",
+           nom, (unsigned long long)n, 1000.0 * n / total, 1000.0 * k / lents, t[n - 1], (long long)empreinte());
+}
+
+static void gergovie(void) {
+    u n1 = getenv("GERGOVIE_VOL") ? (u)atoll(getenv("GERGOVIE_VOL")) : 240;
+    u n2 = getenv("GERGOVIE_JOUR") ? (u)atoll(getenv("GERGOVIE_JOUR")) : 120;
+    double *t = (double *)calloc(n1 + n2 + 1, sizeof(double));
+    struct timespec ti, tf;
+    /* épreuve 1, le vol : l'œil bouge, le soleil est fixe */
+    preparer_soleil(360, 70);
+    ranger_lumiere(1);
+    for (u i = 0; i < n1; i++) {
+        u cx, cy, cz, tg;
+        clock_gettime(CLOCK_MONOTONIC, &ti);
+        camera(i, n1, &cx, &cy, &cz, &tg);
+        rendre_cubes(cx, cy, cz, 512, tg, i * 3);
+        clock_gettime(CLOCK_MONOTONIC, &tf);
+        t[i] = ms(ti, tf);
+    }
+    bilan("le vol (l'oeil bouge)", t, n1);
+    /* épreuve 2, le jour : l'œil bouge et le soleil aussi (la lumière refaite à chaque image) */
+    for (u i = 0; i < n2; i++) {
+        u cx, cy, cz, tg;
+        clock_gettime(CLOCK_MONOTONIC, &ti);
+        preparer_soleil(300 + i * 3, 50 + i);
+        ranger_lumiere(0);
+        camera(i, n2, &cx, &cy, &cz, &tg);
+        rendre_cubes(cx, cy, cz, 512, tg, i * 3);
+        clock_gettime(CLOCK_MONOTONIC, &tf);
+        t[i] = ms(ti, tf);
+    }
+    bilan("le jour (le soleil bouge aussi)", t, n2);
+    free(t);
+}
+
 int main(void) {
     u IMAGES = getenv("CUBES_IMAGES") ? (u)atoll(getenv("CUBES_IMAGES")) : 48;
-    HCOL = calloc(MONDE * MONDE, sizeof(u));
-    PENTE = calloc(MONDE * MONDE, sizeof(u));
-    for (u t = 0; t < TUILES * TUILES; t++) { DIRE[t] = calloc(32768 * PAS, sizeof(u)); DIRT[t] = calloc(32768 * PAS, sizeof(u)); }
+    HCOL = (u *)calloc(MONDE * MONDE, sizeof(u));
+    PENTE = (u *)calloc(MONDE * MONDE, sizeof(u));
+    for (u t = 0; t < TUILES * TUILES; t++) { DIRE[t] = (u *)calloc(32768 * PAS, sizeof(u)); DIRT[t] = (u *)calloc(32768 * PAS, sizeof(u)); }
     struct timespec t0, t1, ti, tf;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     preparer_sinus();
@@ -645,35 +722,19 @@ int main(void) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
     printf("le monde : %.0f ms ; blocs porteurs d'une surface, par tuile : %llu, %llu, %llu, %llu\n", ms(t0, t1),
            (unsigned long long)GLOB[1], (unsigned long long)GLOB[2], (unsigned long long)GLOB[3], (unsigned long long)GLOB[4]);
+    if (getenv("GERGOVIE")) { gergovie(); return 0; }
     preparer_soleil(360, 70);
     clock_gettime(CLOCK_MONOTONIC, &t0);
     ranger_lumiere(1);
     clock_gettime(CLOCK_MONOTONIC, &t1);
     printf("les calques de lumiere : %.0f ms\n", ms(t0, t1));
-    u ay = GLOB[0];
     double total = 0;
-    u avant = IMAGES * 7 / 12;
     for (u i = 0; i < IMAGES; i++) {
         clock_gettime(CLOCK_MONOTONIC, &ti);
         if (TOURNE == 1) { preparer_soleil(300 + i * 3, 50 + i); ranger_lumiere(0); }
-        u cx = ARCHE_X * 65536, cy, cz;
-        if (i < avant) {
-            cy = (u)110 * 65536 * RN / RD - (((u)110 * RN / RD - ay - (u)12 * RN / RD) * 65536 / avant) * i;
-            cz = (u)470 * 65536 * RN / RD - ((u)170 * 65536 * RN / RD / avant) * i;
-        } else {
-            u j = i - avant, reste = IMAGES - avant;
-            cy = (ay + (u)12 * RN / RD) * 65536 + sdiv(((u)64 * RN / RD - ay - (u)12 * RN / RD) * 65536, reste) * j;
-            cz = ARCHE_Z * 65536 - ((u)110 * 65536 * RN / RD / reste) * j;
-        }
-        u lacet = 512;
-        u vy = (ay + (u)14 * RN / RD) * 65536 - cy;
-        u tangage = 0, vu = 0 - ((u)1 << 62);
-        for (u k = 0; k < 129; k++) {
-            u a = (k + 1024 - 64) & 1023;
-            u p = sdiv(vy, 256) * sin1024(a) + ((u)80 * 256 * RN / RD) * cos1024(a);
-            if (slt(vu, p)) { vu = p; tangage = a; }
-        }
-        rendre_cubes(cx, cy, cz, lacet, tangage, i * 3);
+        u cx, cy, cz, tangage;
+        camera(i, IMAGES, &cx, &cy, &cz, &tangage);
+        rendre_cubes(cx, cy, cz, 512, tangage, i * 3);
         clock_gettime(CLOCK_MONOTONIC, &tf);
         total += ms(ti, tf);
         if (getenv("CUBES_DETAIL")) printf("image %llu : %.0f ms\n", (unsigned long long)i + 1, ms(ti, tf));
@@ -681,12 +742,10 @@ int main(void) {
     if (getenv("CUBES_PPM")) {
         FILE *f = fopen(getenv("CUBES_PPM"), "wb");
         fprintf(f, "P6 %d %d 255\n", W, H);
-        for (u i = 0; i < W * H; i++) { unsigned char p[3] = {ECRAN[i] >> 16, ECRAN[i] >> 8, ECRAN[i]}; fwrite(p, 1, 3, f); }
+        for (u i = 0; i < W * H; i++) { unsigned char p[3] = {(unsigned char)(ECRAN[i] >> 16), (unsigned char)(ECRAN[i] >> 8), (unsigned char)ECRAN[i]}; fwrite(p, 1, 3, f); }
         fclose(f);
     }
-    u h = 14695981039346656037u;
-    for (u i = 0; i < W * H; i++) h = (h ^ ECRAN[i]) * 1099511628211u;
     printf("%llu images en %.0f ms (%.0f ms par image)\n", (unsigned long long)IMAGES, total, total / IMAGES);
-    printf("empreinte : %lld\n", (long long)h);
+    printf("empreinte : %lld\n", (long long)empreinte());
     return 0;
 }

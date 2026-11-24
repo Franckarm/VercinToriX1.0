@@ -211,5 +211,15 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Piège : deux appels consécutifs dans une branche du tapis = un accord = pas de bandes (un cœur). Les lier par une
   valeur (`soit fait = etage_cache(..); etage_ecran(y, s + fait * 0);`). À corriger dans la forge.
 - Noyau Taranis : types_de remet `_corps_vus` autour des locales ; verifier_type rend PasPourLaCarte.
-- Prochaine livraison : vtx-0.819.zip / essai-0.819.bat.
+- Prochaine livraison : vtx-0.820.zip / essai-0.820.bat.
 - À discuter : une nouvelle répartition (carte et processeur ensemble sur des rangées) ; l'écart par fil vtx/C.
+
+## 0.819 (24 novembre) : la partie graphique renaît
+- Décidé : reprendre la partie graphique seule, à partir du modèle classique des moteurs pour la carte, puis la
+  changer pas à pas vers un modèle tout vtx (le document du projet `belenos-renouveau.md`, §105).
+- L'épreuve de Gergovie (le juge) : `cubes_ref.c` avec `GERGOVIE=1` (C et C++), `belenos/gergovie.rs` (Rust à la main),
+  `belenos/gergovie.vtx` ; le vol (240 images) et le jour (120) ; moyenne, 1 % bas, pire image, empreinte (les mêmes
+  pour les quatre : 8987854166678181011 et 1907865044188733942).
+- Prochain : le modèle classique sur la carte (la scène résidente, en 64 bits, l'image gardée par la carte), mesuré
+  dans Gergovie ; puis l'ombre quaternaire (prioritaire).
+- Prochaine livraison : vtx-0.820.zip / essai-0.820.bat.

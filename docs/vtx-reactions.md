@@ -4425,3 +4425,29 @@ jour (accepter les accords sans effet dans les bandes).
 clarté 275,9, Divona 80,5, cache 9,8). Pas plus rapide : la fusion retire un passage, pas le travail du rayon.
 Sur lavapipe (petit film 320 × 180), les rayons et la clarté sur la carte donnent la même empreinte que le processeur.
 Les tests de Taranis, des cylindres, l'épreuve et les mêmes mots : conformes.
+
+## 105. La partie graphique renaît ; l'épreuve de Gergovie, le juge (24 novembre, 0.819)
+
+**Décidé avec le créateur** (après la 0.818 : le C 29 ms, vtx 59 ms, la carte 149 ms par image) : on reprend la
+partie graphique seule (le langage, ses compilateurs, Ogmios et l'épreuve d'Alésia ne bougent pas). On part du modèle
+classique des moteurs faits pour la carte (la scène montée une fois, quelques octets par image, un fil par point,
+l'image gardée et montrée par la carte), on le mesure, puis on le change pas à pas vers un modèle tout vtx. Gardés dès le
+début : le vergobret (gestionnaire du modèle standard, sur la carte d'abord ; pas d'étages pour commencer), le 64 bits
+(Dunon ; le vergobret pourra taire les bits inutiles), le quaternaire (l'ombre quaternaire : option prioritaire), les
+cubes. Repris de l'ancien Belenos, parce que mesurés : les blocs creusés, les calques de lumière, la pente apprise, seul
+ce qui change monte. Le détail : le document du projet `belenos-renouveau.md`.
+
+**L'épreuve de Gergovie** (le banc d'essai, façon 3DMark) : le paysage du cube et le trajet de l'œil, deux épreuves :
+- **le vol** (240 images) : l'œil bouge, le soleil est fixe (la lumière rangée une fois) ;
+- **le jour** (120 images) : le soleil bouge aussi (la clepsydre refaite à chaque image, comptée dans son temps).
+
+Pour chacune : les images par seconde en moyenne, **le 1 % bas** (la moyenne des 1 % d'images les plus lentes : la
+fluidité, le but du créateur), la pire image, l'empreinte de la dernière. Quatre versions du même calcul :
+- `belenos/cubes_ref.c` (`GERGOVIE=1`) : en C, et le même fichier compilé en C++ (`cl /TP`, `g++ -x c++`) ;
+- `belenos/gergovie.rs` : en Rust écrit à la main (des fils de std, les accès aux tableaux vérifiés : du Rust ordinaire) ;
+- `belenos/gergovie.vtx` : en vtx forgé.
+
+Ici (2 cœurs, 24 et 6 images) : les quatre donnent les mêmes empreintes (le vol 8987854166678181011, le jour
+1907865044188733942) ; le C 4,4 images par seconde, Rust 4,9, vtx 3,0 (sa première image est la plus lente : le
+réglage et la mise en place des pages ; le 1 % bas le montre). Honnêtement : le C++ ira comme le C (le même code, le
+même compilateur) ; un moteur C++ gagne par son organisation, pas par son langage.
