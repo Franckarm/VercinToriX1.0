@@ -34,6 +34,7 @@ constante F_SYNAPSES = 4042;
 constante F_MOLECULES = 4043;
 constante F_LIGNEE = 4044;
 constante F_SIGNES = 4045;
+constante F_CELLULES = 4046;
 constante MOITIE = 170141183460469231731687303715884105728;
 constante PLACES = 65536;
 constante PLACES_M = 4096;
@@ -139,6 +140,14 @@ fonction etat_synapse(vp, vc): logique {
         retour faux;
     }
     retour variable;
+}
+
+// un morceau de texte, seulement si c vaut 1
+fonction nom_si(c, t: texte): texte {
+    si c == 1 {
+        retour t;
+    }
+    retour "";
 }
 
 // un texte est-il dans la liste (par son contenu) ?
@@ -299,7 +308,7 @@ fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no, nsb, nsh, vu
     ecrire_texte(carnet, mol + " " + var + " " + noms_q[q] + " : " + expliquer(qe, @[cube_adresse(0, F_POINTS, p)],
                  @[cube_adresse(1, F_POINTS, p)], nb, nh) + "\n");
     si nsb >= MOITIE || ash >= MOITIE || asb != nsb || ash != nsh {
-        si nsb >= MOITIE || asb >= MOITIE {
+        si (nsb >= MOITIE || asb >= MOITIE) && !(nsb == MOITIE && nsh == MOITIE - 1 && asb == MOITIE && ash == MOITIE - 1) {
             ecrire_texte(carnet, "    avec le signe : de " + lisible_s(asb) + " -> " + lisible_s(nsb) + ", à " + lisible_s(ash)
                          + " -> " + lisible_s(nsh) + "\n");
         }
@@ -377,6 +386,16 @@ fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no, nsb, nsh, vu
     retour q;
 }
 
+// 0.837 : le dossier codon d'une variable (4045, étage 2), 0 si elle n'est pas connue
+fonction codon_de(mol: texte, var: texte) {
+    soit h = empreinte_nom(mol + " " + var);
+    soit p = place_de(h);
+    si p == (0 - 1) || @[cube_adresse(0, F_NOMS, p)] != h {
+        retour 0;
+    }
+    retour @[cube_adresse(2, F_SIGNES, p)];
+}
+
 // la règle apprise d'une variable (sa synapse)
 fonction regle(mol: texte, var: texte): logique {
     soit h = empreinte_nom(mol + " " + var);
@@ -448,6 +467,107 @@ fonction poser_poids(mol: texte, w) {
         @[cube_adresse(0, F_MOLECULES, p)] = h;
         @[cube_adresse(2, F_MOLECULES, p)] = w;
     }
+}
+
+// 0.837 : 4046 : l'arrangement d'une molécule (sa place : celle de 4043) : étage 1 son dépliage (0 : le compilateur
+// décide ; 1 : gardée à part ; 2 : dépliée dans ses appelants), étage 2 la mutation de dépliage rejetée
+fonction etat_deplier(mol: texte) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p == (0 - 1) || @[cube_adresse(0, F_MOLECULES, p)] != h {
+        retour 0;
+    }
+    retour @[cube_adresse(1, F_CELLULES, p)];
+}
+
+fonction poser_deplier(mol: texte, e) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p != (0 - 1) {
+        @[cube_adresse(0, F_MOLECULES, p)] = h;
+        @[cube_adresse(1, F_CELLULES, p)] = e;
+    }
+}
+
+fonction rejet_deplier(mol: texte) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p == (0 - 1) || @[cube_adresse(0, F_MOLECULES, p)] != h {
+        retour 0;
+    }
+    retour @[cube_adresse(2, F_CELLULES, p)];
+}
+
+fonction poser_rejet_deplier(mol: texte, r) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p != (0 - 1) {
+        @[cube_adresse(0, F_MOLECULES, p)] = h;
+        @[cube_adresse(2, F_CELLULES, p)] = r;
+    }
+}
+
+// un gène : « esus MOL » (Ésus connecté ou non dans la molécule) ou « deplier MOL » (son arrangement)
+fonction gene_mol(g: texte): texte {
+    retour sous_texte(g, position(g, " ") + 1, longueur(g));
+}
+
+fonction gene_etat(g: texte) {
+    si commence_par(g, "esus ") == 1 {
+        retour etat_esus(gene_mol(g));
+    }
+    retour etat_deplier(gene_mol(g));
+}
+
+fonction gene_poser(g: texte, v) {
+    si commence_par(g, "esus ") == 1 {
+        poser_esus(gene_mol(g), v);
+    } sinon {
+        poser_deplier(gene_mol(g), v);
+    }
+}
+
+fonction gene_rejete(g: texte) {
+    si commence_par(g, "esus ") == 1 {
+        retour rejetee(gene_mol(g));
+    }
+    retour rejet_deplier(gene_mol(g));
+}
+
+fonction gene_rejeter(g: texte, r) {
+    si commence_par(g, "esus ") == 1 {
+        poser_rejet(gene_mol(g), r);
+    } sinon {
+        poser_rejet_deplier(gene_mol(g), r);
+    }
+}
+
+// l'état muté : Ésus basculé ; le dépliage : déplié, ou gardé à part s'il l'était
+fonction gene_muter(g: texte, avant) {
+    si commence_par(g, "esus ") == 1 {
+        si avant == 1 {
+            retour 2;
+        }
+        retour 1;
+    }
+    si avant == 2 {
+        retour 1;
+    }
+    retour 2;
+}
+
+fonction gene_dire(g: texte, v): texte {
+    soit m = gene_mol(g);
+    si commence_par(g, "esus ") == 1 {
+        si v == 1 {
+            retour "déconnecte Ésus dans " + m;
+        }
+        retour "connecte Ésus dans " + m;
+    }
+    si v == 2 {
+        retour "déplie " + m + " dans ses appelants (la cellule fondue)";
+    }
+    retour "garde " + m + " à part";
 }
 
 fonction principal() {
@@ -550,6 +670,7 @@ fonction principal() {
     pour kr0 dans 0..longueur(lmol) {
         si letat[kr0] == 1 || letat[kr0] == 3 {
             poser_rejet(lmol[kr0], 0);
+            poser_rejet_deplier(lmol[kr0], 0);
         }
     }
     // 3 : relier : le travail de chaque molécule (s'il a été compté), puis le temps du programme
@@ -598,9 +719,31 @@ fonction principal() {
     soit sc = @[cube_adresse(3, F_LIGNEE, 1)];
     soit paires = @[cube_adresse(0, F_LIGNEE, 2)];
     soit mute = "";
-    pour ka dans 0..longueur(lm) {
-        si attente != 0 && empreinte_nom(lm[ka]) == attente {
-            mute = lm[ka];
+    // 0.837 : les gènes : Ésus dans chaque molécule ; le dépliage de chaque molécule appelée par une autre (les cellules)
+    soit cel_txt = lire_fichier(base + ".cellules");
+    soit appelees = ["x"];
+    retirer(appelees);
+    pour lc dans decouper(cel_txt, "\n") {
+        soit mc = mots(lc);
+        si longueur(mc) >= 2 && commence_par(lc, "#") == 0 {
+            pour kc2 dans 2..longueur(mc) {
+                si dans_liste(appelees, mc[kc2]) == 0 {
+                    ajouter(appelees, mc[kc2]);
+                }
+            }
+        }
+    }
+    soit genes = ["x"];
+    retirer(genes);
+    pour kg0 dans 0..longueur(lm) {
+        ajouter(genes, "esus " + lm[kg0]);
+        si dans_liste(appelees, lm[kg0]) == 1 {
+            ajouter(genes, "deplier " + lm[kg0]);
+        }
+    }
+    pour ka dans 0..longueur(genes) {
+        si attente != 0 && empreinte_nom(genes[ka]) == attente {
+            mute = genes[ka];
         }
     }
     ecrire_texte(carnet, "# la lignée : génération " + texte(gen) + ", ce passage " + texte(t) + " µs\n");
@@ -620,29 +763,29 @@ fonction principal() {
             } sinon si tv * 100 >= tp * 103 {
                 sc = sc + 1;
             }
-            ecrire_texte(carnet, "évolution : " + mute + " : la variante " + texte(tv) + " µs contre le parent " + texte(tp)
+            ecrire_texte(carnet, "évolution : « " + mute + " » : la variante " + texte(tv) + " µs contre le parent " + texte(tp)
                          + " µs (pour " + texte(sp) + ", contre " + texte(sc) + ")\n");
         }
         soit decide = etat_synapse(sp, sc);
         soit fini = 0;
         selon decide {
             vrai {
-                ecrire_texte(carnet, "évolution : la mutation de " + mute + " est gardée (plus rapide)\n");
+                ecrire_texte(carnet, "évolution : la mutation « " + mute + " » est gardée (plus rapide)\n");
                 fini = 1;
             }
             faux {
-                poser_esus(mute, avant);
-                poser_rejet(mute, 1);
-                ecrire_texte(carnet, "évolution : la mutation de " + mute + " est rejetée (plus lente) : retour au parent\n");
+                gene_poser(mute, avant);
+                gene_rejeter(mute, 1);
+                ecrire_texte(carnet, "évolution : la mutation « " + mute + " » est rejetée (plus lente) : retour au parent\n");
                 fini = 1;
             }
             inconnu { }
             variable { }
         }
         si fini == 0 && paires >= 8 {
-            poser_esus(mute, avant);
-            poser_rejet(mute, 1);
-            ecrire_texte(carnet, "évolution : la mutation de " + mute + " n'a rien prouvé en huit paires : le parent reste\n");
+            gene_poser(mute, avant);
+            gene_rejeter(mute, 1);
+            ecrire_texte(carnet, "évolution : la mutation « " + mute + " » n'a rien prouvé en huit paires : le parent reste\n");
             fini = 1;
         }
         si fini == 1 {
@@ -662,20 +805,17 @@ fonction principal() {
     si attente == 0 && t > 0 && total > 0 {
         soit candidates = ["x"];
         retirer(candidates);
-        pour kc dans 0..longueur(lm) {
-            si poids_de(lm[kc]) * 50 >= total && rejetee(lm[kc]) == 0 {
-                ajouter(candidates, lm[kc]);
+        pour kc dans 0..longueur(genes) {
+            si poids_de(gene_mol(genes[kc])) * 50 >= total && gene_rejete(genes[kc]) == 0 {
+                ajouter(candidates, genes[kc]);
             }
         }
         si longueur(candidates) > 0 {
             graine(t + gen);
             mute = candidates[hasard(longueur(candidates))];
-            avant = etat_esus(mute);
-            soit neuf = 1;
-            si avant == 1 {
-                neuf = 2;
-            }
-            poser_esus(mute, neuf);
+            avant = gene_etat(mute);
+            soit neuf = gene_muter(mute, avant);
+            gene_poser(mute, neuf);
             attente = empreinte_nom(mute);
             gen = gen + 1;
             tour = 1;
@@ -683,11 +823,7 @@ fonction principal() {
             sp = 0;
             sc = 0;
             paires = 0;
-            soit dit = "connecte";
-            si neuf == 1 {
-                dit = "déconnecte";
-            }
-            ecrire_texte(carnet, "évolution : génération " + texte(gen) + " : la mutation " + dit + " Ésus dans " + mute + "\n");
+            ecrire_texte(carnet, "évolution : génération " + texte(gen) + " : la mutation " + gene_dire(mute, neuf) + "\n");
         } sinon {
             ecrire_texte(carnet, "évolution : rien à essayer (les mutations des molécules lourdes ont été jugées) : la lignée est stable\n");
         }
@@ -696,10 +832,77 @@ fonction principal() {
     pour kg dans 0..longueur(lm) {
         si rejetee(lm[kg]) == 2 {
             poser_esus(lm[kg], 1);
-            si attente != 0 && lm[kg] == mute {
+            si attente != 0 && mute == "esus " + lm[kg] {
                 attente = 0;
                 ecrire_texte(carnet, "évolution : la mutation de " + mute + " est arrêtée : la garde l'a reprise\n");
             }
+        }
+    }
+    // 0.837 : les cellules à connaître : une molécule et celles qu'elle appelle ; connue quand chaque variable de chacune
+    // a son dossier codon tranché vrai (les témoins d'accord) et que rien n'a été démenti
+    ecrire_texte(carnet, "# les cellules (une molécule et celles qu'elle appelle ; connue : tous ses dossiers tranchés vrai)\n");
+    soit ncel = 0;
+    soit nconnues = 0;
+    pour lc2 dans decouper(cel_txt, "\n") {
+        soit mc2 = mots(lc2);
+        si longueur(mc2) >= 2 && commence_par(lc2, "#") == 0 && commence_par(mc2[0], "__") == 0 {
+            soit membres = [mc2[0]];
+            pour kc3 dans 2..longueur(mc2) {
+                ajouter(membres, mc2[kc3]);
+            }
+            soit sures = 0;
+            soit suspens = 0;
+            soit echues = 0;
+            soit dem2 = 0;
+            pour kv2 dans 0..longueur(lmol) {
+                si dans_liste(membres, lmol[kv2]) == 1 {
+                    soit dc = codon_de(lmol[kv2], lvar[kv2]);
+                    si etat(dc) == 1 && verdict_ordonne(dc) == vrai {
+                        sures = sures + 1;
+                    } sinon si etat(dc) == 2 {
+                        echues = echues + 1;
+                    } sinon {
+                        suspens = suspens + 1;
+                    }
+                }
+            }
+            pour km2 dans 0..longueur(membres) {
+                si rejetee(membres[km2]) == 2 {
+                    dem2 = 1;
+                }
+            }
+            soit connue = 0;
+            si sures > 0 && suspens == 0 && echues == 0 && dem2 == 0 {
+                connue = 1;
+            }
+            soit hc = empreinte_nom(mc2[0]);
+            soit pc = place_molecule(hc);
+            soit avant_c = 0;
+            si pc != (0 - 1) && @[cube_adresse(0, F_MOLECULES, pc)] == hc {
+                avant_c = @[cube_adresse(3, F_CELLULES, pc)];
+            }
+            soit dit2 = "à connaître";
+            si connue == 1 && avant_c == 1 {
+                dit2 = "connue";
+            } sinon si connue == 1 {
+                dit2 = "devient connue";
+            } sinon si avant_c == 1 {
+                dit2 = "n'est plus connue (une variable a bougé)";
+            }
+            soit app = "";
+            si longueur(membres) > 1 {
+                app = " ; elle appelle " + assembler(tranche(membres, 1, longueur(membres)), ", ");
+            }
+            ecrire_texte(carnet, "cellule " + mc2[0] + " (membrane " + mc2[1] + app + ") : " + dit2 + " ; " + texte(sures)
+                         + " dossiers tranchés vrai, " + texte(suspens) + " en suspens, " + texte(echues) + " échus"
+                         + nom_si(dem2, ", une preuve démentie") + nom_si(etat_deplier(mc2[0]) == 2, " ; dépliée")
+                         + nom_si(etat_deplier(mc2[0]) == 1, " ; gardée à part") + "\n");
+            si pc != (0 - 1) {
+                @[cube_adresse(0, F_MOLECULES, pc)] = hc;
+                @[cube_adresse(3, F_CELLULES, pc)] = connue;
+            }
+            ncel = ncel + 1;
+            nconnues = nconnues + connue;
         }
     }
     @[cube_adresse(0, F_LIGNEE, 0)] = gen;
@@ -715,14 +918,24 @@ fonction principal() {
 
     // 5 : adapter : l'ARN (la forge le lit : « esus MOLÉCULE 0 » déconnecte Ésus de la molécule)
     soit arn = ouvrir_ecriture(base + ".arn");
-    ecrire_texte(arn, "# ARN du Druide pour " + prog + ", lu par la forge : esus MOLÉCULE 0 (Ésus déconnecté), 1 (connecté)\n");
+    ecrire_texte(arn, "# ARN du Druide pour " + prog + ", lu par la forge : esus MOLÉCULE 0 (Ésus déconnecté) ; deplier MOLÉCULE 1 (dépliée dans ses appelants), 0 (à part)\n");
     pour ke dans 0..longueur(lm) {
         soit ee = etat_esus(lm[ke]);
-        si attente != 0 && lm[ke] == mute && tour == 2 {
+        si attente != 0 && mute == "esus " + lm[ke] && tour == 2 {
             ee = avant;
         }
         si ee == 1 {
             ecrire_texte(arn, "esus " + lm[ke] + " 0\n");
+        }
+        soit dp = etat_deplier(lm[ke]);
+        si attente != 0 && mute == "deplier " + lm[ke] && tour == 2 {
+            dp = avant;
+        }
+        si dp == 1 {
+            ecrire_texte(arn, "deplier " + lm[ke] + " 0\n");
+        }
+        si dp == 2 {
+            ecrire_texte(arn, "deplier " + lm[ke] + " 1\n");
         }
     }
     fermer(arn);
@@ -790,6 +1003,7 @@ fonction principal() {
     pour em dans 0..4 {
         pages = pages + ranger_cube(em, F_MOLECULES);
     }
+    pages = pages + ranger_cube(1, F_CELLULES) + ranger_cube(2, F_CELLULES) + ranger_cube(3, F_CELLULES);
     afficher("le Druide :", prog, ":", nlu, "variables ; pareilles ou plus serrées", compte[2], ", plus larges", compte[1],
-             ", nouvelles", compte[0], ", déplacées", compte[3], "; génération", gen, "; temps", t, "µs ;", pages, "pages rangées");
+             ", nouvelles", compte[0], ", déplacées", compte[3], "; cellules connues", nconnues, "sur", ncel, "; génération", gen, "; temps", t, "µs ;", pages, "pages rangées");
 }

@@ -560,3 +560,32 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Le Druide** (décidé avec le créateur) : il conseille, modèle, propose, organise, connecte et déconnecte, apprend ;
   il touche l'ARN et le cube chromatique, jamais l'ADN ; la garde le tient (rien ne passe sans le même résultat).
 
+
+## 0.837 (25 novembre) : le signe, le codon, les cellules
+- **Six points** par variable (Ésus) : les quatre, plus le plus petit et le plus grand lus avec le signe (`0 - 5` vaut
+  -5, plus « aucune borne ») : trois paires d'opposés, les trois axes du dé (l'idée du créateur). Le relevé PROG.esus a
+  huit colonnes (les deux dernières en hex signé : `-1e`). Ésus prend `+ - * ./ .%` en 64 bits signés quand c'est
+  prouvé (mesuré : pas de gain sur ma boucle, LLVM les fait déjà bien ; le gain est la connaissance).
+- **L'observation** : la passe de mesure (`VTX_DRUIDE=poids`) relève les valeurs vraiment prises par chaque variable
+  entière et chaque paramètre (PROG.observe : molécule variable bas haut petit grand fois).
+- **Le codon du Druide** (bibliotheque/codon.vtx, avec ordre ; 4045 étage 2) : A inconnu, C faux, G vrai, U variable ;
+  place 0 la mémoire, 1 la forge du jour, 2 l'observation. Une variable déplacée reste en suspens (le délai : 3 forges),
+  tranchée quand les témoins s'accordent, échue sinon. **La garde** : une valeur vue hors de la preuve : le dossier échu
+  (« la preuve démentie »), ALERTE, Ésus déconnecté de la molécule pour toujours (le rejet 2, que rien n'efface).
+- **La membrane des cellules** (`membrane()` dans forge128.py) : une molécule du programme appelée seulement par des
+  appels visibles (jamais en valeur, pas du prélude, pas principal) reçoit sur ses paramètres ce que ses appelants y
+  mettent ; chaque molécule rend par son retour ce que ses retours prouvent (0 compris) ; tout tourne jusqu'à tenir
+  (élargi ; ce qui bouge encore après huit tours devient tout l'intervalle). `VTX_MEMBRANE=0` l'éteint. Mesuré
+  (exemples128/cellules.vtx, 30 millions d'appels) : 195 → 110 ms (−43 %), la même sortie. PROG.cellules : chaque
+  molécule, sa membrane, ce qu'elle appelle.
+- **Trouvé et fermé en route** : Ésus ne voyait pas les affectations rangées dans un « accord » (la partition) :
+  une borne pouvait être trop serrée. Les trois marcheurs de l'arbre descendent maintenant dans les accords.
+- **Les cellules du Druide** : une molécule et celles qu'elle appelle ; connue quand tous ses dossiers sont tranchés
+  vrai et que rien n'a été démenti (4046 étage 3) ; le carnet le dit (« devient connue », « n'est plus connue »).
+- **L'arrangement** (un gène nouveau) : `deplier MOL 1` (la molécule fondue dans ses appelants : `#[inline(always)]`)
+  ou `0` (gardée à part : `#[inline(never)]`) dans l'ARN du Druide ; l'évolution choisit entre les gènes « esus MOL » et
+  « deplier MOL » (une molécule appelée par une autre), mesurés en paires comme avant.
+- Livraison : vtx-0.837.zip, essai-0.837.bat.
+- **Prochain** : les mutations plus riches (lot, fondre, carte directe de Gutuater) ; une cellule connue pourrait être
+  forgée seule et gardée (son ADN rangé, rien à refaire tant qu'elle ne change pas) ; la traduction en vtx (le
+  compilateur des noyaux de Taranis, le vergobret, la forge).

@@ -132,6 +132,30 @@ verifier("la garde : une valeur vue hors de la preuve (trafiquée) : l'alerte, �
 c4 = passe("1")
 arn = open(os.path.join(d, "signe_druide.arn"), encoding="utf-8").read()
 verifier("la garde tient à la forge suivante", "esus principal 0" in arn, arn)
+
+# 0.837 : les cellules : la membrane, le fichier des cellules, l'arrangement (deplier) lu par la forge
+CEL = open(os.path.join(racine, "exemples128", "cellules.vtx"), encoding="utf-8").read().replace("30000000", "3000")
+p = os.path.join(d, "cel_druide.vtx")
+open(p, "w", encoding="utf-8").write(CEL)
+exe = os.path.join(d, "cel_druide" + (".exe" if WIN else ""))
+releve = os.path.join(d, "cel_druide.esus")
+env = dict(os.environ, VTX_DRUIDE="poids")
+subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), p, "-o", exe], capture_output=True, env=env)
+subprocess.run([exe], capture_output=True, env=env)
+cel = open(os.path.join(d, "cel_druide.cellules"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "cel_druide.cellules")) else ""
+verifier("les cellules : principal appelle brasser_mol et reduire_mol ; leurs membranes ouvertes",
+         "principal fermee brasser_mol reduire_mol" in cel and "brasser_mol ouverte" in cel, cel)
+obs = open(os.path.join(d, "cel_druide.observe"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "cel_druide.observe")) else ""
+verifier("la membrane observée : ce que brasser_mol a reçu (a de 0 à 2999, 3000 fois)", "brasser_mol a 0 bb7 0 bb7 3000" in obs, obs)
+subprocess.run([LUGUS, os.path.join(dr, "druide.vtx")], input=releve + "\n", capture_output=True, text=True)
+carnet = open(os.path.join(d, "cel_druide.druide"), encoding="utf-8").read()
+verifier("le carnet dit ses cellules", "cellule principal (membrane fermee ; elle appelle brasser_mol, reduire_mol)" in carnet, carnet[-800:])
+src = CEL
+sortie = os.path.join(d, "dpl_druide")
+open(sortie + ".arn", "w", encoding="utf-8").write("deplier reduire_mol 1\ndeplier brasser_mol 0\n")
+code, _ = forge128.source_rust(src, d, "dpl_druide", sortie)
+verifier("l'arrangement : « deplier reduire_mol 1 » la fond dans ses appelants, « deplier brasser_mol 0 » la garde à part",
+         "#[inline(always)]\nfn f_reduire_mol(" in code and "#[inline(never)]\nfn f_brasser_mol(" in code, "")
 shutil.rmtree(d, ignore_errors=True)
 print("le Druide : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))
 sys.exit(1 if echecs else 0)

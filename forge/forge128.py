@@ -69,6 +69,7 @@ ESUS_VARIABLES = [None]   # 0.835 : les quatre points d'une variable de la fonct
 ESUS_RELEVE = [[]]        # 0.835 : les quatre points de chaque variable entière du programme forgé (le fichier .esus)
 DRUIDE_OBS = [[]]         # 0.836 : les variables observées (VTX_DRUIDE=poids) : (molécule, variable), leur rang dans OBS
 DRUIDE_NOMS = [[]]        # 0.835 : les molécules comptées (VTX_DRUIDE=poids à la forge) : leur rang dans POIDS
+DEPLIER = [{}]            # 0.837 : l'ARN du Druide, l'arrangement : molécule -> 1 (dépliée) ou 0 (à part)
 ESUS_ETEINT = [set()]     # 0.835 : les molécules où l'ARN du Druide déconnecte Ésus (PROG.arn : « esus MOL 0 »)
 ESUS_ICI = [True]         # 0.835 : Ésus est-il connecté dans la molécule en cours de forge ?
 G128 = (1 << 128) - 1
@@ -143,6 +144,7 @@ def membrane(fonctions):
     joints sur tous les appels) ; toute molécule du programme rend par son retour ce que ses retours prouvent (0 compris,
     si elle finit sans retour). Le tout tourne jusqu'à tenir (élargi après le premier tour) ; s'il ne tient pas, rien."""
     MEMBRANE[0] = {}
+    CELLULES[0] = {}
     if not L() or os.environ.get("VTX_MEMBRANE") == "0" or os.environ.get("VTX_ESUS") == "0":
         return
     user = {f.nom: f for f in fonctions if getattr(f, "origine", "") != "prélude"}
@@ -165,6 +167,22 @@ def membrane(fonctions):
     for f in fonctions:
         scan(f.corps)
     ouverts = {n for n in user if n not in refs and nappels[n] > 0 and n != "principal"}
+    graphe = {n: set() for n in user}
+
+    def appels_de(x, n):
+        if isinstance(x, list):
+            for y in x:
+                appels_de(y, n)
+            return
+        if not isinstance(x, tuple) or not x:
+            return
+        if x[0] == "appel" and len(x) > 1 and isinstance(x[1], str) and x[1] in user:
+            graphe[n].add(x[1])
+        for y in (x[1:] if isinstance(x[0], str) else x):
+            if isinstance(y, (list, tuple)):
+                appels_de(y, n)
+    for n, f in user.items():
+        appels_de(f.corps, n)
     hyp = {n: ({p: (BAS6 if n in ouverts and t == "e" else INCONNU4) for p, t in zip(f.params, f.ptypes)},
                BAS6 if f.rtype == "e" else INCONNU4) for n, f in user.items()}
     sauve = ESUS_VARIABLES[0]
@@ -232,6 +250,7 @@ def membrane(fonctions):
             pr, r = hyp[n]
             hyp[n] = ({p: (INCONNU4 if v[0] > v[1] else v) for p, v in pr.items()}, INCONNU4 if r[0] > r[1] else r)
     MEMBRANE[0] = hyp if tient else {}
+    CELLULES[0] = {n: (n in ouverts and tient, graphe[n]) for n in user}
 
 
 CELLULE = [None]   # 0.837 : la molécule dont la membrane se calcule
@@ -448,6 +467,19 @@ def druide_mode():
     return os.environ.get("VTX_DRUIDE", "")
 
 
+def lire_deplier(chemin):
+    """0.837 : l'arrangement dans l'ARN du Druide : « deplier MOLÉCULE 1|0 »"""
+    d = {}
+    try:
+        for l in open(chemin, encoding="utf-8"):
+            m = l.split()
+            if len(m) == 3 and m[0] == "deplier" and m[2] in ("0", "1"):
+                d[m[1]] = m[2] == "1"
+    except OSError:
+        pass
+    return d
+
+
 def lire_arn_druide(chemin):
     """0.835 : l'ARN du Druide (PROG.arn, à côté de l'exécutable) : « esus MOLÉCULE 0 » déconnecte Ésus de la molécule"""
     eteint = set()
@@ -661,6 +693,14 @@ class Forge(V.Generateur):
         corps = self.lignes
         if self.poids_ligne:
             corps = ["    " + self.poids_ligne] + corps
+        if druide_mode() == "poids" and L():
+            # 0.837 : la membrane observée : ce que les paramètres reçoivent vraiment, à l'entrée de la molécule
+            avant_l = self.lignes
+            self.lignes = []
+            for p in params:
+                self.observer(p)
+            corps = ["    " + x.strip() for x in self.lignes] + corps
+            self.lignes = avant_l
         self.graphe[f.nom] = self.appelees
         if L() and ESUS_VARIABLES[0] is not None:
             # 0.835 : les quatre points de chaque variable entière de la molécule (le relevé d'Ésus, pour le Druide)
@@ -672,6 +712,11 @@ class Forge(V.Generateur):
         sig = ", ".join(f"mut v_{ident(p)}: u128" for p in params)
         sig = "c: &mut Ctx" + (", " + sig if sig else "")
         out = []
+        # 0.837 : l'arrangement des molécules, choisi par le Druide (son ARN : « deplier MOL 1 » : la molécule fondue
+        # dans celles qui l'appellent ; « deplier MOL 0 » : gardée à part) ; sans ARN, le compilateur décide
+        dpl = DEPLIER[0].get(f.nom)
+        if dpl is not None:
+            out.append("#[inline(always)]" if dpl else "#[inline(never)]")
         if self.cadre_actif:
             noms = ", ".join(f"v_{ident(p)}" for p in params)
             sig0 = ", ".join(["c: &mut Ctx"] + [f"v_{ident(p)}: u128" for p in params])
@@ -2334,6 +2379,7 @@ def source_rust(src, dossier=None, nom="programme", sortie=None):
     DRUIDE_NOMS[0] = []
     DRUIDE_OBS[0] = []
     ESUS_ETEINT[0] = lire_arn_druide(os.path.splitext(sortie)[0] + ".arn") if sortie else set()
+    DEPLIER[0] = lire_deplier(os.path.splitext(sortie)[0] + ".arn") if sortie else {}
     prog, mots = programme_rust(src, dossier, nom)
     main = "\nfn main() {\n    let a: Vec<String> = std::env::args().collect();\n    lancer(&a[1..]);\n}\n"
     return noyau(sortie) + "\n" + prog + main, mots
@@ -2365,7 +2411,23 @@ def forger_fichier(chemin, sortie=None, rs=None, natif=False):
     if not garder:
         shutil.rmtree(os.path.dirname(rs), ignore_errors=True)
     ecrire_releve_esus(os.path.splitext(sortie)[0] + ".esus", os.path.basename(chemin))
+    ecrire_cellules(os.path.splitext(sortie)[0] + ".cellules")
     return sortie
+
+
+CELLULES = [{}]   # 0.837 : molécule du programme -> (membrane ouverte ?, les molécules du programme qu'elle appelle)
+
+
+def ecrire_cellules(chemin):
+    """0.837 : les cellules du programme, pour le Druide : chaque molécule (hors prélude), sa membrane (ouverte : ses
+    paramètres reçoivent ce que ses appelants y mettent ; fermée sinon), les molécules qu'elle appelle"""
+    if not CELLULES[0] or not L():
+        return
+    lignes = ["# les cellules : molécule membrane (ouverte|fermee) appelle…"]
+    for n, (ouv, app) in CELLULES[0].items():
+        lignes.append(f"{n} {'ouverte' if ouv else 'fermee'} " + " ".join(sorted(app)))
+    with open(chemin, "w", encoding="utf-8") as f:
+        f.write("\n".join(l.rstrip() for l in lignes) + "\n")
 
 
 def ecrire_releve_esus(chemin, programme):
