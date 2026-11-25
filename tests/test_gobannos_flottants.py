@@ -72,7 +72,6 @@ COPIES = []
 
 def comparer(prog, entree="", clavier=False):
     systeme = "windows" if WIN else "linux"
-    prog = en_dunon(prog)
     exe, info = forger(prog, systeme)
     if exe is None:
         return False, info

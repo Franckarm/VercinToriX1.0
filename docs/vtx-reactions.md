@@ -4709,3 +4709,19 @@ d'autres nombres que le processeur. Gergovie garde ainsi ses empreintes, au proc
 addition, bien plus pour une division). Et `0 - 1` n'est plus 18446744073709551615 : un programme qui comparait son
 propre -1 à ce nombre doit écrire `0 - 1`. « On trouvera une méthode » pour la vitesse : la plus simple est déjà là,
 Dunon, là où la largeur ne sert pas.
+
+## 116. -1 vaut -1, Gobannos divise en 128 (25 novembre, 0.834)
+
+**Les sentinelles.** La machine Lugus parlait déjà en quatre valeurs sans le dire : un service rend tout à un pour
+« inconnu » (absent, illisible, la fin de l'entrée) et tout à un moins un pour « faux ». Seule l'instruction SYS, laissée
+à 64 bits, coupait ces réponses en deux. Elle passe à toute la largeur sur Lugus ; Dunon garde les siennes (ses services
+sont à lui). Le prélude écrit `0 - 1` : la même phrase vaut sur les deux machines. Le piège d'hier se ferme du même coup.
+
+**La division.** L'instruction x86 ne divise que 128 bits par 64 : Gobannos pose deux routines dans chaque exécutable.
+Un diviseur de 64 bits se traite en deux divisions ; un plus grand en 128 tours, en gardant le bit qui déborde du reste
+(sinon un diviseur de plus de 2^127 donnerait un faux reste). La version signée passe par les valeurs absolues : le cas
+du plus petit nombre divisé par -1 tombe juste sans règle à part.
+
+**Ce qui reste lent** est le même : la division de 128 bits coûte. La réponse prévue est le Druide : prouver qu'une valeur
+tient en 64 bits, et changer la division par une constante en multiplication.
+

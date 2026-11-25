@@ -27,7 +27,7 @@ avec le créateur.*
   pour Dunon). Tout ajout dans les deux ; les programmes déjà écrits gardent leurs mots (`outils/avant_apres.py`).
 - Le créateur lance lui-même les `.bat` : les déposer dans `G:\Boulot\Code\Vercintorix1.0 rust\Claude outputs\` (envoi
   du fichier, puis dépôt sur son PC). Ne jamais lancer le `.bat`, ne jamais prendre le contrôle de son écran.
-- Un nom neuf à chaque livraison (le prochain : `vtx-0.834.zip`, `essai-0.834.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
+- Un nom neuf à chaque livraison (le prochain : `vtx-0.835.zip`, `essai-0.835.bat` ; le `.bat` pose `set PYTHONUTF8=1`). Les `.bat` en CRLF et ASCII, sans
   accents ; le `.bat` écrit aussi dans le journal ce qu'il montre à l'écran ; il ne joue que la nouveauté.
 - Commits sur `vtx-0.6`, jamais de force ; tuer un processus par son numéro, jamais `pkill -f`.
 - L'adresse électronique du créateur ne part vers aucun service sans son accord.
@@ -463,3 +463,27 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Prochain (décidé)** : traduire en vtx ce qui peut l'être : le compilateur des noyaux de Taranis (les mêmes mots SPIR-V
   que taranis/noyau_vtx.py), les décisions du vergobret, la forge ; puis le cache qui montre l'image, et le monde d'un
   seul tenant au processeur.
+
+## 0.834 (25 novembre) : finir Lugus en 128
+- **-1 vaut -1 sur tout le mot** (décidé par le créateur : les services de Lugus et de Dunon sont indépendants, ceux de
+  Lugus passent en 128). SYS et ENTC sont à toute la largeur sur Lugus (64 bits en `dunon;`) : la machine rendait déjà
+  `u128::MAX` (inconnu : absent, illisible, la fin de l'entrée) et `u128::MAX - 1` (faux : pas un cube, pas un
+  dossier) ; c'est SYS.64 qui les tronquait. Le prélude écrit ses sentinelles `0 - 1` (justes sur Lugus et sur Dunon ;
+  « absent » s'affiche -1) ; les masques de 64 bits des hachages restent. La forge ne masque plus un service (sauf en
+  `dunon;`). Corrigés : vtxc128 (`lire_fichier`), Gobannos, Gutuater, Ogmios (leurs comparaisons à 0 - 1).
+- **Le piège du `0 - 1`** est fermé avec : un -1 rendu par un service est le -1 du programme. Exemple :
+  `exemples128/sentinelles.vtx`.
+- **Gobannos traduit la division de 128 bits** : les routines `R_DIV128` (sans signe : deux DIV si le diviseur tient en
+  64 bits, sinon 128 tours décaler-soustraire, la retenue du reste gardée) et `R_DIVS128` (les valeurs absolues, puis
+  les signes ; par zéro et le plus petit par -1 comme la machine) ; DIV, MOD, DIVS, MODS à 128 bits les appellent ;
+  `CC_GE`. Les programmes à 128 bits deviennent des .exe (les tests de Gobannos ne passent plus par Dunon ; sa
+  bibliothèque des flottants reste en `dunon;`, ses règles le veulent). Restent non traduits, comme avant : IN, les
+  voies (#8A), la matière (#92), et les fichiers (le travail en attente depuis le 18, que le créateur écrit lui-même).
+  Exemple : `exemples128/division128.vtx`.
+- Vérifié : `verifier.py` « Tout est conforme » ; l'épreuve d'Alésia 60/60.
+- **Ensuite (décidé)** : le Druide pour la vitesse du 128 (prouver qu'une valeur tient en 64 bits et prendre l'opération
+  de 64 bits ; la division par une constante changée en multiplication, Granlund et Montgomery) ; il aidera la forge et
+  Gobannos. Puis la traduction en vtx : le compilateur des noyaux de Taranis, le vergobret, la forge.
+- Idée du créateur à creuser : que les services répondent aussi par les quatre valeurs (un quit d'état en haut du mot,
+  comme les flottants), au lieu d'un nombre à comparer.
+

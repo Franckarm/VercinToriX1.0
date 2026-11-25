@@ -99,7 +99,9 @@ constante R_HORS = 20;
 constante R_SAUVER = 21;       // 0.6y : les flottants par la bibliothèque
 constante R_RENDRE = 22;
 constante R_EMPILER = 23;
-constante NR = 24;
+constante R_DIV128 = 24;       // 0.834 : la division de 128 bits (l'entier de Lugus)
+constante R_DIVS128 = 25;
+constante NR = 26;
 
 // les registres de x86-64
 constante RAX = 0;
@@ -127,6 +129,7 @@ constante CC_E = 4;
 constante CC_NE = 5;
 constante CC_BE = 6;
 constante CC_A = 7;
+constante CC_GE = 13;          // 0.834 : signé, plus grand ou égal (après un test : positif ou nul)
 
 constante M48 = 0xFFFFFFFFFFFF;
 constante M56 = 0xFFFFFFFFFFFFFF;
@@ -890,6 +893,24 @@ fonction traduire_un(p) {
             ici8(fin3);
             poser_z(RAX, 255);
             ranger(d, RAX, 255);
+        }
+        retour suivant;
+    }
+    si wl == 0 && (op == 0x0C || op == 0x0D || op == 0x1A || op == 0x1B) {
+        // 0.834 : DIV, MOD, DIVS, MODS sur tout le mot (l'entier de Lugus a 128 bits) : par les routines
+        charger(s, RAX, RDX);
+        charger(t, RCX, R8);
+        si op == 0x0C || op == 0x0D {
+            call_r(R_DIV128);
+        } sinon {
+            call_r(R_DIVS128);
+        }
+        si op == 0x0C || op == 0x1A {
+            poser_z(RAX, RDX);
+            ranger(d, RAX, RDX);
+        } sinon {
+            poser_z(RCX, R8);
+            ranger(d, RCX, R8);
         }
         retour suivant;
     }
@@ -1869,6 +1890,130 @@ fonction movzx_rm8_idx_brin() {
 }
 
 // R_HORS : un saut vers une place qui n'est pas du code traduit
+// 0.834 : R_DIV128 : rax:rdx (le dividende) divisé par rcx:r8 (le diviseur), sans signe, sur 128 bits ; rend le
+// quotient dans rax:rdx, le reste dans rcx:r8 (r9, r10, r11, rsi, rdi gardés). Par zéro, comme la machine : le
+// quotient tout à un, le reste le dividende. Un diviseur de 64 bits : deux DIV ; sinon 128 tours (décaler, soustraire).
+fonction routine_div128() {
+    routine(R_DIV128);
+    push_r(R9);
+    push_r(R10);
+    push_r(R11);
+    push_r(RSI);
+    push_r(RDI);
+    mov_rr(R9, RCX);
+    op_rr(0x09, R9, R8);
+    soit nonnul = jcc8(CC_NE);
+    mov_rr(RCX, RAX);
+    mov_rr(R8, RDX);
+    mov_ri(RAX, 18446744073709551615);
+    mov_ri(RDX, 18446744073709551615);
+    soit fin0 = jmp8();
+    ici8(nonnul);
+    test_rr(R8, R8);
+    soit large = jcc8(CC_NE);
+    // le diviseur tient en 64 bits : la moitié haute, puis la basse avec le reste
+    mov_rr(R9, RAX);
+    mov_rr(RAX, RDX);
+    op_rr(0x31, RDX, RDX);
+    f7(6, RCX);
+    mov_rr(R10, RAX);
+    mov_rr(RAX, R9);
+    f7(6, RCX);
+    mov_rr(RCX, RDX);
+    op_rr(0x31, R8, R8);
+    mov_rr(RDX, R10);
+    soit fin1 = jmp8();
+    ici8(large);
+    // 128 tours : le reste r10:r9 reçoit le bit fort du dividende, le quotient entre par le bas de rax:rdx
+    op_rr(0x31, R9, R9);
+    op_rr(0x31, R10, R10);
+    mov_ri(R11, 128);
+    soit tour = ici();
+    op_rr(0x01, RAX, RAX);
+    op_rr(0x11, RDX, RDX);
+    op_rr(0x11, R9, R9);
+    op_rr(0x11, R10, R10);
+    soit force = jcc8(CC_B);
+    mov_rr(RSI, R9);
+    mov_rr(RDI, R10);
+    op_rr(0x29, RSI, RCX);
+    op_rr(0x19, RDI, R8);
+    soit petit = jcc8(CC_B);
+    mov_rr(R9, RSI);
+    mov_rr(R10, RDI);
+    op_ri(1, RAX, 1);
+    soit suite = jmp8();
+    ici8(force);
+    // le reste a débordé de 128 bits : il dépasse le diviseur
+    op_rr(0x29, R9, RCX);
+    op_rr(0x19, R10, R8);
+    op_ri(1, RAX, 1);
+    ici8(petit);
+    ici8(suite);
+    op_ri(5, R11, 1);
+    jcc8_arr(CC_NE, tour);
+    mov_rr(RCX, R9);
+    mov_rr(R8, R10);
+    ici8(fin0);
+    ici8(fin1);
+    pop_r(RDI);
+    pop_r(RSI);
+    pop_r(R11);
+    pop_r(R10);
+    pop_r(R9);
+    ret_();
+}
+
+// rax:rdx = -rax:rdx
+fonction neg128(a, b) {
+    f7(2, a);
+    f7(2, b);
+    op_ri(0, a, 1);
+    op_ri(2, b, 0);
+}
+
+// 0.834 : R_DIVS128 : la même, signée (DIVS, MODS) : les valeurs absolues, R_DIV128, puis les signes (le quotient :
+// les deux signes mêlés ; le reste : celui du dividende). Par zéro : tout à un, le dividende ; le plus petit par -1 :
+// lui-même, reste 0 (ce que donnent les valeurs absolues).
+fonction routine_divs128() {
+    routine(R_DIVS128);
+    push_r(R9);
+    push_r(R10);
+    mov_rr(R9, RCX);
+    op_rr(0x09, R9, R8);
+    soit nonnul = jcc8(CC_NE);
+    mov_rr(RCX, RAX);
+    mov_rr(R8, RDX);
+    mov_ri(RAX, 18446744073709551615);
+    mov_ri(RDX, 18446744073709551615);
+    soit fin0 = jmp8();
+    ici8(nonnul);
+    mov_rr(R9, RDX);
+    mov_rr(R10, RDX);
+    op_rr(0x31, R10, R8);
+    test_rr(RDX, RDX);
+    soit pos_n = jcc8(CC_GE);
+    neg128(RAX, RDX);
+    ici8(pos_n);
+    test_rr(R8, R8);
+    soit pos_d = jcc8(CC_GE);
+    neg128(RCX, R8);
+    ici8(pos_d);
+    call_r(R_DIV128);
+    test_rr(R10, R10);
+    soit q_pos = jcc8(CC_GE);
+    neg128(RAX, RDX);
+    ici8(q_pos);
+    test_rr(R9, R9);
+    soit r_pos = jcc8(CC_GE);
+    neg128(RCX, R8);
+    ici8(r_pos);
+    ici8(fin0);
+    pop_r(R10);
+    pop_r(R9);
+    ret_();
+}
+
 fonction routine_hors() {
     routine(R_HORS);
     op_rr(0x31, RCX, RCX);
@@ -2563,6 +2708,8 @@ fonction forger(sortie_: texte, win) {
     routines_flottants();
     routine_ret();
     routine_hors();
+    routine_div128();
+    routine_divs128();
     routines_texte();
     si win {
         socle_windows();

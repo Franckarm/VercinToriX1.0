@@ -1,0 +1,19 @@
+// machine : lugus
+// 0.834 : -1 vaut -1 sur tout le mot. Les services de Lugus rendent leur résultat sur 128 bits : -1 pour « inconnu »
+// (absent, illisible, la fin de l'entrée), -2 pour « faux » (pas un cube, pas un dossier) ; le prélude dit « absent »
+// par 0 - 1 (rang_si, position_derniere, log2_entier de 0…). Un programme compare donc à 0 - 1, sur Lugus comme sur Dunon.
+//     lugus exemples128/sentinelles.vtx < un_fichier_court
+
+fonction principal() {
+    soit f = ouvrir_lecture("ce fichier n'existe pas");
+    afficher("ouvrir un fichier absent :", f, f == 0 - 1);
+    afficher("la dernière place de « z » dans « gaulois » :", position_derniere("gaulois", "z"));
+    afficher("log2_entier(0) :", log2_entier(0));
+    soit n = 0;
+    soit c = lire_car(1);
+    tantque c != 0 - 1 && n < 100000 {
+        n = n + 1;
+        c = lire_car(1);
+    }
+    afficher("caractères lus jusqu'à la fin :", n, "puis", c);
+}

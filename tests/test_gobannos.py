@@ -70,7 +70,6 @@ COPIES = []
 
 def comparer(prog, entree="", clavier=False):
     systeme = "windows" if WIN else "linux"
-    prog = en_dunon(prog)
     exe, info = forger(prog, systeme)
     if exe is None:
         return False, info
@@ -122,26 +121,38 @@ verifier("le clavier : les lignes, les accents, une réponse à quatre valeurs, 
 FLOT = "fonction principal() {\n    afficher(\"avant\");\n    soit x = 1.5;\n    afficher(x * 2.0);\n}\n"
 p = os.path.join(d, "flot.vtx")
 open(p, "w", encoding="utf-8").write(FLOT)
-exe, info = forger(en_dunon(p), "windows" if WIN else "linux")
+exe, info = forger(p, "windows" if WIN else "linux")
 r = lancer([exe]) if exe else None
 verifier("un flottant (pas encore traduit) : « avant » écrit, puis l'arrêt dit (code 3), rien de faux",
          r is not None and r.returncode == 3 and r.stdout.decode("utf-8").replace("\r\n", "\n") == "avant\n"
          and "pas encore traduite par Gobannos" in r.stderr.decode("utf-8"),
          info if r is None else f"{r.returncode} {r.stdout!r} {r.stderr!r}")
 
-# 4 bis. 0.833 : un programme à 128 bits (sans « dunon; ») : sa division de 128 bits n'est pas encore traduite ;
-# l'exécutable s'arrête en le disant (code 3), sans rien écrire de faux
-p = os.path.join(d, "large.vtx")
-open(p, "w", encoding="utf-8").write("fonction principal() {\n    afficher(1 << 100);\n}\n")
-exe, info = forger(p, "windows" if WIN else "linux")
-r = lancer([exe]) if exe else None
-verifier("l'entier de 128 bits (la division pas encore traduite) : l'arrêt dit (code 3), rien de faux",
-         r is not None and r.returncode == 3 and r.stdout == b"" and "pas encore traduite par Gobannos" in r.stderr.decode("utf-8"),
-         info if r is None else f"{r.returncode} {r.stdout!r} {r.stderr!r}")
+# 4 bis. 0.834 : l'entier de 128 bits : la division et le modulo (signés ou non, par zéro, le plus petit par -1, un
+# diviseur de plus de 64 bits) par les routines R_DIV128 et R_DIVS128 : la même sortie que Lugus
+DIV = """fonction principal() {
+    soit a = (1 << 100) + 12345;
+    afficher(a / 7, a % 7);
+    afficher(a / ((1 << 70) + 3), a % ((1 << 70) + 3));
+    afficher((0 - 1) / 3, (0 - 1) % 1000);
+    afficher((0 - 100) ./ 7, (0 - 100) .% 7, 100 ./ (0 - 7));
+    afficher(a / 0, a % 0);
+    soit m = 1 << 127;
+    afficher(m ./ (0 - 1), m .% (0 - 1));
+    afficher(((1 << 127) + 5) / ((1 << 127) + 1), ((1 << 127) + 5) % ((1 << 127) + 1));
+    soit x = 0;
+    pour i dans 1..2000 { x = x + (a * i) / (i + 1) % 1000003; }
+    afficher(x);
+}
+"""
+p = os.path.join(d, "division128.vtx")
+open(p, "w", encoding="utf-8").write(DIV)
+ok, detail = comparer(p)
+verifier("l'entier de 128 bits : la division et le modulo, comme Lugus", ok, detail)
 
 # 5. l'exécutable Windows (vérifié sous Linux) : PE32+, une section, KERNEL32 et ses sept fonctions
 if not WIN:
-    exe, info = forger(en_dunon(os.path.join(E, "supposons.vtx")), "windows")
+    exe, info = forger(os.path.join(E, "supposons.vtx"), "windows")
     ok = exe is not None
     if ok:
         b = open(exe, "rb").read()

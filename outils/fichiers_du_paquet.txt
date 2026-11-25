@@ -263,3 +263,5 @@ tests/minimum/minimum.vtx
 exemples128/entier128.vtx
 exemples128/entier128_dunon.vtx
 outils/memes_mots128.py
+exemples128/sentinelles.vtx
+exemples128/division128.vtx
