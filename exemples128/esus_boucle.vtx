@@ -1,0 +1,15 @@
+// machine : lugus
+// 0.835 : une boucle à petites valeurs, dans un programme de 128 bits. Ésus (la forge) prouve que i, a et b tiennent
+// en 64 bits et prend les opérations de 64 bits ; le Druide (druide/druide.vtx) apprend ses bornes et fait évoluer
+// son ARN d'une forge à l'autre.
+//     python forge/forge128.py exemples128/esus_boucle.vtx -o esus_boucle            (VTX_ESUS=0 : sans Ésus)
+//     VTX_DRUIDE=poids, puis VTX_DRUIDE=1 à la forge : le travail des molécules, puis le temps, pour le Druide
+fonction principal() {
+    soit s = 0;
+    pour i dans 0..40000000 {
+        soit a = (i & 1023) * 2654435761;
+        soit b = a % 1000003;
+        s = s ^ (b * 7 + i / 3);
+    }
+    afficher(s);
+}
