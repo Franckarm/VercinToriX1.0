@@ -100,7 +100,6 @@ exemples128/alternance.vtx
 exemples128/banc_traduction.vtx
 exemples128/bonjour128.vtx
 exemples128/bords_du_monde.vtx
-exemples128/bords_du_monde.vtx.mots
 exemples128/calcul_vagues.vtx
 exemples128/catalogue.vtx
 exemples128/chute.vtx
@@ -115,7 +114,6 @@ exemples128/duel.vtx
 exemples128/faces.vtx
 exemples128/freinage.vtx
 exemples128/gene.vtx
-exemples128/gene.vtx.lugus.mots
 exemples128/gene.vtx.vtx64.mots
 exemples128/lister.vtx
 exemples128/mandel_reaction.vtx
