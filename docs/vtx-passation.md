@@ -610,3 +610,22 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   `belenos/gergovie_druide.vtx` (48 + 24 images) ; chez moi (2 cœurs, demi-échelle) 84 cellules, 68 faites après une
   génération (les légères), l'évolution essaie « deplier ranger_colonne ».
 - Livraison : vtx-0.838.zip, essai-0.838.bat.
+
+## 0.839 (25 novembre) : Gergovie en 128, la membrane du cube
+- **Gergovie en 128** (`belenos/gergovie128.vtx`, sans `dunon;`) : la scène comptait sans le dire sur le débordement à
+  64 bits (comme le C++) ; elle l'écrit maintenant (`MOT64`, `signe64` : les deux hachages du bruit, le tirage de la
+  clepsydre progressive, l'empreinte de l'image et du film) : les mêmes empreintes, au bit près, en 128 et en Dunon
+  (vérifié à demi-échelle). Le prix (chez moi, 2 cœurs) : le vol 41 → 24 images par seconde, le jour 9,8 → 6,2.
+  Décidé avec le créateur : Dunon reste la règle des programmes du graphique (la compatibilité, comme la carte).
+- **La membrane du cube** (`membrane()`, `frequences`, `lire_cube`) : Ésus joint tout ce qui est écrit dans chaque
+  fréquence des étages 1 et 2 (et 0 : la mémoire part de zéro) ; une lecture y est bornée. Une écriture d'étage connu
+  mais de fréquence non située va dans le « fond » de l'étage (lu partout) ; une écriture dont l'étage n'est pas prouvé
+  brouille les deux étages, sauf dans les trois mots du prélude qui n'écrivent qu'un texte (`__mettre`, `changer_car`,
+  `texte_neuf`), gardés à l'exécution (`garde_cube` : le programme s'arrête plutôt que de rendre un résultat faux).
+  Refusée si le programme appelle un service qui écrirait le cube (seuls 3, 4, 5, 10, 12, 18, 22, 25, 26, 32, 33 sont
+  sûrs), `gemv`, `melanger`, ou un mot opaque. Le programme vérifie au départ qu'aucun cube des étages 1 et 2
+  n'attend sur le disque (la page relue en paresse contredirait la preuve). `VTX_MEMBRANE_CUBE=0` l'éteint ;
+  `VTX_CUBE_DIRE=1` dit ce qu'elle sait. Mesuré : une table lue 30 millions de fois, 180 → 73 ms (−60 %) ; Gergovie :
+  14 fréquences, 2 bornées, rien de gagné : ses valeurs rangées sont signées, tirées d'autres lectures, divisées par des
+  variables ; l'annuaire (une valeur lue sert d'adresse) écrit hors de toute fréquence située.
+- Livraison : vtx-0.839.zip, essai-0.839.bat.

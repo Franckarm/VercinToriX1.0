@@ -43,6 +43,8 @@ verifier("la membrane : sommer_mol n (appelé avec j % 100) borné", rel.get(("s
          rel.get(("sommer_mol", "n")))
 verifier("la membrane, récursive : descendre_mol acc borné par son reste (au moins 100002, élargi à une puissance de deux)",
          100002 <= int(rel.get(("descendre_mol", "acc"), ["", "0"])[1], 16) < 1 << 20, rel.get(("descendre_mol", "acc")))
+verifier("la membrane du cube : v lu dans la table (fréquence 9) borné par ce qui y est écrit (au plus 1000002)",
+         rel.get(("table_du_cube", "v"), ["", ""])[1] == "f4242", rel.get(("table_du_cube", "v")))
 import shutil
 shutil.rmtree(d, ignore_errors=True)
 print("Ésus : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))

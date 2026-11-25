@@ -270,3 +270,4 @@ exemples128/bornes.vtx
 exemples128/cellules.vtx
 belenos/gergovie_druide.vtx
 belenos/gergovie128.vtx
+exemples128/table_cube.vtx

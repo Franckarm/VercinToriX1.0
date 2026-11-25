@@ -159,6 +159,7 @@ def membrane(fonctions):
     si elle finit sans retour). Le tout tourne jusqu'à tenir (élargi après le premier tour) ; s'il ne tient pas, rien."""
     MEMBRANE[0] = {}
     CELLULES[0] = {}
+    CUBE[0], CUBE_BROUILLE[0], CUBE_SUPPOSE[0], CUBE_FOND[0] = {}, set(), [], {}
     user = {f.nom: f for f in fonctions if getattr(f, "origine", "") != "prélude"}
     refs, nappels = set(), {n: 0 for n in user}
 
@@ -216,10 +217,40 @@ def membrane(fonctions):
         return
     hyp = {n: ({p: (BAS6 if n in ouverts and t == "e" else INCONNU4) for p, t in zip(f.params, f.ptypes)},
                BAS6 if f.rtype == "e" else INCONNU4) for n, f in user.items()}
+    # 0.839 : la membrane du cube est-elle permise ? (aucun service qui écrirait les étages 1 et 2, aucun mot qui écrit la
+    # mémoire sans qu'Ésus le voie)
+    cube_ok = [os.environ.get("VTX_MEMBRANE_CUBE") != "0"]
+
+    def permis(x):
+        if isinstance(x, list):
+            for y in x:
+                permis(y)
+            return
+        if not isinstance(x, tuple) or not x:
+            return
+        if isinstance(x[0], str):
+            if x[0] in NOEUDS_OPAQUES:
+                cube_ok[0] = False
+            if x[0] == "appel" and len(x) > 2 and isinstance(x[1], str):
+                if x[1] in INTEGRES_ECRIVENT:
+                    cube_ok[0] = False
+                if x[1] == "__service" and isinstance(x[2], list) and x[2]:
+                    a0 = x[2][0]
+                    if not (isinstance(a0, tuple) and a0[0] == "nombre" and a0[1] in SERVICES_SURS):
+                        cube_ok[0] = False
+        for y in (x[1:] if isinstance(x[0], str) else x):
+            if isinstance(y, (list, tuple)):
+                permis(y)
+    for f in fonctions:
+        permis(f.corps)
+    hyp_cube, hyp_fond = {}, {}
     sauve = ESUS_VARIABLES[0]
     tient = False
     for tour in range(60):
         MEMBRANE[0] = hyp
+        CUBE[0] = hyp_cube if cube_ok[0] else {}
+        CUBE_FOND[0] = hyp_fond if cube_ok[0] else {}
+        CUBE_BROUILLE[0] = set() if cube_ok[0] else {1, 2}
         neuf = {n: ({p: BAS6 for p in f.params}, BAS6) for n, f in user.items()}
 
         def marcher(x):
@@ -248,6 +279,36 @@ def membrane(fonctions):
             marcher(f.corps)
             pr, r = neuf[f.nom]
             neuf[f.nom] = (pr, joindre6(r, (0, 0, G128, 0, 0, 0)))   # finir sans retour : 0
+        # 0.839 : les écritures du cube, dans toutes les molécules (le prélude compris)
+        neuf_cube, brouille, fond = {}, set(), {}
+        if cube_ok[0]:
+            def ecritures(x):
+                if isinstance(x, list):
+                    for y in x:
+                        ecritures(y)
+                    return
+                if not isinstance(x, tuple) or not x:
+                    return
+                if x[0] == "ecrire" and len(x) > 3:
+                    fs = frequences(x[1], x[2])
+                    if fs is None and isinstance(x[1], int):
+                        # l'étage est sûr, pas la fréquence : la valeur peut aller partout dans l'étage (le fond)
+                        fond[x[1]] = joindre6(fond.get(x[1], ZERO6), points(x[3]))
+                    elif fs is None and CELLULE[0] in TEXTES_PRELUDE:
+                        pass   # un texte : la garde le vérifie à l'exécution
+                    elif fs is None:
+                        brouille.update({1, 2})   # une écriture qu'Ésus ne situe pas (l'étage dans l'adresse) : le cube n'est pas connu
+                    elif fs:
+                        v = points(x[3])
+                        for k in fs:
+                            neuf_cube[k] = joindre6(neuf_cube.get(k, ZERO6), v)
+                for y in (x[1:] if isinstance(x[0], str) else x):
+                    if isinstance(y, (list, tuple)):
+                        ecritures(y)
+            for f in fonctions:
+                CELLULE[0] = f.nom
+                ESUS_VARIABLES[0] = esus_definitions(f.corps, f.params, f.nom if f.nom in user else None)
+                ecritures(f.corps)
         # ce qui ne s'ouvre pas : tout l'intervalle
         for n, f in user.items():
             for p, t in zip(f.params, f.ptypes):
@@ -255,8 +316,13 @@ def membrane(fonctions):
                     neuf[n][0][p] = INCONNU4
             if f.rtype != "e":
                 neuf[n] = (neuf[n][0], INCONNU4)
-        if tour > 0 and all(dans6(neuf[n][1], hyp[n][1]) and all(dans6(neuf[n][0][p], hyp[n][0][p]) for p in neuf[n][0])
-                            for n in user):
+        cube_tient = (not brouille and all(dans6(v, hyp_cube.get(k, ZERO6)) for k, v in neuf_cube.items())
+                      and all(dans6(v, hyp_fond.get(e, ZERO6)) for e, v in fond.items()))
+        if brouille:
+            cube_ok[0] = False   # une écriture qu'Ésus ne situe pas : le cube n'est pas connu (un tour de plus, sans lui)
+            hyp_cube = {}
+        if tour > 0 and cube_tient and all(dans6(neuf[n][1], hyp[n][1]) and all(dans6(neuf[n][0][p], hyp[n][0][p]) for p in neuf[n][0])
+                                           for n in user):
             tient = True
             break
         nh = {}
@@ -273,6 +339,9 @@ def membrane(fonctions):
             pr = {p: suivant(hyp[n][0][p], neuf[n][0][p]) for p in neuf[n][0]}
             nh[n] = (pr, suivant(hyp[n][1], neuf[n][1]))
         hyp = nh
+        if cube_ok[0]:
+            hyp_cube = {k: suivant(hyp_cube.get(k, ZERO6), v) for k, v in {**{k: ZERO6 for k in hyp_cube}, **neuf_cube}.items()}
+            hyp_fond = {e: suivant(hyp_fond.get(e, ZERO6), v) for e, v in {**{e: ZERO6 for e in hyp_fond}, **fond}.items()}
     ESUS_VARIABLES[0] = sauve
     CELLULE[0] = None
     if tient:
@@ -281,10 +350,86 @@ def membrane(fonctions):
             pr, r = hyp[n]
             hyp[n] = ({p: (INCONNU4 if v[0] > v[1] else v) for p, v in pr.items()}, INCONNU4 if r[0] > r[1] else r)
     MEMBRANE[0] = hyp if tient else {}
+    CUBE[0] = hyp_cube if (tient and cube_ok[0]) else {}
+    CUBE_FOND[0] = hyp_fond if (tient and cube_ok[0]) else {}
+    CUBE_BROUILLE[0] = set() if (tient and cube_ok[0]) else {1, 2}
+    if CUBE[0] or (tient and cube_ok[0]):
+        CUBE_SUPPOSE[0] = [1, 2]   # le programme vérifiera qu'aucun cube de ces étages n'attend sur le disque
+    if os.environ.get("VTX_CUBE_DIRE"):
+        conn = sum(1 for v in CUBE[0].values() if v != INCONNU4)
+        print(f"membrane du cube : {'permise' if cube_ok[0] else 'refusée'} (tient : {tient}), {len(CUBE[0])} fréquences "
+              f"écrites, {conn} bornées ; le fond : " + ", ".join(f"étage {e} au plus {v[1]:x}" for e, v in CUBE_FOND[0].items()),
+              file=sys.stderr)
     CELLULES[0] = {n: (n in ouverts and tient, graphe[n], emp_c[n]) for n in user}
 
 
 CELLULE = [None]   # 0.837 : la molécule dont la membrane se calcule
+# 0.839 : la membrane du cube : ce que chaque fréquence des étages 1 et 2 contient (les six points joints de tout ce qui
+# y est écrit, et 0 : la mémoire part de zéro) ; CUBE[0] : (étage, fréquence) -> six points ; un étage dans CUBE_BROUILLE
+# n'est pas connu (une écriture qu'Ésus ne situe pas)
+CUBE = [{}]
+CUBE_BROUILLE = [set()]
+CUBE_SUPPOSE = [[]]   # les fréquences supposées vides au départ (le programme le vérifie avant de commencer)
+CUBE_FOND = [{}]      # 0.839 : étage -> ce qu'une écriture d'adresse non située (mais d'étage connu) peut y mettre, partout
+ZERO6 = (0, 0, G128, 0, 0, 0)
+# les services qui n'écrivent pas dans les étages 1 et 2 (26 efface le tas, à l'étage 3 ; 12 présente l'image)
+SERVICES_SURS = {3, 4, 5, 10, 12, 18, 22, 25, 26, 32, 33}
+INTEGRES_ECRIVENT = {"gemv", "melanger"}
+NOEUDS_OPAQUES = {"asm", "segments", "mem", "rangee_lire", "ecrire_champ"}
+# les mots du prélude qui n'écrivent que dans un texte (ses caractères, son bloc neuf du tas) : une écriture y est
+# supposée hors des étages 1 et 2, et le programme le vérifie à chaque fois (il s'arrête sinon : jamais un résultat faux)
+TEXTES_PRELUDE = {"__mettre", "changer_car", "texte_neuf"}
+
+
+def frequences(et, adr):
+    """0.839 : les (étage, fréquence) qu'une adresse peut toucher : [] si Ésus la situe hors des étages 1 et 2 ; None
+    si elle peut tomber n'importe où dans 1 ou 2 (l'étage est brouillé) ; sinon la liste"""
+    pa = points(adr)
+    if pa[0] > pa[1]:
+        return []
+    if isinstance(et, int):
+        if et not in (1, 2):
+            return []
+        b, h, e = pa[0], pa[1], et
+        if h >= 1 << 48:
+            return None
+    else:
+        b, h = pa[0], pa[1]
+        if h >= 1 << 64:
+            return None
+        if h < 1 << 62 or b >= 3 << 62:
+            return []   # étage 0 ou 3 : ni connu, ni brouillé
+        if b < 1 << 62 or h >= 3 << 62 or (b >> 62) != (h >> 62):
+            return None
+        e = b >> 62
+        b, h = b & ((1 << 48) - 1), h & ((1 << 48) - 1)
+        if (pa[0] >> 48) & 0x3FFF or (pa[1] >> 48) & 0x3FFF:
+            return None
+    f0, f1 = b >> 24, h >> 24
+    if f1 - f0 > 256:
+        return None
+    return [(e, f) for f in range(f0, f1 + 1)]
+
+
+def lire_cube(et, adr):
+    """0.839 : les six points d'une lecture du cube (la membrane du cube), ou rien de prouvé"""
+    fs = frequences(et, adr)
+    if fs is None and isinstance(et, int) and et in (1, 2) and et not in CUBE_BROUILLE[0]:
+        # une lecture d'adresse non située : tout ce que l'étage peut contenir
+        r = joindre6(ZERO6, CUBE_FOND[0].get(et, ZERO6))
+        for k, v in CUBE[0].items():
+            if k[0] == et:
+                r = joindre6(r, v)
+        return r
+    if not fs:
+        return INCONNU4
+    r = BAS6
+    for k in fs:
+        if k[0] in CUBE_BROUILLE[0]:
+            return INCONNU4
+        r = joindre6(r, CUBE[0].get(k, ZERO6))   # jamais écrite : la mémoire part de zéro
+        r = joindre6(r, CUBE_FOND[0].get(k[0], ZERO6))
+    return r
 
 
 def esus_definitions(corps, params, nom_f=None):
@@ -412,6 +557,8 @@ def points_bruts(e):
         return v, v, G ^ v, v, sv, sv
     if e[0] == "var" and len(e) > 1 and ESUS_VARIABLES[0] is not None:
         return ESUS_VARIABLES[0](e[1])
+    if e[0] == "lire" and len(e) > 2 and CUBE[0]:
+        return lire_cube(e[1], e[2])
     if e[0] == "appel" and len(e) > 1 and isinstance(e[1], str) and e[1] in MEMBRANE[0]:
         return MEMBRANE[0][e[1]][1]   # 0.837 : ce que la molécule rend, prouvé par ses retours
     if e[0] != "bin" or len(e) < 4:
@@ -831,7 +978,11 @@ class Forge(V.Generateur):
             else:
                 a = self.adresse(et, adr)
                 v = self.val(val)
-                self.ligne(self.b([a, v], "c.ecrire({0}, {1})") + ";")
+                if CUBE_SUPPOSE[0] and not isinstance(et, int) and self.f.nom in TEXTES_PRELUDE and frequences(et, adr) is None:
+                    # 0.839 : la garde de la membrane du cube : un texte n'est jamais dans les étages 1 et 2
+                    self.ligne(self.b([a, v], "{{ let a = {0}; garde_cube(a); c.ecrire(a, {1}) }}") + ";")
+                else:
+                    self.ligne(self.b([a, v], "c.ecrire({0}, {1})") + ";")
         elif g == "si":
             self.ligne(f"if {self.cond(s[1])} {{")
             self.niveau += 1
@@ -2356,7 +2507,22 @@ def programme_rust(src, dossier=None, nom="programme"):
     s.append("#[allow(dead_code)]\nfn ctx_bande(inst: &Instantane) -> Box<Ctx> {\n    let mut c = ctx_cylindre(inst);\n"
              "    c.ombre.as_mut().unwrap().partage = true;\n    c\n}")
     s.append(code_druide())
-    s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
+    # 0.839 : la garde de la membrane du cube : aucun cube des étages 1 et 2 n'attend sur le disque (la preuve suppose
+    # une mémoire qui part de zéro)
+    s.append("#[allow(dead_code)]\n#[inline(always)]\nfn garde_cube(a: u128) {\n"
+             "    let e = if a >> 64 == 0 { (a >> 62) & 3 } else { a >> 126 };\n"
+             "    if e == 1 || e == 2 { arret_membrane_cube(e, a); }\n}\n"
+             "#[allow(dead_code)]\n#[cold]\n#[inline(never)]\nfn arret_membrane_cube(e: u128, a: u128) {\n"
+             "    eprintln!(\"membrane du cube : un texte écrit à l'étage {} (adresse {:#x}) : la preuve d'Ésus ne tient plus ; "
+             "reforger avec VTX_MEMBRANE_CUBE=0\", e, a);\n    std::process::exit(4);\n}")
+    gardes = ""
+    if CUBE_SUPPOSE[0]:
+        gardes = ("    if let Ok(l) = std::fs::read_dir(\".\") { for x in l.flatten() { let n = x.file_name().to_string_lossy().into_owned(); "
+                  "if (n.starts_with(\"cube128-1-\") || n.starts_with(\"cube128-2-\") || n.starts_with(\"anticube128-1-\") || "
+                  "n.starts_with(\"anticube128-2-\")) && n.ends_with(\".cub\") { eprintln!(\"membrane du cube : {} attend sur le "
+                  "disque ; la preuve suppose une mémoire vide : reforger avec VTX_MEMBRANE_CUBE=0, ou ôter ce cube\", n); "
+                  "std::process::exit(4); } } }\n")
+    s.append("pub fn lancer(entrees: &[String]) {\n" + gardes + "    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees, druide_fin);\n}\n")
     return "\n".join(s), mots
 

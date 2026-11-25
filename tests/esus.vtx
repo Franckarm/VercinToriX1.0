@@ -73,7 +73,26 @@ fonction descendre_mol(n, acc) {
     retour descendre_mol(n - 1, (acc * 7 + n) % 100003);
 }
 
+// 0.839 : la membrane du cube : une table écrite une fois, relue ; et une fréquence écrite à une place calculée
+fonction table_du_cube() {
+    pour i dans 0..512 {
+        @2[(9 << 24) + i] = (i * 2654435761) % 1000003;
+    }
+    soit t = 0;
+    pour j dans 0..20000 {
+        soit v = @2[(9 << 24) + (j & 511)];
+        t = t ^ ((v * 37 + j) % 65521);
+        @2[(11 << 24) + (j & 63)] = t + v;
+    }
+    soit u = 0;
+    pour k dans 0..64 {
+        u = u + @2[(11 << 24) + k] * 3;
+    }
+    afficher(t, u, @2[(13 << 24) + 5]);
+}
+
 fonction principal() {
+    table_du_cube();
     cellules();
     afficher(descendre_mol(50, 1), descendre_mol(3, 99999));
     negatifs();

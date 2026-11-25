@@ -1,0 +1,13 @@
+// 0.839 : la membrane du cube : une table de la fréquence 7 remplie une fois, puis lue 30 millions de fois ; Ésus sait
+// ce qu'elle contient (VTX_MEMBRANE_CUBE=0 à la forge pour comparer : ici −60 %, la même sortie).
+fonction principal() {
+    pour i dans 0..4096 {
+        @2[(7 << 24) + i] = (i * 2654435761) % 1000003;
+    }
+    soit t = 0;
+    pour j dans 0..30000000 {
+        soit v = @2[(7 << 24) + (j & 4095)];
+        t = t ^ ((v * 37 + j) % 65521);
+    }
+    afficher(t);
+}
