@@ -1,0 +1,17 @@
+// 0.837 : la membrane des cellules : les bornes passent des appelants aux paramètres, et des retours aux appelants.
+// VTX_MEMBRANE=0 à la forge pour comparer (ici : -43 %, la même sortie).
+fonction brasser_mol(a, b) {
+    retour (a * 2654435761 + b) % 1000003;
+}
+
+fonction reduire_mol(x) {
+    retour (x / 7) % 65536;
+}
+
+fonction principal() {
+    soit t = 0;
+    pour j dans 0..30000000 {
+        t = t ^ reduire_mol(brasser_mol(j & 1048575, j % 1000));
+    }
+    afficher(t);
+}

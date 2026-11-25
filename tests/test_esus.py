@@ -31,6 +31,18 @@ for esus in (True, False):
     ok, info = forger(exe, esus)
     rf = subprocess.run([exe], capture_output=True, text=True).stdout if ok else info
     verifier(("avec" if esus else "sans") + " Ésus : la forge donne la sortie de Lugus", ok and rf == rl, rf[-300:] + " / " + rl[-300:])
+# 0.837 : la membrane des cellules : un paramètre reçoit ce que ses appelants y mettent ; un retour, ce qu'il prouve
+rel = {}
+for l in open(os.path.join(d, "esus_oui.esus"), encoding="utf-8"):
+    m = l.split()
+    if len(m) == 8:
+        rel[(m[0], m[1])] = m[2:]
+verifier("la membrane : brasser_mol a (appelé avec k de 0 à 100, et 3) borné", rel.get(("brasser_mol", "a"), [0, ""])[1] == "7f",
+         rel.get(("brasser_mol", "a")))
+verifier("la membrane : sommer_mol n (appelé avec j % 100) borné", rel.get(("sommer_mol", "n"), ["", ""])[5:] == ["63"],
+         rel.get(("sommer_mol", "n")))
+verifier("la membrane, récursive : descendre_mol acc borné par son reste (au moins 100002, élargi à une puissance de deux)",
+         100002 <= int(rel.get(("descendre_mol", "acc"), ["", "0"])[1], 16) < 1 << 20, rel.get(("descendre_mol", "acc")))
 import shutil
 shutil.rmtree(d, ignore_errors=True)
 print("Ésus : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))

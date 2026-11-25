@@ -41,7 +41,41 @@ fonction negatifs() {
     afficher(t .< 0, m .>> 2, q * q, (0 - 3) * (0 - 4));
 }
 
+fonction brasser_mol(a, b) {
+    retour (a * 31 + b) % 65536;
+}
+
+fonction decaler_mol(i) {
+    retour (i & 255) - 128;
+}
+
+fonction sommer_mol(n) {
+    soit s = 0;
+    pour k dans 0..n {
+        s = s + brasser_mol(k, k & 15) + decaler_mol(k);
+    }
+    retour s;
+}
+
+fonction cellules() {
+    soit t = 0;
+    pour j dans 0..2000 {
+        t = t ^ sommer_mol(j % 100);
+    }
+    afficher(t, brasser_mol(3, 4), decaler_mol(7));
+}
+
+// une molécule récursive : sa membrane tient d'un appel à l'autre
+fonction descendre_mol(n, acc) {
+    si n == 0 {
+        retour acc % 1000;
+    }
+    retour descendre_mol(n - 1, (acc * 7 + n) % 100003);
+}
+
 fonction principal() {
+    cellules();
+    afficher(descendre_mol(50, 1), descendre_mol(3, 99999));
     negatifs();
     accumulateurs();
     soit x = 1;

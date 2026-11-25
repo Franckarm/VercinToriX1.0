@@ -113,12 +113,143 @@ def esus_haut(h, z, o):
     return z | (G128 ^ ((1 << h.bit_length()) - 1)), o
 
 
-def esus_definitions(corps, params):
+MEMBRANE = [{}]   # 0.837 : la membrane des cellules : molécule -> ({paramètre: six points}, six points du retour)
+BAS6 = (G128, 0, G128, G128, SMAX, SMIN)   # rien encore : pas une seule valeur
+
+
+def joindre6(a, b):
+    return (min(a[0], b[0]), max(a[1], b[1]), a[2] & b[2], a[3] & b[3], min(a[4], b[4]), max(a[5], b[5]))
+
+
+def dans6(a, b):
+    """a ⊆ b : six points de a tenus par ceux de b"""
+    return (a[0] >= b[0] and a[1] <= b[1] and (a[2] & b[2]) == b[2] and (a[3] & b[3]) == b[3]
+            and a[4] >= b[4] and a[5] <= b[5])
+
+
+def elargir6(h, j):
+    """après le premier tour : le haut au nombre de bits, le bas à 0 s'il bouge encore ; en signé de même (pour finir)"""
+    if j[0] > j[1]:
+        return j
+    hh = (1 << j[1].bit_length()) - 1
+    sh = j[5] if j[5] <= h[5] else min(SMAX, (1 << j[5].bit_length()) - 1)
+    sb = j[4] if j[4] >= h[4] else max(SMIN, -(1 << (-j[4]).bit_length()) if j[4] < 0 else 0)
+    return (0 if j[0] < h[0] else j[0], hh) + esus_haut(hh, j[2], j[3]) + (sb, sh)
+
+
+def membrane(fonctions):
+    """0.837 : la membrane des cellules. Une molécule appelée seulement par des appels visibles (jamais passée en valeur,
+    jamais du prélude, pas principal) reçoit sur ses paramètres entiers ce que ses appelants y mettent (les six points
+    joints sur tous les appels) ; toute molécule du programme rend par son retour ce que ses retours prouvent (0 compris,
+    si elle finit sans retour). Le tout tourne jusqu'à tenir (élargi après le premier tour) ; s'il ne tient pas, rien."""
+    MEMBRANE[0] = {}
+    if not L() or os.environ.get("VTX_MEMBRANE") == "0" or os.environ.get("VTX_ESUS") == "0":
+        return
+    user = {f.nom: f for f in fonctions if getattr(f, "origine", "") != "prélude"}
+    refs, nappels = set(), {n: 0 for n in user}
+
+    def scan(x):
+        if isinstance(x, list):
+            for y in x:
+                scan(y)
+            return
+        if not isinstance(x, tuple) or not x:
+            return
+        if x[0] in ("fref", "appelv") and len(x) > 1 and isinstance(x[1], str):
+            refs.add(x[1])
+        if x[0] == "appel" and len(x) > 2 and isinstance(x[1], str) and x[1] in nappels:
+            nappels[x[1]] += 1
+        for y in (x[1:] if isinstance(x[0], str) else x):
+            if isinstance(y, (list, tuple)):
+                scan(y)
+    for f in fonctions:
+        scan(f.corps)
+    ouverts = {n for n in user if n not in refs and nappels[n] > 0 and n != "principal"}
+    hyp = {n: ({p: (BAS6 if n in ouverts and t == "e" else INCONNU4) for p, t in zip(f.params, f.ptypes)},
+               BAS6 if f.rtype == "e" else INCONNU4) for n, f in user.items()}
+    sauve = ESUS_VARIABLES[0]
+    tient = False
+    for tour in range(60):
+        MEMBRANE[0] = hyp
+        neuf = {n: ({p: BAS6 for p in f.params}, BAS6) for n, f in user.items()}
+
+        def marcher(x):
+            if isinstance(x, list):
+                for y in x:
+                    marcher(y)
+                return
+            if not isinstance(x, tuple) or not x:
+                return
+            if x[0] == "appel" and len(x) > 2 and isinstance(x[1], str) and x[1] in ouverts and isinstance(x[2], list):
+                g = user[x[1]]
+                if len(x[2]) != len(g.params):
+                    ouverts.discard(x[1])
+                else:
+                    for pnom, a in zip(g.params, x[2]):
+                        neuf[x[1]][0][pnom] = joindre6(neuf[x[1]][0][pnom], points(a))
+            if x[0] == "retour" and len(x) > 1 and CELLULE[0] in neuf:
+                pr, r = neuf[CELLULE[0]]
+                neuf[CELLULE[0]] = (pr, joindre6(r, (0, 0, G128, 0, 0, 0) if x[1] is None else points(x[1])))
+            for y in (x[1:] if isinstance(x[0], str) else x):
+                if isinstance(y, (list, tuple)):
+                    marcher(y)
+        for f in user.values():
+            CELLULE[0] = f.nom
+            ESUS_VARIABLES[0] = esus_definitions(f.corps, f.params, f.nom)
+            marcher(f.corps)
+            pr, r = neuf[f.nom]
+            neuf[f.nom] = (pr, joindre6(r, (0, 0, G128, 0, 0, 0)))   # finir sans retour : 0
+        # ce qui ne s'ouvre pas : tout l'intervalle
+        for n, f in user.items():
+            for p, t in zip(f.params, f.ptypes):
+                if n not in ouverts or t != "e":
+                    neuf[n][0][p] = INCONNU4
+            if f.rtype != "e":
+                neuf[n] = (neuf[n][0], INCONNU4)
+        if tour > 0 and all(dans6(neuf[n][1], hyp[n][1]) and all(dans6(neuf[n][0][p], hyp[n][0][p]) for p in neuf[n][0])
+                            for n in user):
+            tient = True
+            break
+        nh = {}
+
+        def suivant(h, nv):
+            # ce qui bouge encore après huit tours devient tout l'intervalle (sûr, et la membrane finit par tenir)
+            if dans6(nv, h):
+                return h
+            if tour >= 8:
+                return INCONNU4
+            j = joindre6(h, nv)
+            return elargir6(h, j) if tour > 0 else j
+        for n in user:
+            pr = {p: suivant(hyp[n][0][p], neuf[n][0][p]) for p in neuf[n][0]}
+            nh[n] = (pr, suivant(hyp[n][1], neuf[n][1]))
+        hyp = nh
+    ESUS_VARIABLES[0] = sauve
+    CELLULE[0] = None
+    if tient:
+        # ce qui reste vide (jamais atteint) : tout l'intervalle, par prudence
+        for n in hyp:
+            pr, r = hyp[n]
+            hyp[n] = ({p: (INCONNU4 if v[0] > v[1] else v) for p, v in pr.items()}, INCONNU4 if r[0] > r[1] else r)
+    MEMBRANE[0] = hyp if tient else {}
+
+
+CELLULE = [None]   # 0.837 : la molécule dont la membrane se calcule
+
+
+def esus_definitions(corps, params, nom_f=None):
     """0.835 : Ésus : chaque affectation d'une variable dans la fonction (où qu'elle soit : sous un si, une boucle…) ;
     rend la fonction nom -> ses quatre points (le plus bas, le plus haut, les bits sûrement à 0, sûrement à 1),
     prudente : un paramètre, une définition qu'Ésus ne lit pas, ou une variable qui dépend d'elle-même : rien de
     prouvé (INCONNU4)."""
     defs, inconnues = {}, set(params)
+    # 0.837 : la membrane : un paramètre reçoit ce que ses appelants y mettent
+    mb = MEMBRANE[0].get(nom_f) if nom_f else None
+    if mb:
+        for p in params:
+            if p in mb[0] and mb[0][p] != INCONNU4:
+                inconnues.discard(p)
+                defs.setdefault(p, []).append(("fixe", mb[0][p]))
 
     def parcourir(x):
         if isinstance(x, list):
@@ -136,7 +267,7 @@ def esus_definitions(corps, params):
         elif isinstance(g, str) and len(x) > 1 and isinstance(x[1], str) and g not in ("var", "appel", "nombre", "bin",
                                                                                      "texte", "champ", "tnombre"):
             inconnues.add(x[1])   # une autre façon d'écrire une variable (pour … dans, selon…) : Ésus ne la lit pas
-        for y in x[1:]:
+        for y in (x[1:] if isinstance(x[0], str) else x):
             if isinstance(y, (list, tuple)):
                 parcourir(y)
 
@@ -148,7 +279,9 @@ def esus_definitions(corps, params):
     def calculer(nom):
         bas, haut, z, o, sb, sh = BAS
         for d in defs[nom]:
-            if d[0] == "expr":
+            if d[0] == "fixe":
+                b2, h2, z2, o2, sb2, sh2 = d[1]
+            elif d[0] == "expr":
                 b2, h2, z2, o2, sb2, sh2 = points(d[1])
             else:
                 _, a, fin, pas = d
@@ -156,6 +289,8 @@ def esus_definitions(corps, params):
                     b2, h2, z2, o2, sb2, sh2 = INCONNU4
                 else:
                     pa, pf = points(a), points(fin)
+                    if pa[0] > pa[1] or pf[0] > pf[1]:
+                        continue   # rien encore
                     b2, h2 = pa[0], min(G128, max(pa[1], pf[1] + pas))
                     z2, o2 = esus_haut(h2, 0, 0)
                     sb2, sh2 = signe_de(b2, h2)
@@ -212,8 +347,8 @@ def points(e):
     sûrement à 0, les bits sûrement à 1 ; 0.836 : et le plus petit, le plus grand lus avec le signe. Bit à bit, c'est
     Belnap : à 0 et à 1 à la fois serait un chemin qui se contredit (jamais atteint) ; ni l'un ni l'autre, inconnu."""
     r = points_bruts(e)
-    if r is INCONNU4:
-        return r
+    if r is INCONNU4 or r[0] > r[1]:
+        return r   # 0.837 : vide (pas encore une seule valeur, pendant qu'une borne se cherche) : il reste vide
     return esus_six(*r)
 
 
@@ -227,13 +362,18 @@ def points_bruts(e):
         return v, v, G ^ v, v, sv, sv
     if e[0] == "var" and len(e) > 1 and ESUS_VARIABLES[0] is not None:
         return ESUS_VARIABLES[0](e[1])
+    if e[0] == "appel" and len(e) > 1 and isinstance(e[1], str) and e[1] in MEMBRANE[0]:
+        return MEMBRANE[0][e[1]][1]   # 0.837 : ce que la molécule rend, prouvé par ses retours
     if e[0] != "bin" or len(e) < 4:
         return INCONNU4
     op = e[1]
     if op in V.COMPARAISONS or op in V.SIGNEES_COMP or op in ("&&", "||"):
         return 0, 1, G ^ 1, 0, 0, 1
-    ba, ha, za, oa, sa0, sa1 = points(e[2])
-    bb, hb, zb, ob, sb0, sb1 = points(e[3])
+    pa6, pb6 = points(e[2]), points(e[3])
+    if pa6[0] > pa6[1] or pb6[0] > pb6[1]:
+        return BAS6   # 0.837 : une opération sur rien encore : rien encore
+    ba, ha, za, oa, sa0, sa1 = pa6
+    bb, hb, zb, ob, sb0, sb1 = pb6
     k = e[3][1] if e[3][0] == "nombre" else None
     if op == "&":
         h = min(ha, hb)
@@ -323,7 +463,8 @@ def lire_arn_druide(chemin):
 
 def borne(e):
     """0.835 : Ésus : la plus grande valeur prouvée de l'entier e (le deuxième des quatre points)"""
-    return points(e)[1]
+    r = points(e)
+    return G128 if r[0] > r[1] else r[1]   # vide : par prudence, tout l'intervalle
 
 
 def lit(v):
@@ -458,7 +599,7 @@ class Forge(V.Generateur):
             params.append(p)
         loc = []
         self.locales(f.corps, loc)
-        ESUS_VARIABLES[0] = esus_definitions(f.corps, f.params)
+        ESUS_VARIABLES[0] = esus_definitions(f.corps, f.params, f.nom)
         ESUS_ICI[0] = f.nom not in ESUS_ETEINT[0]
         self.poids_ligne = ""
         self.mol_druide = f.nom
@@ -525,7 +666,8 @@ class Forge(V.Generateur):
             # 0.835 : les quatre points de chaque variable entière de la molécule (le relevé d'Ésus, pour le Druide)
             for v in list(params) + list(locales):
                 if self.vtypes.get(v) == "e":
-                    ESUS_RELEVE[0].append((f.nom, v) + ESUS_VARIABLES[0](v))
+                    r6 = ESUS_VARIABLES[0](v)
+                    ESUS_RELEVE[0].append((f.nom, v) + (INCONNU4 if r6[0] > r6[1] else r6))
         nom = ident(f.nom)
         sig = ", ".join(f"mut v_{ident(p)}: u128" for p in params)
         sig = "c: &mut Ctx" + (", " + sig if sig else "")
@@ -1949,6 +2091,7 @@ class Forge(V.Generateur):
                     ramasse.add(n)
                     change = True
         self.ramasse = ramasse
+        membrane(self.forgees)   # 0.837 : les cellules : ce qui passe la membrane de chaque molécule
         self.noyaux = []
         self.plan = planifier_zones(self.forgees, self.ecrits, bool(self.blobs and any(v for _, _, v in self.blobs)),
                                     self.blobs)
