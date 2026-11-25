@@ -668,7 +668,7 @@ fonction demi(p) {
 
 fonction lire_mots(chemin: texte) {
     soit f = ouvrir_lecture(chemin);
-    si f == 4294967295 || f == 18446744073709551615 {
+    si f == 4294967295 || f == (0 - 1) {
         afficher("Gobannos : je ne peux pas lire", chemin);
         retour 0;
     }
@@ -2623,7 +2623,7 @@ fonction forger(sortie_: texte, win) {
     soit entree = code0;
     soit virtuel = d_etat + E_TOTAL;
     soit f_ = ouvrir_ecriture("octets:" + sortie_);
-    si f_ == 4294967295 || f_ == 18446744073709551615 {
+    si f_ == 4294967295 || f_ == (0 - 1) {
         afficher("Gobannos : je ne peux pas écrire", sortie_);
         retour 0;
     }

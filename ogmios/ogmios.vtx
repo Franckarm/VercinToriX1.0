@@ -384,7 +384,7 @@ fonction souris_et_molette() {
 fonction lire_nom(): texte {
     soit n = 0;
     soit x = entrée();
-    tantque x != 0 && x != 18446744073709551615 && n < 4096 {
+    tantque x != 0 && x != (0 - 1) && n < 4096 {
         @2[RAP + n] = x;
         n = n + 1;
         x = entrée();
@@ -400,9 +400,9 @@ fonction charger() {
     soit n = 0;
     soit crlf = 0;
     soit canal = ouvrir_lecture(etat(E_NOM));
-    si canal != 18446744073709551615 {
+    si canal != (0 - 1) {
         soit ch = lire_car(canal);
-        tantque ch != 18446744073709551615 && n < MAXTXT {
+        tantque ch != (0 - 1) && n < MAXTXT {
             si ch == 13 {
                 crlf = 1;
             } sinon {
@@ -424,7 +424,7 @@ fonction charger() {
 
 fonction enregistrer() {
     soit canal = ouvrir_ecriture(etat(E_NOM));
-    si canal == 18446744073709551615 {
+    si canal == (0 - 1) {
         poser(E_MSG, "enregistrement impossible");
         retour;
     }
@@ -446,9 +446,9 @@ fonction lancer() {
     enregistrer();
     soit canal = __service(24, etat(E_NOM));
     soit n = 0;
-    si canal != 18446744073709551615 {
+    si canal != (0 - 1) {
         soit ch = lire_car(canal);
-        tantque ch != 18446744073709551615 && n < 800000 {
+        tantque ch != (0 - 1) && n < 800000 {
             @2[RAP + n] = ch;
             ecrire_car(1, ch);              // aussi dans la console
             n = n + 1;

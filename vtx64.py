@@ -5963,10 +5963,10 @@ fonction puissance_de_deux_suivante(x) {
     tantque p < x && p != 0 { p = p << 1; }
     retour p;
 }
-// log2_entier, log10_entier, racine_entiere : Rust ilog2, ilog10, isqrt (log de 0 : 18446744073709551615, comme « absent »)
-fonction log2_entier(x) { si x == 0 { retour 18446744073709551615; } retour nb_bits(0 - 1) - 1 - zeros_en_tete(x); }
+// log2_entier, log10_entier, racine_entiere : Rust ilog2, ilog10, isqrt (log de 0 : (0 - 1), comme « absent »)
+fonction log2_entier(x) { si x == 0 { retour (0 - 1); } retour nb_bits(0 - 1) - 1 - zeros_en_tete(x); }
 fonction log10_entier(x) {
-    si x == 0 { retour 18446744073709551615; }
+    si x == 0 { retour (0 - 1); }
     soit n = 0;
     soit v = x;
     tantque v >= 10 { v = v / 10; n = n + 1; }
@@ -6034,11 +6034,11 @@ fonction mot_de(h, l) { retour ((h & 255) << 8) | (l & 255); }
 // est_vide : Rust is_empty, Arduino length() == 0 (un texte ou un tableau)
 fonction est_vide(t) { si longueur(t) == 0 { retour 1; } retour 0; }
 // contient_texte, position_derniere : Rust contains, rfind ; Arduino indexOf, lastIndexOf
-fonction contient_texte(t, m) { si position(t, m) != 18446744073709551615 { retour 1; } retour 0; }
+fonction contient_texte(t, m) { si position(t, m) != (0 - 1) { retour 1; } retour 0; }
 fonction position_derniere(t, m) {
     soit n = longueur(t);
     soit k = longueur(m);
-    si k > n { retour 18446744073709551615; }
+    si k > n { retour (0 - 1); }
     soit i = n - k + 1;
     tantque i > 0 {
         i = i - 1;
@@ -6046,7 +6046,7 @@ fonction position_derniere(t, m) {
         tantque j < k && car(t, i + j) == car(m, j) { j = j + 1; }
         si j == k { retour i; }
     }
-    retour 18446744073709551615;
+    retour (0 - 1);
 }
 fonction __est_blanc(c) { retour c == 32 || c == 9 || c == 10 || c == 13; }
 // rogner_debut, rogner_fin : Rust trim_start, trim_end (nettoyer : trim)
@@ -6073,7 +6073,7 @@ fonction sans_suffixe(t, s): texte {
 // remplacer_premier : Rust replacen(a, b, 1)
 fonction remplacer_premier(t, a, b): texte {
     soit p = position(t, a);
-    si p == 18446744073709551615 || longueur(a) == 0 { retour sous_texte(t, 0, longueur(t)); }
+    si p == (0 - 1) || longueur(a) == 0 { retour sous_texte(t, 0, longueur(t)); }
     retour __texte_plus(__texte_plus(sous_texte(t, 0, p), b), sous_texte(t, p + longueur(a), longueur(t)));
 }
 // lignes, mots, couper_en_deux : Rust lines, split_whitespace, split_once (des tableaux de textes)
@@ -6115,7 +6115,7 @@ fonction mots(t) {
 fonction couper_en_deux(t, sep) {
     soit r = tableau(0);
     soit p = position(t, sep);
-    si p == 18446744073709551615 { __ajouter(r, sous_texte(t, 0, longueur(t))); retour r; }
+    si p == (0 - 1) { __ajouter(r, sous_texte(t, 0, longueur(t))); retour r; }
     __ajouter(r, sous_texte(t, 0, p));
     __ajouter(r, sous_texte(t, p + longueur(sep), longueur(t)));
     retour r;
@@ -6152,10 +6152,10 @@ fonction comparer_textes(a, b) {
     pour i dans 0..n {
         soit x = car(a, i);
         soit y = car(b, i);
-        si x < y { retour 18446744073709551615; }
+        si x < y { retour (0 - 1); }
         si x > y { retour 1; }
     }
-    si na < nb { retour 18446744073709551615; }
+    si na < nb { retour (0 - 1); }
     si na > nb { retour 1; }
     retour 0;
 }
@@ -6173,15 +6173,15 @@ fonction est_ponctuation(c) {
 fonction est_hexadecimal(c) { si (c >= 48 && c <= 57) || (c >= 65 && c <= 70) || (c >= 97 && c <= 102) { retour 1; } retour 0; }
 fonction est_ascii(c) { si c < 128 { retour 1; } retour 0; }
 fonction est_controle(c) { si c < 32 || c == 127 { retour 1; } retour 0; }
-// valeur_chiffre, chiffre_de : Rust char::to_digit, char::from_digit (absent : 18446744073709551615)
+// valeur_chiffre, chiffre_de : Rust char::to_digit, char::from_digit (absent : (0 - 1))
 fonction valeur_chiffre(c, base) {
     soit v = 99;
     si c >= 48 && c <= 57 { v = c - 48; } sinon si c >= 97 && c <= 122 { v = c - 87; } sinon si c >= 65 && c <= 90 { v = c - 55; }
-    si v >= base { retour 18446744073709551615; }
+    si v >= base { retour (0 - 1); }
     retour v;
 }
 fonction chiffre_de(v, base) {
-    si v >= base || v >= 36 { retour 18446744073709551615; }
+    si v >= base || v >= 36 { retour (0 - 1); }
     si v < 10 { retour 48 + v; }
     retour 87 + v;
 }
@@ -6199,7 +6199,7 @@ fonction lire_base(t, base) {
     soit r = 0;
     pour i dans 0..longueur(t) {
         soit v = valeur_chiffre(car(t, i), base);
-        si v == 18446744073709551615 { retour r; }
+        si v == (0 - 1) { retour r; }
         r = r * base + v;
     }
     retour r;
@@ -6240,7 +6240,7 @@ fonction tourner_tableau_droite(t, k) {
 // est_trie, trier_decroissant : Rust is_sorted, sort_by(|a, b| b.cmp(a)) (signés)
 fonction est_trie(t) { pour i dans 1..longueur(t) { si t[i] .< t[i - 1] { retour 0; } } retour 1; }
 fonction trier_decroissant(t) { trier(t); inverser(t); }
-// recherche_dichotomique : Rust binary_search (dans un tableau trié, signé ; absent : 18446744073709551615)
+// recherche_dichotomique : Rust binary_search (dans un tableau trié, signé ; absent : (0 - 1))
 fonction recherche_dichotomique(t, v) {
     soit a = 0;
     soit b = longueur(t);
@@ -6249,7 +6249,7 @@ fonction recherche_dichotomique(t, v) {
         si t[m] == v { retour m; }
         si t[m] .< v { a = m + 1; } sinon { b = m; }
     }
-    retour 18446744073709551615;
+    retour (0 - 1);
 }
 // produit, moyenne, mediane : Rust iter().product(), statistiques (un tableau vide : la moyenne est inconnue)
 fonction produit(t) { soit p = 1; pour x dans t { p = p * x; } retour p; }
@@ -6351,14 +6351,14 @@ fonction produit_cartesien(a, b) {
 // position_max, position_min, chercher_dernier : itertools position_max, position_min ; Rust rposition
 fonction position_max(t) {
     soit n = longueur(t);
-    si n == 0 { retour 18446744073709551615; }
+    si n == 0 { retour (0 - 1); }
     soit k = 0;
     pour i dans 1..n { si t[i] .> t[k] { k = i; } }
     retour k;
 }
 fonction position_min(t) {
     soit n = longueur(t);
-    si n == 0 { retour 18446744073709551615; }
+    si n == 0 { retour (0 - 1); }
     soit k = 0;
     pour i dans 1..n { si t[i] .< t[k] { k = i; } }
     retour k;
@@ -6366,7 +6366,7 @@ fonction position_min(t) {
 fonction chercher_dernier(t, v) {
     soit i = longueur(t);
     tantque i > 0 { i = i - 1; si t[i] == v { retour i; } }
-    retour 18446744073709551615;
+    retour (0 - 1);
 }
 // tronquer_tableau, redimensionner, repeter_tableau : Rust truncate, resize, repeat
 fonction tronquer_tableau(t, n) { tantque longueur(t) > n { retirer(t); } }
@@ -6457,7 +6457,7 @@ fonction piocher_plusieurs(t, k) { soit c = copie(t); brasser(c); tantque longue
 fonction tirage_pondere(poids) {
     soit total = 0;
     pour w dans poids { total = total + w; }
-    si total == 0 { retour 18446744073709551615; }
+    si total == 0 { retour (0 - 1); }
     soit r = hasard(total);
     soit acc = 0;
     soit n = longueur(poids);
@@ -6744,10 +6744,10 @@ fonction adresse_point(x, y, z) { retour ((x & 255) << 16) | ((y & 255) << 8) | 
 fonction coord_x(a) { retour (a >> 16) & 255; }
 fonction coord_y(a) { retour (a >> 8) & 255; }
 fonction coord_z(a) { retour a & 255; }
-// voisin : le point d'à côté sur un axe (0 : x, 1 : y, 2 : z), dans un sens (1 ou 18446744073709551615), le cube refermé
+// voisin : le point d'à côté sur un axe (0 : x, 1 : y, 2 : z), dans un sens (1 ou (0 - 1)), le cube refermé
 fonction voisin(a, axe, sens) {
     soit d = 1;
-    si sens .< 0 || sens == 18446744073709551615 { d = 255; }
+    si sens .< 0 || sens == (0 - 1) { d = 255; }
     si axe == 0 { retour adresse_point(coord_x(a) + d, coord_y(a), coord_z(a)); }
     si axe == 1 { retour adresse_point(coord_x(a), coord_y(a) + d, coord_z(a)); }
     retour adresse_point(coord_x(a), coord_y(a), coord_z(a) + d);
@@ -6793,7 +6793,7 @@ fonction ecart_bases(a, b) { retour nb_bits(0 - 1) / 2 - nb_bits(qegal(a, b)); }
 // -- famille « tableaux, avec une fonction » (Rust Iterator ; Lugus, et Dunon depuis la 0.65)
 // transformer, filtrer, plier, tous, au_moins_un, aucun, trouver_si, rang_si, compter_si, pour_chacun, garder_si, trier_par :
 // Rust map, filter, fold, all, any, !any, find, position, filter().count(), for_each, retain, sort_by_key (la fonction
-// rend 1 ou 0 pour une question ; ces mots rendent 1 ou 0, ou 18446744073709551615 pour « absent »)
+// rend 1 ou 0 pour une question ; ces mots rendent 1 ou 0, ou (0 - 1) pour « absent »)
 fonction transformer(t, __fv) { soit r = tableau(0); pour x dans t { ajouter(r, __fv(x)); } retour r; }
 fonction filtrer(t, __fv) { soit r = tableau(0); pour x dans t { si __fv(x) != 0 { ajouter(r, x); } } retour r; }
 fonction plier(t, __fv, depart) { soit acc = depart; pour x dans t { acc = __fv(acc, x); } retour acc; }
@@ -6804,7 +6804,7 @@ fonction trouver_si(t, __fv) { pour x dans t { si __fv(x) != 0 { retour x; } } r
 fonction rang_si(t, __fv) {
     soit n = longueur(t);
     pour i dans 0..n { si __fv(t[i]) != 0 { retour i; } }
-    retour 18446744073709551615;
+    retour (0 - 1);
 }
 fonction compter_si(t, __fv) { soit k = 0; pour x dans t { si __fv(x) != 0 { k = k + 1; } } retour k; }
 fonction pour_chacun(t, __fv) { pour x dans t { __fv(x); } }

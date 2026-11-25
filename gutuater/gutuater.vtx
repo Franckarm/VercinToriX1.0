@@ -14,12 +14,12 @@ importer "synapse.vtx";
 
 fonction lire_fichier(nom: texte): texte {
     soit canal = ouvrir_lecture(nom);
-    si canal == 18446744073709551615 {
+    si canal == (0 - 1) {
         retour "";
     }
     soit cs = tableau(0);
     soit ch = lire_car(canal);
-    tantque ch != 18446744073709551615 {
+    tantque ch != (0 - 1) {
         si ch != 13 {
             ajouter(cs, ch);
         }

@@ -1395,19 +1395,19 @@ class Forge(V.Generateur):
                 return self.b([e1()], "(!{0})")
             return self.b([e1()], "((!({0} as u64)) as u128)")
         if nom == "lire_car":
-            return self.b([e1()], "(c.m.lire_canal({0}) & M64)")
+            return self.b([e1()], "(c.m.lire_canal({0})" + ("" if L() else " & M64") + ")")
         if nom == "ecrire_car":
             return self.b([self.val(a[1], "e"), e1()], "{{ c.m.ecrire_canal({1}, {0}); 0u128 }}")
         if nom in ("ouvrir_lecture", "ouvrir_ecriture", "fermer", "fin_de"):
             code = {"ouvrir_lecture": 1, "ouvrir_ecriture": 2, "fermer": 3, "fin_de": 4}[nom]
-            return self.b([e1()], "c.sys(" + str(code) + ", {0})")
+            return self.b([e1()], "(c.sys(" + str(code) + ", {0})" + ("" if L() else " & M64") + ")")
         if nom == "bruit":
-            return "c.sys(5, 0)"
+            return "(c.sys(5, 0)" + ("" if L() else " & M64") + ")"
         if nom == "pile":
             self.appelees.add("<pile>")
             return "c.sp"
         if nom == "__service":
-            return self.b([e1(), self.val(a[1], "e")], "c.sys({0}, {1})")
+            return self.b([e1(), self.val(a[1], "e")], "(c.sys({0}, {1})" + ("" if L() else " & M64") + ")")
         if nom == "nb_bits":
             if L():
                 return self.b([e1()], "({0}.count_ones() as u128)")

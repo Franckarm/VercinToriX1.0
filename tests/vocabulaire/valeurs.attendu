@@ -1,7 +1,7 @@
 transformer 25 4 64 1 16
 filtrer 2 8 4
 plier 20 0 1 1
-trouver 2 1 3 18446744073709551615
+trouver 2 1 3 -1
 garder_si 2 8 4
 trier_par 8 5 4 2 1
 fin

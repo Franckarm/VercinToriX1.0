@@ -1199,7 +1199,7 @@ impl Ctx {
     }
     fn sys(&mut self, code: u128, arg: u128) -> u128 {
         match self.m.service(code, arg) {
-            Ok(v) => v & M64,
+            Ok(v) => v,   // 0.833 : tout le mot (-1 inconnu, -2 faux) ; la forge le ramène à 64 bits en « dunon; »
             Err(e) => {
                 arreter(self, &e);
                 0

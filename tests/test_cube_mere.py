@@ -104,8 +104,7 @@ for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py
     verifier(f"{machine.capitalize()} : les mêmes fichiers en Rust et en Python, octet pour octet", f1 == f2 and f1 != {},
              f"{sorted(f1)} / {sorted(f2)}")
     verifier(f"{machine.capitalize()} : la même sortie en Rust et en Python ; les noms ambigus ou interdits refusés",
-             e1 == sortie_py(e2) and r1 == sortie_py(r2) and ("\n2 1\n-2 -2 -2 " in e1 or "\n2 1\n" + " ".join(["18446744073709551614"] * 3) + " " in e1)
-             and not e1.rstrip().endswith(("-2", "18446744073709551614")),     # 0.833 : sur Lugus, -2 du service sur 64 bits
+             e1 == sortie_py(e2) and r1 == sortie_py(r2) and "\n2 1\n-2 -2 -2 " in e1 and not e1.rstrip().endswith("-2"),
              f"{e1!r} / {e2!r}")
     verifier(f"{machine.capitalize()} : relus sous le cube mère, les points reviennent ; le cube mère (service 29) dit "
              "deux sous-cubes, et à l'adresse 440 le sous-cube de l'étage 1, deux pages (5 et 70 000)",
