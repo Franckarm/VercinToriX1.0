@@ -629,3 +629,17 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   14 fréquences, 2 bornées, rien de gagné : ses valeurs rangées sont signées, tirées d'autres lectures, divisées par des
   variables ; l'annuaire (une valeur lue sert d'adresse) écrit hors de toute fréquence située.
 - Livraison : vtx-0.839.zip, essai-0.839.bat.
+
+## 0.840 (25 novembre) : la racine entière
+- Chez le créateur, la 0.839 : la table du cube 0,229 → 0,068 s ; Gergovie en 128 les mêmes empreintes, le vol 9,2
+  contre 17,1 en Dunon ; la bibliothèque : 69 cellules sur 85 reprises par gergovie.vtx ; corrigé ensuite : un
+  programme sans relevé ni mesure (le Druide voit ses molécules par le fichier des cellules ; les gènes repris vont dans
+  l'ARN).
+- **La racine entière du prélude** commençait à 2^62 : fausse au-delà de 2^64 sur Lugus ; elle part maintenant de la
+  plus haute puissance de 4 du mot (`1 << (nb_bits(0 - 1) - 2)`), les deux compilateurs renouvelés (point fixe).
+- **Ésus, un codon synonyme** : `racine_entiere` du prélude devient dans la forge `racine_entiere_n` (la racine du
+  double du processeur, corrigée jusqu'à l'entier exact ; au-delà de 2^64, `u128::isqrt`) ; `VTX_RACINE_NATIVE=0`
+  l'éteint. Le C++ de référence fait la même chose (à armes égales). Mesuré à demi-échelle : le C++ +15 %, vtx +8 à
+  +17 % ; les mêmes empreintes. Le « 34 % du travail » du Druide comptait des tours de boucle (32 par racine), pas du
+  temps : ses conseils le disent maintenant.
+- Livraison : vtx-0.840.zip, essai-0.840.bat.

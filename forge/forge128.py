@@ -2059,6 +2059,12 @@ class Forge(V.Generateur):
             return self.appel(("appel", "__pq_" + nom, [self.bits_x(a) for a in args], ligne))
         if nom in SURCHARGES and self.typ(e) in ("f", "s", "i"):
             return self.surcharge_rs(nom, args, self.typ(e), ligne)
+        if nom == "racine_entiere" and len(args) == 1 and esus_actif() and os.environ.get("VTX_RACINE_NATIVE") != "0":
+            pf = self.fonctions.get(nom) or self.reserve.get(nom)
+            if pf is not None and getattr(pf, "origine", "") == "prélude" and self.typ(args[0]) == "e":
+                # 0.839 : Ésus : un codon synonyme : la racine entière du prélude (exacte, bit par bit) faite par le
+                # processeur (la racine du flottant de 64 bits, puis corrigée d'une unité : le même résultat, exact)
+                return self.b([self.val(args[0], "e")], "racine_entiere_n({0})")
         if nom in ("afficher", "ecrire", "texte") and len(args) == 1:
             pf = self.fonctions.get(nom) or self.reserve.get(nom)
             if pf is not None and getattr(pf, "origine", "") == "prélude":

@@ -5973,9 +5973,10 @@ fonction log10_entier(x) {
     retour n;
 }
 fonction racine_entiere(x) {
+    // 0.839 : la plus haute puissance de 4 du mot (2^126 sur Lugus, 2^62 sur Dunon : juste au-delà de 2^64 aussi)
     soit r = 0;
     soit v = x;
-    soit b = 4611686018427387904;
+    soit b = 1 << (nb_bits(0 - 1) - 2);
     tantque b > v { b = b >> 2; }
     tantque b != 0 {
         si v >= r + b { v = v - (r + b); r = (r >> 1) + b; } sinon { r = r >> 1; }

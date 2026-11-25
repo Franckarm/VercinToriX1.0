@@ -5,6 +5,7 @@
  *     g++ -O2 -fopenmp -o gergovie_ref belenos/gergovie_ref.cpp
  *     GERGOVIE_VOL=240 GERGOVIE_JOUR=120 ./gergovie_ref
  * Les opérations de vtx : / % < > sans signe ; ./ .>> .< .> avec signe ; tout sur 64 bits, en enveloppant. */
+#include <cmath>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -103,13 +104,12 @@ static u *DISTA, *DISTB;
 static u ECRAN[W * H];
 static u COMPTE[4 * H];
 
+// 0.839 : la racine entière exacte par la racine du double, corrigée d'une unité (comme la forge de vtx : à armes
+// égales ; le même résultat que la boucle bit par bit d'avant)
 static u racine_entiere(u x) {
-    u r = 0, v = x, b = (u)1 << 62;
-    while (b > v) b >>= 2;
-    while (b != 0) {
-        if (v >= r + b) { v -= r + b; r = (r >> 1) + b; } else r >>= 1;
-        b >>= 2;
-    }
+    u r = (u)std::sqrt((double)x);
+    while (r > 0xFFFFFFFFull || r * r > x) r--;
+    while (r < 0xFFFFFFFFull && (r + 1) * (r + 1) <= x) r++;
     return r;
 }
 

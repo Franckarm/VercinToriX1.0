@@ -1046,7 +1046,7 @@ fonction principal() {
 
     // 4 : proposer : les molécules par leur poids, et ce qui aiderait Ésus dans chacune
     soit cons = ouvrir_ecriture(base + ".conseils");
-    ecrire_texte(cons, "# conseils du Druide pour " + prog + " (les molécules par leur travail ; ce qu'Ésus prouve ou non)\n");
+    ecrire_texte(cons, "# conseils du Druide pour " + prog + " (les molécules par leur travail : appels et tours de boucle comptés, pas le temps ; ce qu'Ésus prouve ou non)\n");
     soit pris = tableau(longueur(lm));
     pour rang dans 0..10 {
         soit meilleur = 0 - 1;

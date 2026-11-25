@@ -2593,3 +2593,22 @@ fn taranis_boucle(c: &mut Ctx, spv: &[u32], a: u128, b: u128, acces: &[(bool, u1
     }
     true
 }
+
+// 0.839 : la racine entière exacte (Ésus, le codon synonyme de celle du prélude) : la racine du flottant de 64 bits du
+// processeur, corrigée jusqu'à l'entier exact ; au-delà de 2^64, celle de Rust
+#[allow(dead_code)]
+#[inline(always)]
+fn racine_entiere_n(x: u128) -> u128 {
+    if x >> 64 != 0 {
+        return x.isqrt();
+    }
+    let x = x as u64;
+    let mut r = (x as f64).sqrt() as u64;
+    while r > 0xFFFF_FFFF || r * r > x {
+        r -= 1;
+    }
+    while r < 0xFFFF_FFFF && (r + 1) * (r + 1) <= x {
+        r += 1;
+    }
+    r as u128
+}
