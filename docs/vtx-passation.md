@@ -551,6 +551,9 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Le carnet du Druide en clair** : chaque variable dit ce qui a changé (pareille, plus serrée, plus large : elle peut
   dépasser son ancien maximum ou minimum, déplacée vers le haut ou vers le bas, ou d'autres bits sûrs), avec l'ancien et
   le neuf ; puis sa règle apprise.
+- **Taranis et le 128** : Taranis reste en 64 bits (décision du créateur) ; la frontière est vérifiée
+  (tests/test_taranis128.py) : un programme Lugus reste au processeur même avec VTX_CARTE=1 et garde ses bits au-delà
+  de 64 ; un programme « dunon; » peut aller à la carte. Livraison : vtx-0.836.zip, essai-0.836.bat.
 - **Prochain pour le Druide** : des mutations plus riches que la bascule d'Ésus (les gènes de Gutuater : lot, fondre,
   carte directe ; les choix du vergobret), la garde de l'empreinte sur les variantes qui pourraient changer un résultat,
   et la lecture de `centre` (son cube a-t-il dû être réparé ?).
