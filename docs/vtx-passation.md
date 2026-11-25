@@ -508,8 +508,16 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Les quatre points d'une molécule** (l'idée du créateur) : pour chaque variable, la plus petite et la plus grande
   valeur, les bits sûrement à 0 et sûrement à 1 (ce que LLVM garde : intervalles et bits connus) ; bit à bit, c'est
   Belnap (inconnu, faux = 0 sûr, vrai = 1 sûr, variable = un chemin qui se contredit, du code jamais atteint). À
-  ranger sur une face du cube de la molécule (le côté du travail, pas l'ADN) : le Druide les relira d'une forge à
-  l'autre. Prochain : les bits connus, la vérification des bornes retirée quand l'indice est prouvé, puis la face.
+  ranger dans le cube (le côté du travail, pas l'ADN) : le Druide les relira d'une forge à l'autre.
+- **Les quatre points calculés** (fait) : `points(e)` dans forge128.py (le plus bas, le plus haut, les bits sûrement à 0,
+  à 1 : &, |, ^, les décalages, %, /, +, * ; les variables par `esus_definitions`) ; la borne d'Ésus en est le deuxième
+  point. **Le relevé d'Ésus** : `PROG.esus` à côté de l'exécutable forgé (une ligne par variable entière de chaque
+  molécule : molécule, variable, bas, haut, zéros, uns, en hex ; rien pour un programme en `dunon;`).
+- **Les faces ne suffisent pas** (six faces de 64 bits par molécule, déjà prises) ; le rangement proposé : les quatre
+  points d'une variable à la même adresse sur les quatre étages d'une fréquence réservée (étage 0 le plus bas, 1 le
+  plus haut, 2 les zéros sûrs, 3 les uns sûrs). Ce sera le premier geste du Druide (en vtx).
+- **Retirer `__borne`** quand l'indice est prouvé : laissé ; il faut prouver i < longueur(t) (une relation entre deux
+  valeurs, que des bornes ne donnent pas) ; le cas courant (`0..longueur(t)`) est déjà fait par l'épissage sûr.
 - **Le Druide** (décidé avec le créateur) : il conseille, modèle, propose, organise, connecte et déconnecte, apprend ;
   il touche l'ARN et le cube chromatique, jamais l'ADN ; la garde le tient (rien ne passe sans le même résultat).
 

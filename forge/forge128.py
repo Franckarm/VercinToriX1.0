@@ -65,14 +65,22 @@ def esus_diviser(op, c):
     return f"modk128({{0}}, {m}u128, {l}, {c}u128)"
 
 
-ESUS_VARIABLES = [None]   # 0.835 : la borne d'une variable de la fonction en cours (posée par fonction_rs)
+ESUS_VARIABLES = [None]   # 0.835 : les quatre points d'une variable de la fonction en cours (posé par fonction_rs)
+ESUS_RELEVE = [[]]        # 0.835 : les quatre points de chaque variable entière du programme forgé (le fichier .esus)
+G128 = (1 << 128) - 1
+INCONNU4 = (0, G128, 0, 0)   # rien de prouvé : de 0 à 2^128 - 1, aucun bit sûr
+
+
+def esus_haut(h, z, o):
+    """les bits au-dessus du plus haut sont sûrement à 0"""
+    return z | (G128 ^ ((1 << h.bit_length()) - 1)), o
 
 
 def esus_definitions(corps, params):
     """0.835 : Ésus : chaque affectation d'une variable dans la fonction (où qu'elle soit : sous un si, une boucle…) ;
-    rend la fonction nom -> borne (la plus grande valeur qu'elle peut prendre), prudente : un paramètre, une
-    définition qu'Ésus ne lit pas, ou une variable qui dépend d'elle-même : 2^128 - 1."""
-    G = (1 << 128) - 1
+    rend la fonction nom -> ses quatre points (le plus bas, le plus haut, les bits sûrement à 0, sûrement à 1),
+    prudente : un paramètre, une définition qu'Ésus ne lit pas, ou une variable qui dépend d'elle-même : rien de
+    prouvé (INCONNU4)."""
     defs, inconnues = {}, set(params)
 
     def parcourir(x):
@@ -98,62 +106,90 @@ def esus_definitions(corps, params):
     parcourir(corps)
     vues, en_cours = {}, set()
 
-    def bv(nom):
+    def pv(nom):
         if nom in vues:
             return vues[nom]
         if nom in inconnues or nom not in defs or nom in en_cours:
-            return G
+            return INCONNU4
         en_cours.add(nom)
-        b = 0
+        bas, haut, z, o = G128, 0, G128, G128
         for d in defs[nom]:
             if d[0] == "expr":
-                b = max(b, borne(d[1]))
+                b2, h2, z2, o2 = points(d[1])
             else:
                 _, a, fin, pas = d
                 if pas is None or pas < 1:
-                    b = G
+                    b2, h2, z2, o2 = INCONNU4
                 else:
-                    b = max(b, borne(a), min(G, borne(fin) + pas))
-            if b == G:
+                    pa, pf = points(a), points(fin)
+                    b2, h2 = pa[0], min(G128, max(pa[1], pf[1] + pas))
+                    z2, o2 = esus_haut(h2, 0, 0)
+            bas, haut, z, o = min(bas, b2), max(haut, h2), z & z2, o & o2
+            if haut == G128 and bas == 0 and z == 0 and o == 0:
                 break
         en_cours.discard(nom)
-        vues[nom] = b
-        return b
-    return bv
+        vues[nom] = (bas, haut, z, o)
+        return vues[nom]
+    return pv
+
+
+def points(e):
+    """0.835 : Ésus : les quatre points de l'entier e (sur 128 bits) que l'arbre prouve : le plus bas, le plus haut, les
+    bits sûrement à 0, les bits sûrement à 1. Bit à bit, c'est Belnap : à 0 et à 1 à la fois serait un chemin qui se
+    contredit (jamais atteint) ; ni l'un ni l'autre, inconnu."""
+    G = G128
+    if not isinstance(e, tuple) or not e:
+        return INCONNU4
+    if e[0] == "nombre" and isinstance(e[1], int):
+        v = e[1] & G
+        return v, v, G ^ v, v
+    if e[0] == "var" and len(e) > 1 and ESUS_VARIABLES[0] is not None:
+        return ESUS_VARIABLES[0](e[1])
+    if e[0] != "bin" or len(e) < 4:
+        return INCONNU4
+    op = e[1]
+    if op in V.COMPARAISONS or op in V.SIGNEES_COMP or op in ("&&", "||"):
+        return 0, 1, G ^ 1, 0
+    ba, ha, za, oa = points(e[2])
+    bb, hb, zb, ob = points(e[3])
+    k = e[3][1] if e[3][0] == "nombre" else None
+    if op == "&":
+        h = min(ha, hb)
+        return (0, h) + esus_haut(h, za | zb, oa & ob)
+    if op == "|":
+        h = (1 << max(ha.bit_length(), hb.bit_length())) - 1
+        return (max(ba, bb), h) + esus_haut(h, za & zb, oa | ob)
+    if op == "^":
+        h = (1 << max(ha.bit_length(), hb.bit_length())) - 1
+        return (0, h) + esus_haut(h, (za & zb) | (oa & ob), (za & ob) | (oa & zb))
+    if op == ">>" and k is not None:
+        k = min(k, 127)
+        return ba >> k, ha >> k, (za >> k) | (G ^ (G >> k)), oa >> k
+    if op == "<<" and k is not None and k < 128:
+        zb_ = ((za << k) | ((1 << k) - 1)) & G
+        if (ha << k) <= G:
+            return ba << k, ha << k, zb_, (oa << k) & G
+        return 0, G, zb_, (oa << k) & G
+    if op == "%" and k is not None and k > 0:
+        if ha < k:
+            return ba, ha, za, oa
+        h = k - 1
+        return (0, h) + esus_haut(h, 0, 0)
+    if op == "/" and k is not None and k > 0:
+        h = ha // k
+        return (ba // k, h) + esus_haut(h, 0, 0)
+    if op == "+" and ha + hb <= G:
+        h = ha + hb
+        return (ba + bb, h) + esus_haut(h, 0, 0)
+    if op == "*" and ha * hb <= G:
+        h = ha * hb
+        return (ba * bb, h) + esus_haut(h, 0, 0)
+    return INCONNU4
 
 
 def borne(e):
-    """0.835 : Ésus : la plus grande valeur que peut prendre l'entier e (sur 128 bits), quand l'arbre le prouve ; sinon
-    2^128 - 1. Sert à prendre l'opération de 64 bits (le codon synonyme, plus rapide) quand tout y tient."""
-    G = (1 << 128) - 1
-    if not isinstance(e, tuple) or not e:
-        return G
-    if e[0] == "nombre" and isinstance(e[1], int):
-        return e[1] & G
-    if e[0] == "var" and len(e) > 1 and ESUS_VARIABLES[0] is not None:
-        return ESUS_VARIABLES[0](e[1])
-    if e[0] == "bin" and len(e) >= 4:
-        op = e[1]
-        if op in V.COMPARAISONS or op in V.SIGNEES_COMP or op in ("&&", "||"):
-            return 1
-        ba, bb = borne(e[2]), borne(e[3])
-        if op == "&":
-            return min(ba, bb)
-        if op in ("|", "^"):
-            return (1 << max(ba.bit_length(), bb.bit_length())) - 1
-        if op == ">>" and e[3][0] == "nombre":
-            return ba >> min(e[3][1], 127)
-        if op == "<<" and e[3][0] == "nombre" and e[3][1] < 128:
-            return min(G, ba << e[3][1]) if (ba << e[3][1]) <= G else G
-        if op == "%" and e[3][0] == "nombre" and e[3][1] > 0:
-            return min(ba, e[3][1] - 1)
-        if op == "/" and e[3][0] == "nombre" and e[3][1] > 0:
-            return ba // e[3][1]
-        if op == "+" and ba + bb <= G:
-            return ba + bb
-        if op == "*" and ba * bb <= G:
-            return ba * bb
-    return G
+    """0.835 : Ésus : la plus grande valeur prouvée de l'entier e (le deuxième des quatre points)"""
+    return points(e)[1]
 
 
 def lit(v):
@@ -341,6 +377,11 @@ class Forge(V.Generateur):
         self.lot_pos, self.lot_suite = 0, False
         corps = self.lignes
         self.graphe[f.nom] = self.appelees
+        if L() and ESUS_VARIABLES[0] is not None:
+            # 0.835 : les quatre points de chaque variable entière de la molécule (le relevé d'Ésus, pour le Druide)
+            for v in list(params) + list(locales):
+                if self.vtypes.get(v) == "e":
+                    ESUS_RELEVE[0].append((f.nom, v) + ESUS_VARIABLES[0](v))
         nom = ident(f.nom)
         sig = ", ".join(f"mut v_{ident(p)}: u128" for p in params)
         sig = "c: &mut Ctx" + (", " + sig if sig else "")
@@ -1932,6 +1973,7 @@ def programme_rust(src, dossier=None, nom="programme"):
 
 def source_rust(src, dossier=None, nom="programme", sortie=None):
     """Le programme Rust complet d'un programme vtx."""
+    ESUS_RELEVE[0] = []
     prog, mots = programme_rust(src, dossier, nom)
     main = "\nfn main() {\n    let a: Vec<String> = std::env::args().collect();\n    lancer(&a[1..]);\n}\n"
     return noyau(sortie) + "\n" + prog + main, mots
@@ -1962,7 +2004,21 @@ def forger_fichier(chemin, sortie=None, rs=None, natif=False):
         raise VtxError("rustc a refusé le programme forgé :\n" + r.stderr[-3000:])
     if not garder:
         shutil.rmtree(os.path.dirname(rs), ignore_errors=True)
+    ecrire_releve_esus(os.path.splitext(sortie)[0] + ".esus", os.path.basename(chemin))
     return sortie
+
+
+def ecrire_releve_esus(chemin, programme):
+    """0.835 : le relevé d'Ésus à côté de l'exécutable : pour chaque variable entière de chaque molécule, ses quatre
+    points (le plus bas, le plus haut, les bits sûrement à 0, sûrement à 1, en hex) ; le Druide les rangera dans le
+    cube (les quatre étages d'une fréquence) et les apprendra d'une forge à l'autre."""
+    if not ESUS_RELEVE[0]:
+        return
+    lignes = [f"# Ésus : les quatre points des variables de {programme} (molécule variable bas haut zéros uns)"]
+    for mol, var, bas, haut, z, o in ESUS_RELEVE[0]:
+        lignes.append(f"{mol} {var} {bas:x} {haut:x} {z:x} {o:x}")
+    with open(chemin, "w", encoding="utf-8") as f:
+        f.write("\n".join(lignes) + "\n")
 
 
 if __name__ == "__main__":
