@@ -1,0 +1,12 @@
+// 0.836 : un programme en 128 bits (sans « dunon; ») : Taranis compte en 64, il ne doit pas le prendre
+fonction principal() {
+    tableau t[4096];
+    pour i dans 0..4096 {
+        t[i] = (i * 2654435761) ^ (i << 70);
+    }
+    soit s = 0;
+    pour x dans t {
+        s = s ^ x;
+    }
+    afficher(s, t[4095]);
+}

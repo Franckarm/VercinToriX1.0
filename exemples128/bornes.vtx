@@ -1,0 +1,24 @@
+// 0.836 : les bornes des accumulateurs (Ésus) : ou-exclusif, masque, reste : bornés ; somme, produit, décalage : non.
+// forge128.py écrit bornes.esus : variable, bas, haut (en hexadécimal), bits sûrs.
+fonction accumulateurs() {
+    soit x = 0;
+    soit g = 7;
+    soit r = 5;
+    soit somme = 0;
+    soit produit = 1;
+    soit h = 1;
+    pour i dans 0..5000 {
+        x = x ^ ((i * 2654435761) & 4294967295);
+        g = (g * 6364136223846793005 + 1442695040888963407) & 18446744073709551615;
+        r = (r * 31 + i) % 1000003;
+        somme = somme + i * 18446744073709551557;
+        produit = produit * 3 + 1;
+        h = (h << 5) + i;
+    }
+    afficher(x, g, r, somme, produit, h);
+    afficher(x / 7, g % 1000, r * r, somme / 3, produit % 1000003, h % 97);
+}
+
+fonction principal() {
+    accumulateurs();
+}
