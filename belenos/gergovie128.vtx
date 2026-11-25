@@ -1,0 +1,15 @@
+// machine : lugus
+// Belenos : l'épreuve de Gergovie au processeur (0.822 : la plaine auvergnate, le puy, le lac, le camp romain, les
+// armées ; gergovie_scene.vtx). Le vol (240 images, l'œil bouge), puis le jour (120 images, le soleil bouge aussi) :
+// la moyenne, le 1 % bas (la fluidité), la pire image, l'empreinte (la même que sur la carte : gergovie_carte.vtx).
+//     python forge/forge128.py belenos/gergovie.vtx -o gergovie_vtx ; gergovie_vtx
+// 0.839 : la même épreuve en 128 bits (Lugus), sans « dunon; » : les mêmes empreintes (la scène écrit ses 64 bits)
+constante RN = 1;
+constante RD = 1;
+constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne
+constante PROGRESSIF = 0;          // 0.828 : la clepsydre refaite en entier
+importer "gergovie_scene.vtx";
+
+fonction principal() {
+    epreuve(240, 120, 0);
+}

@@ -111,16 +111,25 @@ fonction cos1024(a) {
     retour @2[SINUS + ((a + 256) & 1023)];
 }
 
+// 0.839 : ce que la scène veut sur 64 bits (les hachages tournent sur 64 bits, comme le C++ de référence), écrit :
+// sur Lugus (128 bits) le masque garde les 64 bits du bas ; en Dunon il ne coûte rien (Ésus le voit)
+constante MOT64 = 18446744073709551615;
+
+// un mot de 64 bits lu avec son signe (le C++ affiche un int64 ; sur Lugus le signe s'étend aux 128 bits)
+fonction signe64(x) {
+    retour ((x & MOT64) ^ 9223372036854775808) - 9223372036854775808;
+}
+
 // -------------------------------------------------------------------------------------------------- les bruits
 fonction hache(x, z) {
     soit h = (x & 4095) * 374761393 + (z & 4095) * 668265263 + 1013904223;
-    h = (h ^ (h >> 13)) * 1274126177;
+    h = ((h ^ (h >> 13)) * 1274126177) & MOT64;
     retour (h ^ (h >> 16)) & 65535;
 }
 
 fonction hache3(x, y, z) {
     soit h = (x & 1023) * 374761393 + (y & 1023) * 668265263 + (z & 1023) * 2246822519 + 1013904223;
-    h = (h ^ (h >> 13)) * 1274126177;
+    h = ((h ^ (h >> 13)) * 1274126177) & MOT64;
     retour (h ^ (h >> 16)) & 65535;
 }
 
@@ -1936,7 +1945,7 @@ fonction ranger_lumiere_progressive_processeur(jeu, image) {
 }
 
 fonction tirage(t, n, g, image) {
-    retour (((((t * 1031 + n) * 16 + g) * 2654435761) >> 13) + image) & 3;
+    retour ((((((t * 1031 + n) * 16 + g) * 2654435761) & MOT64) >> 13) + image) & 3;
 }
 
 fonction ranger_mot_tire(m, jeu, image) {
@@ -2082,7 +2091,7 @@ fonction empreinte_image() {
     pour i dans 0..(W * H) {
         soit c = @1[i];
         soit rgb3 = ((c >> 56) & 255) * 65536 + ((c >> 40) & 255) * 256 + ((c >> 24) & 255);
-        h = (h ^ rgb3) * 1099511628211;
+        h = ((h ^ rgb3) * 1099511628211) & MOT64;
     }
     retour h;
 }
@@ -2313,7 +2322,7 @@ fonction bilan(nom: texte, n) {
     }
     afficher("gergovie : " + nom + " : " + texte(n) + " images, " + en_dixiemes(10000 * n / total)
              + " images par seconde en moyenne, 1 % bas " + en_dixiemes(10000 * k / lents) + ", pire image "
-             + texte(pire) + " ms ; empreinte " + texte(empreinte_image()));
+             + texte(pire) + " ms ; empreinte " + texte(signe64(empreinte_image())));
 }
 
 // l'épreuve : le monde, la mise en place (pas comptée), le vol (vol images, le soleil fixe), le jour (jour images,
@@ -2367,10 +2376,10 @@ fonction epreuve(vol, jour, sur_carte) {
         image_gergovie(i, vol, i * 3, sur_carte);
         @2[TEMPS + i] = horloge() - ti;
         presenter();
-        film = (film ^ empreinte_image()) * 1099511628211;
+        film = ((film ^ empreinte_image()) * 1099511628211) & MOT64;
     }
     bilan("le vol" + lieu, vol);
-    afficher("gergovie : le vol" + lieu + " : le film entier, empreinte " + texte(film));
+    afficher("gergovie : le vol" + lieu + " : le film entier, empreinte " + texte(signe64(film)));
     film = 14695981039346656037;
     pour i dans 0..jour {
         soit tj = horloge();
@@ -2387,8 +2396,8 @@ fonction epreuve(vol, jour, sur_carte) {
         image_gergovie(i, jour, i * 3, sur_carte);
         @2[TEMPS + i] = horloge() - tj;
         presenter();
-        film = (film ^ empreinte_image()) * 1099511628211;
+        film = ((film ^ empreinte_image()) * 1099511628211) & MOT64;
     }
     bilan("le jour" + lieu, jour);
-    afficher("gergovie : le jour" + lieu + " : le film entier, empreinte " + texte(film));
+    afficher("gergovie : le jour" + lieu + " : le film entier, empreinte " + texte(signe64(film)));
 }
