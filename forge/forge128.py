@@ -2459,7 +2459,7 @@ def carte_directe(sortie=None):
             for l in open(arn, encoding="utf-8"):
                 m = l.split()
                 if len(m) >= 3 and m[0] == "carte_directe" and m[1] == "0":
-                    print(f"gutuater : la carte directe : {m[2]} ({'65 536 places' if m[2] == 'vrai' else '1 024 places mêlées'})",
+                    print(f"gutuater : la carte directe : {m[2]} ({'le monde d’un seul tenant : la page, puis le mot' if m[2] == 'vrai' else '1 024 places mêlées, la promesse vérifiée'})",
                           file=sys.stderr)
                     return m[2] == "vrai"
     return False

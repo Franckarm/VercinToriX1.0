@@ -654,3 +654,27 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   largeur. Le choix Lugus ou Dunon restera manuel (au programme, ou par molécule si on le fait) ; aucune bascule
   128 ↔ 64 à l'exécution.
 - Livraison : vtx-0.841.zip, essai-0.841.bat.
+
+## 0.842 (25 novembre) : le monde d'un seul tenant au processeur, la liste du 128
+- Chez le créateur, la 0.841 : Taranis revenu (57,8 / 32,5) ; le C++ 32,1 / 18,7 ; vtx Dunon 17,4 / 10,3.
+- **Mesuré (callgrind, demi-échelle)** : vtx exécute 2,6 fois les instructions du C++ (14,9 G contre 5,6 G) ; le quart
+  des instructions de vtx sert à trouver la page de chaque lecture du cube (le hachage de la carte du vergobret,
+  l'étiquette, les marques de la promesse) ; le C++ lit un tableau. Essayé et écarté : les variables locales en u64 en
+  Dunon (+3 à 5 % : LLVM les rétrécit déjà).
+- **Le gène « carte directe » de Gutuater devient le monde d'un seul tenant** (noyau_forge128.rs) : `lire2` et
+  `ecrire2` lisent la page à sa place (`l[page]`, `e[page]`), puis le mot : ni hachage, ni étiquette, ni marque de la
+  promesse ; les places prises sont oubliées une à une (`pris`) aux mêmes moments qu'avant (Taranis, les services).
+  Mesuré chez moi : un cœur, le vol 23 → 27,5 images par seconde, le jour 5,7 → 7,2 ; deux cœurs, 40 → 52 ; les
+  mêmes empreintes. Le prix : l'épissage rapide du processeur, la promesse des bandes n'est plus vérifiée
+  (`test_cylindres` le montre : une promesse rompue n'arrête plus la machine). **La garde** : Gutuater ne l'exprime
+  qu'après une paire de mesures, et la variante tue (la promesse vérifiée) doit avoir fini son programme : une
+  promesse rompue arrête la machine, le temps n'est pas écrit, la paire ne se fait pas, le gène reste tu.
+- **Gutuater en automatique** (l'essai) : les deux variantes de Gergovie forgées (`VTX_CARTE_DIRECTE=0/1`), jouées
+  tour à tour (`VTX_GUTUATER_TEMPS=1`), Gutuater digère les temps (chez moi : pour 3, contre 0 : vrai, 25 % de gagné),
+  écrit son ARN ; la forge le lit (« la carte directe : vrai »).
+- **La liste de sécurité du 128** (`docs/vtx-liste-128.md`, la demande du créateur) : ce que rien d'automatique ne passe
+  en 64 (l'entier de Lugus, le cœur de vtx, le cube mère et les cubes, le cube chromatique, les nombres larges, la
+  mémoire du Druide) ; ce qui est en 64 par nature (le graphique : Vergobret et Taranis, sans option ; les formats
+  d'échange de 64 bits) ; ce que l'automatique a le droit de faire (Ésus par preuve, Gutuater sans changer de valeur,
+  le Druide sur l'ARN) ; le passage qui couperait une valeur reste un choix écrit, refusé sur la liste.
+- Livraison : vtx-0.842.zip, essai-0.842.bat.

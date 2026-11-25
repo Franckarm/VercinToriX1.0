@@ -76,6 +76,8 @@ struct Carte {
     k: [u64; CARTE],           // 0.808 : l'étiquette de chaque place : le numéro de la page + 1 (0 : place libre) ; 0.830 :
                                // plus la génération (oublier la carte ne la remet plus à zéro : la génération change)
     gen: u64,
+    // 0.842 : la carte directe (le monde d'un seul tenant au processeur) : les places prises, oubliées une à une
+    pris: Vec<u32>,
     l: [*mut u128; CARTE],
     e: [*mut u128; CARTE],
     r: [*mut u64; CARTE],
@@ -94,10 +96,18 @@ fn place_carte(pg: u64) -> usize {
 
 impl Carte {
     fn neuve() -> Box<Carte> {
-        Box::new(Carte { k: [0; CARTE], gen: 1, l: [std::ptr::null_mut(); CARTE], e: [std::ptr::null_mut(); CARTE],
+        Box::new(Carte { k: [0; CARTE], gen: 1, pris: Vec::new(), l: [std::ptr::null_mut(); CARTE], e: [std::ptr::null_mut(); CARTE],
                          r: [std::ptr::null_mut(); CARTE], w: [std::ptr::null_mut(); CARTE] })
     }
     fn oublier(&mut self) {
+        if CARTE_DIRECTE {
+            for &q in &self.pris {
+                self.l[q as usize] = std::ptr::null_mut();
+                self.e[q as usize] = std::ptr::null_mut();
+            }
+            self.pris.clear();
+            return;
+        }
         self.gen += 1;
         if self.gen >= 1 << 23 {
             self.k = [0; CARTE];
@@ -942,6 +952,17 @@ impl Ctx {
     fn lire2(&mut self, a: u128) -> u128 {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
         let pg = idx >> 16;
+        if CARTE_DIRECTE {
+            // 0.842 : le monde d'un seul tenant (le gène de Gutuater) : la page, puis le mot ; rien d'autre (ni
+            // étiquette, ni marque de la promesse : l'épissage rapide du processeur)
+            if pg < CARTE as u64 {
+                let p = self.carte.l[pg as usize];
+                if !p.is_null() {
+                    return unsafe { *p.add((idx & 65535) as usize) };
+                }
+            }
+            return self.lire2_lent(idx);
+        }
         let h = place_carte(pg);
         if self.carte.k[h] == self.carte.etiquette(pg) {
             let p = self.carte.l[h];
@@ -968,6 +989,16 @@ impl Ctx {
             let (k, _) = Spu128::cle_page(a);
             let h = case(k);
             if self.cl[h] == k {
+                if CARTE_DIRECTE {
+                    if pg < CARTE as u64 {
+                        let q = pg as usize;
+                        if self.carte.l[q].is_null() && self.carte.e[q].is_null() {
+                            self.carte.pris.push(q as u32);
+                        }
+                        self.carte.l[q] = self.pl[h];
+                    }
+                    return v;
+                }
                 let q = place_carte(pg);
                 if self.carte.k[q] != self.carte.etiquette(pg) {
                     self.carte.k[q] = self.carte.etiquette(pg);
@@ -985,6 +1016,16 @@ impl Ctx {
     fn ecrire2(&mut self, a: u128, v: u128) {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
         let pg = idx >> 16;
+        if CARTE_DIRECTE {
+            if pg < CARTE as u64 {
+                let p = self.carte.e[pg as usize];
+                if !p.is_null() {
+                    unsafe { *p.add((idx & 65535) as usize) = v };
+                    return;
+                }
+            }
+            return self.ecrire2_lent(idx, v);
+        }
         let h = place_carte(pg);
         if self.carte.k[h] == self.carte.etiquette(pg) {
             let p = self.carte.e[h];
@@ -1010,6 +1051,16 @@ impl Ctx {
             let (k, _) = Spu128::cle_page(a);
             let h = case(k);
             if self.ce[h] == k && self.pb[h].is_null() {
+                if CARTE_DIRECTE {
+                    if pg < CARTE as u64 {
+                        let q = pg as usize;
+                        if self.carte.l[q].is_null() && self.carte.e[q].is_null() {
+                            self.carte.pris.push(q as u32);
+                        }
+                        self.carte.e[q] = self.pe[h];
+                    }
+                    return;
+                }
                 let q = place_carte(pg);
                 if self.carte.k[q] != self.carte.etiquette(pg) {
                     self.carte.k[q] = self.carte.etiquette(pg);
