@@ -274,3 +274,4 @@ exemples128/table_cube.vtx
 docs/vtx-liste-128.md
 belenos/gergovie_eventail.vtx
 belenos/gergovie_carte_eventail.vtx
+docs/vtx-reference-gobatix.md
