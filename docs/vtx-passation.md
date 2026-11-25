@@ -487,3 +487,20 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - Idée du créateur à creuser : que les services répondent aussi par les quatre valeurs (un quit d'état en haut du mot,
   comme les flottants), au lieu d'un nombre à comparer.
 
+## 0.835 (25 novembre, en cours) : Ésus dans la forge
+- **Ésus** (le bûcheron qui taille l'arbre) : l'optimisation du cœur, dans la forge (le natif), pas dans les mots de
+  Lugus (sur l'émulateur, une division est une seule instruction : la changer l'allongerait ; les deux compilateurs ne
+  changent pas). `esus_diviser` : la division et le reste par une constante (puissance de deux : un décalage ; sinon
+  Granlund et Montgomery, fig. 4.1 : `divk128`, `modk128`, `mulhu128v` dans noyau_forge128.rs) ; `borne(e)` : la plus
+  grande valeur prouvée d'une expression ; quand les deux opérandes et le résultat tiennent en 64 bits, l'opération de
+  64 bits (+, *, / et % par une constante). `VTX_ESUS=0` l'éteint. Test : `tests/test_esus.py` (avec et sans, contre
+  Lugus) ; la forge : 98 programmes conformes.
+- **Mesuré** (une boucle de hachage de 30 millions de tours) : le reste d'une valeur de 121 bits par 1000003 : −25 à
+  −30 % ; `/ 7` d'une valeur de 16 bits : rien (LLVM le faisait déjà) ; la boucle entière : à égalité, parce que ses
+  valeurs sont vraiment grandes (le coût du 128 y est réel et ne se réduit pas sans changer le résultat).
+- **Prochain pour Ésus** : les bornes des variables (le compteur d'une boucle `pour i dans 0..N`, un indice), là où les
+  vrais programmes ont leurs petites valeurs ; puis Gobannos (le même travail sur les mots). Le Druide le guidera par
+  le poids des molécules.
+- **Le Druide** (décidé avec le créateur) : il conseille, modèle, propose, organise, connecte et déconnecte, apprend ;
+  il touche l'ARN et le cube chromatique, jamais l'ADN ; la garde le tient (rien ne passe sans le même résultat).
+

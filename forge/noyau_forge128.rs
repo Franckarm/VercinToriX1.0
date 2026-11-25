@@ -1405,6 +1405,28 @@ fn quits_128(a: u128, b: u128, op: u32) -> u128 {
     }
     r
 }
+// --- 0.835 : Ésus, la division par une constante changée en multiplication (Granlund et Montgomery, 1994) : le
+// multiplicateur m et la longueur l sont calculés à la forge ; ici, le quotient exact pour tout n de 128 bits.
+#[allow(dead_code)]
+#[inline(always)]
+fn mulhu128v(a: u128, b: u128) -> u128 {
+    let (a0, a1) = (a & 0xFFFF_FFFF_FFFF_FFFF, a >> 64);
+    let (b0, b1) = (b & 0xFFFF_FFFF_FFFF_FFFF, b >> 64);
+    let (p00, p01, p10, p11) = (a0 * b0, a0 * b1, a1 * b0, a1 * b1);
+    let mid = (p00 >> 64) + (p01 & 0xFFFF_FFFF_FFFF_FFFF) + (p10 & 0xFFFF_FFFF_FFFF_FFFF);
+    p11 + (p01 >> 64) + (p10 >> 64) + (mid >> 64)
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn divk128(n: u128, m: u128, l: u32) -> u128 {
+    let t = mulhu128v(m, n);
+    (t + ((n - t) >> 1)) >> (l - 1)
+}
+#[allow(dead_code)]
+#[inline(always)]
+fn modk128(n: u128, m: u128, l: u32, c: u128) -> u128 {
+    n - divk128(n, m, l).wrapping_mul(c)
+}
 #[allow(dead_code)]
 fn mulhu128(a: u128, b: u128) -> u128 {
     qflot128::U256::mul(a, b).hi

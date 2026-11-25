@@ -4,6 +4,23 @@
 
 Tous droits réservés : voir `AUTEUR.md`.
 
+## Où en est vtx (25 novembre 2026, 0.835)
+
+- **Lugus compte en 128 bits** : l'entier par défaut a la largeur du mot (le hex, l'ADN, l'ARN, le cube chromatique),
+  dans les deux compilateurs (les mêmes mots), le prélude, la forge et Gobannos. `exemples128/entier128.vtx`.
+- **Dunon pour le graphique** : un programme qui commence par `dunon;` compte en 64 bits, comme la carte (Taranis) et
+  le C++ de référence ; Gergovie et Belenos y sont, avec les mêmes empreintes au processeur et sur la carte.
+- **-1 vaut -1** : les services de Lugus répondent sur tout le mot (-1 inconnu, -2 faux) ; le prélude dit « absent »
+  par `0 - 1`. `exemples128/sentinelles.vtx`.
+- **Gobannos divise en 128 bits** : les programmes de 128 bits deviennent des exécutables (Linux, Windows).
+  `exemples128/division128.vtx`.
+- **Ésus, dans la forge** : la division par une constante changée en multiplication (Granlund et Montgomery), et
+  l'opération de 64 bits quand les bornes prouvent que tout y tient (les codons synonymes). Le même résultat ;
+  `VTX_ESUS=0` l'éteint.
+- **Les agents** : le Vergobret (l'exécution : carte ou processeur, les fils), Gutuater (la forge et la garde, écrit
+  en vtx), le Druide (les conseils, à concevoir : il travaillera l'ARN et le cube, jamais l'ADN).
+- Le journal de passation : `docs/vtx-passation.md` ; les décisions et leurs raisons : `docs/vtx-reactions.md`.
+
 Langage, compilateurs, machines et atelier du SPU à cube chromatique.
 
 ## Les machines : Lugus est la machine de vtx

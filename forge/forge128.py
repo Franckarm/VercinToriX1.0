@@ -48,6 +48,55 @@ def L():
     return V.ENTIER_LARGE
 
 
+def esus_diviser(op, c):
+    """0.835 : Ésus (le bûcheron, qui taille l'arbre) : la division ou le reste d'un entier de 128 bits par une
+    constante c, sans division : un décalage pour une puissance de deux, sinon la multiplication de Granlund et
+    Montgomery (1994, figure 4.1) : l = le nombre de bits de c, m = floor(2^128 (2^l - c) / c) + 1 ; q = (t + (n - t) / 2)
+    >> (l - 1), t = les 128 bits hauts de m n. Exact pour tout n (vérifié par tests/test_esus.py)."""
+    if c == 1:
+        return "{0}" if op == "/" else "(({0}) & 0)"
+    if c & (c - 1) == 0:
+        k = c.bit_length() - 1
+        return f"({{0}} >> {k})" if op == "/" else f"({{0}} & {c - 1}u128)"
+    l = c.bit_length()
+    m = ((1 << 128) * ((1 << l) - c)) // c + 1
+    if op == "/":
+        return f"divk128({{0}}, {m}u128, {l})"
+    return f"modk128({{0}}, {m}u128, {l}, {c}u128)"
+
+
+def borne(e):
+    """0.835 : Ésus : la plus grande valeur que peut prendre l'entier e (sur 128 bits), quand l'arbre le prouve ; sinon
+    2^128 - 1. Sert à prendre l'opération de 64 bits (le codon synonyme, plus rapide) quand tout y tient."""
+    G = (1 << 128) - 1
+    if not isinstance(e, tuple) or not e:
+        return G
+    if e[0] == "nombre" and isinstance(e[1], int):
+        return e[1] & G
+    if e[0] == "bin" and len(e) >= 4:
+        op = e[1]
+        if op in V.COMPARAISONS or op in V.SIGNEES_COMP or op in ("&&", "||"):
+            return 1
+        ba, bb = borne(e[2]), borne(e[3])
+        if op == "&":
+            return min(ba, bb)
+        if op in ("|", "^"):
+            return (1 << max(ba.bit_length(), bb.bit_length())) - 1
+        if op == ">>" and e[3][0] == "nombre":
+            return ba >> min(e[3][1], 127)
+        if op == "<<" and e[3][0] == "nombre" and e[3][1] < 128:
+            return min(G, ba << e[3][1]) if (ba << e[3][1]) <= G else G
+        if op == "%" and e[3][0] == "nombre" and e[3][1] > 0:
+            return min(ba, e[3][1] - 1)
+        if op == "/" and e[3][0] == "nombre" and e[3][1] > 0:
+            return ba // e[3][1]
+        if op == "+" and ba + bb <= G:
+            return ba + bb
+        if op == "*" and ba * bb <= G:
+            return ba * bb
+    return G
+
+
 def lit(v):
     return f"{v & ((1 << 128) - 1)}u128"
 
@@ -1230,6 +1279,17 @@ class Forge(V.Generateur):
                          "&": "({0} & {1})", "|": "({0} | {1})", "^": "({0} ^ {1})",
                          "<<": "({0} << ({1} & 127))", ">>": "({0} >> ({1} & 127))",
                          "./": "divs128l({0}, {1})", ".%": "mods128l({0}, {1})", ".>>": "sar128({0}, {1})"}[op]
+                if os.environ.get("VTX_ESUS") != "0" and op in ("+", "*", "/", "%"):
+                    # 0.835 : Ésus : le codon synonyme : tout tient en 64 bits (prouvé par les bornes) : l'opération de 64
+                    # bits, le même résultat (la division et le reste : par une constante non nulle seulement)
+                    M64_ = (1 << 64) - 1
+                    if borne(e[2]) <= M64_ and borne(e[3]) <= M64_ and borne(e) <= M64_ and (
+                            op in ("+", "*") or (e[3][0] == "nombre" and e[3][1] > 0)):
+                        f64 = {"+": "(({0} as u64) + ({1} as u64)) as u128", "*": "(({0} as u64) * ({1} as u64)) as u128",
+                               "/": "(({0} as u64) / ({1} as u64)) as u128", "%": "(({0} as u64) % ({1} as u64)) as u128"}[op]
+                        return self.b([a, b], "(" + f64 + ")")
+                if op in ("/", "%") and e[3][0] == "nombre" and 0 < e[3][1] < 1 << 128 and os.environ.get("VTX_ESUS") != "0":
+                    return self.b([a], esus_diviser(op, e[3][1]))   # 0.835 : Ésus
             if t == "i" and op in ("+", "-", "*", "<<", "/"):
                 forme = "(" + forme + " & M32)"
             return self.b([a, b], forme)
