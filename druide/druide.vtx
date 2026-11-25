@@ -1,0 +1,186 @@
+// machine : lugus
+// Le Druide (0.835), premier geste : la mémoire de ce qu'Ésus a prouvé. Le Druide conseille, modèle, propose,
+// organise, connecte et déconnecte, apprend (le créateur) ; il touche l'ARN et le cube, jamais l'ADN.
+//
+//     lugus druide/druide.vtx      (il lit une ligne : le chemin du relevé d'Ésus, PROG.esus, écrit par la forge)
+//
+// Le relevé dit, pour chaque variable entière de chaque molécule, ses quatre points : le plus bas, le plus haut, les
+// bits sûrement à 0, les bits sûrement à 1. Le Druide les range dans son cube, sous le cube mère du programme
+// (cube128-PROG-e-4040.cub, dans son dossier à lui) : les quatre points d'une variable à la même place, sur les quatre
+// étages de la fréquence 4040 ; à la fréquence 4041, étage 0, l'empreinte de son nom (molécule et variable). La
+// machine range chaque cube avec son anti-cube et son ombre : les sommets de secours, qui le réparent s'il s'abîme.
+//
+// Avant de ranger, il compare avec ce qu'il savait (en quatre valeurs) :
+//   vrai      la même chose, ou plus serré (la preuve s'est resserrée) ;
+//   faux      plus large (la preuve s'est relâchée : une retouche du programme a élargi la variable) ;
+//   inconnu   une variable qu'il ne connaissait pas ;
+//   variable  ni l'un ni l'autre (la preuve s'est déplacée : à regarder).
+// Il écrit son carnet à côté du relevé : PROG.druide.
+
+constante F_POINTS = 4040;
+constante F_NOMS = 4041;
+constante PLACES = 65536;
+
+fonction lire_fichier(nom: texte): texte {
+    soit canal = ouvrir_lecture(nom);
+    si canal == (0 - 1) {
+        retour "";
+    }
+    soit cs = tableau(0);
+    soit ch = lire_car(canal);
+    tantque ch != (0 - 1) {
+        si ch != 13 {
+            ajouter(cs, ch);
+        }
+        ch = lire_car(canal);
+    }
+    fermer(canal);
+    soit r = texte_neuf(longueur(cs));
+    pour i dans 0..longueur(cs) {
+        changer_car(r, i, cs[i]);
+    }
+    retour r;
+}
+
+// un nombre écrit en hex (sans #), sur 128 bits
+fonction de_hexa(t: texte) {
+    soit v = 0;
+    pour i dans 0..longueur(t) {
+        soit c = car(t, i);
+        soit d = 0;
+        si c >= 48 && c <= 57 {
+            d = c - 48;
+        } sinon si c >= 97 && c <= 102 {
+            d = c - 87;
+        } sinon si c >= 65 && c <= 70 {
+            d = c - 55;
+        }
+        v = (v << 4) | d;
+    }
+    retour v;
+}
+
+// l'empreinte d'un nom (FNV-1a de 64 bits), jamais nulle : 0 marque une place libre
+fonction empreinte_nom(t: texte) {
+    soit h = 14695981039346656037;
+    pour i dans 0..longueur(t) {
+        h = ((h ^ car(t, i)) * 1099511628211) & 18446744073709551615;
+    }
+    retour h | 1;
+}
+
+// la place d'un nom dans le cube : la sienne si elle y est, sinon la première libre après son empreinte
+fonction place_de(h) {
+    soit p = h % PLACES;
+    soit n = 0;
+    tantque n < PLACES {
+        soit x = @[cube_adresse(0, F_NOMS, p)];
+        si x == 0 || x == h {
+            retour p;
+        }
+        p = (p + 1) % PLACES;
+        n = n + 1;
+    }
+    retour 0 - 1;
+}
+
+// ce qu'il savait (a…) contre ce qu'Ésus prouve maintenant (n…)
+fonction comparer(connu, ab, ah, az, ao, nb, nh, nz, no): logique {
+    si connu == 0 {
+        retour inconnu;
+    }
+    // plus serré ou pareil : l'intervalle neuf est dans l'ancien, et il sait au moins les mêmes bits
+    soit dedans = nb >= ab && nh <= ah && (nz & az) == az && (no & ao) == ao;
+    si dedans {
+        retour vrai;
+    }
+    soit autour = nb <= ab && nh >= ah && (az & nz) == nz && (ao & no) == no;
+    si autour {
+        retour faux;
+    }
+    retour variable;
+}
+
+fonction nom_logique(l: logique): texte {
+    soit r = "inconnu";
+    selon l {
+        vrai { r = "vrai"; }
+        faux { r = "faux"; }
+        inconnu { r = "inconnu"; }
+        variable { r = "variable"; }
+    }
+    retour r;
+}
+
+fonction principal() {
+    soit chemin = lire_ligne();
+    tantque longueur(chemin) > 0 && (car(chemin, longueur(chemin) - 1) == 13 || car(chemin, longueur(chemin) - 1) == 32) {
+        chemin = sous_texte(chemin, 0, longueur(chemin) - 1);
+    }
+    // le nom du programme : le relevé PROG.esus, sans son dossier
+    soit debut = 0;
+    pour k dans 0..longueur(chemin) {
+        si car(chemin, k) == 47 || car(chemin, k) == 92 {
+            debut = k + 1;
+        }
+    }
+    soit fin = longueur(chemin);
+    si finit_par(chemin, ".esus") == 1 {
+        fin = fin - 5;
+    }
+    soit prog = sous_texte(chemin, debut, fin);
+    soit releve = lire_fichier(chemin);
+    si longueur(releve) == 0 {
+        afficher("le Druide : pas de relevé d'Ésus à", chemin);
+        retour;
+    }
+    cube_mere(prog);
+    soit carnet = ouvrir_ecriture(sous_texte(chemin, 0, fin) + ".druide");
+    ecrire_texte(carnet, "# carnet du Druide pour " + prog + " : molécule variable état (ce qu'Ésus prouve, contre ce qu'il savait) bas haut\n");
+    soit compte = [0, 0, 0, 0];
+    soit nlu = 0;
+    pour l dans decouper(releve, "\n") {
+        soit m = mots(l);
+        si longueur(m) == 6 && commence_par(l, "#") == 0 {
+            soit h = empreinte_nom(m[0] + " " + m[1]);
+            soit p = place_de(h);
+            si p != (0 - 1) {
+                soit nb = de_hexa(m[2]);
+                soit nh = de_hexa(m[3]);
+                soit nz = de_hexa(m[4]);
+                soit no = de_hexa(m[5]);
+                soit connu = 0;
+                si @[cube_adresse(0, F_NOMS, p)] == h {
+                    connu = 1;
+                }
+                soit ab = @[cube_adresse(0, F_POINTS, p)];
+                soit ah = @[cube_adresse(1, F_POINTS, p)];
+                soit az = @[cube_adresse(2, F_POINTS, p)];
+                soit ao = @[cube_adresse(3, F_POINTS, p)];
+                soit etat = comparer(connu, ab, ah, az, ao, nb, nh, nz, no);
+                soit q = 0;
+                selon etat {
+                    vrai { q = 2; }
+                    faux { q = 1; }
+                    inconnu { q = 0; }
+                    variable { q = 3; }
+                }
+                compte[q] = compte[q] + 1;
+                ecrire_texte(carnet, m[0] + " " + m[1] + " " + nom_logique(etat) + " " + texte(nb) + " " + texte(nh) + "\n");
+                @[cube_adresse(0, F_NOMS, p)] = h;
+                @[cube_adresse(0, F_POINTS, p)] = nb;
+                @[cube_adresse(1, F_POINTS, p)] = nh;
+                @[cube_adresse(2, F_POINTS, p)] = nz;
+                @[cube_adresse(3, F_POINTS, p)] = no;
+                nlu = nlu + 1;
+            }
+        }
+    }
+    fermer(carnet);
+    soit pages = ranger_cube(0, F_NOMS);
+    pour e dans 0..4 {
+        pages = pages + ranger_cube(e, F_POINTS);
+    }
+    afficher("le Druide :", prog, ":", nlu, "variables ; vrai (pareil ou plus serré)", compte[2], ", faux (plus large)",
+             compte[1], ", inconnu (nouvelles)", compte[0], ", variable (déplacées)", compte[3], ";", pages, "pages rangées");
+}

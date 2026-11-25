@@ -2015,7 +2015,10 @@ def ecrire_releve_esus(chemin, programme):
     if not ESUS_RELEVE[0]:
         return
     lignes = [f"# Ésus : les quatre points des variables de {programme} (molécule variable bas haut zéros uns)"]
-    for mol, var, bas, haut, z, o in ESUS_RELEVE[0]:
+    vus = {}
+    for r in ESUS_RELEVE[0]:
+        vus[(r[0], r[1])] = r          # une molécule forgée deux fois : son dernier relevé
+    for mol, var, bas, haut, z, o in vus.values():
         lignes.append(f"{mol} {var} {bas:x} {haut:x} {z:x} {o:x}")
     with open(chemin, "w", encoding="utf-8") as f:
         f.write("\n".join(lignes) + "\n")

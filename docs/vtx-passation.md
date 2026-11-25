@@ -516,6 +516,18 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Les faces ne suffisent pas** (six faces de 64 bits par molécule, déjà prises) ; le rangement proposé : les quatre
   points d'une variable à la même adresse sur les quatre étages d'une fréquence réservée (étage 0 le plus bas, 1 le
   plus haut, 2 les zéros sûrs, 3 les uns sûrs). Ce sera le premier geste du Druide (en vtx).
+- **Le Druide, premier geste** (fait, `druide/druide.vtx`, en vtx) : `lugus druide/druide.vtx` lit une ligne (le chemin de
+  PROG.esus) ; sous le cube mère du programme, dans son dossier à lui (`druide/cube128-PROG-e-4040.cub` : sa mémoire,
+  pas l'ADN, ignorée par git), les quatre points d'une variable sur les quatre étages de la fréquence 4040, l'empreinte
+  de son nom (FNV-1a de « molécule variable ») à 4041 ; il compare avant de ranger : inconnu (nouvelle), vrai (pareil
+  ou plus serré), faux (plus large), variable (déplacée) ; son carnet : PROG.druide. **Les sommets de secours** (l'idée
+  du créateur : 4 sûrs, 4 en secours) : la machine range chaque cube avec son anti-cube et son ombre, qui le
+  réparent ; ils jouent ce rôle (le Druide pourra dire, à la lecture, si son cube a dû être réparé : à faire, par
+  `centre`). Test : `tests/test_druide.py` (dans verifier.py).
+- **Prochain pour le Druide** : apprendre (une variable qui reste vraie d'une forge à l'autre devient une règle que le
+  Druide propose à Ésus ; une fausse ou variable, un signal de retouche) ; relier son carnet aux mesures de Gutuater
+  et au poids des molécules (l'étape limitante) ; proposer (des conseils écrits, puis des variantes de l'ARN que la
+  garde essaie).
 - **Retirer `__borne`** quand l'indice est prouvé : laissé ; il faut prouver i < longueur(t) (une relation entre deux
   valeurs, que des bornes ne donnent pas) ; le cas courant (`0..longueur(t)`) est déjà fait par l'épissage sûr.
 - **Le Druide** (décidé avec le créateur) : il conseille, modèle, propose, organise, connecte et déconnecte, apprend ;

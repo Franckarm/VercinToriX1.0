@@ -169,6 +169,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("forge", "test_forge128.py"), "40" if COMPLET else "12"]))
     etapes.append(("Ésus : la division par une constante et les codons de 64 bits dans la forge, comme Lugus",
                    [sys.executable, os.path.join("tests", "test_esus.py")]))
+    etapes.append(("le Druide : le relevé d'Ésus rangé dans son cube, comparé en quatre valeurs",
+                   [sys.executable, os.path.join("tests", "test_druide.py")]))
     etapes.append(("forge du SPU-32 : vtx -> Rust -> natif, mêmes sorties et même mémoire que le SPU émulé",
                    [sys.executable, os.path.join("forge", "test_forge.py"), "300" if COMPLET else "60"]))
     etapes.append(("flottant_petuar : le flottant quaternaire de 128 bits (référence exacte, quatre machines, vtxc, ADN et cube)",
