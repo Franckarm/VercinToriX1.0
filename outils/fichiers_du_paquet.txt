@@ -272,3 +272,5 @@ belenos/gergovie_druide.vtx
 belenos/gergovie128.vtx
 exemples128/table_cube.vtx
 docs/vtx-liste-128.md
+belenos/gergovie_eventail.vtx
+belenos/gergovie_carte_eventail.vtx

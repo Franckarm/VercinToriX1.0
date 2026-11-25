@@ -1,0 +1,15 @@
+// machine : lugus
+// Belenos : l'épreuve de Gergovie, l'éventail (0.843, PROGRESSIF = 2 ; l'idée du créateur) : quand le soleil bouge,
+// un mot du calque sur deux par image (le glissement) ; sur chaque ligne de huit points, les bouts et le centre se
+// calculent, les autres reçoivent le dégradé du noir vers le gris (l'irradiation) ; le vol est le même. Sur la carte.
+// La référence : gergovie_ref.cpp avec -DPROGRESSIF=2 (à armes égales ; les mêmes empreintes).
+dunon;
+constante RN = 1;
+constante RD = 1;
+constante BLOCS = 0;
+constante PROGRESSIF = 2;
+importer "gergovie_scene.vtx";
+
+fonction principal() {
+    epreuve(240, 120, 1);
+}

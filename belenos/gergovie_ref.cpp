@@ -798,6 +798,66 @@ static void ranger_lumiere_p(u image) {
 }
 #endif
 
+#if defined(PROGRESSIF) && PROGRESSIF == 2
+/* 0.843 : l'éventail (comme ranger_lumiere_eventail de gergovie_scene.vtx) : un mot sur deux par image (dans chaque
+   paire, celui que tire le hachage, décalé de l'image) ; les références j = 0, 4, 7 ; si elles diffèrent, entre deux
+   références qui sont des surfaces, le dégradé de l'une à l'autre ; sinon le point se calcule */
+static void ranger_lumiere_e(u image) {
+    long q;
+#pragma omp parallel for schedule(dynamic, 8)
+    for (q = 0; q < (long)(TUILES * TUILES * 1024); q++) {
+        u t = (u)q >> 10, bx = (u)q & 31, bz = ((u)q >> 5) & 31;
+        u x0 = (t % TUILES) * 256 + bx * 8, z0 = (t / TUILES) * 256 + bz * 8;
+        for (u by = 0; by < 32; by++) {
+            u e = DIRE[t][IX((bx << 10) | (by << 5) | bz)];
+            if (e >= 16 && e < ((u)1 << 62)) {
+                u n = e - 16;
+                for (u g = 0; g < 32; g++) {
+                    u w = g * 2 + (tirage(t, n, g, image) & 1);
+                    u ms_ = 0, faits = 0, commun = 9, vref = 0;
+                    for (u jr = 0; jr < 3; jr++) {
+                        u j = jr * 4 - (jr >> 1);
+                        u v = w * 8 + j, x = x0 + (v >> 6), y = by * 8 + ((v >> 3) & 7), z = z0 + (v & 7);
+                        u el = POOLE[t][IX(n * 512 + v)];
+                        if (el != 0 && ((el >> 2) & 63) != EAU && expose(x, y, z)) {
+                            u nx = ((el >> 8) & 255) - 128, ny = ((el >> 16) & 255) - 128, nz = ((el >> 24) & 255) - 128;
+                            if (nx == 0 - (u)128) { nx = 0; ny = 127; nz = 0; }
+                            u sv = soleil_vu(x, y, z, nx, ny, nz);
+                            ms_ |= (128 | sv) << (j * 8);
+                            faits |= (u)1 << j;
+                            vref |= sv << (jr * 8);
+                            if (commun == 9) commun = sv; else if (commun != sv) commun = 10;
+                        }
+                    }
+                    if (commun == 9) commun = 10;
+                    for (u j = 0; j < 8; j++) {
+                        if ((faits >> j) & 1) continue;
+                        u v = w * 8 + j, x = x0 + (v >> 6), y = by * 8 + ((v >> 3) & 7), z = z0 + (v & 7);
+                        u el = POOLE[t][IX(n * 512 + v)];
+                        if (el != 0 && ((el >> 2) & 63) != EAU && expose(x, y, z)) {
+                            u nx = ((el >> 8) & 255) - 128, ny = ((el >> 16) & 255) - 128, nz = ((el >> 24) & 255) - 128;
+                            if (nx == 0 - (u)128) { nx = 0; ny = 127; nz = 0; }
+                            u sj = commun;
+                            if (commun >= 9) {
+                                u ja = j > 4 ? 4 : 0, jb = j > 4 ? 7 : 4, ka = j > 4 ? 1 : 0, kb = j > 4 ? 2 : 1;
+                                if (((faits >> ja) & 1) && ((faits >> jb) & 1)) {
+                                    u sa = (vref >> (ka * 8)) & 255, sb = (vref >> (kb * 8)) & 255, l = jb - ja;
+                                    sj = (sa * (jb - j) + sb * (j - ja) + l / 2) / l;
+                                } else {
+                                    sj = soleil_vu(x, y, z, nx, ny, nz);
+                                }
+                            }
+                            ms_ |= (128 | sj) << (j * 8);
+                        }
+                    }
+                    SOLC[t][IX(n * 64 + w)] = ms_;
+                }
+            }
+        }
+    }
+}
+#endif
+
 static u brumer(u c, u t) {
     u r = c & 4095, g = (c >> 12) & 4095, b = (c >> 24) & 4095;
     u d = (t >> 16) * RD / RN;
@@ -955,7 +1015,9 @@ int main(void) {
     for (u i = 0; i < n2; i++) {
         clock_gettime(CLOCK_MONOTONIC, &ti);
         preparer_soleil(300 + i * 3, 50 + i);
-#ifdef PROGRESSIF
+#if defined(PROGRESSIF) && PROGRESSIF == 2
+        if (i > 0) ranger_lumiere_e(i); else ranger_lumiere(0);
+#elif defined(PROGRESSIF)
         if (i > 0) ranger_lumiere_p(i); else ranger_lumiere(0);
 #else
         ranger_lumiere(0);
@@ -965,7 +1027,10 @@ int main(void) {
         t[i] = ms(ti, tf);
         film = (film ^ empreinte()) * 1099511628211u;
     }
-    #ifdef PROGRESSIF
+#if defined(PROGRESSIF) && PROGRESSIF == 2
+    bilan("le jour (en C++, l'éventail)", t, n2);
+    printf("gergovie : le jour (en C++, l'éventail) : le film entier, empreinte %lld\n", (long long)film);
+#elif defined(PROGRESSIF)
     bilan("le jour (en C++, la clepsydre progressive)", t, n2);
     printf("gergovie : le jour (en C++, la clepsydre progressive) : le film entier, empreinte %lld\n", (long long)film);
 #else

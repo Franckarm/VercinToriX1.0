@@ -1944,6 +1944,55 @@ fonction ranger_lumiere_progressive_processeur(jeu, image) {
     }
 }
 
+// 0.843 : l'éventail (PROGRESSIF = 2, l'idée du créateur) : l'ombre n'est qu'un dépôt ; elle ne doit pas coûter. Deux
+// gestes : (1) le glissement : quand le soleil bouge, chaque image ne refait qu'un mot du calque sur deux (dans chaque
+// paire de mots voisins, celui que tire le hachage de son lieu, décalé de l'image : l'autre garde son dépôt d'avant,
+// refait à l'image suivante, comme les couleurs qui coulaient) ; (2) l'irradiation : sur une ligne de huit points, la
+// lumière se calcule aux deux bouts et au centre (les références) ; entre deux références qui diffèrent, les points ne
+// lancent plus de rayon : ils reçoivent l'éventail du noir vers le gris (le nombre de points du soleil vus, de l'une à
+// l'autre, en dégradé) ; une référence qui manque (pas une surface) : le point se calcule.
+fonction ranger_lumiere_eventail(jeu, image) {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    soit moitie = total / 2;
+    pour m dans 0..moitie en segments {
+        ranger_mot_moitie(m, jeu, image);
+    }
+}
+
+fonction ranger_lumiere_eventail_processeur(jeu, image) {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    soit moitie = total / 2;
+    pour m dans 0..moitie en bandes {
+        ranger_mot_moitie(m, jeu, image);
+    }
+}
+
+fonction ranger_mot_moitie(m, jeu, image) {
+    soit t = 0;
+    soit r = m * 2;
+    soit cherche = 1;
+    pour k dans 0..(TUILES * TUILES) {
+        si cherche == 1 {
+            soit nk = @2[GLOB + 1 + k] * 64;
+            si r < nk {
+                t = k;
+                cherche = 0;
+            } sinon {
+                r = r - nk;
+            }
+        }
+    }
+    soit n = r >> 6;
+    soit g = (r & 63) >> 1;
+    ranger_mot_tnw(t, n, g * 2 + (tirage(t, n, g, image) & 1), 0, jeu, 2);
+}
+
 fonction tirage(t, n, g, image) {
     retour ((((((t * 1031 + n) * 16 + g) * 2654435761) & MOT64) >> 13) + image) & 3;
 }
@@ -2005,7 +2054,8 @@ fonction ranger_mot_tnw(t, n, w, avec_ciel, jeu, refs) {
     // les références : j = 0, 4, 7 (les bouts et le centre) ; leur valeur, ou 9 : pas une surface ; 10 : elles diffèrent
     soit commun = 9;
     soit faits = 0;
-    si refs == 1 {
+    soit vref = 0;   // 0.843 : la valeur de chaque référence (j = 0, 4, 7), un octet chacune
+    si refs >= 1 {
         pour jr dans 0..3 {
             soit j1 = (jr * 4) - (jr >> 1);
             soit v1 = w * 8 + j1;
@@ -2019,6 +2069,7 @@ fonction ranger_mot_tnw(t, n, w, avec_ciel, jeu, refs) {
                     soit sv = soleil_vu(x1, y1, z1, (n1 & 255) - 128, ((n1 >> 16) & 255) - 128, ((n1 >> 32) & 255) - 128, jeu);
                     ms = ms | ((128 | sv) << (j1 * 8));
                     faits = faits | (1 << j1);
+                    vref = vref | (sv << (jr * 8));
                     si commun == 9 {
                         commun = sv;
                     } sinon si commun != sv {
@@ -2046,7 +2097,25 @@ fonction ranger_mot_tnw(t, n, w, avec_ciel, jeu, refs) {
                     soit nz = ((nn >> 32) & 255) - 128;
                     soit sj = commun;
                     si commun >= 9 {
-                        sj = soleil_vu(x, y, z, nx, ny, nz, jeu);
+                        // 0.843 : l'éventail : entre deux références qui sont des surfaces, le dégradé de l'une à l'autre
+                        soit ja = 0;
+                        soit jb = 4;
+                        soit ka = 0;
+                        soit kb = 1;
+                        si j > 4 {
+                            ja = 4;
+                            jb = 7;
+                            ka = 1;
+                            kb = 2;
+                        }
+                        si refs == 2 && ((faits >> ja) & 1) == 1 && ((faits >> jb) & 1) == 1 {
+                            soit sa = (vref >> (ka * 8)) & 255;
+                            soit sb = (vref >> (kb * 8)) & 255;
+                            soit l = jb - ja;
+                            sj = (sa * (jb - j) + sb * (j - ja) + l / 2) / l;
+                        } sinon {
+                            sj = soleil_vu(x, y, z, nx, ny, nz, jeu);
+                        }
                     }
                     ms = ms | ((128 | sj) << (j * 8));
                     si avec_ciel == 1 {
@@ -2357,6 +2426,9 @@ fonction epreuve(vol, jour, sur_carte) {
             si PROGRESSIF == 1 {
                 ranger_lumiere_progressive(0, mise);
             }
+            si PROGRESSIF == 2 {
+                ranger_lumiere_eventail(0, mise);
+            }
             ranger_lumiere_carte(0, 0);
         }
     }
@@ -2386,10 +2458,14 @@ fonction epreuve(vol, jour, sur_carte) {
         preparer_soleil(300 + i * 3, 50 + i, 0);
         si sur_carte == 0 && PROGRESSIF == 1 && i > 0 {
             ranger_lumiere_progressive_processeur(0, i);
+        } sinon si sur_carte == 0 && PROGRESSIF == 2 && i > 0 {
+            ranger_lumiere_eventail_processeur(0, i);
         } sinon si sur_carte == 0 {
             ranger_lumiere(0, 0);
         } sinon si PROGRESSIF == 1 && i > 0 {
             ranger_lumiere_progressive(0, i);
+        } sinon si PROGRESSIF == 2 && i > 0 {
+            ranger_lumiere_eventail(0, i);
         } sinon {
             ranger_lumiere_carte(0, 0);
         }

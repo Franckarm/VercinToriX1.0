@@ -678,3 +678,19 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   d'échange de 64 bits) ; ce que l'automatique a le droit de faire (Ésus par preuve, Gutuater sans changer de valeur,
   le Druide sur l'ARN) ; le passage qui couperait une valeur reste un choix écrit, refusé sur la liste.
 - Livraison : vtx-0.842.zip, essai-0.842.bat.
+
+## 0.843 (25 novembre) : l'éventail
+- Chez le créateur, la 0.842 : Gutuater a appris la carte directe sur Gergovie (pour 3, contre 0 : 15 % de gagné) ;
+  vtx au processeur 17,8 → 21,1 au vol, 10,5 → 13,0 au jour (les mêmes empreintes) ; le C++ 33,1 / 19,3 ; Taranis
+  55,6 / 31,8.
+- **L'éventail** (PROGRESSIF = 2, l'idée du créateur : l'ombre n'est qu'un dépôt, elle ne doit pas coûter d'énergie) :
+  quand le soleil bouge, un mot du calque sur deux par image (dans chaque paire, celui que tire le hachage, décalé de
+  l'image : le glissement, l'autre garde son dépôt) ; sur chaque ligne de huit points, les bouts et le centre se
+  calculent ; s'ils diffèrent, les points entre deux références reçoivent le dégradé (le nombre de points du soleil vus,
+  de l'une à l'autre, arrondi) au lieu d'un rayon ; une référence qui n'est pas une surface : le point se calcule.
+  `belenos/gergovie_eventail.vtx`, `gergovie_carte_eventail.vtx` ; le C++ : `gergovie_ref.cpp -DPROGRESSIF=2`
+  (`ranger_lumiere_e`). Les mêmes empreintes pour les trois (demi-échelle : -7623786151919117638 au processeur et en
+  C++ ; la carte = le processeur). Mesuré à demi-échelle : le jour en C++ 17,3 → 32,5 ; vtx 14,2 → 20,3 ; la dernière
+  image diffère du témoin sur 0,45 % des pixels (les bords d'ombre). La clepsydre progressive (un mot sur quatre) reste
+  plus rapide (C++ 44,6, vtx 27,5) mais plus en retard sur le soleil.
+- Livraison : vtx-0.843.zip, essai-0.843.bat.
