@@ -695,6 +695,14 @@ fonction principal() {
             ajouter(lm, mq[0]);
         }
     }
+    // 0.839 : et les molécules des cellules (un programme sans relevé de variables ni passe de mesure : ses gènes, la
+    // bibliothèque, l'ARN les voient quand même)
+    pour lc0 dans decouper(lire_fichier(base + ".cellules"), "\n") {
+        soit m0 = mots(lc0);
+        si longueur(m0) >= 3 && commence_par(lc0, "#") == 0 && dans_liste(lm, m0[0]) == 0 {
+            ajouter(lm, m0[0]);
+        }
+    }
     soit total = 0;
     pour kt dans 0..longueur(lm) {
         total = total + poids_de(lm[kt]);
