@@ -19,6 +19,7 @@ appel qui peut ramasser (comme la forge du SPU-32).
 Utilisation : python3 forge/forge128.py PROG.vtx [-o EXE] [--rs FICHIER.rs] [--natif]
 L'exécutable prend les entrées du programme sur sa ligne de commande ; avec FORGE_LIGNE=1 dans l'environnement, il
 écrit la ligne du corpus de Lugus (sorties, mémoire, brin, texte) au lieu des sorties."""
+import hashlib
 import os
 import re
 import shutil
@@ -138,6 +139,19 @@ def elargir6(h, j):
     return (0 if j[0] < h[0] else j[0], hh) + esus_haut(hh, j[2], j[3]) + (sb, sh)
 
 
+def sans_lignes(x):
+    """0.838 : un arbre sans ses numéros de ligne (le dernier entier d'un nœud, sauf d'un nombre) : déplacer une molécule
+    dans son fichier ne change pas son empreinte (au pire, deux molécules presque pareilles se confondent : la cellule
+    n'apporte que des choix sans risque, Ésus exact et le dépliage, jamais un résultat)"""
+    if isinstance(x, list):
+        return [sans_lignes(y) for y in x]
+    if isinstance(x, tuple):
+        if x and x[0] != "nombre" and len(x) > 2 and isinstance(x[-1], int) and not isinstance(x[-1], bool):
+            x = x[:-1]
+        return tuple(sans_lignes(y) for y in x)
+    return x
+
+
 def membrane(fonctions):
     """0.837 : la membrane des cellules. Une molécule appelée seulement par des appels visibles (jamais passée en valeur,
     jamais du prélude, pas principal) reçoit sur ses paramètres entiers ce que ses appelants y mettent (les six points
@@ -145,8 +159,6 @@ def membrane(fonctions):
     si elle finit sans retour). Le tout tourne jusqu'à tenir (élargi après le premier tour) ; s'il ne tient pas, rien."""
     MEMBRANE[0] = {}
     CELLULES[0] = {}
-    if not L() or os.environ.get("VTX_MEMBRANE") == "0" or os.environ.get("VTX_ESUS") == "0":
-        return
     user = {f.nom: f for f in fonctions if getattr(f, "origine", "") != "prélude"}
     refs, nappels = set(), {n: 0 for n in user}
 
@@ -183,6 +195,25 @@ def membrane(fonctions):
                 appels_de(y, n)
     for n, f in user.items():
         appels_de(f.corps, n)
+    # 0.838 : l'empreinte de chaque molécule (son arbre, sans les numéros de ligne) et de chaque cellule (elle et
+    # celles qu'elle appelle, de proche en proche) : la même cellule se reconnaît d'un programme à l'autre
+    emp_m = {n: hashlib.sha256(repr(sans_lignes(f.corps)).encode("utf-8") + repr((f.params, f.ptypes, f.rtype)).encode("utf-8"))
+             .hexdigest()[:16] for n, f in user.items()}
+
+    def fermeture(n, vus):
+        if n in vus:
+            return
+        vus.add(n)
+        for a in graphe.get(n, ()):
+            fermeture(a, vus)
+    emp_c = {}
+    for n in user:
+        vus = set()
+        fermeture(n, vus)
+        emp_c[n] = hashlib.sha256(" ".join(sorted(m + ":" + emp_m[m] for m in vus)).encode("utf-8")).hexdigest()[:16]
+    CELLULES[0] = {n: (False, graphe[n], emp_c[n]) for n in user}
+    if not L() or os.environ.get("VTX_MEMBRANE") == "0" or os.environ.get("VTX_ESUS") == "0":
+        return
     hyp = {n: ({p: (BAS6 if n in ouverts and t == "e" else INCONNU4) for p, t in zip(f.params, f.ptypes)},
                BAS6 if f.rtype == "e" else INCONNU4) for n, f in user.items()}
     sauve = ESUS_VARIABLES[0]
@@ -250,7 +281,7 @@ def membrane(fonctions):
             pr, r = hyp[n]
             hyp[n] = ({p: (INCONNU4 if v[0] > v[1] else v) for p, v in pr.items()}, INCONNU4 if r[0] > r[1] else r)
     MEMBRANE[0] = hyp if tient else {}
-    CELLULES[0] = {n: (n in ouverts and tient, graphe[n]) for n in user}
+    CELLULES[0] = {n: (n in ouverts and tient, graphe[n], emp_c[n]) for n in user}
 
 
 CELLULE = [None]   # 0.837 : la molécule dont la membrane se calcule
@@ -2392,6 +2423,18 @@ def rustc_options(natif=False):
     return o
 
 
+VERSION_RUSTC = [None]
+
+
+def rustc_version():
+    if VERSION_RUSTC[0] is None:
+        try:
+            VERSION_RUSTC[0] = subprocess.run(["rustc", "--version"], capture_output=True, text=True).stdout.strip()
+        except OSError:
+            VERSION_RUSTC[0] = "?"
+    return VERSION_RUSTC[0]
+
+
 def forger_fichier(chemin, sortie=None, rs=None, natif=False):
     src = open(chemin, encoding="utf-8").read()
     ext = ".exe" if os.name == "nt" else ""
@@ -2405,9 +2448,28 @@ def forger_fichier(chemin, sortie=None, rs=None, natif=False):
     rustc = shutil.which("rustc")
     if not rustc:
         raise VtxError("rustc introuvable : la forge passe par le compilateur Rust (rustup.rs)")
-    r = subprocess.run([rustc] + rustc_options(natif) + ["-o", sortie, rs], capture_output=True, text=True)
-    if r.returncode:
-        raise VtxError("rustc a refusé le programme forgé :\n" + r.stderr[-3000:])
+    # 0.838 : le grenier : un exécutable déjà forgé depuis exactement le même texte Rust (et les mêmes options) est
+    # repris tel quel ; les générations du Druide (le parent et la variante, tour à tour) ne se recompilent plus
+    grenier = os.path.join(os.path.dirname(os.path.abspath(sortie)), ".grenier")
+    cle = hashlib.sha256((code + "\0" + " ".join(rustc_options(natif)) + "\0" + rustc_version()).encode("utf-8")).hexdigest()[:32]
+    garde = os.path.join(grenier, cle + ext)
+    if os.environ.get("VTX_GRENIER") != "0" and os.path.exists(garde):
+        shutil.copy2(garde, sortie)
+        os.utime(garde)
+        print("forge : repris du grenier (le même texte Rust)", file=sys.stderr)
+    else:
+        r = subprocess.run([rustc] + rustc_options(natif) + ["-o", sortie, rs], capture_output=True, text=True)
+        if r.returncode:
+            raise VtxError("rustc a refusé le programme forgé :\n" + r.stderr[-3000:])
+        if os.environ.get("VTX_GRENIER") != "0":
+            try:
+                os.makedirs(grenier, exist_ok=True)
+                shutil.copy2(sortie, garde)
+                gardes = sorted((os.path.join(grenier, x) for x in os.listdir(grenier)), key=os.path.getmtime)
+                for x in gardes[:-16]:
+                    os.remove(x)   # seize exécutables gardés au plus, les plus anciens partent
+            except OSError:
+                pass
     if not garder:
         shutil.rmtree(os.path.dirname(rs), ignore_errors=True)
     ecrire_releve_esus(os.path.splitext(sortie)[0] + ".esus", os.path.basename(chemin))
@@ -2421,11 +2483,11 @@ CELLULES = [{}]   # 0.837 : molécule du programme -> (membrane ouverte ?, les m
 def ecrire_cellules(chemin):
     """0.837 : les cellules du programme, pour le Druide : chaque molécule (hors prélude), sa membrane (ouverte : ses
     paramètres reçoivent ce que ses appelants y mettent ; fermée sinon), les molécules qu'elle appelle"""
-    if not CELLULES[0] or not L():
+    if not CELLULES[0]:
         return
-    lignes = ["# les cellules : molécule membrane (ouverte|fermee) appelle…"]
-    for n, (ouv, app) in CELLULES[0].items():
-        lignes.append(f"{n} {'ouverte' if ouv else 'fermee'} " + " ".join(sorted(app)))
+    lignes = [f"# les cellules ({128 if L() else 64} bits) : molécule membrane (ouverte|fermee) empreinte appelle…"]
+    for n, (ouv, app, emp) in CELLULES[0].items():
+        lignes.append(f"{n} {'ouverte' if ouv else 'fermee'} {emp} " + " ".join(sorted(app)))
     with open(chemin, "w", encoding="utf-8") as f:
         f.write("\n".join(l.rstrip() for l in lignes) + "\n")
 
@@ -2434,7 +2496,7 @@ def ecrire_releve_esus(chemin, programme):
     """0.835 : le relevé d'Ésus à côté de l'exécutable : pour chaque variable entière de chaque molécule, ses quatre
     points (le plus bas, le plus haut, les bits sûrement à 0, sûrement à 1, en hex) ; le Druide les rangera dans le
     cube (les quatre étages d'une fréquence) et les apprendra d'une forge à l'autre."""
-    if not ESUS_RELEVE[0]:
+    if not ESUS_RELEVE[0] and L():
         return
     lignes = [f"# Ésus : les quatre points des variables de {programme} (molécule variable bas haut zéros uns, puis le plus petit et le plus grand avec le signe)"]
     vus = {}

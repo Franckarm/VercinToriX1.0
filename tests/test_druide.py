@@ -144,7 +144,7 @@ subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), p,
 subprocess.run([exe], capture_output=True, env=env)
 cel = open(os.path.join(d, "cel_druide.cellules"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "cel_druide.cellules")) else ""
 verifier("les cellules : principal appelle brasser_mol et reduire_mol ; leurs membranes ouvertes",
-         "principal fermee brasser_mol reduire_mol" in cel and "brasser_mol ouverte" in cel, cel)
+         any(l.startswith("principal fermee ") and l.endswith(" brasser_mol reduire_mol") for l in cel.splitlines()) and "brasser_mol ouverte" in cel, cel)
 obs = open(os.path.join(d, "cel_druide.observe"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "cel_druide.observe")) else ""
 verifier("la membrane observée : ce que brasser_mol a reçu (a de 0 à 2999, 3000 fois)", "brasser_mol a 0 bb7 0 bb7 3000" in obs, obs)
 subprocess.run([LUGUS, os.path.join(dr, "druide.vtx")], input=releve + "\n", capture_output=True, text=True)
@@ -156,6 +156,28 @@ open(sortie + ".arn", "w", encoding="utf-8").write("deplier reduire_mol 1\ndepli
 code, _ = forge128.source_rust(src, d, "dpl_druide", sortie)
 verifier("l'arrangement : « deplier reduire_mol 1 » la fond dans ses appelants, « deplier brasser_mol 0 » la garde à part",
          "#[inline(always)]\nfn f_reduire_mol(" in code and "#[inline(never)]\nfn f_brasser_mol(" in code, "")
+
+# 0.838 : le grenier (le même texte Rust : l'exécutable repris) ; la bibliothèque des cellules (d'un programme à l'autre)
+p = os.path.join(d, "cel_druide.vtx")
+r = subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), p, "-o", exe], capture_output=True, text=True)
+r = subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), p, "-o", exe], capture_output=True, text=True)
+verifier("le grenier : la même forge deux fois : l'exécutable repris", "repris du grenier" in r.stderr, r.stderr[-300:])
+bib = os.path.join(d, "cellules.bibliotheque")
+open(bib, "w", encoding="utf-8").write("# essai\n")
+cel = open(os.path.join(d, "cel_druide.cellules"), encoding="utf-8").read()
+emp = [l.split()[2] for l in cel.splitlines() if l.startswith("brasser_mol ")][0]
+open(bib, "a", encoding="utf-8").write(f"{emp} 2 1 autre_programme brasser_mol\n")
+p2 = os.path.join(d, "cel2_druide.vtx")
+open(p2, "w", encoding="utf-8").write(CEL.replace("afficher(t);", "afficher(t + 1);"))
+exe2 = os.path.join(d, "cel2_druide" + (".exe" if WIN else ""))
+subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), p2, "-o", exe2], capture_output=True)
+subprocess.run([exe2], capture_output=True)
+subprocess.run([LUGUS, os.path.join(dr, "druide.vtx")], input=os.path.join(d, "cel2_druide.esus") + "\n", capture_output=True, text=True)
+carnet = open(os.path.join(d, "cel2_druide.druide"), encoding="utf-8").read()
+arn = open(os.path.join(d, "cel2_druide.arn"), encoding="utf-8").read()
+verifier("la bibliothèque : brasser_mol (la même empreinte) reprise d'un autre programme, ses gènes dans l'ARN",
+         "cellule brasser_mol : reprise de la bibliothèque (connue dans autre_programme" in carnet and "deplier brasser_mol 0" in arn,
+         carnet[-600:] + arn)
 shutil.rmtree(d, ignore_errors=True)
 print("le Druide : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))
 sys.exit(1 if echecs else 0)

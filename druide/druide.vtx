@@ -725,8 +725,8 @@ fonction principal() {
     retirer(appelees);
     pour lc dans decouper(cel_txt, "\n") {
         soit mc = mots(lc);
-        si longueur(mc) >= 2 && commence_par(lc, "#") == 0 {
-            pour kc2 dans 2..longueur(mc) {
+        si longueur(mc) >= 3 && commence_par(lc, "#") == 0 {
+            pour kc2 dans 3..longueur(mc) {
                 si dans_liste(appelees, mc[kc2]) == 0 {
                     ajouter(appelees, mc[kc2]);
                 }
@@ -735,8 +735,15 @@ fonction principal() {
     }
     soit genes = ["x"];
     retirer(genes);
+    // en 64 bits (un programme « dunon; »), Ésus ne travaille pas : seul l'arrangement est un gène
+    soit large = 1;
+    si position(cel_txt, "(64 bits)") < longueur(cel_txt) {
+        large = 0;
+    }
     pour kg0 dans 0..longueur(lm) {
-        ajouter(genes, "esus " + lm[kg0]);
+        si large == 1 {
+            ajouter(genes, "esus " + lm[kg0]);
+        }
         si dans_liste(appelees, lm[kg0]) == 1 {
             ajouter(genes, "deplier " + lm[kg0]);
         }
@@ -744,6 +751,57 @@ fonction principal() {
     pour ka dans 0..longueur(genes) {
         si attente != 0 && empreinte_nom(genes[ka]) == attente {
             mute = genes[ka];
+        }
+    }
+    // 0.838 : la bibliothèque des cellules du dossier (cellules.bibliotheque, à côté du relevé) : une cellule déjà connue
+    // (dans ce programme ou un autre : la même empreinte) apporte ses gènes, jugés ; l'évolution n'a plus à les chercher
+    soit dossier = "";
+    pour kd dans 0..longueur(base) {
+        si car(base, kd) == 47 || car(base, kd) == 92 {
+            dossier = sous_texte(base, 0, kd + 1);
+        }
+    }
+    soit chemin_bib = dossier + "cellules.bibliotheque";
+    soit bib_txt = lire_fichier(chemin_bib);
+    soit bemp = ["x"];
+    soit blig = ["x"];
+    retirer(bemp);
+    retirer(blig);
+    pour lb dans decouper(bib_txt, "\n") {
+        soit mb = mots(lb);
+        si longueur(mb) >= 5 && commence_par(lb, "#") == 0 {
+            ajouter(bemp, mb[0]);
+            ajouter(blig, lb);
+        }
+    }
+    pour lc4 dans decouper(cel_txt, "\n") {
+        soit m4 = mots(lc4);
+        si longueur(m4) >= 3 && commence_par(lc4, "#") == 0 {
+            soit h4 = empreinte_nom(m4[0]);
+            soit p4 = place_molecule(h4);
+            soit vu4 = 0;
+            si p4 != (0 - 1) && @[cube_adresse(0, F_MOLECULES, p4)] == h4 {
+                vu4 = @[cube_adresse(0, F_CELLULES, p4)];
+            }
+            pour kb dans 0..longueur(bemp) {
+                si bemp[kb] == m4[2] && vu4 == 0 && !(attente != 0 && (mute == "esus " + m4[0] || mute == "deplier " + m4[0])) {
+                    soit mb2 = mots(blig[kb]);
+                    soit e4 = nombre(mb2[1]);
+                    soit d4 = nombre(mb2[2]);
+                    si large == 1 && e4 != 0 {
+                        poser_esus(m4[0], e4);
+                        poser_rejet(m4[0], 3);
+                    }
+                    poser_deplier(m4[0], d4);
+                    poser_rejet_deplier(m4[0], 3);
+                    ecrire_texte(carnet, "cellule " + m4[0] + " : reprise de la bibliothèque (connue dans " + mb2[3]
+                                 + ", la même empreinte " + m4[2] + ") : ses gènes sont jugés\n");
+                }
+            }
+            si p4 != (0 - 1) {
+                @[cube_adresse(0, F_MOLECULES, p4)] = h4;
+                @[cube_adresse(0, F_CELLULES, p4)] = 1;
+            }
         }
     }
     ecrire_texte(carnet, "# la lignée : génération " + texte(gen) + ", ce passage " + texte(t) + " µs\n");
@@ -771,6 +829,7 @@ fonction principal() {
         selon decide {
             vrai {
                 ecrire_texte(carnet, "évolution : la mutation « " + mute + " » est gardée (plus rapide)\n");
+                gene_rejeter(mute, 3);   // 0.838 : jugée (gardée) : elle ne se retente pas
                 fini = 1;
             }
             faux {
@@ -845,9 +904,9 @@ fonction principal() {
     soit nconnues = 0;
     pour lc2 dans decouper(cel_txt, "\n") {
         soit mc2 = mots(lc2);
-        si longueur(mc2) >= 2 && commence_par(lc2, "#") == 0 && commence_par(mc2[0], "__") == 0 {
+        si longueur(mc2) >= 3 && commence_par(lc2, "#") == 0 && commence_par(mc2[0], "__") == 0 {
             soit membres = [mc2[0]];
-            pour kc3 dans 2..longueur(mc2) {
+            pour kc3 dans 3..longueur(mc2) {
                 ajouter(membres, mc2[kc3]);
             }
             soit sures = 0;
@@ -871,9 +930,37 @@ fonction principal() {
                     dem2 = 1;
                 }
             }
+            // ses gènes (ceux de ses membres) : tous jugés ?
+            soit ngenes = 0;
+            soit njuges = 0;
+            pour kg5 dans 0..longueur(genes) {
+                si dans_liste(membres, gene_mol(genes[kg5])) == 1 {
+                    ngenes = ngenes + 1;
+                    // une molécule légère (moins de 2 % du travail) n'est pas mise à l'épreuve : le compilateur décide
+                    si gene_rejete(genes[kg5]) != 0 || poids_de(gene_mol(genes[kg5])) * 50 < total {
+                        njuges = njuges + 1;
+                    }
+                }
+            }
             soit connue = 0;
-            si sures > 0 && suspens == 0 && echues == 0 && dem2 == 0 {
+            si suspens == 0 && echues == 0 && dem2 == 0 && (sures > 0 || (ngenes > 0 && njuges == ngenes)) {
                 connue = 1;
+            }
+            // connue : rangée dans la bibliothèque du dossier (son empreinte, Ésus, son dépliage, le programme)
+            si connue == 1 && njuges == ngenes && !(attente != 0 && dans_liste(membres, gene_mol(mute)) == 1) {
+                soit neuve = mc2[2] + " " + texte(etat_esus(mc2[0])) + " " + texte(etat_deplier(mc2[0])) + " " + prog + " "
+                             + mc2[0];
+                soit trouve = 0;
+                pour kb2 dans 0..longueur(bemp) {
+                    si bemp[kb2] == mc2[2] {
+                        blig[kb2] = neuve;
+                        trouve = 1;
+                    }
+                }
+                si trouve == 0 {
+                    ajouter(bemp, mc2[2]);
+                    ajouter(blig, neuve);
+                }
             }
             soit hc = empreinte_nom(mc2[0]);
             soit pc = place_molecule(hc);
@@ -882,7 +969,9 @@ fonction principal() {
                 avant_c = @[cube_adresse(3, F_CELLULES, pc)];
             }
             soit dit2 = "à connaître";
-            si connue == 1 && avant_c == 1 {
+            si connue == 1 && njuges == ngenes {
+                dit2 = "faite (connue, ses gènes jugés : gardée dans la bibliothèque)";
+            } sinon si connue == 1 && avant_c == 1 {
                 dit2 = "connue";
             } sinon si connue == 1 {
                 dit2 = "devient connue";
@@ -894,7 +983,8 @@ fonction principal() {
                 app = " ; elle appelle " + assembler(tranche(membres, 1, longueur(membres)), ", ");
             }
             ecrire_texte(carnet, "cellule " + mc2[0] + " (membrane " + mc2[1] + app + ") : " + dit2 + " ; " + texte(sures)
-                         + " dossiers tranchés vrai, " + texte(suspens) + " en suspens, " + texte(echues) + " échus"
+                         + " dossiers tranchés vrai, " + texte(suspens) + " en suspens, " + texte(echues) + " échus ; gènes jugés "
+                         + texte(njuges) + " sur " + texte(ngenes)
                          + nom_si(dem2, ", une preuve démentie") + nom_si(etat_deplier(mc2[0]) == 2, " ; dépliée")
                          + nom_si(etat_deplier(mc2[0]) == 1, " ; gardée à part") + "\n");
             si pc != (0 - 1) {
@@ -905,6 +995,12 @@ fonction principal() {
             nconnues = nconnues + connue;
         }
     }
+    soit bib = ouvrir_ecriture(chemin_bib);
+    ecrire_texte(bib, "# la bibliothèque des cellules du dossier (le Druide) : empreinte esus (1 déconnecté, 2 connecté) deplier (0, 1 à part, 2 dépliée) programme molécule\n");
+    pour kb3 dans 0..longueur(blig) {
+        ecrire_texte(bib, blig[kb3] + "\n");
+    }
+    fermer(bib);
     @[cube_adresse(0, F_LIGNEE, 0)] = gen;
     @[cube_adresse(1, F_LIGNEE, 0)] = tp;
     @[cube_adresse(2, F_LIGNEE, 0)] = attente;
@@ -967,7 +1063,17 @@ fonction principal() {
             si etat_esus(nomm) == 1 {
                 etat_e = "déconnecté";
             }
-            ecrire_texte(cons, nomm + " : " + texte(part / 10) + "," + texte(part % 10) + " % du travail ; Ésus " + etat_e + "\n");
+            si large == 0 {
+                etat_e = "sans travail (64 bits)";
+            }
+            soit dp_e = "";
+            si etat_deplier(nomm) == 2 {
+                dp_e = " ; dépliée dans ses appelants";
+            }
+            si etat_deplier(nomm) == 1 {
+                dp_e = " ; gardée à part";
+            }
+            ecrire_texte(cons, nomm + " : " + texte(part / 10) + "," + texte(part % 10) + " % du travail ; Ésus " + etat_e + dp_e + "\n");
             pour kv dans 0..longueur(lmol) {
                 si lmol[kv] == nomm {
                     si lhaut[kv] == TOUT && lsb[kv] >= MOITIE && lsh[kv] < MOITIE && lsh[kv] - lsb[kv] < 18446744073709551615 {
@@ -1003,7 +1109,7 @@ fonction principal() {
     pour em dans 0..4 {
         pages = pages + ranger_cube(em, F_MOLECULES);
     }
-    pages = pages + ranger_cube(1, F_CELLULES) + ranger_cube(2, F_CELLULES) + ranger_cube(3, F_CELLULES);
+    pages = pages + ranger_cube(0, F_CELLULES) + ranger_cube(1, F_CELLULES) + ranger_cube(2, F_CELLULES) + ranger_cube(3, F_CELLULES);
     afficher("le Druide :", prog, ":", nlu, "variables ; pareilles ou plus serrées", compte[2], ", plus larges", compte[1],
              ", nouvelles", compte[0], ", déplacées", compte[3], "; cellules connues", nconnues, "sur", ncel, "; génération", gen, "; temps", t, "µs ;", pages, "pages rangées");
 }

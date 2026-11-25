@@ -589,3 +589,24 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Prochain** : les mutations plus riches (lot, fondre, carte directe de Gutuater) ; une cellule connue pourrait être
   forgée seule et gardée (son ADN rangé, rien à refaire tant qu'elle ne change pas) ; la traduction en vtx (le
   compilateur des noyaux de Taranis, le vergobret, la forge).
+
+## 0.838 (25 novembre) : la cellule
+- **Le grenier de la forge** (`.grenier/` à côté de l'exécutable) : un exécutable déjà forgé depuis exactement le même
+  texte Rust (les mêmes options, le même rustc) est repris tel quel ; seize gardés au plus. Les générations du Druide
+  (le parent et la variante, tour à tour) ne se recompilent plus : Gergovie 20 s de rustc → 0. `VTX_GRENIER=0`
+  l'éteint. Essayé et écarté : une cellule par module Rust avec la compilation incrémentale (120 s au lieu de 20, et
+  rien de repris) ; une cellule compilée seule demanderait des crates séparées (le noyau en bibliothèque, les adresses
+  des textes dans le code) : à faire plus tard, si le grenier ne suffit pas.
+- **L'empreinte d'une cellule** (`sans_lignes`, `membrane()`) : l'arbre de chaque molécule sans ses numéros de ligne,
+  puis la cellule (elle et ce qu'elle appelle, de proche en proche). PROG.cellules : molécule, membrane, empreinte,
+  appelle… ; aussi pour un programme en `dunon;` (sans membrane : « fermee » ; l'en-tête dit 64 ou 128 bits). Un relevé
+  d'Ésus vide est écrit en Dunon, pour que le Druide y travaille.
+- **La cellule faite** : connue (ses dossiers tranchés vrai, ou sans variables) et ses gènes jugés (une mutation gardée
+  est jugée aussi : le rejet 3 ; une molécule de moins de 2 % du travail ne se met pas à l'épreuve). Elle entre dans
+  **la bibliothèque des cellules** du dossier (`cellules.bibliotheque`, à côté du relevé : empreinte, Ésus, dépliage,
+  programme, molécule). Un autre programme du dossier qui a la même cellule la reprend (« reprise de la bibliothèque » :
+  ses gènes, jugés) ; une confusion d'empreinte ne coûterait que de la vitesse (Ésus est exact, le dépliage aussi).
+- **En Dunon**, Ésus ne travaille pas : le seul gène est l'arrangement (deplier). Le Druide sur Gergovie :
+  `belenos/gergovie_druide.vtx` (48 + 24 images) ; chez moi (2 cœurs, demi-échelle) 84 cellules, 68 faites après une
+  génération (les légères), l'évolution essaie « deplier ranger_colonne ».
+- Livraison : vtx-0.838.zip, essai-0.838.bat.

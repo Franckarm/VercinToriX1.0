@@ -14,3 +14,5 @@ exemples128/cube128-labyrinthe.cub
 exemples128/anticube128-labyrinthe.cub
 exemples128/ombre128-labyrinthe.cub
 exemples128/*.wav
+.grenier/
+cellules.bibliotheque

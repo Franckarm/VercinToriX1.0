@@ -1,0 +1,16 @@
+// machine : lugus
+// 0.838 : Gergovie pour le Druide : la même scène au processeur (Dunon), un film plus court (48 images de vol, 24 de
+// jour) : assez pour mesurer une génération. Ses cellules (les molécules de la scène, ce qu'elles appellent) sont
+// rangées par la forge (gergovie_druide.cellules) ; le Druide y fait évoluer l'arrangement (deplier), et garde les
+// cellules faites dans la bibliothèque du dossier (cellules.bibliotheque) : gergovie.vtx et les autres mains de la
+// même scène les reprennent (la même empreinte).
+dunon;
+constante RN = 1;
+constante RD = 1;
+constante BLOCS = 0;
+constante PROGRESSIF = 0;
+importer "gergovie_scene.vtx";
+
+fonction principal() {
+    epreuve(48, 24, 0);
+}
