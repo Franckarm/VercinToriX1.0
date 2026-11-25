@@ -161,15 +161,19 @@ fonction comparer(connu, ab, ah, az, ao, nb, nh, nz, no): logique {
     retour variable;
 }
 
-// un nombre lisible (au-delà de 2^127, l'entier s'affiche signé : on le dit autrement)
+// 0.836 : un nombre en hexadécimal, comme dans le relevé d'Ésus et les points du cube (#…, sans zéros devant)
 fonction lisible(n): texte {
-    si n == TOUT {
-        retour "2^128-1";
+    si n == 0 {
+        retour "#0";
     }
-    si n >= 170141183460469231731687303715884105728 {
-        retour "plus de 2^127";
+    soit chiffres = "0123456789abcdef";
+    soit t = "";
+    soit v = n;
+    tantque v != 0 {
+        t = car_texte(car(chiffres, v & 15)) + t;
+        v = v >> 4;
     }
-    retour texte(n);
+    retour "#" + t;
 }
 
 // ce qui a changé, en clair (le quit de la comparaison ; l'ancien bas et haut, le neuf)
