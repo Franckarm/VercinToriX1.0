@@ -31,6 +31,8 @@ PROG = """fonction principal() {
 dr = os.path.join(d, "druide")
 os.makedirs(dr)
 shutil.copy(os.path.join(racine, "druide", "druide.vtx"), dr)
+os.makedirs(os.path.join(d, "bibliotheque"))
+shutil.copy(os.path.join(racine, "bibliotheque", "codon.vtx"), os.path.join(d, "bibliotheque"))   # 0.836 : le codon
 etats = []
 for n in ("1000", "1000", "500", "2000"):
     p = os.path.join(d, "essai_druide.vtx")
@@ -85,6 +87,51 @@ verifier("adapter : sans ARN, Ésus taille principal (le reste par une constante
          "modk128(" in corps_principal(code1) or "as u64) %" in corps_principal(code1), corps_principal(code1)[:400])
 verifier("adapter : « esus principal 0 » : Ésus déconnecté de principal", "modk128(" not in corps_principal(code0)
          and "as u64) %" not in corps_principal(code0), corps_principal(code0)[:400])
+
+# 0.836 : le signe, l'observation, le codon, la garde
+SIGNE = """fonction principal() {
+    soit t = 0;
+    soit m = 0;
+    pour i dans 0..1000 {
+        soit dd = (i % 21) - 10;
+        t = dd * 3;
+        m = (i & 7) - 100;
+    }
+    afficher(t, m);
+}
+"""
+p = os.path.join(d, "signe_druide.vtx")
+open(p, "w", encoding="utf-8").write(SIGNE)
+exe = os.path.join(d, "signe_druide" + (".exe" if WIN else ""))
+releve = os.path.join(d, "signe_druide.esus")
+
+
+def passe(mode, trafic=None):
+    env = dict(os.environ, VTX_DRUIDE=mode)
+    subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), p, "-o", exe], capture_output=True, env=env)
+    subprocess.run([exe], capture_output=True, env=env)
+    if trafic:
+        txt = open(releve, encoding="utf-8").read()
+        open(releve, "w", encoding="utf-8").write(txt.replace(*trafic))
+    subprocess.run([LUGUS, os.path.join(dr, "druide.vtx")], input=releve + "\n", capture_output=True, text=True)
+    return open(os.path.join(d, "signe_druide.druide"), encoding="utf-8").read()
+
+
+rel = {l.split()[1]: l.split()[6:] for l in open(releve, encoding="utf-8") if l.startswith("principal ")} if passe("poids") else {}
+verifier("le signe : t de -30 à 30, m de -100 à 0 (le relevé d'Ésus)", rel.get("t") == ["-1e", "1e"] and rel.get("m") == ["-64", "0"], rel)
+obs = open(os.path.join(d, "signe_druide.observe"), encoding="utf-8").read() if os.path.exists(os.path.join(d, "signe_druide.observe")) else ""
+c1 = passe("1")
+verifier("le codon : la forge d'après, l'observation d'avant qui vaut encore (AGG : vrai, tranché)",
+         "codon AGG (mémoire, forge, observation) : vrai, tranché" in c1, c1[:900])
+c2 = passe("1")
+verifier("le codon : trois témoins d'accord (GGG)", "codon GGG (mémoire, forge, observation) : vrai, tranché" in c2, c2[:900])
+c3 = passe("poids", (" -64 0\n", " -64 -60\n"))
+arn = open(os.path.join(d, "signe_druide.arn"), encoding="utf-8").read()
+verifier("la garde : une valeur vue hors de la preuve (trafiquée) : l'alerte, Ésus déconnecté de principal",
+         "ALERTE" in c3 and "la preuve démentie" in c3 and "esus principal 0" in arn, c3[:900] + arn)
+c4 = passe("1")
+arn = open(os.path.join(d, "signe_druide.arn"), encoding="utf-8").read()
+verifier("la garde tient à la forge suivante", "esus principal 0" in arn, arn)
 shutil.rmtree(d, ignore_errors=True)
 print("le Druide : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))
 sys.exit(1 if echecs else 0)

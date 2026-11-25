@@ -17,13 +17,24 @@
 //    chaque génération, une mutation (une molécule lourde, tirée au hasard, basculée) ; le programme se mesure ; la
 //    variante est gardée si elle va plus vite (2 % au moins), sinon il revient au parent (4044 : la génération, le temps
 //    du parent, la mutation en attente). La garde : Ésus est exact par preuve ; aucune variante ne change le résultat.
+// 0.836 : le signe et le codon. Chaque variable a aussi son plus petit et son plus grand lus avec le signe (4045,
+// étages 0 et 1 : 0 - 5 est -5) ; et son dossier codon (4045, étage 2 ; bibliotheque/codon.vtx, avec ordre) : trois
+// lettres, A inconnu, C faux, G vrai, U variable, comme le tableau du code génétique. Place 0 : la mémoire (ce que la
+// forge d'avant disait) ; place 1 : la forge du jour ; place 2 : le recoupement, ce que le programme a vraiment fait
+// (PROG.observe, écrit par la passe de mesure VTX_DRUIDE=poids : les valeurs prises dedans la preuve, G ; dehors, U :
+// la preuve d'Ésus est démentie, le Druide le déconnecte de la molécule, pour toujours). Une variable déplacée n'est
+// plus jugée d'un coup : son dossier reste en suspens, tranché quand les témoins s'accordent, échu au bout du délai.
 // Son carnet : PROG.druide.
+
+importer "../bibliotheque/codon.vtx";
 
 constante F_POINTS = 4040;
 constante F_NOMS = 4041;
 constante F_SYNAPSES = 4042;
 constante F_MOLECULES = 4043;
 constante F_LIGNEE = 4044;
+constante F_SIGNES = 4045;
+constante MOITIE = 170141183460469231731687303715884105728;
 constante PLACES = 65536;
 constante PLACES_M = 4096;
 constante SUR = 3;
@@ -67,6 +78,14 @@ fonction de_hexa(t: texte) {
         v = (v << 4) | d;
     }
     retour v;
+}
+
+// 0.836 : un nombre signé écrit en hex (« -1e » vaut -30)
+fonction de_signe(t: texte) {
+    si commence_par(t, "-") == 1 {
+        retour 0 - de_hexa(sous_texte(t, 1, longueur(t)));
+    }
+    retour de_hexa(t);
 }
 
 // l'empreinte d'un nom (FNV-1a de 64 bits), jamais nulle : 0 marque une place libre
@@ -145,16 +164,16 @@ fonction temps_de(t: texte) {
 }
 
 // ce qu'il savait (a…) contre ce qu'Ésus prouve maintenant (n…)
-fonction comparer(connu, ab, ah, az, ao, nb, nh, nz, no): logique {
+fonction comparer(connu, ab, ah, az, ao, nb, nh, nz, no, asb, ash, nsb, nsh): logique {
     si connu == 0 {
         retour inconnu;
     }
-    // plus serré ou pareil : l'intervalle neuf est dans l'ancien, et il sait au moins les mêmes bits
-    soit dedans = nb >= ab && nh <= ah && (nz & az) == az && (no & ao) == ao;
+    // plus serré ou pareil : l'intervalle neuf est dans l'ancien (sans signe et avec), et il sait au moins les mêmes bits
+    soit dedans = nb >= ab && nh <= ah && (nz & az) == az && (no & ao) == ao && nsb .>= asb && nsh .<= ash;
     si dedans {
         retour vrai;
     }
-    soit autour = nb <= ab && nh >= ah && (az & nz) == nz && (ao & no) == no;
+    soit autour = nb <= ab && nh >= ah && (az & nz) == nz && (ao & no) == no && nsb .<= asb && nsh .>= ash;
     si autour {
         retour faux;
     }
@@ -176,11 +195,34 @@ fonction lisible(n): texte {
     retour "#" + t;
 }
 
+// 0.836 : un nombre lu avec le signe
+fonction lisible_s(n): texte {
+    si n >= MOITIE {
+        retour "-" + lisible(0 - n);
+    }
+    retour lisible(n);
+}
+
+// 0.836 : les lettres du codon, comme le tableau du code génétique
+fonction base_de(l: logique): texte {
+    soit b = "A";
+    selon l {
+        inconnu { b = "A"; }
+        faux { b = "C"; }
+        vrai { b = "G"; }
+        variable { b = "U"; }
+    }
+    retour b;
+}
+
 // ce qui a changé, en clair (le quit de la comparaison ; l'ancien bas et haut, le neuf)
 fonction expliquer(q, ab, ah, nb, nh): texte {
     soit de = "bas " + lisible(ab) + " -> " + lisible(nb) + ", haut " + lisible(ah) + " -> " + lisible(nh);
     si q == 0 {
         retour "nouvelle : bas " + lisible(nb) + ", haut " + lisible(nh);
+    }
+    si q == 4 {
+        retour "plus serrée avec le signe";
     }
     si q == 2 {
         si nb == ab && nh == ah {
@@ -214,7 +256,7 @@ fonction nom_logique(l: logique): texte {
 
 // 1 et 2 : se souvenir et apprendre (une variable) ; rend l'état de la comparaison, en quit (0 inconnu, 1 faux,
 // 2 vrai, 3 variable)
-fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no, carnet) {
+fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no, nsb, nsh, vu, ob, oh, osb, osh, carnet) {
     soit h = empreinte_nom(mol + " " + var);
     soit p = place_de(h);
     si p == (0 - 1) {
@@ -224,10 +266,19 @@ fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no, carnet) {
     si @[cube_adresse(0, F_NOMS, p)] == h {
         connu = 1;
     }
-    soit etat = comparer(connu, @[cube_adresse(0, F_POINTS, p)], @[cube_adresse(1, F_POINTS, p)],
-                         @[cube_adresse(2, F_POINTS, p)], @[cube_adresse(3, F_POINTS, p)], nb, nh, nz, no);
+    // le signé d'avant (une variable rangée avant la 0.836 n'en a pas : tout l'intervalle)
+    soit asb = MOITIE;
+    soit ash = MOITIE - 1;
+    si connu == 1 && @[cube_adresse(3, F_SIGNES, p)] == 1 {
+        asb = @[cube_adresse(0, F_SIGNES, p)];
+        ash = @[cube_adresse(1, F_SIGNES, p)];
+    }
+    soit etat_c = comparer(connu, @[cube_adresse(0, F_POINTS, p)], @[cube_adresse(1, F_POINTS, p)],
+                           @[cube_adresse(2, F_POINTS, p)], @[cube_adresse(3, F_POINTS, p)], nb, nh, nz, no, asb, ash,
+                           nsb, nsh);
+    soit pareil_s = asb == nsb && ash == nsh;
     soit q = 0;
-    selon etat {
+    selon etat_c {
         vrai { q = 2; }
         faux { q = 1; }
         inconnu { q = 0; }
@@ -241,8 +292,71 @@ fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no, carnet) {
         vc = @[cube_adresse(1, F_SYNAPSES, p)];
     }
     soit noms_q = ["inconnu", "faux", "vrai", "variable"];
-    ecrire_texte(carnet, mol + " " + var + " " + noms_q[q] + " : " + expliquer(q, @[cube_adresse(0, F_POINTS, p)],
+    soit qe = q;
+    si q == 2 && pareil_s == 0 {
+        qe = 4;   // pareille sans signe, plus serrée avec
+    }
+    ecrire_texte(carnet, mol + " " + var + " " + noms_q[q] + " : " + expliquer(qe, @[cube_adresse(0, F_POINTS, p)],
                  @[cube_adresse(1, F_POINTS, p)], nb, nh) + "\n");
+    si nsb >= MOITIE || ash >= MOITIE || asb != nsb || ash != nsh {
+        si nsb >= MOITIE || asb >= MOITIE {
+            ecrire_texte(carnet, "    avec le signe : de " + lisible_s(asb) + " -> " + lisible_s(nsb) + ", à " + lisible_s(ash)
+                         + " -> " + lisible_s(nsh) + "\n");
+        }
+    }
+    // le codon : la mémoire (la lettre du jour de la forge d'avant), la forge du jour, le recoupement (l'observation)
+    soit dav = 0;
+    si connu == 1 {
+        dav = @[cube_adresse(2, F_SIGNES, p)];
+    }
+    soit l0 = inconnu;
+    soit l2 = inconnu;
+    si connu == 1 {
+        l0 = lettre(dav, 1);
+        si q == 2 {
+            l2 = lettre(dav, 2);   // la borne n'a pas bougé : l'observation d'avant vaut encore
+        }
+    }
+    soit dementie = 0;
+    si vu == 1 {
+        si ob >= nb && oh <= nh && osb .>= nsb && osh .<= nsh {
+            l2 = vrai;
+        } sinon {
+            l2 = variable;
+            dementie = 1;
+        }
+    }
+    soit l1 = comme_logique(q);
+    soit c = codon(l0, l1, l2);
+    soit d = c;
+    si (dav & 63) == c {
+        d = dav;
+    }
+    d = consolider_ordonne(d);
+    si dementie == 1 {
+        d = (d & 63) + 128;   // un fait contre une preuve : la contradiction est fixée (échue), pas un avis à peser
+    }
+    soit dit = "    codon " + base_de(l0) + base_de(l1) + base_de(l2) + " (mémoire, forge, observation) : "
+               + nom_logique(verdict_ordonne(d)) + ", " + nom_etat(d);
+    si dementie == 1 {
+        dit = "    codon " + base_de(l0) + base_de(l1) + base_de(l2) + " (mémoire, forge, observation) : variable, échu (la preuve démentie)";
+    }
+    si etat(d) == 0 {
+        dit = dit + " (âge " + texte(age(d)) + " sur " + texte(delai()) + ")";
+    }
+    si vu == 1 {
+        dit = dit + " ; vu de " + lisible_s(osb) + " à " + lisible_s(osh) + " (sans signe " + lisible(ob) + " à " + lisible(oh) + ")";
+    }
+    ecrire_texte(carnet, dit + "\n");
+    si dementie == 1 {
+        ecrire_texte(carnet, "    ALERTE : la valeur vue sort de la preuve d'Ésus : Ésus est déconnecté de " + mol + " (la garde)\n");
+        poser_esus(mol, 1);
+        poser_rejet(mol, 2);
+    }
+    @[cube_adresse(0, F_SIGNES, p)] = nsb;
+    @[cube_adresse(1, F_SIGNES, p)] = nsh;
+    @[cube_adresse(2, F_SIGNES, p)] = d;
+    @[cube_adresse(3, F_SIGNES, p)] = 1;
     si q == 2 || q == 3 {
         vp = vp + 1;
     }
@@ -309,6 +423,9 @@ fonction rejetee(mol: texte) {
 fonction poser_rejet(mol: texte, r) {
     soit h = empreinte_nom(mol);
     soit p = place_molecule(h);
+    si p != (0 - 1) && @[cube_adresse(0, F_MOLECULES, p)] == h && @[cube_adresse(3, F_MOLECULES, p)] == 2 {
+        retour 0;   // 0.836 : une molécule où la preuve a été démentie reste à la garde
+    }
     si p != (0 - 1) {
         @[cube_adresse(0, F_MOLECULES, p)] = h;
         @[cube_adresse(3, F_MOLECULES, p)] = r;
@@ -371,11 +488,54 @@ fonction principal() {
     retirer(lvar);
     retirer(lhaut);
     retirer(letat);
+    // 0.836 : ce que les variables ont vraiment pris (la passe de mesure : PROG.observe), consommé après lecture
+    soit obs_txt = lire_fichier(base + ".observe");
+    fermer(ouvrir_ecriture(base + ".observe"));
+    soit ocle = ["x"];
+    soit ovals = [["x"]];
+    retirer(ocle);
+    retirer(ovals);
+    pour lo dans decouper(obs_txt, "\n") {
+        soit mo = mots(lo);
+        si longueur(mo) == 7 {
+            ajouter(ocle, mo[0] + " " + mo[1]);
+            ajouter(ovals, mo);
+        }
+    }
+    soit lsb = [0];
+    soit lsh = [0];
+    retirer(lsb);
+    retirer(lsh);
     pour l dans decouper(releve, "\n") {
         soit m = mots(l);
-        si longueur(m) == 6 && commence_par(l, "#") == 0 {
+        si (longueur(m) == 6 || longueur(m) == 8) && commence_par(l, "#") == 0 {
             soit nh = de_hexa(m[3]);
-            soit q = apprendre_variable(m[0], m[1], de_hexa(m[2]), nh, de_hexa(m[4]), de_hexa(m[5]), carnet);
+            soit sb = MOITIE;
+            soit sh = MOITIE - 1;
+            si longueur(m) == 8 {
+                sb = de_signe(m[6]);
+                sh = de_signe(m[7]);
+            }
+            soit vu = 0;
+            soit ob = 0;
+            soit oh = 0;
+            soit osb = 0;
+            soit osh = 0;
+            pour ko dans 0..longueur(ocle) {
+                si ocle[ko] == m[0] + " " + m[1] {
+                    soit vo = ["x"];
+                    vo = ovals[ko];
+                    vu = 1;
+                    ob = de_hexa(vo[2]);
+                    oh = de_hexa(vo[3]);
+                    osb = de_signe(vo[4]);
+                    osh = de_signe(vo[5]);
+                }
+            }
+            soit q = apprendre_variable(m[0], m[1], de_hexa(m[2]), nh, de_hexa(m[4]), de_hexa(m[5]), sb, sh, vu, ob, oh,
+                                        osb, osh, carnet);
+            ajouter(lsb, sb);
+            ajouter(lsh, sh);
             compte[q] = compte[q] + 1;
             ajouter(lmol, m[0]);
             ajouter(lvar, m[1]);
@@ -532,6 +692,16 @@ fonction principal() {
             ecrire_texte(carnet, "évolution : rien à essayer (les mutations des molécules lourdes ont été jugées) : la lignée est stable\n");
         }
     }
+    // 0.836 : la garde l'emporte sur l'évolution : une molécule où la preuve a été démentie reste sans Ésus
+    pour kg dans 0..longueur(lm) {
+        si rejetee(lm[kg]) == 2 {
+            poser_esus(lm[kg], 1);
+            si attente != 0 && lm[kg] == mute {
+                attente = 0;
+                ecrire_texte(carnet, "évolution : la mutation de " + mute + " est arrêtée : la garde l'a reprise\n");
+            }
+        }
+    }
     @[cube_adresse(0, F_LIGNEE, 0)] = gen;
     @[cube_adresse(1, F_LIGNEE, 0)] = tp;
     @[cube_adresse(2, F_LIGNEE, 0)] = attente;
@@ -587,7 +757,10 @@ fonction principal() {
             ecrire_texte(cons, nomm + " : " + texte(part / 10) + "," + texte(part % 10) + " % du travail ; Ésus " + etat_e + "\n");
             pour kv dans 0..longueur(lmol) {
                 si lmol[kv] == nomm {
-                    si lhaut[kv] == TOUT {
+                    si lhaut[kv] == TOUT && lsb[kv] >= MOITIE && lsh[kv] < MOITIE && lsh[kv] - lsb[kv] < 18446744073709551615 {
+                        ecrire_texte(cons, "    " + lvar[kv] + " : des valeurs négatives, bornées de " + lisible_s(lsb[kv]) + " à "
+                                     + lisible_s(lsh[kv]) + " : Ésus prend ses opérations signées en 64 bits\n");
+                    } sinon si lhaut[kv] == TOUT {
                         ecrire_texte(cons, "    " + lvar[kv] + " : aucune borne prouvée (128 bits) ; un masque, ou une borne de boucle, la mettrait en 64 bits\n");
                     } sinon si lhaut[kv] <= 18446744073709551615 {
                         selon regle(nomm, lvar[kv]) {
@@ -611,6 +784,9 @@ fonction principal() {
         pages = pages + ranger_cube(e, F_POINTS);
     }
     pages = pages + ranger_cube(0, F_SYNAPSES) + ranger_cube(1, F_SYNAPSES);
+    pour es dans 0..4 {
+        pages = pages + ranger_cube(es, F_SIGNES);
+    }
     pour em dans 0..4 {
         pages = pages + ranger_cube(em, F_MOLECULES);
     }

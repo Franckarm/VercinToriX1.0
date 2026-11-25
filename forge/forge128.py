@@ -67,11 +67,45 @@ def esus_diviser(op, c):
 
 ESUS_VARIABLES = [None]   # 0.835 : les quatre points d'une variable de la fonction en cours (posé par fonction_rs)
 ESUS_RELEVE = [[]]        # 0.835 : les quatre points de chaque variable entière du programme forgé (le fichier .esus)
+DRUIDE_OBS = [[]]         # 0.836 : les variables observées (VTX_DRUIDE=poids) : (molécule, variable), leur rang dans OBS
 DRUIDE_NOMS = [[]]        # 0.835 : les molécules comptées (VTX_DRUIDE=poids à la forge) : leur rang dans POIDS
 ESUS_ETEINT = [set()]     # 0.835 : les molécules où l'ARN du Druide déconnecte Ésus (PROG.arn : « esus MOL 0 »)
 ESUS_ICI = [True]         # 0.835 : Ésus est-il connecté dans la molécule en cours de forge ?
 G128 = (1 << 128) - 1
-INCONNU4 = (0, G128, 0, 0)   # rien de prouvé : de 0 à 2^128 - 1, aucun bit sûr
+SMIN, SMAX = -(1 << 127), (1 << 127) - 1
+# 0.836 : six points : les quatre (le plus bas, le plus haut sans signe, les bits sûrs à 0, à 1), puis le plus petit et
+# le plus grand lus avec le signe (les valeurs négatives : 0 - 5 vaut -5, pas 2^128 - 5)
+INCONNU4 = (0, G128, 0, 0, SMIN, SMAX)   # rien de prouvé
+
+
+def signe_de(b, h):
+    """0.836 : l'intervalle signé que donne un intervalle sans signe (le mot de 128 bits lu en complément à deux)"""
+    if h <= SMAX:
+        return b, h
+    if b > SMAX:
+        return b - (1 << 128), h - (1 << 128)
+    return SMIN, SMAX
+
+
+def esus_six(b, h, z, o, sb=SMIN, sh=SMAX):
+    """0.836 : les six points accordés : le signé croisé avec ce que dit le sans signe, et le sans signe resserré par le
+    signé (un intervalle signé tout positif, ou tout négatif, borne aussi le sans signe)"""
+    db, dh = signe_de(b, h)
+    sb, sh = max(sb, db), min(sh, dh)
+    if sb > sh:
+        sb, sh = db, dh
+    if sb >= 0:
+        b, h = max(b, sb), min(h, sh)
+    elif sh < 0:
+        b, h = max(b, sb + (1 << 128)), min(h, sh + (1 << 128))
+    if b > h:
+        return INCONNU4
+    z, o = esus_haut(h, z, o)
+    return b, h, z, o, sb, sh
+
+
+def sdans(a, b):
+    return SMIN <= a and b <= SMAX
 
 
 def esus_haut(h, z, o):
@@ -109,27 +143,29 @@ def esus_definitions(corps, params):
     parcourir(corps)
     vues, en_cours, hyp = {}, {}, {}
     lu_hyp = [0]   # combien de fois une hypothèse a été lue (un résultat qui en dépend ne se garde pas)
-    BAS = (G128, 0, G128, G128)   # rien encore : pas une seule valeur
+    BAS = (G128, 0, G128, G128, SMAX, SMIN)   # rien encore : pas une seule valeur
 
     def calculer(nom):
-        bas, haut, z, o = G128, 0, G128, G128
+        bas, haut, z, o, sb, sh = BAS
         for d in defs[nom]:
             if d[0] == "expr":
-                b2, h2, z2, o2 = points(d[1])
+                b2, h2, z2, o2, sb2, sh2 = points(d[1])
             else:
                 _, a, fin, pas = d
                 if pas is None or pas < 1:
-                    b2, h2, z2, o2 = INCONNU4
+                    b2, h2, z2, o2, sb2, sh2 = INCONNU4
                 else:
                     pa, pf = points(a), points(fin)
                     b2, h2 = pa[0], min(G128, max(pa[1], pf[1] + pas))
                     z2, o2 = esus_haut(h2, 0, 0)
-            bas, haut, z, o = min(bas, b2), max(haut, h2), z & z2, o & o2
-        return bas, haut, z, o
+                    sb2, sh2 = signe_de(b2, h2)
+            bas, haut, z, o, sb, sh = min(bas, b2), max(haut, h2), z & z2, o & o2, min(sb, sb2), max(sh, sh2)
+        return bas, haut, z, o, sb, sh
 
     def dedans(a, b):
         # a ⊆ b : l'intervalle de a dans celui de b, et b ne sait pas plus de bits que a
-        return a[0] >= b[0] and a[1] <= b[1] and (a[2] & b[2]) == b[2] and (a[3] & b[3]) == b[3]
+        return (a[0] >= b[0] and a[1] <= b[1] and (a[2] & b[2]) == b[2] and (a[3] & b[3]) == b[3]
+                and a[4] >= b[4] and a[5] <= b[5])
 
     def pv(nom):
         if nom in vues:
@@ -150,11 +186,15 @@ def esus_definitions(corps, params):
                 r = hyp[nom]   # la borne tient d'un tour à l'autre : elle est prouvée
                 break
             h = hyp[nom]
-            j = (min(h[0], res[0]), max(h[1], res[1]), h[2] & res[2], h[3] & res[3])
+            j = (min(h[0], res[0]), max(h[1], res[1]), h[2] & res[2], h[3] & res[3], min(h[4], res[4]),
+                 max(h[5], res[5]))
             if tour > 0:
-                # élargir : le haut au nombre de bits, le bas à 0 s'il bouge encore (pour finir à coup sûr)
+                # élargir : le haut au nombre de bits, le bas à 0 s'il bouge encore (pour finir à coup sûr) ; en signé,
+                # de même vers le haut et vers le bas (une puissance de deux de plus)
                 hh = (1 << j[1].bit_length()) - 1
-                j = (0 if j[0] < h[0] else j[0], hh) + esus_haut(hh, j[2], j[3])
+                sh = j[5] if j[5] <= h[5] else min(SMAX, (1 << j[5].bit_length()) - 1)
+                sb = j[4] if j[4] >= h[4] else max(SMIN, -(1 << (-j[4]).bit_length()) if j[4] < 0 else 0)
+                j = (0 if j[0] < h[0] else j[0], hh) + esus_haut(hh, j[2], j[3]) + (sb, sh)
             hyp[nom] = j
             if lu_hyp[0] == avant_lu:
                 r = res   # elle ne dépend pas d'elle-même : le premier calcul suffit
@@ -168,24 +208,32 @@ def esus_definitions(corps, params):
 
 
 def points(e):
-    """0.835 : Ésus : les quatre points de l'entier e (sur 128 bits) que l'arbre prouve : le plus bas, le plus haut, les
-    bits sûrement à 0, les bits sûrement à 1. Bit à bit, c'est Belnap : à 0 et à 1 à la fois serait un chemin qui se
-    contredit (jamais atteint) ; ni l'un ni l'autre, inconnu."""
+    """0.835 : Ésus : les points de l'entier e (sur 128 bits) que l'arbre prouve : le plus bas, le plus haut, les bits
+    sûrement à 0, les bits sûrement à 1 ; 0.836 : et le plus petit, le plus grand lus avec le signe. Bit à bit, c'est
+    Belnap : à 0 et à 1 à la fois serait un chemin qui se contredit (jamais atteint) ; ni l'un ni l'autre, inconnu."""
+    r = points_bruts(e)
+    if r is INCONNU4:
+        return r
+    return esus_six(*r)
+
+
+def points_bruts(e):
     G = G128
     if not isinstance(e, tuple) or not e:
         return INCONNU4
     if e[0] == "nombre" and isinstance(e[1], int):
         v = e[1] & G
-        return v, v, G ^ v, v
+        sv = v - (1 << 128) if v > SMAX else v
+        return v, v, G ^ v, v, sv, sv
     if e[0] == "var" and len(e) > 1 and ESUS_VARIABLES[0] is not None:
         return ESUS_VARIABLES[0](e[1])
     if e[0] != "bin" or len(e) < 4:
         return INCONNU4
     op = e[1]
     if op in V.COMPARAISONS or op in V.SIGNEES_COMP or op in ("&&", "||"):
-        return 0, 1, G ^ 1, 0
-    ba, ha, za, oa = points(e[2])
-    bb, hb, zb, ob = points(e[3])
+        return 0, 1, G ^ 1, 0, 0, 1
+    ba, ha, za, oa, sa0, sa1 = points(e[2])
+    bb, hb, zb, ob, sb0, sb1 = points(e[3])
     k = e[3][1] if e[3][0] == "nombre" else None
     if op == "&":
         h = min(ha, hb)
@@ -199,6 +247,9 @@ def points(e):
     if op == ">>" and k is not None:
         k = min(k, 127)
         return ba >> k, ha >> k, (za >> k) | (G ^ (G >> k)), oa >> k
+    if op == ".>>" and k is not None and k < 128:
+        # le décalage signé : l'arrondi vers le bas, comme >> de Python sur un entier signé
+        return (0, G, 0, 0, sa0 >> k, sa1 >> k)
     if op == "<<" and k is not None and k < 128:
         zb_ = ((za << k) | ((1 << k) - 1)) & G
         if (ha << k) <= G:
@@ -212,12 +263,37 @@ def points(e):
     if op == "/" and k is not None and k > 0:
         h = ha // k
         return (ba // k, h) + esus_haut(h, 0, 0)
-    if op == "+" and ha + hb <= G:
-        h = ha + hb
-        return (ba + bb, h) + esus_haut(h, 0, 0)
-    if op == "*" and ha * hb <= G:
-        h = ha * hb
-        return (ba * bb, h) + esus_haut(h, 0, 0)
+    if op in ("./", ".%") and k is not None:
+        ks = k - (1 << 128) if k > SMAX else k
+        if ks == 0 or (ks == -1 and sa0 == SMIN):
+            return INCONNU4
+        if op == "./":
+            q = sorted((abs(x) // abs(ks)) * (1 if (x < 0) == (ks < 0) else -1) for x in (sa0, sa1))
+            return (0, G, 0, 0, q[0], q[1])
+        m = abs(ks) - 1   # le reste a le signe du dividende (comme Rust et le C)
+        return (0, G, 0, 0, -m if sa0 < 0 else 0, m if sa1 > 0 else 0)
+    if op == "+":
+        s0, s1 = sa0 + sb0, sa1 + sb1
+        s0, s1 = (s0, s1) if sdans(s0, s1) else (SMIN, SMAX)
+        if ha + hb <= G:
+            h = ha + hb
+            return (ba + bb, h) + esus_haut(h, 0, 0) + (s0, s1)
+        return (0, G, 0, 0, s0, s1)
+    if op == "-":
+        # 0.836 : la soustraction : sans signe, juste si elle ne passe pas sous 0 ; en signé, les écarts extrêmes
+        s0, s1 = sa0 - sb1, sa1 - sb0
+        s0, s1 = (s0, s1) if sdans(s0, s1) else (SMIN, SMAX)
+        if ba >= hb:
+            h = ha - bb
+            return (ba - hb, h) + esus_haut(h, 0, 0) + (s0, s1)
+        return (0, G, 0, 0, s0, s1)
+    if op == "*":
+        c = [x * y for x in (sa0, sa1) for y in (sb0, sb1)]
+        s0, s1 = (min(c), max(c)) if sdans(min(c), max(c)) else (SMIN, SMAX)
+        if ha * hb <= G:
+            h = ha * hb
+            return (ba * bb, h) + esus_haut(h, 0, 0) + (s0, s1)
+        return (0, G, 0, 0, s0, s1)
     return INCONNU4
 
 
@@ -385,6 +461,7 @@ class Forge(V.Generateur):
         ESUS_VARIABLES[0] = esus_definitions(f.corps, f.params)
         ESUS_ICI[0] = f.nom not in ESUS_ETEINT[0]
         self.poids_ligne = ""
+        self.mol_druide = f.nom
         if druide_mode() == "poids":
             # 0.835 : le compteur de la molécule (un appel, un tour de boucle : son travail, pour le Druide)
             if f.nom not in DRUIDE_NOMS[0]:
@@ -483,6 +560,16 @@ class Forge(V.Generateur):
         return " ".join(f"c.poser(fp.wrapping_add({self.places[v]}), v_{ident(v)});" for v in self.toutes) + " "
 
     # ------------------------------------------------------------ instructions
+    def observer(self, nom):
+        """0.836 : la passe de mesure du Druide (VTX_DRUIDE=poids) : chaque valeur prise par une variable entière est
+        observée (la plus petite, la plus grande, sans signe et avec) : le troisième témoin de son codon"""
+        if druide_mode() != "poids" or not L() or self.vtypes.get(nom) != "e":
+            return
+        cle = (getattr(self, "mol_druide", "?"), nom)
+        if cle not in DRUIDE_OBS[0]:
+            DRUIDE_OBS[0].append(cle)
+        self.ligne(f"observer({DRUIDE_OBS[0].index(cle)}, v_{ident(nom)});")
+
     def instr(self, s):
         g = s[0]
         if g == "soit":
@@ -492,9 +579,11 @@ class Forge(V.Generateur):
             else:
                 code = self.val(s[2], t)
             self.ligne(f"v_{ident(s[1])} = {code};")
+            self.observer(s[1])
         elif g == "affecter":
             self.variable(s[1], s[3])
             self.ligne(f"v_{ident(s[1])} = {self.val(s[2], self.vtypes[s[1]])};")
+            self.observer(s[1])
         elif g == "ecrire_champ":
             _st, pos, t = self.champ_de(("champ_ref", s[1], s[2], s[4]))
             b = self.val(s[1])
@@ -1460,6 +1549,16 @@ class Forge(V.Generateur):
                         f64 = {"+": "(({0} as u64) + ({1} as u64)) as u128", "*": "(({0} as u64) * ({1} as u64)) as u128",
                                "/": "(({0} as u64) / ({1} as u64)) as u128", "%": "(({0} as u64) % ({1} as u64)) as u128"}[op]
                         return self.b([a, b], "(" + f64 + ")")
+                if esus_actif() and op in ("+", "-", "*", "./", ".%"):
+                    # 0.836 : Ésus en signé : les deux opérandes et le résultat tiennent entre -2^63 et 2^63 - 1
+                    # (prouvé) : l'opération de 64 bits signée, puis le signe étendu à 128 bits ; le même résultat
+                    pa_, pb_, pe_ = points(e[2]), points(e[3]), points(e)
+                    I64 = (-(1 << 63), (1 << 63) - 1)
+                    if all(I64[0] <= x[4] and x[5] <= I64[1] for x in (pa_, pb_, pe_)) and (
+                            op in ("+", "-", "*") or (e[3][0] == "nombre" and pb_[4] == pb_[5] and pb_[4] not in (0, -1))):
+                        g64 = {"+": "wrapping_add", "-": "wrapping_sub", "*": "wrapping_mul", "./": "wrapping_div",
+                               ".%": "wrapping_rem"}[op]
+                        return self.b([a, b], "(((({0} as u64) as i64)." + g64 + "(({1} as u64) as i64)) as i128 as u128)")
                 if op in ("/", "%") and e[3][0] == "nombre" and 0 < e[3][1] < 1 << 128 and esus_actif():
                     return self.b([a], esus_diviser(op, e[3][1]))   # 0.835 : Ésus
             if t == "i" and op in ("+", "-", "*", "<<", "/"):
@@ -2053,6 +2152,15 @@ def code_druide():
     out.append("#[allow(dead_code)]\nstatic POIDS: [std::sync::atomic::AtomicU64; %d] = { const Z: std::sync::atomic::AtomicU64 = "
                "std::sync::atomic::AtomicU64::new(0); [Z; %d] };" % (n, n))
     out.append("#[allow(dead_code)]\nconst NOMS_POIDS: [&str; %d] = [%s];" % (len(noms), ", ".join('"%s"' % x for x in noms)))
+    obs = DRUIDE_OBS[0]
+    no = max(1, len(obs))
+    out.append("#[allow(dead_code)]\nstatic OBS: [std::sync::Mutex<(u128, u128, i128, i128, u64)>; %d] = { const Z: "
+               "std::sync::Mutex<(u128, u128, i128, i128, u64)> = std::sync::Mutex::new((u128::MAX, 0, i128::MAX, i128::MIN, 0)); "
+               "[Z; %d] };" % (no, no))
+    out.append("#[allow(dead_code)]\nconst NOMS_OBS: [&str; %d] = [%s];" % (len(obs), ", ".join('"%s %s"' % x for x in obs)))
+    out.append("#[allow(dead_code)]\n#[inline(never)]\nfn observer(k: usize, v: u128) {\n    if let Ok(mut g) = OBS[k].lock() {\n"
+               "        let s = v as i128;\n        if v < g.0 { g.0 = v; }\n        if v > g.1 { g.1 = v; }\n"
+               "        if s < g.2 { g.2 = s; }\n        if s > g.3 { g.3 = s; }\n        g.4 += 1;\n    }\n}")
     out.append("#[allow(unused_variables)]\nfn druide_fin(us: u128) {")
     if mode in ("poids", "1"):
         out.append("    use std::io::Write;")
@@ -2066,6 +2174,13 @@ def code_druide():
         out.append("            let _ = writeln!(f, \"{} {}\", n, POIDS[k].load(std::sync::atomic::Ordering::Relaxed));")
         out.append("        }")
         out.append("    }")
+        # 0.836 : ce que les variables ont vraiment pris (PROG.observe : molécule variable bas haut petit grand fois)
+        out.append("    if let Ok(mut f) = std::fs::File::create(exe.with_extension(\"observe\")) {")
+        out.append("        let sx = |v: i128| if v < 0 { format!(\"-{:x}\", v.unsigned_abs()) } else { format!(\"{:x}\", v) };")
+        out.append("        for (k, n) in NOMS_OBS.iter().enumerate() {")
+        out.append("            if let Ok(g) = OBS[k].lock() { if g.4 > 0 { let _ = writeln!(f, \"{} {:x} {:x} {} {} {}\", n, g.0, g.1, sx(g.2), sx(g.3), g.4); } }")
+        out.append("        }")
+        out.append("    }")
     out.append("}")
     return "\n".join(out)
 
@@ -2074,6 +2189,7 @@ def source_rust(src, dossier=None, nom="programme", sortie=None):
     """Le programme Rust complet d'un programme vtx."""
     ESUS_RELEVE[0] = []
     DRUIDE_NOMS[0] = []
+    DRUIDE_OBS[0] = []
     ESUS_ETEINT[0] = lire_arn_druide(os.path.splitext(sortie)[0] + ".arn") if sortie else set()
     prog, mots = programme_rust(src, dossier, nom)
     main = "\nfn main() {\n    let a: Vec<String> = std::env::args().collect();\n    lancer(&a[1..]);\n}\n"
@@ -2115,12 +2231,14 @@ def ecrire_releve_esus(chemin, programme):
     cube (les quatre étages d'une fréquence) et les apprendra d'une forge à l'autre."""
     if not ESUS_RELEVE[0]:
         return
-    lignes = [f"# Ésus : les quatre points des variables de {programme} (molécule variable bas haut zéros uns)"]
+    lignes = [f"# Ésus : les quatre points des variables de {programme} (molécule variable bas haut zéros uns, puis le plus petit et le plus grand avec le signe)"]
     vus = {}
     for r in ESUS_RELEVE[0]:
         vus[(r[0], r[1])] = r          # une molécule forgée deux fois : son dernier relevé
-    for mol, var, bas, haut, z, o in vus.values():
-        lignes.append(f"{mol} {var} {bas:x} {haut:x} {z:x} {o:x}")
+    def sx(v):
+        return f"-{-v:x}" if v < 0 else f"{v:x}"
+    for mol, var, bas, haut, z, o, sb, sh in vus.values():
+        lignes.append(f"{mol} {var} {bas:x} {haut:x} {z:x} {o:x} {sx(sb)} {sx(sh)}")
     with open(chemin, "w", encoding="utf-8") as f:
         f.write("\n".join(lignes) + "\n")
 

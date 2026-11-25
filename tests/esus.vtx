@@ -20,7 +20,29 @@ fonction accumulateurs() {
     afficher(x / 7, g % 1000, r * r, somme / 3, produit % 1000003, h % 97);
 }
 
+// 0.836 : les valeurs négatives : bornées en signé (Ésus prend l'opération de 64 bits signée), ou non
+fonction negatifs() {
+    soit t = 0;
+    soit m = 0;
+    soit q = 0;
+    soit r = 0;
+    soit grand = 0;
+    soit tous = 0;
+    pour i dans 0..3000 {
+        soit d = (i % 21) - 10;
+        t = d * 3 - 7;
+        m = (i & 7) - 100;
+        q = m ./ 7 + m .% 5;
+        r = (0 - i) .% 9 + (0 - i) ./ 1000;
+        grand = (0 - i) * 6148914691236517205;
+        tous = tous + d;
+    }
+    afficher(t, m, q, r, grand, tous);
+    afficher(t .< 0, m .>> 2, q * q, (0 - 3) * (0 - 4));
+}
+
 fonction principal() {
+    negatifs();
     accumulateurs();
     soit x = 1;
     soit s = 0;
