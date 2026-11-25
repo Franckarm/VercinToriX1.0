@@ -643,3 +643,14 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   +17 % ; les mêmes empreintes. Le « 34 % du travail » du Druide comptait des tours de boucle (32 par racine), pas du
   temps : ses conseils le disent maintenant.
 - Livraison : vtx-0.840.zip, essai-0.840.bat.
+
+## 0.841 (25 novembre) : Taranis réparé
+- Chez le créateur, la 0.840 : le C++ 32,1 / 19,1 (la racine du double : +7 %) ; vtx Dunon 17,2 / 10,3 (rien) ; **Taranis
+  tombé de 57,1 à 5,8** : la racine entière du prélude appelait `nb_bits(0 - 1)`, que le noyau de la carte ne
+  connaissait pas : le noyau du rayon était refusé, la boucle revenait au processeur par le chemin lent de la carte.
+  Réparé (noyau_vtx : `nb_bits` vaut 64 sur la carte, comme au processeur en Dunon) ; `tests/test_taranis128.py`
+  vérifie maintenant que les noyaux de Gergovie sur la carte sont tous acceptés (il voit la panne de la 0.840).
+- Décidé par le créateur : **le Vergobret reste du côté du graphique, en 64 bits, sans changement automatique** de
+  largeur. Le choix Lugus ou Dunon restera manuel (au programme, ou par molécule si on le fait) ; aucune bascule
+  128 ↔ 64 à l'exécution.
+- Livraison : vtx-0.841.zip, essai-0.841.bat.

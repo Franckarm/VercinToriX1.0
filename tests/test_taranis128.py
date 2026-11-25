@@ -23,5 +23,38 @@ with tempfile.TemporaryDirectory() as d:
         ok &= bon
         print("OK  " if bon else "ÉCHEC", nom, ": la sortie de Lugus" + ("" if not alla else " (la carte)"),
               "" if bon else repr((sortie, attendu, f.stderr[-300:])))
+# 0.840 : le noyau de la carte doit savoir les mots du prélude qui dépendent de la largeur (nb_bits : 64 sur la carte) :
+# une boucle qui appelle racine_entiere va à la carte (la 0.840 l'avait refusée : Gergovie sur la carte à 5,8 images
+# par seconde au lieu de 57)
+sys.path.insert(0, os.path.join(RACINE, "forge"))
+sys.path.insert(0, os.path.join(RACINE, "taranis"))
+import forge128, noyau_vtx  # noqa: E402
+os.environ["VTX_CARTE"] = "1"
+os.environ["VTX_EPISSAGE"] = "rapide"
+pris, refus = [0], []
+
+
+def enrober(cls):
+    orig = cls.compiler
+
+    def compter(self):
+        try:
+            r = orig(self)
+            pris[0] += 1
+            return r
+        except noyau_vtx.PasPourLaCarte as e:
+            refus.append(str(e))
+            raise
+    cls.compiler = compter
+
+
+for cls in (noyau_vtx.Noyau, noyau_vtx.NoyauI64, noyau_vtx.NoyauTaranis):
+    enrober(cls)
+with tempfile.TemporaryDirectory() as d:
+    g = os.path.join(RACINE, "belenos", "gergovie_carte.vtx")
+    forge128.source_rust(open(g, encoding="utf-8").read(), os.path.dirname(g), "gergovie_carte", os.path.join(d, "gc"))
+bon = pris[0] > 0 and not any("nb_bits" in r for r in refus)
+ok &= bon
+print("OK  " if bon else "ÉCHEC", "Gergovie sur la carte : ses noyaux compilés, aucun refusé pour nb_bits (racine_entiere)", "" if bon else refus[:3])
 print("Taranis et le 128 : tout est conforme" if ok else "Taranis et le 128 : des écarts")
 sys.exit(0 if ok else 1)

@@ -587,6 +587,9 @@ class Noyau:
     # ------------------------------------------------------------ les appels : la fonction recopiée dans le noyau
     def appel(self, e):
         nom, args = e[1], e[2]
+        if nom == "nb_bits" and len(args) == 1:
+            # 0.840 : la largeur de l'entier : Taranis ne prend que les programmes « dunon; » : 64 (comme le processeur)
+            return self.expr(("nombre", 64))
         f = self.fo.fonctions.get(nom)
         if f is None:
             raise PasPourLaCarte(f"« {nom} » n'est pas une fonction vtx du programme")

@@ -4,7 +4,7 @@
 
 Tous droits réservés : voir `AUTEUR.md`.
 
-## Où en est vtx (25 novembre 2026, 0.840)
+## Où en est vtx (25 novembre 2026, 0.841)
 
 - **Lugus compte en 128 bits** : l'entier par défaut a la largeur du mot (le hex, l'ADN, l'ARN, le cube chromatique),
   dans les deux compilateurs (les mêmes mots), le prélude, la forge et Gobannos. `exemples128/entier128.vtx`.
