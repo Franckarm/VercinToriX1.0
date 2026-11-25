@@ -67,6 +67,9 @@ def esus_diviser(op, c):
 
 ESUS_VARIABLES = [None]   # 0.835 : les quatre points d'une variable de la fonction en cours (posé par fonction_rs)
 ESUS_RELEVE = [[]]        # 0.835 : les quatre points de chaque variable entière du programme forgé (le fichier .esus)
+DRUIDE_NOMS = [[]]        # 0.835 : les molécules comptées (VTX_DRUIDE=poids à la forge) : leur rang dans POIDS
+ESUS_ETEINT = [set()]     # 0.835 : les molécules où l'ARN du Druide déconnecte Ésus (PROG.arn : « esus MOL 0 »)
+ESUS_ICI = [True]         # 0.835 : Ésus est-il connecté dans la molécule en cours de forge ?
 G128 = (1 << 128) - 1
 INCONNU4 = (0, G128, 0, 0)   # rien de prouvé : de 0 à 2^128 - 1, aucun bit sûr
 
@@ -185,6 +188,30 @@ def points(e):
         h = ha * hb
         return (ba * bb, h) + esus_haut(h, 0, 0)
     return INCONNU4
+
+
+def esus_actif():
+    """0.835 : Ésus travaille-t-il ici ? (VTX_ESUS=0 l'éteint partout ; l'ARN du Druide, molécule par molécule)"""
+    return os.environ.get("VTX_ESUS") != "0" and ESUS_ICI[0]
+
+
+def druide_mode():
+    """0.835 : VTX_DRUIDE à la forge : « poids » (compter le travail de chaque molécule, et le temps), « 1 » (le temps
+    seul : les générations du Druide, sans compteurs qui pèseraient), sinon rien"""
+    return os.environ.get("VTX_DRUIDE", "")
+
+
+def lire_arn_druide(chemin):
+    """0.835 : l'ARN du Druide (PROG.arn, à côté de l'exécutable) : « esus MOLÉCULE 0 » déconnecte Ésus de la molécule"""
+    eteint = set()
+    try:
+        for l in open(chemin, encoding="utf-8"):
+            m = l.split()
+            if len(m) == 3 and m[0] == "esus" and m[2] == "0":
+                eteint.add(m[1])
+    except OSError:
+        pass
+    return eteint
 
 
 def borne(e):
@@ -325,6 +352,13 @@ class Forge(V.Generateur):
         loc = []
         self.locales(f.corps, loc)
         ESUS_VARIABLES[0] = esus_definitions(f.corps, f.params)
+        ESUS_ICI[0] = f.nom not in ESUS_ETEINT[0]
+        self.poids_ligne = ""
+        if druide_mode() == "poids":
+            # 0.835 : le compteur de la molécule (un appel, un tour de boucle : son travail, pour le Druide)
+            if f.nom not in DRUIDE_NOMS[0]:
+                DRUIDE_NOMS[0].append(f.nom)
+            self.poids_ligne = f"POIDS[{DRUIDE_NOMS[0].index(f.nom)}].fetch_add(1, std::sync::atomic::Ordering::Relaxed);"
         kinds, locales = {}, []
         for nom, l, kind, st in loc:
             chaque = st[0] == "soit"
@@ -376,6 +410,8 @@ class Forge(V.Generateur):
                 pos = pos + 1 if self.lot_suite else 0
         self.lot_pos, self.lot_suite = 0, False
         corps = self.lignes
+        if self.poids_ligne:
+            corps = ["    " + self.poids_ligne] + corps
         self.graphe[f.nom] = self.appelees
         if L() and ESUS_VARIABLES[0] is not None:
             # 0.835 : les quatre points de chaque variable entière de la molécule (le relevé d'Ésus, pour le Druide)
@@ -477,6 +513,8 @@ class Forge(V.Generateur):
             self.ligne(f"{lb}: loop {{")
             self.niveau += 1
             self.ligne(f"if !{self.cond(s[1])} {{ break; }}")
+            if self.poids_ligne:
+                self.ligne(self.poids_ligne)
             self.boucles.append((f"continue {lb}", f"break {lb}"))
             for x in s[2]:
                 self.instr(x)
@@ -492,6 +530,8 @@ class Forge(V.Generateur):
             self.ligne(f"{lb}: loop {{")
             self.niveau += 1
             self.ligne(f"if !{self.cond(('bin', '<', ('var', s[1], s[5]), s[3]))} {{ break; }}")
+            if self.poids_ligne:
+                self.ligne(self.poids_ligne)
             self.ligne(f"{lc}: {{")
             self.niveau += 1
             self.boucles.append((f"break {lc}", f"break {lb}"))
@@ -1380,7 +1420,7 @@ class Forge(V.Generateur):
                          "&": "({0} & {1})", "|": "({0} | {1})", "^": "({0} ^ {1})",
                          "<<": "({0} << ({1} & 127))", ">>": "({0} >> ({1} & 127))",
                          "./": "divs128l({0}, {1})", ".%": "mods128l({0}, {1})", ".>>": "sar128({0}, {1})"}[op]
-                if os.environ.get("VTX_ESUS") != "0" and op in ("+", "*", "/", "%"):
+                if esus_actif() and op in ("+", "*", "/", "%"):
                     # 0.835 : Ésus : le codon synonyme : tout tient en 64 bits (prouvé par les bornes) : l'opération de 64
                     # bits, le même résultat (la division et le reste : par une constante non nulle seulement)
                     M64_ = (1 << 64) - 1
@@ -1389,7 +1429,7 @@ class Forge(V.Generateur):
                         f64 = {"+": "(({0} as u64) + ({1} as u64)) as u128", "*": "(({0} as u64) * ({1} as u64)) as u128",
                                "/": "(({0} as u64) / ({1} as u64)) as u128", "%": "(({0} as u64) % ({1} as u64)) as u128"}[op]
                         return self.b([a, b], "(" + f64 + ")")
-                if op in ("/", "%") and e[3][0] == "nombre" and 0 < e[3][1] < 1 << 128 and os.environ.get("VTX_ESUS") != "0":
+                if op in ("/", "%") and e[3][0] == "nombre" and 0 < e[3][1] < 1 << 128 and esus_actif():
                     return self.b([a], esus_diviser(op, e[3][1]))   # 0.835 : Ésus
             if t == "i" and op in ("+", "-", "*", "<<", "/"):
                 forme = "(" + forme + " & M32)"
@@ -1966,14 +2006,44 @@ def programme_rust(src, dossier=None, nom="programme"):
     # 0.77 : la machine d'un cœur « en bandes » : il écrit directement dans le cube commun
     s.append("#[allow(dead_code)]\nfn ctx_bande(inst: &Instantane) -> Box<Ctx> {\n    let mut c = ctx_cylindre(inst);\n"
              "    c.ombre.as_mut().unwrap().partage = true;\n    c\n}")
+    s.append(code_druide())
     s.append("pub fn lancer(entrees: &[String]) {\n    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
-             "NOM, entrees);\n}\n")
+             "NOM, entrees, druide_fin);\n}\n")
     return "\n".join(s), mots
+
+
+def code_druide():
+    """0.835 : les compteurs des molécules (VTX_DRUIDE=poids) et druide_fin, que le noyau appelle à la fin : PROG.poids
+    (« molécule travail ») et PROG.temps (le temps du programme, en microsecondes), à côté de l'exécutable"""
+    mode = druide_mode()
+    noms = DRUIDE_NOMS[0]
+    out = []
+    n = max(1, len(noms))
+    out.append("#[allow(dead_code)]\nstatic POIDS: [std::sync::atomic::AtomicU64; %d] = { const Z: std::sync::atomic::AtomicU64 = "
+               "std::sync::atomic::AtomicU64::new(0); [Z; %d] };" % (n, n))
+    out.append("#[allow(dead_code)]\nconst NOMS_POIDS: [&str; %d] = [%s];" % (len(noms), ", ".join('"%s"' % x for x in noms)))
+    out.append("#[allow(unused_variables)]\nfn druide_fin(us: u128) {")
+    if mode in ("poids", "1"):
+        out.append("    use std::io::Write;")
+        out.append("    let exe = match std::env::current_exe() { Ok(e) => e, Err(_) => return };")
+    if mode == "1":
+        # le temps seul : la passe des poids (ses compteurs pèsent) n'écrit pas de temps
+        out.append("    if let Ok(mut f) = std::fs::File::create(exe.with_extension(\"temps\")) { let _ = writeln!(f, \"temps {}\", us); }")
+    if mode == "poids":
+        out.append("    if let Ok(mut f) = std::fs::File::create(exe.with_extension(\"poids\")) {")
+        out.append("        for (k, n) in NOMS_POIDS.iter().enumerate() {")
+        out.append("            let _ = writeln!(f, \"{} {}\", n, POIDS[k].load(std::sync::atomic::Ordering::Relaxed));")
+        out.append("        }")
+        out.append("    }")
+    out.append("}")
+    return "\n".join(out)
 
 
 def source_rust(src, dossier=None, nom="programme", sortie=None):
     """Le programme Rust complet d'un programme vtx."""
     ESUS_RELEVE[0] = []
+    DRUIDE_NOMS[0] = []
+    ESUS_ETEINT[0] = lire_arn_druide(os.path.splitext(sortie)[0] + ".arn") if sortie else set()
     prog, mots = programme_rust(src, dossier, nom)
     main = "\nfn main() {\n    let a: Vec<String> = std::env::args().collect();\n    lancer(&a[1..]);\n}\n"
     return noyau(sortie) + "\n" + prog + main, mots

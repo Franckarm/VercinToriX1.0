@@ -1502,7 +1502,7 @@ fn presenter_forge(s: &Spu128) -> u128 {
 }
 
 fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vider: fn(&mut Ctx), mots: &[u128], fin_code: u128,
-                    nom: &str, entrees: &[String]) {
+                    nom: &str, entrees: &[String], druide_fin: fn(u128)) {
     let mut m = Spu128::nouveau();
     m.dossier = std::env::current_dir().ok();
     // 0.78 : la fenêtre du programme (ou VTX_IMAGES=DOSSIER : les images en fichiers PNG), ouverte à la première image
@@ -1548,6 +1548,8 @@ fn lancer_programme(principal: fn(&mut Ctx) -> u128, debuter: fn(&mut Ctx), vide
     if std::env::var("FORGE_TEMPS").is_ok() {
         eprintln!("{} : {:.3} s", nom, duree.as_secs_f64());
     }
+    // 0.835 : le Druide : le temps du programme (et le travail de chaque molécule, si la forge les a comptés)
+    druide_fin(duree.as_micros());
     // 0.830 : un gène choisi à la forge (la carte directe) : le temps du programme entier, pour Gutuater, qui le mettra
     // en face de celui de l'autre variante (« temps GENE LIEU VARIANTE MICROSECONDES »)
     if let Some(d) = dossier_gutuater() {

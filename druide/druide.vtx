@@ -1,25 +1,34 @@
 // machine : lugus
-// Le Druide (0.835), premier geste : la mémoire de ce qu'Ésus a prouvé. Le Druide conseille, modèle, propose,
-// organise, connecte et déconnecte, apprend (le créateur) ; il touche l'ARN et le cube, jamais l'ADN.
+// Le Druide (0.835) : il conseille, modèle, propose, organise, connecte et déconnecte, apprend (le créateur) ; il
+// touche l'ARN et le cube, jamais l'ADN. Ses cinq gestes, à chaque forge :
 //
 //     lugus druide/druide.vtx      (il lit une ligne : le chemin du relevé d'Ésus, PROG.esus, écrit par la forge)
 //
-// Le relevé dit, pour chaque variable entière de chaque molécule, ses quatre points : le plus bas, le plus haut, les
-// bits sûrement à 0, les bits sûrement à 1. Le Druide les range dans son cube, sous le cube mère du programme
-// (cube128-PROG-e-4040.cub, dans son dossier à lui) : les quatre points d'une variable à la même place, sur les quatre
-// étages de la fréquence 4040 ; à la fréquence 4041, étage 0, l'empreinte de son nom (molécule et variable). La
-// machine range chaque cube avec son anti-cube et son ombre : les sommets de secours, qui le réparent s'il s'abîme.
-//
-// Avant de ranger, il compare avec ce qu'il savait (en quatre valeurs) :
-//   vrai      la même chose, ou plus serré (la preuve s'est resserrée) ;
-//   faux      plus large (la preuve s'est relâchée : une retouche du programme a élargi la variable) ;
-//   inconnu   une variable qu'il ne connaissait pas ;
-//   variable  ni l'un ni l'autre (la preuve s'est déplacée : à regarder).
-// Il écrit son carnet à côté du relevé : PROG.druide.
+// 1. se souvenir : les quatre points de chaque variable (le relevé d'Ésus) rangés dans son cube, sous le cube mère du
+//    programme, dans son dossier à lui (cube128-PROG-e-4040.cub) : les quatre étages de la fréquence 4040 ; l'empreinte
+//    du nom à 4041. La machine range chaque cube avec son anti-cube et son ombre : les sommets de secours.
+// 2. apprendre : il compare avec ce qu'il savait (vrai : pareil ou plus serré ; faux : plus large ; inconnu : nouvelle ;
+//    variable : déplacée) et en fait une synapse par variable (4042 : pour, contre ; les règles de Gutuater : il faut
+//    trois preuves d'un côté, et trois fois plus que de l'autre) : une borne vraie de forge en forge est une règle.
+// 3. relier : le travail de chaque molécule (PROG.poids, quand la forge les a comptés : VTX_DRUIDE=poids) et le temps
+//    du programme (PROG.temps) ; il les garde (4043 : chaque molécule, son état, son poids).
+// 4. proposer : PROG.conseils, les molécules par leur poids, et ce qui aiderait Ésus dans chacune.
+// 5. adapter et évoluer : son ARN (PROG.arn, lu par la forge) connecte ou déconnecte Ésus molécule par molécule. À
+//    chaque génération, une mutation (une molécule lourde, tirée au hasard, basculée) ; le programme se mesure ; la
+//    variante est gardée si elle va plus vite (2 % au moins), sinon il revient au parent (4044 : la génération, le temps
+//    du parent, la mutation en attente). La garde : Ésus est exact par preuve ; aucune variante ne change le résultat.
+// Son carnet : PROG.druide.
 
 constante F_POINTS = 4040;
 constante F_NOMS = 4041;
+constante F_SYNAPSES = 4042;
+constante F_MOLECULES = 4043;
+constante F_LIGNEE = 4044;
 constante PLACES = 65536;
+constante PLACES_M = 4096;
+constante SUR = 3;
+constante PLEIN = 24;
+constante TOUT = 340282366920938463463374607431768211455;
 
 fonction lire_fichier(nom: texte): texte {
     soit canal = ouvrir_lecture(nom);
@@ -84,6 +93,57 @@ fonction place_de(h) {
     retour 0 - 1;
 }
 
+// la place d'une molécule (4043, étage 0 : l'empreinte de son nom)
+fonction place_molecule(h) {
+    soit p = h % PLACES_M;
+    soit n = 0;
+    tantque n < PLACES_M {
+        soit x = @[cube_adresse(0, F_MOLECULES, p)];
+        si x == 0 || x == h {
+            retour p;
+        }
+        p = (p + 1) % PLACES_M;
+        n = n + 1;
+    }
+    retour 0 - 1;
+}
+
+// l'état d'une synapse (les règles de Gutuater)
+fonction etat_synapse(vp, vc): logique {
+    si vp < SUR && vc < SUR {
+        retour inconnu;
+    }
+    si vp >= SUR && vp >= 3 * vc {
+        retour vrai;
+    }
+    si vc >= SUR && vc >= 3 * vp {
+        retour faux;
+    }
+    retour variable;
+}
+
+// un texte est-il dans la liste (par son contenu) ?
+fonction dans_liste(l, x: texte) {
+    soit liste = ["x"];
+    liste = l;
+    pour k dans 0..longueur(liste) {
+        si liste[k] == x {
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
+fonction temps_de(t: texte) {
+    pour l dans decouper(t, "\n") {
+        soit m = mots(l);
+        si longueur(m) == 2 && m[0] == "temps" {
+            retour nombre(m[1]);
+        }
+    }
+    retour 0;
+}
+
 // ce qu'il savait (a…) contre ce qu'Ésus prouve maintenant (n…)
 fonction comparer(connu, ab, ah, az, ao, nb, nh, nz, no): logique {
     si connu == 0 {
@@ -112,6 +172,124 @@ fonction nom_logique(l: logique): texte {
     retour r;
 }
 
+// 1 et 2 : se souvenir et apprendre (une variable) ; rend l'état de la comparaison, en quit (0 inconnu, 1 faux,
+// 2 vrai, 3 variable)
+fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no) {
+    soit h = empreinte_nom(mol + " " + var);
+    soit p = place_de(h);
+    si p == (0 - 1) {
+        retour 0;
+    }
+    soit connu = 0;
+    si @[cube_adresse(0, F_NOMS, p)] == h {
+        connu = 1;
+    }
+    soit etat = comparer(connu, @[cube_adresse(0, F_POINTS, p)], @[cube_adresse(1, F_POINTS, p)],
+                         @[cube_adresse(2, F_POINTS, p)], @[cube_adresse(3, F_POINTS, p)], nb, nh, nz, no);
+    soit q = 0;
+    selon etat {
+        vrai { q = 2; }
+        faux { q = 1; }
+        inconnu { q = 0; }
+        variable { q = 3; }
+    }
+    // la synapse : vrai, une preuve pour ; faux, une contre ; variable, l'une et l'autre ; l'usure au-delà de PLEIN
+    soit vp = 0;
+    soit vc = 0;
+    si connu == 1 {
+        vp = @[cube_adresse(0, F_SYNAPSES, p)];
+        vc = @[cube_adresse(1, F_SYNAPSES, p)];
+    }
+    si q == 2 || q == 3 {
+        vp = vp + 1;
+    }
+    si q == 1 || q == 3 {
+        vc = vc + 1;
+    }
+    si vp + vc > PLEIN {
+        vp = vp / 2;
+        vc = vc / 2;
+    }
+    @[cube_adresse(0, F_NOMS, p)] = h;
+    @[cube_adresse(0, F_POINTS, p)] = nb;
+    @[cube_adresse(1, F_POINTS, p)] = nh;
+    @[cube_adresse(2, F_POINTS, p)] = nz;
+    @[cube_adresse(3, F_POINTS, p)] = no;
+    @[cube_adresse(0, F_SYNAPSES, p)] = vp;
+    @[cube_adresse(1, F_SYNAPSES, p)] = vc;
+    retour q;
+}
+
+// la règle apprise d'une variable (sa synapse)
+fonction regle(mol: texte, var: texte): logique {
+    soit h = empreinte_nom(mol + " " + var);
+    soit p = place_de(h);
+    si p == (0 - 1) || @[cube_adresse(0, F_NOMS, p)] != h {
+        retour inconnu;
+    }
+    retour etat_synapse(@[cube_adresse(0, F_SYNAPSES, p)], @[cube_adresse(1, F_SYNAPSES, p)]);
+}
+
+// 4043 : l'état d'Ésus dans une molécule (0 jamais vue : connecté ; 1 déconnecté ; 2 connecté), son poids
+fonction etat_esus(mol: texte) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p == (0 - 1) || @[cube_adresse(0, F_MOLECULES, p)] != h {
+        retour 2;
+    }
+    soit e = @[cube_adresse(1, F_MOLECULES, p)];
+    si e == 0 {
+        retour 2;
+    }
+    retour e;
+}
+
+fonction poser_esus(mol: texte, e) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p != (0 - 1) {
+        @[cube_adresse(0, F_MOLECULES, p)] = h;
+        @[cube_adresse(1, F_MOLECULES, p)] = e;
+    }
+}
+
+// 4043, étage 3 : la mutation de cette molécule a été rejetée (1) : elle n'est plus retentée tant qu'elle ne change pas
+fonction rejetee(mol: texte) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p == (0 - 1) || @[cube_adresse(0, F_MOLECULES, p)] != h {
+        retour 0;
+    }
+    retour @[cube_adresse(3, F_MOLECULES, p)];
+}
+
+fonction poser_rejet(mol: texte, r) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p != (0 - 1) {
+        @[cube_adresse(0, F_MOLECULES, p)] = h;
+        @[cube_adresse(3, F_MOLECULES, p)] = r;
+    }
+}
+
+fonction poids_de(mol: texte) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p == (0 - 1) || @[cube_adresse(0, F_MOLECULES, p)] != h {
+        retour 0;
+    }
+    retour @[cube_adresse(2, F_MOLECULES, p)];
+}
+
+fonction poser_poids(mol: texte, w) {
+    soit h = empreinte_nom(mol);
+    soit p = place_molecule(h);
+    si p != (0 - 1) {
+        @[cube_adresse(0, F_MOLECULES, p)] = h;
+        @[cube_adresse(2, F_MOLECULES, p)] = w;
+    }
+}
+
 fonction principal() {
     soit chemin = lire_ligne();
     tantque longueur(chemin) > 0 && (car(chemin, longueur(chemin) - 1) == 13 || car(chemin, longueur(chemin) - 1) == 32) {
@@ -129,58 +307,272 @@ fonction principal() {
         fin = fin - 5;
     }
     soit prog = sous_texte(chemin, debut, fin);
+    soit base = sous_texte(chemin, 0, fin);
     soit releve = lire_fichier(chemin);
     si longueur(releve) == 0 {
         afficher("le Druide : pas de relevé d'Ésus à", chemin);
         retour;
     }
     cube_mere(prog);
-    soit carnet = ouvrir_ecriture(sous_texte(chemin, 0, fin) + ".druide");
-    ecrire_texte(carnet, "# carnet du Druide pour " + prog + " : molécule variable état (ce qu'Ésus prouve, contre ce qu'il savait) bas haut\n");
+
+    // 1 et 2 : se souvenir, apprendre
+    soit carnet = ouvrir_ecriture(base + ".druide");
+    ecrire_texte(carnet, "# carnet du Druide pour " + prog + "\n# les variables : molécule variable état (contre ce qu'il savait) règle (apprise) bas haut\n");
     soit compte = [0, 0, 0, 0];
     soit nlu = 0;
+    soit lmol = ["x"];
+    soit lvar = ["x"];
+    soit lhaut = [0];
+    soit letat = [0];
+    retirer(lmol);
+    retirer(lvar);
+    retirer(lhaut);
+    retirer(letat);
     pour l dans decouper(releve, "\n") {
         soit m = mots(l);
         si longueur(m) == 6 && commence_par(l, "#") == 0 {
-            soit h = empreinte_nom(m[0] + " " + m[1]);
-            soit p = place_de(h);
-            si p != (0 - 1) {
-                soit nb = de_hexa(m[2]);
-                soit nh = de_hexa(m[3]);
-                soit nz = de_hexa(m[4]);
-                soit no = de_hexa(m[5]);
-                soit connu = 0;
-                si @[cube_adresse(0, F_NOMS, p)] == h {
-                    connu = 1;
+            soit nh = de_hexa(m[3]);
+            soit q = apprendre_variable(m[0], m[1], de_hexa(m[2]), nh, de_hexa(m[4]), de_hexa(m[5]));
+            compte[q] = compte[q] + 1;
+            ajouter(lmol, m[0]);
+            ajouter(lvar, m[1]);
+            ajouter(lhaut, nh);
+            ajouter(letat, q);
+            soit noms_q = ["inconnu", "faux", "vrai", "variable"];
+            ecrire_texte(carnet, m[0] + " " + m[1] + " " + noms_q[q] + " " + nom_logique(regle(m[0], m[1])) + " "
+                         + m[2] + " " + m[3] + "\n");
+            nlu = nlu + 1;
+        }
+    }
+
+    // une molécule retouchée (une de ses variables plus large ou déplacée) redevient candidate aux mutations
+    pour kr0 dans 0..longueur(lmol) {
+        si letat[kr0] == 1 || letat[kr0] == 3 {
+            poser_rejet(lmol[kr0], 0);
+        }
+    }
+    // 3 : relier : le travail de chaque molécule (s'il a été compté), puis le temps du programme
+    soit poids_txt = lire_fichier(base + ".poids");
+    pour lp dans decouper(poids_txt, "\n") {
+        soit mp = mots(lp);
+        si longueur(mp) == 2 {
+            poser_poids(mp[0], nombre(mp[1]));
+        }
+    }
+    // les molécules connues : celles du relevé (et du poids) ; leur poids total
+    soit lm = ["x"];
+    retirer(lm);
+    pour km dans 0..longueur(lmol) {
+        si dans_liste(lm, lmol[km]) == 0 {
+            ajouter(lm, lmol[km]);
+        }
+    }
+    pour lq dans decouper(poids_txt, "\n") {
+        soit mq = mots(lq);
+        si longueur(mq) == 2 && dans_liste(lm, mq[0]) == 0 {
+            ajouter(lm, mq[0]);
+        }
+    }
+    soit total = 0;
+    pour kt dans 0..longueur(lm) {
+        total = total + poids_de(lm[kt]);
+    }
+    soit t = temps_de(lire_fichier(base + ".temps"));
+    // un temps ne compte qu'une fois (comme les mesures de Gutuater)
+    fermer(ouvrir_ecriture(base + ".temps"));
+
+    // 5 : évoluer, à la manière de Gutuater : pendant une mutation, le parent et la variante jouent tour à tour (le
+    // bruit de la mesure ne décide pas sur un seul essai) ; chaque paire est une preuve (3 % de mieux : pour ; de moins :
+    // contre) ; la synapse décide (vrai : la variante est gardée ; faux : retour au parent) ; huit paires sans décision :
+    // le doute garde le parent. La lignée (4044) : génération, temps du parent, molécule en attente, son état d'avant ;
+    // à l'adresse 1 : le tour (1 : ce passage était la variante ; 2 : le parent), le temps de la variante, pour, contre ;
+    // à l'adresse 2 : les paires jouées.
+    soit gen = @[cube_adresse(0, F_LIGNEE, 0)];
+    soit tp = @[cube_adresse(1, F_LIGNEE, 0)];
+    soit attente = @[cube_adresse(2, F_LIGNEE, 0)];
+    soit avant = @[cube_adresse(3, F_LIGNEE, 0)];
+    soit tour = @[cube_adresse(0, F_LIGNEE, 1)];
+    soit tv = @[cube_adresse(1, F_LIGNEE, 1)];
+    soit sp = @[cube_adresse(2, F_LIGNEE, 1)];
+    soit sc = @[cube_adresse(3, F_LIGNEE, 1)];
+    soit paires = @[cube_adresse(0, F_LIGNEE, 2)];
+    soit mute = "";
+    pour ka dans 0..longueur(lm) {
+        si attente != 0 && empreinte_nom(lm[ka]) == attente {
+            mute = lm[ka];
+        }
+    }
+    ecrire_texte(carnet, "# la lignée : génération " + texte(gen) + ", ce passage " + texte(t) + " µs\n");
+    si attente != 0 && longueur(mute) == 0 {
+        attente = 0;
+    }
+    si attente != 0 && t > 0 {
+        si tour == 1 {
+            tv = t;
+        } sinon {
+            tp = t;
+        }
+        si tour == 1 && tp > 0 {
+            paires = paires + 1;
+            si tv * 100 <= tp * 97 {
+                sp = sp + 1;
+            } sinon si tv * 100 >= tp * 103 {
+                sc = sc + 1;
+            }
+            ecrire_texte(carnet, "évolution : " + mute + " : la variante " + texte(tv) + " µs contre le parent " + texte(tp)
+                         + " µs (pour " + texte(sp) + ", contre " + texte(sc) + ")\n");
+        }
+        soit decide = etat_synapse(sp, sc);
+        soit fini = 0;
+        selon decide {
+            vrai {
+                ecrire_texte(carnet, "évolution : la mutation de " + mute + " est gardée (plus rapide)\n");
+                fini = 1;
+            }
+            faux {
+                poser_esus(mute, avant);
+                poser_rejet(mute, 1);
+                ecrire_texte(carnet, "évolution : la mutation de " + mute + " est rejetée (plus lente) : retour au parent\n");
+                fini = 1;
+            }
+            inconnu { }
+            variable { }
+        }
+        si fini == 0 && paires >= 8 {
+            poser_esus(mute, avant);
+            poser_rejet(mute, 1);
+            ecrire_texte(carnet, "évolution : la mutation de " + mute + " n'a rien prouvé en huit paires : le parent reste\n");
+            fini = 1;
+        }
+        si fini == 1 {
+            attente = 0;
+        } sinon {
+            // le tour suivant : l'autre
+            si tour == 1 {
+                tour = 2;
+            } sinon {
+                tour = 1;
+            }
+        }
+    } sinon si t > 0 {
+        tp = t;
+    }
+    // une mutation neuve : une molécule qui pèse (2 % au moins du travail), tirée au hasard (la graine : le temps)
+    si attente == 0 && t > 0 && total > 0 {
+        soit candidates = ["x"];
+        retirer(candidates);
+        pour kc dans 0..longueur(lm) {
+            si poids_de(lm[kc]) * 50 >= total && rejetee(lm[kc]) == 0 {
+                ajouter(candidates, lm[kc]);
+            }
+        }
+        si longueur(candidates) > 0 {
+            graine(t + gen);
+            mute = candidates[hasard(longueur(candidates))];
+            avant = etat_esus(mute);
+            soit neuf = 1;
+            si avant == 1 {
+                neuf = 2;
+            }
+            poser_esus(mute, neuf);
+            attente = empreinte_nom(mute);
+            gen = gen + 1;
+            tour = 1;
+            tv = 0;
+            sp = 0;
+            sc = 0;
+            paires = 0;
+            soit dit = "connecte";
+            si neuf == 1 {
+                dit = "déconnecte";
+            }
+            ecrire_texte(carnet, "évolution : génération " + texte(gen) + " : la mutation " + dit + " Ésus dans " + mute + "\n");
+        } sinon {
+            ecrire_texte(carnet, "évolution : rien à essayer (les mutations des molécules lourdes ont été jugées) : la lignée est stable\n");
+        }
+    }
+    @[cube_adresse(0, F_LIGNEE, 0)] = gen;
+    @[cube_adresse(1, F_LIGNEE, 0)] = tp;
+    @[cube_adresse(2, F_LIGNEE, 0)] = attente;
+    @[cube_adresse(3, F_LIGNEE, 0)] = avant;
+    @[cube_adresse(0, F_LIGNEE, 1)] = tour;
+    @[cube_adresse(1, F_LIGNEE, 1)] = tv;
+    @[cube_adresse(2, F_LIGNEE, 1)] = sp;
+    @[cube_adresse(3, F_LIGNEE, 1)] = sc;
+    @[cube_adresse(0, F_LIGNEE, 2)] = paires;
+    fermer(carnet);
+
+    // 5 : adapter : l'ARN (la forge le lit : « esus MOLÉCULE 0 » déconnecte Ésus de la molécule)
+    soit arn = ouvrir_ecriture(base + ".arn");
+    ecrire_texte(arn, "# ARN du Druide pour " + prog + ", lu par la forge : esus MOLÉCULE 0 (Ésus déconnecté), 1 (connecté)\n");
+    pour ke dans 0..longueur(lm) {
+        soit ee = etat_esus(lm[ke]);
+        si attente != 0 && lm[ke] == mute && tour == 2 {
+            ee = avant;
+        }
+        si ee == 1 {
+            ecrire_texte(arn, "esus " + lm[ke] + " 0\n");
+        }
+    }
+    fermer(arn);
+
+    // 4 : proposer : les molécules par leur poids, et ce qui aiderait Ésus dans chacune
+    soit cons = ouvrir_ecriture(base + ".conseils");
+    ecrire_texte(cons, "# conseils du Druide pour " + prog + " (les molécules par leur travail ; ce qu'Ésus prouve ou non)\n");
+    soit pris = tableau(longueur(lm));
+    pour rang dans 0..10 {
+        soit meilleur = 0 - 1;
+        soit wmax = 0;
+        pour kr dans 0..longueur(lm) {
+            si pris[kr] == 0 && poids_de(lm[kr]) > wmax {
+                wmax = poids_de(lm[kr]);
+                meilleur = kr;
+            }
+        }
+        si meilleur != (0 - 1) && wmax * 100 < total {
+            meilleur = 0 - 1;
+        }
+        si meilleur != (0 - 1) {
+            pris[meilleur] = 1;
+            soit nomm = lm[meilleur];
+            soit part = 0;
+            si total > 0 {
+                part = wmax * 1000 / total;
+            }
+            soit etat_e = "connecté";
+            si etat_esus(nomm) == 1 {
+                etat_e = "déconnecté";
+            }
+            ecrire_texte(cons, nomm + " : " + texte(part / 10) + "," + texte(part % 10) + " % du travail ; Ésus " + etat_e + "\n");
+            pour kv dans 0..longueur(lmol) {
+                si lmol[kv] == nomm {
+                    si lhaut[kv] == TOUT {
+                        ecrire_texte(cons, "    " + lvar[kv] + " : aucune borne prouvée (128 bits) ; un masque, ou une borne de boucle, la mettrait en 64 bits\n");
+                    } sinon si lhaut[kv] <= 18446744073709551615 {
+                        selon regle(nomm, lvar[kv]) {
+                            vrai { ecrire_texte(cons, "    " + lvar[kv] + " : borne stable (au plus " + texte(lhaut[kv]) + ") : ses opérations en 64 bits\n"); }
+                            faux { ecrire_texte(cons, "    " + lvar[kv] + " : sa borne s'élargit d'une forge à l'autre : à regarder\n"); }
+                            inconnu { ecrire_texte(cons, "    " + lvar[kv] + " : au plus " + texte(lhaut[kv]) + " (à confirmer aux prochaines forges)\n"); }
+                            variable { ecrire_texte(cons, "    " + lvar[kv] + " : sa borne se déplace : à regarder\n"); }
+                        }
+                    }
                 }
-                soit ab = @[cube_adresse(0, F_POINTS, p)];
-                soit ah = @[cube_adresse(1, F_POINTS, p)];
-                soit az = @[cube_adresse(2, F_POINTS, p)];
-                soit ao = @[cube_adresse(3, F_POINTS, p)];
-                soit etat = comparer(connu, ab, ah, az, ao, nb, nh, nz, no);
-                soit q = 0;
-                selon etat {
-                    vrai { q = 2; }
-                    faux { q = 1; }
-                    inconnu { q = 0; }
-                    variable { q = 3; }
-                }
-                compte[q] = compte[q] + 1;
-                ecrire_texte(carnet, m[0] + " " + m[1] + " " + nom_logique(etat) + " " + texte(nb) + " " + texte(nh) + "\n");
-                @[cube_adresse(0, F_NOMS, p)] = h;
-                @[cube_adresse(0, F_POINTS, p)] = nb;
-                @[cube_adresse(1, F_POINTS, p)] = nh;
-                @[cube_adresse(2, F_POINTS, p)] = nz;
-                @[cube_adresse(3, F_POINTS, p)] = no;
-                nlu = nlu + 1;
             }
         }
     }
-    fermer(carnet);
+    fermer(cons);
+
     soit pages = ranger_cube(0, F_NOMS);
+    pour el dans 0..4 {
+        pages = pages + ranger_cube(el, F_LIGNEE);
+    }
     pour e dans 0..4 {
         pages = pages + ranger_cube(e, F_POINTS);
     }
-    afficher("le Druide :", prog, ":", nlu, "variables ; vrai (pareil ou plus serré)", compte[2], ", faux (plus large)",
-             compte[1], ", inconnu (nouvelles)", compte[0], ", variable (déplacées)", compte[3], ";", pages, "pages rangées");
+    pages = pages + ranger_cube(0, F_SYNAPSES) + ranger_cube(1, F_SYNAPSES);
+    pour em dans 0..4 {
+        pages = pages + ranger_cube(em, F_MOLECULES);
+    }
+    afficher("le Druide :", prog, ":", nlu, "variables ; vrai", compte[2], ", faux", compte[1], ", inconnu", compte[0],
+             ", variable", compte[3], "; génération", gen, "; temps", t, "µs ;", pages, "pages rangées");
 }

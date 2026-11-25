@@ -52,6 +52,39 @@ verifier("la boucle allongée : i et a plus larges (faux), b pareil (vrai)",
 verifier("le Druide range dans son cube à lui (sous le cube mère du programme), pas à côté du programme",
          any(f.startswith("cube128-essai_druide-") for f in os.listdir(dr)) and not any(f.startswith("cube128-") for f in os.listdir(d)),
          os.listdir(dr))
+# relier : la forge compte le travail de chaque molécule (VTX_DRUIDE=poids) : principal porte ses 1000 tours
+p = os.path.join(d, "poids_druide.vtx")
+open(p, "w", encoding="utf-8").write(PROG.replace("N", "1000"))
+exe = os.path.join(d, "poids_druide" + (".exe" if WIN else ""))
+env = dict(os.environ, VTX_DRUIDE="poids")
+subprocess.run([sys.executable, os.path.join(racine, "forge", "forge128.py"), p, "-o", exe], capture_output=True, env=env)
+subprocess.run([exe], capture_output=True)
+poids = {}
+if os.path.exists(os.path.join(d, "poids_druide.poids")):
+    for l in open(os.path.join(d, "poids_druide.poids"), encoding="utf-8"):
+        m = l.split()
+        if len(m) == 2:
+            poids[m[0]] = int(m[1])
+verifier("relier : le travail de principal compté (ses 1000 tours et son appel)", poids.get("principal") == 1001, poids)
+# adapter : l'ARN du Druide déconnecte Ésus d'une molécule : la forge ne la taille plus (et le résultat ne change pas)
+sys.path.insert(0, os.path.join(racine, "forge"))
+import forge128  # noqa: E402
+src = open(p, encoding="utf-8").read()
+sortie = os.path.join(d, "arn_druide")
+code1, _ = forge128.source_rust(src, d, "arn_druide", sortie)
+open(sortie + ".arn", "w", encoding="utf-8").write("esus principal 0\n")
+code0, _ = forge128.source_rust(src, d, "arn_druide", sortie)
+
+
+def corps_principal(code):
+    i = code.find("fn f_principal(")
+    return code[i:code.find("\n}\n", i)]
+
+
+verifier("adapter : sans ARN, Ésus taille principal (le reste par une constante sans division)",
+         "modk128(" in corps_principal(code1) or "as u64) %" in corps_principal(code1), corps_principal(code1)[:400])
+verifier("adapter : « esus principal 0 » : Ésus déconnecté de principal", "modk128(" not in corps_principal(code0)
+         and "as u64) %" not in corps_principal(code0), corps_principal(code0)[:400])
 shutil.rmtree(d, ignore_errors=True)
 print("le Druide : " + ("tout est conforme" if echecs == 0 else f"{echecs} écart(s)"))
 sys.exit(1 if echecs else 0)

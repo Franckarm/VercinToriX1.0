@@ -4725,3 +4725,20 @@ du plus petit nombre divisé par -1 tombe juste sans règle à part.
 **Ce qui reste lent** est le même : la division de 128 bits coûte. La réponse prévue est le Druide : prouver qu'une valeur
 tient en 64 bits, et changer la division par une constante en multiplication.
 
+## 117. Ésus et le Druide (25 novembre, 0.835)
+
+**Ésus** est l'épisseur du cœur : il retire de l'ARN ce qui ne sert pas au travail. Il vit dans la forge, pas dans les
+mots de Lugus (sur l'émulateur, une division est une seule instruction : la changer l'allongerait). Il prouve, pour
+chaque variable, ses quatre points (le plus bas, le plus haut, les bits sûrs à 0 et à 1) et prend le codon de 64 bits
+quand tout y tient ; il change la division par une constante en multiplication. Sur une boucle à petites valeurs, le
+programme de 128 bits va aussi vite que sa version Dunon. Là où les valeurs sont vraiment grandes, il ne gagne rien :
+le coût du 128 y est réel.
+
+**Le Druide**, écrit en vtx, se souvient (son cube, sous le cube mère du programme, dans son dossier à lui), apprend (une
+synapse par variable), relie (le travail de chaque molécule, le temps du programme), propose (ses conseils) et adapte
+(son ARN, que la forge lit). Il évolue : une mutation, le parent et la variante en alternance, la sélection par la
+synapse, la mémoire des échecs. Il ne touche jamais l'ADN ; la garde est l'exactitude d'Ésus, prouvée.
+
+Ce qu'il sait faire est encore petit (une seule sorte de mutation) ; ce qui compte est la boucle : varier, mesurer
+honnêtement malgré le bruit, garder ou rendre, se souvenir. Les mutations plus riches s'y brancheront.
+

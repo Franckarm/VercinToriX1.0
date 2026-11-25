@@ -524,12 +524,29 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   du créateur : 4 sûrs, 4 en secours) : la machine range chaque cube avec son anti-cube et son ombre, qui le
   réparent ; ils jouent ce rôle (le Druide pourra dire, à la lecture, si son cube a dû être réparé : à faire, par
   `centre`). Test : `tests/test_druide.py` (dans verifier.py).
-- **Prochain pour le Druide** : apprendre (une variable qui reste vraie d'une forge à l'autre devient une règle que le
-  Druide propose à Ésus ; une fausse ou variable, un signal de retouche) ; relier son carnet aux mesures de Gutuater
-  et au poids des molécules (l'étape limitante) ; proposer (des conseils écrits, puis des variantes de l'ARN que la
-  garde essaie).
-- **Retirer `__borne`** quand l'indice est prouvé : laissé ; il faut prouver i < longueur(t) (une relation entre deux
-  valeurs, que des bornes ne donnent pas) ; le cas courant (`0..longueur(t)`) est déjà fait par l'épissage sûr.
+- **Le Druide, ses cinq gestes** (fait, la demande du créateur : apprendre, relier, proposer, adapter, évoluer) :
+  - *apprendre* : une synapse par variable (4042 : pour, contre ; les règles de Gutuater : 3 preuves d'un côté et trois
+    fois plus que de l'autre ; l'usure au-delà de 24) ; une borne vraie de forge en forge devient une règle ;
+  - *relier* : `VTX_DRUIDE=poids` à la forge : chaque molécule a son compteur (un appel, un tour de boucle), écrit à la
+    fin dans PROG.poids (les compteurs pèsent : 6 fois plus lent ; une passe de mesure seulement) ; `VTX_DRUIDE=1` :
+    PROG.temps (le temps du programme), pour les générations ; le Druide garde les poids (4043, étage 2) ;
+  - *proposer* : PROG.conseils : les molécules d'au moins 1 % du travail, et pour chaque variable : aucune borne (128
+    bits : un masque ou une borne de boucle aiderait), borne stable (ses opérations en 64 bits), borne qui s'élargit ou
+    se déplace (à regarder) ;
+  - *adapter* : PROG.arn (« esus MOLÉCULE 0 ») : la forge déconnecte Ésus de la molécule (`lire_arn_druide`,
+    `esus_actif`) ;
+  - *évoluer* : une mutation par génération (une molécule d'au moins 2 % du travail, tirée au hasard, Ésus basculé) ;
+    le parent et la variante jouent tour à tour (le bruit ne décide pas sur un essai) ; chaque paire, une preuve (3 %) ;
+    la synapse décide (vrai : gardée ; faux : retour au parent) ; huit paires sans décision : le parent reste ; une
+    mutation rejetée n'est plus retentée tant que la molécule ne change pas (une variable plus large ou déplacée la
+    rend de nouveau candidate) ; plus rien à essayer : « la lignée est stable ». La lignée : 4044.
+  - Essayé sur une boucle (40 millions de tours) : la mutation « déconnecter Ésus de principal » rejetée en trois
+    paires (la variante 79 à 95 ms contre le parent 58 à 83 : Ésus fait gagner), puis la lignée stable.
+  - Le cycle : forger (VTX_DRUIDE=poids) → lancer → druide ; puis à chaque génération : forger (VTX_DRUIDE=1, la forge
+    lit PROG.arn) → lancer → druide. Le noyau : `lancer_programme(…, druide_fin)`.
+- **Prochain pour le Druide** : des mutations plus riches que la bascule d'Ésus (les gènes de Gutuater : lot, fondre,
+  carte directe ; les choix du vergobret), la garde de l'empreinte sur les variantes qui pourraient changer un résultat,
+  et la lecture de `centre` (son cube a-t-il dû être réparé ?).
 - **Le Druide** (décidé avec le créateur) : il conseille, modèle, propose, organise, connecte et déconnecte, apprend ;
   il touche l'ARN et le cube chromatique, jamais l'ADN ; la garde le tient (rien ne passe sans le même résultat).
 
