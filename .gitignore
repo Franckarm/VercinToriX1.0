@@ -6,3 +6,11 @@ verifier.log
 feu/feu-de-camp.png
 ombre/ombre-256.png
 vtx-rs/target
+# 0.835 : ce que l'atelier et les exemples refont en tournant (les mots compilés, les cubes et les sons des exemples)
+*.vtx.mots
+*.lugus.mots
+exemples128/*128-*.cub
+exemples128/cube128-labyrinthe.cub
+exemples128/anticube128-labyrinthe.cub
+exemples128/ombre128-labyrinthe.cub
+exemples128/*.wav
