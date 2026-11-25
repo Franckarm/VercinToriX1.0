@@ -161,6 +161,42 @@ fonction comparer(connu, ab, ah, az, ao, nb, nh, nz, no): logique {
     retour variable;
 }
 
+// un nombre lisible (au-delà de 2^127, l'entier s'affiche signé : on le dit autrement)
+fonction lisible(n): texte {
+    si n == TOUT {
+        retour "2^128-1";
+    }
+    si n >= 170141183460469231731687303715884105728 {
+        retour "plus de 2^127";
+    }
+    retour texte(n);
+}
+
+// ce qui a changé, en clair (le quit de la comparaison ; l'ancien bas et haut, le neuf)
+fonction expliquer(q, ab, ah, nb, nh): texte {
+    soit de = "bas " + lisible(ab) + " -> " + lisible(nb) + ", haut " + lisible(ah) + " -> " + lisible(nh);
+    si q == 0 {
+        retour "nouvelle : bas " + lisible(nb) + ", haut " + lisible(nh);
+    }
+    si q == 2 {
+        si nb == ab && nh == ah {
+            retour "pareille";
+        }
+        retour "plus serrée : " + de;
+    }
+    si q == 1 {
+        retour "plus large (elle peut dépasser son ancien maximum ou minimum) : " + de;
+    }
+    // variable : ni dedans ni autour
+    si nb > ab && nh > ah {
+        retour "déplacée vers le haut (plus grande que l'ancien maximum, jamais aussi petite qu'avant) : " + de;
+    }
+    si nb < ab && nh < ah {
+        retour "déplacée vers le bas (plus petite que l'ancien minimum, jamais aussi grande qu'avant) : " + de;
+    }
+    retour "mêmes limites, d'autres bits sûrs (sa forme a changé, pas sa taille) : " + de;
+}
+
 fonction nom_logique(l: logique): texte {
     soit r = "inconnu";
     selon l {
@@ -174,7 +210,7 @@ fonction nom_logique(l: logique): texte {
 
 // 1 et 2 : se souvenir et apprendre (une variable) ; rend l'état de la comparaison, en quit (0 inconnu, 1 faux,
 // 2 vrai, 3 variable)
-fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no) {
+fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no, carnet) {
     soit h = empreinte_nom(mol + " " + var);
     soit p = place_de(h);
     si p == (0 - 1) {
@@ -200,6 +236,9 @@ fonction apprendre_variable(mol: texte, var: texte, nb, nh, nz, no) {
         vp = @[cube_adresse(0, F_SYNAPSES, p)];
         vc = @[cube_adresse(1, F_SYNAPSES, p)];
     }
+    soit noms_q = ["inconnu", "faux", "vrai", "variable"];
+    ecrire_texte(carnet, mol + " " + var + " " + noms_q[q] + " : " + expliquer(q, @[cube_adresse(0, F_POINTS, p)],
+                 @[cube_adresse(1, F_POINTS, p)], nb, nh) + "\n");
     si q == 2 || q == 3 {
         vp = vp + 1;
     }
@@ -317,7 +356,7 @@ fonction principal() {
 
     // 1 et 2 : se souvenir, apprendre
     soit carnet = ouvrir_ecriture(base + ".druide");
-    ecrire_texte(carnet, "# carnet du Druide pour " + prog + "\n# les variables : molécule variable état (contre ce qu'il savait) règle (apprise) bas haut\n");
+    ecrire_texte(carnet, "# carnet du Druide pour " + prog + "\n# les variables : molécule variable état : ce qui a changé (vrai : pareille ou plus serrée ; faux : plus large ; inconnu : nouvelle ; variable : déplacée)\n");
     soit compte = [0, 0, 0, 0];
     soit nlu = 0;
     soit lmol = ["x"];
@@ -332,15 +371,13 @@ fonction principal() {
         soit m = mots(l);
         si longueur(m) == 6 && commence_par(l, "#") == 0 {
             soit nh = de_hexa(m[3]);
-            soit q = apprendre_variable(m[0], m[1], de_hexa(m[2]), nh, de_hexa(m[4]), de_hexa(m[5]));
+            soit q = apprendre_variable(m[0], m[1], de_hexa(m[2]), nh, de_hexa(m[4]), de_hexa(m[5]), carnet);
             compte[q] = compte[q] + 1;
             ajouter(lmol, m[0]);
             ajouter(lvar, m[1]);
             ajouter(lhaut, nh);
             ajouter(letat, q);
-            soit noms_q = ["inconnu", "faux", "vrai", "variable"];
-            ecrire_texte(carnet, m[0] + " " + m[1] + " " + noms_q[q] + " " + nom_logique(regle(m[0], m[1])) + " "
-                         + m[2] + " " + m[3] + "\n");
+            ecrire_texte(carnet, "    sa règle (apprise de forge en forge) : " + nom_logique(regle(m[0], m[1])) + "\n");
             nlu = nlu + 1;
         }
     }
@@ -573,6 +610,6 @@ fonction principal() {
     pour em dans 0..4 {
         pages = pages + ranger_cube(em, F_MOLECULES);
     }
-    afficher("le Druide :", prog, ":", nlu, "variables ; vrai", compte[2], ", faux", compte[1], ", inconnu", compte[0],
-             ", variable", compte[3], "; génération", gen, "; temps", t, "µs ;", pages, "pages rangées");
+    afficher("le Druide :", prog, ":", nlu, "variables ; pareilles ou plus serrées", compte[2], ", plus larges", compte[1],
+             ", nouvelles", compte[0], ", déplacées", compte[3], "; génération", gen, "; temps", t, "µs ;", pages, "pages rangées");
 }

@@ -107,14 +107,11 @@ def esus_definitions(corps, params):
                 parcourir(y)
 
     parcourir(corps)
-    vues, en_cours = {}, set()
+    vues, en_cours, hyp = {}, {}, {}
+    lu_hyp = [0]   # combien de fois une hypothèse a été lue (un résultat qui en dépend ne se garde pas)
+    BAS = (G128, 0, G128, G128)   # rien encore : pas une seule valeur
 
-    def pv(nom):
-        if nom in vues:
-            return vues[nom]
-        if nom in inconnues or nom not in defs or nom in en_cours:
-            return INCONNU4
-        en_cours.add(nom)
+    def calculer(nom):
         bas, haut, z, o = G128, 0, G128, G128
         for d in defs[nom]:
             if d[0] == "expr":
@@ -128,11 +125,45 @@ def esus_definitions(corps, params):
                     b2, h2 = pa[0], min(G128, max(pa[1], pf[1] + pas))
                     z2, o2 = esus_haut(h2, 0, 0)
             bas, haut, z, o = min(bas, b2), max(haut, h2), z & z2, o & o2
-            if haut == G128 and bas == 0 and z == 0 and o == 0:
+        return bas, haut, z, o
+
+    def dedans(a, b):
+        # a ⊆ b : l'intervalle de a dans celui de b, et b ne sait pas plus de bits que a
+        return a[0] >= b[0] and a[1] <= b[1] and (a[2] & b[2]) == b[2] and (a[3] & b[3]) == b[3]
+
+    def pv(nom):
+        if nom in vues:
+            return vues[nom]
+        if nom in inconnues or nom not in defs:
+            return INCONNU4
+        if nom in en_cours:
+            # 0.835 : une variable qui dépend d'elle-même (s = s ^ x…) : son hypothèse du moment
+            lu_hyp[0] += 1
+            return hyp.get(nom, BAS)
+        avant_lu = lu_hyp[0]
+        en_cours[nom] = True
+        hyp[nom] = BAS
+        r = INCONNU4
+        for tour in range(140):
+            res = calculer(nom)
+            if tour > 0 and dedans(res, hyp[nom]):
+                r = hyp[nom]   # la borne tient d'un tour à l'autre : elle est prouvée
                 break
-        en_cours.discard(nom)
-        vues[nom] = (bas, haut, z, o)
-        return vues[nom]
+            h = hyp[nom]
+            j = (min(h[0], res[0]), max(h[1], res[1]), h[2] & res[2], h[3] & res[3])
+            if tour > 0:
+                # élargir : le haut au nombre de bits, le bas à 0 s'il bouge encore (pour finir à coup sûr)
+                hh = (1 << j[1].bit_length()) - 1
+                j = (0 if j[0] < h[0] else j[0], hh) + esus_haut(hh, j[2], j[3])
+            hyp[nom] = j
+            if lu_hyp[0] == avant_lu:
+                r = res   # elle ne dépend pas d'elle-même : le premier calcul suffit
+                break
+        del en_cours[nom]
+        hyp.pop(nom, None)
+        if lu_hyp[0] == avant_lu or not en_cours:
+            vues[nom] = r   # ne garder que ce qui ne dépend pas de l'hypothèse d'une autre variable
+        return r
     return pv
 
 

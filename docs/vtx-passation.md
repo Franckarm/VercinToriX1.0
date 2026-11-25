@@ -544,6 +544,13 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
     paires (la variante 79 à 95 ms contre le parent 58 à 83 : Ésus fait gagner), puis la lignée stable.
   - Le cycle : forger (VTX_DRUIDE=poids) → lancer → druide ; puis à chaque génération : forger (VTX_DRUIDE=1, la forge
     lit PROG.arn) → lancer → druide. Le noyau : `lancer_programme(…, druide_fin)`.
+- **Les bornes qui tiennent d'un tour à l'autre** (Ésus) : une variable qui dépend d'elle-même (s = s ^ x, x = (x * a
+  + c) & m, r = (r * 31 + i) % p) : il part de rien, élargit (le haut au nombre de bits) jusqu'à ce que la borne tienne
+  (un tour de plus la garde), sinon rien de prouvé ; une somme, un produit, un décalage qui grandissent restent
+  inconnus. tests/esus.vtx : les accumulateurs, bornés ou non, contre Lugus.
+- **Le carnet du Druide en clair** : chaque variable dit ce qui a changé (pareille, plus serrée, plus large : elle peut
+  dépasser son ancien maximum ou minimum, déplacée vers le haut ou vers le bas, ou d'autres bits sûrs), avec l'ancien et
+  le neuf ; puis sa règle apprise.
 - **Prochain pour le Druide** : des mutations plus riches que la bascule d'Ésus (les gènes de Gutuater : lot, fondre,
   carte directe ; les choix du vergobret), la garde de l'empreinte sur les variantes qui pourraient changer un résultat,
   et la lecture de `centre` (son cube a-t-il dû être réparé ?).
