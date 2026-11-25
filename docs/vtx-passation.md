@@ -694,3 +694,14 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   image diffère du témoin sur 0,45 % des pixels (les bords d'ombre). La clepsydre progressive (un mot sur quatre) reste
   plus rapide (C++ 44,6, vtx 27,5) mais plus en retard sur le soleil.
 - Livraison : vtx-0.843.zip, essai-0.843.bat.
+
+## Pour reprendre (25 novembre au soir, après l'essai 0.843)
+- Chez le créateur, la 0.843 : l'éventail, les mêmes empreintes pour les trois (film du jour 5583855259397388630) ;
+  le jour : C++ 19,6 → 25,5 ; vtx 13,0 → 15,9 ; Taranis 32,1 → 34,2. Le vol : C++ 33,3, vtx 21,4, Taranis 53,8.
+- Son jugement : l'aspect est brumeux ; ça ne coule pas comme quand la donnée de l'ARN n'était pas effacée ; il
+  faudrait une persistance de deux images avant l'effacement.
+- Sa conclusion : ni Gutuater ni le Vergobret ne décident seuls d'une approximation ; c'est un travail pour Belenos, à
+  partir de ce que Gutuater et le Vergobret savent faire : maîtriser les lots de cubes et de pixels, et l'ARN. Il dit
+  avoir trouvé une méthode : la lui demander en reprenant.
+- En suspens : la largeur par molécule (un choix, refusé sur la liste du 128) ; vtx au processeur encore derrière le C++
+  (21,4 contre 33,3 au vol).
