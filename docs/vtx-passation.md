@@ -498,9 +498,18 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Mesuré** (une boucle de hachage de 30 millions de tours) : le reste d'une valeur de 121 bits par 1000003 : −25 à
   −30 % ; `/ 7` d'une valeur de 16 bits : rien (LLVM le faisait déjà) ; la boucle entière : à égalité, parce que ses
   valeurs sont vraiment grandes (le coût du 128 y est réel et ne se réduit pas sans changer le résultat).
-- **Prochain pour Ésus** : les bornes des variables (le compteur d'une boucle `pour i dans 0..N`, un indice), là où les
-  vrais programmes ont leurs petites valeurs ; puis Gobannos (le même travail sur les mots). Le Druide le guidera par
-  le poids des molécules.
+- **Les bornes des variables** (fait) : `esus_definitions` lit toutes les affectations d'une variable dans la fonction
+  (`soit`, `affecter`, `pour`) et prend la plus grande borne ; le compteur de `pour i dans a..b` va jusqu'à b + le pas ;
+  un paramètre, une écriture qu'Ésus ne lit pas, ou une variable qui dépend d'elle-même : 128 bits (prudent : au pire,
+  rien n'est optimisé). Mesuré : une boucle à petites valeurs (40 millions de tours) : 0,088 s → 0,062 s (−30 %),
+  autant que la même en Dunon (0,063 s), la même sortie.
+- **Ésus est un épisseur** (le créateur) : il retire de l'ARN ce qui ne sert pas au travail, comme l'épissage sûr de la
+  0.69c retirait la vérification des bornes dans `0..longueur(t)` ; avec les bornes prouvées, le même geste partout.
+- **Les quatre points d'une molécule** (l'idée du créateur) : pour chaque variable, la plus petite et la plus grande
+  valeur, les bits sûrement à 0 et sûrement à 1 (ce que LLVM garde : intervalles et bits connus) ; bit à bit, c'est
+  Belnap (inconnu, faux = 0 sûr, vrai = 1 sûr, variable = un chemin qui se contredit, du code jamais atteint). À
+  ranger sur une face du cube de la molécule (le côté du travail, pas l'ADN) : le Druide les relira d'une forge à
+  l'autre. Prochain : les bits connus, la vérification des bornes retirée quand l'indice est prouvé, puis la face.
 - **Le Druide** (décidé avec le créateur) : il conseille, modèle, propose, organise, connecte et déconnecte, apprend ;
   il touche l'ARN et le cube chromatique, jamais l'ADN ; la garde le tient (rien ne passe sans le même résultat).
 

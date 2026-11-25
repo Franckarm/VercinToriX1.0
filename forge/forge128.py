@@ -65,6 +65,63 @@ def esus_diviser(op, c):
     return f"modk128({{0}}, {m}u128, {l}, {c}u128)"
 
 
+ESUS_VARIABLES = [None]   # 0.835 : la borne d'une variable de la fonction en cours (posée par fonction_rs)
+
+
+def esus_definitions(corps, params):
+    """0.835 : Ésus : chaque affectation d'une variable dans la fonction (où qu'elle soit : sous un si, une boucle…) ;
+    rend la fonction nom -> borne (la plus grande valeur qu'elle peut prendre), prudente : un paramètre, une
+    définition qu'Ésus ne lit pas, ou une variable qui dépend d'elle-même : 2^128 - 1."""
+    G = (1 << 128) - 1
+    defs, inconnues = {}, set(params)
+
+    def parcourir(x):
+        if isinstance(x, list):
+            for y in x:
+                parcourir(y)
+            return
+        if not isinstance(x, tuple) or not x:
+            return
+        g = x[0]
+        if g in ("soit", "affecter") and len(x) > 2 and isinstance(x[1], str):
+            defs.setdefault(x[1], []).append(("expr", x[2]))
+        elif g == "pour" and len(x) > 4 and isinstance(x[1], str):
+            pas = x[6] if len(x) > 6 and isinstance(x[6], int) else None
+            defs.setdefault(x[1], []).append(("pour", x[2], x[3], pas))
+        elif isinstance(g, str) and len(x) > 1 and isinstance(x[1], str) and g not in ("var", "appel", "nombre", "bin",
+                                                                                     "texte", "champ", "tnombre"):
+            inconnues.add(x[1])   # une autre façon d'écrire une variable (pour … dans, selon…) : Ésus ne la lit pas
+        for y in x[1:]:
+            if isinstance(y, (list, tuple)):
+                parcourir(y)
+
+    parcourir(corps)
+    vues, en_cours = {}, set()
+
+    def bv(nom):
+        if nom in vues:
+            return vues[nom]
+        if nom in inconnues or nom not in defs or nom in en_cours:
+            return G
+        en_cours.add(nom)
+        b = 0
+        for d in defs[nom]:
+            if d[0] == "expr":
+                b = max(b, borne(d[1]))
+            else:
+                _, a, fin, pas = d
+                if pas is None or pas < 1:
+                    b = G
+                else:
+                    b = max(b, borne(a), min(G, borne(fin) + pas))
+            if b == G:
+                break
+        en_cours.discard(nom)
+        vues[nom] = b
+        return b
+    return bv
+
+
 def borne(e):
     """0.835 : Ésus : la plus grande valeur que peut prendre l'entier e (sur 128 bits), quand l'arbre le prouve ; sinon
     2^128 - 1. Sert à prendre l'opération de 64 bits (le codon synonyme, plus rapide) quand tout y tient."""
@@ -73,6 +130,8 @@ def borne(e):
         return G
     if e[0] == "nombre" and isinstance(e[1], int):
         return e[1] & G
+    if e[0] == "var" and len(e) > 1 and ESUS_VARIABLES[0] is not None:
+        return ESUS_VARIABLES[0](e[1])
     if e[0] == "bin" and len(e) >= 4:
         op = e[1]
         if op in V.COMPARAISONS or op in V.SIGNEES_COMP or op in ("&&", "||"):
@@ -229,6 +288,7 @@ class Forge(V.Generateur):
             params.append(p)
         loc = []
         self.locales(f.corps, loc)
+        ESUS_VARIABLES[0] = esus_definitions(f.corps, f.params)
         kinds, locales = {}, []
         for nom, l, kind, st in loc:
             chaque = st[0] == "soit"
