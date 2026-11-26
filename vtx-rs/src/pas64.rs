@@ -1,6 +1,6 @@
 // Hors de Windows, seule la vérification (essai) s'en sert : une partie y reste inemployée.
 #![cfg_attr(not(any(windows, feature = "verif_fenetre")), allow(dead_code))]
-// Le pas à pas et les vues de la machine 64 bits, sans fenêtre : l'atelier (fenetre.rs) s'en sert, et
+// Le pas à pas et les vues de la machine 64 bits, sans fenêtre : Ogmios (fenetre.rs) s'en sert, et
 // « vtx-spu essai-pas64 PROG.vtx » les vérifie partout (même sous Linux).
 use super::machine64::vers_point32;
 use super::spu64::Spu64;
@@ -82,7 +82,7 @@ impl Pas {
 }
 
 /// Ce qu'a laissé un programme de la machine 64 bits ou de Lugus : ses pages (les vraies valeurs, sur 64 ou 128 bits)
-/// et la fréquence que regarde chaque étage du cube. Le cube de l'atelier dessine des points de 32 bits : un point
+/// et la fréquence que regarde chaque étage du cube. Le cube d'Ogmios dessine des points de 32 bits : un point
 /// profond #RRRRGGGGBBBBAAAA y paraît par l'octet fort de chaque voie (vers_point32), un point de matière de Lugus par
 /// l'octet fort de ses trois couleurs et sa transparence (vers_point32_128) ; le clic et « mot » rendent la vraie
 /// valeur.
@@ -109,7 +109,7 @@ impl Vue64 {
         let mut pages = HashMap::new();
         for e in 0..4usize {
             for (i, mots) in s.pages_etage(e) {
-                // les cubes au-delà de 2^32 restent hors de la vue (le cube de l'atelier les numérote sur 32 bits)
+                // les cubes au-delà de 2^32 restent hors de la vue (le cube d'Ogmios les numérote sur 32 bits)
                 if (i >> 24) >> 32 == 0 {
                     pages.insert((e as u32, i >> 16), mots.to_vec().into_boxed_slice());
                 }
@@ -253,7 +253,7 @@ pub fn table_des_lignes(dbg: impl Iterator<Item = u64>) -> HashMap<u64, usize> {
 }
 
 
-/// vtx-spu essai-pas64 PROG.vtx [ENTRÉES…] : ce que fait l'atelier sur la machine 64 bits, sans fenêtre. Pas à pas
+/// vtx-spu essai-pas64 PROG.vtx [ENTRÉES…] : ce que fait Ogmios sur la machine 64 bits, sans fenêtre. Pas à pas
 /// ligne par ligne (F7), puis par-dessus les fonctions (F8), puis d'un coup (F5) : les trois doivent finir avec la même
 /// console et les mêmes sorties que l'exécution complète ; puis la vue du cube (points de 32 bits) et le panneau.
 pub fn essai(args: &[String]) {
@@ -289,7 +289,7 @@ pub fn essai(args: &[String]) {
     r.charger(&m);
     r.entree.extend(entrees.iter().copied());
     let ref_fin = r.executer(20_000_000_000);
-    println!("référence (F5 de l'atelier) : {} instructions{}", r.pas, match &ref_fin { Ok(()) => String::new(), Err(e) => format!(", arrêt : {}", e) });
+    println!("référence (F5 d'Ogmios) : {} instructions{}", r.pas, match &ref_fin { Ok(()) => String::new(), Err(e) => format!(", arrêt : {}", e) });
     let (ref_texte, ref_sortie) = (console(&r), r.sortie.clone());
     let (mots, _, dbg) = compiler64(&nombres64(VTXC64), &source, &base, PAS_A_PAS64, true).expect("compilation pas à pas");
     let debuts = table_des_lignes(dbg.into_iter());

@@ -9,7 +9,7 @@
 //     seconde par défaut) ; la souris et le clavier y sont transmis au programme (souris(), touche(), appuyee()) ;
 //   - les images PNG (toutes les machines), une par appel, pour vérifier une animation sans écran ;
 //   - une animation GIF (toutes les machines), écrite par différence d'une image à l'autre (gif.rs) ;
-//   - l'atelier, qui montre les images dans sa vue du cube et peut les enregistrer en GIF.
+//   - Ogmios, qui montre les images dans sa vue du cube et peut les enregistrer en GIF.
 // vtx toile PROG.vtx                                    la fenêtre (Windows), SPU-32
 // vtx toile64 PROG.vtx                                  la même chose sur le SPU-64
 // vtx toile128 PROG.vtx [--fichier F]                     la même chose sur Lugus ; --fichier : le chemin de F, lu par

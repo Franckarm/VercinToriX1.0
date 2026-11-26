@@ -89,7 +89,7 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_paillasse.py")]))
     etapes.append(("la carte du programme sur la paillasse : une case par fonction, une liaison par appel",
                    [sys.executable, os.path.join("tests", "test_carte.py")]))
-    etapes.append(("Ogmios écrit en vtx : l'atelier sur Lugus (édition rejouée, Ctrl+S, F5 sur une machine fille)",
+    etapes.append(("Ogmios écrit en vtx : Ogmios sur Lugus (édition rejouée, Ctrl+S, F5 sur une machine fille)",
                    [sys.executable, os.path.join("tests", "test_ogmios.py")]))
     etapes.append(("Fischer : le fil de Hilbert, la signature des molécules, le cube des molécules",
                    [sys.executable, os.path.join("tests", "test_fischer.py")]))
@@ -192,7 +192,7 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_taranis.py")]))
     etapes.append(("Taranis, les noyaux : des boucles en segments tirées au hasard, forgées pour la carte (SPIR-V), les mêmes mots que Lugus",
                    [sys.executable, os.path.join("tests", "test_taranis_noyaux.py"), "40" if COMPLET else "16"]))
-    etapes.append(("atelier en console (pseudo-terminal)", [sys.executable, os.path.join("atelier", "test_atelier.py")]))
+    etapes.append(("Ogmios en console (pseudo-terminal)", [sys.executable, os.path.join("tests", "test_ogmios_console.py")]))
 else:
     print("cargo absent : la machine Rust n'est pas vérifiée (voir vtx-rs/LISEZMOI.md)")
 if shutil.which("node"):

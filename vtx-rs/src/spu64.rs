@@ -38,7 +38,7 @@ pub struct Spu64 {
     pub mere: Option<String>,
     pub pas: u64,
     pub presenter: Option<Box<dyn FnMut(&Spu64) -> u64>>,
-    // la console du programme (canal 1) branchée ailleurs (le terminal de l'atelier, le clavier) ; sinon, texte et
+    // la console du programme (canal 1) branchée ailleurs (le terminal d'Ogmios, le clavier) ; sinon, texte et
     // texte_entree
     pub console_ecrire: Option<Box<dyn FnMut(u64)>>,
     pub console_lire: Option<Box<dyn FnMut() -> u64>>,
@@ -190,7 +190,7 @@ impl Spu64 {
     }
 
     /// Les pages écrites de l'étage e : (adresse longue de leur premier mot, leurs 65 536 mots), pour les vues de
-    /// l'atelier.
+    /// Ogmios.
     pub fn pages_etage(&self, e: usize) -> Vec<(u64, &[u64])> {
         let mut v: Vec<(u64, &[u64])> = self.pages[e].iter().map(|(k, p)| (((e as u64) << 62) | (k << 16), &p.mots[..])).collect();
         v.sort_by_key(|x| x.0);

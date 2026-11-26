@@ -1,5 +1,5 @@
 // Lugus (le SPU-128) avec son compilateur embarqué : vtxc128 (vtxc/vtxc128.vtx) déjà compilé, dans vtxc128.mots. Ce que
-// font « lugus PROG.vtx » (compiler et lancer un programme sans Python) et l'atelier quand il travaille sur Lugus.
+// font « lugus PROG.vtx » (compiler et lancer un programme sans Python) et Ogmios quand il travaille sur Lugus.
 use crate::spu128::Spu128;
 
 /// vtxc128 compilé (optimisé, sans prélude) : ses mots de 128 bits, en décimal séparés par des virgules.
@@ -92,7 +92,7 @@ pub struct Mode128 {
 
 /// Un programme : prélude, optimisations, partition (comme vtx128.py par défaut).
 pub const COMPLET128: Mode128 = Mode128 { prelude: true, optim: true, partition: true };
-/// Le pas à pas de l'atelier : sans partition (l'exécution reste en séquence, ligne après ligne).
+/// Le pas à pas d'Ogmios : sans partition (l'exécution reste en séquence, ligne après ligne).
 pub const PAS_A_PAS128: Mode128 = Mode128 { prelude: true, optim: true, partition: false };
 /// vtxc128 lui-même : sans prélude (il a ses propres outils), optimisé, sans partition.
 pub const COMPILATEUR128: Mode128 = Mode128 { prelude: false, optim: true, partition: false };

@@ -1,11 +1,11 @@
-"""L'atelier (« vtx atelier programme.vtx ») piloté dans un pseudo-terminal : on tape, on lance, on lit l'écran.
+"""Ogmios (« vtx ogmios programme.vtx ») piloté dans un pseudo-terminal : on tape, on lance, on lit l'écran.
 Un petit émulateur de terminal reconstitue l'écran à partir des séquences ANSI. Sous Windows, il n'y a pas de
-pseudo-terminal en Python : le test est sauté (l'atelier s'essaie alors à la main).
+pseudo-terminal en Python : le test est sauté (Ogmios s'essaie alors à la main).
 Option : --image FICHIER.html enregistre le dernier écran, en couleurs."""
 import os, re, shutil, subprocess, sys, tempfile, time, html
 
 if os.name == "nt":
-    print("Windows : pas de pseudo-terminal en Python, test sauté (essayez « vtx atelier exemples\\rayons.vtx »)")
+    print("Windows : pas de pseudo-terminal en Python, test sauté (essayez « vtx ogmios exemples\\rayons.vtx »)")
     sys.exit(0)
 import pty, fcntl, termios, struct, select
 
@@ -29,7 +29,7 @@ def piloter(fichier, touches, dossier=None):
         os.environ["TERM"] = "xterm-256color"
         if dossier:
             os.chdir(dossier)
-        os.execv(VTX, [VTX, "atelier"] + ([fichier] if fichier else []))
+        os.execv(VTX, [VTX, "ogmios"] + ([fichier] if fichier else []))
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", H, L, 0, 0))
     flux = bytearray()
 
@@ -89,11 +89,11 @@ def c256(n):
 
 
 def ecran(flux, avant_sortie=True):
-    """La grille des caractères (et leurs couleurs) du dernier écran dessiné avant la sortie de l'atelier."""
+    """La grille des caractères (et leurs couleurs) du dernier écran dessiné avant la sortie d'Ogmios."""
     t = flux.decode("utf-8", "replace")
     if avant_sortie and "\x1b[?1049l" in t:
         t = t[:t.rfind("\x1b[?1049l")]
-    # l'atelier redessine tout l'écran à chaque fois : le dernier dessin suffit
+    # Ogmios redessine tout l'écran à chaque fois : le dernier dessin suffit
     if "\x1b[?25l\x1b[H" in t:
         t = t[t.rfind("\x1b[?25l\x1b[H"):]
     g = [[(" ", (200, 200, 200), (0, 0, 0))] * L for _ in range(H)]
@@ -272,10 +272,10 @@ try:
     obtenu = open(menus).read()
     verifier("souris : menu Édition, « Tout sélectionner », puis Ctrl+X", obtenu.strip() == "", repr(obtenu))
 
-    # atelier (le même exécutable sous un autre nom) ouvre directement l'atelier
-    ATELIER = os.path.join(cible, "release", "atelier")
-    verifier("l'exécutable « atelier » est construit", os.path.exists(ATELIER))
+    # ogmios (le même exécutable sous un autre nom) ouvre directement Ogmios
+    OGMIOS = os.path.join(cible, "release", "ogmios")
+    verifier("l'exécutable « ogmios » est construit", os.path.exists(OGMIOS))
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
-print(f"\nAtelier : {bons}/{total} vérifications")
+print(f"\nOgmios en console : {bons}/{total} vérifications")
 sys.exit(0 if bons == total else 1)

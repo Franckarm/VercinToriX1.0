@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """La paillasse (vtx-rs/src/paillasse.rs), au centre d'Ogmios : la surface des réactions, dans les deux sens avec le
-texte. Sans écran, par « vtx paillasse » (le même module que l'atelier, les gestes de la souris rejoués) :
+texte. Sans écran, par « vtx paillasse » (le même module qu'Ogmios, les gestes de la souris rejoués) :
   1. la lecture : les atomes, leurs liaisons et leurs vagues sont ceux du compilateur (vtx128.py), sur les exemples de
      Lugus et sur des réactions au hasard ;
   2. les gestes : tirer une liaison sur une entrée libre « _ », délier, ajouter un atome (double clic), le retirer

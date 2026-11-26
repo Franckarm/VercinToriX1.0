@@ -6,7 +6,7 @@
 //   vtx64 renouveler vtxc64.vtx     vtxc64 se recompile lui-même ; point fixe exigé avant d'écrire vtxc64.mots
 //   vtx64 profil FICHIER.mots [ENTRÉES…]   comme lancer, et compte les instructions par adresse (profil.txt)
 mod qflot;
-// une partie sert seulement à l'atelier (vues du cube, pas à pas)
+// une partie sert seulement à Ogmios (vues du cube, pas à pas)
 #[allow(dead_code)]
 mod spu64;
 #[allow(dead_code)]

@@ -1,5 +1,5 @@
 // Les sorties de la toile : ce que devient une image présentée par un programme (presenter()). La fenêtre (Windows),
-// les images PNG, l'animation GIF, l'atelier (qui installe sa propre sortie) ; l'enregistrement de l'atelier.
+// les images PNG, l'animation GIF, Ogmios (qui installe sa propre sortie) ; l'enregistrement d'Ogmios.
 // Ce fichier ne dépend que de gif.rs et hote.rs : la forge (forge/forge.py) le recopie dans chaque programme forgé,
 // qui ouvre ainsi la même fenêtre que « vtx toile ».
 use super::gif::Gif;
@@ -14,7 +14,7 @@ pub trait Sortie: Send {
 }
 
 static SORTIE: Mutex<Option<Box<dyn Sortie>>> = Mutex::new(None);
-/// L'enregistrement (l'atelier : bouton « Enregistrer ») : tant qu'il est demandé, chaque image montrée s'ajoute à
+/// L'enregistrement (Ogmios : bouton « Enregistrer ») : tant qu'il est demandé, chaque image montrée s'ajoute à
 /// l'animation, commencée à la première image.
 pub static ENREGISTRER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 pub static ENREGISTREMENT: Mutex<Option<Gif>> = Mutex::new(None);
@@ -285,7 +285,7 @@ mod fen {
         place: (i32, i32, i32, i32),
     }
     static IMAGE: Mutex<Image> = Mutex::new(Image { px: Vec::new(), l: 0, h: 0, ferme: false, place: (0, 0, 0, 0) });
-    /// 0.68 : la fenêtre du dernier programme : un programme relancé (F5 de l'atelier) ferme la précédente avant d'ouvrir
+    /// 0.68 : la fenêtre du dernier programme : un programme relancé (F5 d'Ogmios) ferme la précédente avant d'ouvrir
     /// la sienne
     static DERNIERE: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
     static BOUTONS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);

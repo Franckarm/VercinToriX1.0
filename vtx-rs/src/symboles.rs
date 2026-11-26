@@ -1,5 +1,5 @@
 // Le débogueur de Lugus, par les noms : vtxc128 écrit code.sym en pas à pas (une ligne par fonction : son nom, la place
-// de son premier mot, sa ligne ; une par variable : son nom, sa place dans le cadre, sa sorte). D'ici, l'atelier remonte
+// de son premier mot, sa ligne ; une par variable : son nom, sa place dans le cadre, sa sorte). D'ici, Ogmios remonte
 // la pile des appels (le cadre R13 garde l'ancien cadre en +0 et l'adresse de retour en +1) et écrit chaque variable
 // comme le programme l'entend : un texte entre guillemets, un tableau entre crochets, un flottant en décimal, un
 // logique par son nom de Belnap.
@@ -270,7 +270,7 @@ pub fn valeur(s: &Spu128, sorte: &str, v: u128) -> String {
 }
 
 /// vtx-spu regarder128 PROG.vtx LIGNE [FOIS] : le pas à pas jusqu'à la ligne (la FOIS-ième fois), puis la vue du
-/// débogueur ; de quoi vérifier sans l'atelier ce que le panneau montrera.
+/// débogueur ; de quoi vérifier sans Ogmios ce que le panneau montrera.
 pub fn essai(args: &[String]) {
     use super::machine128::{compiler128_dbg, dossier_de128, nombres128, PAS_A_PAS128, VTXC128};
     use super::pas64::table_des_lignes;
@@ -323,7 +323,7 @@ pub fn essai(args: &[String]) {
         }
     }
     if sortir {
-        // Maj+F8 de l'atelier : jusqu'au retour dans l'appelante (son cadre revient), puis le retour lui-même
+        // Maj+F8 d'Ogmios : jusqu'au retour dans l'appelante (son cadre revient), puis le retour lui-même
         let cadre = s.r[13];
         loop {
             if s.pas_unique().is_err() || s.arrete {

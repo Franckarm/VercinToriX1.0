@@ -11,7 +11,7 @@ s'appelle désormais **la toile** (`vtx toile PROG.vtx`) : le nom Gobatix est r�
 
 | Logiciel | Pour qui | Ce qu'il fait |
 |---|---|---|
-| **L'atelier** | le programmeur | écrire, lancer et suivre pas à pas les programmes vtx ; la paillasse y viendra |
+| **Ogmios** | le programmeur | écrire, lancer et suivre pas à pas les programmes vtx ; la paillasse y viendra |
 | **Gobatix** | le créateur d'images et de films | modéliser, texturer, peindre, animer, rendre |
 | **Le montage** (plus tard) | le monteur | assembler les plans, le son, les effets |
 

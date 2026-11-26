@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ogmios écrit en vtx (ogmios/ogmios.vtx, l'étape 6, premier temps) : l'atelier tourne sur Lugus, dessine dans la toile
+"""Ogmios écrit en vtx (ogmios/ogmios.vtx, l'étape 6, premier temps) : Ogmios tourne sur Lugus, dessine dans la toile
 et lit le clavier et la souris. Sans écran : « vtx toile128 … --scenario » rejoue des touches image par image, et les
 images sont écrites en PNG. On vérifie : les deux compilateurs donnent les mêmes mots ; une édition (flèches, Fin,
 caractères accentués, Entrée qui garde le retrait, retour arrière, Suppr, Tab, Début, la souris) puis Ctrl+S donnent le

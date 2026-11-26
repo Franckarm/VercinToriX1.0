@@ -944,7 +944,7 @@ pub fn traduire(mots: &[u128]) -> Option<Traduction> {
 
 impl Traduction {
     /// Avance la machine jusqu'à son arrêt : le code traduit tant qu'il peut, Lugus pour le reste. Ni la limite
-    /// d'instructions, ni la patrouille, ni l'arrêt demandé de l'atelier ne sont regardés ici : c'est le mode d'un
+    /// d'instructions, ni la patrouille, ni l'arrêt demandé d'Ogmios ne sont regardés ici : c'est le mode d'un
     /// .exe. (Un programme qui écrirait dans son propre code serait suivi par Lugus, pas par la traduction.)
     pub fn executer(&self, s: &mut Spu128) -> Result<(), String> {
         let sp: *mut Spu128 = s;

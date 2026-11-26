@@ -25,7 +25,7 @@ valeur se lit aussi comme une **séquence d'ADN** (A C G T, U pour l'ARN). Le pr
   où la mémoire est une RAM spectrale étagée et le disque une surface d'impression spectrale (section 2).
 - **Le logiciel réel** : le langage **vtx** (mots-clés en français, quelques alias gaulois), ses deux compilateurs
   qui produisent toujours les mêmes mots (l'un en Python, l'autre écrit en vtx et qui se compile lui-même), des
-  machines qui exécutent le code du SPU (Rust surtout), un atelier de programmation, et des programmes écrits en vtx :
+  machines qui exécutent le code du SPU (Rust surtout), Ogmios (l'environnement où l'on écrit et lance), et des programmes écrits en vtx :
   jeux, rendu 3D, une IA (le ScoR), la génomique, la compression du cube.
 
 Le matériel n'existe pas : tout tourne en émulation, fidèle au format des mots, des instructions et de la mémoire du
@@ -42,7 +42,7 @@ défaut ont 128 bits** (depuis le 24 novembre ; ce qui reste en 128 quoi qu'il a
 est gelé. Le programme est une **chimie** (des atomes qui réagissent, des liaisons qui portent les données) ; il se range
 en **ADN** qui se vérifie et se répare lui-même, se transcrit en **ARN**, porte sa **carte** (six faces par molécule) et
 ses **promesses**. Il se forge en code natif (la forge, par Rust), ou en exécutable par Gobannos (écrit en vtx).
-**Belenos** est son moteur graphique, **Taranis** le noyau de la carte graphique, **Ogmios** son atelier. Trois agents
+**Belenos** est son moteur graphique, **Taranis** le noyau de la carte graphique, **Ogmios** l'endroit où il s'écrit. Trois agents
 l'accompagnent : le **Vergobret** (l'exécution), **Gutuater** (la forge et la garde), le **Druide** (la mémoire des bornes,
 les cellules, l'évolution), avec **Ésus** dans la forge ; leur mémoire vit dans le **nemeton** du programme.
 
@@ -315,17 +315,17 @@ compilateur sans Python.
 ## 6. Les machines et l'outillage
 
 - **Machines du SPU-32** : Python (référence), Java (retirée à la demande du créateur), JavaScript interprété et
-  traduit en fonctions (×3,4), **Rust** (`vtx-spu`, `vtx`, `atelier`), et la **traduction en code natif** par rustc
+  traduit en fonctions (×3,4), **Rust** (`vtx-spu`, `vtx`, `ogmios`), et la **traduction en code natif** par rustc
   (×12 ; mise de côté : on n'y touche plus). Un **corpus de conformité** (487 programmes) : toutes les machines
   donnent les mêmes sorties, le même nombre d'instructions et la même mémoire.
 - **Machines du SPU-64** : Python (`spu64/`, flottants par fractions exactes) et Rust (`vtx64`, 150 à 190 millions
   d'instructions par seconde, un cache séparé pour la page du code) ; corpus de 503 programmes ; plus de 40 000
   programmes aléatoires identiques. `vtx64 profil` compte les instructions par adresse.
 - **`vtx.exe`** : la machine Rust qui embarque vtxc déjà compilé : `vtx programme.vtx` compile et exécute sans Python.
-- **L'atelier** : en console (séquences ANSI, sans bibliothèque) puis en fenêtre Win32 écrite directement (éditeur,
+- **Ogmios** : en console (séquences ANSI, sans bibliothèque) puis en fenêtre Win32 écrite directement (éditeur,
   menus, cube en perspective / à plat / en quits, terminal, onglets Sortie et Terminal, arbre des liaisons du tas, pas
   à pas F7 F8 F9 F5, vue quaternaire et Belnap des registres). `vtx installer` associe les fichiers `.vtx` (icône du
-  cube écrite par la machine elle-même). Depuis le 23 octobre, l'atelier travaille **par défaut sur la SPU-64**
+  cube écrite par la machine elle-même). Depuis le 23 octobre, Ogmios travaille **par défaut sur la SPU-64**
   (vtxc64 embarqué ; registres de 64 bits, points profonds vus en 32 bits dans le cube, `cube ÉTAGE FRÉQUENCE`,
   vraie valeur au clic ; Ctrl+M repasse sur la SPU-32).
 - **`vtx64.exe`** : la machine du SPU-64 avec vtxc64 embarqué : `vtx64 programme.vtx` sans Python, `vtx64 renouveler`
@@ -337,7 +337,7 @@ compilateur sans Python.
   modélisation, de texture et de peinture, repérée en xyz hexadécimal ; la case contient un point profond (couleur,
   et l'état de Belnap dans l'alpha : inconnu = vide, vrai = matière, faux = creusé, variable = conflit).
   Deuxième pas (24 octobre, 0.5) : **l'interactif**, sur les deux machines (services 16 à 21) : `souris()`,
-  `touche()`, `appuyee()`, `molette()`, `horloge()`, `cadence()` ; l'image finie (double tampon) ; l'atelier montre
+  `touche()`, `appuyee()`, `molette()`, `horloge()`, `cadence()` ; l'image finie (double tampon) ; Ogmios montre
   l'animation pendant qu'elle tourne, lui donne la souris et le clavier, l'enregistre en **GIF** (Ctrl+G) ;
   `vtx gobatix64`. **L'anti-cube exploité** : `anti_couleur` (255 − c, involutive) pose curseurs et objets animés sans
   sauvegarder le fond ; le GIF n'écrit que la différence d'une image à l'autre, les points inchangés étant *inconnus*
@@ -353,7 +353,7 @@ compilateur sans Python.
 - **Les .exe de Lugus** (`vtx exe128`, Ctrl+E dans Ogmios) : la machine, le programme compilé et ses fichiers dans un
   seul exécutable Windows ; une vitrine (fenêtre) quand il est lancé d'un double clic. Ni Rust ni Python chez
   l'utilisateur. Senos a aussi son .exe, écrit directement en x86-64 par `natif.py` (PE32+, KERNEL32 seul).
-- **Ogmios** (l'atelier, `atelier.exe`) : le texte, **la paillasse au centre** (les atomes d'une réaction en cases, les
+- **Ogmios** (Ogmios, `ogmios.exe`) : le texte, **la paillasse au centre** (les atomes d'une réaction en cases, les
   liaisons en courbes, dans les deux sens avec le texte ; la carte du programme), le cube, la visionneuse (images, sons,
   exécutables), le débogueur par les noms ; F5 sur Lugus compile, range l'ADN avec sa carte, puis lance ; la fenêtre des
   explications montre les six faces et le centre de la fonction choisie.
@@ -639,7 +639,7 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 | SPU-64 | *dunon* | forteresse, enceinte | attesté (Lugdunum, Verdun) ; proposé |
 | SPU-128 | *Lugus* | dieu de la lumière et de tous les arts | attesté ; proposé (Lugdunum : Lugus bâti sur Dunon) |
 | SPU-256 | *albios* | monde lumineux, blanc | attesté (Albiorix) ; proposé, pour plus tard |
-| l'atelier | *Ogmios* | dieu de l'éloquence, qui entraîne les hommes par la langue | attesté (Lucien) ; adopté |
+| Ogmios | *Ogmios* | dieu de l'éloquence, qui entraîne les hommes par la langue | attesté (Lucien) ; adopté |
 | le moteur graphique | *Belenos* | dieu brillant, de la lumière et du soleil | attesté ; adopté |
 | la carte graphique | *Taranis* | dieu du tonnerre, à la roue | attesté ; adopté |
 | le traducteur écrit en vtx (les .exe) | *Gobannos* | le dieu forgeron | attesté ; commencé (0.6v) |
@@ -1221,7 +1221,7 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 - **Le langage du SPU-64 reste disponible sur Lugus** (`COMPAT_64`) : les 348 programmes de comparaison et toute la suite de vtx64 passent toujours.
 - **Suite** : vtxc128, le compilateur écrit en vtx, qui doit donner les mêmes mots.
 
-### vtxc128, la forge de Lugus, la puissance mesurée, l'atelier (25 octobre, soir)
+### vtxc128, la forge de Lugus, la puissance mesurée, Ogmios (25 octobre, soir)
 
 - **vtxc128** : le compilateur écrit en vtx pour Lugus donne exactement les mêmes mots que vtx128.py (138 compilations
   de la suite, des programmes au hasard) et se compile lui-même (point fixe, 158 969 mots optimisés). `lugus PROG.vtx`
@@ -1241,7 +1241,7 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
   1,6 fois le temps du SPU-64 émulé.
 - Honnêtement : la conception visait « dix à cinquante instructions par opération flottante » ; la multiplication en fait
   encore environ 150 (mesuré). Le quaternaire n'a pas de matériel : il ne rattrapera le double que dans un circuit.
-- **L'atelier sur Lugus** : troisième machine (menu Exécuter, Ctrl+M passe SPU-64 → Lugus → SPU-32, « machine 128 » au
+- **Ogmios sur Lugus** : troisième machine (menu Exécuter, Ctrl+M passe SPU-64 → Lugus → SPU-32, « machine 128 » au
   terminal, `// machine : lugus` en tête du fichier, le dossier `exemples128`). F5 compile avec vtxc128 et exécute, la
   console passe par le terminal, Maj+F5 arrête ; le pas à pas (F7, F8, F9, F5) avec les registres de 128 bits en quatre
   voies ; le cube montre les points de matière en points de 32 bits, **la transparence en alpha** ; le clic et « mot »
@@ -1251,7 +1251,7 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 ### Les noms gaulois adoptés (31 octobre)
 
 - **Senos** (l'ancien) pour le SPU-32, **Dunon** (la forteresse) pour le SPU-64, **Lugus** (la lumière) pour le SPU-128 :
-  dans l'atelier (titre, menu, bouton, terminal : `machine senos|dunon|lugus`, `// machine : dunon` en tête d'un
+  dans Ogmios (titre, menu, bouton, terminal : `machine senos|dunon|lugus`, `// machine : dunon` en tête d'un
   programme). Albios (le monde lumineux) reste réservé au SPU-256.
 - La chimie de Vercintorix (`docs/vtx-chimie.md`) : la liaison est la donnée, les atomes sont le code, le cube est le
   support, Fischer l'indexation, la surface façon Blueprint la syntaxe ; l'épissage là où la mesure le montre utile.

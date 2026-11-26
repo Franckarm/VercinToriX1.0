@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 mod traduction;
-mod atelier;
+mod ogmios_console;
 mod arbre;
 mod cube;
 mod toile;
@@ -31,7 +31,7 @@ mod hote;
 #[allow(dead_code)]
 mod gif;
 mod miroir;
-// la machine SPU-64 et son compilateur embarqué (vtxc64) : l'atelier s'en sert
+// la machine SPU-64 et son compilateur embarqué (vtxc64) : Ogmios s'en sert
 #[allow(dead_code)]
 mod qflot;
 #[allow(dead_code)]
@@ -39,7 +39,7 @@ mod spu64;
 #[allow(dead_code)]
 mod machine64;
 mod pas64;
-// Lugus (le SPU-128) et son compilateur embarqué (vtxc128) : l'atelier s'en sert aussi
+// Lugus (le SPU-128) et son compilateur embarqué (vtxc128) : Ogmios s'en sert aussi
 #[allow(dead_code)]
 mod qflot128;
 #[allow(dead_code)]
@@ -287,7 +287,7 @@ fn boucle(mem: &Memoire, et: &mut Etat, entrees: &[u32], max_pas: u64, dossier: 
             }
         }
         if pas >= max_pas || (pas & 0xF_FFFF == 0 && ARRET.load(std::sync::atomic::Ordering::Relaxed)) {
-            // l'état est gardé : le pas à pas de l'atelier reprend d'ici
+            // l'état est gardé : le pas à pas d'Ogmios reprend d'ici
             *et = Etat { r, pc, z, c, pas, ie, sorties: std::mem::take(&mut sorties), texte: std::mem::take(&mut texte) };
             if pas < max_pas {
                 return Err("programme arrêté".to_string());
@@ -705,7 +705,7 @@ struct Mode {
 }
 
 const COMPLET: Mode = Mode { prelude: true, optim: true, partition: true };
-/// Le pas à pas de l'atelier : comme COMPLET, sans partition (l'exécution reste en séquence, ligne après ligne).
+/// Le pas à pas d'Ogmios : comme COMPLET, sans partition (l'exécution reste en séquence, ligne après ligne).
 const PAS_A_PAS: Mode = Mode { prelude: true, optim: true, partition: false };
 /// vtxc lui-même : sans prélude (il a ses propres outils), optimisé, sans partition.
 const COMPILATEUR: Mode = Mode { prelude: false, optim: true, partition: false };
@@ -777,13 +777,13 @@ fn compiler_ou_sortir(fichier: &str, mode: Mode) -> (Vec<u32>, Vec<u32>) {
 // Le canal 1 : ce que le programme écrit (ecrire_texte, afficher) et ce qu'il lit (lire_car(1), lire_ligne()).
 // Par défaut, le texte écrit est gardé et montré à la fin, et rien n'est à lire. vtx PROG.vtx lit le clavier : dès la
 // première lecture, le texte en attente est montré et la suite est écrite au fur et à mesure (une question avant sa
-// réponse). La fenêtre de l'atelier branche ses propres canaux (DIRECT, CANAL_ENTREE, CANAL_SORTIE).
+// réponse). La fenêtre d'Ogmios branche ses propres canaux (DIRECT, CANAL_ENTREE, CANAL_SORTIE).
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-/// 0 : rien à lire ; 1 : le clavier ; 2 : la fenêtre de l'atelier
+/// 0 : rien à lire ; 1 : le clavier ; 2 : la fenêtre d'Ogmios
 static CLAVIER: AtomicU8 = AtomicU8::new(0);
 static ECHO: AtomicBool = AtomicBool::new(false);
 static DIRECT: AtomicBool = AtomicBool::new(false);
-/// demande d'arrêt (bouton Arrêter de l'atelier) : vue toutes les 2^20 instructions
+/// demande d'arrêt (bouton Arrêter d'Ogmios) : vue toutes les 2^20 instructions
 static ARRET: AtomicBool = AtomicBool::new(false);
 /// Temps passé à attendre le clavier pendant l'exécution (nanosecondes), retiré du temps de calcul affiché.
 static ATTENTE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -859,7 +859,7 @@ fn lire_car_clavier() -> u32 {
 
 // ------------------------------------------------------------------------------------------------ installer
 /// vtx installer : les fichiers .vtx deviennent des « programmes Vercintorix », avec l'icône du cube, et s'ouvrent dans
-/// l'atelier d'un double-clic. Sous Windows : le registre de l'utilisateur (sans droits d'administrateur). Sous Linux :
+/// Ogmios d'un double-clic. Sous Windows : le registre de l'utilisateur (sans droits d'administrateur). Sous Linux :
 /// un type de fichier, une application et une icône dans ~/.local/share. vtx desinstaller retire tout.
 pub fn installer(poser: bool) -> Result<String, String> {
     let exe = env::current_exe().expect("chemin de l'exécutable inconnu");
@@ -867,8 +867,8 @@ pub fn installer(poser: bool) -> Result<String, String> {
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        // Ogmios.exe (le dossier Ogmios que pose l'essai), sinon atelier.exe
-        let atelier = if dossier.join("Ogmios.exe").exists() { dossier.join("Ogmios.exe") } else { dossier.join("atelier.exe") };
+        // ogmios.exe (le dossier Ogmios que pose l'essai, ou celui de la construction)
+        let ogmios_exe = if dossier.join("Ogmios.exe").exists() { dossier.join("Ogmios.exe") } else { dossier.join("ogmios.exe") };
         let icone = dossier.join("vtx.ico");
         let reg = |args: &[&str]| {
             let r = process::Command::new("reg").args(args).creation_flags(0x0800_0000).output();
@@ -876,7 +876,7 @@ pub fn installer(poser: bool) -> Result<String, String> {
         };
         let ok = if poser {
             let _ = fs::write(&icone, cube::ico(&[16, 32, 48, 256]));
-            let commande = format!("\"{}\" \"%1\"", atelier.display());
+            let commande = format!("\"{}\" \"%1\"", ogmios_exe.display());
             reg(&["add", r"HKCU\Software\Classes\.vtx", "/ve", "/d", "Vercintorix.Programme", "/f"])
                 && reg(&["add", r"HKCU\Software\Classes\Vercintorix.Programme", "/ve", "/d", "Programme Vercintorix", "/f"])
                 && reg(&["add", r"HKCU\Software\Classes\Vercintorix.Programme\DefaultIcon", "/ve", "/d", &icone.display().to_string(), "/f"])
@@ -892,8 +892,8 @@ pub fn installer(poser: bool) -> Result<String, String> {
         let ps = if poser {
             format!("foreach($d in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFolderPath('Programs'))){{\
                      $s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'Ogmios.lnk'));$s.TargetPath='{}';\
-                     $s.WorkingDirectory='{}';$s.IconLocation='{}';$s.Description='Ogmios, l atelier de Vercintorix';$s.Save()}}",
-                    atelier.display(), dossier.display(), icone.display())
+                     $s.WorkingDirectory='{}';$s.IconLocation='{}';$s.Description='Ogmios, Vercintorix';$s.Save()}}",
+                    ogmios_exe.display(), dossier.display(), icone.display())
         } else {
             "foreach($d in @([Environment]::GetFolderPath('Desktop'),[Environment]::GetFolderPath('Programs'))){\
              Remove-Item -ErrorAction SilentlyContinue (Join-Path $d 'Ogmios.lnk')}".to_string()
@@ -905,7 +905,7 @@ pub fn installer(poser: bool) -> Result<String, String> {
         if poser && ok {
             Ok(format!("Les fichiers .vtx s'ouvrent maintenant dans {} (icône : {}) ; Ogmios a ses raccourcis sur le \
                         Bureau et dans le menu Démarrer.\nSi Windows propose encore une autre application : clic droit sur un .vtx, « Ouvrir avec », \
-                        Ogmios.exe, « Toujours ».", atelier.display(), icone.display()))
+                        Ogmios.exe, « Toujours ».", ogmios_exe.display(), icone.display()))
         } else if ok {
             Ok("Association des fichiers .vtx retirée.".to_string())
         } else {
@@ -916,7 +916,7 @@ pub fn installer(poser: bool) -> Result<String, String> {
     {
         let maison = PathBuf::from(env::var("HOME").expect("HOME inconnu"));
         let partage = maison.join(".local/share");
-        let app = partage.join("applications/vercintorix-atelier.desktop");
+        let app = partage.join("applications/vercintorix-ogmios.desktop");
         let mime = partage.join("mime/packages/vercintorix.xml");
         let icones = [partage.join("icons/hicolor/64x64/apps/vercintorix.png"),
                       partage.join("icons/hicolor/64x64/mimetypes/text-x-vtx.png"),
@@ -928,8 +928,8 @@ pub fn installer(poser: bool) -> Result<String, String> {
                 let _ = fs::create_dir_all(f.parent().unwrap());
             }
             let vtx = dossier.join("vtx");
-            let _ = fs::write(&app, format!("[Desktop Entry]\nType=Application\nName=Ogmios (atelier vtx)\nComment=Écrire, lancer et voir le cube : Vercintorix\n\
-                Exec=\"{}\" atelier %f\nTerminal=true\nIcon=vercintorix\nMimeType=text/x-vtx;\nCategories=Development;\n", vtx.display()));
+            let _ = fs::write(&app, format!("[Desktop Entry]\nType=Application\nName=Ogmios\nComment=Écrire, lancer et voir le cube : Vercintorix\n\
+                Exec=\"{}\" ogmios %f\nTerminal=true\nIcon=vercintorix\nMimeType=text/x-vtx;\nCategories=Development;\n", vtx.display()));
             let _ = fs::write(&mime, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<mime-info xmlns=\"http://www.freedesktop.org/standards/shared-mime-info\">\n\
                   <mime-type type=\"text/x-vtx\">\n    <comment>Programme Vercintorix</comment>\n    <sub-class-of type=\"text/plain\"/>\n\
                     <glob pattern=\"*.vtx\"/>\n  </mime-type>\n</mime-info>\n");
@@ -939,8 +939,8 @@ pub fn installer(poser: bool) -> Result<String, String> {
             }
             lancer("update-mime-database", &[&partage.join("mime").to_string_lossy()]);
             lancer("update-desktop-database", &[&partage.join("applications").to_string_lossy()]);
-            lancer("xdg-mime", &["default", "vercintorix-atelier.desktop", "text/x-vtx"]);
-            Ok(format!("Les fichiers .vtx sont maintenant des « programmes Vercintorix » : un double-clic ouvre l'atelier (dans un \
+            lancer("xdg-mime", &["default", "vercintorix-ogmios.desktop", "text/x-vtx"]);
+            Ok(format!("Les fichiers .vtx sont maintenant des « programmes Vercintorix » : un double-clic ouvre Ogmios (dans un \
                         terminal).\nFichiers posés : {}, {} et les icônes dans {}.", app.display(), mime.display(),
                        partage.join("icons/hicolor").display()))
         } else {
@@ -1053,15 +1053,15 @@ fn main() {
     if let Some(p) = exe128::paquet_embarque() {
         exe128::jouer(p);
     }
-    // atelier.exe (le même programme sous ce nom) : l'atelier, sur le fichier donné ou en commençant par « ouvrir ».
-    // Un double-clic sur atelier.exe, ou « Ouvrir avec » sur un fichier .vtx, arrive ici.
+    // ogmios.exe (le même programme sous ce nom) : Ogmios, sur le fichier donné ou en commençant par « ouvrir ».
+    // Un double-clic sur ogmios.exe, ou « Ouvrir avec » sur un fichier .vtx, arrive ici.
     let nom = std::path::Path::new(&args[0]).file_stem().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-    if nom == "atelier" || nom == "ogmios" {
-        // sous Windows, la fenêtre ; ailleurs, l'atelier en console
+    if nom == "ogmios" {
+        // sous Windows, la fenêtre ; ailleurs, Ogmios en console
         #[cfg(windows)]
         fenetre::lancer_fenetre(args.get(1).map(|s| s.as_str()));
         #[cfg(not(windows))]
-        atelier::atelier(args.get(1).map(|s| s.as_str()));
+        ogmios_console::ogmios(args.get(1).map(|s| s.as_str()));
         return;
     }
     match args.get(1).map(|s| s.as_str()) {
@@ -1105,7 +1105,7 @@ fn main() {
         Some("essai-pas128") => pas128::essai(&args[2..]),
         Some("regarder128") => symboles::essai(&args[2..]),
         Some("exe128") => exe128::commande(&args[2..]),
-        Some("atelier") => atelier::atelier(args.get(2).map(|s| s.as_str())),
+        Some("ogmios") => ogmios_console::ogmios(args.get(2).map(|s| s.as_str())),
         Some("traduire") if args.len() > 2 => traduire_programme(&args[2], args.get(3)),
         Some("traduire-corpus") if args.len() > 3 => {
             let texte = fs::read_to_string(&args[2]).expect("lecture du corpus impossible");
@@ -1129,7 +1129,7 @@ fn main() {
         }
         Some("session") if args.len() > 2 => session(&args[2], args.get(3).map(|s| s.parse().unwrap()).unwrap_or(100)),
         _ => {
-            eprintln!("utilisation : vtx-spu PROG.vtx [ENTRÉES…] | vtx-spu atelier PROG.vtx | vtx-spu compiler PROG.vtx [SORTIE] | vtx-spu renouveler VTXC.vtx | vtx-spu corpus FICHIER | vtx-spu session FICHIER [N] | vtx-spu lancer FICHIER [MAX_PAS] [CYLINDRES]");
+            eprintln!("utilisation : vtx-spu PROG.vtx [ENTRÉES…] | vtx-spu ogmios PROG.vtx | vtx-spu compiler PROG.vtx [SORTIE] | vtx-spu renouveler VTXC.vtx | vtx-spu corpus FICHIER | vtx-spu session FICHIER [N] | vtx-spu lancer FICHIER [MAX_PAS] [CYLINDRES]");
             process::exit(2);
         }
     }

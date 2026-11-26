@@ -77,18 +77,18 @@ verifier("l'empreinte : vtx128.py, vtx64.py, lugus empreinte et vtx64 empreinte 
 crlf = ecrire("outil_crlf.vtx", OUTIL, crlf=True)
 verifier("un module en \\r\\n a la même empreinte que le même en \\n", empreinte("lugus", crlf) == e)
 
-atelier = ecrire("atelier.vtx", f'importer "outil.vtx" empreinte "{e}";\nfonction quadruple(x) {{ retour double(double(x)); }}\n',
+ouvrage = ecrire("ouvrage.vtx", f'importer "outil.vtx" empreinte "{e}";\nfonction quadruple(x) {{ retour double(double(x)); }}\n',
                  crlf=True)
-ea = empreinte("lugus", atelier)
-PROMIS = ecrire("promis.vtx", f'importer "atelier.vtx" empreinte "{ea.upper()}";\n'
+ea = empreinte("lugus", ouvrage)
+PROMIS = ecrire("promis.vtx", f'importer "ouvrage.vtx" empreinte "{ea.upper()}";\n'
                               f'importer "outil.vtx" empreinte "{e}";\n'
                               "fonction principal() { afficher(salut(), quadruple(5)); }\n")
 LIBRE = ecrire("libre.vtx", 'importer "outil.vtx";\nfonction quadruple(x) { retour double(double(x)); }\n'
                             "fonction principal() { afficher(salut(), quadruple(5)); }\n")
 # le même programme, ses modules non promis : les mêmes mots que le programme promis (la promesse n'en change aucun)
-LIBRE2 = ecrire("libre2.vtx", 'importer "atelier_libre.vtx";\nimporter "outil.vtx";\n'
+LIBRE2 = ecrire("libre2.vtx", 'importer "ouvrage_libre.vtx";\nimporter "outil.vtx";\n'
                               "fonction principal() { afficher(salut(), quadruple(5)); }\n")
-ecrire("atelier_libre.vtx", 'importer "outil.vtx";\nfonction quadruple(x) { retour double(double(x)); }\n')
+ecrire("ouvrage_libre.vtx", 'importer "outil.vtx";\nfonction quadruple(x) { retour double(double(x)); }\n')
 for machine, nom_m in (("lugus", "Lugus"), ("vtx64", "Dunon")):
     mp, mlp = compiler(machine, PROMIS)
     ml_, mll = compiler(machine, LIBRE2)
@@ -103,7 +103,7 @@ for machine, nom_m in (("lugus", "Lugus"), ("vtx64", "Dunon")):
     mp, mlp = compiler(machine, PROMIS)
     ok = (isinstance(mp, str) and isinstance(mlp, str) and "n'est plus celui promis" in mp and "n'est plus celui promis" in mlp
           and nouvelle in mp and nouvelle in mlp and e in mp and e in mlp)
-    verifier(f"{nom_m} : le module a changé (atelier.vtx le promettait) : refusé par les deux compilateurs, l'empreinte "
+    verifier(f"{nom_m} : le module a changé (ouvrage.vtx le promettait) : refusé par les deux compilateurs, l'empreinte "
              "trouvée dite", ok, f"{mp[:200]} / {mlp[:200]}")
     ml_, mll = compiler(machine, LIBRE)
     verifier(f"{nom_m} : sans promesse, le module changé est pris tel quel (comme avant)",

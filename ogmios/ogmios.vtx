@@ -1,5 +1,5 @@
 // machine : lugus
-// Ogmios écrit en vtx (premier temps) : l'atelier dans le langage lui-même, comme vtxc128. Ogmios, le dieu gaulois de
+// Ogmios écrit en vtx (premier temps) : Ogmios dans le langage lui-même, comme vtxc128. Ogmios, le dieu gaulois de
 // l'éloquence, tire les hommes par des chaînes d'or attachées à sa langue : ici, l'éditeur tient le texte du programme.
 //
 //     vtx toile128 ogmios/ogmios.vtx --fichier PROG.vtx
@@ -615,7 +615,7 @@ fonction dessiner() {
     }
 }
 
-// ---------------------------------------------------------------------------------------------- l'atelier
+// ---------------------------------------------------------------------------------------------- Ogmios
 fonction principal() {
     ecran(L, H);
     preparer_police();

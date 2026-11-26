@@ -12,11 +12,8 @@ path = "src/main.rs"
 name = "vtx"
 path = "src/vtx.rs"
 
-[[bin]]
-name = "atelier"
-path = "src/atelier_exe.rs"
 
-# 0.69 : Ogmios, l'atelier, sous son propre nom (le même programme qu'atelier.exe)
+# 0.69 : Ogmios, sous son propre nom (le même programme qu'ogmios.exe)
 [[bin]]
 name = "ogmios"
 path = "src/ogmios_exe.rs"

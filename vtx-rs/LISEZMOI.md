@@ -22,7 +22,7 @@ cd vtx-rs
 cargo build --release
 ```
 
-La première compilation prend une minute environ. Elle produit `target\release\vtx.exe` et `target\release\atelier.exe`. (Les tests de conformité ne sont plus dans le paquet allégé ; ils sont passés avant chaque livraison.)
+La première compilation prend une minute environ. Elle produit `target\release\vtx.exe` et `target\release\ogmios.exe`. (Les tests de conformité ne sont plus dans le paquet allégé ; ils sont passés avant chaque livraison.)
 
 ## En cas de problème
 
@@ -55,12 +55,12 @@ Ce que vtxc compile : **tout le langage**, avec le prélude, les fichiers import
 |---|---|
 | `vtx PROG.vtx [ENTRÉES…]` | compile avec vtxc embarqué, puis exécute ; les fichiers du programme sont ouverts dans le dossier courant |
 | `vtx compiler PROG.vtx [SORTIE]` | compile seulement ; écrit « mots; » dans SORTIE (par défaut PROG.prog), lisible par `lancer` |
-| `atelier.exe [PROG.vtx]` | sous Windows, la fenêtre de l'atelier (menus, boutons, éditeur, cube en perspective ou à plat, sortie) ; ailleurs, l'atelier en console |
+| `ogmios.exe [PROG.vtx]` | sous Windows, la fenêtre d'Ogmios (menus, boutons, éditeur, cube en perspective ou à plat, sortie) ; ailleurs, Ogmios en console |
 | `vtx image PROG.vtx SORTIE.ppm [étage] [plan\|iso] [entrées…]` | lance le programme et écrit l'image du cube (perspective ou à plat) |
-| `vtx atelier PROG.vtx` | l'atelier en console : éditeur, compilation et exécution (F5), et le cube : un étage de la mémoire dessiné en couleurs, un mot `#RRGGBBAA` par pixel (voir COMMENCER.md) |
+| `vtx ogmios PROG.vtx` | Ogmios en console : éditeur, compilation et exécution (F5), et le cube : un étage de la mémoire dessiné en couleurs, un mot `#RRGGBBAA` par pixel (voir COMMENCER.md) |
 | `vtx traduire PROG.vtx [SORTIE]` | traduit en code natif : vtxc compile, le code du SPU devient du Rust, rustc (LLVM) en fait un exécutable ; même résultat, environ 12 fois plus vite sur un cœur ; les accords sont joués sur les cœurs de la machine moins un (`VTX_ROTOS` pour en fixer le nombre : *rotos*, la roue en gaulois) |
 | `vtx renouveler VTXC.vtx` | recompile vtxc par lui-même et remplace `vtxc.mots` si le point fixe est atteint |
-| `vtx64 PROG.vtx [ENTRÉES…]` | la machine 64 bits : vtxc64 (embarqué) compile, la SPU-64 exécute ; aussi `vtx64 compiler PROG.vtx`, `vtx64 renouveler vtxc64.vtx` (voir docs/vtx64-langage.md, section 9). L'atelier travaille par défaut sur la SPU-64 (Ctrl+M : SPU-32) |
+| `vtx64 PROG.vtx [ENTRÉES…]` | la machine 64 bits : vtxc64 (embarqué) compile, la SPU-64 exécute ; aussi `vtx64 compiler PROG.vtx`, `vtx64 renouveler vtxc64.vtx` (voir docs/vtx64-langage.md, section 9). Ogmios travaille par défaut sur la SPU-64 (Ctrl+M : SPU-32) |
 | `vtx-spu corpus FICHIER` | rejoue un corpus (une ligne « mots;entrées » par programme), mémoire neuve à chaque programme |
 | `vtx-spu session FICHIER [N]` | première ligne : les mots ; lignes suivantes : entrées d'appels successifs qui partagent la mémoire ; la dernière est rejouée N fois et chronométrée |
 | `vtx-spu lancer FICHIER [MAX_PAS] [CYLINDRES]` | un programme « mots;entrées;table » : instructions, durée, sorties, puis le texte de la console. Avec la table des accords (produite par `python vtx.py exporter prog.vtx [entrées] > prog.txt`), les tâches d'une mesure sont jouées sur plusieurs cœurs : par défaut les cœurs de la machine moins un |

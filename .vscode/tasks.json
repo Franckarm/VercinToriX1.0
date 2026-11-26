@@ -39,14 +39,14 @@
       }
     },
     {
-      "label": "vtx : atelier (éditeur et cube) sur le programme ouvert",
+      "label": "vtx : Ogmios (éditeur et cube) sur le programme ouvert",
       "type": "process",
       "command": "${workspaceFolder}/vtx-rs/target/release/vtx",
       "windows": {
         "command": "${workspaceFolder}\\vtx-rs\\target\\release\\vtx.exe"
       },
       "args": [
-        "atelier",
+        "ogmios",
         "${file}"
       ],
       "options": {

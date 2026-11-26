@@ -158,8 +158,7 @@ vtx-rs/LISEZMOI.md
 vtx-rs/lecteur_adn.mots
 vtx-rs/src/adn.rs
 vtx-rs/src/arbre.rs
-vtx-rs/src/atelier.rs
-vtx-rs/src/atelier_exe.rs
+vtx-rs/src/ogmios_console.rs
 vtx-rs/src/cube.rs
 vtx-rs/src/exe128.rs
 vtx-rs/src/fenetre.rs

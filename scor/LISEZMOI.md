@@ -8,7 +8,7 @@ cd scor
 vtx scor.vtx            # huit questions de démonstration, puis les vôtres au clavier (ligne vide : fin)
 ```
 
-Dans l'atelier : ouvrez `scor.vtx`, F5 ; les questions se tapent dans la ligne du terminal. L'étage 1 du cube
+Dans Ogmios : ouvrez `scor.vtx`, F5 ; les questions se tapent dans la ligne du terminal. L'étage 1 du cube
 montre tous les mots consolidés à leur place ; l'étage 2, la dernière question et ses réponses.
 
 ## Comment il marche

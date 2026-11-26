@@ -18,7 +18,7 @@ La machine n'existe pas en matériel : `lugus` la joue sur le PC.
 |---|---|---|
 | **vtxc128** | compiler un texte vtx en mots de Lugus | vtx (se compile lui-même) |
 | **vtx128.py** | la référence : doit donner les mêmes mots que vtxc128 | Python (le témoin, pas l'outil) |
-| **Ogmios** (`atelier.exe`) | écrire, lancer (F5), voir la paillasse, la carte, le cube | Rust |
+| **Ogmios** (`ogmios.exe`) | écrire, lancer (F5), voir la paillasse, la carte, le cube | Rust |
 | **le lecteur d'ADN** | ranger, vérifier, réparer, juger les promesses | vtx |
 | **Gobannos** | faire un .exe (Windows) ou un programme Linux à partir des mots | vtx |
 | **la bibliothèque des flottants** | les flottants des .exe de Gobannos | vtx |
@@ -76,6 +76,6 @@ Python ne sert plus qu'aux **témoins** (les références qui vérifient) et aux
 
 ## Si tu ne retiens que trois choses
 
-1. On écrit du vtx ; `lugus` le lance ; Ogmios est l'atelier.
+1. On écrit du vtx ; `lugus` le lance ; Ogmios est Ogmios.
 2. Le programme se range en ADN, qui se vérifie et porte sa carte (les six faces).
 3. Gobannos en fait un .exe, sans Rust ni Python.

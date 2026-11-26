@@ -1,4 +1,4 @@
-// L'atelier vtx en mode console : « vtx atelier programme.vtx ».
+// Ogmios vtx en mode console : « vtx ogmios programme.vtx ».
 // À gauche, l'éditeur (couleurs du langage, numéros de ligne). À droite, le cube : un étage de la mémoire du SPU
 // dessiné en couleurs, chaque mot #RRGGBBAA étant un pixel de sa couleur (deux pixels par caractère, avec un
 // demi-carré). En bas à droite, ce qu'a donné le programme : instructions, sorties, console, erreurs.
@@ -412,14 +412,14 @@ fn colorer(ligne: &[char]) -> Vec<&'static str> {
     col
 }
 
-// ------------------------------------------------------------------------------------------------ l'atelier
+// ------------------------------------------------------------------------------------------------ Ogmios
 #[derive(PartialEq, Clone, Copy)]
 enum Focus {
     Editeur,
     Cube,
 }
 
-struct Atelier {
+struct Ogmios {
     fichier: String,
     lignes: Vec<Vec<char>>,
     cl: usize,
@@ -536,7 +536,7 @@ fn titres_menus() -> Vec<(usize, usize)> {
 
 const LARGEURS: [u32; 8] = [16, 32, 64, 128, 256, 512, 1024, 4096];
 
-impl Atelier {
+impl Ogmios {
     fn texte(&self) -> String {
         self.lignes.iter().map(|l| l.iter().collect::<String>()).collect::<Vec<_>>().join("\n")
     }
@@ -1115,7 +1115,7 @@ impl Atelier {
                 ];
             }
             Action::Apropos => {
-                self.message = "Ogmios, l'atelier de Vercintorix : le langage du cube chromatique et de la logique à quatre valeurs".into();
+                self.message = "Ogmios, de Vercintorix : le langage du cube chromatique et de la logique à quatre valeurs".into();
             }
         }
     }
@@ -1614,9 +1614,9 @@ fn menu_lettre(t: &str) -> char {
     }
 }
 
-/// L'atelier, sur un fichier, ou (None) en commençant par la fenêtre « ouvrir ».
-pub fn atelier(fichier: Option<&str>) {
-    let mut a = Atelier {
+/// Ogmios, sur un fichier, ou (None) en commençant par la fenêtre « ouvrir ».
+pub fn ogmios(fichier: Option<&str>) {
+    let mut a = Ogmios {
         fichier: String::new(), lignes: vec![Vec::new()], cl: 0, cc: 0, haut: 0, gauche: 0, modifie: false, annuler: Vec::new(), frappe: false,
         focus: Focus::Editeur, entrees: String::new(), saisie: None, mem: None, etage: 1, largeur: 64, base: 0, zoom: 1, sel: 0,
         mode_valeur: false, message: String::new(), rapport: Vec::new(),
@@ -1632,7 +1632,7 @@ pub fn atelier(fichier: Option<&str>) {
             a.ouvrir_dossier(d);
         }
     }
-    a.rapport = vec!["Bienvenue dans l'atelier vtx.".into(),
+    a.rapport = vec!["Bienvenue dans Ogmios.".into(),
         "F5 compile et lance ; F7 avance pas à pas, ligne par ligne ; F9 pose un point d'arrêt.".into(),
         "F6 passe au cube : 0-3 choisit l'étage, l la largeur de l'image, +/- le zoom.".into(),
         "Ctrl+O ouvre un autre fichier.".into()];

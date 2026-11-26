@@ -11,7 +11,7 @@ vtx64.py, et se compiler lui-même (point fixe).
  5. Le compilateur embarqué dans la machine Rust (vtx-rs/vtxc64.mots) est vtxc64 optimisé, à jour.
  6. « vtx64 PROG.vtx » (compilé par vtxc64 embarqué, sans Python) donne, sur exemples64, ce que donnent vtx64.py puis
     la machine.
- 7. L'atelier sur la SPU-64 (vtx-spu essai-pas64) : pas à pas ligne par ligne, par-dessus les fonctions et d'un coup,
+ 7. Ogmios sur la SPU-64 (vtx-spu essai-pas64) : pas à pas ligne par ligne, par-dessus les fonctions et d'un coup,
     même console et mêmes sorties ; la vue du cube (points de 32 bits) montre chaque mot.
 
 Chaque étape s'annonce avant de commencer (le point fixe prend une à deux minutes) ; dans un terminal, un compteur
@@ -217,8 +217,8 @@ for f in exs:
         ecarts.append(f)
 verifier(f"vtx64 PROG.vtx : {len(exs) - len(ecarts)}/{len(exs)} exemples comme vtx64.py + machine", not ecarts, str(ecarts))
 
-# 7. l'atelier sur la SPU-64
-annoncer("7. l'atelier sur la SPU-64 : pas à pas (F7, F8, F5) et vue du cube, sur exemples64")
+# 7. Ogmios sur la SPU-64
+annoncer("7. Ogmios sur la SPU-64 : pas à pas (F7, F8, F5) et vue du cube, sur exemples64")
 spu = os.path.join(cible, "release", "vtx-spu" + (".exe" if os.name == "nt" else ""))
 ecarts = []
 for f in exs:
@@ -226,7 +226,7 @@ for f in exs:
                        errors="replace")
     if r.returncode != 0 or not r.stdout.rstrip().endswith("conforme") or "NON CONFORME" in r.stdout:
         ecarts.append(f)
-verifier(f"atelier SPU-64 : {len(exs) - len(ecarts)}/{len(exs)} exemples, pas à pas et vue conformes", not ecarts, str(ecarts))
+verifier(f"Ogmios sur la SPU-64 : {len(exs) - len(ecarts)}/{len(exs)} exemples, pas à pas et vue conformes", not ecarts, str(ecarts))
 
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"[{time.time() - DEBUT:5.0f} s] fin")

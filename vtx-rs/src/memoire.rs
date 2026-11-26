@@ -273,7 +273,7 @@ pub fn cubes_sur_disque(d: &std::path::Path) -> Vec<(u32, u32, u64)> {
     v
 }
 
-/// Le tableau des cubes pour l'atelier (commande « cubes ») et pour « vtx cubes DOSSIER ».
+/// Le tableau des cubes pour Ogmios (commande « cubes ») et pour « vtx cubes DOSSIER ».
 pub fn texte_cubes(mem: Option<&Memoire>, d: &std::path::Path) -> String {
     let note = |f: u32| nom_note(f).map(|n| format!(" ({})", n)).unwrap_or_default();
     let mut t = String::new();

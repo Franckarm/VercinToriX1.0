@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Le débogueur de Lugus par les noms : vtxc128 écrit code.sym en pas à pas, l'atelier remonte la pile des appels et
-écrit les variables comme le programme les entend. vtx-spu regarder128 montre la même vue que le panneau de l'atelier,
+"""Le débogueur de Lugus par les noms : vtxc128 écrit code.sym en pas à pas, Ogmios remonte la pile des appels et
+écrit les variables comme le programme les entend. vtx-spu regarder128 montre la même vue que le panneau d'Ogmios,
 arrêté à une ligne (la n-ième fois)."""
 import os
 import subprocess

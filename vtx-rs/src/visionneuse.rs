@@ -1,9 +1,9 @@
-// La visionneuse d'Ogmios : ce qu'un programme a créé s'ouvre dans sa propre fenêtre, à côté de l'atelier.
+// La visionneuse d'Ogmios : ce qu'un programme a créé s'ouvre dans sa propre fenêtre, à côté d'Ogmios.
 //   - une image (PNG, GIF, BMP, JPEG) : montrée par GDI+ (la bibliothèque d'images de Windows), à la taille de la
 //     fenêtre, les petites images agrandies sans flou (chaque point reste un carré) ;
 //   - un son (WAV) : joué (PlaySound) ; un clic dans sa fenêtre le rejoue, Échap l'arrête ;
 //   - un exécutable : lancé dans sa propre console.
-// Avant chaque exécution, l'atelier photographie le dossier du programme (photo) ; à la fin, ce qui est nouveau ou a
+// Avant chaque exécution, Ogmios photographie le dossier du programme (photo) ; à la fin, ce qui est nouveau ou a
 // changé (nouveautes) s'ouvre (ouvrir). Une fenêtre par fichier ; la rouvrir la remet devant.
 #![allow(non_snake_case, clippy::upper_case_acronyms)]
 use core::ffi::c_void;
@@ -266,7 +266,7 @@ unsafe fn charger_image(p: &Path) -> (H, (u32, u32)) {
 }
 
 /// ouvre le fichier dans la visionneuse (ou, pour un exécutable, le lance dans sa propre console) ; rend un mot pour
-/// la barre d'état de l'atelier
+/// la barre d'état d'Ogmios
 pub fn ouvrir(p: &Path) -> String {
     let g = match genre(p) {
         Some(g) => g,

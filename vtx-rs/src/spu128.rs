@@ -82,8 +82,8 @@ pub struct Spu128 {
     /// le service 27, le compilateur du lecteur d'ADN (0.6n bis) : un texte vtx compilé par vtxc128 (en vtx, sur une
     /// machine fille) dans le dossier de la machine ; rend « mots;\n » ou « !l'erreur » (machine128::compiler_pour_lecteur)
     pub compilateur: Option<fn(&str, &std::path::Path) -> String>,
-    // la console branchée ailleurs (l'atelier, un terminal) : ce que le programme écrit et lit sur le canal 1 passe
-    // par elles au lieu du texte gardé ; arret : Maj+F5 de l'atelier ; parler : la voix (le canal « voix: »)
+    // la console branchée ailleurs (Ogmios, un terminal) : ce que le programme écrit et lit sur le canal 1 passe
+    // par elles au lieu du texte gardé ; arret : Maj+F5 d'Ogmios ; parler : la voix (le canal « voix: »)
     pub console_ecrire: Option<Box<dyn FnMut(u128)>>,
     pub console_lire: Option<Box<dyn FnMut() -> u128>>,
     pub arret: Option<&'static std::sync::atomic::AtomicBool>,
@@ -170,7 +170,7 @@ pub fn garde_plantage() {
 
 /// Pour le code traduit : une opération sur les flottants quaternaires, faite d'ici sans passer par le décodage de
 /// Lugus. OP (le code) et W (la largeur : 0 Q128, 1 Q64, 2 Q32) sont des constantes : le format est connu, ses champs
-/// deviennent des constantes, comme dans l'atelier forgé. regs : d | s << 4 | t << 8 | (imm & 3) << 12. Les mêmes
+/// deviennent des constantes, comme dans Ogmios forgé. regs : d | s << 4 | t << 8 | (imm & 3) << 12. Les mêmes
 /// calculs que le bras des flottants de pas_general, et le même poser (z selon la valeur, c effacé).
 pub extern "sysv64" fn natif_flot<const OP: u16, const W: u32>(s: *mut Spu128, regs: u64) {
     let s = unsafe { &mut *s };

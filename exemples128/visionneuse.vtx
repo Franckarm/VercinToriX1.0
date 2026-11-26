@@ -1,7 +1,7 @@
 // machine : lugus
 // La visionneuse d'Ogmios, pour l'essayer : ce programme crée, à côté de lui, un son (la.wav : un la, 440 Hz, en onde
 // triangle qui s'éteint) et une image (belnap.bmp : les quatre états de Belnap en carrés, inconnu, faux, vrai, variable,
-// fondus du noir à leur couleur). Lancé dans l'atelier (F5), les deux s'ouvrent chacun dans sa fenêtre.
+// fondus du noir à leur couleur). Lancé dans Ogmios (F5), les deux s'ouvrent chacun dans sa fenêtre.
 // Des formats sans compression : WAV (PCM 8 bits) et BMP (24 bits) ; chaque octet écrit à la main.
 
 constante TAUX = 22050;

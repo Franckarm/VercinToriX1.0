@@ -5982,7 +5982,7 @@ fonction triangle(x0, y0, c0, x1, y1, c1, x2, y2, c2) {
         y = y + 1;
     }
 }
-// ---- l'interactif (une fenêtre : la toile ou l'atelier ; sans fenêtre, souris, touche et molette rendent 0)
+// ---- l'interactif (une fenêtre : la toile ou Ogmios ; sans fenêtre, souris, touche et molette rendent 0)
 fonction cadence(ms) {
     // presenter() attend au moins ms millisecondes depuis l'image précédente (16 par défaut : 60 images par seconde ; 0 : sans
     // attendre) ; c'est aussi la durée de chaque image d'une animation GIF ; rend l'ancienne cadence

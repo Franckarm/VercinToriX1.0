@@ -79,7 +79,7 @@ compilation), le plus aux frontières (O, là où les erreurs entrent).
   en hex). H₂O : 18 hex ; CH₄ : 16 ; l'éthanol C₂H₆O : 46. Comparer deux signatures dit si une molécule a changé, sans la
   relire.
 - **Source** : chaque molécule garde la case (ou la ligne du texte) qui l'a créée. Une erreur ramène à l'endroit dans
-  l'atelier.
+  Ogmios.
 - **Contrôle local** : quand un atome change, on revérifie cet atome et ses liaisons, pas le programme. Le travail de
   contrôle suit la taille du changement, pas celle du programme.
 - **Triangulation**, trois témoins indépendants : la formule (ce que la molécule contient), les liaisons (comment elle
@@ -133,13 +133,13 @@ molécule « stable » est un bloc plein, sans case vide. Le diamant (un réseau
 graphite (des feuillets sp2 empilés, faiblement liés) est l'empilement des étages : passer d'un étage à l'autre coûte plus
 que rester dans un feuillet.
 
-## 8. L'atelier : une surface façon Blueprint
+## 8. Ogmios : une surface façon Blueprint
 
 - On **pose des cases** (constante, afficher, importer, calcul, condition, attente, rendez-vous…) et on les **relie**. La
   valence de chaque case (section 4) limite ses fils.
 - **Synchronisation par Belnap** : une entrée encore vide est *inconnue*, la case attend ; dès que toutes ses entrées
   sont connues, elle réagit, en même temps que toutes les cases prêtes. Deux valeurs contradictoires sur une même entrée
-  donnent *variable* : l'atelier la montre au lieu de choisir au hasard. C'est l'énergie d'activation : une réaction ne
+  donnent *variable* : Ogmios la montre au lieu de choisir au hasard. C'est l'énergie d'activation : une réaction ne
   part que quand tout est réuni.
 - **Le rendez-vous** : une case qui attend que plusieurs voies arrivent, puis les relâche ensemble (« attendre qu'une
   voie atteigne une valeur pour activer l'autre, et repartir ensemble »).
@@ -165,14 +165,14 @@ alternatif tire plusieurs protéines d'un même gène.
 - **L'ADN garde tout** : les neutrons (le contrôle), les sources des molécules, la table des lignes du pas à pas, les
   isotopes lourds. Rien ne se perd dans ce qui dure.
 - **L'ARN n'en garde que ce que la lecture demande.** À la transcription, l'épissage retire les introns : les neutrons
-  déjà vérifiés, les tables de l'atelier, les sources. C'est là que le contrôle allégé rend la vitesse.
+  déjà vérifiés, les tables d'Ogmios, les sources. C'est là que le contrôle allégé rend la vitesse.
 - **L'épissage alternatif** tire plusieurs ARN d'un même ADN :
   - *rapide* : tout le contrôle retiré, sauf celui des frontières (O) ;
   - *sûr* : les isotopes lourds gardés ;
   - *pas à pas* : la table des lignes et les sources gardées.
 - **Les signaux** : en biologie, les bornes d'un intron sont marquées (GU au début, AG à la fin). Dans l'ADN de vtx, une
   borne d'intron serait marquée de même, pour que la transcription le saute sans rien analyser.
-- La lecture du Hex et de l'ADN n'épisse pas : elle doit pouvoir tout relire (la fiabilité, l'atelier). L'épissage est à
+- La lecture du Hex et de l'ADN n'épisse pas : elle doit pouvoir tout relire (la fiabilité, Ogmios). L'épissage est à
   la transcription.
 
 Une coïncidence à noter : un codon biologique fait trois bases, soit 6 bits ; les codons de la voie de matière de Lugus
@@ -212,7 +212,7 @@ Chaque essai a sa mesure avant et après, comme le crible.
 3. **La syntaxe est la surface (Blueprint)** : on programme en posant des cases et en tirant des liaisons. Elle s'enregistre
    en texte (les cases, leurs valeurs, leurs liaisons), lisible et comparable : c'est le Hex. Une case peut garder des
    lignes de vtx classique, pour que rien de l'existant ne se perde.
-4. **Les éléments de l'atelier sont une représentation**, pas une contrainte : on prend dans la chimie, la biologie ou la
+4. **Les éléments d'Ogmios sont une représentation**, pas une contrainte : on prend dans la chimie, la biologie ou la
    physique ce qui est le plus efficace pour chaque besoin (section 11 bis).
 5. **Pas d'épissage entre le Hex et l'ADN** : l'épissage se fait à la transcription (ADN → ARN). L'épissage actuel des
    instructions, aujourd'hui fait à la compilation, est à déplacer ou à renommer (voir la question ouverte).
@@ -238,7 +238,7 @@ Chaque essai a sa mesure avant et après, comme le crible.
 La mesure décide, pas le principe :
 - **l'épissage des instructions** (sections 27 et 38 de vtx-0-5-autonomie.md) reste où il est : il est mesuré utile
   (de 9 à 20 % d'instructions exécutées en moins) ; il épisse le code, pas les données ;
-- **l'épissage des atomes à la transcription** (ADN → ARN : les neutrons vérifiés, les sources, les tables de l'atelier)
+- **l'épissage des atomes à la transcription** (ADN → ARN : les neutrons vérifiés, les sources, les tables d'Ogmios)
   n'est fait que si un essai montre qu'il rend du temps. Essai 5 de la section 10 : le même programme en ARN *rapide* et
   en ARN *sûr*, mesurés ; s'il n'y a pas d'écart, pas d'épissage.
 
@@ -250,7 +250,7 @@ La mesure décide, pas le principe :
 3. La maquette web de la surface (faite : la paillasse, `surface/paillasse.html`) (poser des cases, tirer des liaisons, voir les vagues et les attentes en Belnap, voir le
    texte vtx s'écrire).
 3. Les essais mesurés de la section 10.
-4. L'atelier, puis la chaîne Cube → Hex → ADN → ARN.
+4. Ogmios, puis la chaîne Cube → Hex → ADN → ARN.
 
 ## 13. Proposition : les liaisons écrites (31 octobre, à valider)
 

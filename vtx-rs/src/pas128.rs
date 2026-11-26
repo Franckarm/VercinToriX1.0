@@ -1,6 +1,6 @@
 // Hors de Windows, seule la vérification (essai-pas128) s'en sert : une partie y reste inemployée.
 #![cfg_attr(not(any(windows, feature = "verif_fenetre")), allow(dead_code))]
-// Le pas à pas et les vues de Lugus (le SPU-128), sans fenêtre : l'atelier (fenetre.rs) s'en sert, et
+// Le pas à pas et les vues de Lugus (le SPU-128), sans fenêtre : Ogmios (fenetre.rs) s'en sert, et
 // « vtx-spu essai-pas128 PROG.vtx » les vérifie partout (même sous Linux). Les vues du cube et le pas à pas eux-mêmes
 // sont ceux de la machine 64 bits (pas64.rs : Vue64, Pas, Moteur::M128) ; ici, ce qui est propre aux mots de 128 bits.
 use super::pas64::{table_des_lignes, Moteur, Pas, Vue64};
@@ -143,7 +143,7 @@ pub fn presenter128(s: &Spu128) -> u128 {
     }
 }
 
-/// vtx-spu essai-pas128 PROG.vtx [ENTRÉES…] : ce que fait l'atelier sur Lugus, sans fenêtre. Pas à pas ligne par ligne
+/// vtx-spu essai-pas128 PROG.vtx [ENTRÉES…] : ce que fait Ogmios sur Lugus, sans fenêtre. Pas à pas ligne par ligne
 /// (F7), puis par-dessus les fonctions (F8), puis d'un coup (F5) : les trois doivent finir avec la même console et les
 /// mêmes sorties que l'exécution complète ; puis la vue du cube (points de 32 bits) et le panneau.
 pub fn essai(args: &[String]) {
@@ -177,7 +177,7 @@ pub fn essai(args: &[String]) {
     r.charger(&m);
     r.entree.extend(entrees.iter().copied());
     let ref_fin = r.executer(20_000_000_000);
-    println!("référence (F5 de l'atelier) : {} instructions{}", r.pas, match &ref_fin { Ok(()) => String::new(), Err(e) => format!(", arrêt : {}", e) });
+    println!("référence (F5 d'Ogmios) : {} instructions{}", r.pas, match &ref_fin { Ok(()) => String::new(), Err(e) => format!(", arrêt : {}", e) });
     let (ref_texte, ref_sortie) = (console(&r), r.sortie.clone());
     let (mots, _, dbg) = compiler128(&compilateur, &source, &base, PAS_A_PAS128, true).expect("compilation pas à pas");
     let debuts = table_des_lignes(dbg.into_iter().map(|x| x as u64));

@@ -21,7 +21,7 @@
 //
 // L'étage 1 montre tous les points des mots (couleur : le hex de leur orthographe) ; l'étage 2 montre la dernière
 // question (blanc), ses réponses (vert vrai, gris inconnu) et l'anti-cube en miroir (rouge faux, orange variable).
-// Usage : dans ce dossier, vtx scor.vtx, puis des questions au clavier ; ou dans l'atelier (le terminal).
+// Usage : dans ce dossier, vtx scor.vtx, puis des questions au clavier ; ou dans Ogmios (le terminal).
 
 constante FENETRE = 4;
 constante CASE = 16;            // 16 × 16 × 16 cases de 16 unités

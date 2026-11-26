@@ -14,7 +14,7 @@
 // faux (sa branche n'a pas réagi), inconnu (jamais calculée).
 //
 // Ce module ne dépend pas de Windows : il dessine dans une image (les traits, les cases) et rend la liste des textes à
-// écrire par-dessus. L'atelier écrit ces textes avec la police de Windows ; « vtx paillasse » les écrit avec la police
+// écrire par-dessus. Ogmios écrit ces textes avec la police de Windows ; « vtx paillasse » les écrit avec la police
 // 5 × 7 du prélude, dans un PNG, pour vérifier sans écran.
 use std::collections::HashMap;
 
@@ -3244,7 +3244,7 @@ pub fn commande(args: &[String]) {
     }
     p.lire(&source);
     if valeurs {
-        // Ctrl+P de l'atelier : le programme compilé avec la provenance et lancé ; chaque liaison porte sa valeur
+        // Ctrl+P d'Ogmios : le programme compilé avec la provenance et lancé ; chaque liaison porte sa valeur
         let base = super::machine128::dossier_de128(&fichier);
         match super::machine128::valeurs_liaisons(&source, &base, &[]) {
             Ok(v) => p.valeurs = v,

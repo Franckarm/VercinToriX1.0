@@ -6,7 +6,7 @@ que vtx128.py (le langage de Lugus : flottant de 128 bits par défaut, point de 
  2. La suite de vtx128.py (ses programmes, ceux du SPU-64 et ceux de Lugus), avec le prélude, sans et avec optimisation.
  3. Des programmes aléatoires (vtxc/hasard64.py) : prélude, optimisations, partition.
  4. Avec les optimisations, vtxc128 se compile comme vtx128.py ; le compilateur embarqué dans lugus est à jour.
- 5. L'atelier sur Lugus (vtx-spu essai-pas128) : pas à pas ligne par ligne, par-dessus les fonctions et d'un coup, la
+ 5. Ogmios sur Lugus (vtx-spu essai-pas128) : pas à pas ligne par ligne, par-dessus les fonctions et d'un coup, la
     vue du cube, sur les exemples de Lugus (exemples128).
 
     python3 vtxc/test_vtxc128.py [--complet] [--sans-point-fixe] [--seul MOT]"""
@@ -152,7 +152,7 @@ if not seul:
                            encoding="utf-8", errors="replace")
         if r.returncode != 0 or not r.stdout.rstrip().endswith("conforme") or "NON CONFORME" in r.stdout:
             ecarts.append(f)
-    verifier(f"atelier sur Lugus : {len(exs) - len(ecarts)}/{len(exs)} exemples, pas à pas et vue conformes", not ecarts,
+    verifier(f"Ogmios sur Lugus : {len(exs) - len(ecarts)}/{len(exs)} exemples, pas à pas et vue conformes", not ecarts,
              str(ecarts))
 
 shutil.rmtree(TMP, ignore_errors=True)

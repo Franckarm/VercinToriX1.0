@@ -14,7 +14,7 @@ cargo build --release
 ```
 
 Cela donne, dans `vtx-rs\target\release` : **`lugus.exe`** (la machine et son compilateur vtxc128, écrit en vtx),
-**`ogmios.exe`** (l'atelier), `vtx64.exe` (Dunon, la machine de 64 bits) et `vtx.exe` (les outils : la toile, la
+**`ogmios.exe`** (Ogmios), `vtx64.exe` (Dunon, la machine de 64 bits) et `vtx.exe` (les outils : la toile, la
 paillasse, les .exe). Python n'est pas nécessaire. `vtx installer` associe les fichiers `.vtx` à Ogmios et pose ses
 raccourcis (Bureau, menu Démarrer).
 
@@ -39,7 +39,7 @@ signalé à la ligne suivante.
 (`variable`), un texte. `sortie(x)` écrit le mot de la machine tel quel (sans signe : sur Lugus, −2 s'écrit
 340282366920938463463374607431768211454) : c'est le canal des tests.
 
-## 3. Ogmios, l'atelier
+## 3. Ogmios
 
 `ogmios.exe` ouvre une vraie fenêtre : le texte à gauche, **la paillasse au centre** (les réactions en cases et en
 liaisons, dans les deux sens avec le texte ; le clic droit pose ou édite une case), le cube à droite, et en bas la

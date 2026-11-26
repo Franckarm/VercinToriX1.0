@@ -1,5 +1,5 @@
 // Ce que la machine hôte donne à un programme interactif, pareil sur le SPU-32 et le SPU-64 (services 16 à 21) :
-// la souris dans l'image, les touches, l'horloge, la cadence des images. Une fenêtre (la toile ou l'atelier) écrit ici
+// la souris dans l'image, les touches, l'horloge, la cadence des images. Une fenêtre (la toile ou Ogmios) écrit ici
 // ce qu'elle voit ; sans fenêtre, tout vaut 0 (pas de souris, pas de touche), sauf l'horloge.
 //
 //   16 souris()      x (bits 0-11) | y (12-23) | boutons (24-26 : gauche 1, droit 2, milieu 4) | dans l'image (27)

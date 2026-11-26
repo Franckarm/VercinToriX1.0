@@ -5,7 +5,7 @@ mantisse), l'entier par défaut reste de 64 bits, l'`entier_petuar` en a 128, et
 point de matière : trois couleurs de 32 bits et sa matière (état, reflet, lumière, transparence, profondeur, rugosité).
 **0.833** : l'entier par défaut a maintenant 128 bits ; `dunon;` en tête d'un programme le ramène à 64 (le graphique). Voir `entier128.vtx` et `entier128_dunon.vtx`.
 
-La première ligne `// machine : lugus` fait ouvrir le programme sur Lugus dans l'atelier (les fichiers de ce dossier
+La première ligne `// machine : lugus` fait ouvrir le programme sur Lugus dans Ogmios (les fichiers de ce dossier
 s'y ouvrent de toute façon).
 
 | Programme | Ce qu'il montre |
@@ -27,7 +27,7 @@ s'y ouvrent de toute façon).
 
     lugus exemples128/bonjour128.vtx                 compile (vtxc128 embarqué) et lance, sans Python
     python forge/forge128.py exemples128/bonjour128.vtx   l'exécutable natif (forgé)
-    vtx-spu essai-pas128 exemples128/degrade128.vtx  le pas à pas et la vue de l'atelier, sans fenêtre
+    vtx-spu essai-pas128 exemples128/degrade128.vtx  le pas à pas et la vue d'Ogmios, sans fenêtre
 
 Les exemples du SPU-64 (`exemples64`) sont écrits dans le langage du SPU-64 : sur Lugus, certains demandent une
 conversion écrite (le flottant y a 128 bits).

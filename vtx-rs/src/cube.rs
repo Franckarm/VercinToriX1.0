@@ -1,5 +1,5 @@
 // Le cube dessiné : un étage de la mémoire à plat, ou en perspective isométrique (256 × 256 × 256 mots).
-// Utilisé par la fenêtre de l'atelier, et par « vtx image » qui écrit l'image dans un fichier.
+// Utilisé par la fenêtre d'Ogmios, et par « vtx image » qui écrit l'image dans un fichier.
 use super::Memoire;
 
 /// La couleur d'un mot (0x00RRGGBB). Un petit nombre (285 vaut #0000011D, presque noir) serait invisible : il prend
@@ -431,7 +431,7 @@ pub fn dessin(args: &[String]) {
 }
 
 /// vtx quits PROG.vtx SORTIE.png [ÉTAGE] [BASE] [LARGEUR] : lance le programme, puis montre un étage de sa mémoire en
-/// quits (chaque mot en 4 × 4 cases de couleur de Belnap), comme la vue « en quits » de l'atelier.
+/// quits (chaque mot en 4 × 4 cases de couleur de Belnap), comme la vue « en quits » d'Ogmios.
 pub fn image_quits(args: &[String]) {
     use super::{compiler_avec, dossier_de, executer_dans, nombres, COMPLET, VTXC};
     if args.len() < 2 {

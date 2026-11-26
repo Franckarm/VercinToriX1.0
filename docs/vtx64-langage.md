@@ -141,7 +141,7 @@ millions au lieu de 179. `vtx64 profil prog.mots` compte les instructions par ad
 (`profil.txt`). Ce qui reste est surtout le coût des appels des petites fonctions (`ajouter`, `elem`…) : l'étape
 suivante est l'expansion en ligne des fonctions courtes, dans vtx64.py et vtxc64 ensemble (faite : section 10).
 
-## 9. vtxc64 dans la machine Rust, l'atelier sur le SPU-64
+## 9. vtxc64 dans la machine Rust, Ogmios sur le SPU-64
 
 vtxc64 optimisé (`vtx-rs/vtxc64.mots`, copie de `vtxc/vtxc64.mots`) est embarqué dans les exécutables : plus besoin de
 Python pour compiler un programme du SPU-64.
@@ -151,13 +151,13 @@ Python pour compiler un programme du SPU-64.
 | `vtx64 PROG.vtx [ENTRÉES…]` | vtxc64 compile (prélude, optimisations, partition), la SPU-64 exécute ; la console du programme est le terminal (`lire_ligne` lit le clavier), le canal `voix:` parle ; une erreur de compilation donne le fichier et la ligne |
 | `vtx64 compiler PROG.vtx [SORTIE.mots]` | écrit seulement « mots;table » |
 | `vtx64 renouveler vtxc64.vtx` | l'ancien vtxc64 compile le nouveau (m1), m1 le recompile (m2), m2 se recompile (m3) : `vtxc64.mots` n'est écrit que si m2 = m3 ; puis `cargo build --release` l'embarque |
-| `vtx-spu essai-pas64 PROG.vtx` | ce que fait l'atelier sur la SPU-64, sans fenêtre (vérification) |
+| `vtx-spu essai-pas64 PROG.vtx` | ce que fait Ogmios sur la SPU-64, sans fenêtre (vérification) |
 
-**L'atelier** travaille par défaut sur la SPU-64 : le titre et le bouton de la barre nomment la machine, *Exécuter ›
+**Ogmios** travaille par défaut sur la SPU-64 : le titre et le bouton de la barre nomment la machine, *Exécuter ›
 Machine 64 bits* (Ctrl+M, ou `machine 32` / `machine 64` dans le terminal) change de machine. Un fichier du dossier
 `exemples` (les programmes de 32 bits) s'ouvre sur la SPU-32, tout le reste sur la SPU-64.
 
-* **F5** : vtxc64 compile, la SPU-64 exécute dans un fil à part ; la console passe par le terminal de l'atelier, Maj+F5
+* **F5** : vtxc64 compile, la SPU-64 exécute dans un fil à part ; la console passe par le terminal d'Ogmios, Maj+F5
   arrête le programme (vu toutes les 2^20 instructions).
 * **Le cube** dessine des points de 32 bits : un point profond `#RRRRGGGGBBBBAAAA` y paraît par l'octet fort de chaque
   voie (`#RRGGBBAA`), un petit nombre (moins de 2^32) reste tel quel. Chaque étage regarde son cube 0 (ou, s'il est vide,
@@ -168,11 +168,11 @@ Machine 64 bits* (Ctrl+M, ou `machine 32` / `machine 64` dans le terminal) chang
   lignes ; le panneau montre les registres sur 64 bits (décimal, quatre voies en hexadécimal, 32 quits), R13 et R14, le
   cadre de la fonction (variables locales et paramètres), les sorties et ce que le programme a écrit.
 * Ce qui reste propre à la SPU-32 : l'image d'un programme qui dessine (`ecran`) et l'arbre des objets du tas
-  (tableaux, dictionnaires, textes), dont la disposition est celle des mots de 32 bits. L'atelier en console
-  (`vtx atelier`, hors Windows) reste sur la SPU-32.
+  (tableaux, dictionnaires, textes), dont la disposition est celle des mots de 32 bits. Ogmios en console
+  (`vtx ogmios`, hors Windows) reste sur la SPU-32.
 
 `vtxc/test_vtxc64.py` vérifie aussi que le compilateur embarqué est à jour, que `vtx64 PROG.vtx` donne sur exemples64
-ce que donnent vtx64.py puis la machine, et que le pas à pas de l'atelier (ligne par ligne, par-dessus, d'un coup) finit
+ce que donnent vtx64.py puis la machine, et que le pas à pas d'Ogmios (ligne par ligne, par-dessus, d'un coup) finit
 avec la même console et les mêmes sorties que F5, la vue du cube montrant chaque mot. Il annonce chaque étape avant de
 la commencer.
 
@@ -291,8 +291,8 @@ Sans fenêtre, 16, 17, 20 et 21 rendent 0 (sur les quatre machines : Python, Rus
 cadence est gardée sans effet ; l'horloge marche partout.
 
 **L'image finie (double tampon).** `presenter()` copie l'image de l'étage 1 vers la sortie : la fenêtre de Gobatix, la
-vue du cube de l'atelier, des PNG, un GIF. La sortie ne montre que des images finies ; le programme dessine la
-suivante dans l'étage 1 sans être vu. Jusqu'ici l'atelier ne montrait l'image qu'à la fin du programme : il la montre
+vue du cube d'Ogmios, des PNG, un GIF. La sortie ne montre que des images finies ; le programme dessine la
+suivante dans l'étage 1 sans être vu. Jusqu'ici Ogmios ne montrait l'image qu'à la fin du programme : il la montre
 maintenant à chaque `presenter()`, sur les deux machines (le SPU-64 n'avait aucune sortie d'image : `presenter64`,
 `vtx toile64`). Un point profond est vu par l'octet fort de chaque voie.
 
@@ -314,8 +314,8 @@ trame les dégradés fins (le cube chromatique se voit légèrement grenu) ; une
 **Les scénarios.** `--scenario FICHIER` rejoue des gestes image par image ; le même scénario donne le même GIF octet
 pour octet sur le SPU-32 et le SPU-64 (`peindre.scenario`).
 
-**L'atelier.** Pendant l'exécution, la vue du cube montre la dernière image ; un clic sur l'image lui donne la souris et
-le clavier (Échap compris ; F5 et Maj+F5 restent à l'atelier). Ctrl+G commence et finit l'enregistrement d'un GIF
+**Ogmios.** Pendant l'exécution, la vue du cube montre la dernière image ; un clic sur l'image lui donne la souris et
+le clavier (Échap compris ; F5 et Maj+F5 restent à Ogmios). Ctrl+G commence et finit l'enregistrement d'un GIF
 (`programme-1.gif` à côté du programme) ; Cube › Image en PNG. Le programme fini, la vue en perspective se tourne à la
 souris (glisser à gauche : un quart de tour ; glisser à droite : déplacer ; double clic : revenir). La limite d'instructions
 de F5 est levée : un programme interactif tourne tant qu'on veut, Maj+F5 l'arrête.

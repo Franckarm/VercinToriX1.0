@@ -20,7 +20,7 @@ Tous droits réservés : voir `AUTEUR.md`.
   (la clepsydre progressive, l'éventail, les deux faces) sont gardés dans la branche `ombre-approchee`.
 - Le journal de passation : `docs/vtx-passation.md` ; les décisions et leurs raisons : `docs/vtx-reactions.md`.
 
-Langage, compilateurs, machines et atelier du SPU à cube chromatique.
+Langage, compilateurs, machines et Ogmios, pour le SPU à cube chromatique.
 
 ## Les machines : Lugus est la machine de vtx
 
@@ -47,7 +47,7 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
   - **Le calcul incrémental** : chaque atome lourd garde ses souvenirs dans une colonne de seize places, rangée comme
     Fischer. Rappelé avec des entrées déjà vues, il ne réagit pas (10 fois moins d'instructions sur une scène
     d'animation).
-  - **La provenance** : `lugus pourquoi PROG.vtx [liaison]`, ou Ctrl+P dans l'atelier, remonte une valeur jusqu'à ses
+  - **La provenance** : `lugus pourquoi PROG.vtx [liaison]`, ou Ctrl+P dans Ogmios, remonte une valeur jusqu'à ses
     constantes et à ses entrées.
 - **Le chemin Cube → Hex → ADN → ARN** :
   - l'ADN, c'est le programme rangé avec ses trois témoins (signature, ombre, neutrons) : `lugus ranger PROG.vtx` ;
@@ -65,11 +65,11 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
     témoins s'il en a) ; `lugus hex PROG.adn` écrit les mots en hex, chacun à sa place du cube ; `lugus cube PROG.adn`
     les range dans le cube (`cube128-1-440.cub`, avec son anti-cube et son ombre) ; `lugus ranger` reprend un hex ou un
     cube en ADN, et `lugus PROG.hex`, `lugus cube128-1-440.cub` se lancent (docs/vtx-reactions.md, section 49).
-- **L'atelier Ogmios** (`atelier.exe`) : le texte à gauche, **la paillasse au centre** (les réactions dessinées en
+- **Ogmios** (`ogmios.exe`) : le texte à gauche, **la paillasse au centre** (les réactions dessinées en
   atomes et liaisons, rangées en vagues, dans les deux sens avec le texte : tirer une liaison, ajouter ou retirer un
   atome réécrit la ligne), le cube à droite ; en bas, Sortie, Terminal, Pas à pas, Arbre et la fenêtre des explications.
   Sur Lugus, F5 range aussi l'ADN, et Ctrl+P fait réagir : chaque liaison montre sa valeur. Les trois machines (Ctrl+M).
-- **Ogmios écrit en vtx** (`ogmios/ogmios.vtx`, premier temps) : l'atelier dans le langage, qui tourne sur Lugus.
+- **Ogmios écrit en vtx** (`ogmios/ogmios.vtx`, premier temps) : Ogmios dans le langage, qui tourne sur Lugus.
   `vtx toile128 ogmios/ogmios.vtx --fichier PROG.vtx` : édition en couleurs, Ctrl+S, F5 (le programme compilé par vtxc128
   et lancé sur une machine fille), Ctrl+Q.
 - **La forge** : un programme devient un exécutable natif, par Rust (`python forge/forge128.py PROG.vtx`), avec les

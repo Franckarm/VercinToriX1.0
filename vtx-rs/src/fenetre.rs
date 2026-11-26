@@ -1,4 +1,4 @@
-// L'atelier en fenêtre Windows (atelier.exe) : Win32 et GDI directement, sans bibliothèque.
+// Ogmios en fenêtre Windows (ogmios.exe) : Win32 et GDI directement, sans bibliothèque.
 // En haut, des boutons (Ouvrir, Enregistrer, Lancer, Pas à pas, les entrées, l'étage, la vue). À gauche, le texte du
 // programme (le contrôle d'édition de Windows : souris, sélection, presse-papiers, annulation). À droite, le cube :
 // un étage de la mémoire, à plat (chaque mot est un pixel de sa couleur) ou en perspective isométrique (l'étage
@@ -346,7 +346,7 @@ fn w(s: &str) -> Vec<u16> {
 
 /// L'état de la fenêtre : un seul fil (celui des messages) le touche ; le programme lancé tourne à côté et rend son
 /// résultat par FINI.
-struct Atelier {
+struct Ogmios {
     inst: H,
     fen: H,
     source: H,
@@ -425,9 +425,9 @@ enum Avance {
 
 const LIMITE_PAS: u64 = 200_000_000;
 
-static mut ATELIER: *mut Atelier = std::ptr::null_mut();
-fn a() -> &'static mut Atelier {
-    unsafe { &mut *ATELIER }
+static mut OGMIOS: *mut Ogmios = std::ptr::null_mut();
+fn a() -> &'static mut Ogmios {
+    unsafe { &mut *OGMIOS }
 }
 
 struct Fini {
@@ -709,7 +709,7 @@ fn lancer() {
 
 /// « Pourquoi ? » (Ctrl+P) : le nom sous le curseur (une liaison d'une réaction), ou rien ; le programme est compilé avec
 /// la provenance et lancé sur Lugus, puis l'arbre de sa valeur s'écrit dans le journal (comme « lugus pourquoi »)
-fn pourquoi_atelier() {
+fn pourquoi_ogmios() {
     let at = a();
     if at.en_cours {
         etat("un programme tourne déjà");
@@ -869,7 +869,7 @@ fn lancer_avec(adn_range: Option<PathBuf>) {
     super::hote::FENETRE.store(true, Ordering::Relaxed);
     match super::sortie::fenetre(&fichier.to_string_lossy()) {
         Some(f) => super::toile::installer(Some(Box::new(FenetreProgramme { f }))),
-        None => super::toile::installer(Some(Box::new(VueAtelier { cube: at.cube as usize }))),
+        None => super::toile::installer(Some(Box::new(VueOgmios { cube: at.cube as usize }))),
     }
     ANNONCEE.store(false, Ordering::Relaxed);
     PEINTURE.store(false, Ordering::Relaxed);
@@ -1268,7 +1268,7 @@ fn fini() {
 }
 
 // ------------------------------------------------------------------------------------------------ l'exécutable autonome
-/// le dossier natif/ (le traducteur directement en x86-64) : à côté de l'atelier, ou au-dessus (vtx-rs/target/release)
+/// le dossier natif/ (le traducteur directement en x86-64) : à côté d'Ogmios, ou au-dessus (vtx-rs/target/release)
 fn dossier_natif() -> Option<PathBuf> {
     let mut points: Vec<PathBuf> = Vec::new();
     if let Ok(e) = std::env::current_exe() {
@@ -1301,7 +1301,7 @@ fn faire_executable() {
     let natif = match dossier_natif() {
         Some(d) => d,
         None => {
-            message("Le traducteur (le dossier natif, avec natif.py) est introuvable à côté de l'atelier.");
+            message("Le traducteur (le dossier natif, avec natif.py) est introuvable à côté d'Ogmios.");
             return;
         }
     };
@@ -1503,7 +1503,7 @@ fn montrer_onglet(i: usize) {
 }
 
 /// Entrée dans la ligne du terminal : pendant l'exécution, la ligne part vers le programme (lire_car(1), lire_ligne()) ;
-/// sinon c'est une commande de l'atelier.
+/// sinon c'est une commande d'Ogmios.
 fn ligne_terminal() {
     let at = a();
     let t = lire_texte(at.term_entree);
@@ -2170,7 +2170,7 @@ static PLACE: Mutex<(i32, i32, i32, i32)> = Mutex::new((0, 0, 0, 0));
 static ANNONCEE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 static PEINTURE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// La sortie de la toile dans l'atelier : chaque image présentée remplace la précédente dans la vue du cube.
+/// La sortie de la toile dans Ogmios : chaque image présentée remplace la précédente dans la vue du cube.
 /// 0.68 : la fenêtre du programme lancé par F5 (sortie::fenetre), qui s'arrête aussi par Maj+F5
 struct FenetreProgramme {
     f: Box<dyn super::toile::Sortie>,
@@ -2181,10 +2181,10 @@ impl super::toile::Sortie for FenetreProgramme {
     }
 }
 
-struct VueAtelier {
+struct VueOgmios {
     cube: usize,
 }
-impl super::toile::Sortie for VueAtelier {
+impl super::toile::Sortie for VueOgmios {
     fn montrer(&mut self, l: usize, h: usize, px: &[u32]) -> bool {
         {
             let mut im = IMAGE.lock().unwrap();
@@ -2240,7 +2240,7 @@ unsafe fn souris_vue(h: H, m: u32, wp: usize, lp: isize) -> bool {
     let b = (wp as u32 & 1) | (wp as u32 & 2) | if wp & 16 != 0 { 4 } else { 0 };
     let presse = matches!(m, WM_LBUTTONDOWN | WM_RBUTTONDOWN | WM_MBUTTONDOWN | WM_LBUTTONDBLCLK);
     let lache = matches!(m, WM_LBUTTONUP | WM_RBUTTONUP | WM_MBUTTONUP);
-    // la souris est rendue au reste de l'atelier dès que plus aucun bouton n'est enfoncé, quel que soit l'état (sinon,
+    // la souris est rendue au reste d'Ogmios dès que plus aucun bouton n'est enfoncé, quel que soit l'état (sinon,
     // un bouton relâché après la fin du programme laissait la vue du cube garder la souris : l'éditeur ne pouvait plus
     // arrêter de sélectionner)
     if lache && b == 0 {
@@ -2477,7 +2477,7 @@ unsafe extern "system" fn proc_source(h: H, m: u32, wp: usize, lp: isize) -> isi
     let ancien = a().ancien_proc_source;
     if m == WM_PASTE {
         // le presse-papiers peut venir d'ailleurs avec des fins de ligne « \n » seules : l'éditeur de Windows veut « \r\n »
-        if let Some(t) = super::atelier::console::lire_presse() {
+        if let Some(t) = super::ogmios_console::console::lire_presse() {
             let t = t.replace("\r\n", "\n").replace('\r', "\n").replace('\n', "\r\n").replace('\t', "    ");
             SendMessageW(h, EM_REPLACESEL, 1, w(&t).as_ptr() as isize);
             return 0;
@@ -3157,7 +3157,7 @@ fn menus(fen: H) {
             ajouter(cases, &format!("{}  {} — {}\t{}", c.symbole, c.nom.replace('_', " "), c.famille, c.modele), C_CASE + k as u16);
         }
         let aide = CreatePopupMenu();
-        ajouter(aide, "&Associer les fichiers .vtx à l'atelier", C_ASSOCIER);
+        ajouter(aide, "&Associer les fichiers .vtx à Ogmios", C_ASSOCIER);
         ajouter(aide, "À &propos", C_APROPOS);
         for (m, t) in [(fichier, "&Fichier"), (edition, "&Édition"), (executer, "E&xécuter"), (cube, "&Cube"), (cases, "Ca&ses"), (aide, "&Aide")] {
             AppendMenuW(barre, MF_POPUP, m as usize, w(t).as_ptr());
@@ -3243,7 +3243,7 @@ fn commande(c: u16) {
             }
             C_POURQUOI => {
                 if at.pas.is_none() {
-                    pourquoi_atelier();
+                    pourquoi_ogmios();
                 }
             }
             C_MACHINE64 | C_M32 | C_M64 | C_LUGUS => {
@@ -3344,7 +3344,7 @@ fn commande(c: u16) {
                 at.vue64 = None;
                 InvalidateRect(at.cube, std::ptr::null(), 0);
             }
-            C_APROPOS => message("Ogmios, l'atelier de Vercintorix (Ogmios : le dieu gaulois du langage, qui lie par la parole)\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nLes machines portent des noms gaulois : Senos l'ancien (SPU-32), Dunon la forteresse (SPU-64), Lugus la lumière (SPU-128), bâti sur Dunon comme Lugdunum.\n\nMachine Dunon (SPU-64, par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine Lugus (SPU-128) : mots de 128 bits, points de matière (trois couleurs de 32 bits et la matière), flottants de 128 bits, compilés par vtxc128 ; le cube les montre aussi en points de 32 bits (la transparence en alpha). Machine Senos (SPU-32) : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine suivante (Ctrl+M) passe de l'une à l'autre ; « // machine : lugus » en tête d'un programme la choisit.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
+            C_APROPOS => message("Ogmios, de Vercintorix (Ogmios : le dieu gaulois du langage, qui lie par la parole)\n\nVercintorix : le langage du cube chromatique et de la logique à quatre valeurs.\n\nLes machines portent des noms gaulois : Senos l'ancien (SPU-32), Dunon la forteresse (SPU-64), Lugus la lumière (SPU-128), bâti sur Dunon comme Lugdunum.\n\nMachine Dunon (SPU-64, par défaut) : mots de 64 bits, points profonds #RRRRGGGGBBBBAAAA, compilés par vtxc64 ; le cube les montre en points de 32 bits. Machine Lugus (SPU-128) : mots de 128 bits, points de matière (trois couleurs de 32 bits et la matière), flottants de 128 bits, compilés par vtxc128 ; le cube les montre aussi en points de 32 bits (la transparence en alpha). Machine Senos (SPU-32) : mots #RRGGBBAA, compilés par vtxc. Exécuter › Machine suivante (Ctrl+M) passe de l'une à l'autre ; « // machine : lugus » en tête d'un programme la choisit.\n\nF5 lance le programme, F6 change la vue du cube.\nPas à pas : F7 ligne suivante, F8 sans entrer dans les fonctions, F9 point d'arrêt, F5 continuer, Échap arrêter."),
             _ => {}
         }
     }
@@ -3440,12 +3440,12 @@ unsafe extern "system" fn proc_fenetre(h: H, m: u32, wp: usize, lp: isize) -> is
     }
 }
 
-/// atelier.exe : la fenêtre, sur le fichier donné (ou un nouveau programme).
+/// ogmios.exe : la fenêtre, sur le fichier donné (ou un nouveau programme).
 pub fn lancer_fenetre(fichier: Option<&str>) {
     unsafe {
         SetProcessDPIAware();
         let inst = GetModuleHandleW(std::ptr::null());
-        let boite = Box::new(Atelier {
+        let boite = Box::new(Ogmios {
             inst, fen: std::ptr::null_mut(), source: std::ptr::null_mut(), sortie: std::ptr::null_mut(), entrees: std::ptr::null_mut(),
             cube: std::ptr::null_mut(), etat: std::ptr::null_mut(), boutons: Vec::new(), etiquettes: Vec::new(),
             police: std::ptr::null_mut(), police_ui: std::ptr::null_mut(), pinceau: std::ptr::null_mut(), echelle: 1.0,
@@ -3459,7 +3459,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             paillasse: std::ptr::null_mut(), explications: std::ptr::null_mut(), pail: super::paillasse::Paillasse::nouvelle(),
             druide: String::new(),
         });
-        ATELIER = Box::into_raw(boite);
+        OGMIOS = Box::into_raw(boite);
         let curseur = LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16);
         // l'icône du cube, à côté de l'exécutable (écrite la première fois)
         if let Some(d) = std::env::current_exe().ok().and_then(|e| e.parent().map(|p| p.to_path_buf())) {
@@ -3469,7 +3469,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             }
             a().icone = LoadImageW(std::ptr::null_mut(), w(&f.to_string_lossy()).as_ptr(), 1, 0, 0, 0x10 | 0x40);
         }
-        let nom_fen = w("VtxAtelier");
+        let nom_fen = w("VtxOgmios");
         let nom_cube = w("VtxCube");
         let classe = WndClassEx {
             cbSize: std::mem::size_of::<WndClassEx>() as u32, style: 0, lpfnWndProc: proc_fenetre, cbClsExtra: 0, cbWndExtra: 0,
@@ -3556,7 +3556,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             guetteur::entrer(msg.message, msg.wParam, ou);
             // pendant l'exécution, les touches tapées dans l'image vont au programme (Échap compris)
             let at = a();
-            // les raccourcis de l'atelier restent à l'atelier : Ctrl+…, Alt+… et les touches F1 à F12
+            // les raccourcis d'Ogmios restent à Ogmios : Ctrl+…, Alt+… et les touches F1 à F12
             let direct = at.en_cours && msg.hwnd == at.cube && matches!(msg.message, WM_KEYDOWN | WM_KEYUP)
                 && !(0x70..=0x7B).contains(&msg.wParam) && GetKeyState(0x11) >= 0 && GetKeyState(0x12) >= 0;
             if direct || TranslateAcceleratorW(fen, table, &mut msg) == 0 {
@@ -3570,8 +3570,8 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
 
 // ------------------------------------------------------------------------------------------------ le guetteur
 /// Le guetteur : la boucle des messages dit ce qu'elle traite ; si un message la tient plus de deux secondes, un fil à
-/// part l'écrit dans ogmios.log (à côté de l'atelier), puis combien de temps il a duré. Une panique y est écrite aussi,
-/// avec sa place dans le code : de quoi trouver ce qui fige l'atelier sans le voir.
+/// part l'écrit dans ogmios.log (à côté d'Ogmios), puis combien de temps il a duré. Une panique y est écrite aussi,
+/// avec sa place dans le code : de quoi trouver ce qui fige Ogmios sans le voir.
 mod guetteur {
     use std::io::Write;
     use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};

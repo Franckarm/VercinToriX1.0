@@ -1,5 +1,5 @@
 // La machine SPU-64 avec son compilateur embarqué : vtxc64 (vtxc/vtxc64.vtx) déjà compilé, dans vtxc64.mots. Ce que
-// font vtx64.exe (compiler et lancer un programme sans Python) et l'atelier quand il travaille en 64 bits.
+// font vtx64.exe (compiler et lancer un programme sans Python) et Ogmios quand il travaille en 64 bits.
 use crate::spu64::Spu64;
 
 /// vtxc64 compilé (optimisé, sans prélude) : ses mots, en décimal séparés par des virgules.
@@ -19,7 +19,7 @@ pub struct Mode64 {
 
 /// Un programme : prélude, optimisations, partition (comme vtx64.py par défaut).
 pub const COMPLET64: Mode64 = Mode64 { prelude: true, optim: true, partition: true };
-/// Le pas à pas de l'atelier : sans partition (l'exécution reste en séquence, ligne après ligne).
+/// Le pas à pas d'Ogmios : sans partition (l'exécution reste en séquence, ligne après ligne).
 pub const PAS_A_PAS64: Mode64 = Mode64 { prelude: true, optim: true, partition: false };
 /// vtxc64 lui-même : sans prélude (il a ses propres outils), optimisé, sans partition.
 pub const COMPILATEUR64: Mode64 = Mode64 { prelude: false, optim: true, partition: false };
@@ -142,7 +142,7 @@ pub fn parler64(t: &str) {
 }
 
 /// Un point profond #RRRRGGGGBBBBAAAA vu en point de 32 bits #RRGGBBAA (l'octet fort de chaque voie), pour les vues
-/// du cube de l'atelier ; un petit nombre (moins de 2^32) reste tel quel, pour garder sa couleur de petit nombre.
+/// du cube d'Ogmios ; un petit nombre (moins de 2^32) reste tel quel, pour garder sa couleur de petit nombre.
 pub fn vers_point32(v: u64) -> u32 {
     if v < 1 << 32 {
         return v as u32;

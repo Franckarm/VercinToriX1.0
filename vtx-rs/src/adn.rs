@@ -1,5 +1,5 @@
 // L'ADN d'un programme et sa fiabilité par les trois témoins (docs/vtx-reactions.md, étape 5) : la même chose que
-// chimie/adn.py, en Rust, pour que Lugus (et l'atelier) vérifient et réparent un programme rangé avant de le lancer.
+// chimie/adn.py, en Rust, pour que Lugus (et Ogmios) vérifient et réparent un programme rangé avant de le lancer.
 // Les deux font le même ADN (le même découpage, les mêmes témoins, le même fichier) et le lisent de même :
 // tests/test_adn.py le vérifie.
 //
