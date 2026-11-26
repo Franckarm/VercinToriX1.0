@@ -794,9 +794,9 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   pose le raccourci ; les essais suivants doivent toujours construire ogmios.
 
 **L'écart avec le C++ au processeur (Gergovie, la moitié de l'échelle, un fil, callgrind).**
-- Le même travail : par image, le même nombre de rayons (6 093 432 pour 6 images) et de pas de tracer (141 256 598,
+- Le même travail : le même nombre de rayons (6 093 432 pour 6 images) et de pas de tracer (141 256 598,
   à 49 près). L'écart n'est pas dans l'algorithme.
-- Par image, vtx exécute 1,45 fois les instructions du C++ (28,05 G contre 19,33 G pour 6 images), comme le temps
+- Pour 6 images, vtx exécute 1,45 fois les instructions du C++ (28,05 G contre 19,33 G), comme le temps
   mesuré. 84 % sont dans `tracer` : 165 instructions par pas contre 117.
 - Où vont les 48 instructions de plus d'un pas : chaque lecture du cube (2,4 par pas) refait l'adresse globale
   ((F << 24) + i, masquée sur 48 bits), la redécoupe en page et place, vérifie la page (dans la carte, non nulle),
@@ -816,7 +816,7 @@ processeurs optiques et quantiques) ; la solution reste dans vtx : la forge gard
 d'un cube lu sous la forme `(F << 24) + i` (ce qu'écrivent `@nom[i]` et `@nom(t)[i]`), `lire2_fi` / `ecrire2_fi`
 prennent la page sans faire puis défaire l'adresse (le même mot que lire2 ; hors de la carte directe, l'adresse est
 refaite). Gergovie nomme ses cubes d'éléments et de creux (`cube elements[16] @2 frequence 17;`, `cube creux[4] @2
-frequence 110;`) et `tracer` les lit par leur nom. Mesuré (callgrind, demi-échelle, un fil) : par image 26,61 G
+frequence 110;`) et `tracer` les lit par leur nom. Mesuré (callgrind, demi-échelle, un fil) : pour 6 images 26,61 G
 instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à 1,38. Les mêmes empreintes.
 - Ce qui reste dans une lecture (9 instructions contre 2) : la borne, le pointeur de la carte, celui de la page, le
   test de la page absente, l'index de 16 octets. La marche suivante, décidée avec le créateur : un cube nommé avec sa
