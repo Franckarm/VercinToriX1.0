@@ -274,3 +274,4 @@ tests/valeur_sue/sue.vtx
 outils/essai_modele.bat
 outils/faire_essai.py
 tests/test_valeur_sue.py
+outils/bilan_taranis.py
