@@ -11,5 +11,5 @@ constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne
 importer "gergovie_scene.vtx";
 
 fonction principal() {
-    epreuve(240, 120, 2);
+    epreuve_complete(240, 120, 120, 2);      // 0.849 : et le soir (l'œil arrêté)
 }

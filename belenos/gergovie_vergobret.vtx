@@ -1,0 +1,16 @@
+// machine : lugus
+// Belenos (0.849) : Gergovie sur la carte, le Vergobret choisit le soir (l'œil arrêté) les étages ou le noyau
+// unique, d'après ce qu'il a appris (vergobret.arn) ; sinon il mesure l'un et l'autre (noter_gene). D'après
+// gergovie_carte.vtx (0.822) : la même scène que gergovie.vtx, chaque image
+// faite d'un coup sur la carte (un fil par point). À lancer avec VTX_EPISSAGE=rapide (Taranis ; sans : l'ancien chemin).
+//     python forge/forge128.py belenos/gergovie_carte.vtx -o gergovie_carte ; VTX_EPISSAGE=rapide VTX_CARTE=1 gergovie_carte
+// 0.833 : le graphique compte en 64 bits (comme Taranis et le C++ de référence) : Dunon
+dunon;
+constante RN = 1;
+constante RD = 1;
+constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne
+importer "gergovie_scene.vtx";
+
+fonction principal() {
+    epreuve_complete(240, 120, 120, 4);
+}

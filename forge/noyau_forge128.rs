@@ -1293,6 +1293,31 @@ impl Ctx {
                 return v;
             }
         }
+        // 0.849 : gene(lieu) : l'ARN du Vergobret (« choix LIEU ÉTAT ») en valeur sue ; noter_gene : une mesure
+        if code == 35 {
+            if dossier_gutuater().is_none() {
+                return u128::MAX;
+            }
+            let lieu = (arg as u64 & 0xFFFF) as u32;
+            return match arn_vergobret().get(&("choix".to_string(), lieu)).copied().unwrap_or(0) {
+                2 => 1,
+                1 => u128::MAX - 1,
+                3 => u128::MAX - 2,
+                _ => u128::MAX,
+            };
+        }
+        if code == 36 {
+            let (lieu, avec, sans) = (arg as u64 & 0xFFFF, (arg as u64 >> 16) & 0xFF_FFFF, (arg as u64 >> 40) & 0xFF_FFFF);
+            if let Some(d) = dossier_gutuater() {
+                use std::io::Write;
+                if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("vergobret.mesures")) {
+                    let _ = writeln!(f, "mesure choix {} {} {}", lieu, avec, sans);
+                }
+            }
+            dire_vergobret(format!("le choix {} : avec {:.1} ms, sans {:.1} ms ; noté pour le Vergobret", lieu,
+                                   avec as f64 / 1e3, sans as f64 / 1e3));
+            return 0;
+        }
         match self.m.service(code, arg) {
             Ok(v) => v,   // 0.833 : tout le mot (-1 inconnu, -2 faux) ; la forge le ramène à 64 bits en « dunon; »
             Err(e) => {

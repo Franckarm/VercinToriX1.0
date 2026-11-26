@@ -391,7 +391,7 @@ CUBE_SUPPOSE = [[]]   # les fréquences supposées vides au départ (le programm
 CUBE_FOND = [{}]      # 0.839 : étage -> ce qu'une écriture d'adresse non située (mais d'étage connu) peut y mettre, partout
 ZERO6 = (0, 0, G128, 0, 0, 0)
 # les services qui n'écrivent pas dans les étages 1 et 2 (26 efface le tas, à l'étage 3 ; 12 présente l'image)
-SERVICES_SURS = {3, 4, 5, 10, 12, 18, 22, 25, 26, 32, 33}
+SERVICES_SURS = {3, 4, 5, 10, 12, 18, 22, 25, 26, 32, 33, 35, 36}
 INTEGRES_ECRIVENT = {"gemv", "melanger"}
 NOEUDS_OPAQUES = {"asm", "segments", "mem", "rangee_lire", "ecrire_champ"}
 # les mots du prélude qui n'écrivent que dans un texte (ses caractères, son bloc neuf du tas) : une écriture y est
@@ -2369,7 +2369,7 @@ class Forge(V.Generateur):
 # lit la mémoire, aucun brin posé) est rangé hors du cube, dans un tableau Rust serré, du plus petit type qui tient ce
 # qu'on y écrit : des nombres écrits jusqu'à 255 dans des octets, des entiers de 64 bits dans des u64, le reste en u128.
 # À la fin (ou à une erreur), son contenu est recopié dans le cube : la mémoire finale est celle de la machine.
-SERVICES_MEMOIRE = {6, 7, 11, 12, 13, 22, 34}          # ils lisent ou écrivent la mémoire du programme
+SERVICES_MEMOIRE = {6, 7, 11, 12, 13, 22, 34}  # 35, 36 (gene, noter_gene) : ni l'un ni l'autre          # ils lisent ou écrivent la mémoire du programme
 TYPES_64 = {"e", "i", "s", "q"}
 
 

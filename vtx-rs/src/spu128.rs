@@ -1039,6 +1039,9 @@ impl Spu128 {
                 self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }
+            // 0.849 : gene(lieu), noter_gene : le Vergobret vit dans la carte (la forge) : la machine ne sait rien
+            35 => Ok(u128::MAX),
+            36 => Ok(0),
             34 => {
                 // 0.849 : presenter_cube(f) : l'image rangée dans le cube de fréquence f de l'étage 2 (le point i :
                 // 0xRRGGBB, comme ecran(l, h) l'a dimensionnée) : posée à l'étage 1 (comme rgb), présentée ; rend

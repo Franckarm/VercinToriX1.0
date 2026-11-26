@@ -5822,6 +5822,15 @@ fonction presenter_cube(f) {
     // image que la carte vient de rendre se montre sans redescendre au processeur (la forge, Taranis)
     retour __service(34, f);
 }
+fonction gene(lieu) {
+    // 0.849 : ce que le Vergobret a appris du gène « choix » de ce lieu (un nombre du programme), en valeur sue : vrai
+    // (le choix s'exprime), faux (il se tait), inconnu ou variable (à mesurer : noter_gene) ; hors de la forge : inconnu
+    retour __service(35, lieu);
+}
+fonction noter_gene(lieu, avec, sans) {
+    // 0.849 : une mesure pour le Vergobret : le temps avec le choix exprimé et sans (en microsecondes, moins de 2^24)
+    retour __service(36, (lieu & 65535) | ((avec & 16777215) << 16) | ((sans & 16777215) << 40));
+}
 fonction ranger_cube(etage, f) {
     // écrit sur disque le cube de fréquence f de l'étage (fichier cube64-ÉTAGE-FRÉQUENCE.cub, à côté du programme), avec le
     // brin de chaque mot ; ses pages sont relues d'elles-mêmes, à la demande, au premier accès ; rend le nombre de pages
@@ -5996,6 +6005,10 @@ fonction cadence(ms) {
 fonction horloge() {
     // les millisecondes écoulées depuis le lancement du programme
     retour __service(18, 0);
+}
+fonction horloge_us() {
+    // 0.849 : les microsecondes écoulées depuis le lancement du programme
+    retour __service(18, 1);
 }
 fonction souris() {
     // la souris dans l'image du programme, en un mot : x (bits 0 à 11), y (12 à 23), boutons (24 à 26 : gauche 1, droit 2,

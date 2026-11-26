@@ -1885,9 +1885,30 @@ fonction etage_cache(i, fi) {
 }
 
 // une image par les étages, sur la carte (chaque étage une boucle en segments : un noyau de Taranis)
+// 0.849 : l'œil des étages (GLOB + 50 à 54) et s'il est encore celui des étages des matériaux (GLOB + 55) : l'œil
+// immobile, les directions et les points touchés (FDIR, FMAT, sur la carte) restent ; seuls l'ombre, la lumière, le
+// reflet et le cache sont refaits (le soleil bouge). Le noyau unique ne peut pas : il refait tout, à chaque image
+constante OEIL = 600050;
+
+fonction oeil_garde(cx, cy, cz, lacet, tangage) {
+    si @2[OEIL + 5] == 1 && @2[OEIL] == cx && @2[OEIL + 1] == cy && @2[OEIL + 2] == cz && @2[OEIL + 3] == lacet
+            && @2[OEIL + 4] == tangage {
+        retour 1;
+    }
+    @2[OEIL] = cx;
+    @2[OEIL + 1] = cy;
+    @2[OEIL + 2] = cz;
+    @2[OEIL + 3] = lacet;
+    @2[OEIL + 4] = tangage;
+    @2[OEIL + 5] = 1;
+    retour 0;
+}
+
 fonction image_etages(cx, cy, cz, lacet, tangage, temps) {
-    pour i dans 0..(W * H) en segments {
-        etage_materiaux(i, cx, cy, cz, lacet, tangage);
+    si oeil_garde(cx, cy, cz, lacet, tangage) == 0 {
+        pour i dans 0..(W * H) en segments {
+            etage_materiaux(i, cx, cy, cz, lacet, tangage);
+        }
     }
     pour i2 dans 0..(W * H) en segments {
         etage_ombre(i2, cx, cy, cz);
@@ -2258,6 +2279,42 @@ fonction bilan(nom: texte, n, derniere) {
 // le soleil bouge : la clepsydre refaite à chaque image, sur la carte quand l'image y est faite) ; sur_carte : 0 le
 // processeur, 1 la carte d'un seul noyau, 2 la carte par les étages
 fonction epreuve(vol, jour, sur_carte) {
+    epreuve_complete(vol, jour, 0, sur_carte);
+}
+
+// 0.849 : le lieu du choix « les étages » pour le Vergobret (gene, noter_gene)
+constante GENE_ETAGES = 1;
+
+// une image du soir : l'œil arrêté, le soleil qui bouge ; mode 4 : le Vergobret choisit les étages ou le noyau unique
+// (ce qu'il a appris ; sinon il mesure l'un et l'autre, une paire par deux images)
+fonction image_soir(k, n, temps, sur_carte, i) {
+    si sur_carte != 4 {
+        image_gergovie(k, n, temps, sur_carte);
+        retour;
+    }
+    selon gene(GENE_ETAGES) {
+        vrai { image_gergovie(k, n, temps, 2); }
+        faux { image_gergovie(k, n, temps, 1); }
+        autre {
+            soit t1 = horloge_us();
+            image_gergovie(k, n, temps, 2 - (i & 1));
+            soit d = horloge_us() - t1;
+            // la première paire (l'œil vient d'arriver : les étages refont les matériaux) ne compte pas
+            si (i & 1) == 0 {
+                @2[OEIL + 6] = d;
+            } sinon si i > 2 {
+                noter_gene(GENE_ETAGES, @2[OEIL + 6], d);
+            }
+        }
+    }
+}
+
+fonction epreuve_complete(vol, jour, soir, sur_carte_demande) {
+    // 0.849 : le mode 4 (le Vergobret choisit, le soir) joue le vol et le jour d'un seul noyau
+    soit sur_carte = sur_carte_demande;
+    si sur_carte == 4 {
+        sur_carte = 1;
+    }
     soit t0 = horloge();
     creer_monde();
     afficher("le monde : " + texte(horloge() - t0) + " ms ; blocs porteurs d'une surface, par tuile : "
@@ -2278,6 +2335,7 @@ fonction epreuve(vol, jour, sur_carte) {
     }
     // 0.849 : sur la carte (sans l'ordre par blocs), l'image reste sur la carte et presenter_cube la montre ; elle est
     // comptée dans le temps de l'image (le temps qu'il faut pour qu'elle soit prête à l'écran : à armes égales)
+    @2[OEIL + 5] = 0;
     soit sur_cube = 0;
     si (sur_carte == 1 || sur_carte == 2) && BLOCS == 0 {
         sur_cube = 1;
@@ -2350,4 +2408,37 @@ fonction epreuve(vol, jour, sur_carte) {
     }
     bilan("le jour" + lieu, jour, derniere);
     afficher("gergovie : le jour" + lieu + " : le film entier, empreinte " + texte(signe64(film)));
+    // 0.849 : le soir : l'œil arrêté (au milieu du vol), le soleil qui descend ; les étages n'y refont que l'ombre, la
+    // lumière, le reflet et le cache ; le mode 4 : le Vergobret choisit
+    si soir > 0 {
+        soit lieu_soir = lieu;
+        si sur_carte_demande == 4 {
+            lieu_soir = " (sur la carte, le Vergobret choisit)";
+        }
+        film = 14695981039346656037;
+        pour i dans 0..soir {
+            soit tsoir = horloge();
+            preparer_soleil(200 + i * 2, 40 - (i * 30) / soir, 0);
+            si sur_carte == 0 {
+                ranger_lumiere(0, 0);
+            } sinon {
+                ranger_lumiere_carte(0, 0);
+            }
+            image_soir(vol / 2, vol, i * 3, sur_carte_demande, i);
+            si sur_cube == 1 {
+                soit es = presenter_cube(FECRAN);
+                @2[TEMPS + i] = horloge() - tsoir;
+                film = ((film ^ es) * 1099511628211) & MOT64;
+                derniere = es;
+            } sinon {
+                @2[TEMPS + i] = horloge() - tsoir;
+                presenter();
+                soit eps = empreinte_image();
+                film = ((film ^ eps) * 1099511628211) & MOT64;
+                derniere = eps;
+            }
+        }
+        bilan("le soir" + lieu_soir, soir, derniere);
+        afficher("gergovie : le soir" + lieu_soir + " : le film entier, empreinte " + texte(signe64(film)));
+    }
 }

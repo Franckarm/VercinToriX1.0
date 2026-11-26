@@ -512,6 +512,9 @@ impl Spu64 {
             }
             // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé)
             22 => Ok(crate::miroir::prendre_etat() as u64),
+            // 0.849 : gene(lieu), noter_gene : le Vergobret vit dans la carte (la forge) : la machine ne sait rien
+            35 => Ok(u64::MAX),
+            36 => Ok(0),
             34 => {
                 // 0.849 : presenter_cube(f), comme Lugus : l'image du cube de fréquence f de l'étage 2 (0xRRGGBB)
                 // posée à l'étage 1 et présentée ; rend son empreinte (FNV-1a de 64 bits des points de 24 bits)

@@ -59,6 +59,14 @@ fn depuis_debut() -> u64 {
     d.get_or_insert_with(Instant::now).elapsed().as_millis() as u64
 }
 
+fn depuis_debut_us() -> u64 {
+    if HORLOGE_IMAGES.load(Ordering::Relaxed) {
+        return TEMPS_IMAGES.load(Ordering::Relaxed) * 1000;
+    }
+    let mut d = DEBUT.lock().unwrap();
+    d.get_or_insert_with(Instant::now).elapsed().as_micros() as u64
+}
+
 /// La souris, vue par la fenêtre, en points de l'image du programme.
 pub fn poser_souris(x: i32, y: i32, boutons: u32, dedans: bool) {
     let v = (x.clamp(0, 4095) as u32) | ((y.clamp(0, 4095) as u32) << 12) | ((boutons & 7) << 24) | ((dedans as u32) << 27);
@@ -151,6 +159,8 @@ pub fn service(code: u64, arg: u64, m: u64) -> Option<u64> {
     Some(match code {
         16 => SOURIS.load(Ordering::Relaxed) as u64,
         17 => TOUCHES.lock().unwrap().pop_front().unwrap_or(0) as u64,
+        // 0.849 : horloge_us (l'argument 1) : les microsecondes
+        18 if arg == 1 => depuis_debut_us() & m,
         18 => depuis_debut() & m,
         19 => CADENCE_MS.swap(arg.min(60_000) as u32, Ordering::Relaxed) as u64,
         20 => (MOLETTE.swap(0, Ordering::Relaxed) as i64 as u64) & m,
