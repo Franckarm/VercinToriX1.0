@@ -1039,6 +1039,40 @@ impl Spu128 {
                 self.fichiers.insert(canal, (true, rendu.chars().map(|c| c as u128).collect(), 0, String::new()));
                 Ok(canal)
             }
+            34 => {
+                // 0.849 : presenter_cube(f) : l'image rangée dans le cube de fréquence f de l'étage 2 (le point i :
+                // 0xRRGGBB, comme ecran(l, h) l'a dimensionnée) : posée à l'étage 1 (comme rgb), présentée ; rend
+                // l'empreinte de l'image (FNV-1a de 64 bits des points de 24 bits, dans l'ordre), 2^128 - 1 sans écran
+                let (l, h) = (self.regarder((3u128 << 62) | 14_680_058), self.regarder((3u128 << 62) | 14_680_059));
+                if !((1..=4096).contains(&l) && (1..=4096).contains(&h) && l * h <= 1 << 24) {
+                    return Ok(u128::MAX);
+                }
+                let n = (l * h) as usize;
+                let f = arg & 0xFF_FFFF;
+                let mut px = vec![0u32; n];
+                for (q, morceau) in px.chunks_mut(PAGE).enumerate() {
+                    if let Some(mots) = self.page_vue(2, (f << 8) | q as u128) {
+                        for (d, &v) in morceau.iter_mut().zip(mots.iter()) {
+                            *d = (v & 0xFF_FFFF) as u32;
+                        }
+                    }
+                }
+                let mut emp: u64 = 14695981039346656037;
+                for &c in &px {
+                    emp = (emp ^ c as u64).wrapping_mul(1099511628211);
+                }
+                for (i, &c) in px.iter().enumerate() {
+                    let (r, g, b) = ((c >> 16) as u128 & 255, (c >> 8) as u128 & 255, c as u128 & 255);
+                    let w = ((r * 257) << 48) | ((g * 257) << 32) | ((b * 257) << 16) | 65535;
+                    self.ecrire_mem((1u128 << 62) | i as u128, w)?;
+                }
+                self.appeler_patrouille(Ronde::Image)?;
+                if let Some(mut fp) = self.presenter.take() {
+                    let _ = fp(self);
+                    self.presenter = Some(fp);
+                }
+                Ok(emp as u128)
+            }
             12 => {
                 // l'image présentée : la machine attend l'écran, la patrouille fait une ronde entière
                 self.appeler_patrouille(Ronde::Image)?;

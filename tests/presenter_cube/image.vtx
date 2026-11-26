@@ -1,0 +1,20 @@
+// machine : lugus
+// 0.849 : presenter_cube(f) : une image de 40 × 30 rangée dans le cube de fréquence 210, montrée ; son empreinte est
+// celle que le programme calcule lui-même sur l'étage 1 (là où presenter_cube l'a posée)
+constante W = 40;
+constante H = 30;
+fonction principal() {
+    ecran(W, H);
+    pour i dans 0..(W * H) {
+        @2[(210 << 24) + i] = ((i * 7) & 255) * 65536 + ((i * 3) & 255) * 256 + (i & 255);
+    }
+    soit e = presenter_cube(210);
+    soit h = 14695981039346656037;
+    pour k dans 0..(W * H) {
+        soit c = @1[k];
+        soit rgb3 = ((c >> 56) & 255) * 65536 + ((c >> 40) & 255) * 256 + ((c >> 24) & 255);
+        h = ((h ^ rgb3) * 1099511628211) & 18446744073709551615;
+    }
+    afficher(e == h);
+    afficher(e);
+}

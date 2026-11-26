@@ -1286,6 +1286,13 @@ impl Ctx {
         self.ecrire(a, v);
     }
     fn sys(&mut self, code: u128, arg: u128) -> u128 {
+        // 0.849 : presenter_cube(f) d'une image que la carte vient de rendre (une fréquence de la carte, 200 et plus) :
+        // elle se montre depuis le miroir (8 octets), sans redescendre au processeur ni passer par l'étage 1
+        if code == 34 {
+            if let Some(v) = taranis_presenter_cube(self, arg) {
+                return v;
+            }
+        }
         match self.m.service(code, arg) {
             Ok(v) => v,   // 0.833 : tout le mot (-1 inconnu, -2 faux) ; la forge le ramène à 64 bits en « dunon; »
             Err(e) => {
@@ -2191,6 +2198,58 @@ fn taranis_direct(c: &mut Ctx, spv: &'static [u32], a: u128, b: u128, ext: &[u12
             std::process::exit(3);
         }
     }
+}
+
+/// 0.849 : presenter_cube(f) quand l'image est sur la carte : la fréquence f (200 et plus : elle ne redescend pas)
+/// est copiée de la carte vers le miroir, puis les points (0xRRGGBB, 8 octets par mot) vont à l'écran ; l'empreinte
+/// est celle de la machine (FNV-1a de 64 bits). None : l'image n'est pas sur la carte (la machine la présente).
+/// VTX_PRESENTER_CARTE=0 : toujours par la machine.
+#[allow(dead_code)]
+fn taranis_presenter_cube(c: &mut Ctx, f: u128) -> Option<u128> {
+    if std::env::var("VTX_PRESENTER_CARTE").map_or(false, |v| v == "0") {
+        return None;
+    }
+    let f = (f & 0xFF_FFFF) as usize;
+    if f < FREQ_CARTE || f >= 256 {
+        return None;
+    }
+    taranis_vider(c);
+    let (l, h) = (c.m.regarder((3u128 << 62) | 14_680_058), c.m.regarder((3u128 << 62) | 14_680_059));
+    if !((1..=4096).contains(&l) && (1..=4096).contains(&h) && l * h <= 1 << 24) {
+        return None;
+    }
+    let (l, h) = (l as usize, h as usize);
+    let mut g = etat_taranis().lock().unwrap();
+    if !g.pret || !g.perimees.get(f).copied().unwrap_or(false) || g.freq[f].1 == 0 {
+        return None;
+    }
+    let carte = taranis_vk::carte()?;
+    let (debut, nb) = g.freq[f];
+    let places: Vec<u32> = (0..nb).map(|q| debut + q).collect();
+    let ok = {
+        let EtatTaranis { res, .. } = &mut *g;
+        carte.redescendre(res.as_mut().unwrap(), &places).is_ok()
+    };
+    if !ok {
+        return None;
+    }
+    let miroir = g.res.as_ref().unwrap().miroir as *const u64;
+    let mut px = vec![0u32; l * h];
+    for (q, morceau) in px.chunks_mut(65536).enumerate() {
+        if (q as u32) < nb {
+            let src = unsafe { std::slice::from_raw_parts(miroir.add((debut as usize + q) * 65536), 65536) };
+            for (d, &w) in morceau.iter_mut().zip(src) {
+                *d = (w & 0xFF_FFFF) as u32;
+            }
+        }
+    }
+    drop(g);
+    let mut emp: u64 = 14695981039346656037;
+    for &p in &px {
+        emp = (emp ^ p as u64).wrapping_mul(1099511628211);
+    }
+    let _ = sortie::montrer(l, h, &px);
+    Some(emp as u128)
 }
 
 /// 0.824 : vide le lot de la carte (s'il attend) : il part, ce qu'il a écrit redescend

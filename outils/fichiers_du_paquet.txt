@@ -276,3 +276,5 @@ outils/faire_essai.py
 tests/test_valeur_sue.py
 outils/bilan_taranis.py
 exemples128/fonctions_imbriquees.vtx
+tests/test_presenter_cube.py
+tests/presenter_cube/image.vtx

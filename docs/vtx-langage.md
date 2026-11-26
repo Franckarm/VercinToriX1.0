@@ -429,6 +429,7 @@ Sur Lugus (128 bits) et en `dunon;` (64), sur Dunon, et forgé ; un `selon` sur 
 | `accorder(étage, f)`, `frequence(étage)` | l'étage regarde le cube de fréquence f | SYS 8, SYS 9 |
 | `ranger_cube(étage, f)` | écrit le cube sur disque (`cube-ÉTAGE-FRÉQUENCE.cub`) | SYS 11 |
 | `presenter()` | montre l'image de l'étage 1 (une fenêtre, Ogmios, PNG ou GIF) | SYS 12 |
+| `presenter_cube(f)` | 0.849 : montre l'image rangée dans le cube de fréquence f de l'étage 2 (le point i : 0xRRGGBB, à la taille d'`ecran`), la pose à l'étage 1 et rend son empreinte (FNV-1a de 64 bits des points) ; forgé, une image que la carte vient de rendre (fréquence 200 et plus) se montre depuis la carte sans redescendre (`VTX_PRESENTER_CARTE=0` l'éteint ; l'étage 1 n'est alors pas écrit) | SYS 34 |
 | `souris()`, `souris_x(m)`, `souris_y(m)`, `souris_boutons(m)`, `souris_dedans(m)` | la souris dans l'image (0 sans fenêtre) | SYS 16, prélude |
 | `touche()`, `appuyee(t)`, `touche_gauche()`… | la prochaine touche (sans attendre), une touche enfoncée | SYS 17, SYS 21 |
 | `molette()`, `horloge()`, `cadence(ms)` | crans de molette, millisecondes, cadence des images | SYS 20, 18, 19 |

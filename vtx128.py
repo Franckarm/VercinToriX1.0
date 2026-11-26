@@ -667,7 +667,7 @@ SOUVENIR_PLACES = 1 << SOUVENIR_BITS     # la colonne des souvenirs d'un atome :
 TYPES_SOUVENIR = {"e", "i", "f", "s", "x", "w", "p"}
 EFFETS_PURS = {"__rompre", "sortie", "afficher", "entrée", "lire_car", "ecrire_car", "__service", "ouvrir_lecture",
                "ouvrir_ecriture", "fermer", "fin_de", "bruit", "pile", "marquer_adn", "marquer_arn", "liberer_brin", "brin",
-               "gemv", "tableau", "nouveau", "nouveau_de", "ecrire", "texte", "presenter", "ecran", "pixel"}
+               "gemv", "tableau", "nouveau", "nouveau_de", "ecrire", "texte", "presenter", "presenter_cube", "ecran", "pixel"}
 NOEUDS_IMPURS = {"appelv", "lire", "ecrire", "mem", "champ_ref", "ecrire_champ", "asm", "accord", "segments", "rangee_lire",
                  "rangee_ecrire", "hyp", "etiq"}
 
@@ -5815,6 +5815,12 @@ fonction presenter() {
     // la toile : montre l'image préparée par ecran(l, h) ; rend 0 tant que tout va bien (la machine sans fenêtre rend toujours 0),
     // 1 quand la fenêtre a été fermée, (0 - 1) si le programme n'a pas préparé d'image
     retour __service(12, 0);
+}
+fonction presenter_cube(f) {
+    // 0.849 : l'image rangée dans le cube de fréquence f de l'étage 2 (le point i : 0xRRGGBB, la taille d'ecran(l, h)),
+    // posée à l'étage 1 et présentée ; rend l'empreinte de l'image (FNV-1a de 64 bits des points, dans l'ordre). Une
+    // image que la carte vient de rendre se montre sans redescendre au processeur (la forge, Taranis)
+    retour __service(34, f);
 }
 fonction ranger_cube(etage, f) {
     // écrit sur disque le cube de fréquence f de l'étage (fichier cube64-ÉTAGE-FRÉQUENCE.cub, à côté du programme), avec le

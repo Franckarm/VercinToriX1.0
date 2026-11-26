@@ -49,6 +49,8 @@ constante FMAT = 201;              // l'étage des matériaux : la distance du p
 constante FOMB = 202;              // l'étage de l'ombre : l'état quaternaire, la clepsydre, le ciel vu (ombrer)
 constante FLUM = 203;              // l'étage de la lumière : la couleur d'un point de terre avant la brume
 constante FREF = 204;              // l'étage du reflet : la couleur d'un point d'eau (Divona) avant la brume
+constante FECRAN = 206;            // 0.849 : l'image rendue sur la carte (une fréquence de la carte : elle ne redescend pas),
+                                   // montrée par presenter_cube (le point i : 0xRRGGBB)
 constante FPROJ = 205;             // 0.831 : la projection des points : pour chaque pixel, la profondeur et le point (le plus proche)
 constante PIXEL_VIDE = 18446744073709551615;   // 0.831 : un pixel où rien n'est tombé
 
@@ -1869,15 +1871,16 @@ fonction etage_reflet(i, cx, cy, cz, temps) {
 }
 
 // le cache : la composition (le ciel, la brume) : le point de l'image
-fonction etage_cache(i) {
+fonction etage_cache(i, fi) {
+    // 0.849 : fi, la fréquence de l'image : FECRAN (elle reste sur la carte), ou FIMAGE (l'ordre par blocs)
     soit t = @2[(FMAT << 24) + i];
     soit w = @2[(FDIR << 24) + i];
     si t == MANQUE {
-        @2[(FIMAGE << 24) + i] = ciel(dir_x(w), dir_y(w), dir_z(w), 0) & 16777215;
+        @2[(fi << 24) + i] = ciel(dir_x(w), dir_y(w), dir_z(w), 0) & 16777215;
     } sinon si (@2[(FOMB << 24) + i] & 2) != 0 {
-        @2[(FIMAGE << 24) + i] = brumer(@2[(FREF << 24) + i], t);
+        @2[(fi << 24) + i] = brumer(@2[(FREF << 24) + i], t);
     } sinon {
-        @2[(FIMAGE << 24) + i] = brumer(@2[(FLUM << 24) + i], t);
+        @2[(fi << 24) + i] = brumer(@2[(FLUM << 24) + i], t);
     }
 }
 
@@ -1895,8 +1898,15 @@ fonction image_etages(cx, cy, cz, lacet, tangage, temps) {
     pour i4 dans 0..(W * H) en segments {
         etage_reflet(i4, cx, cy, cz, temps);
     }
+    si BLOCS == 0 {
+        // 0.849 : l'image reste sur la carte : presenter_cube la montre
+        pour i6 dans 0..(W * H) en segments {
+            etage_cache(i6, FECRAN);
+        }
+        retour;
+    }
     pour i5 dans 0..(W * H) en segments {
-        etage_cache(i5);
+        etage_cache(i5, FIMAGE);
     }
     pour y dans 0..H en bandes {
         pour x dans 0..W {
@@ -1985,6 +1995,13 @@ fonction image_processeur(cx, cy, cz, lacet, tangage, temps) {
 
 // une image sur la carte : un fil par point (Taranis), le point rendu dans FIMAGE, puis posé à l'écran
 fonction image_carte(cx, cy, cz, lacet, tangage, temps) {
+    // 0.849 : sans l'ordre par blocs, l'image reste sur la carte (FECRAN) : presenter_cube la montre depuis la carte
+    si BLOCS == 0 {
+        pour i dans 0..(W * H) en segments {
+            @2[(FECRAN << 24) + i] = point_vu(i, cx, cy, cz, lacet, tangage, temps);
+        }
+        retour;
+    }
     pour i dans 0..(W * H) en segments {
         @2[(FIMAGE << 24) + i] = point_vu(pixel_de(i), cx, cy, cz, lacet, tangage, temps);
     }
@@ -2199,7 +2216,8 @@ fonction en_dixiemes(d): texte {
 // le bilan d'une épreuve de n images (les temps, en ms, dans @2[TEMPS + i])
 constante TEMPS = 605000;
 
-fonction bilan(nom: texte, n) {
+fonction bilan(nom: texte, n, derniere) {
+    // 0.849 : derniere, l'empreinte de la dernière image (presenter_cube la rend ; sinon celle de l'étage 1)
     soit total = 0;
     soit pire = 0;
     pour i dans 0..n {
@@ -2233,7 +2251,7 @@ fonction bilan(nom: texte, n) {
     }
     afficher("gergovie : " + nom + " : " + texte(n) + " images, " + en_dixiemes(10000 * n / total)
              + " images par seconde en moyenne, 1 % bas " + en_dixiemes(10000 * k / lents) + ", pire image "
-             + texte(pire) + " ms ; empreinte " + texte(signe64(empreinte_image())));
+             + texte(pire) + " ms ; empreinte " + texte(signe64(derniere)));
 }
 
 // l'épreuve : le monde, la mise en place (pas comptée), le vol (vol images, le soleil fixe), le jour (jour images,
@@ -2253,6 +2271,13 @@ fonction epreuve(vol, jour, sur_carte) {
         @2[(FLUM << 24) + i] = 0;
         @2[(FREF << 24) + i] = 0;
         @2[(FPROJ << 24) + i] = PIXEL_VIDE;
+        @2[(FECRAN << 24) + i] = 0;
+    }
+    // 0.849 : sur la carte (sans l'ordre par blocs), l'image reste sur la carte et presenter_cube la montre ; elle est
+    // comptée dans le temps de l'image (le temps qu'il faut pour qu'elle soit prête à l'écran : à armes égales)
+    soit sur_cube = 0;
+    si (sur_carte == 1 || sur_carte == 2) && BLOCS == 0 {
+        sur_cube = 1;
     }
     preparer_soleil(360, 70, 0);
     ranger_lumiere(1, 0);
@@ -2278,14 +2303,24 @@ fonction epreuve(vol, jour, sur_carte) {
     // 0.829 : l'empreinte du film entier (chaque image comptée, hors du chronomètre) : la dernière image ne suffit pas
     // à juger une lumière qui change d'une image à l'autre
     soit film = 14695981039346656037;
+    soit derniere = 0;
     pour i dans 0..vol {
         soit ti = horloge();
         image_gergovie(i, vol, i * 3, sur_carte);
-        @2[TEMPS + i] = horloge() - ti;
-        presenter();
-        film = ((film ^ empreinte_image()) * 1099511628211) & MOT64;
+        si sur_cube == 1 {
+            soit ev = presenter_cube(FECRAN);
+            @2[TEMPS + i] = horloge() - ti;
+            film = ((film ^ ev) * 1099511628211) & MOT64;
+            derniere = ev;
+        } sinon {
+            @2[TEMPS + i] = horloge() - ti;
+            presenter();
+            soit epev = empreinte_image();
+            film = ((film ^ epev) * 1099511628211) & MOT64;
+            derniere = epev;
+        }
     }
-    bilan("le vol" + lieu, vol);
+    bilan("le vol" + lieu, vol, derniere);
     afficher("gergovie : le vol" + lieu + " : le film entier, empreinte " + texte(signe64(film)));
     film = 14695981039346656037;
     pour i dans 0..jour {
@@ -2297,10 +2332,19 @@ fonction epreuve(vol, jour, sur_carte) {
             ranger_lumiere_carte(0, 0);
         }
         image_gergovie(i, jour, i * 3, sur_carte);
-        @2[TEMPS + i] = horloge() - tj;
-        presenter();
-        film = ((film ^ empreinte_image()) * 1099511628211) & MOT64;
+        si sur_cube == 1 {
+            soit ej = presenter_cube(FECRAN);
+            @2[TEMPS + i] = horloge() - tj;
+            film = ((film ^ ej) * 1099511628211) & MOT64;
+            derniere = ej;
+        } sinon {
+            @2[TEMPS + i] = horloge() - tj;
+            presenter();
+            soit epej = empreinte_image();
+            film = ((film ^ epej) * 1099511628211) & MOT64;
+            derniere = epej;
+        }
     }
-    bilan("le jour" + lieu, jour);
+    bilan("le jour" + lieu, jour, derniere);
     afficher("gergovie : le jour" + lieu + " : le film entier, empreinte " + texte(signe64(film)));
 }

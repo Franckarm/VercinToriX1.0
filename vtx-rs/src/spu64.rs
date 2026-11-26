@@ -512,6 +512,38 @@ impl Spu64 {
             }
             // 22 : l'état des cubes lus sur disque depuis le dernier appel (miroir inversé)
             22 => Ok(crate::miroir::prendre_etat() as u64),
+            34 => {
+                // 0.849 : presenter_cube(f), comme Lugus : l'image du cube de fréquence f de l'étage 2 (0xRRGGBB)
+                // posée à l'étage 1 et présentée ; rend son empreinte (FNV-1a de 64 bits des points de 24 bits)
+                let (l, h) = (self.regarder((3u64 << 62) | 14_680_058), self.regarder((3u64 << 62) | 14_680_059));
+                if !((1..=4096).contains(&l) && (1..=4096).contains(&h) && l * h <= 1 << 24) {
+                    return Ok(u64::MAX);
+                }
+                let n = (l * h) as usize;
+                let f = arg & 0xFF_FFFF;
+                let mut px = vec![0u32; n];
+                for (q, morceau) in px.chunks_mut(PAGE).enumerate() {
+                    if let Some(mots) = self.page_vue(2, (f << 8) | q as u64) {
+                        for (d, &v) in morceau.iter_mut().zip(mots.iter()) {
+                            *d = (v & 0xFF_FFFF) as u32;
+                        }
+                    }
+                }
+                let mut emp: u64 = 14695981039346656037;
+                for &c in &px {
+                    emp = (emp ^ c as u64).wrapping_mul(1099511628211);
+                }
+                for (i, &c) in px.iter().enumerate() {
+                    let (r, g, b) = ((c >> 16) as u64 & 255, (c >> 8) as u64 & 255, c as u64 & 255);
+                    let w = ((r * 257) << 48) | ((g * 257) << 32) | ((b * 257) << 16) | 65535;
+                    self.ecrire_mem((1u64 << 62) | i as u64, w)?;
+                }
+                if let Some(mut fp) = self.presenter.take() {
+                    let _ = fp(self);
+                    self.presenter = Some(fp);
+                }
+                Ok(emp)
+            }
             12 => {
                 if let Some(mut f) = self.presenter.take() {
                     let r = f(self);

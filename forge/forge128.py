@@ -2369,7 +2369,7 @@ class Forge(V.Generateur):
 # lit la mémoire, aucun brin posé) est rangé hors du cube, dans un tableau Rust serré, du plus petit type qui tient ce
 # qu'on y écrit : des nombres écrits jusqu'à 255 dans des octets, des entiers de 64 bits dans des u64, le reste en u128.
 # À la fin (ou à une erreur), son contenu est recopié dans le cube : la mémoire finale est celle de la machine.
-SERVICES_MEMOIRE = {6, 7, 11, 12, 13, 22}          # ils lisent ou écrivent la mémoire du programme
+SERVICES_MEMOIRE = {6, 7, 11, 12, 13, 22, 34}          # ils lisent ou écrivent la mémoire du programme
 TYPES_64 = {"e", "i", "s", "q"}
 
 
