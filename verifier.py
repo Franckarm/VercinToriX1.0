@@ -173,6 +173,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_druide.py")]))
     etapes.append(("Taranis et le 128 : un programme Lugus reste au processeur, un programme dunon peut aller à la carte",
                    [sys.executable, os.path.join("tests", "test_taranis128.py")]))
+    etapes.append(("Belenos, la clepsydre à deux faces : le C++ et vtx (le processeur, la carte) donnent le même film",
+                   [sys.executable, os.path.join("tests", "test_deux_faces.py")]))
     etapes.append(("forge du SPU-32 : vtx -> Rust -> natif, mêmes sorties et même mémoire que le SPU émulé",
                    [sys.executable, os.path.join("forge", "test_forge.py"), "300" if COMPLET else "60"]))
     etapes.append(("flottant_petuar : le flottant quaternaire de 128 bits (référence exacte, quatre machines, vtxc, ADN et cube)",

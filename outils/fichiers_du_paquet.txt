@@ -275,3 +275,8 @@ docs/vtx-liste-128.md
 belenos/gergovie_eventail.vtx
 belenos/gergovie_carte_eventail.vtx
 docs/vtx-reference-gobatix.md
+belenos/gergovie_deux_faces.vtx
+belenos/gergovie_deux_faces_alternes.vtx
+belenos/gergovie_carte_deux_faces.vtx
+belenos/gergovie_carte_deux_faces_alternes.vtx
+tests/test_deux_faces.py

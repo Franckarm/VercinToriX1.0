@@ -718,3 +718,20 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   avoir trouvé une méthode : la lui demander en reprenant.
 - En suspens : la largeur par molécule (un choix, refusé sur la liste du 128) ; vtx au processeur encore derrière le C++
   (21,4 contre 33,3 au vol).
+
+## 0.844 (26 novembre) : la clepsydre à deux faces
+- La méthode du créateur, lue avec lui : « dans l'espace » (l'ombre poussée par ce qui la porte, reçue par ce qu'elle
+  couvre) ; les deux images de persistance fondues par le quaternaire, au bord et au cœur de l'ombre.
+- `PROGRESSIF = 3` (`gergovie_deux_faces.vtx`, `gergovie_carte_deux_faces.vtx`) : pousser (le dos tourné et les marches,
+  un rayon à l'opposé du soleil, le dépôt dans l'anti-cube : FDEPOT = 208 + 16 · parité + t), l'état (FETAT = 240 + t, un
+  quartet par point), recevoir (l'accord des 26 voisins : vrai, faux, sinon les quatre rayons). `PROGRESSIF = 4` (`…_alternes`) :
+  un point variable sur deux garde sa valeur d'une image. FMASQUE = 192 + t : les points de surface de chaque mot, rangés
+  une fois. La marque de la poussée : GLOB + 41 ; l'axe du soleil : GLOB + 42.
+- Mesuré (§118) : 99,4 % des points justes contre 98,3 % pour l'éventail ; 17 à 21 % des points lancent des rayons ;
+  à demi-échelle, vtx au processeur à égalité avec l'éventail (9,4 contre 9,7), le C++ un peu derrière (14,5 contre 16,4).
+- Les empreintes : les mêmes pour le C++, vtx et Taranis (`tests/test_deux_faces.py`, dans verifier.py).
+- Attention : gergovie_scene.vtx a grandi ; les lignes des boucles ont changé, le carnet de Gutuater repart à inconnu.
+- L'autonomie : le créateur l'a redemandée le 26 ; le code machine des appels au système n'est toujours pas repris
+  (le filtre du 18, la lettre du créateur à Anthropic en attente). Proposé à la place : les voies (#8A) et la matière (#92)
+  dans Gobannos, qui ne sont pas des appels au système.
+- Livraison : vtx-0.844.zip, essai-0.844.bat (le C++, vtx au processeur, Taranis, pour 3 et 4). Prochaine : vtx-0.845.

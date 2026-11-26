@@ -4742,3 +4742,50 @@ synapse, la mémoire des échecs. Il ne touche jamais l'ADN ; la garde est l'exa
 Ce qu'il sait faire est encore petit (une seule sorte de mutation) ; ce qui compte est la boucle : varier, mesurer
 honnêtement malgré le bruit, garder ou rendre, se souvenir. Les mutations plus riches s'y brancheront.
 
+
+## 118. La clepsydre à deux faces (26 novembre, 0.844)
+
+**La méthode du créateur.** La clepsydre n'avait jamais servi que d'un côté : un point tourné vers le soleil lance
+quatre rayons vers lui et compte ceux qui passent. Le côté négatif (les points du dessous, qui portent l'ombre) n'avait
+jamais été fait. Le créateur l'a choisi « dans l'espace » : l'ombre est poussée par ce qui la porte, et reçue par ce
+qu'elle couvre. Les deux images de persistance se fondent par le quaternaire, au bord comme au cœur de l'ombre.
+
+**Trois gestes** (`gergovie_scene.vtx`, `PROGRESSIF = 3` ; le C++ : `gergovie_ref.cpp -DPROGRESSIF=3`) :
+1. *pousser* : chaque point qui tourne le dos au soleil lance **un seul** rayon à l'opposé. Il part comme la
+   clepsydre. Le premier point de surface touché est dans l'ombre : il reçoit le dépôt dans l'anti-cube
+   (`FDEPOT + 16 · parité + t`, la marque de la poussée, une case par point). Les marches du relief poussent aussi.
+   Une marche est un point dont la normale regarde le soleil, mais dont la case voisine à l'opposé (sur l'axe où le
+   soleil pèse le plus) est vide et a de la matière devant elle. Sans les marches, l'ombre que le relief en escalier
+   porte sur lui-même échappait. Tous ceux qui touchent un point y écrivent le même nombre, sans relire la case :
+   l'ordre ne compte pas, et les cœurs ne se gênent pas (une première version qui gardait le minimum relisait la case,
+   et les cylindres la rejouaient seule : 40 ms au lieu de 9) ;
+2. *l'état* de chaque point, un quartet d'un seul bit, huit par mot (`FETAT + t`) : la lumière (aucun dépôt aux deux
+   poussées), l'ombre (un dépôt aux deux), le désaccord (l'une des deux : l'ombre qui bouge, ou un trou), le dos tourné ;
+3. *recevoir* : un point et ses 26 voisins tous dans l'ombre : faux, rien du soleil, sans rayon. Tous dans la lumière :
+   vrai, tout le soleil, sans rayon. Sinon variable : le bord, la pénombre, l'ombre qui bouge ; le point lance les quatre
+   rayons de la clepsydre. Les états des voisins se lisent par lignes : neuf lignes de huit points (plus le point
+   d'avant et d'après), mêlées en dix quartets par un OU. Il faut 27 lectures par mot au lieu de 27 par point.
+
+`PROGRESSIF = 4` (les bords alternés) : un point variable sur deux, tiré par son lieu et l'image, garde sa valeur de
+l'image d'avant. C'est la persistance au sens propre : deux fois moins de rayons, un bord en retard d'une image.
+
+**Mesuré** (le C++ avec `OMBRE_DIAG=1` : chaque image comparée point par point au calque exact ; pleine échelle, 24
+images du jour) :
+
+| | justes | un d'écart | plus | rayons |
+|---|---|---|---|---|
+| l'éventail (0.843) | 98,3 % | 1,0 % | 0,70 % | un mot sur deux, 3 points sur 8 au moins |
+| les deux faces | 99,4 % | 0,25 % | 0,34 % | 17 à 21 % des points |
+| les bords alternés | 98,8 % | 0,6 % | 0,58 % | 8 à 10 % |
+
+Les erreurs sont nettes, pas brumeuses : surtout des trous de l'ombre à deux points d'un dépôt (l'ombre couchée sur une
+pente rasante, où les rayons poussés tombent plus loin les uns des autres). À demi-échelle, sur deux cœurs : le C++ fait
+14,5 images par seconde au jour (le témoin 11,8, l'éventail 16,4) ; vtx au processeur 9,4 (le témoin 7,0, l'éventail
+9,7). Pousser coûte 9 ms, les états 8, recevoir 25 à 30 (dont les rayons des bords). Les empreintes : les mêmes pour le
+C++, vtx au processeur et Taranis (`tests/test_deux_faces.py`, vérifié aussi à pleine échelle). Sur lavapipe, la
+version carte est plus lente que l'éventail ; la RTX dira.
+
+**Ce qui reste.** Les trous à deux points pourraient se combler par un dépôt plus large quand le rayon arrive rasant
+(le rapport des deux pentes le dit). Le calque d'état pourrait servir ailleurs : c'est une ombre quaternaire rangée, que
+Divona ou la lumière des feux pourraient lire. Les deux jeux de dépôts de l'anti-cube sont des fréquences de l'ARN (208
+et plus) : ils vivent sur la carte et ne redescendent pas.

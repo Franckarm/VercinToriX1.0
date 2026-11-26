@@ -2131,6 +2131,376 @@ fonction ranger_mot_tnw(t, n, w, avec_ciel, jeu, refs) {
     }
 }
 
+// 0.844 : la clepsydre à deux faces (PROGRESSIF = 3 ; 4 : la même, les bords alternés), la méthode du créateur : le côté
+// négatif de la clepsydre pousse l'ombre, le côté positif la reçoit. Trois gestes, à chaque image où le soleil bouge :
+// (1) pousser : chaque point de surface qui tourne le dos au soleil (le dessous de la clepsydre), et chaque marche du
+//     relief (la case voisine à l'opposé du soleil, sur l'axe où il pèse le plus, est vide et a de la matière devant
+//     elle vers le soleil), lance un seul rayon à l'opposé du soleil ; le premier point de surface touché est dans
+//     l'ombre : il reçoit le dépôt dans l'anti-cube (FDEPOT + 16 · parité + t : la marque de la poussée, une case par
+//     point ; deux jeux, par parité : les deux images de persistance) ;
+// (2) l'état quaternaire de chaque point (FETAT + t) : 1 la lumière (aucun dépôt aux deux poussées), 2 l'ombre (un dépôt
+//     aux deux), 3 le désaccord (l'ombre qui bouge, ou un trou), 4 le dos tourné ;
+// (3) recevoir : un point tourné vers le soleil et ses 26 voisins tous dans l'ombre : faux (rien de vu) ; tous dans la
+//     lumière : vrai (tout le soleil) ; sinon variable (le bord, la pénombre) : les quatre rayons de la clepsydre.
+//     PROGRESSIF = 4 : un point variable sur deux (tiré par son lieu et l'image) garde sa valeur de l'image d'avant.
+// La référence : gergovie_ref.cpp -DPROGRESSIF=3 (ou 4) : les mêmes empreintes.
+constante FMASQUE = 192;           // + t : pour chaque mot du calque, ses points de surface (un bit par point : pas de
+                                   // l'eau, de la matière exposée) ; rangé une fois, avec le monde
+constante FDEPOT = 208;
+constante FETAT = 240;
+
+// le mot q du calque (toutes les tuiles à la suite) : sa tuile (8 bits) et son rang dans la tuile
+fonction tuile_du_mot(q) {
+    soit t = 0;
+    soit r = q;
+    soit cherche = 1;
+    pour k dans 0..(TUILES * TUILES) {
+        si cherche == 1 {
+            soit nk = @2[GLOB + 1 + k] * 64;
+            si r < nk {
+                t = k;
+                cherche = 0;
+            } sinon {
+                r = r - nk;
+            }
+        }
+    }
+    retour (r << 8) | t;
+}
+
+fonction mots_du_calque() {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    retour total;
+}
+
+// la pente d'un mot d'élément face au soleil (le jeu 0)
+fonction pente_soleil(el) {
+    soit nn = normale_de(el);
+    retour ((((nn & 255) - 128) * @2[SOLEILS + 12] + (((nn >> 16) & 255) - 128) * @2[SOLEILS + 13]
+            + (((nn >> 32) & 255) - 128) * @2[SOLEILS + 14]) ./ 127);
+}
+
+// le rayon d'ombre depuis (sx, sy, sz), à l'opposé du soleil : le dépôt sur le premier point de surface touché
+fonction deposer(sx, sy, sz, cur) {
+    soit lx = 0 - @2[SOLEILS + 12];
+    soit ly = 0 - @2[SOLEILS + 13];
+    soit lz = 0 - @2[SOLEILS + 14];
+    soit tt = tracer(sx, sy, sz, lx, ly, lz, 700 * 65536 * RN / RD, 0);
+    si tt != MANQUE {
+        soit hx = (sx + ((lx * tt) .>> 16)) >> 16;
+        soit hy = (sy + ((ly * tt) .>> 16)) >> 16;
+        soit hz = (sz + ((lz * tt) .>> 16)) >> 16;
+        si hx < MONDE && hz < MONDE && hy < 256 {
+            soit th = (hz >> 8) * TUILES + (hx >> 8);
+            soit eh = @2[((FELT + th) << 24) + ((((hx >> 3) & 31) << 10) | (((hy >> 3) & 31) << 5) | ((hz >> 3) & 31))];
+            si eh >= 16 && eh < (1 << 62) {
+                // la marque de la poussée, sans relire la case : tous ceux qui touchent ce point y écrivent le même
+                // nombre (l'ordre ne compte pas, et les cœurs ne se gênent pas)
+                @2[((FDEPOT + 16 * (cur & 1) + th) << 24) + (eh - 16) * 512 + (((hx & 7) << 6) | ((hy & 7) << 3) | (hz & 7))] = cur;
+            }
+        }
+    }
+    retour 0;
+}
+
+// un point qui tourne le dos au soleil : il part de son centre poussé le long de sa normale (ou de son voisin vide),
+// comme la clepsydre
+fonction pousser_dos(x, y, z, nx, ny, nz, cur) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    soit dp = depart(x, y, z, nx, ny, nz);
+    si dp < 6 {
+        sx = (x << 16) + 32768;
+        sy = (y << 16) + 32768;
+        sz = (z << 16) + 32768;
+        si dp == 0 {
+            sx = sx + 65536;
+        } sinon si dp == 1 {
+            sx = sx - 65536;
+        } sinon si dp == 2 {
+            sy = sy + 65536;
+        } sinon si dp == 3 {
+            sy = sy - 65536;
+        } sinon si dp == 4 {
+            sz = sz + 65536;
+        } sinon {
+            sz = sz - 65536;
+        }
+    }
+    retour deposer(sx, sy, sz, cur);
+}
+
+// les huit points du mot q : ceux qui poussent
+fonction pousser_mot(q, cur, axe) {
+    soit tr = tuile_du_mot(q);
+    soit t = tr & 255;
+    soit r = tr >> 8;
+    soit n = r >> 6;
+    soit w = r & 63;
+    soit b = @2[((FINV + t) << 24) + n];
+    soit x0 = (t % TUILES) * 256 + (b >> 10) * 8;
+    soit y0 = ((b >> 5) & 31) * 8;
+    soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
+    soit base = (FELT + t) << 24;
+    soit m = @2[((FMASQUE + t) << 24) + r];
+    pour j dans 0..8 {
+        soit v = w * 8 + j;
+        soit x = x0 + (v >> 6);
+        soit y = y0 + ((v >> 3) & 7);
+        soit z = z0 + (v & 7);
+        si ((m >> j) & 1) == 1 {
+            soit el = @2[base + REP + n * 512 + v];
+            si pente_soleil(el) .> 0 {
+                // une marche : la case voisine à l'opposé du soleil, sur son axe le plus fort
+                soit cx = x;
+                soit cy = y;
+                soit cz = z;
+                si axe == 0 {
+                    si @2[SOLEILS + 12] .> 0 {
+                        cx = x - 1;
+                    } sinon {
+                        cx = x + 1;
+                    }
+                } sinon si axe == 1 {
+                    si @2[SOLEILS + 13] .> 0 {
+                        cy = y - 1;
+                    } sinon {
+                        cy = y + 1;
+                    }
+                } sinon {
+                    si @2[SOLEILS + 14] .> 0 {
+                        cz = z - 1;
+                    } sinon {
+                        cz = z + 1;
+                    }
+                }
+                si element(cx, cy, cz) == 0 {
+                    soit sx = (cx << 16) + 32768;
+                    soit sy = (cy << 16) + 32768;
+                    soit sz = (cz << 16) + 32768;
+                    si element((sx + @2[SOLEILS + 12]) >> 16, (sy + @2[SOLEILS + 13]) >> 16, (sz + @2[SOLEILS + 14]) >> 16) != 0 {
+                        deposer(sx, sy, sz, cur);
+                    }
+                }
+            } sinon {
+                soit nn = normale_de(el);
+                pousser_dos(x, y, z, (nn & 255) - 128, ((nn >> 16) & 255) - 128, ((nn >> 32) & 255) - 128, cur);
+            }
+        }
+    }
+}
+
+// l'état quaternaire des huit points du mot q, rangé d'un seul mot (FETAT + t, à la place du mot) : un quartet par
+// point, d'un seul bit : 1 la lumière, 2 l'ombre, 4 le désaccord, 8 le dos tourné, 0 pas une surface
+fonction etat_mot(q, cur) {
+    soit tr = tuile_du_mot(q);
+    soit t = tr & 255;
+    soit r = tr >> 8;
+    soit n = r >> 6;
+    soit base = (FELT + t) << 24;
+    soit m = @2[((FMASQUE + t) << 24) + r];
+    soit e = 0;
+    pour j dans 0..8 {
+        soit v = (r & 63) * 8 + j;
+        si ((m >> j) & 1) == 1 {
+            soit st = 8;
+            si pente_soleil(@2[base + REP + n * 512 + v]) .> 0 {
+                soit ia = @2[((FDEPOT + 16 * (cur & 1) + t) << 24) + n * 512 + v] == cur;
+                soit ib = @2[((FDEPOT + 16 * ((cur - 1) & 1) + t) << 24) + n * 512 + v] == cur - 1;
+                si ia && ib {
+                    st = 2;
+                } sinon si ia || ib {
+                    st = 4;
+                } sinon {
+                    st = 1;
+                }
+            }
+            e = e | (st << (j * 4));
+        }
+    }
+    @2[((FETAT + t) << 24) + r] = e;
+}
+
+// les états de la ligne de huit points (le long de z) du bloc qui contient (x, y, z) : 0 hors du monde ou sans bloc
+fonction ligne_etats(x, y, z) {
+    si x >= MONDE || z >= MONDE || y >= 256 {
+        retour 0;
+    }
+    soit th = (z >> 8) * TUILES + (x >> 8);
+    soit eh = @2[((FELT + th) << 24) + ((((x >> 3) & 31) << 10) | (((y >> 3) & 31) << 5) | ((z >> 3) & 31))];
+    si eh < 16 || eh >= (1 << 62) {
+        retour 0;
+    }
+    retour @2[((FETAT + th) << 24) + (eh - 16) * 64 + (((x & 7) << 3) | (y & 7))];
+}
+
+// recevoir : le calque du soleil des huit points du mot q. Les états des 26 voisins de chaque point se lisent d'un
+// coup : les neuf lignes voisines (x ± 1, y ± 1), chacune avec le point d'avant et le point d'après (les blocs voisins
+// le long de z), mêlées en une ligne de dix quartets ; pour le point j, les quartets j, j + 1, j + 2 (lui compris : son
+// propre état ne change rien à l'accord)
+fonction recevoir_mot(q, image, alterne) {
+    soit tr = tuile_du_mot(q);
+    soit t = tr & 255;
+    soit r = tr >> 8;
+    soit n = r >> 6;
+    soit w = r & 63;
+    soit b = @2[((FINV + t) << 24) + n];
+    soit xl = (t % TUILES) * 256 + (b >> 10) * 8 + (w >> 3);
+    soit yl = ((b >> 5) & 31) * 8 + (w & 7);
+    soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
+    soit base = (FELT + t) << 24;
+    soit lieu = ((FSOL + t) << 24) + r;
+    soit ancien = @2[lieu];
+    soit propre = @2[((FETAT + t) << 24) + r];
+    soit ms = 0;
+    si propre != 0 {
+        soit voisins = 0;
+        pour d dans 0..9 {
+            soit lx = xl + d % 3 - 1;
+            soit ly = yl + d / 3 - 1;
+            voisins = voisins | ((ligne_etats(lx, ly, z0 - 1) >> 28) & 15) | (ligne_etats(lx, ly, z0) << 4)
+                      | ((ligne_etats(lx, ly, z0 + 8) & 15) << 36);
+        }
+        pour j dans 0..8 {
+            soit me = (propre >> (j * 4)) & 15;
+            si me != 0 {
+                soit sv = 0;
+                si me != 8 {
+                    soit autour = ((voisins >> (j * 4)) | (voisins >> (j * 4 + 4)) | (voisins >> (j * 4 + 8))) & 15;
+                    // l'accord : la lumière ne touche ni l'ombre, ni le désaccord, ni le dos tourné ; l'ombre ne touche
+                    // ni la lumière ni le désaccord ; sinon le point est variable
+                    soit accord = 3;
+                    si me == 1 && (autour & 14) == 0 {
+                        accord = 1;
+                    } sinon si me == 2 && (autour & 5) == 0 {
+                        accord = 2;
+                    }
+                    si accord == 2 {
+                        sv = 0;
+                    } sinon si accord == 1 {
+                        sv = 4;
+                    } sinon si alterne == 1 && ((w * 8 + j + w * 3 + n + image) & 1) == 1 && ((ancien >> (j * 8)) & 128) == 128 {
+                        sv = (ancien >> (j * 8)) & 15;
+                    } sinon {
+                        soit v = w * 8 + j;
+                        soit nn = normale_de(@2[base + REP + n * 512 + v]);
+                        sv = soleil_vu(xl, yl, z0 + j, (nn & 255) - 128, ((nn >> 16) & 255) - 128, ((nn >> 32) & 255) - 128, 0);
+                    }
+                }
+                ms = ms | ((128 | sv) << (j * 8));
+            }
+        }
+    }
+    @2[lieu] = ms;
+}
+
+// la marque de la poussée (GLOB + 41) et l'axe le plus fort du soleil (GLOB + 42)
+fonction nouvelle_poussee() {
+    soit cur = @2[GLOB + 41] + 1;
+    @2[GLOB + 41] = cur;
+    soit ax = @2[SOLEILS + 12];
+    soit ay = @2[SOLEILS + 13];
+    soit az = @2[SOLEILS + 14];
+    si ax .< 0 {
+        ax = 0 - ax;
+    }
+    si ay .< 0 {
+        ay = 0 - ay;
+    }
+    si az .< 0 {
+        az = 0 - az;
+    }
+    soit axe = 2;
+    si ax >= ay && ax >= az {
+        axe = 0;
+    } sinon si ay >= az {
+        axe = 1;
+    }
+    @2[GLOB + 42] = axe;
+    retour cur;
+}
+
+// la mise en place : les points de surface de chaque mot (une fois : le relief ne bouge pas) ; la première poussée est
+// 2 (une case neuve, 0, ne passe pour aucune)
+fonction preparer_deux_faces() {
+    @2[GLOB + 41] = 1;
+    soit total = mots_du_calque();
+    pour q dans 0..total en bandes {
+        masque_mot(q);
+    }
+}
+
+fonction masque_mot(q) {
+    soit tr = tuile_du_mot(q);
+    soit t = tr & 255;
+    soit r = tr >> 8;
+    soit n = r >> 6;
+    soit w = r & 63;
+    soit b = @2[((FINV + t) << 24) + n];
+    soit x0 = (t % TUILES) * 256 + (b >> 10) * 8;
+    soit y0 = ((b >> 5) & 31) * 8;
+    soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
+    soit base = (FELT + t) << 24;
+    soit m = 0;
+    pour j dans 0..8 {
+        soit v = w * 8 + j;
+        soit el = @2[base + REP + n * 512 + v];
+        si el != 0 && ((el >> 2) & 63) != EAU {
+            si expose(x0 + (v >> 6), y0 + ((v >> 3) & 7), z0 + (v & 7)) == 1 {
+                m = m | (1 << j);
+            }
+        }
+    }
+    @2[((FMASQUE + t) << 24) + r] = m;
+}
+
+// pousser seul (la première image du jour : le calque y est fait en entier ; la poussée prépare la suivante)
+fonction pousser_deux_faces_processeur() {
+    soit cur = nouvelle_poussee();
+    soit axe = @2[GLOB + 42];
+    soit total = mots_du_calque();
+    pour q dans 0..total en segments {
+        pousser_mot(q, cur, axe);
+    }
+}
+
+fonction pousser_deux_faces_carte() {
+    soit cur = nouvelle_poussee();
+    soit axe = @2[GLOB + 42];
+    soit total = mots_du_calque();
+    pour q dans 0..total en segments {
+        pousser_mot(q, cur, axe);
+    }
+}
+
+fonction ranger_lumiere_deux_faces_processeur(image, alterne) {
+    pousser_deux_faces_processeur();
+    soit cur = @2[GLOB + 41];
+    soit total = mots_du_calque();
+    pour q dans 0..total en bandes {
+        etat_mot(q, cur);
+    }
+    pour q2 dans 0..total en bandes {
+        recevoir_mot(q2, image, alterne);
+    }
+}
+
+fonction ranger_lumiere_deux_faces_carte(image, alterne) {
+    pousser_deux_faces_carte();
+    soit cur = @2[GLOB + 41];
+    soit total = mots_du_calque();
+    pour q dans 0..total en segments {
+        etat_mot(q, cur);
+    }
+    pour q2 dans 0..total en segments {
+        recevoir_mot(q2, image, alterne);
+    }
+}
+
 // une image au processeur : chaque rangée à un cœur
 fonction image_processeur(cx, cy, cz, lacet, tangage, temps) {
     pour y dans 0..H en bandes {
@@ -2414,6 +2784,9 @@ fonction epreuve(vol, jour, sur_carte) {
     }
     preparer_soleil(360, 70, 0);
     ranger_lumiere(1, 0);
+    si PROGRESSIF >= 3 {
+        preparer_deux_faces();
+    }
     // 0.824 : la mise en place (pas comptée) : trois images et trois clepsydres (pour le même soleil : la même
     // lumière) ; chaque noyau de la carte s'y compile, et le vergobret y fait ses essais (la carte ou le processeur,
     // combien de cœurs) : rien de cela ne tombe plus pendant le vol ni le jour
@@ -2428,6 +2801,9 @@ fonction epreuve(vol, jour, sur_carte) {
             }
             si PROGRESSIF == 2 {
                 ranger_lumiere_eventail(0, mise);
+            }
+            si PROGRESSIF >= 3 {
+                ranger_lumiere_deux_faces_carte(mise, PROGRESSIF - 3);
             }
             ranger_lumiere_carte(0, 0);
         }
@@ -2456,7 +2832,11 @@ fonction epreuve(vol, jour, sur_carte) {
     pour i dans 0..jour {
         soit tj = horloge();
         preparer_soleil(300 + i * 3, 50 + i, 0);
-        si sur_carte == 0 && PROGRESSIF == 1 && i > 0 {
+        si sur_carte == 0 && PROGRESSIF >= 3 && i > 0 {
+            ranger_lumiere_deux_faces_processeur(i, PROGRESSIF - 3);
+        } sinon si sur_carte != 0 && PROGRESSIF >= 3 && i > 0 {
+            ranger_lumiere_deux_faces_carte(i, PROGRESSIF - 3);
+        } sinon si sur_carte == 0 && PROGRESSIF == 1 && i > 0 {
             ranger_lumiere_progressive_processeur(0, i);
         } sinon si sur_carte == 0 && PROGRESSIF == 2 && i > 0 {
             ranger_lumiere_eventail_processeur(0, i);
@@ -2468,6 +2848,14 @@ fonction epreuve(vol, jour, sur_carte) {
             ranger_lumiere_eventail(0, i);
         } sinon {
             ranger_lumiere_carte(0, 0);
+        }
+        // la première image du jour : le calque entier ; la poussée prépare l'image suivante (ses deux images)
+        si PROGRESSIF >= 3 && i == 0 {
+            si sur_carte == 0 {
+                pousser_deux_faces_processeur();
+            } sinon {
+                pousser_deux_faces_carte();
+            }
         }
         image_gergovie(i, jour, i * 3, sur_carte);
         @2[TEMPS + i] = horloge() - tj;
