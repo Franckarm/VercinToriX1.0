@@ -1,20 +1,27 @@
-# Les agents de Vercintorix : le Vergobret, Gutuater, le Druide (0.846)
+# Les agents de Vercintorix : le Druide, Gutuater, le Vergobret (0.847)
 
-*Décidé le 24 novembre, refait le 26 avec le créateur : « mieux répartir les rôles ». Remplace la conception du 24
-(`docs/archives/gutuater-druide-conception.md`). Les trois sont des programmes déterministes et lisibles, pas une IA :
-chaque décision se retrouve dans un carnet ; sans eux (`VTX_GUTUATER=0`), la forge est la même sur toutes les machines.*
+*Décidé le 24 novembre, refait le 26 avec le créateur. Chaque agent a sa maison : le Druide dans le langage, Gutuater
+dans le processeur, le Vergobret dans la carte graphique. Remplace la conception du 24
+(`docs/archives/gutuater-druide-conception.md`) et la répartition du matin du 26 (où le Vergobret tenait l'exécution
+en général : c'était faux). Les trois sont des programmes déterministes et lisibles, pas une IA : chaque décision se
+retrouve dans un carnet ; sans eux (`VTX_GUTUATER=0`), la forge est la même sur toutes les machines.*
 
-## 1. Qui fait quoi : un moment, un rôle
+## 1. Qui fait quoi : une maison, un rôle
 
-| Agent | Son moment | Ce qu'il fait | Ce qu'il ne fait jamais |
+| Agent | Sa maison | Ce qu'il fait | Ce qu'il ne fait jamais |
 |---|---|---|---|
-| **Le Druide** | **l'écriture** (Ogmios, `lugus druide`) | il **conseille** : il lit le programme et dit ce qu'il voit, avec son état de Belnap ; il prépare les **potions** (le code proposé) ; il tient la **bibliothèque** (le code mort, ce qui définit quoi) ; il **se souvient** des bornes des variables (le relevé d'Ésus) et des cellules ; il **rapporte** ce que les autres agents ont appris | poser une potion sans le programmeur ; toucher l'ADN |
-| **Gutuater** | **la forge** | il **choisit les gènes** (les variantes que la forge sait faire : la carte directe, le lot, fondre ; à terme Ésus et le dépliage, aujourd'hui choisis par l'évolution du Druide) ; il **garde** (une variante infidèle est tue pour toujours ; les mêmes mots) | inventer une variante ; écrire du code machine (le blocage des appels au système reste hors de lui) |
-| **Le Vergobret** | **l'exécution** | il **mesure et choisit** : la carte ou le processeur, combien de fils, le lot exprimé ou non quand Gutuater ne sait pas ; il écrit ses mesures pour Gutuater | changer une largeur (il reste en 64 bits, côté graphique, sans bascule automatique : décision du 25 novembre) |
-| **Ésus** (dans la forge) | **la forge** | l'épisseur du cœur : il prouve les bornes et prend l'opération de 64 bits quand tout y tient ; il change une division par une constante en multiplication | changer une valeur (sa preuve est sa garde) |
+| **Le Druide** | **le langage** (Ogmios, `lugus druide`, la forge) | il **conseille** : il lit le programme et dit ce qu'il voit, avec son état de Belnap ; il prépare les **potions** (le code proposé) ; il tient la **bibliothèque** (le code mort, ce qui définit quoi) ; il **fait évoluer** le cœur (Ésus, le dépliage : `druide/druide.vtx`) ; il **rapporte** ce que les deux autres ont appris | poser une potion sans le programmeur ; toucher l'ADN |
+| **Gutuater** | **le processeur** : le graphisme et la 3D quand ils tournent au processeur | il tient les gènes du processeur : la **carte directe** (le monde d'un seul tenant), les **fils** (combien de cœurs pour une boucle : le réglage, `gutuater.savoir`), la carte des pages de l'étage 2 ; il mesure, apprend, se souvient (`gutuater/gutuater.vtx`) | inventer une variante ; écrire du code machine (le blocage des appels au système reste hors de lui) |
+| **Le Vergobret** | **la carte graphique** (Taranis) | il tient les gènes de la carte : le **lot** (les boucles d'une image en un envoi), **fondre** (le lot en un seul noyau, avec sa garde), le choix **la carte ou le processeur** pour une boucle qui sait aller à la carte (`vergobret/vergobret.vtx`) | changer une largeur (il reste en 64 bits, sans bascule automatique : décision du 25 novembre) |
+| **Ésus** (dans la forge) | le cœur, conduit par le Druide | l'épisseur : il prouve les bornes et prend l'opération de 64 bits quand tout y tient ; il change une division par une constante en multiplication | changer une valeur (sa preuve est sa garde) |
 
-La chaîne : **le Druide** (ce qu'on écrit) → **Gutuater** (ce qu'on forge) → **le Vergobret** (ce qui tourne) → ses
-mesures reviennent à Gutuater, et ce que Gutuater apprend revient au Druide, qui le dit au programmeur.
+La chaîne : **le Druide** (ce qu'on écrit) → la forge → le programme forgé, qui mesure : ce qui tourne au processeur va
+à **Gutuater**, ce qui tourne sur la carte au **Vergobret** ; chacun en tire son ARN, que la forge et le programme
+lisent ensuite, et le Druide le dit au programmeur.
+
+Les deux carnets suivent la même loi des preuves : un seul moteur, `gutuater/carnet.vtx` (avec `synapse.vtx`), que
+`gutuater.vtx` et `vergobret.vtx` appellent chacun sous son nom. Les messages du programme forgé (`VTX_REGLAGE=1`)
+disent qui parle : « gutuater : la boucle de la ligne … : apprend, 2 cœur(s) », « vergobret : le lot … : fondu … ».
 
 ## 2. Une seule mémoire : le nemeton
 
@@ -25,9 +32,10 @@ dans un dossier neuf, repartait d'un Gutuater qui ne savait rien).
 
 | Fichier du nemeton | Écrit par | Lu par |
 |---|---|---|
-| `gutuater.mesures` | le Vergobret (et le programme forgé : « temps GENE LIEU VARIANTE µs ») | Gutuater |
-| `gutuater.carnet` | Gutuater (ses synapses) | Gutuater |
-| `gutuater.arn` | Gutuater (le plan : « GENE LIEU ÉTAT ») | la forge, le Vergobret, le Druide |
+| `gutuater.mesures` | le programme forgé, au processeur (« temps carte_directe 0 VARIANTE µs ») | Gutuater |
+| `gutuater.carnet`, `gutuater.arn` | Gutuater (ses synapses ; le plan : « GENE LIEU ÉTAT ») | la forge (la carte directe), le Druide |
+| `vergobret.mesures` | le programme forgé, sur la carte (« mesure lot LIEU A B », « infidele fondre LIEU ») | le Vergobret |
+| `vergobret.carnet`, `vergobret.arn` | le Vergobret | le programme forgé (le lot, fondre), le Druide |
 | `druide.conseils` | (à venir : la forge et le Druide d'évolution) | le Druide conseiller |
 
 Un ARN posé à côté de l'exécutable passe avant le nemeton (les essais, les tests). `VTX_NEMETON_DIRE=1` dit où il est.
@@ -41,7 +49,7 @@ Le **lieu** d'un gène est l'empreinte de sa molécule et de son arbre sans les 
 
 ## 4. Une seule synapse
 
-Les deux carnets suivent les mêmes règles de Belnap : il faut un poids de 3 d'un côté, et trois fois plus que de l'autre,
+Les carnets suivent les mêmes règles de Belnap : il faut un poids de 3 d'un côté, et trois fois plus que de l'autre,
 pour croire (vrai) ou nier (faux) ; sinon inconnu, ou variable quand les preuves se contredisent ; l'usure au-delà de 24 ;
 une infidélité est une preuve contre définitive. Le seuil d'une petite preuve tremble (la résonance stochastique). La
 synapse est écrite une fois, en vtx (`gutuater/synapse.vtx`) ; le Druide d'évolution en garde une copie qui suit les mêmes
@@ -63,6 +71,7 @@ Le Druide :
 
 Ce que savent les agents de ce programme :
 · Gutuater : la carte directe (le monde d'un seul tenant au processeur) : vrai
+· le Vergobret : le lot 670194876 (les boucles de la carte en un envoi) : vrai
 ```
 
 Chaque conseil porte son état : **sûr** (vrai), **à vérifier** (inconnu), **selon le cas** (variable). Ce qu'il sait voir
@@ -77,7 +86,7 @@ console) :
 5. `si … == vrai` (inconnu et variable rangés avec le non : selon le cas) ;
 6. une fonction que rien n'appelle dans le fichier (la bibliothèque : du code mort, ou une fonction pour ceux qui
    l'importent : à vérifier) ;
-7. ce que Gutuater a appris de ce programme (son ARN, dans le nemeton).
+7. ce que Gutuater et le Vergobret ont appris de ce programme (leurs ARN, dans le nemeton).
 
 **Les potions sont proposées, jamais posées** : on les recopie depuis la fenêtre des explications. Le geste qui les pose
 (à la bonne place, après la garde des mêmes mots) viendra ensuite. Le Druide lit les jetons du texte (pas l'arbre du
@@ -86,8 +95,9 @@ compilateur) : il peut se tromper de contexte, d'où l'état « à vérifier » 
 ## 6. Ce qui reste (dans l'ordre)
 
 - La mémoire du Druide d'évolution dans le nemeton ; sa synapse fondue dans `synapse.vtx`.
-- Les gènes d'Ésus et du dépliage choisis par Gutuater (le Druide garde la connaissance, Gutuater la décision).
+- Les gènes de Gutuater qui manquent : les bandes et les segments (aujourd'hui choisis par la forge), la place des
+  cubes en mémoire (voir l'écart avec le C++, `vtx-passation.md`, 0.847).
 - Le geste qui pose une potion (dans Ogmios), avec la garde : les mêmes mots, la même sortie.
 - Le Druide qui lit l'arbre du compilateur (vtxc128 sur une machine fille, comme le lecteur d'ADN) au lieu des jetons.
 - La garde des mêmes mots, automatique (Gutuater compare vtx128.py et vtxc128 sur ce qu'il forge).
-- Le Vergobret écrit en vtx.
+- Le réglage des fils (le choix des cœurs) écrit en vtx, dans Gutuater.

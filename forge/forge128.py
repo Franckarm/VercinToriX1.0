@@ -986,7 +986,7 @@ class Forge(V.Generateur):
                                                   f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) = v as {ty}; }} }} else "
                                                   f"{{ c.ecrire(etg(a, {et}), v); }} }}")) + ";")
             elif et == 2:
-                # 0.805 : l'étage 2 par la carte du vergobret
+                # 0.805 : l'étage 2 par la carte des pages (Gutuater)
                 a = self.val(adr, "e")
                 v = self.val(val)
                 self.ligne(self.b([a, v], "c.ecrire2({0}, {1})") + ";")
@@ -1366,7 +1366,7 @@ class Forge(V.Generateur):
     def part_des_coeurs(self, notes, bandes):
         """La part de chaque cœur : un fil par cœur et par passage (std::thread::scope), pour les cylindres en segments et
         les bandes dont les notes ne sont pas les segments d'une même boucle. 0.806 : les bandes d'une même boucle vont à
-        l'équipe du vergobret (equipe_en_morceaux) ; l'alourdissement vu en 0.77 venait des variables prises par la tâche
+        l'équipe de Gutuater (equipe_en_morceaux) ; l'alourdissement vu en 0.77 venait des variables prises par la tâche
         sans être copiées : copiées (move), la fonction jouée sur un seul cœur ne s'alourdit plus."""
         m = len(notes)
         self.ligne("let recoltes: Vec<Recolte> = std::thread::scope(|sc| {")
@@ -1406,7 +1406,7 @@ class Forge(V.Generateur):
         self.ligne("});")
 
     def equipe_en_morceaux(self, notes):
-        """0.806 : le vergobret : la boucle entière [a, b) coupée à l'exécution en morceaux (quatre par cœur, alignés sur
+        """0.806 : Gutuater : la boucle entière [a, b) coupée à l'exécution en morceaux (quatre par cœur, alignés sur
         le pas) ; l'équipe de cœurs (créée une fois, gardée vivante : equipe_jouer) les prend l'un après l'autre (un
         compteur partagé) : chaque cœur libre prend le suivant, quel que soit le nombre de cœurs ou le coût de chaque
         morceau. Les variables de la fonction sont copiées dans la tâche (move) : la fonction jouée sur un seul cœur garde
@@ -1508,10 +1508,10 @@ class Forge(V.Generateur):
                    and (st[6] if len(st) > 6 else 1) == (notes[0][6] if len(notes[0]) > 6 else 1) for st in notes)
         self.ligne("{")
         self.niveau += 1
-        # 0.810 : le réglage de cette boucle (le vergobret mesure : combien de cœurs lui vont le mieux)
+        # 0.810 : le réglage de cette boucle (Gutuater mesure : combien de cœurs lui vont le mieux)
         self.nreglages = getattr(self, "nreglages", 0) + 1
         site = f"REGLAGE_{self.nreglages}"
-        # 0.812 : la clé de la boucle pour la mémoire du vergobret : son programme, sa ligne et son corps
+        # 0.812 : la clé de la boucle pour la mémoire de Gutuater : son programme, sa ligne et son corps
         h = 14695981039346656037
         for o in f"{getattr(self, 'nom_programme', '')}:{ligne}:{notes!r}".encode("utf-8"):
             h = ((h ^ o) * 1099511628211) & M64
@@ -1975,7 +1975,7 @@ class Forge(V.Generateur):
                                                             f".wrapping_sub({zone[1]}) as usize; if !z{k}.is_null() && i < "
                                                             f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) as u128 }} }} else "
                                                             f"{{ c.lire(etg(a, {e[1]})) }} }}"))
-            # 0.805 : l'étage 2 par la carte du vergobret
+            # 0.805 : l'étage 2 par la carte des pages (Gutuater)
             if e[1] == 2:
                 return self.b([self.val(e[2], "e")], "c.lire2({0})")
             if isinstance(e[1], int) and e[2][0] == "nombre":
@@ -2513,7 +2513,7 @@ def programme_rust(src, dossier=None, nom="programme"):
          f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n"]
     s += [x.replace(MARQUE, "") for x in fonctions]
     s.append(code_zones(fo.plan or {}))
-    # 0.810 : le réglage de chaque boucle « en bandes » (le vergobret mesure)
+    # 0.810 : le réglage de chaque boucle « en bandes » (Gutuater mesure)
     for r, h in sorted(set(getattr(fo, "reglages", []))):
         s.append(f"#[allow(dead_code)]\nstatic {r}: Reglage = Reglage::neuf({h}u64);")
     # 0.816 : le choix de la carte ou du processeur, pour chaque boucle qui sait aller à la carte

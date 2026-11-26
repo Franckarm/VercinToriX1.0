@@ -13,7 +13,7 @@ import tempfile
 
 racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
-GUT = os.path.join(racine, "gutuater", "gutuater.vtx")
+GUT = os.path.join(racine, "vergobret", "vergobret.vtx")
 D = tempfile.mkdtemp(prefix="fondre-")
 echecs = []
 LIEU = ["?"]      # 0.845 : le lieu d'un lot est l'empreinte de sa boucle (dite par la forge), plus sa ligne
@@ -46,7 +46,7 @@ def jouer(exe):
 
 dossier, exe, dit, attendu = forger("fidele")
 verifier("la forge fond le lot fidèle (la garde : 120 et 200)", "se fond aussi en un noyau" in dit and "[120, 200]" in dit, dit[-300:])
-open(os.path.join(dossier, "gutuater.arn"), "w").write(f"fondre {LIEU[0]} vrai\n")
+open(os.path.join(dossier, "vergobret.arn"), "w").write(f"fondre {LIEU[0]} vrai\n")
 rc, sortie, err = jouer(exe)
 if "pas de carte" in err:
     print("pas de carte : rien d'autre n'est joué")
@@ -55,14 +55,14 @@ verifier(f"fondu, le même résultat que Lugus ({attendu})", rc == 0 and sortie 
 verifier("le vergobret a suivi l'ARN (fondu, sans essai)", "fondre vrai" in err or rc == 0, err[-200:])
 
 dossier, exe, dit, attendu = forger("infidele")
-open(os.path.join(dossier, "gutuater.arn"), "w").write(f"fondre {LIEU[0]} vrai\n")
+open(os.path.join(dossier, "vergobret.arn"), "w").write(f"fondre {LIEU[0]} vrai\n")
 rc, sortie, err = jouer(exe)
 verifier("infidèle : la garde arrête la machine", rc == 3 and "pas fidèle" in err, f"{rc} {err[-300:]}")
-mes = open(os.path.join(dossier, "gutuater.mesures")).read() if os.path.exists(os.path.join(dossier, "gutuater.mesures")) else ""
-verifier("et le note pour Gutuater", f"infidele fondre {LIEU[0]}" in mes, mes)
+mes = open(os.path.join(dossier, "vergobret.mesures")).read() if os.path.exists(os.path.join(dossier, "vergobret.mesures")) else ""
+verifier("et le note pour le Vergobret", f"infidele fondre {LIEU[0]}" in mes, mes)
 r = subprocess.run([LUGUS, GUT], input=dossier + "\n", capture_output=True, text=True, encoding="utf-8")
-arn = open(os.path.join(dossier, "gutuater.arn")).read()
-verifier("Gutuater le tait pour toujours", f"fondre {LIEU[0]} faux" in arn and "infidèle" in r.stdout, r.stdout + arn)
+arn = open(os.path.join(dossier, "vergobret.arn")).read()
+verifier("le Vergobret le tait pour toujours", f"fondre {LIEU[0]} faux" in arn and "infidèle" in r.stdout, r.stdout + arn)
 rc, sortie, err = jouer(exe)
 verifier(f"relancé : le lot séparé, le résultat de Lugus ({attendu})", rc == 0 and sortie == attendu, f"{rc} {sortie} {err[-200:]}")
 

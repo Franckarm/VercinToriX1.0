@@ -1,0 +1,15 @@
+// machine : lugus
+// Le Vergobret (0.847) : le magistrat qui vit dans la carte graphique (Taranis). Il tient les gènes de la carte : le
+// lot (les boucles d'une image envoyées ensemble) et fondre (le lot fondu en un seul noyau). Le programme forgé mesure
+// et écrit vergobret.mesures ; lui en tire vergobret.arn, dans le nemeton, que le programme lit à son lancement. Même
+// carnet, mêmes règles de preuve que Gutuater (../gutuater/carnet.vtx, ../gutuater/synapse.vtx) : chaque agent a sa
+// maison, la loi des preuves est commune.
+//
+//     lugus vergobret/vergobret.vtx    (il lit une ligne : le nemeton du programme)
+
+importer "../gutuater/synapse.vtx";
+importer "../gutuater/carnet.vtx";
+
+fonction principal() {
+    tenir_carnet(dossier_lu(), "vergobret", "Vergobret");
+}

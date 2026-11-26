@@ -237,6 +237,8 @@ belenos/gergovie_etages.vtx
 belenos/gergovie_ref.cpp
 gutuater/gutuater.vtx
 gutuater/synapse.vtx
+gutuater/carnet.vtx
+vergobret/vergobret.vtx
 tests/test_gutuater.py
 tests/test_fondre.py
 tests/fondre/fidele.vtx

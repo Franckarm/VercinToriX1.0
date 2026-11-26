@@ -779,3 +779,34 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   processeur 21,3 / 13,1 avec la carte directe, 17,9 / 10,5 sans ; Gutuater l'a apprise dans le nemeton (pour 3,
   contre 0, 15 % de gagné) et la forge normale l'a lue. Corrigé ensuite : le Druide prenait l'en-tête de l'ARN (« # … »)
   pour un gène.
+
+## 0.847 (en cours, 26 novembre)
+
+**Fait.**
+- Le nom « atelier » a disparu : le binaire `atelier` n'existe plus (seul `ogmios`), `vtx ogmios PROG.vtx`, le module
+  `ogmios_console.rs`, le test `tests/test_ogmios_console.py` ; les textes, l'association des fichiers, les tests.
+  Point fixe renouvelé (vtxc128 277846 mots, vtxc64 266557).
+- Les agents à leur maison (docs/vtx-agents.md) : Gutuater au processeur (la carte directe, les fils :
+  `gutuater.savoir`), le Vergobret à la carte (le lot, fondre, la carte ou le processeur : `vergobret.arn`,
+  `vergobret.mesures`), le Druide au langage. Un seul moteur de carnet : `gutuater/carnet.vtx`, appelé par
+  `gutuater/gutuater.vtx` et `vergobret/vergobret.vtx`.
+- Ogmios manquait sur le PC du créateur : l'essai 0.846b ne construisait que lugus. `ogmios-0.846b.bat` le construit et
+  pose le raccourci ; les essais suivants doivent toujours construire ogmios.
+
+**L'écart avec le C++ au processeur (Gergovie, la moitié de l'échelle, un fil, callgrind).**
+- Le même travail : par image, le même nombre de rayons (6 093 432 pour 6 images) et de pas de tracer (141 256 598,
+  à 49 près). L'écart n'est pas dans l'algorithme.
+- Par image, vtx exécute 1,45 fois les instructions du C++ (28,05 G contre 19,33 G pour 6 images), comme le temps
+  mesuré. 84 % sont dans `tracer` : 165 instructions par pas contre 117.
+- Où vont les 48 instructions de plus d'un pas : chaque lecture du cube (2,4 par pas) refait l'adresse globale
+  ((F << 24) + i, masquée sur 48 bits), la redécoupe en page et place, vérifie la page (dans la carte, non nulle),
+  charge le pointeur de la carte, puis celui de la page, puis le mot (16 octets) : environ 14 instructions et trois
+  lectures dépendantes, contre 1 à 2 instructions et une lecture en C++ (le tableau `DIRE[0]` reste dans un registre).
+  Environ 30 des 48 viennent de là. Le reste : des variables rangées sur la pile (le contexte et le masque prennent
+  des registres).
+- Une page retenue par lieu de lecture (essai à la main dans le Rust forgé) n'ôte que 4 % : ce n'est pas la carte qui
+  coûte, c'est de traduire l'adresse en logiciel à chaque lecture.
+- Proposé au créateur, pas encore fait : laisser le processeur traduire l'adresse lui-même (sa mémoire virtuelle, sa
+  table des pages, son TLB) en réservant l'étage 2 d'un seul tenant (les pages engagées à la demande par le système).
+  La lecture devient la base, plus l'adresse ; la base sort de la boucle comme en C++. Aussi à mesurer : des mots de
+  8 octets pour un programme `dunon;` côté graphique (la moitié du cache), à peser avec la liste 128.

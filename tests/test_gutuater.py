@@ -93,5 +93,15 @@ r = subprocess.run([LUGUS, GUT], input=D + "\n", capture_output=True, text=True,
 arn_t = open(os.path.join(D, "gutuater.arn"), encoding="utf-8").read()
 verifier("la paire : 15 s contre 19 s, la carte directe : vrai", "carte_directe 0 vrai" in arn_t, arn_t + r.stdout)
 
+# 0.847 : le Vergobret (la carte graphique) tient son carnet avec le même moteur, sous son nom
+VER = os.path.join(racine, "vergobret", "vergobret.vtx")
+with open(os.path.join(D, "vergobret.mesures"), "w", encoding="utf-8") as f:
+    f.write("mesure lot 77 8000 9500\n" * 2)
+r = subprocess.run([LUGUS, VER], input=D + "\n", capture_output=True, text=True, encoding="utf-8")
+arn_v = open(os.path.join(D, "vergobret.arn"), encoding="utf-8").read()
+verifier("le Vergobret : son ARN à son nom (le lot 77 : vrai), celui de Gutuater intact",
+         "lot 77 vrai" in arn_v and "carte_directe 0 vrai" in open(os.path.join(D, "gutuater.arn"), encoding="utf-8").read(),
+         arn_v + r.stdout + r.stderr)
+
 print("Tout est conforme" if not echecs else f"{len(echecs)} échec(s)")
 sys.exit(1 if echecs else 0)

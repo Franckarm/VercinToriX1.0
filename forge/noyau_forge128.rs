@@ -34,7 +34,7 @@ struct Ctx {
     vider: fn(&mut Ctx),
     // la machine d'un cylindre (les segments joués ensemble) : elle lit le cube commun, et n'écrit que dans le sien
     ombre: Option<Box<Cylindre>>,
-    // 0.805 : la carte du vergobret : pour chaque page de l'étage 2 (là où vivent les données d'un programme), le
+    // 0.805 : la carte des pages (Gutuater) : pour chaque page de l'étage 2 (là où vivent les données d'un programme), le
     // pointeur sur son premier mot, pour lire (c2l) et pour écrire (c2e) ; en bandes, les mots lus (r2) et écrits (w2),
     // un bit par mot (la promesse). Lire un mot de l'étage 2 n'est plus que : numéro de page, pointeur, mot. Une page
     // entre dans la carte à sa première lecture ou écriture ; la carte est oubliée avec le petit cache (oublier_pages)
@@ -268,12 +268,12 @@ fn cylindres_voulus() -> usize {
         .unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)))
 }
 
-/// 0.810 : le vergobret mesure : une règle sans rien savoir du processeur (ni ses cœurs réels, ni ses fils jumeaux, ni sa
+/// 0.810 : Gutuater mesure : une règle sans rien savoir du processeur (ni ses cœurs réels, ni ses fils jumeaux, ni sa
 /// mémoire). Chaque boucle « en bandes » a son réglage : elle essaie tous les fils que la machine offre, puis la moitié,
 /// le quart… (deux passages chacun, le temps de chaque passage) tant que c'est plus rapide ; puis elle garde le
 /// meilleur. Le résultat ne dépend pas du nombre de cœurs (la promesse des bandes) : seul le temps change.
-/// 0.812 : le vergobret apprend (une petite intelligence, honnêtement nommée : une mémoire et un plus proche voisin).
-/// - il se souvient : ce qu'il a appris est rangé dans `vergobret.savoir`, à côté du programme (une ligne par boucle :
+/// 0.812 : Gutuater apprend (une petite intelligence, honnêtement nommée : une mémoire et un plus proche voisin).
+/// - il se souvient : ce qu'il a appris est rangé dans `gutuater.savoir`, à côté du programme (une ligne par boucle :
 ///   sa clé, le nombre de fils de la machine, le meilleur nombre de cœurs, son temps, le temps sur tous les fils) ;
 ///   au lancement suivant, la boucle prend tout de suite ce qu'il sait ;
 /// - il devine : une boucle jamais vue est d'abord mesurée sur tous les fils ; s'il connaît une boucle qui coûtait à
@@ -336,7 +336,7 @@ fn fichier_savoir() -> Option<std::path::PathBuf> {
     if std::env::var("VTX_VERGOBRET").map_or(false, |v| v == "0") {
         return None;
     }
-    std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("vergobret.savoir")))
+    std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.join("gutuater.savoir")))
 }
 
 #[allow(dead_code)]
@@ -345,7 +345,7 @@ fn retenir(sv: Souvenir) {
     v.retain(|x| !(x.0 == sv.0 && x.1 == sv.1));
     v.push(sv);
     if let Some(f) = fichier_savoir() {
-        let mut t = String::from("# vergobret : ce qu'il a appris (clé de la boucle, fils de la machine, meilleur nombre de cœurs, son temps, le temps sur tous les fils)\n");
+        let mut t = String::from("# gutuater : ce qu'il a appris (clé de la boucle, fils de la machine, meilleur nombre de cœurs, son temps, le temps sur tous les fils)\n");
         for x in v.iter() {
             t += &format!("{:016x} {} {} {:e} {:e}\n", x.0, x.1, x.2, x.3, x.4);
         }
@@ -355,6 +355,15 @@ fn retenir(sv: Souvenir) {
 
 #[allow(dead_code)]
 fn dire_reglage(m: String) {
+    // 0.847 : les fils du processeur (combien de cœurs pour une boucle) : c'est Gutuater, qui vit dans le processeur
+    if std::env::var("VTX_REGLAGE").is_ok() {
+        eprintln!("gutuater : {}", m);
+    }
+}
+
+/// 0.847 : la carte graphique (la carte ou le processeur pour une boucle, le lot, fondre) : c'est le Vergobret
+#[allow(dead_code)]
+fn dire_vergobret(m: String) {
     if std::env::var("VTX_REGLAGE").is_ok() {
         eprintln!("vergobret : {}", m);
     }
@@ -546,7 +555,7 @@ impl Choix {
                 if !la_carte {
                     e.1 = f64::MAX;
                 }
-                dire_reglage(format!("la boucle de la ligne {} : la carte {:.1} ms, le processeur {:.1} ms : {}", ligne,
+                dire_vergobret(format!("la boucle de la ligne {} : la carte {:.1} ms, le processeur {:.1} ms : {}", ligne,
                                      tc * 1e3, e.2 * 1e3, if la_carte { "la carte" } else { "le processeur" }));
             }
             _ => {}
@@ -947,7 +956,7 @@ fn case(k: u128) -> usize {
 }
 
 impl Ctx {
-    /// 0.805 : lire un mot de l'étage 2 (a : son adresse dans l'étage) par la carte du vergobret
+    /// 0.805 : lire un mot de l'étage 2 (a : son adresse dans l'étage) par la carte des pages (Gutuater)
     #[inline(always)]
     fn lire2(&mut self, a: u128) -> u128 {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
@@ -1011,7 +1020,7 @@ impl Ctx {
         }
         v
     }
-    /// 0.805 : écrire un mot de l'étage 2 par la carte du vergobret
+    /// 0.805 : écrire un mot de l'étage 2 par la carte des pages (Gutuater)
     #[inline(always)]
     fn ecrire2(&mut self, a: u128, v: u128) {
         let idx = (a as u64) & 0xFFFF_FFFF_FFFF;
@@ -1638,8 +1647,8 @@ fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &'stati
         // 0.821 : Taranis, le noyau de la carte
         // 0.824 : VTX_LOT=0 : chaque boucle part seule (sans lot)
         let differe = differe && std::env::var("VTX_LOT").map_or(true, |v| v != "0");
-        // 0.825 : le gène « lot » : Gutuater (son ARN) dit s'il s'exprime ; inconnu ou variable : le vergobret mesure
-        // le lot avec et sans, et note ses mesures pour Gutuater
+        // 0.825 : le gène « lot » : le Vergobret (son ARN) dit s'il s'exprime ; inconnu ou variable : le programme mesure
+        // le lot avec et sans, et note ses mesures pour le Vergobret
         if lieu == 0 {
             return taranis_direct(c, spv64r, a, b, ext, region, differe);
         }
@@ -1655,10 +1664,10 @@ fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &'stati
     taranis_boucle_pages_(c, choisi, a, b, ext, true, false)
 }
 
-/// 0.825 : Gutuater, le gène « lot ». Son ARN (gutuater.arn, à côté du programme) dit, pour chaque lot (la ligne de
+/// 0.825 : le gène « lot » (0.847 : au Vergobret, qui vit dans la carte). Son ARN (vergobret.arn, dans le nemeton) dit, pour chaque lot (la ligne de
 /// sa première boucle) : vrai, le lot s'exprime ; faux, il est tu (chaque boucle part seule) ; inconnu ou variable, le
 /// vergobret le mesure : un passage pour chauffer, puis sans, avec, sans, avec (le meilleur de chaque), et il garde le
-/// plus rapide pour la suite ; ses mesures vont dans gutuater.mesures, que Gutuater lira. VTX_GUTUATER=0 : rien de
+/// plus rapide pour la suite ; ses mesures vont dans vergobret.mesures, que le Vergobret lira. VTX_GUTUATER=0 : rien de
 /// tout cela (le lot, toujours, comme en 0.824).
 #[allow(dead_code)]
 struct GeneLot {
@@ -1695,7 +1704,7 @@ fn dossier_gutuater() -> Option<std::path::PathBuf> {
     D.get_or_init(|| {
         let ici = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf()));
         if let Some(d) = &ici {
-            if d.join("gutuater.arn").exists() || d.join("gutuater.mesures").exists() {
+            if ["gutuater.arn", "gutuater.mesures", "vergobret.arn", "vergobret.mesures"].iter().any(|f| d.join(f).exists()) {
                 return ici;
             }
         }
@@ -1717,27 +1726,32 @@ fn dossier_gutuater() -> Option<std::path::PathBuf> {
     }).clone()
 }
 
-/// l'ARN : (gène, lieu) → l'état (0 inconnu, 1 faux, 2 vrai, 3 variable)
+/// l'ARN d'un agent (« gutuater » : le processeur ; « vergobret » : la carte) : (gène, lieu) → l'état (0 inconnu,
+/// 1 faux, 2 vrai, 3 variable)
 #[allow(dead_code)]
-fn arn_gutuater() -> &'static std::collections::HashMap<(String, u32), u8> {
-    static A: std::sync::OnceLock<std::collections::HashMap<(String, u32), u8>> = std::sync::OnceLock::new();
-    A.get_or_init(|| {
-        let mut a = std::collections::HashMap::new();
-        if let Some(d) = dossier_gutuater() {
-            if let Ok(t) = std::fs::read_to_string(d.join("gutuater.arn")) {
-                for l in t.lines() {
-                    let m: Vec<&str> = l.split_whitespace().collect();
-                    if m.len() >= 3 && !m[0].starts_with('#') {
-                        if let Ok(lieu) = m[1].parse::<u32>() {
-                            let e = match m[2] { "faux" => 1, "vrai" => 2, "variable" => 3, _ => 0 };
-                            a.insert((m[0].to_string(), lieu), e);
-                        }
+fn lire_arn(agent: &str) -> std::collections::HashMap<(String, u32), u8> {
+    let mut a = std::collections::HashMap::new();
+    if let Some(d) = dossier_gutuater() {
+        if let Ok(t) = std::fs::read_to_string(d.join(format!("{}.arn", agent))) {
+            for l in t.lines() {
+                let m: Vec<&str> = l.split_whitespace().collect();
+                if m.len() >= 3 && !m[0].starts_with('#') {
+                    if let Ok(lieu) = m[1].parse::<u32>() {
+                        let e = match m[2] { "faux" => 1, "vrai" => 2, "variable" => 3, _ => 0 };
+                        a.insert((m[0].to_string(), lieu), e);
                     }
                 }
             }
         }
-        a
-    })
+    }
+    a
+}
+
+/// 0.847 : l'ARN du Vergobret (la carte graphique : le lot, fondre)
+#[allow(dead_code)]
+fn arn_vergobret() -> &'static std::collections::HashMap<(String, u32), u8> {
+    static A: std::sync::OnceLock<std::collections::HashMap<(String, u32), u8>> = std::sync::OnceLock::new();
+    A.get_or_init(|| lire_arn("vergobret"))
 }
 
 #[allow(dead_code)]
@@ -1754,13 +1768,13 @@ fn gene_lot_debut(lieu: u32, premiere: bool) -> bool {
     }
     let mut gs = genes_lot().lock().unwrap();
     let g = gs.entry(lieu).or_insert_with(|| {
-        let e = arn_gutuater().get(&("lot".to_string(), lieu)).copied().unwrap_or(0);
+        let e = arn_vergobret().get(&("lot".to_string(), lieu)).copied().unwrap_or(0);
         let choisi = match e { 2 => Some(true), 1 => Some(false), _ => None };
         match e {
-            2 => dire_reglage(format!("le lot {} : Gutuater dit vrai : il s'exprime, sans essai", lieu)),
-            1 => dire_reglage(format!("le lot {} : Gutuater dit faux : il est tu, sans essai", lieu)),
-            3 => dire_reglage(format!("le lot {} : Gutuater dit variable : je mesure encore", lieu)),
-            _ => dire_reglage(format!("le lot {} : Gutuater ne sait pas : je mesure", lieu)),
+            2 => dire_vergobret(format!("le lot {} : le Vergobret dit vrai : il s'exprime, sans essai", lieu)),
+            1 => dire_vergobret(format!("le lot {} : le Vergobret dit faux : il est tu, sans essai", lieu)),
+            3 => dire_vergobret(format!("le lot {} : le Vergobret dit variable : je mesure encore", lieu)),
+            _ => dire_vergobret(format!("le lot {} : le Vergobret ne sait pas : je mesure", lieu)),
         }
         GeneLot { passe: 0, avec: true, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi, inverse: bit_au_hasard() }
     });
@@ -1805,19 +1819,19 @@ fn gene_lot_fin(lieu: u32) {
     if g.passe == 5 {
         let avec = g.t_avec <= g.t_sans;
         g.choisi = Some(avec);
-        dire_reglage(format!("le lot {} : avec {:.1} ms, sans {:.1} ms : {} ; noté pour Gutuater", lieu,
+        dire_vergobret(format!("le lot {} : avec {:.1} ms, sans {:.1} ms : {} ; noté pour le Vergobret", lieu,
                              g.t_avec * 1e3, g.t_sans * 1e3, if avec { "le lot" } else { "chaque boucle seule" }));
         if let Some(d) = dossier_gutuater() {
             use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("vergobret.mesures")) {
                 let _ = writeln!(f, "mesure lot {} {} {}", lieu, (g.t_avec * 1e6) as u64, (g.t_sans * 1e6) as u64);
             }
         }
     }
 }
 
-/// 0.826 : le gène « fondre » : le lot de la ligne `lieu` en un seul noyau. Comme pour le lot : l'ARN de Gutuater dit
-/// vrai (fondu, sans essai), faux (séparé, sans essai) ; inconnu ou variable : le vergobret mesure (séparé pour chauffer,
+/// 0.826 : le gène « fondre » : le lot de la ligne `lieu` en un seul noyau. Comme pour le lot : l'ARN de le Vergobret dit
+/// vrai (fondu, sans essai), faux (séparé, sans essai) ; inconnu ou variable : le programme mesure (séparé pour chauffer,
 /// fondu pour chauffer, puis séparé, fondu, séparé, fondu) et garde le meilleur. Le noyau fondu ne va qu'à la carte, avec
 /// l'épissage rapide (Taranis) ; sinon, le lot séparé.
 static FONDRE_LIEU: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -1850,13 +1864,13 @@ fn gene_fondre_debut(lieu: u32) -> bool {
     }
     let mut gs = genes_fondre().lock().unwrap();
     let g = gs.entry(lieu).or_insert_with(|| {
-        let e = arn_gutuater().get(&("fondre".to_string(), lieu)).copied().unwrap_or(0);
+        let e = arn_vergobret().get(&("fondre".to_string(), lieu)).copied().unwrap_or(0);
         let choisi = match e { 2 => Some(true), 1 => Some(false), _ => None };
         match e {
-            2 => dire_reglage(format!("le lot {} : Gutuater dit fondre vrai : un seul noyau, sans essai", lieu)),
-            1 => dire_reglage(format!("le lot {} : Gutuater dit fondre faux : les étages séparés, sans essai", lieu)),
-            3 => dire_reglage(format!("le lot {} : Gutuater dit fondre variable : je mesure encore", lieu)),
-            _ => dire_reglage(format!("le lot {} : fondre, Gutuater ne sait pas : je mesure", lieu)),
+            2 => dire_vergobret(format!("le lot {} : le Vergobret dit fondre vrai : un seul noyau, sans essai", lieu)),
+            1 => dire_vergobret(format!("le lot {} : le Vergobret dit fondre faux : les étages séparés, sans essai", lieu)),
+            3 => dire_vergobret(format!("le lot {} : le Vergobret dit fondre variable : je mesure encore", lieu)),
+            _ => dire_vergobret(format!("le lot {} : fondre, le Vergobret ne sait pas : je mesure", lieu)),
         }
         GeneLot { passe: 0, avec: false, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi, inverse: bit_au_hasard() }
     });
@@ -1886,7 +1900,7 @@ fn gene_fondre_fin(lieu: u32, fondu: bool) {
     if g.avec && !fondu {
         // le noyau fondu a été refusé (la carte, un tour trop grand…) : les étages séparés, pour la suite
         if g.choisi != Some(false) {
-            dire_reglage(format!("le lot {} : le noyau fondu est refusé ; les étages séparés", lieu));
+            dire_vergobret(format!("le lot {} : le noyau fondu est refusé ; les étages séparés", lieu));
         }
         g.choisi = Some(false);
         return;
@@ -1905,11 +1919,11 @@ fn gene_fondre_fin(lieu: u32, fondu: bool) {
     if g.passe == 6 {
         let fondre = g.t_avec <= g.t_sans;
         g.choisi = Some(fondre);
-        dire_reglage(format!("le lot {} : fondu {:.1} ms, séparé {:.1} ms : {} ; noté pour Gutuater", lieu,
+        dire_vergobret(format!("le lot {} : fondu {:.1} ms, séparé {:.1} ms : {} ; noté pour le Vergobret", lieu,
                              g.t_avec * 1e3, g.t_sans * 1e3, if fondre { "un seul noyau" } else { "les étages séparés" }));
         if let Some(d) = dossier_gutuater() {
             use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("vergobret.mesures")) {
                 let _ = writeln!(f, "mesure fondre {} {} {}", lieu, (g.t_avec * 1e6) as u64, (g.t_sans * 1e6) as u64);
             }
         }
@@ -2192,17 +2206,17 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
         }
     };
     // 0.826 : le noyau fondu n'a pas tenu sa garde (un fil a touché la case d'un autre dans ce que les étages
-    // écrivent) : il n'est pas fidèle ; Gutuater le saura (une preuve contre définitive), et l'image n'est pas sûre
+    // écrivent) : il n'est pas fidèle ; le Vergobret le saura (une preuve contre définitive), et l'image n'est pas sûre
     if lot.iter().any(|&(_, _, _, r)| params[r * 64] == 2) {
         let lieu = FONDRE_LIEU.load(std::sync::atomic::Ordering::Relaxed);
         if let Some(d) = dossier_gutuater() {
             use std::io::Write;
-            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("gutuater.mesures")) {
+            if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(d.join("vergobret.mesures")) {
                 let _ = writeln!(f, "infidele fondre {}", lieu);
             }
         }
-        eprintln!("gutuater : le lot {} fondu en un noyau n'est pas fidèle (un fil a touché la case d'un \
-                   autre) ; noté pour Gutuater, qui le taira ; relancer", lieu);
+        eprintln!("vergobret : le lot {} fondu en un noyau n'est pas fidèle (un fil a touché la case d'un \
+                   autre) ; noté pour le Vergobret, qui le taira ; relancer", lieu);
         std::process::exit(3);
     }
     if lot.iter().any(|&(_, _, _, r)| params[r * 64] != 0) {

@@ -415,22 +415,29 @@ fonction savoir_des_agents(nemeton: texte): texte {
         d = d + "/";
     }
     soit r = "";
-    soit arn = lire_fichier(d + "gutuater.arn");
-    pour l dans decouper(arn, "\n") {
-        soit m = mots_de(l);
-        // une ligne qui commence par # est un commentaire de Gutuater (l'en-tête de son ARN)
-        si longueur(m) >= 3 && commence_par(l, "#") == 0 {
-            soit g: texte = m[0];
-            soit lieu: texte = m[1];
-            soit e: texte = m[2];
-            si g == "carte_directe" {
-                r = r + "savoir|Gutuater|la carte directe (le monde d'un seul tenant au processeur) : " + e + "\n";
-            } sinon si g == "lot" {
-                r = r + "savoir|Gutuater|le lot " + lieu + " (les boucles de la carte en un envoi) : " + e + "\n";
-            } sinon si g == "fondre" {
-                r = r + "savoir|Gutuater|le lot " + lieu + " fondu en un noyau : " + e + "\n";
-            } sinon {
-                r = r + "savoir|Gutuater|" + g + " " + lieu + " : " + e + "\n";
+    // 0.847 : deux maisons : Gutuater (le graphisme et la 3D au processeur), le Vergobret (la carte graphique)
+    pour agent dans ["gutuater", "vergobret"] {
+        soit qui = "Gutuater";
+        si agent == "vergobret" {
+            qui = "le Vergobret";
+        }
+        soit arn = lire_fichier(d + agent + ".arn");
+        pour l dans decouper(arn, "\n") {
+            soit m = mots_de(l);
+            // une ligne qui commence par # est un commentaire (l'en-tête de l'ARN)
+            si longueur(m) >= 3 && commence_par(l, "#") == 0 {
+                soit g: texte = m[0];
+                soit lieu: texte = m[1];
+                soit e: texte = m[2];
+                si g == "carte_directe" {
+                    r = r + "savoir|" + qui + "|la carte directe (le monde d'un seul tenant au processeur) : " + e + "\n";
+                } sinon si g == "lot" {
+                    r = r + "savoir|" + qui + "|le lot " + lieu + " (les boucles de la carte en un envoi) : " + e + "\n";
+                } sinon si g == "fondre" {
+                    r = r + "savoir|" + qui + "|le lot " + lieu + " fondu en un noyau : " + e + "\n";
+                } sinon {
+                    r = r + "savoir|" + qui + "|" + g + " " + lieu + " : " + e + "\n";
+                }
             }
         }
     }

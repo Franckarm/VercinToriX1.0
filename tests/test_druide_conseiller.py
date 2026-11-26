@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory() as d:
     nem = os.path.join(d, "nemeton", "conseils")
     os.makedirs(nem)
     open(os.path.join(nem, "gutuater.arn"), "w").write("# ARN de Gutuater, lu par le vergobret : gene, lieu, etat\ncarte_directe 0 vrai\n")
+    open(os.path.join(nem, "vergobret.arn"), "w").write("# ARN de Vergobret : gene, lieu, etat\nlot 12345 faux\n")
     r = subprocess.run([LUGUS, "druide", os.path.join(ICI, "druide", "conseils.vtx")], capture_output=True, text=True,
                        env=dict(os.environ, VTX_NEMETON=os.path.join(d, "nemeton")))
     t = r.stdout
@@ -39,7 +40,8 @@ with tempfile.TemporaryDirectory() as d:
                 "la potion : cube cube_49 @2 frequence 49;",
                 "ligne 15 (sûr) : une famille de cubes écrite à la main",
                 "ligne 17 (selon le cas) : « si … == vrai »",
-                "Gutuater : la carte directe (le monde d'un seul tenant au processeur) : vrai"]
+                "Gutuater : la carte directe (le monde d'un seul tenant au processeur) : vrai",
+                "le Vergobret : le lot 12345 (les boucles de la carte en un envoi) : faux"]
     for a in attendus:
         dire("le Druide dit : " + a, a in t, t)
     dire("l'en-tête de l'ARN (un commentaire) n'est pas pris pour un gène", "# ARN" not in t, t)
