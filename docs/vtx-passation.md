@@ -873,3 +873,9 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Pour B : séparer montrer (dans le temps) et l'empreinte (hors du temps, comme le C++), puis la chaîne d'échange de
   Vulkan (VK_KHR_surface, VK_KHR_win32_surface, VK_KHR_swapchain) sur la fenêtre de sortie.rs, l'image copiée de la
   carte à l'écran sans passer par le processeur ; chaque pas vérifié chez le créateur (pas de carte ici).
+- Chez le créateur, la 0.849b : **Taranis 81,6 au vol (55,2 avant), 38,8 au jour (32,1)**, les mêmes empreintes ; un
+  lancement de la carte 2,7 ms (rien ne redescend) ; les étages 47,4 / 28,9 ; le C++ 32,1 / 18,8 ; vtx au processeur
+  21,6 / 13,5. Corrigé : le Druide proposait de nommer un cube dont la fréquence est un paramètre (« fi »).
+- Question du créateur : les étages, le tapis roulant restent-ils ? Réponse : oui, comme gènes (exprimés ou tus selon
+  la mesure, par le Vergobret) ; les étages ne gagnent que si une partie de l'image ne change pas d'une image à
+  l'autre (la lumière seule qui bouge, l'œil fixe) ; à démontrer par une épreuve où l'œil s'arrête.

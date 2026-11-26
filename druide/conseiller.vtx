@@ -390,7 +390,13 @@ fonction voir_adresses(j: Jetons, cs: Conseils) {
                     famille = 1;
                 }
             }
-            si nb_par >= 1 && decale == 1 && (j.genres[q] == 1 || j.genres[q] == 2) {
+            // 0.849 : une fréquence qui n'est ni écrite ni une constante (un paramètre : etage_cache(i, fi)) n'est pas
+            // un cube à nommer
+            soit connue = j.genres[q] == 2;
+            si j.genres[q] == 1 && valeur_constante(j, f) != f {
+                connue = vrai;
+            }
+            si nb_par >= 1 && decale == 1 && connue {
                 soit cle: texte = e + ":" + f;
                 si rang_texte(vus, cle) == (0 - 1) {
                     ajouter(vus, cle);
