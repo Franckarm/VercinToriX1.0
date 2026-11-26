@@ -766,3 +766,12 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   la mémoire du Druide d'évolution dans le nemeton, sa synapse dans `synapse.vtx`, Ésus et le dépliage choisis par
   Gutuater, le geste qui pose une potion, le Druide qui lit l'arbre du compilateur.
 - Livraison : vtx-0.846.zip, essai-0.846.bat (réunit la 0.845 et la 0.846). Prochaine : vtx-0.847.
+
+## 0.846b (26 novembre) : Taranis à 7 images par seconde : l'essai, pas la carte
+- Chez le créateur, la 0.846 (comme la 0.844) : Taranis 7,1 au vol, 1,6 au jour (contre 53,8 en 0.843). La cause : mes
+  deux `.bat` posaient `VTX_EPISSAGE=rapide` à la forge mais pas au lancement ; sans lui, l'exécutable prend l'ancien
+  chemin de la carte (les pages, la promesse vérifiée), celui de la 0.816 (58 à 121 ms par image). Rien dans le code de la
+  carte n'avait changé.
+- **Réparé dans la forge** : un programme forgé avec `VTX_EPISSAGE=rapide` garde l'épissage rapide
+  (`EPISSAGE_RAPIDE_FORGE`) ; au lancement, `VTX_EPISSAGE=sur` l'éteint. Le piège ne peut plus revenir.
+- Livraison : vtx-0.846b.zip, essai-0.846b.bat (Taranis le témoin, puis Gutuater et la forge). Prochaine : vtx-0.847.

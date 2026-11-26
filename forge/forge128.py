@@ -2493,6 +2493,10 @@ def noyau(sortie=None, nom=None):
         texte = open(os.path.join(src, m + ".rs"), encoding="utf-8").read()
         mods.append(f"#[allow(dead_code, unused_imports, unused_variables)]\nmod {m} {{\n{texte}\n}}\n")
     n = open(os.path.join(ici, "noyau_forge128.rs"), encoding="utf-8").read()
+    if os.environ.get("VTX_EPISSAGE") == "rapide":
+        # 0.847 : l'épissage rapide de la carte, gardé dans l'exécutable (0.844 et 0.846 : un essai qui ne le redisait
+        # pas au lancement faisait tourner Taranis par l'ancien chemin, 7 images par seconde au lieu de 53)
+        n = n.replace("const EPISSAGE_RAPIDE_FORGE: bool = false;", "const EPISSAGE_RAPIDE_FORGE: bool = true;", 1)
     if carte_directe(sortie, nom):
         n = n.replace("const CARTE_DIRECTE: bool = false;", "const CARTE_DIRECTE: bool = true;", 1)
     return ATTRIBUTS + "\n" + n.replace("// @MODULES@", "\n".join(mods), 1)

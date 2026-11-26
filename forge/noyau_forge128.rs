@@ -2280,8 +2280,14 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
 #[allow(dead_code)]
 fn epissage_rapide() -> bool {
     static R: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *R.get_or_init(|| std::env::var("VTX_EPISSAGE").map_or(false, |v| v == "rapide"))
+    // 0.847 : forgé avec VTX_EPISSAGE=rapide, l'exécutable le garde (il ne faut plus le redire au lancement) ;
+    // VTX_EPISSAGE=sur au lancement l'éteint
+    *R.get_or_init(|| match std::env::var("VTX_EPISSAGE") {
+        Ok(v) => v == "rapide",
+        Err(_) => EPISSAGE_RAPIDE_FORGE,
+    })
 }
+const EPISSAGE_RAPIDE_FORGE: bool = false;
 
 #[allow(dead_code)]
 fn verif_carte() -> bool {
