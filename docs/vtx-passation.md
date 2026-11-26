@@ -825,3 +825,26 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Le reste de l'écart est hors des lectures : 20 tests et sauts de plus par pas, des copies de registres.
 - `tests/test_cylindres.py` « en bandes, mauvais sur 3 cœurs » échoue parfois ici (2 cœurs) : le code forgé de ce
   programme est identique avant et après la liaison ; la détection dépend de l'ordre des fils.
+
+## 0.848 (26 novembre) : la valeur sue, le Druide qui suit les imports, l'essai fiabilisé
+- Chez le créateur, la 0.847 : vtx au processeur 21,8 / 13,4 (+2 %), Taranis 55,3 / 32,1, les mêmes empreintes ; le
+  C++ n'a pas tourné (pas de compilateur dans la console) ; le Vergobret n'avait rien à mesurer (un seul noyau).
+- Décidé : le graphique au processeur reste à Gutuater tel qu'il est (la marche des 8 octets d'un seul tenant est
+  notée) ; l'effort graphique va à la carte ; le 8 octets pour ce qui va à la carte ; on reste en quaternaire.
+- **La valeur sue** : `selon` sur un entier (vtx128.py et vtxc128 : `valeur_sue`, `nom_de_selon` ; vtx64.py et vtxc64 ;
+  la forge) : -1 inconnu, -2 faux, -3 variable, sinon vrai. Les programmes d'avant gardent leurs mots
+  (`outils/avant_apres.py` 128 et 64 : 0 changé). `tests/test_valeur_sue.py`.
+- **Le Druide suit les imports** (`suivre_imports`, la ligne d'un jeton du fichier f : ligne + f · 1 000 000 ;
+  « conseil|ÉTAT|LIGNE@FICHIER|… ») et voit l'adresse rangée dans une variable (`voir_bases` : « base » ne se lie pas) et
+  le cube déjà nommé (`cube_declare`). Sur Gergovie, il propose de lire par leur nom les cubes de `gergovie_scene.vtx` ;
+  `element()` le fait déjà (la même empreinte).
+- **L'essai fiabilisé** : `outils/essai_modele.bat` et `outils/faire_essai.py VERSION "titre" -o DOSSIER` (ASCII, CRLF,
+  les étiquettes vérifiées) ; le C++ par g++, clang++, cl, sinon Visual Studio trouvé par vswhere (vcvars64), sinon un
+  `gergovie_ref.exe` posé à côté ; le Vergobret mesure sur `gergovie_etages` (des lots). Vérification complète conforme ;
+  l'épreuve d'Alésia 60/60.
+- Le créateur (corrigé) : les éléments sont rangés en molécules dans le cube. Dans Gergovie aujourd'hui, le cube
+  d'éléments est un annuaire de blocs 8³ et une réserve de points (matière, état de Belnap, orientation) : pas encore
+  des molécules au sens de la chimie de vtx (atomes, liaisons, Fischer) ; à reprendre avec Gobatix.
+- Prochain : 0.849 (`f()[i]`, le type de fonction dans un type de fonction, les espaces de noms d'importer,
+  `entier_64` réel sur Lugus) ; 0.850 (le 8 octets vers la carte, le Druide sur l'arbre, la potion posée, sa mémoire
+  dans le nemeton) ; puis Gobatix.
