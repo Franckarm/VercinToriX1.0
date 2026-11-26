@@ -775,3 +775,7 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
 - **Réparé dans la forge** : un programme forgé avec `VTX_EPISSAGE=rapide` garde l'épissage rapide
   (`EPISSAGE_RAPIDE_FORGE`) ; au lancement, `VTX_EPISSAGE=sur` l'éteint. Le piège ne peut plus revenir.
 - Livraison : vtx-0.846b.zip, essai-0.846b.bat (Taranis le témoin, puis Gutuater et la forge). Prochaine : vtx-0.847.
+- Chez le créateur, la 0.846b : **Taranis 54,9 au vol, 32,6 au jour** (revenu) ; le C++ 32,5 / 19,5 ; vtx au
+  processeur 21,3 / 13,1 avec la carte directe, 17,9 / 10,5 sans ; Gutuater l'a apprise dans le nemeton (pour 3,
+  contre 0, 15 % de gagné) et la forge normale l'a lue. Corrigé ensuite : le Druide prenait l'en-tête de l'ARN (« # … »)
+  pour un gène.

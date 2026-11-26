@@ -418,7 +418,8 @@ fonction savoir_des_agents(nemeton: texte): texte {
     soit arn = lire_fichier(d + "gutuater.arn");
     pour l dans decouper(arn, "\n") {
         soit m = mots_de(l);
-        si longueur(m) >= 3 {
+        // une ligne qui commence par # est un commentaire de Gutuater (l'en-tête de son ARN)
+        si longueur(m) >= 3 && commence_par(l, "#") == 0 {
             soit g: texte = m[0];
             soit lieu: texte = m[1];
             soit e: texte = m[2];

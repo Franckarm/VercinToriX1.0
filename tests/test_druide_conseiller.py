@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory() as d:
     dire("les mots embarqués sont ceux du texte (outils/druide.sh)", emb == ml)
     nem = os.path.join(d, "nemeton", "conseils")
     os.makedirs(nem)
-    open(os.path.join(nem, "gutuater.arn"), "w").write("carte_directe 0 vrai\n")
+    open(os.path.join(nem, "gutuater.arn"), "w").write("# ARN de Gutuater, lu par le vergobret : gene, lieu, etat\ncarte_directe 0 vrai\n")
     r = subprocess.run([LUGUS, "druide", os.path.join(ICI, "druide", "conseils.vtx")], capture_output=True, text=True,
                        env=dict(os.environ, VTX_NEMETON=os.path.join(d, "nemeton")))
     t = r.stdout
@@ -42,6 +42,7 @@ with tempfile.TemporaryDirectory() as d:
                 "Gutuater : la carte directe (le monde d'un seul tenant au processeur) : vrai"]
     for a in attendus:
         dire("le Druide dit : " + a, a in t, t)
+    dire("l'en-tête de l'ARN (un commentaire) n'est pas pris pour un gène", "# ARN" not in t, t)
     places = [t.find("ligne " + str(n) + " (") for n in (3, 6, 13, 14, 15, 17)]
     dire("dans l'ordre des lignes", all(p >= 0 for p in places) and places == sorted(places), places)
 print("Le Druide conseiller : tout est conforme" if ok else "Le Druide conseiller : des écarts")
