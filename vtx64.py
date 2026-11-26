@@ -730,9 +730,8 @@ class Analyseur:
             if self.est_op(":"):
                 self.suivant()
                 r = self.un_type()
-            if any(x.startswith("g:") for x in ps + [r]):
-                raise VtxError(f"ligne {l} : un type de fonction dans un type de fonction : pas encore")
-            return "g:" + ",".join(ps) + ">" + r
+            # 0.849 : un type de fonction dans un type de fonction (entre parenthèses : « g:(g:e>e),e>e »)
+            return faire_sig(ps, r)
         if k == "id" and v in self.structs:
             return "r:" + v                    # référence à une structure : adresse d'un bloc (le tas)
         if k != "id" or v not in TYPES:
@@ -8606,7 +8605,7 @@ class Generateur:
         if e[0] == "fref" and est_sig(voulu):
             # 0.65 : une fonction nommée là où l'on attend un type de fonction : sa signature doit être celle-là
             f = self.signature(e[1], e[2])
-            sf = "g:" + ",".join(f.ptypes) + ">" + (f.rtype or "e")
+            sf = faire_sig(f.ptypes, f.rtype or "e")
             if sig_norm(sf) != sig_norm(voulu):
                 raise VtxError(f"ligne {e[2]} : « {e[1]} » ne convient pas à {nom_sig(voulu)} : elle est "
                                f"{nom_sig(sf)}")
@@ -9351,22 +9350,54 @@ def est_sig(t):
     return isinstance(t, str) and t.startswith("g:")
 
 
+def _hors(t, ch):
+    """les places de ch dans t hors des parenthèses (0.849 : un type de fonction imbriqué est rangé entre parenthèses)"""
+    prof, r = 0, []
+    for i, c in enumerate(t):
+        if c == "(":
+            prof += 1
+        elif c == ")":
+            prof -= 1
+        elif c == ch and prof == 0:
+            r.append(i)
+    return r
+
+
+def _emballer(x):
+    return "(" + x + ")" if est_sig(x) else x
+
+
+def _deballer(x):
+    return x[1:-1] if x.startswith("(") and x.endswith(")") else x
+
+
+def faire_sig(ps, r):
+    """0.849 : le type d'une fonction « g:T1,T2>R » ; un type de fonction imbriqué est rangé entre parenthèses"""
+    return "g:" + ",".join(_emballer(x) for x in ps) + ">" + _emballer(r)
+
+
 def sig_parts(t):
     """(les types des paramètres, le type du résultat) d'un type de fonction « g:… »"""
-    a, r = t[2:].split(">", 1)
-    return ([x for x in a.split(",")] if a else []), r
+    b = t[2:]
+    g = _hors(b, ">")[0]
+    a, r = b[:g], b[g + 1:]
+    morceaux, d = [], 0
+    for i in _hors(a, ",") + [len(a)]:
+        morceaux.append(a[d:i])
+        d = i + 1
+    return ([_deballer(x) for x in morceaux] if a else []), _deballer(r)
 
 
 def sig_norm(t):
     """le type de fonction tel que la génération le voit : les textes et les tableaux sont des entiers (typer_textes)"""
     ps, r = sig_parts(t)
-    n = lambda x: "e" if x in ("t", "F", "L") else x
-    return "g:" + ",".join(n(x) for x in ps) + ">" + n(r)
+    n = lambda x: sig_norm(x) if est_sig(x) else ("e" if x in ("t", "F", "L") else x)
+    return faire_sig([n(x) for x in ps], n(r))
 
 
 def nom_sig(t):
     ps, r = sig_parts(t)
-    nm = lambda x: x[2:] if x.startswith("r:") else NOMS_SIG.get(x, x)
+    nm = lambda x: nom_sig(x) if est_sig(x) else (x[2:] if x.startswith("r:") else NOMS_SIG.get(x, x))
     return "fonction(" + ", ".join(nm(x) for x in ps) + "): " + nm(r)
 
 

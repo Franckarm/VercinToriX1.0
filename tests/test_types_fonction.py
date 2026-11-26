@@ -57,6 +57,14 @@ r = lugus(TF)
 verifier("appliquer, plier, un flottant, une fonction rendue, un texte, une structure",
          r.stdout.split("\n")[:6] == ["49 16", "1.5", "25", "Par Toutatis !", "4", ""], r.stdout + r.stderr)
 
+# 0.849 : un type de fonction dans un type de fonction
+FI = os.path.join(racine, "exemples128", "fonctions_imbriquees.vtx")
+ok, det = memes_mots(FI)
+verifier("fonctions_imbriquees.vtx : les mêmes mots par les deux compilateurs", ok, det)
+r = lugus(FI)
+verifier("une fonction qui reçoit une fonction qui reçoit une fonction : 7, puis 42", r.stdout.split("\n")[:2] == ["7", "42"],
+         r.stdout + r.stderr)
+
 TETE = """fonction carre(x) { retour x * x; }
 fonction plus(a, b) { retour a + b; }
 fonction moitie(x: flottant): flottant { retour x / 2.0; }
@@ -70,8 +78,10 @@ REFUS = [
      "ligne 6 : « moitie » ne convient pas à fonction(entier): entier : elle est fonction(flottant): flottant"),
     ("trop d'arguments à un appel par valeur", "soit g: fonction(entier): entier = carre; afficher(g(1, 2));",
      "ligne 6 : « g » (fonction(entier): entier) attend 1 argument(s), pas 2"),
-    ("un type de fonction dans un type de fonction", "soit g: fonction(entier): fonction(entier) = carre;",
-     "ligne 6 : un type de fonction dans un type de fonction : pas encore"),
+    # 0.849 : un type de fonction dans un type de fonction est permis ; il est vérifié comme les autres
+    ("une fonction qui rend un entier là où l'on attend une fonction qui rend une fonction",
+     "soit g: fonction(entier): fonction(entier) = carre;",
+     "ligne 6 : « carre » ne convient pas à fonction(entier): fonction(entier): entier : elle est fonction(entier): entier"),
 ]
 for nom, ligne, attendu in REFUS:
     chemin = os.path.join(d, "refus.vtx")

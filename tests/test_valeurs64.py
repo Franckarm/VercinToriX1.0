@@ -149,8 +149,10 @@ REFUS = [
      "ligne 6 : « moitie » ne convient pas à fonction(entier): entier : elle est fonction(flottant): flottant"),
     ("trop d'arguments à un appel par valeur", "soit g: fonction(entier): entier = carre; afficher(g(1, 2));",
      "ligne 6 : « g » (fonction(entier): entier) attend 1 argument(s), pas 2"),
-    ("un type de fonction dans un type de fonction", "soit g: fonction(entier): fonction(entier) = carre;",
-     "ligne 6 : un type de fonction dans un type de fonction : pas encore"),
+    # 0.849 : un type de fonction dans un type de fonction est permis ; il est vérifié comme les autres
+    ("une fonction qui rend un entier là où l'on attend une fonction qui rend une fonction",
+     "soit g: fonction(entier): fonction(entier) = carre;",
+     "ligne 6 : « carre » ne convient pas à fonction(entier): fonction(entier): entier : elle est fonction(entier): entier"),
     ("deux types de fonction différents", "soit g: fonction(entier): entier = carre; soit h: fonction(entier, entier): "
      "entier = g;", "ligne 6 : une valeur de fonction ne va pas là où l'on attend un autre type"),
     ("une valeur de 128 bits passée par valeur", "soit g: fonction(flottant_petuar): entier = carre;",

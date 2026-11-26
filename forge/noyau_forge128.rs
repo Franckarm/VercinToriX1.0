@@ -2284,6 +2284,9 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
         }
     };
     let t1 = std::time::Instant::now();
+    // 0.848 : les pages à rendre au processeur (8 -> 16 octets) : choisies ici, converties ensuite sur tous les cœurs
+    // (mesuré chez le créateur : 3 ms par image sur un seul cœur, 28 % d'un lancement)
+    let mut a_rendre: Vec<(usize, usize)> = Vec::new();
     for &f in &fs {
         for q in 0..g.freq[f].1 {
             let s = (g.freq[f].0 + q) as usize;
@@ -2302,12 +2305,24 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
                 }
                 p
             };
-            let dst = unsafe { std::slice::from_raw_parts_mut(p, 65536) };
-            for (d, &w) in dst.iter_mut().zip(src) {
-                *d = w as u128;
-            }
+            a_rendre.push((s, p as usize));
         }
     }
+    let nt = cylindres_voulus().max(1).min(a_rendre.len().max(1));
+    let morceau = a_rendre.len().div_ceil(nt).max(1);
+    std::thread::scope(|sc| {
+        for ch in a_rendre.chunks(morceau) {
+            sc.spawn(move || {
+                for &(s, p) in ch {
+                    let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s * 65536), 65536) };
+                    let dst = unsafe { std::slice::from_raw_parts_mut(p as *mut u128, 65536) };
+                    for (d, &w) in dst.iter_mut().zip(src) {
+                        *d = w as u128;
+                    }
+                }
+            });
+        }
+    });
     if bavard {
         eprintln!("taranis : {} noyau(x), {} tours, Taranis ({} places, {} montées, {} redescendues) : préparer {:.1} ms, lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
                   lot.len(), lot.iter().map(|x| x.2).sum::<u64>(), g.res.as_ref().unwrap().cap, montees.len(), ecrites.len(),

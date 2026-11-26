@@ -187,7 +187,9 @@ afficher(g(3), c("Par Toutatis"));          // 1.5 Par Toutatis !
 - Un entier se range dans une variable typée fonction (c'est une promesse de celui qui l'écrit), et une valeur de
   fonction va là où va un entier ; deux types de fonction différents ne se mélangent pas.
 - Sans type écrit, rien ne change : l'appel par valeur de 0.6w reste libre.
-- Pas encore : un type de fonction dans un type de fonction (`fonction(fonction(entier)): entier`).
+- **Un type de fonction dans un type de fonction** (0.849) : `fonction(h: fonction(fonction(entier): entier, entier): entier)`,
+  vérifié comme les autres (`exemples128/fonctions_imbriquees.vtx`), sur Lugus et Dunon. La forge ne sait pas encore
+  les fonctions passées en valeur.
 
 **La promesse dans le type** (Lugus, 0.6y) : `fonction(entier): entier touche rien` (ou `lecture`, `memoire`). Seule une
 fonction qui tient au moins cette promesse y entre (« « parler » ne convient pas à fonction(entier): entier touche rien :

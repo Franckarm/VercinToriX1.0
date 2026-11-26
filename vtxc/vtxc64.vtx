@@ -1807,11 +1807,22 @@ fonction sig_meme(c: Ctx, a: Liste, b: Liste) {
         retour 0;
     }
     pour i dans 0..a.n {
-        si type_norme(elem(a, i)) != type_norme(elem(b, i)) {
+        si type_meme(c, elem(a, i), elem(b, i)) == 0 {
             retour 0;
         }
     }
     retour 1;
+}
+
+// 0.849 : deux types pareils une fois normés ; deux types de fonction imbriqués : pareils
+fonction type_meme(c: Ctx, x, y) {
+    si est_sig(x) && est_sig(y) {
+        retour sig_meme(c, sig_de(c, x), sig_de(c, y));
+    }
+    si type_norme(x) == type_norme(y) {
+        retour 1;
+    }
+    retour 0;
 }
 
 // le type d'une fonction du programme : (n, les types de ses paramètres, son résultat)
@@ -1828,6 +1839,9 @@ fonction sig_fonction(f: Fonction): Liste {
 }
 
 fonction nom_type_sig(c: Ctx, t): texte {
+    si est_sig(t) {
+        retour nom_sig(c, sig_de(c, t));
+    }
     si t == 0 { retour "entier"; }
     si t == T_I { retour "entier_32"; }
     si t == T_F { retour "flottant"; }
@@ -1896,9 +1910,7 @@ fonction un_type(c: Ctx) {
             }
         }
         ajouter(l, r);
-        si imbrique {
-            erreur(c, lf, "un type de fonction dans un type de fonction : pas encore");
-        }
+        // 0.849 : un type de fonction dans un type de fonction (un numéro de la table, comme les autres)
         retour sig_numero(c, l);
     }
     soit nom = identifiant(c);

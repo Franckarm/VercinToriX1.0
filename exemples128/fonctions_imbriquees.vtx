@@ -1,0 +1,20 @@
+// machine : lugus
+// 0.849 : un type de fonction dans un type de fonction : deux_fois reçoit une fonction qui reçoit une fonction (7), et
+// choisir rend une fonction (42). Les mêmes mots par vtx128.py et vtxc128, et sur Dunon par vtx64.py et vtxc64.
+fonction un_de_plus(x) {
+    retour x + 1;
+}
+fonction appliquer(f: fonction(entier): entier, x) {
+    retour f(x);
+}
+fonction deux_fois(h: fonction(fonction(entier): entier, entier): entier, g: fonction(entier): entier) {
+    retour h(g, h(g, 5));
+}
+fonction choisir(k): fonction(entier): entier {
+    retour un_de_plus;
+}
+fonction principal() {
+    afficher(deux_fois(appliquer, un_de_plus));
+    soit g = choisir(1);
+    afficher(g(41));
+}

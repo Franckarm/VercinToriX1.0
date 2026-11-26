@@ -848,3 +848,16 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Prochain : 0.849 (`f()[i]`, le type de fonction dans un type de fonction, les espaces de noms d'importer,
   `entier_64` réel sur Lugus) ; 0.850 (le 8 octets vers la carte, le Druide sur l'arbre, la potion posée, sa mémoire
   dans le nemeton) ; puis Gobatix.
+
+## 0.849 (26 novembre, première partie)
+- Chez le créateur, la 0.848 : le C++ 32,4 / 19,6 (par Visual Studio trouvé par vswhere) ; vtx au processeur 22,0 / 13,5 ;
+  Taranis 55,2 / 32,1 ; les étages 43,3 / 27,7 ; le Vergobret a appris le lot (vrai, +39 %) et doute de fondre ; le
+  Druide parle de gergovie_scene.vtx. La mesure des 8 octets (`outils/bilan_taranis.py`) : par lancement de la carte,
+  la carte 3,7 ms, la copie qui redescend 3,2 ms, **la conversion 8 -> 16 octets 3,0 ms (28 %)**, sur un seul cœur.
+- Fait : la conversion de la descente sur tous les cœurs (`taranis_envoyer` : `a_rendre`) ; à mesurer chez le créateur.
+  La suite (le 8 octets) : que le processeur lise l'image redescendue dans le miroir (8 octets) sans la convertir.
+- Fait : **un type de fonction dans un type de fonction** (vtx128.py, vtx64.py : `faire_sig`, `_hors`, les parenthèses ;
+  vtxc128, vtxc64 : `type_meme`, `nom_type_sig` récursif) ; les mêmes mots, les mêmes refus.
+- Trouvé : `f()[i]` lit déjà, sans la borne (la poignée serait calculée deux fois) ; à faire par une variable cachée.
+  La forge ne sait pas les fonctions passées en valeur (« fonction f inconnue ») : à faire.
+- Reste pour la 0.849 : les espaces de noms d'importer, `entier_64` réel sur Lugus, la borne de `f()[i]`.

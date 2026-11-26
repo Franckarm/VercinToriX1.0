@@ -2031,12 +2031,11 @@ class Analyseur:
             if self.est_op(":"):
                 self.suivant()
                 r = self.un_type()
-            if any(x.startswith("g:") for x in ps + [r]):
-                raise VtxError(f"ligne {l} : un type de fonction dans un type de fonction : pas encore")
+            # 0.849 : un type de fonction dans un type de fonction (rangé entre parenthèses : « g:(g:e>e),e>e »)
             # 0.6y : la promesse dans le type (« fonction(entier): entier touche rien ») ; dans l'en-tête d'une fonction,
             # « touche » après le type du résultat reste la promesse de la fonction elle-même
             k = self.promesse_touche(l) if touche_ok else None
-            return "g:" + ",".join(ps) + ">" + r + ("" if k is None or k == 3 else f"!{k}")
+            return faire_sig(ps, r, k)
         if k == "id" and v in self.structs:
             return "r:" + v                    # référence à une structure : adresse d'un bloc (le tas)
         if k != "id" or v not in TYPES:
@@ -11072,7 +11071,7 @@ class Generateur:
             # une fonction nommée là où l'on attend un type de fonction : sa signature doit être celle-là
             f = self.signature(e[1], e[2])
             kf = getattr(f, "touche", None)
-            sf = "g:" + ",".join(f.ptypes) + ">" + (f.rtype or "e") + ("" if kf is None or kf == 3 else f"!{kf}")
+            sf = faire_sig(f.ptypes, f.rtype or "e", kf)
             if sig_base(sig_norm(sf)) != sig_base(sig_norm(voulu)):
                 raise VtxError(f"ligne {e[2]} : « {e[1]} » ne convient pas à {nom_sig(voulu)} : elle est "
                                f"{nom_sig(sig_base(sf))}")
@@ -11948,32 +11947,67 @@ def est_sig(t):
 NIVEAUX_TOUCHE = ("rien", "lecture", "memoire", "monde")
 
 
+def _hors(t, ch):
+    """les places de ch dans t hors des parenthèses (0.849 : un type de fonction imbriqué est rangé entre parenthèses)"""
+    prof, r = 0, []
+    for i, c in enumerate(t):
+        if c == "(":
+            prof += 1
+        elif c == ")":
+            prof -= 1
+        elif c == ch and prof == 0:
+            r.append(i)
+    return r
+
+
+def _emballer(x):
+    return "(" + x + ")" if est_sig(x) else x
+
+
+def _deballer(x):
+    return x[1:-1] if x.startswith("(") and x.endswith(")") else x
+
+
+def faire_sig(ps, r, k=None):
+    """0.849 : le type d'une fonction « g:T1,T2>R » (et « !k » sa promesse) ; un type de fonction parmi les paramètres ou
+    en résultat est rangé entre parenthèses"""
+    return "g:" + ",".join(_emballer(x) for x in ps) + ">" + _emballer(r) + ("" if k is None or k == 3 else f"!{k}")
+
+
 def sig_promesse(t):
     """0.6y : ce que promet un type de fonction (0 rien, 1 lecture, 2 memoire ; 3 : il ne promet rien)"""
-    return int(t.split("!")[1]) if "!" in t else 3
+    h = _hors(t, "!")
+    return int(t[h[-1] + 1:]) if h else 3
 
 
 def sig_base(t):
-    return t.split("!")[0]
+    h = _hors(t, "!")
+    return t[:h[-1]] if h else t
 
 
 def sig_parts(t):
     """(les types des paramètres, le type du résultat) d'un type de fonction « g:… »"""
-    a, r = sig_base(t)[2:].split(">", 1)
-    return ([x for x in a.split(",")] if a else []), r
+    b = sig_base(t)[2:]
+    g = _hors(b, ">")[0]
+    a, r = b[:g], b[g + 1:]
+    morceaux, d = [], 0
+    for i in _hors(a, ",") + [len(a)]:
+        morceaux.append(a[d:i])
+        d = i + 1
+    return ([_deballer(x) for x in morceaux] if a else []), _deballer(r)
 
 
 def sig_norm(t):
-    """le type de fonction tel que la génération le voit : les textes et les tableaux sont des entiers (typer_textes)"""
+    """le type de fonction tel que la génération le voit : les textes et les tableaux sont des entiers (typer_textes) ;
+    un type de fonction imbriqué, de même"""
     ps, r = sig_parts(t)
-    n = lambda x: "e" if x in ("t", "F", "L") else x
-    k = sig_promesse(t)
-    return "g:" + ",".join(n(x) for x in ps) + ">" + n(r) + ("" if k == 3 else f"!{k}")
+    n = lambda x: sig_norm(x) if est_sig(x) else ("e" if x in ("t", "F", "L") else x)
+    return faire_sig([n(x) for x in ps], n(r), sig_promesse(t))
 
 
 def nom_sig(t):
     ps, r = sig_parts(t)
-    nm = lambda x: x[2:] if x.startswith("r:") else NOMS_SIG.get(x, x)
+    nm = lambda x: nom_sig(x) if est_sig(x) else (x[2:] if x.startswith("r:") else NOMS_SIG.get(x, x))
     k = sig_promesse(t)
     return "fonction(" + ", ".join(nm(x) for x in ps) + "): " + nm(r) + ("" if k == 3 else " touche " +
                                                                            NIVEAUX_TOUCHE[k])
