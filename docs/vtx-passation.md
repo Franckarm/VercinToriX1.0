@@ -810,3 +810,18 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   table des pages, son TLB) en réservant l'étage 2 d'un seul tenant (les pages engagées à la demande par le système).
   La lecture devient la base, plus l'adresse ; la base sort de la boucle comme en C++. Aussi à mesurer : des mots de
   8 octets pour un programme `dunon;` côté graphique (la moitié du cache), à peser avec la liste 128.
+
+**La liaison (première marche, faite).** Le créateur refuse de confier la traduction au matériel de l'hôte (vtx vise des
+processeurs optiques et quantiques) ; la solution reste dans vtx : la forge garde séparées la fréquence et la place
+d'un cube lu sous la forme `(F << 24) + i` (ce qu'écrivent `@nom[i]` et `@nom(t)[i]`), `lire2_fi` / `ecrire2_fi`
+prennent la page sans faire puis défaire l'adresse (le même mot que lire2 ; hors de la carte directe, l'adresse est
+refaite). Gergovie nomme ses cubes d'éléments et de creux (`cube elements[16] @2 frequence 17;`, `cube creux[4] @2
+frequence 110;`) et `tracer` les lit par leur nom. Mesuré (callgrind, demi-échelle, un fil) : par image 26,61 G
+instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à 1,38. Les mêmes empreintes.
+- Ce qui reste dans une lecture (9 instructions contre 2) : la borne, le pointeur de la carte, celui de la page, le
+  test de la page absente, l'index de 16 octets. La marche suivante, décidée avec le créateur : un cube nommé avec sa
+  taille (`cube elements[16] @2 [65536] frequence 17;`) rangé d'un seul tenant, et en mots de 8 octets dans un
+  programme `dunon;` (le graphique) : la lecture devient base + i.
+- Le reste de l'écart est hors des lectures : 20 tests et sauts de plus par pas, des copies de registres.
+- `tests/test_cylindres.py` « en bandes, mauvais sur 3 cœurs » échoue parfois ici (2 cœurs) : le code forgé de ce
+  programme est identique avant et après la liaison ; la détection dépend de l'ordre des fils.

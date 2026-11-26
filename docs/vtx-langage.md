@@ -657,6 +657,11 @@ soit t0 = @tuiles(t)[k];              // le point k du cube t de la famille : @2
   croiser les petites fréquences des anciens programmes.
 - Les fréquences en dessous de 256 sont celles que la carte directe (Gutuater) et Taranis rangent d'un seul tenant :
   un cube nommé y gagne leur vitesse.
+- **La liaison (0.847, la forge)** : un cube lu ou écrit par son nom (`@nom[i]`, `@nom(t)[i]`, ou à la main sous la
+  forme `@2[(F << 24) + i]`) garde séparées sa fréquence et sa place jusque dans le programme forgé : la machine prend
+  la page `(F << 8) | (i >> 16)` sans faire puis défaire l'adresse entière. Le mot lu est le même (hors de la carte
+  directe, l'adresse est refaite). Une adresse rangée d'abord dans une variable (`soit base = (F << 24); @2[base + i]`)
+  ne se lie pas : nommez le cube (le Druide le propose).
 - Exemple : `exemples128/cubes_nommes.vtx`.
 
 ### Additionner les cubes : les fréquences

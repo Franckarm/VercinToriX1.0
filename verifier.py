@@ -201,6 +201,11 @@ if shutil.which("node"):
                                           os.path.join("conformite", "corpus_attendu.txt")]))
 else:
     print("node absent : les machines JavaScript ne sont pas vérifiées")
+# 0.847 : « verifier.py --depuis TEXTE » reprend à la première étape dont le nom contient TEXTE
+if "--depuis" in sys.argv and sys.argv.index("--depuis") + 1 < len(sys.argv):
+    _m = sys.argv[sys.argv.index("--depuis") + 1]
+    _k = next((k for k, (n, _) in enumerate(etapes) if _m in n), 0)
+    etapes = etapes[_k:]
 echecs = 0
 noms_echecs = []
 for nom, cmd in etapes:

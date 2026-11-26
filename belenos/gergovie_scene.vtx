@@ -22,6 +22,9 @@ constante FTEX = 1;                // le cube de texture de la tuile t : fréque
 constante FELT = 17;               // le cube d'élément de la tuile t : fréquence FELT + t
 constante FCIEL = 33;              // le calque du ciel de la tuile t
 constante FCREUX = 110;            // les blocs creusés de la tuile t
+// 0.847 : la liaison : nommés, la forge lit ces cubes par leur fréquence et leur place, sans refaire l'adresse
+cube elements[16] @2 frequence 17;   // FELT + t
+cube creux[4] @2 frequence 110;      // FCREUX + t
 constante FSOL = 49;               // le calque du soleil de la tuile t (FSOL + 16 · jeu + t)
 constante REP = 32768;             // la réserve d'un cube : après son annuaire
 constante MER = 44 * RN / RD;      // le niveau du lac
@@ -1053,8 +1056,8 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
         soit x = px >> 16;
         soit y = py >> 16;
         soit z = pz >> 16;
-        soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
-        soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+        soit tu = (z >> 8) * TUILES + (x >> 8);
+        soit e = @elements(tu)[(((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
         soit s = 8;
         // la boîte à quitter : le point (s = 1), son bloc, ou (un bloc vide qui sait sa distance d) les d - 1 blocs
         // autour, tous vides : de (bloc - (d - 1)) · 8 à (bloc + d) · 8 sur chaque axe
@@ -1067,14 +1070,14 @@ fonction tracer(ox, oy, oz, dx, dy, dz, tmax, eau) {
                     retour t;
                 }
             } sinon {
-                soit v = @2[base + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+                soit v = @elements(tu)[REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
                 si v != 0 && (eau == 1 || ((v >> 2) & 63) != EAU) {
                     retour t;
                 }
                 s = 1;
                 // 0.818 : un point vide : son sous-bloc de 4³, ou de 2³, est-il tout vide ? (les blocs creusés)
                 si v == 0 {
-                    soit cm = @2[((FCREUX + (z >> 8) * TUILES + (x >> 8)) << 24) + e - 16];
+                    soit cm = @creux(tu)[e - 16];
                     soit cx4 = (((x >> 2) & 1) << 2) | (((y >> 2) & 1) << 1) | ((z >> 2) & 1);
                     si ((cm >> (cx4 * 8)) & 255) == 0 {
                         s = 4;

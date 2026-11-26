@@ -986,6 +986,34 @@ impl Ctx {
         }
         self.lire2_lent(idx)
     }
+    /// 0.847 : la liaison : un cube lu par sa fréquence et sa place (@nom[i], @nom(t)[i], ou @2[(F << 24) + i]) : la
+    /// forge les a gardées séparées, l'adresse n'est plus faite puis défaite à chaque lecture (la page est
+    /// (F << 8) | (i >> 16)). Le même mot que lire2 : hors de la carte directe, ou hors des 256 premières fréquences,
+    /// c'est lire2 de l'adresse refaite.
+    #[inline(always)]
+    fn lire2_fi(&mut self, f: u128, x: u128) -> u128 {
+        let (f, ix) = (f as u64, x as u64);
+        if CARTE_DIRECTE && f < 256 && ix < (1 << 24) {
+            let p = self.carte.l[((f << 8) | (ix >> 16)) as usize];
+            if !p.is_null() {
+                return unsafe { *p.add((ix & 65535) as usize) };
+            }
+        }
+        self.lire2(((f << 24).wrapping_add(ix)) as u128)
+    }
+    /// 0.847 : la liaison, pour écrire (comme ecrire2)
+    #[inline(always)]
+    fn ecrire2_fi(&mut self, f: u128, x: u128, v: u128) {
+        let (f, ix) = (f as u64, x as u64);
+        if CARTE_DIRECTE && f < 256 && ix < (1 << 24) {
+            let p = self.carte.e[((f << 8) | (ix >> 16)) as usize];
+            if !p.is_null() {
+                unsafe { *p.add((ix & 65535) as usize) = v };
+                return;
+            }
+        }
+        self.ecrire2(((f << 24).wrapping_add(ix)) as u128, v)
+    }
     #[inline(never)]
     fn lire2_lent(&mut self, idx: u64) -> u128 {
         let a = etg(idx as u128, 2);

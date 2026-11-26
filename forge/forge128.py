@@ -985,6 +985,10 @@ class Forge(V.Generateur):
                                                   f".wrapping_sub({zone[1]}) as usize; if !z{k}.is_null() && i < "
                                                   f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) = v as {ty}; }} }} else "
                                                   f"{{ c.ecrire(etg(a, {et}), v); }} }}")) + ";")
+            elif et == 2 and lien_cube(adr):
+                # 0.847 : la liaison : la fréquence et la place gardées séparées (un cube nommé, ou (F << 24) + i)
+                fr, x = lien_cube(adr)
+                self.ligne(self.b([self.val(fr, "e"), self.val(x, "e"), self.val(val)], "c.ecrire2_fi({0}, {1}, {2})") + ";")
             elif et == 2:
                 # 0.805 : l'étage 2 par la carte des pages (Gutuater)
                 a = self.val(adr, "e")
@@ -1976,6 +1980,10 @@ class Forge(V.Generateur):
                                                             f"{zone[2] - zone[1]} {{ unsafe {{ *z{k}.add(i) as u128 }} }} else "
                                                             f"{{ c.lire(etg(a, {e[1]})) }} }}"))
             # 0.805 : l'étage 2 par la carte des pages (Gutuater)
+            if e[1] == 2 and lien_cube(e[2]):
+                # 0.847 : la liaison (voir lien_cube)
+                fr, x = lien_cube(e[2])
+                return self.b([self.val(fr, "e"), self.val(x, "e")], "c.lire2_fi({0}, {1})")
             if e[1] == 2:
                 return self.b([self.val(e[2], "e")], "c.lire2({0})")
             if isinstance(e[1], int) and e[2][0] == "nombre":
@@ -2371,6 +2379,16 @@ def _parcourir(n, f):
     elif isinstance(n, list):
         for x in n:
             _parcourir(x, f)
+
+
+def lien_cube(adr):
+    """0.847 : la liaison des cubes : une adresse de la forme (F << 24) + i (ce qu'écrivent @nom[i] et @nom(t)[i], les
+    cubes nommés) rend (F, i) : la forge les garde séparées, la machine lit la page (F << 8) | (i >> 16) sans refaire
+    puis défaire l'adresse. Sinon None."""
+    if (isinstance(adr, tuple) and len(adr) >= 4 and adr[0] == "bin" and adr[1] == "+" and isinstance(adr[2], tuple)
+            and len(adr[2]) >= 4 and adr[2][0] == "bin" and adr[2][1] == "<<" and adr[2][3] == ("nombre", 24)):
+        return adr[2][2], adr[3]
+    return None
 
 
 def planifier_zones(fonctions, ecrits, _blobs_presents, blobs):
