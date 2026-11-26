@@ -2284,8 +2284,8 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
         }
     };
     let t1 = std::time::Instant::now();
-    // 0.848 : les pages à rendre au processeur (8 -> 16 octets) : choisies ici, converties ensuite sur tous les cœurs
-    // (mesuré chez le créateur : 3 ms par image sur un seul cœur, 28 % d'un lancement)
+    // 0.848 : les pages à rendre au processeur (8 -> 16 octets) : mesuré chez le créateur, 3 ms par image (28 % d'un
+    // lancement)
     let mut a_rendre: Vec<(usize, usize)> = Vec::new();
     for &f in &fs {
         for q in 0..g.freq[f].1 {
@@ -2308,19 +2308,15 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
             a_rendre.push((s, p as usize));
         }
     }
-    let nt = cylindres_voulus().max(1).min(a_rendre.len().max(1));
-    let morceau = a_rendre.len().div_ceil(nt).max(1);
-    std::thread::scope(|sc| {
-        for ch in a_rendre.chunks(morceau) {
-            sc.spawn(move || {
-                for &(s, p) in ch {
-                    let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s * 65536), 65536) };
-                    let dst = unsafe { std::slice::from_raw_parts_mut(p as *mut u128, 65536) };
-                    for (d, &w) in dst.iter_mut().zip(src) {
-                        *d = w as u128;
-                    }
-                }
-            });
+    // 0.849 : essayé sur tous les cœurs : plus lent chez le créateur (3,9 ms contre 3,0 : 24 fils lancés à chaque
+    // image, et la mémoire est le goulot) ; un seul cœur
+    for &(s, p) in &a_rendre {
+        let src = unsafe { std::slice::from_raw_parts((miroir as *const u64).add(s * 65536), 65536) };
+        let dst = unsafe { std::slice::from_raw_parts_mut(p as *mut u128, 65536) };
+        for (d, &w) in dst.iter_mut().zip(src) {
+            *d = w as u128;
+        }
+    }
         }
     });
     if bavard {
