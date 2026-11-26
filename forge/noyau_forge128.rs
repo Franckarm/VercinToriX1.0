@@ -2317,8 +2317,6 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
             *d = w as u128;
         }
     }
-        }
-    });
     if bavard {
         eprintln!("taranis : {} noyau(x), {} tours, Taranis ({} places, {} montées, {} redescendues) : préparer {:.1} ms, lancer {:.1} ms, la carte {:.1} ms, redescendre {:.1} + {:.1} ms",
                   lot.len(), lot.iter().map(|x| x.2).sum::<u64>(), g.res.as_ref().unwrap().cap, montees.len(), ecrites.len(),
