@@ -1,0 +1,19 @@
+constante N = 4;
+constante VIDE = 1;
+constante VIDE = 2;
+
+fonction juger(l: logique) {
+    selon l {
+        vrai { afficher("oui"); }
+        faux { afficher("non"); }
+    }
+}
+
+fonction principal() {
+    soit x: entier_64 = 5;
+    @2[(49 << 24) + 3] = x;
+    @2[((17 + 2) << 24) + 3] = x;
+    soit l: logique = vrai;
+    si l == vrai { afficher("vrai"); }
+    juger(l);
+}

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """vtx64 : le compilateur de Vercintorix pour le SPU-64 (point profond #RRRRGGGGBBBBAAAA, flottants quaternaires, brin).
-Spécification de la machine : docs/specification-spu64.md ; conception : docs/vtx-spu64-conception.md.
+Spécification de la machine : docs/specification-spu64.md ; conception : docs/archives/vtx-spu64-conception.md.
 
 Par défaut, un entier a 64 bits (32 quits) et un flottant est quaternaire de 64 bits ; `5S` et `1.5S` écrivent un
 entier et un flottant de 32 bits, `5LL` et `1.5Q` ceux de 128 bits. Le compilateur du SPU-32 (vtx.py) reste tel quel.
@@ -215,6 +215,139 @@ def echappements(t, ligne):
     return "".join(out)
 
 
+def cubes_nommes(jetons):
+    """0.845 : les cubes nommés. Une déclaration au niveau du programme,
+
+        cube ombre @2;                    // le compilateur choisit sa fréquence (de 199 en descendant)
+        cube passage @2 arn;              // un cube de l'ARN (de 255 en descendant : 200 et plus vivent sur la carte)
+        cube sol[16] @2 frequence 49;     // une famille de 16 cubes, aux fréquences 49 à 64
+        cube lumiere @2 frequence 203;    // sa fréquence, écrite
+
+    nomme un cube de l'étage (1, 2 ou 3) ; `@ombre[i]` lit et écrit son point i, `@sol(t)[i]` le point i du cube t de la
+    famille. C'est une écriture : les jetons sont réécrits dès la lecture en `@2[(F << 24) + (i)]` (et
+    `@2[((F + (t)) << 24) + (i)]`), comme les appels en série ; les deux compilateurs font la même réécriture. Le
+    compilateur refuse deux cubes du même nom, deux cubes qui se recouvrent, un étage autre que 1, 2 ou 3."""
+    t = list(jetons)
+    if not any(k == "id" and v == "cube" for k, v, _ in t):
+        return jetons
+    bruts = getattr(jetons, "bruts", None)
+    decl, garde, gbruts = [], [], []
+    prof, i = 0, 0
+    while i < len(t):
+        k, v, l = t[i]
+        avant = t[i - 1][:2] if i > 0 else ("op", ";")
+        if (prof == 0 and k == "id" and v == "cube" and i + 2 < len(t) and t[i + 1][0] == "id"
+                and t[i + 2][:2] in (("op", "@"), ("op", "[")) and avant in (("op", ";"), ("op", "}"))):
+            nom, j, n = t[i + 1][1], i + 2, 1
+            if t[j][:2] == ("op", "["):
+                if t[j + 1][0] != "num" or t[j + 2][:2] != ("op", "]") or not 1 <= t[j + 1][1] <= 4096:
+                    raise VtxError(f"ligne {l} : le nombre de cubes d'une famille, un nombre écrit de 1 à 4096 « {nom} »")
+                n, j = t[j + 1][1], j + 3
+            if t[j][:2] != ("op", "@") or t[j + 1][0] != "num" or t[j + 1][1] not in (1, 2, 3):
+                raise VtxError(f"ligne {l} : l'étage d'un cube s'écrit @1, @2 ou @3 (l'étage 0 porte le code) « {nom} »")
+            etage, j = t[j + 1][1], j + 2
+            freq, arn = None, False
+            if t[j][:2] == ("id", "frequence"):
+                if t[j + 1][0] != "num" or not 1 <= t[j + 1][1] < (1 << 24):
+                    raise VtxError(f"ligne {l} : la fréquence d'un cube, un nombre écrit de 1 à 16777215 « {nom} »")
+                freq, j = t[j + 1][1], j + 2
+            elif t[j][:2] == ("id", "arn"):
+                arn, j = True, j + 1
+            if t[j][:2] != ("op", ";"):
+                raise VtxError(f"ligne {l} : « ; » attendu à la fin de la déclaration du cube « {nom} »")
+            if any(d[0] == nom for d in decl):
+                raise VtxError(f"ligne {l} : ce cube est déjà déclaré « {nom} »")
+            decl.append([nom, n, etage, freq, arn, l])
+            i = j + 1
+            continue
+        if k == "op" and v in ("{", "(", "["):
+            prof += 1
+        elif k == "op" and v in ("}", ")", "]"):
+            prof -= 1
+        garde.append(t[i])
+        if bruts is not None:
+            gbruts.append(bruts[i])
+        i += 1
+    if not decl:
+        return jetons
+    # les fréquences : les écrites d'abord, puis les autres, de 199 (ou 255 pour l'ARN) en descendant, sans recouvrir
+    pris = {}
+    for d in decl:
+        if d[3] is not None:
+            for f in range(d[3], d[3] + d[1]):
+                if (d[2], f) in pris:
+                    raise VtxError(f"ligne {d[5]} : ce cube recouvre les fréquences d'un autre « {d[0]} »")
+                pris[(d[2], f)] = d[0]
+    for d in decl:
+        if d[3] is None:
+            haut = 255 if d[4] else 199
+            bas = 200 if d[4] else 1
+            f = haut - d[1] + 1
+            while f >= bas and any((d[2], g) in pris for g in range(f, f + d[1])):
+                f -= 1
+            if f < bas:
+                raise VtxError(f"ligne {d[5]} : plus de fréquence libre pour le cube « {d[0]} »")
+            d[3] = f
+            for g in range(f, f + d[1]):
+                pris[(d[2], g)] = d[0]
+    cubes = {d[0]: d for d in decl}
+    # chaque jeton garde son texte écrit (pour les messages)
+    paires = [(garde[q], gbruts[q] if bruts is not None and q < len(gbruts) else str(garde[q][1])) for q in range(len(garde))]
+
+    def fermer(seq, q, ouvre, ferme):
+        p_ = 0
+        while q < len(seq):
+            if seq[q][0][:2] == ("op", ouvre):
+                p_ += 1
+            elif seq[q][0][:2] == ("op", ferme):
+                p_ -= 1
+                if p_ == 0:
+                    return q
+            elif seq[q][0][0] == "eof":
+                break
+            q += 1
+        raise VtxError(f"ligne {seq[max(q - 1, 0)][0][2]} : « {ferme} » attendu")
+
+    def recrire(seq):
+        sortie, i = [], 0
+        while i < len(seq):
+            (k, v, l), _ = seq[i]
+            if (k, v) == ("op", "@") and i + 1 < len(seq) and seq[i + 1][0][0] == "id" and seq[i + 1][0][1] in cubes:
+                nom, n, etage, freq, _, _ = cubes[seq[i + 1][0][1]]
+                j, tt = i + 2, None
+                if j < len(seq) and seq[j][0][:2] == ("op", "("):
+                    if n == 1:
+                        raise VtxError(f"ligne {l} : ce cube n'est pas une famille (il se lit @nom[i]) « {nom} »")
+                    fj = fermer(seq, j, "(", ")")
+                    tt, j = recrire(seq[j + 1:fj]), fj + 1
+                elif n > 1:
+                    raise VtxError(f"ligne {l} : une famille de cubes se lit @nom(t)[i] « {nom} »")
+                if j >= len(seq) or seq[j][0][:2] != ("op", "["):
+                    raise VtxError(f"ligne {l} : « [ » attendu après le cube « {nom} »")
+                fj = fermer(seq, j, "[", "]")
+                x = recrire(seq[j + 1:fj])
+
+                def o(c):
+                    return (("op", c, l), c)
+
+                def num(c):
+                    return (("num", c, l), str(c))
+                if tt is None:
+                    sortie += [o("@"), num(etage), o("["), o("("), num(freq), o("<<"), num(24), o(")"), o("+"), o("(")]
+                else:
+                    sortie += ([o("@"), num(etage), o("["), o("("), o("("), num(freq), o("+"), o("(")] + tt +
+                               [o(")"), o(")"), o("<<"), num(24), o(")"), o("+"), o("(")])
+                sortie += x + [o(")"), o("]")]
+                i = fj + 1
+                continue
+            sortie.append(seq[i])
+            i += 1
+        return sortie
+
+    neuf = recrire(paires)
+    return [j for j, _ in neuf]
+
+
 def lexer(src):
     src = ADN_LIT.sub(_adn_valeur, src)
     jetons, pos, ligne = [], 0, 1
@@ -280,7 +413,7 @@ def lexer(src):
                 raise VtxError(f"ligne {ligne} : nombre trop grand pour 64 bits")
             jetons.append(("num", v, ligne))
     jetons.append(("eof", None, ligne))
-    return jetons
+    return cubes_nommes(jetons)
 
 
 # priorité (du plus faible au plus fort) : comme en Rust, le bit à bit lie plus fort que les comparaisons

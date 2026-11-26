@@ -1,6 +1,6 @@
 # Spécification du SPU-64 (version 1, 23 octobre 2026)
 
-Machine de référence : `spu64/spu64.py` (Python). Machine rapide : `vtx-rs` (binaire `vtx64`). Les deux doivent donner, pour tout programme, les mêmes sorties, le même nombre d'instructions et la même mémoire. Conception d'ensemble : `docs/vtx-spu64-conception.md`.
+Machine de référence : `spu64/spu64.py` (Python). Machine rapide : `vtx-rs` (binaire `vtx64`). Les deux doivent donner, pour tout programme, les mêmes sorties, le même nombre d'instructions et la même mémoire. Conception d'ensemble : `docs/archives/vtx-spu64-conception.md`.
 
 Gravé : cube chromatique, quaternaire, ADN/ARN. Un mot de 64 bits est un **point profond** `#RRRRGGGGBBBBAAAA` : 16 chiffres hex, 32 quits, 32 bases.
 

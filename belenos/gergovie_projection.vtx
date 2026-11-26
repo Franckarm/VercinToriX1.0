@@ -8,7 +8,6 @@ dunon;
 constante RN = 1;
 constante RD = 1;
 constante BLOCS = 0;
-constante PROGRESSIF = 0;
 importer "gergovie_scene.vtx";
 
 fonction principal() {

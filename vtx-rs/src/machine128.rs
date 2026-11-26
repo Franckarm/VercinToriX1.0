@@ -6,6 +6,77 @@ use crate::spu128::Spu128;
 pub const VTXC128: &str = include_str!("../vtxc128.mots");
 /// le lecteur d'ADN écrit en vtx (chimie/adn.vtx), compilé par vtxc128 : `lugus compiler ../chimie/adn.vtx lecteur_adn.mots`
 pub const LECTEUR_ADN: &str = include_str!("../lecteur_adn.mots");
+/// 0.846 : le Druide conseiller (druide/conseiller.vtx), compilé par vtxc128 :
+/// `lugus compiler ../druide/conseiller.vtx druide_conseiller.mots` (outils/druide.sh)
+pub const DRUIDE_CONSEILLER: &str = include_str!("../druide_conseiller.mots");
+
+/// 0.845 : le nemeton d'un programme (la mémoire de ses agents) : VTX_NEMETON/NOM, sinon ~/.vercintorix/nemeton/NOM
+pub fn nemeton_de(programme: &std::path::Path) -> std::path::PathBuf {
+    let nom = programme.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "programme".into());
+    let base = match std::env::var_os("VTX_NEMETON") {
+        Some(b) => std::path::PathBuf::from(b),
+        None => std::path::PathBuf::from(std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).unwrap_or_default())
+            .join(".vercintorix").join("nemeton"),
+    };
+    base.join(nom)
+}
+
+/// 0.846 : les conseils du Druide pour un programme, tels qu'il les dit (« conseil|ÉTAT|LIGNE|TEXTE|POTION »,
+/// « savoir|AGENT|TEXTE », « fin|N ») : le conseiller écrit en vtx, joué sur une machine fille
+pub fn druide_brut(programme: &std::path::Path) -> String {
+    let chemin = std::fs::canonicalize(programme).unwrap_or_else(|_| programme.to_path_buf());
+    let chemin = chemin.to_string_lossy().into_owned();
+    let chemin = chemin.strip_prefix(r"\\?\").unwrap_or(&chemin).to_string();
+    let nem = nemeton_de(programme).to_string_lossy().into_owned();
+    let mut spu = Spu128::nouveau();
+    spu.dossier = programme.parent().map(|d| d.to_path_buf());
+    spu.charger(&nombres128(DRUIDE_CONSEILLER));
+    for e in [chemin, nem] {
+        spu.texte_entree.extend(e.chars().map(|ch| ch as u128));
+        spu.texte_entree.push_back(10);
+    }
+    let _ = spu.executer(2_000_000_000);
+    spu.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect()
+}
+
+/// le dialogue du Druide, en clair (pour la fenêtre des explications d'Ogmios et « lugus druide ») ; les potions
+/// sont proposées, jamais posées sans le programmeur
+pub fn druide_texte(programme: &std::path::Path, fin_de_ligne: &str) -> String {
+    let brut = druide_brut(programme);
+    let mut conseils = Vec::new();
+    let mut savoirs = Vec::new();
+    for l in brut.lines() {
+        let m: Vec<&str> = l.splitn(5, '|').collect();
+        if m.len() >= 4 && m[0] == "conseil" {
+            let etat = match m[1] { "vrai" => "sûr", "inconnu" => "à vérifier", "variable" => "selon le cas", "faux" => "à corriger", x => x };
+            let mut t = format!("· ligne {} ({}) : {}", m[2], etat, m[3]);
+            if m.len() >= 5 && !m[4].trim().is_empty() {
+                t.push_str(&format!("{}    la potion : {}", fin_de_ligne, m[4].trim()));
+            }
+            conseils.push((m[2].parse::<usize>().unwrap_or(0), t));
+        } else if m.len() >= 3 && m[0] == "savoir" {
+            savoirs.push(format!("· {} : {}", m[1], m[2]));
+        }
+    }
+    let mut r = String::from("Le Druide :");
+    r.push_str(fin_de_ligne);
+    if conseils.is_empty() {
+        r.push_str("je ne vois rien à redire.");
+        r.push_str(fin_de_ligne);
+    } else {
+        conseils.sort_by_key(|c| c.0);
+        r.push_str(&conseils.iter().map(|c| c.1.clone()).collect::<Vec<_>>().join(fin_de_ligne));
+        r.push_str(fin_de_ligne);
+    }
+    if !savoirs.is_empty() {
+        r.push_str(fin_de_ligne);
+        r.push_str("Ce que savent les agents de ce programme :");
+        r.push_str(fin_de_ligne);
+        r.push_str(&savoirs.join(fin_de_ligne));
+        r.push_str(fin_de_ligne);
+    }
+    r
+}
 
 pub fn nombres128(s: &str) -> Vec<u128> {
     s.split(|c: char| c == ',' || c.is_whitespace()).filter(|x| !x.is_empty()).map(|x| x.parse::<u128>().unwrap_or(0)).collect()

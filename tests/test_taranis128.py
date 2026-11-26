@@ -51,11 +51,11 @@ def enrober(cls):
 for cls in (noyau_vtx.Noyau, noyau_vtx.NoyauI64, noyau_vtx.NoyauTaranis):
     enrober(cls)
 with tempfile.TemporaryDirectory() as d:
-    for nomg in ("gergovie_carte", "gergovie_carte_eventail", "gergovie_carte_deux_faces"):
+    for nomg in ("gergovie_carte", "gergovie_etages"):
         g = os.path.join(RACINE, "belenos", nomg + ".vtx")
         forge128.source_rust(open(g, encoding="utf-8").read(), os.path.dirname(g), nomg, os.path.join(d, nomg))
 bon = pris[0] > 0 and not any("nb_bits" in r for r in refus)
 ok &= bon
-print("OK  " if bon else "ÉCHEC", "Gergovie sur la carte (le témoin, l'éventail, les deux faces) : ses noyaux compilés, aucun refusé pour nb_bits", "" if bon else refus[:3])
+print("OK  " if bon else "ÉCHEC", "Gergovie sur la carte (un noyau et les étages) : ses noyaux compilés, aucun refusé pour nb_bits", "" if bon else refus[:3])
 print("Taranis et le 128 : tout est conforme" if ok else "Taranis et le 128 : des écarts")
 sys.exit(0 if ok else 1)

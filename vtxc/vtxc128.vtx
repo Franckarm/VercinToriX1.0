@@ -1458,6 +1458,324 @@ fonction lexer(c: Ctx) {
         }
     }
     dernier = nouveau_jeton(c, dernier, 6, 0, 0, ligne);
+    cubes_nommes(c);
+}
+
+// --------------------------------------------------------------------------------------------- les cubes nommés (0.845)
+// « cube NOM @E; », « cube NOM @E arn; », « cube NOM[N] @E frequence F; » au niveau du programme ; « @NOM[i] » et
+// « @NOM(t)[i] » réécrits dans les jetons en « @E[(F << 24) + (i)] » et « @E[((F + (t)) << 24) + (i)] », comme vtx128.py
+// (cubes_nommes) : les mêmes jetons, donc les mêmes mots.
+fonction jeton_num(v, ligne): Jeton {
+    retour Jeton { genre: 3, val: v, texte: 0, ligne: ligne };
+}
+fonction jeton_de_op(t, ligne): Jeton {
+    retour Jeton { genre: 4, val: 0, texte: t, ligne: ligne };
+}
+// le jeton qui ferme celui-ci (une parenthèse, un crochet), ou nul
+fonction jeton_fermant(j: Jeton): Jeton {
+    soit prof = 0;
+    soit q = j;
+    tantque q != nul && q.genre != 6 {
+        si jeton_ouvre(q) {
+            prof = prof + 1;
+        } sinon si jeton_ferme(q) {
+            prof = prof - 1;
+            si prof == 0 {
+                retour q;
+            }
+        }
+        q = q.suivant;
+    }
+    retour nul;
+}
+// une chaîne de jetons neufs : chaque élément de l (des textes d'opérateurs, ou des nombres marqués par un 1 dans m)
+fonction chaine_jetons(l: Liste, m: Liste, ligne): Jeton {
+    soit tete: Jeton = nul;
+    soit queue: Jeton = nul;
+    pour k dans 0..l.n {
+        soit j: Jeton = nul;
+        si elem(m, k) == 1 {
+            j = jeton_num(elem(l, k), ligne);
+        } sinon {
+            j = jeton_de_op(elem(l, k), ligne);
+        }
+        si tete == nul {
+            tete = j;
+        } sinon {
+            queue.suivant = j;
+        }
+        queue = j;
+    }
+    retour tete;
+}
+fonction fin_de_chaine(j: Jeton): Jeton {
+    tantque j.suivant != nul {
+        j = j.suivant;
+    }
+    retour j;
+}
+fonction pousser_op(l: Liste, m: Liste, t) {
+    ajouter(l, t);
+    ajouter(m, 0);
+}
+fonction pousser_num(l: Liste, m: Liste, v) {
+    ajouter(l, v);
+    ajouter(m, 1);
+}
+
+fonction cubes_nommes(c: Ctx) {
+    soit noms = liste();
+    soit nombres = liste();
+    soit etages = liste();
+    soit freqs = liste();
+    soit arns = liste();
+    soit lignes = liste();
+    soit ecrites = liste();
+    // 1. les déclarations, au niveau du programme, retirées des jetons
+    soit prec: Jeton = nul;
+    soit j = c.jetons;
+    soit prof = 0;
+    tantque j != nul && j.genre != 6 && c.erreur == 0 {
+        soit decl = 0;
+        si prof == 0 && j.genre == 1 && egal(j.texte, "cube") && j.suivant.genre == 1 {
+            soit j2 = j.suivant.suivant;
+            si jeton_op(j2, "@") || jeton_op(j2, "[") {
+                si prec == nul || jeton_op(prec, ";") || jeton_op(prec, "}") {
+                    decl = 1;
+                }
+            }
+        }
+        si decl == 1 {
+            soit l = j.ligne;
+            soit nom = j.suivant.texte;
+            soit k = j.suivant.suivant;
+            soit n = 1;
+            si jeton_op(k, "[") {
+                si k.suivant.genre != 3 || !jeton_op(k.suivant.suivant, "]") || k.suivant.val < 1 || k.suivant.val > 4096 {
+                    erreur_nom(c, l, "le nombre de cubes d'une famille, un nombre écrit de 1 à 4096", nom);
+                    retour;
+                }
+                n = k.suivant.val;
+                k = k.suivant.suivant.suivant;
+            }
+            si !jeton_op(k, "@") || k.suivant.genre != 3 || k.suivant.val < 1 || k.suivant.val > 3 {
+                erreur_nom(c, l, "l'étage d'un cube s'écrit @1, @2 ou @3 (l'étage 0 porte le code)", nom);
+                retour;
+            }
+            soit etage = k.suivant.val;
+            k = k.suivant.suivant;
+            soit freq = 0;
+            soit ecrite = 0;
+            soit arn = 0;
+            si k.genre == 1 && egal(k.texte, "frequence") {
+                si k.suivant.genre != 3 || k.suivant.val < 1 || k.suivant.val > 16777215 {
+                    erreur_nom(c, l, "la fréquence d'un cube, un nombre écrit de 1 à 16777215", nom);
+                    retour;
+                }
+                freq = k.suivant.val;
+                ecrite = 1;
+                k = k.suivant.suivant;
+            } sinon si k.genre == 1 && egal(k.texte, "arn") {
+                arn = 1;
+                k = k.suivant;
+            }
+            si !jeton_op(k, ";") {
+                erreur_nom(c, l, "« ; » attendu à la fin de la déclaration du cube", nom);
+                retour;
+            }
+            pour q dans 0..noms.n {
+                si egal(elem(noms, q), nom) {
+                    erreur_nom(c, l, "ce cube est déjà déclaré", nom);
+                    retour;
+                }
+            }
+            ajouter(noms, nom);
+            ajouter(nombres, n);
+            ajouter(etages, etage);
+            ajouter(freqs, freq);
+            ajouter(arns, arn);
+            ajouter(lignes, l);
+            ajouter(ecrites, ecrite);
+            // retirer « cube … ; »
+            si prec == nul {
+                c.jetons = k.suivant;
+            } sinon {
+                prec.suivant = k.suivant;
+            }
+            j = k.suivant;
+        } sinon {
+            si jeton_ouvre(j) {
+                prof = prof + 1;
+            } sinon si jeton_ferme(j) {
+                prof = prof - 1;
+            }
+            prec = j;
+            j = j.suivant;
+        }
+    }
+    si noms.n == 0 || c.erreur != 0 {
+        retour;
+    }
+    // 2. les fréquences : les écrites d'abord (sans se recouvrir), puis les autres de 199 (ou 255, l'ARN) en descendant
+    pour d dans 0..noms.n {
+        si elem(ecrites, d) == 1 {
+            pour e dans 0..d {
+                si elem(ecrites, e) == 1 && elem(etages, e) == elem(etages, d) && elem(freqs, d) < elem(freqs, e) + elem(nombres, e)
+                   && elem(freqs, e) < elem(freqs, d) + elem(nombres, d) {
+                    erreur_nom(c, elem(lignes, d), "ce cube recouvre les fréquences d'un autre", elem(noms, d));
+                    retour;
+                }
+            }
+        }
+    }
+    pour d2 dans 0..noms.n {
+        si elem(ecrites, d2) == 0 {
+            soit haut = 199;
+            soit bas = 1;
+            si elem(arns, d2) == 1 {
+                haut = 255;
+                bas = 200;
+            }
+            soit nd = elem(nombres, d2);
+            soit f = haut - nd + 1;
+            soit libre = 0;
+            tantque libre == 0 && f >= bas {
+                libre = 1;
+                pour e2 dans 0..noms.n {
+                    si e2 != d2 && (elem(ecrites, e2) == 1 || e2 < d2) && elem(etages, e2) == elem(etages, d2)
+                       && f < elem(freqs, e2) + elem(nombres, e2) && elem(freqs, e2) < f + nd {
+                        libre = 0;
+                    }
+                }
+                si libre == 0 {
+                    f = f - 1;
+                }
+            }
+            si libre == 0 {
+                erreur_nom(c, elem(lignes, d2), "plus de fréquence libre pour le cube", elem(noms, d2));
+                retour;
+            }
+            poser(freqs, d2, f);
+        }
+    }
+    // 3. les accès : « @NOM[i] », « @NOM(t)[i] »
+    soit a = c.jetons;
+    tantque a != nul && a.genre != 6 && c.erreur == 0 {
+        soit vu = 0;
+        si jeton_op(a, "@") && a.suivant.genre == 1 {
+            soit d3 = 0 - 1;
+            pour q2 dans 0..noms.n {
+                si egal(elem(noms, q2), a.suivant.texte) {
+                    d3 = q2;
+                }
+            }
+            si d3 != 0 - 1 {
+                vu = 1;
+                soit l2 = a.ligne;
+                soit nom2 = elem(noms, d3);
+                soit nb = elem(nombres, d3);
+                soit b = a.suivant;
+                soit ouvre = b.suivant;
+                soit fam = jeton_op(ouvre, "(");
+                si fam && nb == 1 {
+                    erreur_nom(c, l2, "ce cube n'est pas une famille (il se lit @nom[i])", nom2);
+                    retour;
+                }
+                si !fam && nb > 1 {
+                    erreur_nom(c, l2, "une famille de cubes se lit @nom(t)[i]", nom2);
+                    retour;
+                }
+                soit ls = liste();
+                soit ms = liste();
+                pousser_num(ls, ms, elem(etages, d3));
+                pousser_op(ls, ms, "[");
+                pousser_op(ls, ms, "(");
+                si fam {
+                    pousser_op(ls, ms, "(");
+                    pousser_num(ls, ms, elem(freqs, d3));
+                    pousser_op(ls, ms, "+");
+                    pousser_op(ls, ms, "(");
+                    soit fp = jeton_fermant(ouvre);
+                    si fp == nul || !jeton_op(fp.suivant, "[") {
+                        erreur_nom(c, l2, "« [ » attendu après le cube", nom2);
+                        retour;
+                    }
+                    soit crochet = fp.suivant;
+                    soit fc = jeton_fermant(crochet);
+                    si fc == nul {
+                        erreur_nom(c, l2, "« [ » attendu après le cube", nom2);
+                        retour;
+                    }
+                    // @ E [ ( ( F + ( t… ) ) << 24 ) + ( x… ) ]
+                    soit pre = chaine_jetons(ls, ms, l2);
+                    soit apres_t = ouvre.suivant;
+                    a.suivant = pre;
+                    soit fin_pre = fin_de_chaine(pre);
+                    si apres_t == fp {
+                        fin_pre.suivant = fp;
+                    } sinon {
+                        fin_pre.suivant = apres_t;
+                    }
+                    // fp est « ) » ; après lui : ) << 24 ) + (
+                    soit l3 = liste();
+                    soit m3 = liste();
+                    pousser_op(l3, m3, ")");
+                    pousser_op(l3, m3, "<<");
+                    pousser_num(l3, m3, 24);
+                    pousser_op(l3, m3, ")");
+                    pousser_op(l3, m3, "+");
+                    pousser_op(l3, m3, "(");
+                    soit mil = chaine_jetons(l3, m3, l2);
+                    soit fin_mil = fin_de_chaine(mil);
+                    soit apres_x = crochet.suivant;
+                    fp.suivant = mil;
+                    si apres_x == fc {
+                        fin_mil.suivant = fc;
+                    } sinon {
+                        fin_mil.suivant = apres_x;
+                    }
+                    // fc « ] » devient « ) », suivi d'un « ] » neuf
+                    soit fermeture = jeton_de_op("]", l2);
+                    fermeture.suivant = fc.suivant;
+                    fc.texte = ")";
+                    fc.suivant = fermeture;
+                    a = pre;
+                } sinon {
+                    si !jeton_op(ouvre, "[") {
+                        erreur_nom(c, l2, "« [ » attendu après le cube", nom2);
+                        retour;
+                    }
+                    soit fc2 = jeton_fermant(ouvre);
+                    si fc2 == nul {
+                        erreur_nom(c, l2, "« [ » attendu après le cube", nom2);
+                        retour;
+                    }
+                    // @ E [ ( F << 24 ) + ( x… ) ]
+                    pousser_num(ls, ms, elem(freqs, d3));
+                    pousser_op(ls, ms, "<<");
+                    pousser_num(ls, ms, 24);
+                    pousser_op(ls, ms, ")");
+                    pousser_op(ls, ms, "+");
+                    pousser_op(ls, ms, "(");
+                    soit pre2 = chaine_jetons(ls, ms, l2);
+                    soit apres_x2 = ouvre.suivant;
+                    a.suivant = pre2;
+                    soit fin_pre2 = fin_de_chaine(pre2);
+                    si apres_x2 == fc2 {
+                        fin_pre2.suivant = fc2;
+                    } sinon {
+                        fin_pre2.suivant = apres_x2;
+                    }
+                    soit fermeture2 = jeton_de_op("]", l2);
+                    fermeture2.suivant = fc2.suivant;
+                    fc2.texte = ")";
+                    fc2.suivant = fermeture2;
+                    a = pre2;
+                }
+            }
+        }
+        a = a.suivant;
+    }
 }
 
 // --------------------------------------------------------------------------------------------- analyse : outils

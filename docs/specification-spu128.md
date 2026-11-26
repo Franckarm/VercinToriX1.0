@@ -1,6 +1,6 @@
 # Spécification de Lugus, le SPU-128 (version 1, 25 octobre 2026)
 
-Conception d'ensemble et décisions : `docs/vtx-spu128-conception.md`. Machine de référence prévue : `spu128/spu128.py`
+Conception d'ensemble et décisions : `docs/archives/vtx-spu128-conception.md`. Machine de référence prévue : `spu128/spu128.py`
 (Python) ; machine rapide : `vtx-rs` (binaire `lugus`). Les deux devront donner, pour tout programme, les mêmes sorties,
 le même nombre d'instructions et la même mémoire. Ce document reprend la spécification du SPU-64 (Dunon) et dit ce qui
 change ; ce qu'il ne mentionne pas est comme au SPU-64.

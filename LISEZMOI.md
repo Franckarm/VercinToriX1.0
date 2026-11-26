@@ -1,24 +1,23 @@
-# Vercintorix (vtx) 0.5
+# Vercintorix (vtx) 0.845
 
-**Pour commencer : lisez `COMMENCER.md`** (construire vtx.exe, installer l'éditeur, premiers programmes).
+**Pour commencer : lisez `COMMENCER.md`** (construire la machine, Ogmios, premiers programmes) ; **la référence du
+langage : `docs/vtx-langage.md`** ; les fondements gravés : `docs/vtx-carnet.md`, section 1 bis.
 
 Tous droits réservés : voir `AUTEUR.md`.
 
-## Où en est vtx (25 novembre 2026, 0.843)
+## Où en est vtx (26 novembre 2026, 0.845)
 
-- **Lugus compte en 128 bits** : l'entier par défaut a la largeur du mot (le hex, l'ADN, l'ARN, le cube chromatique),
-  dans les deux compilateurs (les mêmes mots), le prélude, la forge et Gobannos. `exemples128/entier128.vtx`.
-- **Dunon pour le graphique** : un programme qui commence par `dunon;` compte en 64 bits, comme la carte (Taranis) et
-  le C++ de référence ; Gergovie et Belenos y sont, avec les mêmes empreintes au processeur et sur la carte.
-- **-1 vaut -1** : les services de Lugus répondent sur tout le mot (-1 inconnu, -2 faux) ; le prélude dit « absent »
-  par `0 - 1`. `exemples128/sentinelles.vtx`.
-- **Gobannos divise en 128 bits** : les programmes de 128 bits deviennent des exécutables (Linux, Windows).
-  `exemples128/division128.vtx`.
-- **Ésus, dans la forge** : la division par une constante changée en multiplication (Granlund et Montgomery), et
-  l'opération de 64 bits quand les bornes prouvent que tout y tient (les codons synonymes). Le même résultat ;
-  `VTX_ESUS=0` l'éteint.
-- **Les agents** : le Vergobret (l'exécution : carte ou processeur, les fils), Gutuater (la forge et la garde, écrit
-  en vtx), le Druide (les conseils, à concevoir : il travaillera l'ARN et le cube, jamais l'ADN).
+- **Lugus compte en 128 bits** : l'entier et le flottant par défaut ont la largeur du mot (le hex, l'ADN, l'ARN, le cube
+  chromatique), dans les deux compilateurs (les mêmes mots), le prélude, la forge et Gobannos.
+- **Les cubes nommés** (0.845) : `cube relief @2;`, `@relief[i]` ; le compilateur choisit les fréquences et refuse deux
+  cubes qui se recouvrent, sur Lugus et sur Dunon. `exemples128/cubes_nommes.vtx`.
+- **Dunon pour le graphique** : `dunon;` en tête d'un programme le fait compter en 64 bits, comme la carte (Taranis) et le
+  C++ de référence ; Gergovie, l'épreuve du graphique, y est, avec les mêmes empreintes au processeur et sur la carte.
+- **Les agents** : le Vergobret (l'exécution : la carte ou le processeur, les fils), Gutuater (la forge et la garde),
+  le Druide (la mémoire des bornes, les cellules, l'évolution) ; leur mémoire vit dans le **nemeton**
+  (`~/.vercintorix/nemeton/PROG`), qui survit aux paquets. Ésus, dans la forge : les opérations de 64 bits prouvées.
+- L'ombre de Belenos est revenue au calcul exact (la décision du créateur, le 26 novembre) ; les essais approchés
+  (la clepsydre progressive, l'éventail, les deux faces) sont gardés dans la branche `ombre-approchee`.
 - Le journal de passation : `docs/vtx-passation.md` ; les décisions et leurs raisons : `docs/vtx-reactions.md`.
 
 Langage, compilateurs, machines et atelier du SPU à cube chromatique.
@@ -34,7 +33,7 @@ Langage, compilateurs, machines et atelier du SPU à cube chromatique.
 Senos et Dunon gardent le langage d'avant les réactions ; ils y viendront pour la rétrocompatibilité. Chaque machine a
 deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuvent être forgés en code natif.
 
-## Ce que la 0.5 réunit sur Lugus
+## Ce que Lugus réunit
 
 - **Les réactions** (`docs/vtx-reactions.md`) : chaque ligne est un atome, chaque `->` une liaison. Les atomes sont
   rangés par vagues, donc l'ordre des lignes ne compte pas ; les atomes d'une même vague réagissent ensemble, sur
@@ -78,7 +77,7 @@ deux compilateurs qui donnent exactement les mêmes mots, et ses programmes peuv
 - **La toile** : le service d'image de la machine (la souris, le clavier, l'horloge, les GIF). Le nom Gobatix est
   réservé au futur logiciel de modélisation et d'animation (`docs/gobatix-vision.md`).
 
-L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/vtx-0-5-autonomie.md`.
+L'histoire complète, les choix et les mesures : `docs/vtx-carnet.md` et `docs/archives/vtx-0-5-autonomie.md`.
 
 ## Ce qu'il faut
 
@@ -178,4 +177,4 @@ Sous Windows, remplacez `python3` par `py` ou `python`.
 
 ## Pour aller plus loin
 
-La référence complète du langage est dans `docs/vtx-syntaxe-v0-4.md`. Le jeu d'instructions du SPU est dans `docs/specification-spu-v0-5.md`, section 5. Les limites connues sont à la fin de la référence et dans le carnet.
+La référence complète du langage est dans `docs/vtx-langage.md`. Le jeu d'instructions du SPU est dans `docs/archives/specification-spu-v0-5.md`, section 5. Les limites connues sont à la fin de la référence et dans le carnet.

@@ -31,7 +31,7 @@ exactement le problème que vtx veut résoudre.
   `importer empreinte "16hex";` sans chemin, la vibration de chaque molécule (`lugus morceaux`), et la carte qui dit
   d'où vient chaque molécule (et voit une retouche).
 - Les journaux : `docs/vtx-reactions.md` (sections 1 à 77), `docs/vtx-carnet.md` (les fondements, section 1 bis ; la
-  feuille de route, section 11), `docs/vtx-syntaxe-v0-4.md` (la référence du langage).
+  feuille de route, section 11), `docs/vtx-langage.md` (la référence du langage).
 
 ## 2. Les règles de travail (à garder)
 
@@ -735,3 +735,34 @@ l'ARN ce qui agit ; tout passe par le cube d'abord (`vtx-carnet.md`, « Le chemi
   (le filtre du 18, la lettre du créateur à Anthropic en attente). Proposé à la place : les voies (#8A) et la matière (#92)
   dans Gobannos, qui ne sont pas des appels au système.
 - Livraison : vtx-0.844.zip, essai-0.844.bat (le C++, vtx au processeur, Taranis, pour 3 et 4). Prochaine : vtx-0.845.
+
+## 0.845 (26 novembre) : les cubes nommés, le nemeton, les documents
+- Chez le créateur, la 0.844 : mauvais (vtx 10 images par seconde au jour, Taranis 7 au vol). **Décidé** : l'ombre exacte
+  seule, zéro perte ; les modes approchés dans la branche `ombre-approchee` (PROGRESSIF n'existe plus).
+- **L'ordre décidé avec le créateur** (« on corrige tout ») : 0.845 les cubes nommés, le lieu par empreinte, le nemeton,
+  les documents ; 0.846 les rôles des agents et **le Druide dans Ogmios** (le dialogue dans la fenêtre des explications, en
+  bas à droite) ; 0.847 la valeur sue, les services en quatre valeurs, `f()[i]`, les types de fonction imbriqués, les
+  espaces de noms, `entier_64` réel.
+- **Le nemeton** : `~/.vercintorix/nemeton/NOM` (ou `VTX_NEMETON`) : l'ARN de Gutuater n'est plus perdu d'un essai à
+  l'autre (c'était la vraie cause de la carte directe perdue en 0.844, pas les lignes) ; un ARN à côté de l'exécutable
+  passe avant. Le Druide n'y est pas encore (0.846).
+- **Le lieu d'un gène** : `lieu_de(molécule, boucle)` (FNV-1a sans les lignes) ; `tests/test_fondre.py` lit le lieu dans
+  le message de la forge (« le lieu N »).
+- **Les cubes nommés** : `cubes_nommes` à la fin du lexer, dans les quatre compilateurs ; `tests/test_cubes_nommes.py`
+  (dans verifier.py) ; `exemples128/cubes_nommes.vtx`.
+- **Les documents** : `docs/vtx-langage.md` (la référence de Lugus), `COMMENCER.md`, `LISEZMOI.md`, le carnet (section 1,
+  4, la feuille de route) ; `docs/archives/` : huit documents périmés.
+- Livraison : vtx-0.845.zip, essai-0.845.bat (Gergovie témoin : le C++, vtx au processeur, Taranis ; le nemeton).
+
+## 0.846 (26 novembre) : les rôles des agents, le Druide dans Ogmios
+- `docs/vtx-agents.md` : la répartition (le Druide à l'écriture, Gutuater à la forge, le Vergobret à l'exécution, Ésus
+  dans la forge), le nemeton, l'empreinte, la synapse. L'ancienne conception est aux archives.
+- **Le Druide conseiller** : `druide/conseiller.vtx` (en vtx ; recompiler par `outils/druide.sh` après une retouche :
+  `tests/test_druide_conseiller.py` vérifie que les mots embarqués sont ceux du texte) ; `machine128::druide_texte` ;
+  `lugus druide PROG.vtx` ; dans Ogmios : F5 et Ctrl+D (`C_DRUIDE`, `maj_druide`, le champ `druide` de l'atelier),
+  la fenêtre des explications.
+- **À faire ensuite (0.847, décidé)** : la valeur sue et les services en quatre valeurs ; `f()[i]` ; un type de
+  fonction dans un type de fonction ; les espaces de noms d'importer ; `entier_64` réel ou retiré. Puis, pour les agents :
+  la mémoire du Druide d'évolution dans le nemeton, sa synapse dans `synapse.vtx`, Ésus et le dépliage choisis par
+  Gutuater, le geste qui pose une potion, le Druide qui lit l'arbre du compilateur.
+- Livraison : vtx-0.846.zip, essai-0.846.bat (réunit la 0.845 et la 0.846). Prochaine : vtx-0.847.

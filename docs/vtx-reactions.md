@@ -4789,3 +4789,60 @@ version carte est plus lente que l'éventail ; la RTX dira.
 (le rapport des deux pentes le dit). Le calque d'état pourrait servir ailleurs : c'est une ombre quaternaire rangée, que
 Divona ou la lumière des feux pourraient lire. Les deux jeux de dépôts de l'anti-cube sont des fréquences de l'ARN (208
 et plus) : ils vivent sur la carte et ne redescendent pas.
+
+## 119. Les cubes nommés, le lieu par empreinte, le nemeton, les documents (26 novembre, 0.845)
+
+**Chez le créateur, la 0.844** : la clepsydre à deux faces, les mêmes empreintes pour les trois, mais vtx au processeur
+à 10 images par seconde au jour (des images à 943 ms) et Taranis tombé à 7 au vol. Son jugement : l'approximation
+n'apporte qu'un peu de vitesse et ne donne pas zéro perte ; on revient à l'origine, la solution est ailleurs (le halo des
+bords, peut-être les fentes de Young : à mûrir). **Fait** : l'ombre exacte seule ; la clepsydre progressive, l'éventail et
+les deux faces sont gardés dans la branche `ombre-approchee` ; Gergovie garde ses empreintes (vérifiées à demi-échelle
+pour le C++, vtx au processeur et Taranis).
+
+**La vraie cause d'une partie de la perte** (et une correction honnête de ce que j'avais dit) : le vol de vtx avait perdu
+13 % parce que la carte directe n'était plus exprimée. J'avais accusé les numéros de ligne ; en fait l'ARN de Gutuater
+vivait à côté de l'exécutable forgé, et chaque essai se décompresse dans un dossier neuf : tout ce qu'il avait appris
+restait dans l'essai d'avant. Deux défauts, deux réponses :
+- **Le nemeton** (le sanctuaire) : la mémoire des agents d'un programme vit dans `VTX_NEMETON/NOM`, sinon
+  `~/.vercintorix/nemeton/NOM`, quel que soit le dossier du programme ; un ARN posé à côté de l'exécutable passe avant (les
+  essais, les tests). `VTX_NEMETON_DIRE=1` dit où il est.
+- **Le lieu d'un gène** (un lot, un noyau fondu) n'est plus la ligne de sa boucle mais l'empreinte de sa molécule et de son
+  arbre sans les numéros de ligne (`lieu_de`, FNV-1a de 32 bits) : toucher le fichier ailleurs ne fait plus rien oublier.
+
+**Les cubes nommés** (Lugus et Dunon ; `docs/vtx-langage.md`) : `cube relief @2;`, `cube passage @2 arn;`,
+`cube tuiles[4] @2 frequence 17;`, puis `@relief[i]` et `@tuiles(t)[i]`. Le compilateur choisit les fréquences (de 199 en
+descendant ; de 255 pour l'ARN), refuse deux cubes du même nom ou qui se recouvrent, un étage 0, une famille lue sans son
+numéro. C'est une écriture : les deux compilateurs de chaque machine réécrivent les jetons dès la lecture
+(`cubes_nommes`, dans vtx128.py, vtx64.py, vtxc128, vtxc64), les mêmes mots qu'à la main, les mêmes refus
+(`tests/test_cubes_nommes.py`). Honnêtement : rien n'y gagne en vitesse par lui-même (la carte directe range déjà les 256
+premières fréquences d'un seul tenant) ; ce qu'il apporte, c'est qu'un programme dit enfin quels cubes il emploie, et
+qu'un recouvrement est refusé au lieu de casser l'image. Gergovie n'est pas réécrite avec (2 500 lignes, des adresses de
+base calculées : le bénéfice ne vaut pas le risque) ; les programmes neufs, et Gobatix, le seront.
+
+**Les documents** : la référence du langage est réécrite pour Lugus (`docs/vtx-langage.md`, qui remplace la « 0.4 » du
+SPU-32) ; `COMMENCER.md` et `LISEZMOI.md` partent de Lugus et d'Ogmios ; le carnet a sa feuille de route refaite ; huit
+documents périmés vont dans `docs/archives/` (hors du paquet). Trouvé en écrivant la référence : sur Lugus, `entier_64`
+et `long` ne coupent rien (des alias de l'entier de 128 bits) : c'est écrit dans les limites, à trancher en 0.847.
+
+## 120. Les rôles des agents, et le Druide qui parle dans Ogmios (26 novembre, 0.846)
+
+**Demandé par le créateur** : mieux répartir les rôles entre le Druide, Gutuater et le Vergobret ; le Druide dans Ogmios,
+son dialogue dans la fenêtre des explications (en bas à droite) ; accentuer son rôle et ses capacités.
+
+- **La répartition** (`docs/vtx-agents.md`, qui remplace la conception du 24) : un moment, un rôle. Le Druide à
+  l'écriture (conseiller, préparer les potions, la bibliothèque, se souvenir des bornes, rapporter ce que savent les
+  autres) ; Gutuater à la forge (choisir les gènes, garder) ; le Vergobret à l'exécution (mesurer, choisir, en 64 bits
+  sans bascule) ; Ésus dans la forge (les preuves). Une mémoire (le nemeton), une clé (l'empreinte), une synapse (les mêmes
+  règles de Belnap ; la copie du Druide d'évolution reste à fondre dans `synapse.vtx`).
+- **Le Druide conseiller** (`druide/conseiller.vtx`, en vtx ; embarqué dans Lugus et Ogmios : `vtx-rs/druide_conseiller.mots`,
+  `outils/druide.sh`) : il lit les jetons du programme et dit, chacun avec son état (sûr, à vérifier, selon le cas) : une
+  constante définie deux fois ; un `selon` sur un logique sans inconnu ni variable ; une adresse du cube écrite à la main
+  (la potion : le cube nommé, la fréquence lue dans sa constante) ; `entier_64` qui compte en 128 bits ; `si … == vrai` ;
+  une fonction que rien n'appelle ; puis ce que Gutuater a appris de ce programme (son ARN dans le nemeton).
+  `lugus druide PROG.vtx` le dit en console ; dans Ogmios, après F5 ou par Ctrl+D (Exécuter, « Le Druide »), dans la
+  fenêtre des explications, sous ce qu'explique la paillasse. Test : `tests/test_druide_conseiller.py`.
+- **Sur Gergovie**, le Druide propose seize cubes nommés (les familles FTEX, FELT, FSOL, FCIEL, FINV, FCREUX… avec leurs
+  fréquences) : c'est exactement le travail de réécriture que la 0.845 n'avait pas osé faire à la main.
+- **Honnêtement, ce qu'il ne fait pas encore** : poser une potion d'un geste (on la recopie) ; lire l'arbre du
+  compilateur (il lit les jetons : il peut se tromper de contexte, d'où « à vérifier ») ; sa mémoire d'évolution n'est pas
+  encore dans le nemeton ; Ésus et le dépliage sont encore choisis par l'évolution du Druide, pas par Gutuater.

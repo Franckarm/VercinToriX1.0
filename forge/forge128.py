@@ -152,6 +152,24 @@ def sans_lignes(x):
     return x
 
 
+def lieu_de(molecule, st):
+    """0.845 : le lieu d'un gène (un lot, une boucle) : l'empreinte de sa molécule et de son arbre sans les numéros de
+    ligne (FNV-1a de 32 bits, jamais 0). Avant, c'était la ligne de la boucle : toucher le fichier ailleurs déplaçait
+    les lignes, et Gutuater oubliait ce qu'il avait appris."""
+    h = 2166136261
+    for b in (str(molecule) + "|" + repr(sans_lignes(st))).encode("utf-8"):
+        h = ((h ^ b) * 16777619) & 0xFFFFFFFF
+    return (h & 0x7FFFFFFF) or 1
+
+
+def nemeton(nom):
+    """0.845 : le nemeton (le sanctuaire) : la mémoire des agents d'un programme, qui ne dépend pas du dossier où il est
+    forgé ni du paquet livré : VTX_NEMETON/NOM, sinon ~/.vercintorix/nemeton/NOM (les carnets de Gutuater, plus tard
+    ceux du Druide et le savoir du Vergobret)"""
+    base = os.environ.get("VTX_NEMETON") or os.path.join(os.path.expanduser("~"), ".vercintorix", "nemeton")
+    return os.path.join(base, nom)
+
+
 def membrane(fonctions):
     """0.837 : la membrane des cellules. Une molécule appelée seulement par des appels visibles (jamais passée en valeur,
     jamais du prélude, pas principal) reçoit sur ses paramètres entiers ce que ses appelants y mettent (les six points
@@ -1290,9 +1308,9 @@ class Forge(V.Generateur):
             if os.environ.get("VTX_TARANIS"):
                 print(f"taranis : le lot de la ligne {tete[0][5]} ne se fond pas : {e}", file=sys.stderr)
             return False
-        lieu = tete[0][5]
+        lieu = lieu_de(self.mol_druide, tete[0])
         if os.environ.get("VTX_TARANIS"):
-            print(f"taranis : le lot de la ligne {lieu} se fond aussi en un noyau ({len(places)} boucles ; la garde : "
+            print(f"taranis : le lot de la ligne {tete[0][5]} (le lieu {lieu}) se fond aussi en un noyau ({len(places)} boucles ; la garde : "
                   f"{sorted(garde)})", file=sys.stderr)
         k = len(self.noyaux)
         self.noyaux.append(spv)
@@ -1559,7 +1577,7 @@ class Forge(V.Generateur):
                 # 0.825 : le lieu du lot (la ligne de sa première boucle) : c'est là que Gutuater et le vergobret le
                 # reconnaissent, d'un passage à l'autre
                 if getattr(self, "lot_pos", 0) == 0:
-                    self.lot_tete = st[5]
+                    self.lot_tete = lieu_de(self.mol_druide, st)
                 spv64r, dehors64r, _ = noyau_vtx.NoyauTaranis(self, var, corps, region=region, atomique=True).compiler()
                 assert dehors64r == dehors
                 pages = True
@@ -1604,7 +1622,7 @@ class Forge(V.Generateur):
             spv64_p, _, _ = noyau_vtx.NoyauI64(self, var, corps).compiler()
             region = min(getattr(self, "lot_pos", 0), 7)
             if getattr(self, "lot_pos", 0) == 0:
-                self.lot_tete = st[5]
+                self.lot_tete = lieu_de(self.mol_druide, st)
             spv64r_p, dehors_r, _ = noyau_vtx.NoyauTaranis(self, var, corps, region=region, atomique=True).compiler()
             rapide_ok = dehors_p == dehors and dehors_r == dehors
         except noyau_vtx.PasPourLaCarte:
@@ -2447,14 +2465,17 @@ MODULES = ["qflot128", "spu128", "hote", "miroir", "taranis_vk", "gif", "sortie"
 # (0.78 : gif et sortie, la fenêtre : un programme forgé présente lui-même ses images)
 
 
-def carte_directe(sortie=None):
+def carte_directe(sortie=None, nom=None):
     """0.830 : le gène « carte_directe » (Gutuater, à la forge) : VTX_CARTE_DIRECTE=1 ou 0 l'impose ; sinon l'ARN de
     Gutuater à côté du programme forgé (« carte_directe 0 vrai ») ; sinon faux (la carte mêlée, comme avant)"""
     v = os.environ.get("VTX_CARTE_DIRECTE")
     if v in ("0", "1"):
         return v == "1"
     if sortie and os.environ.get("VTX_GUTUATER") != "0":
+        # 0.845 : à côté de l'exécutable s'il y a un ARN (les essais), sinon dans le nemeton du programme
         arn = os.path.join(os.path.dirname(os.path.abspath(sortie)), "gutuater.arn")
+        if not os.path.exists(arn):
+            arn = os.path.join(nemeton(nom or os.path.splitext(os.path.basename(sortie))[0]), "gutuater.arn")
         if os.path.exists(arn):
             for l in open(arn, encoding="utf-8"):
                 m = l.split()
@@ -2465,14 +2486,14 @@ def carte_directe(sortie=None):
     return False
 
 
-def noyau(sortie=None):
+def noyau(sortie=None, nom=None):
     src = os.path.join(racine, "vtx-rs", "src")
     mods = []
     for m in MODULES:
         texte = open(os.path.join(src, m + ".rs"), encoding="utf-8").read()
         mods.append(f"#[allow(dead_code, unused_imports, unused_variables)]\nmod {m} {{\n{texte}\n}}\n")
     n = open(os.path.join(ici, "noyau_forge128.rs"), encoding="utf-8").read()
-    if carte_directe(sortie):
+    if carte_directe(sortie, nom):
         n = n.replace("const CARTE_DIRECTE: bool = false;", "const CARTE_DIRECTE: bool = true;", 1)
     return ATTRIBUTS + "\n" + n.replace("// @MODULES@", "\n".join(mods), 1)
 
@@ -2528,7 +2549,7 @@ def programme_rust(src, dossier=None, nom="programme"):
                   "n.starts_with(\"anticube128-2-\")) && n.ends_with(\".cub\") { eprintln!(\"membrane du cube : {} attend sur le "
                   "disque ; la preuve suppose une mémoire vide : reforger avec VTX_MEMBRANE_CUBE=0, ou ôter ce cube\", n); "
                   "std::process::exit(4); } } }\n")
-    s.append("pub fn lancer(entrees: &[String]) {\n" + gardes + "    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
+    s.append("pub fn lancer(entrees: &[String]) {\n    nommer_programme(NOM);\n" + gardes + "    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees, druide_fin);\n}\n")
     return "\n".join(s), mots
 
@@ -2585,7 +2606,7 @@ def source_rust(src, dossier=None, nom="programme", sortie=None):
     DEPLIER[0] = lire_deplier(os.path.splitext(sortie)[0] + ".arn") if sortie else {}
     prog, mots = programme_rust(src, dossier, nom)
     main = "\nfn main() {\n    let a: Vec<String> = std::env::args().collect();\n    lancer(&a[1..]);\n}\n"
-    return noyau(sortie) + "\n" + prog + main, mots
+    return noyau(sortie, nom) + "\n" + prog + main, mots
 
 
 def rustc_options(natif=False):

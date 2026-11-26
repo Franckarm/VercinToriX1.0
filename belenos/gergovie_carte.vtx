@@ -7,7 +7,6 @@ dunon;
 constante RN = 1;
 constante RD = 1;
 constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne
-constante PROGRESSIF = 0;          // 0.828 : la clepsydre refaite en entier
 importer "gergovie_scene.vtx";
 
 fonction principal() {

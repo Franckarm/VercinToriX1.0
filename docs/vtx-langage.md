@@ -1,99 +1,91 @@
-# Vercintorix (vtx) : référence du langage, version 0.4
+# Vercintorix (vtx) : référence du langage (Lugus, version 0.845)
 
-Cette référence remplace la syntaxe v0.1. Tout ce qui est décrit ici est implémenté dans `vtx.py` et vérifié par ses tests ; les limites sont listées à la fin.
+Cette référence décrit le langage tel que le comprennent les deux compilateurs de **Lugus** (`vtx128.py`, la référence en
+Python, et `vtxc128`, écrit en vtx et embarqué dans `lugus`, Ogmios et les exécutables). Ils donnent les mêmes mots, et
+tout ce qui est décrit ici est vérifié par `verifier.py` et l'épreuve d'Alésia. **Dunon** (le SPU-64) comprend le même
+langage à 64 bits (`docs/vtx64-langage.md` pour ce qui lui est propre) ; Senos (le SPU-32) est gelé. Les limites
+connues sont listées à la fin, honnêtement.
+
+*Remplace la « référence 0.4 » (écrite pour le SPU-32 : entier de 32 bits, flottant binary32), qui ne décrivait plus la
+machine depuis le 25 octobre. Le journal de chaque ajout est dans `docs/vtx-reactions.md`.*
 
 ## 1. Principes
 
-- **Gravé, immuable : le cube chromatique, le quaternaire, l'ADN et l'ARN.** La mémoire est le cube des couleurs : chaque mot est un point `#RRGGBBAA`, écrit en hexadécimal, chaque étage un cube de 256³ points. Toute valeur se lit aussi en quits (deux par chiffre hex) et en bases (A = 0, C = 1, G = 2, T/U = 3, l'ARN écrit U). Un type de plusieurs mots est une suite de points du cube : `flottant_petuar` et `entier_petuar` en prennent quatre (32 chiffres hex, 64 quits, 64 bases). Une nouveauté du langage qui ne respecte pas ces trois lectures n'entre pas.
-- Un programme vtx se compile vers le jeu d'instructions du SPU à cube chromatique ; chaque mot est un point `#RRGGBBAA` du cube (quatre voies de 8 bits, seize quits).
-- Trois types : `entier` (le mot de 32 bits non signé, type par défaut), `flottant` (IEEE 754 binary32), `long` (entier signé de 64 bits, deux mots).
-- Les mots-clés sont en français. Les identifiants peuvent contenir des lettres accentuées.
-- Un même programme donne les mêmes sorties, le même nombre d'instructions et la même mémoire sur toutes les machines de référence (Python, Java, JavaScript interprété, JavaScript traduit).
+- **Gravé, immuable : le cube chromatique, le quaternaire, l'ADN et l'ARN.** La mémoire est le cube des couleurs. Le mot
+  de Lugus a 128 bits : un **point de matière** `#RRRRRRRR_VVVVVVVV_BBBBBBBB_MMMMMMMM` (trois couleurs de 32 bits et la
+  matière), 32 chiffres hex, **64 quits**, 64 bases d'ADN (A = 0, C = 1, G = 2, T/U = 3 ; l'ARN écrit U). Une nouveauté
+  qui ne respecte pas ces trois lectures n'entre pas.
+- **La logique de Belnap au cœur** : inconnu 0 (aucune preuve), faux 1, vrai 2, variable 3 (le oui et le non à la fois).
+  Un logique ne sert jamais de condition de `si` : on écrit `selon`, qui traite les quatre cas (section 6 bis).
+- **L'entier par défaut a 128 bits** (`0 - 1` vaut −1 sur tout le mot) ; **le flottant par défaut est le flottant
+  quaternaire de 128 bits** (`1.5`). `dunon;` en tête d'un programme le fait compter en 64 bits (le graphique, Taranis).
+- Les mots-clés sont en français ; les identifiants peuvent porter des accents.
+- Deux compilateurs, les mêmes mots ; les promesses (`touche`, `exige`, `garantit`) sont vérifiées par la machine ; ce
+  qui n'est pas su est dit inconnu, jamais deviné (`docs/vtx-carnet.md`, section 1 bis : les fondements).
 
 ## 2. Éléments lexicaux
 
 **Commentaires** : `// jusqu'à la fin de la ligne`.
 
-**Mots-clés** : `fonction soit si sinon tantque retour constante pour dans donnees arrêter continuer hypothèse annuler valider`, ainsi que `structure`, `tableau`, `de`, `par` et `importer` à leur place.
+**Mots-clés** : `fonction soit si sinon tantque retour constante pour dans donnees arrêter continuer hypothèse annuler
+valider selon`, et à leur place `structure`, `tableau`, `de`, `par`, `importer`, `reaction`, `cube` (0.845), `dunon`.
 
-**Alias** : `et` `ou` `non` pour `&&` `||` `!` ; `entree` pour `entrée` ; `données` pour `donnees` ; `arreter` pour `arrêter` ; `hypothese` pour `hypothèse`.
+**Alias** : `et` `ou` `non` pour `&&` `||` `!` ; `entree` pour `entrée` ; `données` pour `donnees` ; `arreter` pour
+`arrêter` ; `hypothese` pour `hypothèse`.
 
-**Constantes prédéfinies** : `vrai` (1), `faux` (0), `CPU` (0), `GPU` (1), `PARTAGE` (2), `DISQUE` (3).
+**Constantes prédéfinies** : `vrai`, `faux`, `inconnu`, `variable` (des logiques, ou 1 et 0 là où un entier est attendu),
+`nul`, `CPU` (0), `GPU` (1), `PARTAGE` (2), `DISQUE` (3).
 
 | Littéral | Exemple | Type et valeur |
 |---|---|---|
-| Décimal | `1_000` | entier |
+| Décimal | `1_000` | entier (128 bits) |
 | Hexadécimal | `0xFF` | entier |
 | Base 4 | `0q0123` | entier (un chiffre par quit) |
-| Couleur | `#3A7F1C` ou `#3A7F1C80` | entier `#RRGGBBAA` (alpha 0 si absent) |
-| ADN | `adn"GATTACA"` | entier, 1 à 16 lettres : A = 0, C = 1, G = 2, T = U = 3, la première lettre au poids fort ; de 17 à 64 lettres, un `entier_petuar` |
-| Quatre points du cube | `#4000921F_B54442D1_8469898C_C51701B8` | `entier_petuar` : quatre points `#RRGGBBAA`, le plus fort d'abord (32 chiffres hex) |
-| Flottant quaternaire | `1.5Q`, `2.5e-3000Q` | `flottant_petuar`, lu exactement (arrondi au plus proche, pair au milieu) |
-| Flottant | `1.5`, `2e3`, `3.1415927` | flottant (arrondi au binary32 le plus proche) |
-| Long | `5L`, `0xFFFF_FFFF_FFFFL` | long (jusqu'à 2^64 − 1) |
+| 32 bits | `5S`, `0xFFS` | `entier_32` |
+| 128 bits écrit | `5LL` | `entier_128` (alias `petuar`) |
+| Couleur | `#3A7F1C` | un point de matière : la couleur, la matière par défaut (état vrai, transparence à 1) |
+| Point de matière | `#FF000000_80000000_00000000_80000FC0` | les 128 bits tels quels |
+| ADN | `adn"GATTACA"` | entier : A = 0, C = 1, G = 2, T = U = 3, la première lettre au poids fort (jusqu'à 64 lettres) |
+| Flottant | `1.5`, `2e3`, `2.5e-3000` | flottant quaternaire de 128 bits (`flottant_petuar`), lu exactement |
+| Flottant de 64 bits | `1.5D` | `flottant_64` (quaternaire) |
+| Flottant de 32 bits | `1.5S` | `flottant_32` (quaternaire) |
+| Caractère, texte | `'é'`, `"Bonjour"` | son numéro Unicode ; un texte |
 
 ## 3. Types et conversions
 
-| | entier | flottant | long |
+| Type | Taille | Arithmétique | Remarque |
 |---|---|---|---|
-| Taille | 1 mot | 1 mot | 2 mots (bas, haut) |
-| Arithmétique | modulo 2^32, non signée | IEEE binary32, arrondi au plus proche pair | complément à deux sur 64 bits |
-| Division par zéro | `x / 0` = 0xFFFFFFFF, `x % 0` = x | infini ou NaN (IEEE) | `x / 0` = −1, `x % 0` = x |
-| Division | entière, non signée (`./` et `.%` : signées) | IEEE | tronquée vers zéro, reste du signe du dividende |
-| Comparaisons | non signées (`.<` `.<=` `.>` `.>=` : signées) | IEEE (NaN n'est égal à rien) | signées |
+| `entier` | 128 bits | modulo 2^128 ; `/ % < >` sans signe, `./ .% .< .> .>>` signés | le défaut ; `x / 0` = −1, `x % 0` = x |
+| `entier_32` | 32 bits | modulo 2^32 | suffixe `S` |
+| `entier_128`, `petuar` | 128 bits | comme `entier` | écrit `5LL` |
+| `flottant` (`flottant_petuar`) | 128 bits | quaternaire : état de Belnap, exposant en base 4, 56 quits de mantisse (111 à 112 bits) | le défaut |
+| `flottant_64` | 64 bits | quaternaire, 26 quits (51 à 52 bits) | suffixe `D` |
+| `flottant_32` | 32 bits | quaternaire, 11 quits | suffixe `S` |
+| `logique` | un quit | Belnap | section 6 bis |
+| `texte` | une adresse | | section 6 ter |
+| `point` (`point_de_matiere`) | 128 bits | `p.r`, `p.v`, `p.b` (32 bits), `p.etat`, `p.reflet`, `p.lumiere`… | le mot du cube |
+| structures, tableaux, dictionnaires | des adresses | | sections 6, 8 |
 
-**Conversions implicites** : un entier mélangé à un flottant devient flottant ; un entier mélangé à un long devient long (sans signe). Aucune autre conversion n'est implicite : mélanger un flottant et un long, ou ranger un flottant dans un entier, est une erreur de compilation qui indique la fonction à utiliser.
+**Attention** : sur Lugus, `entier_64` et `long` sont aujourd'hui des **alias de l'entier de 128 bits** (ils ne coupent
+rien) ; seul `dunon;` fait compter en 64 bits. C'est une limite (section 12).
 
-| Fonction | Effet |
-|---|---|
-| `flottant(x)` | entier non signé vers flottant |
-| `flottant_signe(x)` | entier lu en complément à deux vers flottant |
-| `entier(x)` | flottant vers entier signé, tronqué vers zéro, saturé (NaN donne 0) ; long vers son mot bas |
-| `arrondi(x)` | flottant vers entier signé, au plus proche pair, saturé |
-| `long(x)` | entier non signé vers long |
-| `long_signe(x)` | entier en complément à deux vers long |
-| `long_de(haut, bas)` | long à partir de deux mots |
-| `bas(x)`, `haut(x)` | mots d'un long |
-| `bits(x)` | les 32 bits d'un flottant, comme entier |
-| `comme_flottant(x)` | un entier lu comme les 32 bits d'un flottant |
+**Les flottants quaternaires.** *Inconnu* : le nombre n'a pas été calculé (une mémoire jamais écrite est inconnue).
+*Variable* : contradiction (`0/0`, ∞ − ∞, 0 × ∞, racine d'un négatif) ; l'IEEE confond ces deux cas dans un seul NaN.
+Dans un calcul, variable l'emporte sur inconnu, inconnu sur un nombre ; une comparaison avec un état inconnu ou variable
+est fausse dans les deux sens. Un flottant ne sert pas de condition : on le compare, ou on demande `etat(x)`, un
+`logique` : `selon etat(x) { vrai { } faux { } inconnu { } variable { } }`. Le prix honnête : sans bit caché en base 4, un
+ou deux bits de précision de moins que l'IEEE ; et `0.1` s'écrit en base 4 comme en binaire, pas exactement (il
+s'affiche « 0.1 », le décimal le plus court qui redonne la même valeur). L'IEEE reste pour l'échange : `vers_ieee64`,
+`de_ieee64`, `vers_ieee128`, `de_ieee128`.
 
-### Les types larges : `entier_64`, `flottant_64`, `entier_128`
+**Conversions.** Aucune n'est implicite entre types différents, sauf un entier mêlé à un flottant (il devient flottant)
+et un type étroit qui s'élargit ; chaque mélange refusé nomme la fonction à utiliser : `entier(x)` (tronqué vers zéro,
+saturé), `arrondi(x)`, `flottant(x)`, `flottant_64(x)`, `flottant_32(x)`, `entier_32(x)`, `entier_petuar(x)`,
+`flottant_petuar(x)`, `logique(x)` (0 donne faux, le reste vrai), `comme_logique(x)` (le code 0 à 3), `bits(x)` (les bits
+d'un flottant, comme entier), `comme_flottant(x)`.
 
-| | `entier_64` | `flottant_64` | `entier_128` |
-|---|---|---|---|
-| Écriture | `5L` ; type `long` ou `entier_64` | `1.5D`, `2.5e-3D` ; type `flottant_64` | `5LL` ; type `entier_128` (alias gaulois `petuar`, « quatre », parce qu'il tient en quatre mots) |
-| Taille, registres | 2 mots : R1 (bas) et R4 (haut) | 2 mots : R1 et R4 | 4 mots : R1, R3, R4, R6 (le mot bas d'abord) |
-| Arithmétique | complément à deux sur 64 bits | IEEE binary64, arrondi au plus proche pair, NaN canonique | complément à deux sur 128 bits |
-| Opérateurs | `+ - * / % & \| ^ << >>`, comparaisons signées | `+ - * /`, comparaisons IEEE | `+ - & \| ^ ~` et comparaisons en ligne ; `* / % << >>`, `abs`, `min`, `max` par le prélude |
-| Comparaisons | signées | IEEE (NaN n'est égal à rien) | signées ; `>>` arithmétique |
-
-Aucune conversion implicite entre ces types (sauf : un entier de 32 bits s'élargit en `entier_64` ou `entier_128`, sans signe) ; chaque mélange est une erreur de compilation qui nomme la fonction à utiliser. Fonctions : `flottant_64(x)` (depuis un entier, un `long`, un flottant ou un `entier_128`), `flottant_64_signe`, `flottant_64_de(haut, bas)`, `comme_flottant_64(x)` (un long lu comme les 64 bits d'un flottant), `entier(x)` et `arrondi(x)` (de 64 bits vers 32, saturés), `long(x)`, `arrondi_long(x)`, `bas(x)` et `haut(x)` (les deux moitiés d'un `entier_64` ou d'un `flottant_64` ; sur un `entier_128`, les deux moitiés de 64 bits), `entier_128(x)` (non signé depuis un entier de 32 bits, signé depuis un long), `entier_128_signe(x)`, `entier_128_de(haut, bas)` (deux longs). Les instructions du SPU sont les opcodes 0x5B à 0x6B (91 à 107) sur des paires de registres ; l'`entier_128` n'a pas d'instruction propre : quatre mots avec retenue (`ADC`, `SBC`) et des fonctions du prélude.
-
-`afficher` écrit un `flottant_64` avec le plus court décimal qui se relit exactement (Dragon4 exact, mêmes chiffres que `repr` de Python) et un `entier_128` en décimal signé. Les fonctions mathématiques ont leur version 64 bits, tirée de fdlibm : `sinus_64 cosinus_64 tangente_64 exponentielle_64 logarithme_64 puissance_64 arctangente_64 arcsinus_64 arccosinus_64 plancher_64 plafond_64 pi_64`, et `racine`, `abs`, `min`, `max` acceptent les `flottant_64`. Exemples : `exemples/flottant64/` (`precision`, `mandelbrot64`, `newton64`) et `exemples/entier128/` (factorielles, Fibonacci(180), comparaisons).
-
-### Le flottant quaternaire : `flottant_petuar` (128 bits)
-
-Le flottant propre à Vercintorix. *Petuar* est « quatre » en gaulois (comme dans Petrocorii, « les quatre troupes », qui a donné le Périgord) : il tient en quatre points du cube, et tout en lui est quaternaire. Alias : `flottant_128`. Un `entier_petuar` (alias de `entier_128`, et de `petuar`) a la même taille.
-
-| Quits | Chiffres hex | Contenu |
-|---|---|---|
-| 63 | le premier, ses deux bits forts | **l'état**, en logique de Belnap : `A` (0) inconnu, `C` (1) négatif, `G` (2) positif, `T`/`U` (3) variable |
-| 62 à 56 | la fin du premier, puis les trois suivants | **l'exposant**, 7 quits en base 4, biais 8192 ; 16383 : l'infini |
-| 55 à 0 | les 28 derniers | **la mantisse**, 56 chiffres en base 4 ; le premier n'est pas nul (sauf à l'exposant 0 : les sous-normaux) |
-
-Valeur : mantisse × 4^(exposant − 8247). L'état et l'exposant tombent exactement sur les quatre premiers chiffres hex (le `RRGG` du point fort), la mantisse sur des chiffres hex entiers : arrondir au quit près, c'est arrondir au demi-chiffre hex. Précision : 111 à 112 bits (environ 34 chiffres décimaux ; en base 4 il n'y a pas de bit caché, le binary128 de l'IEEE en a 113). Étendue : de 10^−4964 (sous-normaux) à 1,19 × 10^4931. Exemples : `1Q` = `#A0004000_00000000_00000000_00000000` = `GGAAAAAACAAAA…` ; `1Q / 3Q` a pour mantisse `CCCC…C` (en base 4, un tiers vaut exactement 0,1111…) ; π = `#A000C90F_DAA22168_C234C4C6_628B80DC`.
-
-**Les quatre états.** *Inconnu* : le nombre n'a pas été calculé (une mémoire jamais écrite est inconnue : quatre points nuls). *Variable* : contradiction (`0/0`, ∞ − ∞, 0 × ∞, racine d'un négatif) ; l'IEEE confond ces deux cas dans un seul NaN. Dans un calcul, variable l'emporte sur inconnu, inconnu sur un nombre. Une comparaison avec un état inconnu ou variable est fausse (dans les deux sens). Un `flottant_petuar` ne sert pas de condition (`si x` est refusé) : on le compare, ou on demande `etat(x)`, un `logique` (inconnu, faux = négatif, vrai = positif, variable) : `selon etat(x) { vrai { } faux { } inconnu { } variable { } }`.
-
-**Opérations.** `+ - * /`, l'opposé, les six comparaisons, `racine`, `abs`, `min`, `max`, arrondis exactement au plus proche (pair au milieu), sur toutes les machines ; tout est écrit en vtx dans le prélude, sans instruction nouvelle du SPU. Un entier, un flottant ou un `flottant_64` s'élargit tout seul en `flottant_petuar` ; un `long` ou un `entier_petuar` se convertit avec `flottant_petuar(x)`. Vers les autres types : `flottant_64(x)`, `flottant(x)` (un seul arrondi), `entier_128(x)` (tronqué vers zéro, saturé), `long(x)` et `entier(x)` (les bits bas de `entier_128(x)`), `bits(x)` (les quatre points, comme un `entier_petuar`) et `comme_flottant_petuar(w)`. Échange avec le binary128 de l'IEEE 754 (les fichiers et les autres langages) : `vers_ieee128(x)` (exact) et `de_ieee128(w)` (arrondi à 111 ou 112 bits). `pi_petuar()`, `inconnu_petuar()`, `variable_petuar()`. `afficher` écrit les chiffres les plus courts qui redonnent exactement le nombre, ou `inconnu`, `variable`, `inf`.
-
-**Les trois lectures d'une valeur de quatre points.** `texte_cube(w)` : `#RRGGBBAA_RRGGBBAA_RRGGBBAA_RRGGBBAA` ; `texte_adn(w)` : 64 bases, le quit 63 d'abord ; `texte_arn(w)` : la même avec U. Pour un flottant : `texte_adn(bits(x))`.
-
-**Coût** (instructions du SPU, machine Rust : environ 300 millions par seconde) : addition 1 800, multiplication 3 400, division 19 000, racine 44 000 ; un `flottant_64` fait une opération en une instruction. Exemples : `exemples/petuar/` (`decouverte`, `quatre_etats`, `pi_machin`).
-
-**Choix de la précision.** Le type écrit fixe la précision, variable par variable ; il n'y a pas de précision globale : `entier` reste de 32 bits parce que les adresses, les indices de tableaux, les registres et les mots du cube le sont. Passer *tout* en 64 bits doublerait les registres et la pile, ferait perdre les variables en registres (R9 à R12) et obligerait à convertir chaque indice. Un `soit x: flottant_64 = …` n'est pas plus long à écrire qu'un `soit x = …`, et le compilateur refuse chaque mélange.
-
-Un flottant écrit en mémoire (`@2[0] = 1.5;`) y range ses 32 bits ; on le relit avec `comme_flottant(@2[0])`. Un long occupe deux mots : il s'écrit avec `bas(x)` et `haut(x)`.
+**Trois lectures d'une valeur** : `texte_cube(w)` (`#…`), `texte_adn(w)` (64 bases, le quit 63 d'abord), `texte_arn(w)`
+(la même avec U) ; `ecrire_hexa` écrit 16 chiffres si le nombre tient en 64 bits, 32 sinon.
 
 ## 4. Expressions
 
@@ -324,16 +316,16 @@ tantque fin_de(f) == 0 { soit x = lire_car(f); … }
 fermer(f);
 ```
 
-- **Texte** : un littéral `"…"` est rangé après le code (longueur, puis un caractère par mot). Échappements `\n`, `\t`, `\\`, `\'`, `\"`, `\0`. Sa valeur est une adresse globale (l'étage dans les bits 24 et 25), comme toute référence.
+- **Texte** : un littéral `"…"` est rangé après le code (longueur, puis un caractère par mot). Échappements `\n`, `\t`, `\\`, `\'`, `\"`, `\0`. Sa valeur est une adresse globale, comme toute référence : `(étage << 62) | (fréquence << 24) | place`.
 - **Références** : une variable, un paramètre, un retour ou un champ déclaré avec un nom de structure contient l'adresse d'un bloc. `x.champ` lit et écrit le champ (`a.b.c = 1` marche aussi). On ne peut que comparer deux références de même structure (`==`, `!=`) ou une référence à `nul`.
 - **Tas** : dans l'étage 3, de 8 388 608 à 14 680 048. `Structure { champ: valeur, … }`, `nouveau(n)` (n mots), `nouveau_de(Structure)` (comme `Structure {}`), `tas_marque()`, `tas_retour(m)` (rend d'un coup tout ce qui a été pris depuis la marque). Pas de libération mot à mot. `nouveau` rend `nul` quand le tas est plein.
 - **Le type `texte`** : `soit t: texte = "abc";`, `fonction nom(): texte`, `structure P { nom: texte }`. Une variable initialisée par un texte est un texte (`soit t = "abc";`). Pour la machine, un texte reste une adresse (un mot).
   - `a + b` colle deux textes en un texte neuf, pris sur le tas. Si l'un des deux n'est pas un texte, il est d'abord écrit en texte : `"n = " + n` (entier signé), `"x = " + 1.5`, `"g = " + 5L`, `"l = " + fusion(vrai, faux)` (`variable`).
   - `a == b` et `a != b` comparent le contenu de deux textes (`texte_egal`). Un texte comparé à autre chose qu'un texte (`t == nul`) compare les adresses.
-  - `texte(x)` : un entier (signé), un flottant, un long ou un logique écrit en texte. `nombre(t)` : un texte de chiffres (avec un `-` éventuel) vers un entier. `sous_texte(t, debut, fin)` (fin exclue), `position(t, motif)` (la première position, ou −1 = 4294967295).
+  - `texte(x)` : un entier (signé), un flottant, un long ou un logique écrit en texte. `nombre(t)` : un texte de chiffres (avec un `-` éventuel) vers un entier. `sous_texte(t, debut, fin)` (fin exclue), `position(t, motif)` (la première position, ou −1).
   - Limite : un texte rangé dans un champ est reconnu si le champ est déclaré `texte` dans toutes les structures qui ont un champ de ce nom ; une case de tableau ou une case mémoire (`@3[a]`) n'est jamais un texte (passez par une variable déclarée texte).
 - **Fonctions de texte** (prélude) : `longueur(t)`, `car(t, i)`, `changer_car(t, i, c)`, `texte_egal(a, b)`, `texte_neuf(n)`, `ecrire_texte(canal, t)`, `ecrire_nombre(canal, n)`, et `texte`, `nombre`, `sous_texte`, `position`.
-- **Canaux** : `lire_car(canal)` et `ecrire_car(canal, x)` ; canal 0 = `entrée()` et `sortie()`, canal 1 = console en texte, 2 et suivants = fichiers ouverts par `ouvrir_lecture(nom)` ou `ouvrir_ecriture(nom)` (le canal, ou 4294967295 en cas d'échec), `fermer(canal)`, `fin_de(canal)` (1 quand tout est lu). Les fichiers sont ceux du dossier courant de la machine Rust ou Python ; les machines du navigateur n'y ont pas accès. Lire un canal vide rend 4294967295.
+- **Canaux** : `lire_car(canal)` et `ecrire_car(canal, x)` ; canal 0 = `entrée()` et `sortie()`, canal 1 = console en texte, 2 et suivants = fichiers ouverts par `ouvrir_lecture(nom)` ou `ouvrir_ecriture(nom)` (le canal, ou −1 en cas d'échec), `fermer(canal)`, `fin_de(canal)` (1 quand tout est lu). Les fichiers sont ceux du dossier courant de la machine Rust ou Python ; les machines du navigateur n'y ont pas accès. Lire un canal vide rend −1.
 
 ## 6 bis. Logique à quatre valeurs
 
@@ -399,7 +391,7 @@ entre parenthèses) garde son sens ordinaire. Lugus et Dunon ; les mêmes mots p
 | Fonction | Effet | Instruction du SPU |
 |---|---|---|
 | `sortie(x)` | écrit x (un long écrit deux mots : bas puis haut) | OUT |
-| `bruit()` | 32 bits imprévisibles de la machine hôte | SYS 5 |
+| `bruit()` | des bits imprévisibles de la machine hôte | SYS 5 |
 | `entrée()` | lit un mot | IN |
 | `gdot(a, b)` | somme des produits des quatre voies | GDOT |
 | `qegal(a, b)` | 1 dans le bit bas de chaque quit égal (16 comparaisons d'un coup) | QEGAL |
@@ -461,7 +453,7 @@ Inclus seulement s'il est utilisé : `abs inf sup min max signe poids gdotn copi
 
 ### Afficher
 
-`sortie(x)` écrit le mot de la machine tel quel, sur le canal 0 : un entier de 32 bits **sans signe** (−2 s'écrit 4294967294) et un flottant par ses bits (3.5 s'écrit 1080033280). C'est le canal des tests et des autres programmes. Pour lire un résultat, `afficher(x)` l'écrit en clair sur la console, suivi d'un retour à la ligne, selon son type :
+`sortie(x)` écrit le mot de la machine tel quel, sur le canal 0 : un entier **sans signe** (sur Lugus, −2 s'écrit 340282366920938463463374607431768211454) et un flottant par ses bits. C'est le canal des tests et des autres programmes. Pour lire un résultat, `afficher(x)` l'écrit en clair sur la console, suivi d'un retour à la ligne, selon son type :
 
 | `afficher(x)` avec x | écrit |
 |---|---|
@@ -543,9 +535,9 @@ afficher(transformer([1, 2, 3], carre)[2], plier([1, 2, 3], plus, 0));          
 
 ### Hasard
 
-`hasard(n)` : un entier de 0 à n − 1 ; `hasard_entre(a, b)` : de a à b compris ; `hasard_flottant()` : de 0 (compris) à 1 (exclu) ; `hasard_mot()` : 32 bits. Générateur xorshift de 32 bits, son état est en `@3[14680057]`. Le hasard de la machine est **reproductible** : sans `graine(n)`, chaque lancement tire la même suite, sur toutes les machines (c'est ce qui permet de tester et de comparer). Pour changer la suite : `graine(entrée())`, ou toute autre valeur.
+`hasard(n)` : un entier de 0 à n − 1 ; `hasard_entre(a, b)` : de a à b compris ; `hasard_flottant()` : de 0 (compris) à 1 (exclu) ; `hasard_mot()` : 64 bits. Générateur xorshift de 64 bits (13, 7, 17), son état est en `@3[14680057]`. Le hasard de la machine est **reproductible** : sans `graine(n)`, chaque lancement tire la même suite, sur toutes les machines (c'est ce qui permet de tester et de comparer). Pour changer la suite : `graine(entrée())`, ou toute autre valeur.
 
-`bruit()` est l'autre source : 32 bits **imprévisibles**, pris à la machine hôte (aléa du système et horloge ; service SYS 5). `graine_bruit()` fait `graine(bruit())` : une suite différente à chaque lancement. `bruit_logique()` tire un logique (`inconnu`, `faux`, `vrai` ou `variable`). Un programme qui utilise `bruit` ne donne plus le même résultat d'un lancement à l'autre : pour le vérifier, gardez une graine fixe. Sur la machine quaternaire, cette source serait la lecture d'un quit instable, un état `variable` du signal.
+`bruit()` est l'autre source : des bits **imprévisibles**, pris à la machine hôte (aléa du système et horloge ; service SYS 5). `graine_bruit()` fait `graine(bruit())` : une suite différente à chaque lancement. `bruit_logique()` tire un logique (`inconnu`, `faux`, `vrai` ou `variable`). Un programme qui utilise `bruit` ne donne plus le même résultat d'un lancement à l'autre : pour le vérifier, gardez une graine fixe. Sur la machine quaternaire, cette source serait la lecture d'un quit instable, un état `variable` du signal.
 
 ### Tableaux dynamiques
 
@@ -566,7 +558,7 @@ pour mot: texte dans cles(d) {} // annotation si le compilateur ne voit pas que 
 | `ajouter(t, v)` / `retirer(t)` | à la fin / enlève et rend le dernier |
 | `inserer(t, i, v)` / `enlever(t, i)` | au rang i / enlève et rend l'élément i |
 | `vider(t)`, `copie(t)`, `inverser(t)` | |
-| `indice(t, v)` | premier rang de v, 4294967295 s'il n'y est pas |
+| `indice(t, v)` | premier rang de v, −1 s'il n'y est pas |
 | `contient(t, v)`, `somme(t)` | 1 ou 0 ; somme des éléments |
 | `trier(t)` | ordre croissant, entiers signés |
 
@@ -638,8 +630,34 @@ Chaque bloc du tas (`nouveau`, structures, tableaux, textes, dicos) porte un mot
 - **Purge automatique** : quand le tas est plein, `nouveau` ramasse les miettes puis réessaie (les 600 000 derniers mots du tas, de 14 080 048 à 14 680 048, restent au ramasse-miettes pour travailler). Le balayage fond les blocs libres voisins en un seul, un grand bloc libre est découpé pour une petite demande, et une suite libre qui touche le sommet fait redescendre le tas. Si une purge ne rend presque rien, il n'y en a plus d'automatique jusqu'au prochain `ramasser()` (pas d'acharnement). Si le tas reste plein, les tableaux, textes et dicos arrêtent le programme avec le message « mémoire pleine » ; `nouveau` seul rend `nul`. `purges()` : le nombre de purges faites.
 - `tas_utilise()` : les mots pris par le tas. `tas_marque()` et `tas_retour(m)` restent (tas_retour vide aussi les listes de blocs libres).
 - `sauver_tas(nom, racine)` enregistre tout le tas dans le fichier `nom` (et son en-tête dans `nom.ent`) ; `charger_tas(nom)` le recharge et rend la racine (0 si le fichier n'existe pas). La racine est une poignée : pour une structure, `sauver_tas("m", entier(s))`, puis au lancement suivant `soit s: Souvenir = charger_tas("m");` (une déclaration explicite vaut conversion d'un entier en référence).
-- `sauver_bloc(nom, adresse, n)` et `charger_bloc(nom, adresse, n)` : n mots à partir d'une adresse globale (étage dans les bits 24 et 25), dans un fichier binaire.
+- `sauver_bloc(nom, adresse, n)` et `charger_bloc(nom, adresse, n)` : n mots à partir d'une adresse globale, dans un fichier binaire.
 - Exemples : `exemples/premiers/ramasser.vtx`, `exemples/premiers/memoire.vtx`. Nouvelles fonctions intégrées : `pile()` (le sommet de la pile) et `__service(code, argument)` (un service de la machine hôte).
+
+### Les cubes nommés (0.845, Lugus et Dunon)
+
+Un programme dit quels cubes il emploie ; le compilateur leur choisit une fréquence, ou prend celle qui est écrite.
+
+```
+cube relief @2;                       // fréquence choisie : de 199 en descendant (l'ADN, le monde)
+cube passage @2 arn;                  // un cube de l'ARN : de 255 en descendant (200 et plus vivent sur la carte)
+cube tuiles[4] @2 frequence 17;       // une famille de quatre cubes, fréquences 17 à 20
+cube lumiere @2 frequence 203;        // sa fréquence, écrite
+
+@relief[i] = h;                       // le point i du cube : @2[(199 << 24) + (i)]
+soit t0 = @tuiles(t)[k];              // le point k du cube t de la famille : @2[((17 + (t)) << 24) + (k)]
+```
+
+- **C'est une écriture**, comme les appels en série : les deux compilateurs réécrivent les jetons dès la lecture ; le
+  programme produit les mêmes mots que s'il avait écrit les adresses à la main (`tests/test_cubes_nommes.py`).
+- **Refusé, et dit de même par les deux compilateurs** : deux cubes du même nom ; deux cubes qui se recouvrent (les
+  fréquences écrites, puis les choisies) ; un étage autre que 1, 2 ou 3 (l'étage 0 porte le code) ; une famille lue sans
+  son numéro (`@f[i]`), un cube seul lu comme une famille (`@a(t)[i]`) ; plus de fréquence libre.
+- **Ce que le compilateur ne voit pas** : une adresse écrite à la main (`@2[(199 << 24) + i]`) peut encore tomber sur un
+  cube nommé. Dans un programme neuf, nommez tous vos cubes ; les fréquences choisies descendent de 199 pour ne pas
+  croiser les petites fréquences des anciens programmes.
+- Les fréquences en dessous de 256 sont celles que la carte directe (Gutuater) et Taranis rangent d'un seul tenant :
+  un cube nommé y gagne leur vitesse.
+- Exemple : `exemples128/cubes_nommes.vtx`.
 
 ### Additionner les cubes : les fréquences
 
@@ -684,9 +702,15 @@ Un mot de 16 quits lu sur un canal bruité peut avoir un quit décalé d'un nive
 
 ## 9. Mémoire et registres
 
-- Quatre étages (0 à 3) de 2^24 mots. L'étage 0 contient le code, les données et la pile : y écrire peut écraser le programme.
-- Réservés : l'état du hasard en 14 680 057 de l'étage 3 (juste après le pointeur du tas, 14 680 056), le journal des hypothèses dans l'étage 3 à partir de 15 728 640, ses compteurs en 16 777 200 et 16 777 201, et le drapeau d'initialisation des données à la dernière adresse de l'étage 3.
-- Registres utilisés par le compilateur : R1 à R8 de travail (R1 résultat, R1 et R4 pour un long), R13 cadre, R14 pile.
+- Quatre étages (0 à 3) ; **l'étage d'une adresse est un quit** (`adr >> 62`) : 0 le code et la pile, 1 les cubes, 2 le
+  travail, 3 le tas, les souvenirs et la provenance. Une adresse globale : `(étage << 62) | (fréquence << 24) | place` ;
+  `@2[a]` lit l'étage 2 (la fréquence et la place dans `a`). L'étage 0 contient le code : y écrire peut écraser le
+  programme.
+- Réservés dans l'étage 3 : le tas (de 8 388 608 à 14 680 048), son pointeur (14 680 056), l'état du hasard (14 680 057),
+  la taille de l'image (14 680 058 et 59), les copies des tableaux cumulés (14 680 064 à 15 728 640), le journal des
+  hypothèses (à partir de 15 728 640).
+- Registres : R1 à R8 de travail (R1 le résultat), R9 à R12 les variables les plus employées, R13 le cadre, R14 la pile ;
+  chaque registre a 128 bits.
 
 ## 10. Outils
 
@@ -795,11 +819,17 @@ fonction principal() {
 }
 ```
 
-## 12. Limites de la version 0.4
+## 12. Limites connues (0.845)
 
-- Les tableaux, les structures et la mémoire ne contiennent que des mots : un long s'y range en deux écritures.
-- Pas de contrôle d'indice à l'exécution ; les tableaux à plusieurs dimensions se font avec des tableaux de tableaux ; pas de flottants dans un tableau dynamique.
-- Le `flottant_petuar` est calculé par le prélude (pas encore d'instruction du SPU) : de mille à quarante mille fois plus lent qu'un `flottant_64` ; pas de mathématiques `*_petuar` (sinus, exponentielle…) au-delà de `racine` ; pas de directive qui change la précision de tout un fichier.
-- Un flottant_64, un long, un entier_petuar ou un flottant_petuar ne se range pas dans un tableau ou une structure : seulement des mots (`bas(x)` et `haut(x)`, ou les quatre mots de `bits(x)`).
-- Le débogueur n'a pas encore de points d'arrêt conditionnels ni de surveillance d'une case mémoire, et ne montre pas les champs des structures par leur nom ; dans l'atelier, les noms des variables ne sont montrés que sur Lugus.
-- Le compilateur n'optimise pas l'allocation des registres : beaucoup d'empilements et de dépilements.
+- **`entier_64` et `long` ne coupent rien sur Lugus** : ce sont des alias de l'entier de 128 bits. Le passage en 64 bits
+  se fait par programme (`dunon;`), pas par variable (la liste de sécurité du 128 : `docs/vtx-liste-128.md`).
+- `t[i]` est vérifié pour une variable, `t[i][j]` et `s.champ[i]` ; pas encore pour une poignée calculée (`f()[i]`).
+- Un type de fonction ne peut pas contenir un autre type de fonction (`fonction(fonction(entier)): entier`).
+- `importer` insère le texte du module : pas d'espace de noms (deux modules qui ont une fonction du même nom se gênent).
+- Pas de type « une valeur ou son absence » pour tout type : les services rendent des sentinelles (−1, −2) à comparer ;
+  seul le flottant porte son état de Belnap.
+- Une adresse écrite à la main n'est pas vérifiée contre les cubes nommés.
+- Le débogueur n'a pas de points d'arrêt conditionnels ni de surveillance d'une case mémoire ; les noms des variables ne
+  sont montrés que sur Lugus.
+- Les sections 6 ter et 8 gardent quelques exemples écrits pour le SPU-32 : leur sens vaut sur Lugus, leurs nombres
+  (tailles, sentinelles) suivent les sections 3 et 9.

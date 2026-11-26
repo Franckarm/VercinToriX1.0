@@ -417,6 +417,9 @@ fn lugus() {
             sortie.push('\n');
         }
         print!("{}", sortie);
+    } else if args.len() >= 3 && args[1] == "druide" {
+        // 0.846 : les conseils du Druide (le même dialogue que dans Ogmios)
+        print!("{}", crate::machine128::druide_texte(std::path::Path::new(&args[2]), "\n"));
     } else if args.len() >= 3 && args[1] == "lancer" {
         let texte = std::fs::read_to_string(&args[2]).expect("programme illisible");
         let mots = lire_nombres(texte.split(';').next().unwrap_or(""));
@@ -800,7 +803,7 @@ fn lugus() {
         let dossier = std::path::Path::new(&args[1]).parent().map(|p| p.to_path_buf());
         jouer(&mots, &args[2..], dossier);
     } else {
-        dire!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] [--veille|--rapide] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots|PROG.arn] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]Đ-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus eprouver PROG.adn [ENTRÉES…] | lugus PROG.adn --rapide | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…]");
+        dire!("utilisation : lugus PROG.vtx [ENTRÉES…] | lugus PROG.adn [ENTRÉES…] | lugus PROG.arn [ENTRÉES…] [--veille|--rapide] | lugus ranger PROG.vtx [PROG.adn] | lugus arnc PROG.vtx [PROG.arn] | lugus carte PROG.(vtx|adn|arn) [--tout] | lugus cataloguer DOSSIER | lugus morceaux PROG.vtx | lugus transcrire PROG.adn [PROG.mots|PROG.arn] | lugus retrotranscrire PROG.arn [PROG-c.adn] | lugus ranger PROG.(mots|hex|cub|arn) [PROG.adn] | lugus hex PROG.(adn|arn|mots|cub) [PROG.hex] | lugus cube PROG.(adn|arn|mots|hex) [FRÉQUENCE] | lugus PROG.hex | lugus cube128-[NOM-]Đ-F.cub | lugus cube128-NOM.cub | lugus apprendre PROG.adn [ENTRÉES…] | lugus oublier PROG.adn | lugus eprouver PROG.adn [ENTRÉES…] | lugus PROG.adn --rapide | lugus compiler PROG.vtx [SORTIE.mots] | lugus renouveler vtxc128.vtx | lugus corpus FICHIER | lugus lancer FICHIER.mots [ENTRÉES…] | lugus druide PROG.vtx");
         sortir(2);
     }
 }

@@ -157,7 +157,7 @@ machine chimique abstraite de Berry et Boudol (1990). Aucune n'a été pensée p
 En biologie, l'ARN transcrit garde d'abord tout ; l'épissage en retire les introns et raboute les exons. L'épissage
 alternatif tire plusieurs protéines d'un même gène.
 
-**Ce qui existe déjà** (docs/vtx-0-5-autonomie.md, sections 27 et 38) : un épissage des instructions à la compilation
+**Ce qui existe déjà** (docs/archives/vtx-0-5-autonomie.md, sections 27 et 38) : un épissage des instructions à la compilation
 (Hex → ADN) : cinq règles qui retirent les instructions qui ne font que déplacer une valeur. Instructions exécutées :
 −9 à −20 %.
 

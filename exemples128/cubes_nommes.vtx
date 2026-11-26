@@ -1,0 +1,23 @@
+// machine : lugus
+// 0.845 : les cubes nommés. Le programme dit quels cubes il emploie ; le compilateur choisit leurs fréquences (ou prend
+// celle qui est écrite), refuse deux cubes qui se recouvrent, et lit « @nom[i] » comme le point i du cube.
+//     lugus exemples128/cubes_nommes.vtx        (et sur Dunon : vtx64 exemples128/cubes_nommes.vtx)
+
+cube relief @2;                       // fréquence choisie par le compilateur (199)
+cube tuiles[4] @2 frequence 17;       // une famille : quatre cubes, fréquences 17 à 20
+cube passage @2 arn;                  // un cube de l'ARN (255) : refait à chaque image, il vit sur la carte
+
+fonction principal() {
+    pour i dans 0..8 {
+        @relief[i] = i * i;
+    }
+    pour t dans 0..4 {
+        @tuiles(t)[0] = 100 + t;
+    }
+    @passage[@relief[3]] = @tuiles(2)[0] + @relief[7];
+    afficher("relief :", @relief[3], @relief[7]);
+    afficher("tuile 2 :", @tuiles(2)[0]);
+    afficher("passage :", @passage[9]);
+    // les mêmes points, par leur adresse : le cube nommé n'est qu'une écriture
+    afficher("à la main :", @2[(199 << 24) + 7], @2[(19 << 24)], @2[(255 << 24) + 9]);
+}

@@ -156,7 +156,7 @@ tf = time.time() - t0
 # d'autres mots que celle d'un programme forgé (registres sauvés, valeurs périmées) : après une purge, le tas peut
 # garder quelques blocs de plus ou de moins. Ces programmes mesurent le tas ; on compare tout sauf ces mesures.
 TAS = {"exemples/premiers/purge.vtx", "exemples/premiers/ramasser.vtx"}
-ecarts, tas = [], 0
+ecarts, tas, longs = [], 0, []
 for k, nom in enumerate(gardes):
     a = ref[k].split("|", 1)[1] if k < len(ref) and "|" in ref[k] else (ref[k] if k < len(ref) else "?")
     b = obt[k] if k < len(obt) else "?"
@@ -168,6 +168,11 @@ for k, nom in enumerate(gardes):
         if a.split("|")[0] == b.split("|")[0] and sans_tas(ta) == sans_tas(tb):
             tas += 1
             continue
+    # 0.845 : un banc de dizaines de millions de tours (écrit pour la forge de Lugus) dépasse la limite de l'émulateur du
+    # SPU-32 : la référence n'a pas fini, il n'y a rien à comparer (écarté, et dit)
+    if a != b and "limite de" in a and "instructions atteinte" in a:
+        longs.append(nom)
+        continue
     if a != b:
         ecarts.append((nom, a[:200], b[:200]))
 for nom, a, b in ecarts[:10]:
@@ -175,7 +180,7 @@ for nom, a, b in ecarts[:10]:
 for nom, e in refus[:10]:
     print("REFUS", nom, ":", e)
 print(f"Forge : {len(gardes)} programmes ({len(cas) - NHASARD} du paquet et des tests essayés, {NHASARD} au hasard), "
-      f"{len(ecarts)} écart(s), {len(refus)} refus, {tas} mesure(s) du tas différente(s) ; rustc {tc:.0f} s ; SPU émulé {temu:.1f} s, forgés {tf:.2f} s")
+      f"{len(ecarts)} écart(s), {len(refus)} refus, {tas} mesure(s) du tas différente(s), {len(longs)} trop long(s) pour l'émulateur ({', '.join(longs)}) ; rustc {tc:.0f} s ; SPU émulé {temu:.1f} s, forgés {tf:.2f} s")
 if not ecarts and not refus:
     shutil.rmtree(TMP, ignore_errors=True)
 sys.exit(1 if ecarts or refus else 0)

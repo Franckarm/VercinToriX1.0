@@ -4,7 +4,8 @@
 début, ce qui est fait et vérifié, ce qui est resté sur le papier, et les innovations nouvelles ou améliorées.
 Refait le 23 octobre 2026, version 0.5 le 24 octobre (vtx 0.5 : le SPU-32 et le SPU-64, vtx64 et vtxc64) ; complété le
 15 novembre 2026 (vtx 0.6r : Lugus, la chimie, Belenos, l'ADN vivant, la carte et les promesses), et les fondements y sont
-gravés (section 1 bis). La première partie est la synthèse ; le journal d'origine (versions 0.1 à 0.4) est gardé tel quel
+gravés (section 1 bis) ; remis à jour le 26 novembre 2026 (0.845 : Lugus en 128 bits, les cubes nommés, les agents et
+leur nemeton, la feuille de route). La première partie est la synthèse ; le journal d'origine (versions 0.1 à 0.4) est gardé tel quel
 en annexe ; le journal de l'autonomie (0.5 à SPU-64) est dans `vtx-0-5-autonomie.md`, celui des réactions, de Belenos et
 de la 0.6 dans `vtx-reactions.md` (sections 1 à 53).*
 
@@ -35,12 +36,15 @@ Une nouveauté qui ne respecte pas ces trois lectures n'entre pas. S'y ajoutent,
 langage, la **logique à quatre valeurs** de Belnap (inconnu, faux, vrai, variable) et la **partition par
 fréquences** (accords, mesures, segments).
 
-**Aujourd'hui (15 novembre 2026)**, la machine de vtx est **Lugus** (SPU-128, mots de 128 bits) ; Dunon (SPU-64) fait le
-même travail à 64 bits ; Senos (SPU-32) est gelé. Lugus est traduit en x86-64 au lancement de ses exécutables, sans Rust
-ni Python chez l'utilisateur. Le programme est une **chimie** (des atomes qui réagissent, des liaisons qui portent les
-données) ; il se range en **ADN** qui se vérifie et se répare lui-même, se transcrit en **ARN**, porte sa **carte** (six
-faces par molécule) et ses **promesses**. **Belenos** est son moteur graphique, **Taranis** sa porte vers la carte
-graphique, **Ogmios** son atelier.
+**Aujourd'hui (26 novembre 2026, 0.845)**, la machine de vtx est **Lugus** (SPU-128) : **l'entier et le flottant par
+défaut ont 128 bits** (depuis le 24 novembre ; ce qui reste en 128 quoi qu'il arrive : `docs/vtx-liste-128.md`). Dunon
+(SPU-64) fait le même travail à 64 bits, et `dunon;` fait compter un programme en 64 bits (le graphique) ; Senos (SPU-32)
+est gelé. Le programme est une **chimie** (des atomes qui réagissent, des liaisons qui portent les données) ; il se range
+en **ADN** qui se vérifie et se répare lui-même, se transcrit en **ARN**, porte sa **carte** (six faces par molécule) et
+ses **promesses**. Il se forge en code natif (la forge, par Rust), ou en exécutable par Gobannos (écrit en vtx).
+**Belenos** est son moteur graphique, **Taranis** le noyau de la carte graphique, **Ogmios** son atelier. Trois agents
+l'accompagnent : le **Vergobret** (l'exécution), **Gutuater** (la forge et la garde), le **Druide** (la mémoire des bornes,
+les cellules, l'évolution), avec **Ésus** dans la forge ; leur mémoire vit dans le **nemeton** du programme.
 
 ---
 
@@ -55,7 +59,8 @@ Ce qui suit ne change que par une décision du créateur ; le reste du langage s
    une branche qui ne peut jamais servir). Pourquoi : savoir qu'on ne sait pas, et savoir qu'on est contredit, sont ce
    qu'un programme binaire efface ; mesuré (le duel, le combat) : les mêmes décisions qu'un binaire juste, avec bien
    moins d'instructions.
-2. **Le quaternaire dans la machine.** Le quit (deux bits) est l'unité ; un mot de Lugus a 64 quits. **L'étage d'une
+2. **Le quaternaire dans la machine.** Le quit (deux bits) est l'unité ; un mot de Lugus a 64 quits ; l'entier et le
+   flottant par défaut ont la largeur du mot (128 bits, depuis le 24 novembre). **L'étage d'une
    adresse est un quit** (`adr >> 62`) : quatre étages, pas un de plus (l'étage 0 porte le code et la pile, le 1 les
    cubes, le 2 le travail, le 3 le tas, les souvenirs et la provenance). Au-dessus, le langage peut offrir des plans
    virtuels (une table de correspondance) ; le quaternaire reste dans l'adresse de la machine.
@@ -251,9 +256,10 @@ fonction principal() {
 
 - **Mots-clés en français** : `fonction soit si sinon tantque retour constante pour dans donnees arrêter continuer
   hypothèse annuler valider selon` ; alias `et`, `ou`, `non`, `entree`, `données`, `arreter`.
-- **Types** (SPU-64) : `entier` (64 bits), `entier_32` (`5S`), `entier_petuar` (`5LL`, 128 bits), `flottant` (64),
-  `flottant_32` (`1.5S`), `flottant_petuar` (`1.5Q`), `logique`, `texte`, structures et références, tableaux (fixes,
-  dynamiques `[a, b]`, de quits, de logiques, de flottants), dictionnaires.
+- **Types** (Lugus) : `entier` (128 bits), `entier_32` (`5S`), `flottant` (quaternaire, 128 bits), `flottant_64`
+  (`1.5D`), `flottant_32` (`1.5S`), `logique`, `texte`, `point` (le point de matière), structures et références,
+  tableaux (fixes, dynamiques `[a, b]`, de quits, de logiques, de flottants), dictionnaires ; les cubes nommés (`cube
+  relief @2;`, 0.845). La référence : `docs/vtx-langage.md`.
 - **Le cube dans le langage** : `@e[a]` (étage e), `@(x)[a]` (étage calculé), `@[a]` (adresse longue), champs
   `.r .v .b .a` (16 bits sur le SPU-64), `.q(i)`, `cube_adresse`, `ranger_cube`, `jeter_cube`, `gdot`, `gemv`.
 - **Signés** par des opérateurs pointés : `.< .<= .> .>= ./ .% .>>`.
@@ -277,6 +283,11 @@ fonction principal() {
 | 0.6 | 10 – 15 novembre | les flottants traduits, les quatre valeurs aux bords du monde, `logique[]`, Dunon au niveau de Lugus ; le codon et le gène, `selon` sur plusieurs lectures ; la vitesse (2,9 à 4 fois le C) ; le chemin de l'ADN tout en vtx, dans les deux sens, l'ARNc ; la carte à six faces et son centre ; les promesses `touche` |
 | 0.61 | 17 novembre | le vocabulaire étendu : 202 mots (Rust, ses extensions, Arduino, UE5, Blender), en français, par familles, sur Lugus et Dunon ; un mot pour tous les types, sans table ; Dunon reçoit le vocabulaire des nombres |
 | 0.61b | 17 novembre | les modules promis par leur empreinte (`importer … empreinte`) ; `reste` exact sur les flottants, aux trois largeurs, sur Lugus et Dunon |
+| 0.62 – 0.69 | 17 – 21 novembre | le catalogue des modules et son cube ; les cubes mères ; les faces dans le cube ; simplifier (ADN, ARNc, cube) ; le glossaire ; l'épreuve d'Alésia ; t[i] vérifié par la machine (LDT, STT) ; Ogmios indépendant, la paillasse en grille |
+| 0.71 – 0.818 | 22 – 23 novembre | Belenos : le val, le paysage dans le cube, la lumière en calques, le vergobret (la carte des pages, l'équipe de cœurs, la mesure), Divona, la carte graphique par la forge |
+| 0.819 – 0.832 | 24 novembre | la partie graphique refaite : l'épreuve de Gergovie (C++, vtx, Taranis), Taranis le noyau de la carte, les étages, le lot ; Gutuater (la synapse quaternaire, les gènes lot, fondre, la carte directe) |
+| 0.833 – 0.843 | 24 – 25 novembre | **Lugus en 128 bits** (l'entier par défaut), `dunon;`, −1 sur tout le mot ; Ésus (les codons de 64 bits prouvés) et le Druide (la mémoire des bornes, le codon, les cellules, l'évolution) ; le monde d'un seul tenant ; la liste de sécurité du 128 |
+| 0.844 – 0.845 | 26 novembre | l'ombre revenue au calcul exact (les approximations dans la branche `ombre-approchee`) ; **les cubes nommés** ; le lieu des gènes par empreinte ; le nemeton ; les documents remis à jour |
 
 ---
 
@@ -594,51 +605,22 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 
 ## 11. Feuille de route
 
-*Mise à jour le 18 novembre 2026, après la 0.63 (l'ancienne feuille de route, jusqu'au SPU-64, est faite).*
+*Refaite le 26 novembre 2026, avec le créateur (la liste exhaustive de ce qui manquait, et l'ordre).*
 
-1. **Les lectures** : `supposons x parmi [a, b, c] { … } retenir r;` est fait (0.6s : écarter, noter, le verdict à
-   quatre valeurs ; 0.6t : `exige` écarte de lui-même, la carte dit « suppose » ; 0.6u : `retenir r alors { … }`, l'action du
-   choix, seulement sur un verdict vrai). Reste : montrer dans la carte d'où vient le choix. Les cylindres pour les
-   lectures sont mis de côté (forge seulement ; l'idée est gardée dans `vtx-reactions.md`, section 56). Ce qui rapproche vtx du langage humain (le
-   doute, l'interprétation), et le rend natif pour une IA.
-2. **Gobannos, le forgeron écrit en vtx** (commencé le 16 novembre, 0.6v : `gobannos/gobannos.vtx` écrit lui-même
-   l'exécutable, ELF ou PE, des programmes de Lugus en entiers ; douze exemples donnent la sortie de Lugus au caractère
-   près) ; les flottants (fait, 0.6y : par une bibliothèque écrite en vtx, au bit près, le même compte
-   d'instructions ; plus lents que Lugus seul pour l'instant) ; les registres gardés dans le processeur, le cache des
-   pages, les drapeaux morts (fait, 0.6z : sur les entiers, aussi vite que la traduction en Rust ; la cible mise à part,
-   porte ouverte au processeur quaternaire optique) : puis les fichiers et les services, Gobannos qui se
-   traduit lui-même ; puis **les cylindres** dedans (un fil par cylindre, son cube ; pour `supposons`, le cube jeté).
-   But : 100 % vtx, sans Rust ni Python.
-3. **Finir le langage** : les fonctions passées en valeur (fait, 0.6w : `soit f = carre; f(7)`, `plier(t, plus, 0)`,
-   sans instruction nouvelle) ; un type de fonction vérifié (fait, 0.6x : `fonction(entier): entier`, le nombre
-   d'arguments et les types vérifiés, les mêmes refus par les deux compilateurs) ; la promesse dans le type (fait,
-   0.6y : `fonction(entier): entier touche rien`, crue par le juge) ; le vocabulaire des nombres (fait, 0.6za, sur Lugus :
-   un mot, les cinq types : signe, est_positif, est_su, partie_decimale, entre, ecart, arrondi à n décimales… ; inconnu
-   et variable gardés) ; le vocabulaire étendu (fait, 0.61, Lugus et Dunon : 202 mots tirés de Rust, de ses
-   extensions, d'Arduino, d'UE5 et de Blender, en français, par familles ; `docs/vtx-vocabulaire.md`) ; les modules promis par leur empreinte (fait, 0.61 : `importer "x.vtx" empreinte
-   "…";`, la chaîne vérifiée, `lugus empreinte`) ; les modules trouvés par leur seule empreinte (fait, 0.62 :
-   `importer empreinte "…";`, le catalogue `lugus cataloguer`, lister un dossier, la vibration de chaque molécule et la
-   carte qui dit d'où elle vient) ; **le cube du catalogue** (fait, 0.62c : les empreintes rangées dans un cube, pas dans
-   l'ADN ; le compilateur choisit le cube, puis lit à l'adresse ; le service 29, Dunon en deux moitiés).
-   **Les cubes mères** (fait, 0.63 : un cube mère nommé comme un fichier, sans fréquence, le squelette du programme ;
-   ses sous-cubes à leurs fréquences, le nom pour indicatif ; `cube_mere(nom)`, le service 30 ; `lugus cube` range
-   sous le cube mère du programme). **Avant l'IA, finir vtx** (le créateur, 18 novembre) : l'autonomie (Gobannos :
-   les fichiers, les services, se traduire lui-même, puis vtxc128 en .exe), la paillasse et Ogmios, la forge, Belenos et
-   Taranis, Gobatix. **Direction pour après** : la mémoire du cube doit servir à l'IA, pour éviter la coupure entre deux
-   conversations ; à concevoir, un cube de mémoire du projet qu'une IA interroge au début de son travail.
-4. Dunon : les fonctions passées en valeur et leur type (fait, 0.65) ; `multiplier_ajouter` exact, un seul arrondi (fait,
-   0.65). **Simplifier** (fait en partie, 0.66) : trois formes seulement, l'ADN pour le gardé, l'ARNc pour le travail, le cube
-   pour la mémoire ; les isoformes épissées deviennent des façons de lancer l'ARNc ; le glossaire d'une ligne par
-   mot à la fin des messages de Lugus (fait, 0.67).
-5. **Les faces dans le cube** (fait, 0.64) : à la même fréquence, le code à l'étage Đ (le tau gallicum, l'étage 0), les
-   trois axes du dé aux étages 1, 2, 3, chaque molécule à la place de son début ; `face(f, k)` et `centre(f)` lus
-   pendant qu'il tourne (le registre tridimensionnel). La hiérarchie du créateur : le cube mère, le cube hex, la
-   molécule, l'atome.
-6. **Belenos** : le tapis roulant dans chaque tuile, le fluide dans la toile, puis sur la carte (Taranis) ; **Gobatix**
-   (le modeleur) dans le cube vide.
-7. Le but lointain : le SPU spectral (section 2), d'abord sur un banc d'essai à une liaison et des LED adressables.
-
----
+1. **0.845 (fait)** : les cubes nommés (Lugus et Dunon, les deux compilateurs) ; le lieu des gènes de Gutuater par
+   empreinte (plus par ligne) ; le nemeton, la mémoire des agents qui survit aux paquets ; les documents remis à jour,
+   les périmés aux archives ; l'ombre exacte.
+2. **0.846** : les rôles redistribués entre le Vergobret, Gutuater et le Druide (une seule synapse, une seule mémoire, une
+   seule clé) ; **le Druide qui parle dans Ogmios**, dans la fenêtre des explications (en bas à droite) : ses conseils,
+   puis ses potions (le code corrigé proposé, accepté d'un geste).
+3. **0.847** : compléter le langage : la valeur sue (une valeur et son état de Belnap, pour tout type) et les services qui
+   répondent en quatre valeurs ; `f()[i]` vérifié ; un type de fonction dans un type de fonction ; les espaces de noms
+   d'`importer` ; `entier_64` qui compte vraiment en 64 bits (ou retiré).
+4. **Belenos** : l'ombre exacte, mais moins chère (une idée du créateur à mûrir : le halo des bords, les fentes de
+   Young) ; Gobatix (le modeleur) dans des cubes nommés.
+5. **L'autonomie** : les appels au système de Gobannos restent en attente (le filtre du 18 novembre) ; le reste (les
+   voies, la matière) peut être traduit.
+6. Le but lointain : le SPU spectral (section 2), d'abord sur un banc d'essai à une liaison et des LED adressables.
 
 ## 12. Vocabulaire gaulois (hommage, à valider avec un spécialiste)
 
@@ -699,7 +681,7 @@ passe souvent : on mesure le flux (le profil d'exécution) et on élargit le lit
 20 octobre 2026 (puis quelques entrées jusqu'au 31 octobre). La suite est dans `vtx-0-5-autonomie.md` (l'autonomie, le
 SPU-64) et dans `vtx-reactions.md` (les réactions, Belenos, la 0.6).*
 
-Carnet vivant : à chaque programme écrit, on note ce qui manquait au langage. Dernière mise à jour : 20 octobre 2026, vtx 0.4 (flottants binary32, entiers de 64 bits, débogueur au niveau du source, partition automatique des tâches) et « Labyrinthe du cube » version 3. Référence complète du langage : `vtx-syntaxe-v0-4.md`.
+Carnet vivant : à chaque programme écrit, on note ce qui manquait au langage. Dernière mise à jour : 20 octobre 2026, vtx 0.4 (flottants binary32, entiers de 64 bits, débogueur au niveau du source, partition automatique des tâches) et « Labyrinthe du cube » version 3. Référence complète du langage : `vtx-langage.md`.
 
 ### Programmes écrits en vtx
 
@@ -1180,7 +1162,7 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 - **Ramasse-miettes** : une fonction qui peut ramasser (de près ou de loin) a un cadre dans la pile du SPU, où ses variables et les valeurs en cours sont recopiées avant chaque appel qui peut ramasser ; les autres n'ont rien. Le ramasse-miettes étant conservateur, la taille du tas après une purge peut différer de quelques blocs (pile différente) ; les valeurs, non.
 - **Flottants purs** : une variable flottante dont les bits ne sont jamais regardés vit comme flottant de la machine (pas de NaN unique à chaque opération). Une erreur de l'analyse (les tâches d'un accord n'étaient pas parcourues) a été attrapée par le garde-fou de la forge, qui refuse plutôt que de se tromper.
 - **Vérifié** : 3 267 programmes (exemples, programmes des tests de types avec leurs entrées, programmes au hasard) : sorties, texte et mémoire identiques au SPU émulé. Gobatix : peindre, cube_tournant, cube_chromatique et le labyrinthe, même GIF octet pour octet.
-- **Mesures** : de 0,4 à 2 fois le temps du C (adn 2,3 fois plus rapide que le C écrit naturellement) ; le labyrinthe : 13,3 ms par image émulé, 0,45 traduit, 0,15 forgé (`docs/vtx-forge.md`).
+- **Mesures** : de 0,4 à 2 fois le temps du C (adn 2,3 fois plus rapide que le C écrit naturellement) ; le labyrinthe : 13,3 ms par image émulé, 0,45 traduit, 0,15 forgé (`docs/archives/vtx-forge.md`).
 - **Le labyrinthe tout en vtx** (`jeu3/labyrinthe.vtx`) : boucle, clavier, souris, horloge, tableau de bord ; l'image vit dans un cube à elle (l'étage 1 s'accorde sur le cube 12 le temps de peindre et présenter).
 - **Horloge des images** : sous `--gif`, `--images` ou `--scenario`, `horloge()` compte le temps des images présentées : une partie se rejoue à l'identique sur toutes les machines.
 - **Suite** : porter la forge dans vtxc (même texte Rust que forge.py), pour que `vtx forger` n'ait besoin que de rustc ; puis le SPU-64 ; le générateur x86-64 propre viendra après, comparé à la forge.
@@ -1216,7 +1198,7 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
 - **Décision (utilisateur)** : le cube chromatique reste inchangé : chaque point à sa place (R, V, B), le noir et le blanc aux coins opposés, **la diagonale des gris du noir au blanc** ; la matière s'ajoute à chaque point, dans le même mot. Indispensable pour exploiter le cube avec l'IA (un point = un vecteur de huit nombres : R, V, B, reflet, lumière, transparence, profondeur, rugosité ; la distance dans le cube a un sens) et pour la suite. La règle « la matière entre les couleurs » devient une façon de parcourir le cube, pas de le ranger. Figure : `docs/figures/cube_diagonale.png`.
 - **Le mot de 128 bits** (proposé) : 96 bits de couleur (3 × 32 : 79 228 162 514 264 337 593 543 950 336 couleurs), 30 bits de matière (5 × 6 : 1 073 741 824 matières, 64 degrés chacune), 2 bits d'état (un quit de Belnap). 64 bits : 3 × 16 de couleur (281 474 976 710 656 couleurs), 5 × 3 de matière, 1 bit d'état. 32 bits : la rétro-ingénierie (RGBA).
 - **Remarque de l'utilisateur** : la répartition des reflets et de la lumière dans le cube ; de là, retravailler la compression, la répartition et la fiabilité.
-- **Décisions du 25 octobre (midi)** sur la conception du SPU-128 (`docs/vtx-spu128-conception.md`) : la voie de matière en état + cinq codons (le mot garde ses 32 chiffres hex) ; l'adresse du SPU-64 élargie ; l'entier par défaut de 64 bits pour la rapidité, le 128 au choix ; deux instructions par mot ; un nom gaulois par machine (proposés : Senos, Dunon, Lugus, Albios).
+- **Décisions du 25 octobre (midi)** sur la conception du SPU-128 (`docs/archives/vtx-spu128-conception.md`) : la voie de matière en état + cinq codons (le mot garde ses 32 chiffres hex) ; l'adresse du SPU-64 élargie ; l'entier par défaut de 64 bits pour la rapidité, le 128 au choix ; deux instructions par mot ; un nom gaulois par machine (proposés : Senos, Dunon, Lugus, Albios).
 
 ### Lugus, le compilateur : premier temps (25 octobre, après-midi)
 
@@ -1288,6 +1270,6 @@ Tout reste du quaternaire sur le cube : aucune instruction nouvelle dans le SPU,
   −12 % seulement (la conversion et l'arrondi sur la grille à chaque opération). Un défaut (l'infini pris pour un zéro)
   vu par la suite de vtx128, corrigé ; le banc d'essai des flottants refait (l'ancien fabriquait des nombres mal formés).
 - **La paillasse** : la maquette de la surface (atomes, liaisons, vagues, Belnap, le Hex et le vtx équivalent).
-- **Bilan** : `docs/vtx-bilan-lugus.md` (ajouts, retraits, mesures de Fibonacci à l'ADN dans onze façons de faire tourner
+- **Bilan** : `docs/archives/vtx-bilan-lugus.md` (ajouts, retraits, mesures de Fibonacci à l'ADN dans onze façons de faire tourner
   les cinq programmes) ; `verifier.py` : tout est conforme.
 

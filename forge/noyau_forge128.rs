@@ -1678,11 +1678,43 @@ fn bit_au_hasard() -> bool {
 }
 
 #[allow(dead_code)]
+/// 0.845 : le nom du programme (son fichier sans .vtx), posé par lancer() : c'est le nom de son nemeton
+static NOM_PROGRAMME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+#[allow(dead_code)]
+fn nommer_programme(nom: &str) {
+    let _ = NOM_PROGRAMME.set(nom.to_string());
+}
+
 fn dossier_gutuater() -> Option<std::path::PathBuf> {
     if std::env::var("VTX_GUTUATER").map_or(false, |v| v == "0") {
         return None;
     }
-    std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf()))
+    // 0.845 : le nemeton, la mémoire des agents qui survit aux paquets et aux dossiers d'essai : VTX_NEMETON/NOM, sinon
+    // ~/.vercintorix/nemeton/NOM ; un ARN posé à côté de l'exécutable (les essais, les tests) passe avant
+    static D: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    D.get_or_init(|| {
+        let ici = std::env::current_exe().ok().and_then(|e| e.parent().map(|d| d.to_path_buf()));
+        if let Some(d) = &ici {
+            if d.join("gutuater.arn").exists() || d.join("gutuater.mesures").exists() {
+                return ici;
+            }
+        }
+        let base = match std::env::var_os("VTX_NEMETON") {
+            Some(b) => std::path::PathBuf::from(b),
+            None => {
+                let maison = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))?;
+                std::path::PathBuf::from(maison).join(".vercintorix").join("nemeton")
+            }
+        };
+        let nom = NOM_PROGRAMME.get().cloned().or_else(|| std::env::current_exe().ok()
+            .and_then(|e| e.file_stem().map(|n| n.to_string_lossy().into_owned()))).unwrap_or_else(|| "programme".into());
+        let d = base.join(nom);
+        let _ = std::fs::create_dir_all(&d);
+        if std::env::var("VTX_NEMETON_DIRE").is_ok() {
+            eprintln!("nemeton : {}", d.display());
+        }
+        Some(d)
+    }).clone()
 }
 
 /// l'ARN : (gène, lieu) → l'état (0 inconnu, 1 faux, 2 vrai, 3 variable)
@@ -1725,10 +1757,10 @@ fn gene_lot_debut(lieu: u32, premiere: bool) -> bool {
         let e = arn_gutuater().get(&("lot".to_string(), lieu)).copied().unwrap_or(0);
         let choisi = match e { 2 => Some(true), 1 => Some(false), _ => None };
         match e {
-            2 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit vrai : il s'exprime, sans essai", lieu)),
-            1 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit faux : il est tu, sans essai", lieu)),
-            3 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit variable : je mesure encore", lieu)),
-            _ => dire_reglage(format!("le lot de la ligne {} : Gutuater ne sait pas : je mesure", lieu)),
+            2 => dire_reglage(format!("le lot {} : Gutuater dit vrai : il s'exprime, sans essai", lieu)),
+            1 => dire_reglage(format!("le lot {} : Gutuater dit faux : il est tu, sans essai", lieu)),
+            3 => dire_reglage(format!("le lot {} : Gutuater dit variable : je mesure encore", lieu)),
+            _ => dire_reglage(format!("le lot {} : Gutuater ne sait pas : je mesure", lieu)),
         }
         GeneLot { passe: 0, avec: true, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi, inverse: bit_au_hasard() }
     });
@@ -1773,7 +1805,7 @@ fn gene_lot_fin(lieu: u32) {
     if g.passe == 5 {
         let avec = g.t_avec <= g.t_sans;
         g.choisi = Some(avec);
-        dire_reglage(format!("le lot de la ligne {} : avec {:.1} ms, sans {:.1} ms : {} ; noté pour Gutuater", lieu,
+        dire_reglage(format!("le lot {} : avec {:.1} ms, sans {:.1} ms : {} ; noté pour Gutuater", lieu,
                              g.t_avec * 1e3, g.t_sans * 1e3, if avec { "le lot" } else { "chaque boucle seule" }));
         if let Some(d) = dossier_gutuater() {
             use std::io::Write;
@@ -1821,10 +1853,10 @@ fn gene_fondre_debut(lieu: u32) -> bool {
         let e = arn_gutuater().get(&("fondre".to_string(), lieu)).copied().unwrap_or(0);
         let choisi = match e { 2 => Some(true), 1 => Some(false), _ => None };
         match e {
-            2 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit fondre vrai : un seul noyau, sans essai", lieu)),
-            1 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit fondre faux : les étages séparés, sans essai", lieu)),
-            3 => dire_reglage(format!("le lot de la ligne {} : Gutuater dit fondre variable : je mesure encore", lieu)),
-            _ => dire_reglage(format!("le lot de la ligne {} : fondre, Gutuater ne sait pas : je mesure", lieu)),
+            2 => dire_reglage(format!("le lot {} : Gutuater dit fondre vrai : un seul noyau, sans essai", lieu)),
+            1 => dire_reglage(format!("le lot {} : Gutuater dit fondre faux : les étages séparés, sans essai", lieu)),
+            3 => dire_reglage(format!("le lot {} : Gutuater dit fondre variable : je mesure encore", lieu)),
+            _ => dire_reglage(format!("le lot {} : fondre, Gutuater ne sait pas : je mesure", lieu)),
         }
         GeneLot { passe: 0, avec: false, t0: None, t_avec: f64::MAX, t_sans: f64::MAX, choisi, inverse: bit_au_hasard() }
     });
@@ -1854,7 +1886,7 @@ fn gene_fondre_fin(lieu: u32, fondu: bool) {
     if g.avec && !fondu {
         // le noyau fondu a été refusé (la carte, un tour trop grand…) : les étages séparés, pour la suite
         if g.choisi != Some(false) {
-            dire_reglage(format!("le lot de la ligne {} : le noyau fondu est refusé ; les étages séparés", lieu));
+            dire_reglage(format!("le lot {} : le noyau fondu est refusé ; les étages séparés", lieu));
         }
         g.choisi = Some(false);
         return;
@@ -1873,7 +1905,7 @@ fn gene_fondre_fin(lieu: u32, fondu: bool) {
     if g.passe == 6 {
         let fondre = g.t_avec <= g.t_sans;
         g.choisi = Some(fondre);
-        dire_reglage(format!("le lot de la ligne {} : fondu {:.1} ms, séparé {:.1} ms : {} ; noté pour Gutuater", lieu,
+        dire_reglage(format!("le lot {} : fondu {:.1} ms, séparé {:.1} ms : {} ; noté pour Gutuater", lieu,
                              g.t_avec * 1e3, g.t_sans * 1e3, if fondre { "un seul noyau" } else { "les étages séparés" }));
         if let Some(d) = dossier_gutuater() {
             use std::io::Write;
@@ -2169,7 +2201,7 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
                 let _ = writeln!(f, "infidele fondre {}", lieu);
             }
         }
-        eprintln!("gutuater : le lot de la ligne {} fondu en un noyau n'est pas fidèle (un fil a touché la case d'un \
+        eprintln!("gutuater : le lot {} fondu en un noyau n'est pas fidèle (un fil a touché la case d'un \
                    autre) ; noté pour Gutuater, qui le taira ; relancer", lieu);
         std::process::exit(3);
     }

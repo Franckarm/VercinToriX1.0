@@ -1,0 +1,464 @@
+// machine : lugus
+// Le Druide, conseiller (0.846) : il lit le programme que l'on écrit et parle dans Ogmios (la fenêtre des explications,
+// en bas à droite). Il dit ce qu'il voit, avec son état de Belnap : vrai (sûr), inconnu (à vérifier), variable (selon
+// le cas) ; il prépare la potion (le code proposé), que l'on accepte ou non : rien ne change dans le programme sans le
+// programmeur. Il rapporte aussi ce que savent les autres agents de ce programme, dans son nemeton : Gutuater (les gènes
+// appris) et la forge (les conseils d'Ésus).
+//
+//     lugus druide/conseiller.vtx      (il lit deux lignes : le chemin du programme, puis son nemeton, ou rien)
+//
+// Une ligne par conseil : « conseil|ÉTAT|LIGNE|LE TEXTE|LA POTION » (la potion peut être vide) ; puis « savoir|… » pour
+// ce que les autres agents ont appris ; la dernière ligne : « fin|N » (le nombre de conseils).
+
+fonction lire_fichier(nom: texte): texte {
+    soit canal = ouvrir_lecture(nom);
+    si canal == (0 - 1) {
+        retour "";
+    }
+    soit cs = tableau(0);
+    soit ch = lire_car(canal);
+    tantque ch != (0 - 1) {
+        si ch != 13 {
+            ajouter(cs, ch);
+        }
+        ch = lire_car(canal);
+    }
+    fermer(canal);
+    soit r = texte_neuf(longueur(cs));
+    pour i dans 0..longueur(cs) {
+        changer_car(r, i, cs[i]);
+    }
+    retour r;
+}
+
+fonction nettoyer_ligne(t: texte): texte {
+    soit r = t;
+    tantque longueur(r) > 0 && (car(r, longueur(r) - 1) == 13 || car(r, longueur(r) - 1) == 32) {
+        r = sous_texte(r, 0, longueur(r) - 1);
+    }
+    retour r;
+}
+
+// ------------------------------------------------------------------------------------------------- les jetons
+// genres : 1 un nom, 2 un nombre, 3 un signe (un ou deux caractères), 4 un texte entre guillemets
+structure Jetons { genres, textes, lignes }
+
+fonction est_signe_double(a, b) {
+    si (a == '<' && b == '<') || (a == '>' && b == '>') || (a == '=' && b == '=') || (a == '!' && b == '=') {
+        retour 1;
+    }
+    si (a == '<' && b == '=') || (a == '>' && b == '=') || (a == '&' && b == '&') || (a == '|' && b == '|') {
+        retour 1;
+    }
+    si (a == '-' && b == '>') || (a == '.' && b == '.') {
+        retour 1;
+    }
+    retour 0;
+}
+
+fonction lettre_ou_chiffre(c) {
+    si est_lettre(c) == 1 || est_chiffre(c) == 1 || c == '_' {
+        retour 1;
+    }
+    retour 0;
+}
+
+fonction decouper_jetons(s: texte): Jetons {
+    soit j = Jetons { genres: tableau(0), textes: tableau(0), lignes: tableau(0) };
+    soit i = 0;
+    soit ligne = 1;
+    soit n = longueur(s);
+    tantque i < n {
+        soit c = car(s, i);
+        si c == 10 {
+            ligne = ligne + 1;
+            i = i + 1;
+        } sinon si c == 32 || c == 9 {
+            i = i + 1;
+        } sinon si c == '/' && i + 1 < n && car(s, i + 1) == '/' {
+            tantque i < n && car(s, i) != 10 {
+                i = i + 1;
+            }
+        } sinon si c == '"' {
+            soit d = i;
+            i = i + 1;
+            tantque i < n && car(s, i) != '"' && car(s, i) != 10 {
+                si car(s, i) == 92 {
+                    i = i + 1;
+                }
+                i = i + 1;
+            }
+            i = i + 1;
+            ajouter(j.genres, 4);
+            ajouter(j.textes, sous_texte(s, d, i));
+            ajouter(j.lignes, ligne);
+        } sinon si c == 39 {
+            // un caractère : '…'
+            i = i + 1;
+            tantque i < n && car(s, i) != 39 && car(s, i) != 10 {
+                si car(s, i) == 92 {
+                    i = i + 1;
+                }
+                i = i + 1;
+            }
+            i = i + 1;
+            ajouter(j.genres, 2);
+            ajouter(j.textes, "0");
+            ajouter(j.lignes, ligne);
+        } sinon si lettre_ou_chiffre(c) == 1 || c == '#' {
+            soit d2 = i;
+            i = i + 1;
+            tantque i < n && lettre_ou_chiffre(car(s, i)) == 1 {
+                i = i + 1;
+            }
+            soit genre = 1;
+            si est_chiffre(c) == 1 || c == '#' {
+                genre = 2;
+            }
+            ajouter(j.genres, genre);
+            ajouter(j.textes, sous_texte(s, d2, i));
+            ajouter(j.lignes, ligne);
+        } sinon {
+            soit l = 1;
+            si i + 1 < n {
+                si est_signe_double(c, car(s, i + 1)) == 1 {
+                    l = 2;
+                }
+            }
+            ajouter(j.genres, 3);
+            ajouter(j.textes, sous_texte(s, i, i + l));
+            ajouter(j.lignes, ligne);
+            i = i + l;
+        }
+    }
+    retour j;
+}
+
+fonction jeton(j: Jetons, k): texte {
+    si k < longueur(j.textes) {
+        retour j.textes[k];
+    }
+    retour "";
+}
+
+// le jeton qui ferme celui de la place k (une accolade, une parenthèse, un crochet), ou la fin
+fonction fermant(j: Jetons, k) {
+    soit prof = 0;
+    pour q dans k..longueur(j.textes) {
+        soit t: texte = j.textes[q];
+        si j.genres[q] == 3 {
+            si t == "{" || t == "(" || t == "[" {
+                prof = prof + 1;
+            } sinon si t == "}" || t == ")" || t == "]" {
+                prof = prof - 1;
+                si prof == 0 {
+                    retour q;
+                }
+            }
+        }
+    }
+    retour longueur(j.textes);
+}
+
+// le rang d'un texte dans un tableau de textes (par leur contenu), ou -1
+fonction rang_texte(t, nom: texte) {
+    pour i dans 0..longueur(t) {
+        soit x: texte = t[i];
+        si x == nom {
+            retour i;
+        }
+    }
+    retour 0 - 1;
+}
+
+// ------------------------------------------------------------------------------------------------- les conseils
+structure Conseils { n, dits: texte }
+
+fonction dire(cs: Conseils, etat: texte, ligne, quoi: texte, potion: texte) {
+    cs.dits = cs.dits + "conseil|" + etat + "|" + texte(ligne) + "|" + quoi + "|" + potion + "\n";
+    cs.n = cs.n + 1;
+}
+
+// 1. « selon » sur un logique qui ne dit pas tous les cas : que fait le programme quand personne n'a parlé (inconnu), ou
+// quand les témoins se contredisent (variable) ? Une branche absente ne fait rien : c'est peut-être voulu.
+fonction voir_selon(j: Jetons, cs: Conseils) {
+    pour k dans 0..longueur(j.textes) {
+        si j.genres[k] == 1 && jeton(j, k) == "selon" {
+            // la première accolade après l'expression : le corps
+            soit a = k + 1;
+            tantque a < longueur(j.textes) && jeton(j, a) != "{" {
+                a = a + 1;
+            }
+            soit plusieurs = 0;
+            si jeton(j, k + 1) == "(" || jeton(j, k + 1) == "{" {
+                plusieurs = 1;          // selon (a, b) : la table des lectures, jugée par le compilateur
+            }
+            soit b = fermant(j, a);
+            soit vus_vrai = 0;
+            soit vus_faux = 0;
+            soit vus_inconnu = 0;
+            soit vus_variable = 0;
+            soit vus_autre = 0;
+            soit prof = 0;
+            pour q dans (a + 1)..b {
+                soit t: texte = j.textes[q];
+                si j.genres[q] == 3 && (t == "{" || t == "(" || t == "[") {
+                    prof = prof + 1;
+                } sinon si j.genres[q] == 3 && (t == "}" || t == ")" || t == "]") {
+                    prof = prof - 1;
+                } sinon si prof == 0 && j.genres[q] == 1 {
+                    si t == "vrai" {
+                        vus_vrai = 1;
+                    } sinon si t == "faux" {
+                        vus_faux = 1;
+                    } sinon si t == "inconnu" {
+                        vus_inconnu = 1;
+                    } sinon si t == "variable" {
+                        vus_variable = 1;
+                    } sinon si t == "autre" {
+                        vus_autre = 1;
+                    }
+                }
+            }
+            si plusieurs == 0 && vus_autre == 0 && (vus_vrai == 1 || vus_faux == 1) {
+                si vus_inconnu == 0 && vus_variable == 0 {
+                    dire(cs, "inconnu", j.lignes[k],
+                         "ce « selon » ne dit rien pour inconnu (personne n'a parlé) ni pour variable (les témoins se contredisent) : le programme n'y fera rien. Est-ce voulu ?",
+                         "inconnu { } variable { }");
+                } sinon si vus_inconnu == 0 {
+                    dire(cs, "inconnu", j.lignes[k],
+                         "ce « selon » ne dit rien pour inconnu (personne n'a parlé) : le programme n'y fera rien. Est-ce voulu ?",
+                         "inconnu { }");
+                } sinon si vus_variable == 0 {
+                    dire(cs, "inconnu", j.lignes[k],
+                         "ce « selon » ne dit rien pour variable (les témoins se contredisent) : le programme n'y fera rien. Est-ce voulu ?",
+                         "variable { }");
+                }
+            }
+        }
+    }
+}
+
+// 2. une adresse du cube écrite à la main : @E[(F << 24) + …] avec une fréquence écrite ou une constante ; un cube
+// nommé le dirait mieux, et le compilateur refuserait qu'un autre le recouvre
+// la valeur écrite d'une constante (« constante NOM = 140; »), ou le nom lui-même
+fonction valeur_constante(j: Jetons, nom: texte): texte {
+    pour k dans 0..longueur(j.textes) {
+        si jeton(j, k) == "constante" && jeton(j, k + 1) == nom && jeton(j, k + 2) == "=" && j.genres[k + 3] == 2 && jeton(j, k + 4) == ";" {
+            retour jeton(j, k + 3);
+        }
+    }
+    retour nom;
+}
+
+fonction voir_adresses(j: Jetons, cs: Conseils) {
+    soit vus = tableau(0);
+    pour k dans 0..longueur(j.textes) {
+        si jeton(j, k) == "@" && j.genres[k + 1] == 2 && jeton(j, k + 2) == "[" {
+            soit e: texte = jeton(j, k + 1);
+            // ( ( F + … ) << 24 ) ou ( F << 24 )
+            soit q = k + 3;
+            soit nb_par = 0;
+            tantque jeton(j, q) == "(" {
+                nb_par = nb_par + 1;
+                q = q + 1;
+            }
+            soit f: texte = jeton(j, q);
+            soit famille = 0;
+            soit decale = 0;
+            si jeton(j, q + 1) == "<<" && jeton(j, q + 2) == "24" {
+                decale = 1;
+            }
+            si jeton(j, q + 1) == "+" {
+                // ( F + t ) << 24 : une famille
+                soit r = q + 1;
+                tantque r < longueur(j.textes) && jeton(j, r) != ")" {
+                    r = r + 1;
+                }
+                si jeton(j, r + 1) == "<<" && jeton(j, r + 2) == "24" {
+                    decale = 1;
+                    famille = 1;
+                }
+            }
+            si nb_par >= 1 && decale == 1 && (j.genres[q] == 1 || j.genres[q] == 2) {
+                soit cle: texte = e + ":" + f;
+                si rang_texte(vus, cle) == (0 - 1) {
+                    ajouter(vus, cle);
+                    soit nom: texte = minuscules(f);
+                    soit fv: texte = f;
+                    si j.genres[q] == 1 {
+                        fv = valeur_constante(j, f);
+                    }
+                    si j.genres[q] == 2 {
+                        nom = "cube_" + f;
+                    } sinon si commence_par(nom, "f") == 1 && longueur(nom) > 1 {
+                        nom = sous_texte(nom, 1, longueur(nom));
+                    }
+                    si famille == 1 {
+                        dire(cs, "vrai", j.lignes[k],
+                             "une famille de cubes écrite à la main (@" + e + "[((" + f + " + t) << 24) + …]) : nommée, elle se lit @" + nom + "(t)[…], et le compilateur refuse qu'un autre cube la recouvre (N : le nombre de cubes de la famille, à écrire)",
+                             "cube " + nom + "[N] @" + e + " frequence " + fv + ";");
+                    } sinon {
+                        dire(cs, "vrai", j.lignes[k],
+                             "une adresse du cube écrite à la main (@" + e + "[(" + f + " << 24) + …]) : nommé, le cube se lit @" + nom + "[…], et le compilateur refuse qu'un autre le recouvre",
+                             "cube " + nom + " @" + e + " frequence " + fv + ";");
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 3. une constante définie deux fois (le compilateur la prend sans rien dire : 0.831, la constante VIDE de Gergovie)
+fonction voir_constantes(j: Jetons, cs: Conseils) {
+    soit noms = tableau(0);
+    soit lignes = tableau(0);
+    pour k dans 0..longueur(j.textes) {
+        si j.genres[k] == 1 && jeton(j, k) == "constante" && k + 1 < longueur(j.textes) {
+            soit nom: texte = jeton(j, k + 1);
+            soit deja = rang_texte(noms, nom);
+            si deja != (0 - 1) {
+                dire(cs, "vrai", j.lignes[k],
+                     "la constante « " + nom + " » est déjà définie à la ligne " + texte(lignes[deja]) + " : les compilateurs prennent les deux sans rien dire, et l'une cache l'autre",
+                     "");
+            } sinon {
+                ajouter(noms, nom);
+                ajouter(lignes, j.lignes[k]);
+            }
+        }
+    }
+}
+
+// 4. entier_64 ou long dans un programme de Lugus : ils ne coupent rien (des alias de l'entier de 128 bits)
+fonction voir_largeurs(j: Jetons, cs: Conseils) {
+    soit dunon = 0;
+    pour k dans 0..longueur(j.textes) {
+        si j.genres[k] == 1 && jeton(j, k) == "dunon" && jeton(j, k + 1) == ";" {
+            dunon = 1;
+        }
+    }
+    si dunon == 0 {
+        pour k2 dans 0..longueur(j.textes) {
+            si j.genres[k2] == 1 && (jeton(j, k2) == "entier_64" || jeton(j, k2) == "long") && jeton(j, k2 - 1) == ":" {
+                dire(cs, "vrai", j.lignes[k2],
+                     "sur Lugus, « " + jeton(j, k2) + " » compte en 128 bits (c'est un alias de l'entier) : pour compter en 64 bits, « dunon; » en tête du programme",
+                     "");
+                retour;
+            }
+        }
+    }
+}
+
+// 5. un « si » dont la condition est un appel de « contient », « existe »… va bien ; un « si » sur une comparaison à
+// vrai d'un logique aussi ; mais « si x == vrai » oublie inconnu et variable : le Druide le dit, sans plus
+fonction voir_comparaisons(j: Jetons, cs: Conseils) {
+    soit dits = 0;
+    pour k dans 1..longueur(j.textes) {
+        si dits < 3 && j.genres[k] == 1 && (jeton(j, k) == "vrai" || jeton(j, k) == "faux") && jeton(j, k - 1) == "==" {
+            // remonter au « si » de la ligne
+            soit q = k - 1;
+            tantque q > 0 && j.lignes[q] == j.lignes[k] && jeton(j, q) != "si" {
+                q = q - 1;
+            }
+            si jeton(j, q) == "si" && j.lignes[q] == j.lignes[k] {
+                dire(cs, "variable", j.lignes[k],
+                     "« si … == " + jeton(j, k) + " » range inconnu et variable avec le non : selon le cas c'est juste, ou « selon » dirait les quatre cas",
+                     "");
+                dits = dits + 1;
+            }
+        }
+    }
+}
+
+// 6. la bibliothèque : une fonction de ce fichier que rien n'appelle ni ne nomme (ni ce fichier ni ceux qui
+// l'importent, que le Druide ne voit pas encore : à vérifier) ; principal et les réactions mises à part
+fonction voir_mortes(j: Jetons, cs: Conseils) {
+    soit dits = 0;
+    pour k dans 0..longueur(j.textes) {
+        si jeton(j, k) == "fonction" && j.genres[k + 1] == 1 && jeton(j, k + 2) == "(" {
+            soit nom: texte = jeton(j, k + 1);
+            si nom != "principal" {
+                soit vu = 0;
+                pour q dans 0..longueur(j.textes) {
+                    si vu == 0 && q != k + 1 && j.genres[q] == 1 && jeton(j, q) == nom {
+                        vu = 1;
+                    }
+                }
+                si vu == 0 && dits < 8 {
+                    dire(cs, "inconnu", j.lignes[k],
+                         "la fonction « " + nom + " » n'est appelée nulle part dans ce fichier : du code mort, ou une fonction pour ceux qui l'importent",
+                         "");
+                    dits = dits + 1;
+                }
+            }
+        }
+    }
+}
+
+// ------------------------------------------------------------------------------------------------- le savoir des autres
+fonction mots_de(l: texte) {
+    soit r = tableau(0);
+    pour m dans decouper(l, " ") {
+        si longueur(m) > 0 {
+            ajouter(r, m);
+        }
+    }
+    retour r;
+}
+
+fonction savoir_des_agents(nemeton: texte): texte {
+    si longueur(nemeton) == 0 {
+        retour "";
+    }
+    soit d: texte = nemeton;
+    si finit_par(d, "/") == 0 && finit_par(d, "\\") == 0 {
+        d = d + "/";
+    }
+    soit r = "";
+    soit arn = lire_fichier(d + "gutuater.arn");
+    pour l dans decouper(arn, "\n") {
+        soit m = mots_de(l);
+        si longueur(m) >= 3 {
+            soit g: texte = m[0];
+            soit lieu: texte = m[1];
+            soit e: texte = m[2];
+            si g == "carte_directe" {
+                r = r + "savoir|Gutuater|la carte directe (le monde d'un seul tenant au processeur) : " + e + "\n";
+            } sinon si g == "lot" {
+                r = r + "savoir|Gutuater|le lot " + lieu + " (les boucles de la carte en un envoi) : " + e + "\n";
+            } sinon si g == "fondre" {
+                r = r + "savoir|Gutuater|le lot " + lieu + " fondu en un noyau : " + e + "\n";
+            } sinon {
+                r = r + "savoir|Gutuater|" + g + " " + lieu + " : " + e + "\n";
+            }
+        }
+    }
+    soit cons = lire_fichier(d + "druide.conseils");
+    pour l2 dans decouper(cons, "\n") {
+        si longueur(nettoyer_ligne(l2)) > 0 {
+            r = r + "savoir|Ésus|" + nettoyer_ligne(l2) + "\n";
+        }
+    }
+    retour r;
+}
+
+fonction principal() {
+    soit chemin = nettoyer_ligne(lire_ligne());
+    soit nemeton = nettoyer_ligne(lire_ligne());
+    soit src = lire_fichier(chemin);
+    soit cs = Conseils { n: 0, dits: "" };
+    si longueur(src) == 0 {
+        afficher("fin|0");
+        retour;
+    }
+    soit j = decouper_jetons(src);
+    voir_constantes(j, cs);
+    voir_selon(j, cs);
+    voir_adresses(j, cs);
+    voir_largeurs(j, cs);
+    voir_comparaisons(j, cs);
+    voir_mortes(j, cs);
+    ecrire(cs.dits);
+    ecrire(savoir_des_agents(nemeton));
+    afficher("fin|" + texte(cs.n));
+}

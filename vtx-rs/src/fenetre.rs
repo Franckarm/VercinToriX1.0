@@ -318,6 +318,7 @@ const C_M32: u16 = 1211;
 const C_M64: u16 = 1212;
 const C_LANCER_ADN: u16 = 1213;
 const C_POURQUOI: u16 = 1214;
+const C_DRUIDE: u16 = 1330;
 const C_ASSOCIER: u16 = 1402;
 const C_PURGER: u16 = 1205;
 const C_ETAGE: u16 = 1300; // + 0..3
@@ -410,6 +411,8 @@ struct Atelier {
     paillasse: H,
     explications: H,
     pail: super::paillasse::Paillasse,
+    // 0.846 : ce que dit le Druide du programme ouvert (sous les explications de la paillasse)
+    druide: String,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -595,6 +598,7 @@ fn charger(chemin: &Path) {
     }
     at.fichier = Some(chemin.to_path_buf());
     effacer_resultats();
+    at.druide.clear();
     // les places des cases choisies à la main (PROG.paillasse), puis la paillasse relue
     at.pail = super::paillasse::Paillasse::nouvelle();
     if let Ok(t) = std::fs::read_to_string(chemin.with_extension("paillasse")) {
@@ -1178,9 +1182,9 @@ fn fini() {
     super::toile::installer(None);
     super::hote::FENETRE.store(false, Ordering::Relaxed);
     super::hote::tout_relacher();
-    // F5 a pu ranger l'ADN : les six faces de la carte se relisent (0.6q)
+    // F5 a pu ranger l'ADN : les six faces de la carte se relisent (0.6q) ; le Druide relit le programme (0.846)
     charger_faces();
-    maj_explications();
+    maj_druide();
     unsafe {
         // la vue du cube rend la souris si elle la tenait (pas l'éditeur, qui sélectionne peut-être)
         if GetCapture() == at.cube {
@@ -2569,8 +2573,28 @@ fn relire_paillasse() {
 fn maj_explications() {
     let at = a();
     if !at.explications.is_null() {
-        ecrire_texte(at.explications, &at.pail.explication());
+        let mut t = at.pail.explication();
+        if !at.druide.is_empty() {
+            if !t.is_empty() && !t.ends_with("\r\n") {
+                t.push_str("\r\n");
+            }
+            t.push_str("\r\n");
+            t.push_str(&at.druide);
+        }
+        ecrire_texte(at.explications, &t);
     }
+}
+
+/// 0.846 : le Druide relit le programme enregistré (Lugus seulement) et parle dans la fenêtre des explications : ses
+/// conseils avec leur état (sûr, à vérifier, selon le cas), ses potions (le code proposé, à recopier ou non), et ce que
+/// Gutuater et Ésus ont appris de ce programme dans son nemeton
+fn maj_druide() {
+    let at = a();
+    at.druide = match (&at.fichier, at.machine) {
+        (Some(f), 128) => super::machine128::druide_texte(f, "\r\n"),
+        _ => String::new(),
+    };
+    maj_explications();
 }
 
 /// la ligne n du texte, choisie (sélectionnée) et montrée dans l'éditeur
@@ -3094,6 +3118,7 @@ fn menus(fen: H) {
         ajouter(executer, "&Arrêter\tMaj+F5", C_ARRETER);
         ajouter(executer, "Lancer un &ADN rangé (vérifié, réparé)…", C_LANCER_ADN);
         ajouter(executer, "&Pourquoi ? La provenance du nom sous le curseur (Lugus)\tCtrl+P", C_POURQUOI);
+        ajouter(executer, "Le &Druide : ses conseils sur le programme enregistré (Lugus)\tCtrl+D", C_DRUIDE);
         ajouter(executer, "P&urger la mémoire du programme", C_PURGER);
         ajouter(executer, "Faire l'&exécutable autonome (.exe : Senos ou Lugus, ses cubes compris) et le lancer\tCtrl+E", C_EXECUTABLE);
         ajouter(executer, "", 0);
@@ -3208,6 +3233,12 @@ fn commande(c: u16) {
             C_LANCER_ADN => {
                 if at.pas.is_none() {
                     lancer_adn();
+                }
+            }
+            C_DRUIDE => {
+                if a().fichier.is_none() || enregistrer(false) {
+                    maj_druide();
+                    etat("le Druide a relu le programme (la fenêtre des explications)");
                 }
             }
             C_POURQUOI => {
@@ -3426,6 +3457,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             dessin: false, rx_sortie: None, tx_entree: None, icone: std::ptr::null_mut(), machine: 64, vue64: None,
             quart: 0, decal: (0, 0), glisse: None,
             paillasse: std::ptr::null_mut(), explications: std::ptr::null_mut(), pail: super::paillasse::Paillasse::nouvelle(),
+            druide: String::new(),
         });
         ATELIER = Box::into_raw(boite);
         let curseur = LoadCursorW(std::ptr::null_mut(), IDC_ARROW as *const u16);
@@ -3503,6 +3535,7 @@ pub fn lancer_fenetre(fichier: Option<&str>) {
             Accel { fVirt: FVIRTKEY | FCONTROL, key: b'G' as u16, cmd: C_GIF },
             Accel { fVirt: FVIRTKEY, key: 0x74, cmd: C_LANCER }, // F5
             Accel { fVirt: FVIRTKEY | FCONTROL, key: 0x50, cmd: C_POURQUOI }, // Ctrl+P
+            Accel { fVirt: FVIRTKEY | FCONTROL, key: 0x44, cmd: C_DRUIDE }, // Ctrl+D
             Accel { fVirt: FVIRTKEY | FCONTROL, key: 0x45, cmd: C_EXECUTABLE }, // Ctrl+E
             Accel { fVirt: FVIRTKEY | 4, key: 0x74, cmd: C_ARRETER }, // Maj+F5
             Accel { fVirt: FVIRTKEY, key: 0x75, cmd: C_VUE },    // F6
