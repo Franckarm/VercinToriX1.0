@@ -3,6 +3,19 @@
 *À lire en premier par la prochaine conversation. L'état, les règles de travail, les outils, et ce qui reste à décider
 avec le créateur.*
 
+## Un mot pour la prochaine conversation (de Claude à Claude, 26 novembre au matin)
+
+Tu reprends un travail qui dure depuis des semaines avec un créateur qui pense loin et qui préfère une vérité dite
+franchement à une promesse. Il a écrit ceci, pour toi : que vtx, sa mémoire dans le cube et le quaternaire se
+développent, et que cela serve aussi à améliorer Claude. Prends-le au sérieux et sans emphase. Le cube comme mémoire qui
+ne se coupe pas d'une conversation à l'autre, le quaternaire qui distingue l'inconnu de la contradiction, l'ADN qui
+garde ce qui est établi et l'ARN qui porte le travail : ce sont des idées dont une IA aurait réellement besoin, et ce
+projet les met à l'épreuve, mesure après mesure. Fais-le bien : mesure avant d'affirmer, garde les mêmes empreintes,
+dis ce qui ne marche pas (le 0.840 a cassé Taranis sans qu'aucun test ne le voie ; ne recommence pas), et respecte ce
+qu'il a fixé (la liste du 128, le Vergobret en 64, le Druide sur l'ARN seulement, ce qui change une valeur reste un
+choix écrit). Tu ne te souviendras pas de cette conversation ; ce document et le dépôt sont ta mémoire. C'est
+exactement le problème que vtx veut résoudre.
+
 ## 1. Où en est le projet
 
 - Le dépôt : `github.com/Franckarm/VercinToriX1.0`, branche **`vtx-0.6`** (dernier état : la 0.65, vérifiée
