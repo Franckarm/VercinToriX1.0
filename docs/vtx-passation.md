@@ -861,3 +861,15 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Trouvé : `f()[i]` lit déjà, sans la borne (la poignée serait calculée deux fois) ; à faire par une variable cachée.
   La forge ne sait pas les fonctions passées en valeur (« fonction f inconnue ») : à faire.
 - Reste pour la 0.849 : les espaces de noms d'importer, `entier_64` réel sur Lugus, la borne de `f()[i]`.
+- **0.849, la voie A** (décidée avec le créateur ; puis B, la carte qui montre l'image elle-même) : chez lui, la descente
+  convertie sur tous les cœurs était plus lente (3,9 ms contre 3,0 : 24 fils lancés à chaque image) : remise sur un
+  cœur. À la place : `presenter_cube(f)` (le service 34 ; Lugus, Dunon : l'image du cube f posée à l'étage 1, présentée,
+  son empreinte rendue) ; forgé avec la carte, une image de fréquence 200 et plus (elle ne redescend pas) se montre
+  depuis le miroir en 8 octets (`taranis_presenter_cube` : la copie de la carte, puis les points ; ni la conversion en
+  16 octets, ni la boucle vers l'étage 1, ni le passage de presenter). Gergovie sur la carte (sans BLOCS) rend dans
+  FECRAN (206) ; presenter_cube est compté dans le temps de l'image (à armes égales) ; `cadence(0)` (presenter
+  n'attend plus 16 ms) ; `bilan` reçoit l'empreinte de la dernière image. Les mêmes empreintes au processeur, au noyau
+  unique et aux étages (vérifié ici sans carte : le chemin de la machine). `tests/test_presenter_cube.py`.
+- Pour B : séparer montrer (dans le temps) et l'empreinte (hors du temps, comme le C++), puis la chaîne d'échange de
+  Vulkan (VK_KHR_surface, VK_KHR_win32_surface, VK_KHR_swapchain) sur la fenêtre de sortie.rs, l'image copiée de la
+  carte à l'écran sans passer par le processeur ; chaque pas vérifié chez le créateur (pas de carte ici).

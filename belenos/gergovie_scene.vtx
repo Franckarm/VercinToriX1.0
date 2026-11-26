@@ -2263,6 +2263,9 @@ fonction epreuve(vol, jour, sur_carte) {
     afficher("le monde : " + texte(horloge() - t0) + " ms ; blocs porteurs d'une surface, par tuile : "
              + texte(@2[GLOB + 1]) + ", " + texte(@2[GLOB + 2]) + ", " + texte(@2[GLOB + 3]) + ", " + texte(@2[GLOB + 4]));
     ecran(W, H);
+    // 0.849 : presenter_cube est compté dans le temps de l'image : la fenêtre n'attend pas (sans cela, presenter attend
+    // 16 ms entre deux images : 60 images par seconde au plus)
+    cadence(0);
     pour i dans 0..(W * H) {
         @2[(FIMAGE << 24) + i] = 0;
         @2[(FDIR << 24) + i] = 0;
