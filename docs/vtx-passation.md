@@ -879,3 +879,10 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Question du créateur : les étages, le tapis roulant restent-ils ? Réponse : oui, comme gènes (exprimés ou tus selon
   la mesure, par le Vergobret) ; les étages ne gagnent que si une partie de l'image ne change pas d'une image à
   l'autre (la lumière seule qui bouge, l'œil fixe) ; à démontrer par une épreuve où l'œil s'arrête.
+- **0.849c, le Vergobret choisit les étages** (la demande du créateur) : `gene(lieu)` (valeur sue de « choix LIEU » dans
+  vergobret.arn ; hors de la forge : inconnu), `noter_gene(lieu, avec, sans)` (« mesure choix LIEU A B » en µs),
+  `horloge_us()` (service 18, argument 1) ; les services 35, 36. Les étages gardent l'œil immobile (`oeil_garde`,
+  GLOB + 50 à 56 : FDIR et FMAT restent sur la carte) ; Gergovie a un soir (`epreuve_complete(vol, jour, soir, mode)` :
+  l'œil arrêté au milieu du vol, le soleil qui descend) ; le mode 4 (`gergovie_vergobret.vtx`) : selon `gene(1)`, les
+  étages ou le noyau unique, sinon l'un et l'autre en alternance et la mesure. Ici (sans carte, au processeur) : les
+  étages du soir 54 % plus rapides ; les mêmes empreintes dans tous les modes. Le C++ n'a pas de soir (à ajouter).
