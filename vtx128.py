@@ -10502,6 +10502,25 @@ class Generateur:
             self.emettre(f"LDI {reg},{v & MASK64}")
             self.emettre(f"LDIH {reg},{v >> 64}")
 
+    def valeur_sue(self):
+        """0.848 : l'état d'une valeur sue (R1, un entier) : -1 inconnu, -2 faux, -3 variable, sinon vrai ; rendu dans R1"""
+        li, lf, lv, fin = self.nouvelle("Lsuei"), self.nouvelle("Lsuef"), self.nouvelle("Lsuev"), self.nouvelle("Lsue")
+        for v, lab in ((MASK, li), (MASK - 1, lf), (MASK - 2, lv)):
+            self.charger("R2", v)
+            self.emettre("CMP R1,R2")
+            self.emettre(f"JZ {lab}")
+        self.emettre("LDIS R1,#2")
+        self.emettre(f"JMP {fin}")
+        self.etiquette(li)
+        self.emettre("LDIS R1,#0")
+        self.emettre(f"JMP {fin}")
+        self.etiquette(lf)
+        self.emettre("LDIS R1,#1")
+        self.emettre(f"JMP {fin}")
+        self.etiquette(lv)
+        self.emettre("LDIS R1,#3")
+        self.etiquette(fin)
+
     def charger(self, reg, v):
         """Une constante de l'entier dans un registre : LDIS (32 bits signés), LDIU (32 bits sans signe) ou LDI (et LDIH
         pour les 64 bits hauts d'une constante de 128 bits : 0.833, l'entier par défaut a 128 bits)."""
@@ -10846,7 +10865,13 @@ class Generateur:
                 ra, rb = self.deux_ops(x[2], x[3])
                 self.emettre(f"{BINAIRES[x[1]]} {rt},{ra},{rb}")
                 return
-        if g == "soit":
+        if g == "soit" and s[1].startswith("__selon") and self.vtypes[s[1]] == "q" and self.typ(s[2]) == "e":
+            # 0.848 : la valeur sue : « selon » sur un entier (la réponse d'un service) : -1 inconnu, -2 faux,
+            # -3 variable, toute autre valeur vrai (le nombre lui-même est la réponse)
+            self.expr(s[2])
+            self.valeur_sue()
+            self.ranger(s[1], "q", s[3])
+        elif g == "soit":
             t = self.vtypes[s[1]]
             if est_ref(t) and len(s) > 4 and s[4] == t and s[2][0] in ("var", "appel") and self.typ(s[2]) == "e":
                 # soit x: Structure = entier : la déclaration explicite vaut conversion (la racine d'une mémoire

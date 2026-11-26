@@ -1,0 +1,12 @@
+// machine : lugus
+// 0.848 : la valeur sue : « selon » sur la réponse d'un service (un entier) : -1 inconnu, -2 faux, -3 variable, sinon vrai
+fonction principal() {
+    soit c = 5;
+    selon c { vrai { afficher("vrai", c); } faux { afficher("faux"); } autre { afficher("autre"); } }
+    soit d = ouvrir_lecture("/nexiste/pas");
+    selon d { vrai { afficher("ouvert"); } inconnu { afficher("inconnu : pas de fichier"); } faux { afficher("faux"); } variable { afficher("variable"); } }
+    soit e = 0 - 3;
+    selon e { variable { afficher("variable", e); } autre { afficher("autre"); } }
+    soit q = vrai;
+    selon q { vrai { afficher("logique vrai"); } autre { afficher("x"); } }
+}

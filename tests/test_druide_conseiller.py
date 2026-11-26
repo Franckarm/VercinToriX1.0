@@ -47,5 +47,14 @@ with tempfile.TemporaryDirectory() as d:
     dire("l'en-tête de l'ARN (un commentaire) n'est pas pris pour un gène", "# ARN" not in t, t)
     places = [t.find("ligne " + str(n) + " (") for n in (3, 6, 13, 14, 15, 17)]
     dire("dans l'ordre des lignes", all(p >= 0 for p in places) and places == sorted(places), places)
+# 0.848 : le Druide suit les fichiers importés
+r2 = subprocess.run([LUGUS, "druide", os.path.join(ICI, "druide", "avec_import.vtx")], capture_output=True, text=True)
+t2 = r2.stdout
+for a in ["il a lu aussi ce que le programme importe : bibli_druide.vtx",
+          "ligne 5 de bibli_druide.vtx (sûr) : « base » porte l'adresse du cube « table »",
+          "la potion : @table(t)[…]",
+          "ligne 7 de bibli_druide.vtx (à vérifier) : la fonction « jamais_appelee » n'est appelée nulle part dans le programme"]:
+    dire("le Druide, dans les fichiers importés : " + a, a in t2, t2)
+dire("une fonction de la bibliothèque appelée par le programme n'est pas morte", "« lire_case »" not in t2, t2)
 print("Le Druide conseiller : tout est conforme" if ok else "Le Druide conseiller : des écarts")
 sys.exit(0 if ok else 1)

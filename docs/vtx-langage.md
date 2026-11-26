@@ -368,6 +368,23 @@ le reste). Le compilateur **refuse une branche que les précédentes rendent ina
 n'est jamais atteinte »), et une branche qui n'a pas autant de places que de lectures. `selon (x)` (une seule valeur
 entre parenthèses) garde son sens ordinaire. Lugus et Dunon ; les mêmes mots par les deux compilateurs de chacun.
 
+**La valeur sue (0.848).** `selon` sur un entier lit la réponse d'un service en quatre valeurs : `-1` inconnu (rien
+n'a répondu : absent, illisible, la fin de l'entrée), `-2` faux (la réponse est non : pas un cube, pas un dossier),
+`-3` variable (des réponses qui se contredisent ; réservé aux services qui le sauront dire), toute autre valeur vrai,
+et dans la branche `vrai` la variable est la réponse elle-même :
+
+```
+soit c = ouvrir_lecture(nom);
+selon c {
+    vrai { soit premier = lire_car(c); fermer(c); }      // c est le canal
+    inconnu { afficher("pas de fichier « " + nom + " »"); }
+    faux, variable { afficher("refusé"); }
+}
+```
+
+Sur Lugus (128 bits) et en `dunon;` (64), sur Dunon, et forgé ; un `selon` sur un logique garde ses mots
+(`tests/test_valeur_sue.py`).
+
 | Opération | Définition | Effet |
 |---|---|---|
 | `et4(a, b)` | v = v₁ ET v₂, f = f₁ OU f₂ | conjonction |

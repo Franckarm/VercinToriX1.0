@@ -45,26 +45,36 @@ pub fn druide_texte(programme: &std::path::Path, fin_de_ligne: &str) -> String {
     let brut = druide_brut(programme);
     let mut conseils = Vec::new();
     let mut savoirs = Vec::new();
+    let mut lus = String::new();
     for l in brut.lines() {
         let m: Vec<&str> = l.splitn(5, '|').collect();
         if m.len() >= 4 && m[0] == "conseil" {
             let etat = match m[1] { "vrai" => "sûr", "inconnu" => "à vérifier", "variable" => "selon le cas", "faux" => "à corriger", x => x };
-            let mut t = format!("· ligne {} ({}) : {}", m[2], etat, m[3]);
+            // 0.848 : « LIGNE@FICHIER » pour un fichier importé
+            let (ligne, fichier) = match m[2].split_once('@') { Some((l, f)) => (l, f), None => (m[2], "") };
+            let ou = if fichier.is_empty() { format!("ligne {}", ligne) } else { format!("ligne {} de {}", ligne, fichier) };
+            let mut t = format!("· {} ({}) : {}", ou, etat, m[3]);
             if m.len() >= 5 && !m[4].trim().is_empty() {
                 t.push_str(&format!("{}    la potion : {}", fin_de_ligne, m[4].trim()));
             }
-            conseils.push((m[2].parse::<usize>().unwrap_or(0), t));
+            conseils.push(((fichier.to_string(), ligne.parse::<usize>().unwrap_or(0)), t));
+        } else if m.len() >= 2 && m[0] == "lus" {
+            lus = m[1].to_string();
         } else if m.len() >= 3 && m[0] == "savoir" {
             savoirs.push(format!("· {} : {}", m[1], m[2]));
         }
     }
     let mut r = String::from("Le Druide :");
     r.push_str(fin_de_ligne);
+    if !lus.is_empty() {
+        r.push_str(&format!("(il a lu aussi ce que le programme importe : {})", lus));
+        r.push_str(fin_de_ligne);
+    }
     if conseils.is_empty() {
         r.push_str("je ne vois rien à redire.");
         r.push_str(fin_de_ligne);
     } else {
-        conseils.sort_by_key(|c| c.0);
+        conseils.sort_by(|a, b| a.0.cmp(&b.0));
         r.push_str(&conseils.iter().map(|c| c.1.clone()).collect::<Vec<_>>().join(fin_de_ligne));
         r.push_str(fin_de_ligne);
     }

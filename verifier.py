@@ -175,6 +175,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_taranis128.py")]))
     etapes.append(("les cubes nommés : les mêmes mots, la même sortie et les mêmes refus, sur Lugus et sur Dunon",
                    [sys.executable, os.path.join("tests", "test_cubes_nommes.py")]))
+    etapes.append(("la valeur sue : « selon » sur la réponse d'un service, les mêmes mots sur Lugus et Dunon, et forgée",
+                   [sys.executable, os.path.join("tests", "test_valeur_sue.py")]))
     etapes.append(("le Druide conseiller : les mêmes mots, et ses conseils (« lugus druide »)",
                    [sys.executable, os.path.join("tests", "test_druide_conseiller.py")]))
     etapes.append(("forge du SPU-32 : vtx -> Rust -> natif, mêmes sorties et même mémoire que le SPU émulé",

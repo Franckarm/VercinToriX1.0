@@ -1,0 +1,9 @@
+// une bibliothèque pour le Druide (0.848) : une adresse rangée dans une variable, un cube déjà nommé
+cube table[4] @2 frequence 60;
+fonction lire_case(t) {
+    soit base = (60 + t) << 24;
+    retour @2[base + 5];
+}
+fonction jamais_appelee() {
+    retour 1;
+}

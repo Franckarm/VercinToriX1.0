@@ -994,15 +994,15 @@ fonction element(x, y, z) {
     si x >= MONDE || z >= MONDE || y >= 256 {
         retour 0;
     }
-    soit base = (FELT + (z >> 8) * TUILES + (x >> 8)) << 24;
-    soit e = @2[base + (((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
+    soit tu = (z >> 8) * TUILES + (x >> 8);
+    soit e = @elements(tu)[(((x >> 3) & 31) << 10) + (((y >> 3) & 31) << 5) + ((z >> 3) & 31)];
     si (e >> 62) == 2 {
         retour 0;
     }
     si (e >> 62) == 1 {
         retour e & 4294967295;
     }
-    retour @2[base + REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
+    retour @elements(tu)[REP + (e - 16) * 512 + ((x & 7) << 6) + ((y & 7) << 3) + (z & 7)];
 }
 
 // la couleur d'un point (du cube de texture)

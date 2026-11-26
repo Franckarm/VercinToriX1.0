@@ -63,10 +63,19 @@ fonction lettre_ou_chiffre(c) {
     retour 0;
 }
 
+// 0.848 : les jetons de plusieurs fichiers dans les mêmes tableaux ; la ligne d'un jeton du fichier f vaut
+// ligne + f · FICHIER (f = 0 : le programme lui-même, ses lignes ne changent pas)
+constante FICHIER = 1000000;
+
 fonction decouper_jetons(s: texte): Jetons {
     soit j = Jetons { genres: tableau(0), textes: tableau(0), lignes: tableau(0) };
+    decouper_dans(s, j, 0);
+    retour j;
+}
+
+fonction decouper_dans(s: texte, j: Jetons, f) {
     soit i = 0;
-    soit ligne = 1;
+    soit ligne = 1 + f * FICHIER;
     soit n = longueur(s);
     tantque i < n {
         soit c = car(s, i);
@@ -131,7 +140,6 @@ fonction decouper_jetons(s: texte): Jetons {
             i = i + l;
         }
     }
-    retour j;
 }
 
 fonction jeton(j: Jetons, k): texte {
@@ -172,10 +180,47 @@ fonction rang_texte(t, nom: texte) {
 }
 
 // ------------------------------------------------------------------------------------------------- les conseils
-structure Conseils { n, dits: texte }
+structure Conseils { n, dits: texte, noms }
+
+// le nom court d'un fichier (après le dernier séparateur)
+fonction nom_court(chemin: texte): texte {
+    soit d = 0;
+    pour i dans 0..longueur(chemin) {
+        si car(chemin, i) == '/' || car(chemin, i) == 92 {
+            d = i + 1;
+        }
+    }
+    retour sous_texte(chemin, d, longueur(chemin));
+}
+
+// le dossier d'un fichier (jusqu'au dernier séparateur compris)
+fonction dossier_de(chemin: texte): texte {
+    soit d = 0;
+    pour i dans 0..longueur(chemin) {
+        si car(chemin, i) == '/' || car(chemin, i) == 92 {
+            d = i + 1;
+        }
+    }
+    retour sous_texte(chemin, 0, d);
+}
+
+// « la ligne N », ou « la ligne N de fichier.vtx » pour un fichier importé
+fonction ou_ligne(cs: Conseils, ligne): texte {
+    soit f = ligne / FICHIER;
+    si f == 0 {
+        retour "la ligne " + texte(ligne);
+    }
+    soit nom: texte = cs.noms[f];
+    retour "la ligne " + texte(ligne % FICHIER) + " de " + nom_court(nom);
+}
 
 fonction dire(cs: Conseils, etat: texte, ligne, quoi: texte, potion: texte) {
-    cs.dits = cs.dits + "conseil|" + etat + "|" + texte(ligne) + "|" + quoi + "|" + potion + "\n";
+    soit lieu = texte(ligne % FICHIER);
+    si ligne / FICHIER > 0 {
+        soit nom: texte = cs.noms[ligne / FICHIER];
+        lieu = lieu + "@" + nom_court(nom);
+    }
+    cs.dits = cs.dits + "conseil|" + etat + "|" + lieu + "|" + quoi + "|" + potion + "\n";
     cs.n = cs.n + 1;
 }
 
@@ -251,6 +296,71 @@ fonction valeur_constante(j: Jetons, nom: texte): texte {
     retour nom;
 }
 
+// 0.848 : le nom d'un cube déjà déclaré à l'étage e et à la fréquence f (« cube NOM [N] @E frequence F; »), ou ""
+fonction cube_declare(j: Jetons, e: texte, f: texte): texte {
+    pour k dans 0..longueur(j.textes) {
+        si j.genres[k] == 1 && jeton(j, k) == "cube" && j.genres[k + 1] == 1 {
+            soit q = k + 2;
+            si jeton(j, q) == "[" {
+                q = q + 3;
+            }
+            si jeton(j, q) == "@" && jeton(j, q + 1) == e && jeton(j, q + 2) == "frequence" && jeton(j, q + 3) == f {
+                retour jeton(j, k + 1);
+            }
+        }
+    }
+    retour "";
+}
+
+// 0.848 : une adresse du cube rangée dans une variable (« soit base = (F + …) << 24; » puis « @2[base + …] ») : la
+// forge ne la lie pas (chaque lecture refait puis défait l'adresse) ; lue par le nom du cube, elle se lie
+fonction voir_bases(j: Jetons, cs: Conseils) {
+    soit vus = tableau(0);
+    soit dits = 0;
+    pour k dans 0..longueur(j.textes) {
+        si dits < 12 && jeton(j, k) == "soit" && j.genres[k + 1] == 1 && jeton(j, k + 2) == "=" && jeton(j, k + 3) == "(" {
+            soit fin = fermant(j, k + 3);
+            si jeton(j, fin + 1) == "<<" && jeton(j, fin + 2) == "24" && jeton(j, fin + 3) == ";" {
+                soit nomv: texte = jeton(j, k + 1);
+                soit f: texte = jeton(j, k + 4);
+                // la variable est-elle lue comme une adresse (@E[nomv + …]) ?
+                soit lu = 0 - 1;
+                soit e: texte = "";
+                pour q dans fin..longueur(j.textes) {
+                    si lu == (0 - 1) && jeton(j, q) == "[" && jeton(j, q + 1) == nomv && jeton(j, q - 2) == "@" {
+                        lu = q;
+                        e = jeton(j, q - 1);
+                    }
+                }
+                soit cle: texte = nomv + ":" + texte(j.lignes[k]);
+                si lu != (0 - 1) && rang_texte(vus, cle) == (0 - 1) {
+                    ajouter(vus, cle);
+                    soit fv: texte = f;
+                    si j.genres[k + 4] == 1 {
+                        fv = valeur_constante(j, f);
+                    }
+                    soit nomc = cube_declare(j, e, fv);
+                    soit famille = jeton(j, k + 5) == "+";
+                    soit lecture: texte = "@" + nomc + "[…]";
+                    si famille {
+                        lecture = "@" + nomc + "(t)[…]";
+                    }
+                    si longueur(nomc) > 0 {
+                        dire(cs, "vrai", j.lignes[lu],
+                             "« " + nomv + " » porte l'adresse du cube « " + nomc + " » : lue par @" + e + "[" + nomv + " + …], elle ne se lie pas dans la forge (chaque lecture refait puis défait l'adresse) ; par son nom, elle se lie",
+                             lecture);
+                    } sinon {
+                        dire(cs, "vrai", j.lignes[lu],
+                             "« " + nomv + " » porte l'adresse d'un cube (fréquence " + f + ") : lue par @" + e + "[" + nomv + " + …], elle ne se lie pas dans la forge ; nommé, le cube se lit par son nom et se lie",
+                             "cube NOM @" + e + " frequence " + fv + ";");
+                    }
+                    dits = dits + 1;
+                }
+            }
+        }
+    }
+}
+
 fonction voir_adresses(j: Jetons, cs: Conseils) {
     soit vus = tableau(0);
     pour k dans 0..longueur(j.textes) {
@@ -294,7 +404,16 @@ fonction voir_adresses(j: Jetons, cs: Conseils) {
                     } sinon si commence_par(nom, "f") == 1 && longueur(nom) > 1 {
                         nom = sous_texte(nom, 1, longueur(nom));
                     }
-                    si famille == 1 {
+                    soit deja = cube_declare(j, e, fv);
+                    si longueur(deja) > 0 {
+                        soit lecture: texte = "@" + deja + "[…]";
+                        si famille == 1 {
+                            lecture = "@" + deja + "(t)[…]";
+                        }
+                        dire(cs, "vrai", j.lignes[k],
+                             "ce cube est déjà nommé « " + deja + " » : par son nom (" + lecture + "), le compilateur garde la fréquence pour lui seul",
+                             lecture);
+                    } sinon si famille == 1 {
                         dire(cs, "vrai", j.lignes[k],
                              "une famille de cubes écrite à la main (@" + e + "[((" + f + " + t) << 24) + …]) : nommée, elle se lit @" + nom + "(t)[…], et le compilateur refuse qu'un autre cube la recouvre (N : le nombre de cubes de la famille, à écrire)",
                              "cube " + nom + "[N] @" + e + " frequence " + fv + ";");
@@ -319,7 +438,7 @@ fonction voir_constantes(j: Jetons, cs: Conseils) {
             soit deja = rang_texte(noms, nom);
             si deja != (0 - 1) {
                 dire(cs, "vrai", j.lignes[k],
-                     "la constante « " + nom + " » est déjà définie à la ligne " + texte(lignes[deja]) + " : les compilateurs prennent les deux sans rien dire, et l'une cache l'autre",
+                     "la constante « " + nom + " » est déjà définie à " + ou_ligne(cs, lignes[deja]) + " : les compilateurs prennent les deux sans rien dire, et l'une cache l'autre",
                      "");
             } sinon {
                 ajouter(noms, nom);
@@ -370,8 +489,8 @@ fonction voir_comparaisons(j: Jetons, cs: Conseils) {
     }
 }
 
-// 6. la bibliothèque : une fonction de ce fichier que rien n'appelle ni ne nomme (ni ce fichier ni ceux qui
-// l'importent, que le Druide ne voit pas encore : à vérifier) ; principal et les réactions mises à part
+// 6. la bibliothèque : une fonction que rien n'appelle ni ne nomme dans le programme et ce qu'il importe (0.848) :
+// à vérifier (d'autres programmes l'importent peut-être) ; principal et les réactions mises à part
 fonction voir_mortes(j: Jetons, cs: Conseils) {
     soit dits = 0;
     pour k dans 0..longueur(j.textes) {
@@ -386,7 +505,7 @@ fonction voir_mortes(j: Jetons, cs: Conseils) {
                 }
                 si vu == 0 && dits < 8 {
                     dire(cs, "inconnu", j.lignes[k],
-                         "la fonction « " + nom + " » n'est appelée nulle part dans ce fichier : du code mort, ou une fonction pour ceux qui l'importent",
+                         "la fonction « " + nom + " » n'est appelée nulle part dans le programme (ce fichier et ceux qu'il importe) : du code mort, ou une fonction pour d'autres programmes",
                          "");
                     dits = dits + 1;
                 }
@@ -450,23 +569,61 @@ fonction savoir_des_agents(nemeton: texte): texte {
     retour r;
 }
 
+// 0.848 : les fichiers importés (« importer "x.vtx"; »), de proche en proche, chacun une fois (au plus 32)
+fonction suivre_imports(j: Jetons, cs: Conseils) {
+    soit f = 0;
+    tantque f < longueur(cs.noms) && longueur(cs.noms) < 32 {
+        soit de: texte = cs.noms[f];
+        soit dossier = dossier_de(de);
+        pour k dans 0..longueur(j.textes) {
+            si j.lignes[k] / FICHIER == f && j.genres[k] == 1 && jeton(j, k) == "importer" && k + 1 < longueur(j.textes)
+                    && j.genres[k + 1] == 4 {
+                soit g: texte = jeton(j, k + 1);
+                soit nom = dossier + sous_texte(g, 1, longueur(g) - 1);
+                si rang_texte(cs.noms, nom) == (0 - 1) && longueur(cs.noms) < 32 {
+                    soit src = lire_fichier(nom);
+                    si longueur(src) > 0 {
+                        ajouter(cs.noms, nom);
+                        decouper_dans(src, j, longueur(cs.noms) - 1);
+                    }
+                }
+            }
+        }
+        f = f + 1;
+    }
+}
+
 fonction principal() {
     soit chemin = nettoyer_ligne(lire_ligne());
     soit nemeton = nettoyer_ligne(lire_ligne());
     soit src = lire_fichier(chemin);
-    soit cs = Conseils { n: 0, dits: "" };
+    soit cs = Conseils { n: 0, dits: "", noms: tableau(0) };
     si longueur(src) == 0 {
         afficher("fin|0");
         retour;
     }
+    ajouter(cs.noms, chemin);
     soit j = decouper_jetons(src);
+    suivre_imports(j, cs);
     voir_constantes(j, cs);
     voir_selon(j, cs);
     voir_adresses(j, cs);
+    voir_bases(j, cs);
     voir_largeurs(j, cs);
     voir_comparaisons(j, cs);
     voir_mortes(j, cs);
     ecrire(cs.dits);
+    si longueur(cs.noms) > 1 {
+        soit lus = "";
+        pour q dans 1..longueur(cs.noms) {
+            soit nq: texte = cs.noms[q];
+            si q > 1 {
+                lus = lus + ", ";
+            }
+            lus = lus + nom_court(nq);
+        }
+        afficher("lus|" + lus);
+    }
     ecrire(savoir_des_agents(nemeton));
     afficher("fin|" + texte(cs.n));
 }

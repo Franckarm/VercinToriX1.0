@@ -5928,6 +5928,48 @@ fonction gen_logique(c: Ctx, e: Noeud) {
     }
 }
 
+// 0.848 : le nom caché d'un « selon » (__selonN)
+fonction nom_de_selon(n) {
+    soit p = "__selon";
+    si longueur(n) < longueur(p) {
+        retour 0;
+    }
+    pour i dans 0..longueur(p) {
+        si car(n, i) != car(p, i) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+// 0.848 : l'état d'une valeur sue (R1, un entier) : -1 inconnu, -2 faux, -3 variable, sinon vrai ; rendu dans R1
+fonction valeur_sue(c: Ctx) {
+    soit li = nouvelle_etiquette(c);
+    soit lf = nouvelle_etiquette(c);
+    soit lv = nouvelle_etiquette(c);
+    soit fin = nouvelle_etiquette(c);
+    charger(c, 2, 0 - 1);
+    cmp(c, 1, 2);
+    saut(c, 49, li);
+    charger(c, 2, 0 - 2);
+    cmp(c, 1, 2);
+    saut(c, 49, lf);
+    charger(c, 2, 0 - 3);
+    cmp(c, 1, 2);
+    saut(c, 49, lv);
+    ldis(c, 1, 2);
+    saut(c, 48, fin);
+    poser_etiquette(c, li);
+    ldis(c, 1, 0);
+    saut(c, 48, fin);
+    poser_etiquette(c, lf);
+    ldis(c, 1, 1);
+    saut(c, 48, fin);
+    poser_etiquette(c, lv);
+    ldis(c, 1, 3);
+    poser_etiquette(c, fin);
+}
+
 // logique(x), comme_logique(x)
 fonction gen_vers_logique(c: Ctx, e: Noeud) {
     soit nom = e.nom;
@@ -6901,6 +6943,17 @@ fonction instr(c: Ctx, s: Noeud) {
         noter_ligne(c, s.ligne);
     }
     c.sans_ligne = 0;
+    // 0.848 : la valeur sue : « selon » sur un entier (la réponse d'un service) : -1 inconnu, -2 faux, -3 variable,
+    // toute autre valeur vrai (comme vtx64.py)
+    si g == N_SOIT && nom_de_selon(s.nom) == 1 && typ(c, s.a) == 0 {
+        soit vs = var_de(c, s.nom, s.ligne);
+        si vs.type == T_LOG {
+            gen(c, s.a);
+            valeur_sue(c);
+            ranger(c, vs);
+            retour;
+        }
+    }
     si (g == N_SOIT || g == N_AFFECTER) && c.optim && reg_direct(c, s) {
         retour;
     }

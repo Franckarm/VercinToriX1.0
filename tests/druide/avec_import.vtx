@@ -1,0 +1,5 @@
+// machine : lugus
+importer "bibli_druide.vtx";
+fonction principal() {
+    afficher(lire_case(3));
+}

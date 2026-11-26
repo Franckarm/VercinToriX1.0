@@ -955,7 +955,14 @@ class Forge(V.Generateur):
 
     def instr(self, s):
         g = s[0]
-        if g == "soit":
+        if g == "soit" and s[1].startswith("__selon") and self.vtypes[s[1]] == "q" and self.typ(s[2]) == "e":
+            # 0.848 : la valeur sue (comme vtx128.py) : -1 inconnu, -2 faux, -3 variable, toute autre valeur vrai
+            m = "u128::MAX" if L() else "(u64::MAX as u128)"
+            code = self.b([self.val(s[2])], "{{ let x: u128 = {0}; if x == " + m + " {{ 0u128 }} else if x == " + m
+                          + " - 1 {{ 1u128 }} else if x == " + m + " - 2 {{ 3u128 }} else {{ 2u128 }} }}")
+            self.ligne(f"v_{ident(s[1])} = {code};")
+            self.observer(s[1])
+        elif g == "soit":
             t = self.vtypes[s[1]]
             if est_ref(t) and len(s) > 4 and s[4] == t and s[2][0] in ("var", "appel") and self.typ(s[2]) == "e":
                 code = self.val(s[2])

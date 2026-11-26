@@ -268,3 +268,6 @@ docs/vtx-agents.md
 druide/conseiller.vtx
 vtx-rs/druide_conseiller.mots
 tests/druide/conseils.vtx
+tests/druide/avec_import.vtx
+tests/druide/bibli_druide.vtx
+tests/valeur_sue/sue.vtx
