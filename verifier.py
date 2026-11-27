@@ -2,7 +2,13 @@
 """Vérifie l'installation de vtx : tests du langage, puis les tests complémentaires, puis la conformité des machines
 Rust et JavaScript si cargo et node sont installés.
 Utilisation : python3 verifier.py            (rapide : moins de tirages aléatoires, sans les grands volumes)
-              python3 verifier.py --complet  (tout, plusieurs dizaines de minutes)"""
+              python3 verifier.py --complet  (tout, plusieurs dizaines de minutes)
+              python3 verifier.py --geles    (0.851 : ajoute les machines gelées : le SPU-32 (Senos), le SPU-64 séparé,
+                                              les machines JavaScript ; par défaut, seulement Lugus, « dunon; » compris)
+
+0.851 (décidé avec le créateur, 27 novembre) : un seul compilateur à terme, vtxc128 (écrit en vtx). Dunon est
+« dunon; » (ses règles de 64 bits, ses services, sur la machine de Lugus) ; la machine SPU-64 séparée est gelée, comme
+Senos. Les étapes qui ne regardent que les machines gelées ne se jouent plus par défaut."""
 import os
 import shutil
 import subprocess
@@ -11,6 +17,14 @@ import sys
 ici = os.path.dirname(os.path.abspath(__file__))
 # Windows : sans cela, les sorties capturées sont encodées en cp1252, qui ne connaît pas « → », « ³ » ou « ≥ ».
 COMPLET = "--complet" in sys.argv
+GELES = "--geles" in sys.argv or COMPLET
+# 0.851 : les étapes des machines gelées (le SPU-32, le SPU-64 séparé, JavaScript), par le début de leur nom
+NOMS_GELES = ("tests du langage", "SPU-64 :", "vtx64 :", "vtxc64 :", "vtx128 : mêmes sorties que le SPU-64",
+              "les quatre valeurs aux bords du monde sur Dunon", "Dunon fait le travail de Lugus",
+              "les fonctions passées en valeur sur Dunon", "forge du SPU-32", "type texte et afficher",
+              "tableaux, dictionnaires, vocabulaire, lire_ligne", "mémoire qui se libère", "ScoR v0",
+              "traduction directe pour Windows", "traduction en code natif", "machines JavaScript", "machine Rust",
+              "vtxc : le compilateur écrit en vtx se compile lui-même")
 ENV = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1", VTX_RAPIDE="0" if COMPLET else "1")
 TEXTE = dict(capture_output=True, text=True, encoding="utf-8", errors="replace", env=ENV)
 try:
@@ -205,6 +219,10 @@ if shutil.which("node"):
                                           os.path.join("conformite", "corpus_attendu.txt")]))
 else:
     print("node absent : les machines JavaScript ne sont pas vérifiées")
+if not GELES:
+    _avant = len(etapes)
+    etapes = [(n, c) for (n, c) in etapes if not (n.startswith(NOMS_GELES) or n == "machine Rust")]
+    print(f"(0.851 : {_avant - len(etapes)} étape(s) des machines gelées sautées ; « --geles » les joue)")
 # 0.847 : « verifier.py --depuis TEXTE » reprend à la première étape dont le nom contient TEXTE
 if "--depuis" in sys.argv and sys.argv.index("--depuis") + 1 < len(sys.argv):
     _m = sys.argv[sys.argv.index("--depuis") + 1]
@@ -212,8 +230,12 @@ if "--depuis" in sys.argv and sys.argv.index("--depuis") + 1 < len(sys.argv):
     etapes = etapes[_k:]
 echecs = 0
 noms_echecs = []
+import time
+_debut = time.time()
+_durees = []
 for nom, cmd in etapes:
     print(f"\n=== {nom}")
+    _t0 = time.time()
     if nom == "machine Rust":
         b = subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=os.path.join(ici, "vtx-rs"), **TEXTE)
         exe = os.path.join(ici, "vtx-rs", "target", "release", "vtx-spu" + (".exe" if os.name == "nt" else ""))
@@ -234,9 +256,13 @@ for nom, cmd in etapes:
     r = subprocess.run(cmd, cwd=ici, stdin=subprocess.DEVNULL, **TEXTE)   # pas de clavier : une lecture est la fin de l'entrée
     sortie = (r.stdout + r.stderr).strip().split("\n")
     print("\n".join(sortie[-6:]))
+    _durees.append((time.time() - _t0, nom))
+    print(f"({time.time() - _t0:.0f} s)")
     if r.returncode != 0:
         echecs += 1
         noms_echecs.append(nom)
+print(f"\n{(time.time() - _debut) / 60:.0f} minutes ; les plus longues : "
+      + " ; ".join(f"{n} ({d / 60:.0f} min)" for d, n in sorted(_durees, reverse=True)[:5]))
 print("\n" + ("Tout est conforme." if not echecs else f"{echecs} étape(s) en échec : " + " ; ".join(noms_echecs)))
 if not COMPLET:
     print("(vérification rapide ; « verifier.py --complet » refait tout, grands volumes compris)")

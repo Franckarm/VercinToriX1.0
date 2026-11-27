@@ -966,3 +966,13 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Le créateur demande s'il faut retirer « la sécurité » qui ralentit : la vague de 32 fils n'en est pas une (c'est la
   carte elle-même) ; à discuter avec lui ce qu'il entend par sécurité (la vérification de deux heures, les gardes ?).
 - Livraison : vtx-0.850c.zip, essai-0.850c.bat.
+
+## 0.851 (27 novembre) : vers un seul compilateur
+- Décidé avec le créateur : quatre compilateurs (six avec Senos) → un seul, vtxc128. Dunon = `dunon;` (ses règles de
+  64 bits, ses services, sur la machine de Lugus) ; la machine SPU-64 séparée est gelée, comme Senos. Le plan :
+  `docs/vtx-un-compilateur.md` (étape 1 : vtxc128 seul écrit les mots, vtx128.py ne sert plus qu'à la forge, les tests
+  « mêmes mots » deviennent « mêmes résultats » ; étape 2 : vtxc128 écrit l'arbre typé, la forge le lit ; étape 3 : la
+  forge en vtx).
+- Étape 0 (fait) : `verifier.py` saute par défaut les 20 étapes des machines gelées (`--geles` les joue) ; chaque étape
+  dit son temps. Ici : **60 minutes, « Tout est conforme »** (contre plus de deux heures) ; les plus longues : le point
+  fixe de vtxc128 (12 min), les réactions dans vtxc128 (7), les priorités, l'ADN, reste (4 chacune).
