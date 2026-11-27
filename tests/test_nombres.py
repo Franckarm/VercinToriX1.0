@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Le vocabulaire des nombres (0.6za) : signe, est_positif, est_negatif, est_nul, est_entier, est_infini, est_su,
 partie_entiere, partie_decimale, entre, ecart, borne, arrondi(x, n). Un mot pour les cinq types ; le compilateur choisit
-la variante par le type des arguments. vtx128.py et vtxc128 : les mêmes mots ; une fonction du programme qui porte le
+la variante par le type des arguments. vtxc128 seul (0.851) : compilé ; une fonction du programme qui porte le
 même nom garde la main."""
 import os
 import subprocess
@@ -13,9 +13,7 @@ racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "chimie"))
 import adn  # noqa: E402
-import vtx128  # noqa: E402
 
-vtx128.COMPAT_64 = False
 WIN = os.name == "nt"
 X = ".exe" if WIN else ""
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + X)
@@ -38,16 +36,12 @@ def lugus(*args, entree=None):
 
 
 def memes_mots(chemin):
-    texte = open(chemin, encoding="utf-8").read()
-    try:
-        m, _ = vtx128.assembler(vtx128.compiler(texte, dossier=os.path.dirname(chemin)), True)
-    except vtx128.VtxError as e:
-        return False, str(e)
+    # 0.851 : un seul compilateur : ce qui reste des « mêmes mots », vtxc128 (lugus) le compile
     r = lugus("compiler", chemin, os.path.join(d, "x.mots"))
     if r.returncode != 0:
         return False, r.stdout + r.stderr
     ml = [int(x) for x in open(os.path.join(d, "x.mots")).read().split(";")[0].split(",") if x]
-    return m == ml, f"{len(m)} contre {len(ml)}"
+    return len(ml) > 0, f"{len(ml)} mots"
 
 
 
@@ -56,7 +50,7 @@ ATTENDU = "prix arrondi au centime : 12.46 ; à la dizaine : 10.0\npartie entiè
 
 EX = os.path.join(racine, "exemples128", "nombres.vtx")
 ok, det = memes_mots(EX)
-verifier("nombres.vtx : vtxc128 et vtx128.py donnent les mêmes mots", ok, det)
+verifier("nombres.vtx : compilé par vtxc128", ok, det)
 r = lugus(EX)
 verifier("nombres.vtx : la sortie attendue (arrondi, parties, états inconnu et variable, cinq types, l'infini)",
          r.stdout == ATTENDU, r.stdout + r.stderr)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Le type d'une fonction passée en valeur (0.6x) : « fonction(T1, T2): R ». Le compilateur vérifie qu'une fonction
 nommée a bien ce type, compte les arguments d'un appel par valeur et convertit chacun ; un appel rend le type écrit
-(un texte reste un texte). vtx128.py et vtxc128 : les mêmes mots, et les mêmes refus."""
+(un texte reste un texte). vtxc128 seul (0.851) : compilé, et les refus."""
 import os
 import subprocess
 import sys
@@ -12,9 +12,7 @@ racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "chimie"))
 import adn  # noqa: E402
-import vtx128  # noqa: E402
 
-vtx128.COMPAT_64 = False
 WIN = os.name == "nt"
 X = ".exe" if WIN else ""
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + X)
@@ -37,22 +35,18 @@ def lugus(*args, entree=None):
 
 
 def memes_mots(chemin):
-    texte = open(chemin, encoding="utf-8").read()
-    try:
-        m, _ = vtx128.assembler(vtx128.compiler(texte, dossier=os.path.dirname(chemin)), True)
-    except vtx128.VtxError as e:
-        return False, str(e)
+    # 0.851 : un seul compilateur : ce qui reste des « mêmes mots », vtxc128 (lugus) le compile
     r = lugus("compiler", chemin, os.path.join(d, "x.mots"))
     if r.returncode != 0:
         return False, r.stdout + r.stderr
     ml = [int(x) for x in open(os.path.join(d, "x.mots")).read().split(";")[0].split(",") if x]
-    return m == ml, f"{len(m)} contre {len(ml)}"
+    return len(ml) > 0, f"{len(ml)} mots"
 
 
 
 TF = os.path.join(racine, "exemples128", "types_fonction.vtx")
 ok, det = memes_mots(TF)
-verifier("types_fonction.vtx : vtxc128 et vtx128.py donnent les mêmes mots", ok, det)
+verifier("types_fonction.vtx : compilé par vtxc128", ok, det)
 r = lugus(TF)
 verifier("appliquer, plier, un flottant, une fonction rendue, un texte, une structure",
          r.stdout.split("\n")[:6] == ["49 16", "1.5", "25", "Par Toutatis !", "4", ""], r.stdout + r.stderr)
@@ -86,14 +80,9 @@ REFUS = [
 for nom, ligne, attendu in REFUS:
     chemin = os.path.join(d, "refus.vtx")
     open(chemin, "w", encoding="utf-8").write(TETE + " " + ligne + "\n}\n")
-    try:
-        vtx128.compiler(open(chemin, encoding="utf-8").read(), dossier=d)
-        mp = "(accepté)"
-    except vtx128.VtxError as e:
-        mp = str(e)
     rl = lugus("compiler", chemin, os.path.join(d, "x.mots"))
-    verifier(f"refus : {nom} (les deux compilateurs, le même message)",
-             attendu in mp and attendu in rl.stdout + rl.stderr and rl.returncode != 0, mp + " / " + rl.stdout + rl.stderr)
+    verifier(f"refus : {nom} (vtxc128, le message attendu)",
+             attendu in rl.stdout + rl.stderr and rl.returncode != 0, rl.stdout + rl.stderr)
 
 # sans type écrit, rien ne change : un appel par valeur reste libre (0.6w)
 LIBRE = os.path.join(d, "libre.vtx")
@@ -136,14 +125,9 @@ REFUS2 = [
 for nom, ligne, attendu in REFUS2:
     chemin = os.path.join(d, "refus2.vtx")
     open(chemin, "w", encoding="utf-8").write(TETE2 + " " + ligne + "\n}\n")
-    try:
-        vtx128.compiler(open(chemin, encoding="utf-8").read(), dossier=d)
-        mp = "(accepté)"
-    except vtx128.VtxError as e:
-        mp = str(e)
     rl = lugus("compiler", chemin, os.path.join(d, "x.mots"))
-    verifier(f"refus : {nom} (les deux compilateurs, le même message)",
-             attendu in mp and attendu in rl.stdout + rl.stderr and rl.returncode != 0, mp + " / " + rl.stdout + rl.stderr)
+    verifier(f"refus : {nom} (vtxc128, le message attendu)",
+             attendu in rl.stdout + rl.stderr and rl.returncode != 0, rl.stdout + rl.stderr)
 
 # le juge croit la promesse du type, et pas plus : une fonction qui promet rien ne peut appeler une valeur qui lit
 JUGE = os.path.join(d, "juge.vtx")

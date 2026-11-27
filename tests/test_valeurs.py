@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Les fonctions passées en valeur (0.6w) : un nom de fonction sans parenthèses est sa valeur ; f(…) par une variable
-qui porte une fonction est un appel par valeur (le trampoline __appeler). vtx128.py et vtxc128 : les mêmes mots ; la
+qui porte une fonction est un appel par valeur (le trampoline __appeler). vtxc128 seul (0.851) : compilé ; la
 carte et le juge des promesses voient où mène un appel par valeur (le monde, par prudence) ; Gobannos le traduit."""
 import os
 import subprocess
@@ -10,9 +10,7 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 
-vtx128.COMPAT_64 = False
 WIN = os.name == "nt"
 X = ".exe" if WIN else ""
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + X)
@@ -35,23 +33,19 @@ def lugus(*args, entree=None):
 
 
 def memes_mots(chemin):
-    texte = open(chemin, encoding="utf-8").read()
-    try:
-        m, _ = vtx128.assembler(vtx128.compiler(texte, dossier=os.path.dirname(chemin)), True)
-    except vtx128.VtxError as e:
-        return False, str(e)
+    # 0.851 : un seul compilateur : ce qui reste des « mêmes mots », vtxc128 (lugus) le compile
     r = lugus("compiler", chemin, os.path.join(d, "x.mots"))
     if r.returncode != 0:
         return False, r.stdout + r.stderr
     ml = [int(x) for x in open(os.path.join(d, "x.mots")).read().split(";")[0].split(",") if x]
-    return m == ml, f"{len(m)} contre {len(ml)}"
+    return len(ml) > 0, f"{len(ml)} mots"
 
 
 EX = os.path.join(racine, "exemples128", "valeurs.vtx")
 MELE = os.path.join(ici, "valeurs_mele.vtx")
 for nom, chemin in (("exemples128/valeurs.vtx", EX), ("le mélange", MELE)):
     ok, det = memes_mots(chemin)
-    verifier(f"{nom} : vtxc128 et vtx128.py donnent les mêmes mots", ok, det)
+    verifier(f"{nom} : compilé par vtxc128", ok, det)
 
 r = lugus(EX)
 verifier("l'exemple : pour_chacun, plier, une fonction qui rend une fonction, une structure qui porte une fonction",

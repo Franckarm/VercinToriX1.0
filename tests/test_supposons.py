@@ -2,7 +2,7 @@
 """supposons X parmi [E1, …, En] { CORPS } [retenir R;] (0.6s) : chaque candidat est essayé dans X ; la lecture peut
 l'écarter (écarter;) ou le noter (noter E;) ; ce qu'elle écrit en mémoire est défait (une hypothèse, seulement si elle
 écrit). X garde le retenu, R dit comment : faux aucun, vrai un seul ou une meilleure note unique, inconnu plusieurs sans
-note, variable des ex aequo. vtx128.py et vtxc128 donnent les mêmes mots, et les mêmes refus."""
+note, variable des ex aequo. vtxc128 seul les compile et les refuse (0.851)."""
 import os
 import subprocess
 import sys
@@ -11,9 +11,8 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
+from un_compilateur import compiler_texte  # noqa: E402  (0.851 : un seul compilateur)
 
-vtx128.COMPAT_64 = False
 X = ".exe" if os.name == "nt" else ""
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + X)
 d = tempfile.mkdtemp()
@@ -36,11 +35,9 @@ def ecrire(nom, texte):
 
 
 def mots_py(texte):
-    try:
-        m, _ = vtx128.assembler(vtx128.compiler(texte, dossier=d), True)
-        return m, ""
-    except vtx128.VtxError as e:
-        return None, str(e)
+    # 0.851 : un seul compilateur : vtxc128 (lugus) fait ce que faisait vtx128.py
+    m, msg = compiler_texte(texte, dossier=d)
+    return m, ("" if m is not None else msg)
 
 
 def mots_lugus(nom):
@@ -95,7 +92,7 @@ fonction principal() {
 texte = open(os.path.join(racine, "exemples128", "supposons.vtx"), encoding="utf-8").read()
 ecrire("ex.vtx", texte)
 m_l, err = mots_lugus("ex.vtx")
-verifier("exemples128/supposons.vtx : vtxc128 et vtx128.py donnent les mêmes mots", m_l is not None and m_l == mots_py(texte)[0], err)
+verifier("exemples128/supposons.vtx : compilé par vtxc128", m_l is not None, err)
 r = lugus("ex.vtx")
 attendu = ["le meilleur : 8 vrai ; la mémoire : 7", "chat vrai", "ex aequo : 4 variable", "sans note : 4 inconnu",
            "aucun : 4 faux", "5 0 2", "gardé : 80 vrai", "ex aequo, rien n'est fait : 4 variable"]
@@ -107,7 +104,7 @@ verifier("une fonction « touche rien » qui suppose sans écrire tient sa prome
 #    une fonction utilisateur nommée noter
 ecrire("mele.vtx", MELE)
 m_l, err = mots_lugus("mele.vtx")
-verifier("le mélange : les mêmes mots", m_l is not None and m_l == mots_py(MELE)[0], err)
+verifier("le mélange : compilé par vtxc128", m_l is not None, err)
 r = lugus("mele.vtx")
 verifier("le mélange : ce qu'il affiche", r.stdout.split("\n")[:6] == ["5", "chat vrai", "4 variable", "1.5 vrai", "1 1 0", "5"],
          r.stdout + r.stderr)
@@ -128,7 +125,7 @@ CONTRAT = """fonction principal() {
 """
 ecrire("contrat.vtx", CONTRAT)
 m_l, err = mots_lugus("contrat.vtx")
-verifier("exige dans une lecture : les mêmes mots", m_l is not None and m_l == mots_py(CONTRAT)[0], err)
+verifier("exige dans une lecture : compilé par vtxc128", m_l is not None, err)
 r = lugus("contrat.vtx")
 verifier("exige écarte : 12 retenu (9 aussi tient, moins bien noté) ; aucun ne tient : faux ; hors d'une lecture, exige est un nom",
          r.stdout.split("\n")[:3] == ["12 vrai", "1 faux", "3"], r.stdout + r.stderr)
@@ -137,7 +134,7 @@ verifier("exige écarte : 12 retenu (9 aussi tient, moins bien noté) ; aucun ne
 ALORS = open(os.path.join(ici, "supposons_alors.vtx"), encoding="utf-8").read()
 ecrire("alors.vtx", ALORS)
 m_l, err = mots_lugus("alors.vtx")
-verifier("alors : les mêmes mots", m_l is not None and m_l == mots_py(ALORS)[0], err)
+verifier("alors : compilé par vtxc128", m_l is not None, err)
 r = lugus("alors.vtx")
 verifier("alors : joué une fois pour le retenu (la lecture défaite, l'action gardée) ; sinon pour des ex aequo ; "
          "sans retenir ; « alors » reste un nom ailleurs",
