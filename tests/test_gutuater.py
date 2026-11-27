@@ -2,7 +2,7 @@
 
     python3 tests/test_gutuater.py
 
-1. les mêmes mots par vtx128.py et vtxc128 ;
+1. compilé par vtxc128 (0.851 : un seul compilateur) ;
 2. les quatre états de la synapse (Belnap) : inconnu, vrai, faux, variable ; 0.826 : le seuil qui tremble (la
    résonance stochastique) : le bruit pur n'est jamais pris pour un gain, un vrai petit gain finit par se voir ;
 3. l'usure : au-delà d'un poids de 24, les compteurs sont divisés par 2 (une croyance peut se renverser) ;
@@ -14,9 +14,7 @@ import tempfile
 
 racine = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 
-vtx128.COMPAT_64 = False
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
 GUT = os.path.join(racine, "gutuater", "gutuater.vtx")
 D = tempfile.mkdtemp(prefix="gutuater-")
@@ -46,13 +44,12 @@ def digerer(mesures):
     return r, arn, carnet
 
 
-# 1. les deux compilateurs
+# 1. vtxc128 le compile (0.851 : un seul compilateur)
 src = open(GUT, encoding="utf-8").read()
-a = vtx128.assembler(vtx128.compiler(src, dossier=os.path.dirname(GUT)))
 mo = os.path.join(D, "g.mots")
 r = subprocess.run([LUGUS, "compiler", GUT, mo], capture_output=True, text=True)
 b = [int(x) for x in open(mo).read().split(";")[0].split(",") if x] if r.returncode == 0 else None
-verifier(f"gutuater.vtx : les mêmes mots par vtx128.py et vtxc128 ({len(a)} mots)", a == b, r.stdout + r.stderr)
+verifier(f"gutuater.vtx : compilé par vtxc128 ({len(b or [])} mots)", b is not None, r.stdout + r.stderr)
 
 # 2. les quatre états
 r, arn, carnet = digerer("mesure lot 10 8000 9500\nmesure lot 10 8100 9400\n"   # le lot gagne 15 % : vrai

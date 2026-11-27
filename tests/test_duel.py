@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Le duel du binaire et du quaternaire (exemples128/duel.vtx, 0.5zy). Mêmes mots par vtx128.py et vtxc128 ; le binaire
+"""Le duel du binaire et du quaternaire (exemples128/duel.vtx, 0.5zy). Compilé par vtxc128 seul (0.851) ; le binaire
 juste, le binaire d'expert et le quaternaire prennent exactement les mêmes décisions (mêmes erreurs, mêmes portes à
 vérifier, silences = inconnus, contradictions = variables) ; le binaire naïf se trompe bien plus ; le quaternaire joue
 bien moins d'instructions que le binaire juste ; le .exe traduit dit la même chose que Lugus seul. Les rapports
@@ -13,7 +13,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -29,11 +28,10 @@ def verifier(nom, ok, detail=""):
 
 
 src = open(PROG, encoding="utf-8").read()
-ref = vtx128.assembler(vtx128.compiler(src, dossier=os.path.dirname(PROG)))
 r = subprocess.run([os.path.join(BIN, "lugus" + X), "compiler", PROG, os.path.join(d, "q.mots")], capture_output=True,
                    text=True, encoding="utf-8")
 m = [int(x) for x in open(os.path.join(d, "q.mots")).read().split(";")[0].split(",") if x.strip()] if r.returncode == 0 else None
-verifier(f"vtx128.py et vtxc128 donnent les mêmes mots ({len(ref)})", m == ref, f"{len(ref)} contre {None if m is None else len(m)}")
+verifier(f"vtxc128 (lugus) le compile ({len(m or [])} mots ; 0.851 : un seul compilateur)", m is not None, r.stdout[-200:] + r.stderr[-200:])
 
 o = subprocess.run([os.path.join(BIN, "lugus" + X), PROG], capture_output=True, text=True, encoding="utf-8").stdout
 lignes = {l[:2]: l for l in o.splitlines() if re.match(r"^[ABCD]\. ", l)}

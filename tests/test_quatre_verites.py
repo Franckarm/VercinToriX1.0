@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Les quatre vérités (exemples128/quatre_verites.vtx, 0.5zx) : la démonstration visible de la logique de Belnap. Les
-deux compilateurs de Lugus (vtx128.py et vtxc128) donnent les mêmes mots ; le programme écrit les tables de fusion et
+compilé par vtxc128 seul (0.851) ; le programme écrit les tables de fusion et
 de et4 justes, et le conseil d'Alésia décide comme il faut pour chaque porte (vrai, faux, inconnu, variable) ; son .exe,
 traduit en x86-64, écrit la même chose que Lugus seul."""
 import os
@@ -11,7 +11,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -27,11 +26,10 @@ def verifier(nom, ok, detail=""):
 
 
 src = open(PROG, encoding="utf-8").read()
-ref = vtx128.assembler(vtx128.compiler(src, dossier=os.path.dirname(PROG)))
 r = subprocess.run([os.path.join(BIN, "lugus" + X), "compiler", PROG, os.path.join(d, "q.mots")], capture_output=True,
                    text=True, encoding="utf-8")
 m = [int(x) for x in open(os.path.join(d, "q.mots")).read().split(";")[0].split(",") if x.strip()] if r.returncode == 0 else None
-verifier(f"vtx128.py et vtxc128 donnent les mêmes mots ({len(ref)})", m == ref, f"{len(ref)} contre {None if m is None else len(m)}")
+verifier(f"vtxc128 (lugus) le compile ({len(m or [])} mots ; 0.851 : un seul compilateur)", m is not None, r.stdout[-200:] + r.stderr[-200:])
 
 r = subprocess.run([os.path.join(BIN, "lugus" + X), PROG], capture_output=True, text=True, encoding="utf-8")
 o = r.stdout

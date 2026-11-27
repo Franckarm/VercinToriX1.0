@@ -2,8 +2,8 @@
 """Le combat (0.6, exemples128/combat.vtx) : un garde dont les quatre réactions (parer, attaquer, se garder, chercher)
 suivent les quatre valeurs de la question « est-ce qu'il me frappe ? », lue par le codon avec ordre (vue, ouïe, flair),
 avec ou sans tirage au sort devant la contradiction, contre des gardes sans codon et deux gardes binaires, face à un
-légionnaire qui apprend, dans deux tournois de 500 combats (la garde tient, la garde est enfoncée). Mêmes mots par
-vtx128.py et vtxc128 ; traduit en x86-64 comme joué par Lugus seul ; et, avec l'argument « python », comme la machine
+légionnaire qui apprend, dans deux tournois de 500 combats (la garde tient, la garde est enfoncée). Compilé par vtxc128
+seul (0.851) ; traduit en x86-64 comme joué par Lugus seul ; et, avec l'argument « python », comme la machine
 de référence en Python (une demi-minute)."""
 import os
 import subprocess
@@ -13,7 +13,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -38,12 +37,11 @@ def jouer(fic, interprete=False):
 
 demo = os.path.join(racine, "exemples128", "combat.vtx")
 src = open(demo, encoding="utf-8").read()
-ref = vtx128.assembler(vtx128.compiler(src, dossier=os.path.dirname(demo)))
 sortie = os.path.join(d, "combat.mots")
 r = subprocess.run([os.path.join(BIN, "lugus" + X), "compiler", demo, sortie], capture_output=True, text=True,
                    encoding="utf-8", errors="replace")
 m = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()] if r.returncode == 0 else None
-verifier("combat.vtx : mêmes mots par vtx128.py et vtxc128", m == ref, f"{len(ref)} contre {None if m is None else len(m)}")
+verifier("combat.vtx : compilé par vtxc128 (lugus ; 0.851 : un seul compilateur)", m is not None, r.stdout[-200:] + r.stderr[-200:])
 a, b = jouer(demo), jouer(demo, True)
 verifier("traduit en x86-64 comme joué par Lugus seul", a == b and len(a) > 500, a[-300:])
 lignes = a.splitlines()
@@ -88,12 +86,11 @@ fonction principal() {
 }
 """)
 srcc = open(cas, encoding="utf-8").read()
-refc = vtx128.assembler(vtx128.compiler(srcc, dossier=d))
 sortie = os.path.join(d, "textes.mots")
 r = subprocess.run([os.path.join(BIN, "lugus" + X), "compiler", cas, sortie], capture_output=True, text=True,
                    encoding="utf-8", errors="replace")
 m = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()] if r.returncode == 0 else None
-verifier("un tableau de textes écrit dans une variable : mêmes mots par les deux compilateurs", m == refc, "")
+verifier("un tableau de textes écrit dans une variable : compilé par vtxc128 (lugus)", m is not None, r.stdout[-200:])
 o = jouer(cas)
 verifier("ses cases s'affichent, s'ajoutent et se comparent comme des textes",
          o == "agir attendre\nfuir ! 1 3\nattendre agir fuir \n7\n" and o == jouer(cas, True), repr(o))

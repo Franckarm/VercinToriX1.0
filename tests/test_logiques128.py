@@ -2,8 +2,8 @@
 """Les tableaux dynamiques de logiques de Lugus, logique[] (0.6) : un tableau qui grandit et dont chaque case porte une
 des quatre valeurs ; il se déclare (soit t: logique[] = [vrai, inconnu]), se reconnaît à ses valeurs écrites
 ([faux, variable]), se passe à une fonction et en revient, se lit (t[i], pour x dans t), s'écrit, s'allonge (ajouter,
-inserer), se raccourcit (retirer, enlever), se cherche (indice, contient), se copie. Mêmes mots par vtx128.py et
-vtxc128 ; chaque cas comme attendu ; exemples128/conseil.vtx traduit en x86-64 comme joué par Lugus seul."""
+inserer), se raccourcit (retirer, enlever), se cherche (indice, contient), se copie. Compilé par vtxc128 seul
+(0.851) ; chaque cas comme attendu ; exemples128/conseil.vtx traduit en x86-64 comme joué par Lugus seul."""
 import os
 import subprocess
 import sys
@@ -12,7 +12,7 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
+from un_compilateur import se_compile  # noqa: E402  (0.851 : un seul compilateur)
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -27,13 +27,8 @@ def verifier(nom, ok, detail=""):
 
 
 def memes_mots(fic):
-    src = open(fic, encoding="utf-8").read()
-    ref = vtx128.assembler(vtx128.compiler(src, dossier=os.path.dirname(fic)))
-    sortie = os.path.join(d, os.path.basename(fic) + ".mots")
-    r = subprocess.run([os.path.join(BIN, "lugus" + X), "compiler", fic, sortie], capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
-    m = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()] if r.returncode == 0 else None
-    return m == ref, f"{len(ref)} contre {None if m is None else len(m)} {r.stdout[-200:]} {r.stderr[-200:]}"
+    # 0.851 : un seul compilateur : ce qui reste des « mêmes mots », vtxc128 (lugus) le compile
+    return se_compile(fic)
 
 
 def exe(fic, interprete=False):
@@ -93,7 +88,7 @@ fonction principal() {
 }
 """)
 ok, detail = memes_mots(cas)
-verifier("vtx128.py et vtxc128 donnent les mêmes mots (les cas)", ok, detail)
+verifier("vtxc128 (lugus) les compile (les cas)", ok, detail)
 o = exe(cas).splitlines()
 attendu = ["vrai inconnu faux 3",
            "faux vrai inconnu faux variable 5",
@@ -113,7 +108,7 @@ verifier("les cas : traduits en x86-64 comme joués par Lugus seul", exe(cas) ==
 
 demo = os.path.join(racine, "exemples128", "conseil.vtx")
 ok, detail = memes_mots(demo)
-verifier("conseil.vtx : mêmes mots par les deux compilateurs", ok, detail)
+verifier("conseil.vtx : compilé par vtxc128 (lugus)", ok, detail)
 a, b = exe(demo), exe(demo, True)
 verifier("conseil.vtx : le matin, le soir, les paroles rassemblées ; traduit = Lugus seul",
          a == b and "après le matin  : vrai faux inconnu variable inconnu" in a

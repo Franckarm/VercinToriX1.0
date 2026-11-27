@@ -2,7 +2,7 @@
 """Les tableaux de quits et de logiques de Lugus (0.5zz) : 64 éléments par mot (le mot de Lugus entier), les boucles
 réécrites un mot à la fois, et les boucles voisines fondues en une seule passe. Des programmes tirés au hasard (des
 tailles qui ne remplissent pas les mots, des bornes au milieu des mots, des boucles voisines de mêmes bornes ou non) :
-ce que Lugus écrit doit être ce que calcule Python, élément par élément ; vtx128.py et vtxc128 donnent les mêmes mots.
+ce que Lugus écrit doit être ce que calcule Python, élément par élément ; vtxc128 seul les compile (0.851).
 
     python3 tests/test_rangees128.py [nombre de programmes] [graine]"""
 import os
@@ -14,7 +14,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 GRAINE = int(sys.argv[2]) if len(sys.argv) > 2 else 2026
@@ -141,7 +140,6 @@ for k in range(N):
     src, attendu = programme(r)
     fic = os.path.join(d, f"r{k}.vtx")
     open(fic, "w", encoding="utf-8").write(src)
-    ref = vtx128.assembler(vtx128.compiler(src, dossier=d))
     sortie_mots = os.path.join(d, f"r{k}.mots")
     m, dit = None, ""
     for essai in range(2):
@@ -153,10 +151,10 @@ for k in range(N):
             m = [int(x) for x in open(sortie_mots).read().split(";")[0].split(",") if x.strip()]
             break
         print(f"   programme {k}, essai {essai + 1} : la compilation n'a pas abouti ({dit})", flush=True)
-    if m == ref:
+    if m is not None:
         mots_ok += 1
     else:
-        verifier(f"programme {k} : mêmes mots", False, f"{len(ref)} contre {None if m is None else len(m)} ; {dit}")
+        verifier(f"programme {k} : compilé par vtxc128", False, dit)
         print(src)
         continue
     if k % 20 == 19:
@@ -167,7 +165,7 @@ for k in range(N):
     else:
         verifier(f"programme {k} : ce que Lugus écrit", False, f"{o!r} attendu {attendu!r}")
         print(src)
-verifier(f"{N} programmes : vtx128.py et vtxc128 donnent les mêmes mots", mots_ok == N, f"{mots_ok}/{N}")
+verifier(f"{N} programmes : compilés par vtxc128 (0.851 : un seul compilateur)", mots_ok == N, f"{mots_ok}/{N}")
 verifier(f"{N} programmes : Lugus écrit ce que calcule Python, élément par élément", sorties_ok == N, f"{sorties_ok}/{N}")
 print("tableaux rangés de Lugus : " + ("tout est conforme" if echecs == 0 else f"{echecs} échec(s)"))
 sys.exit(1 if echecs else 0)

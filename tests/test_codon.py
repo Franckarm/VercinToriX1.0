@@ -3,7 +3,7 @@
 Vérifié contre une référence écrite ici en Python, pour les 64 codons : le numéro de situation (20 en tout, le même
 dans tout ordre), le verdict (les deux entiers de la table contre la règle), le penchant ; puis la vie d'un dossier :
 recoupé, tranché, échu au bout du délai, rouvert ; jamais de retour à inconnu ; le codon avec ordre (deux lectures de
-premier rang, puis le recoupement) : sa table, ses cases pleines, ses 40 situations. Mêmes mots par vtx128.py et vtxc128 ;
+premier rang, puis le recoupement) : sa table, ses cases pleines, ses 40 situations. Compilé par vtxc128 seul (0.851) ;
 exemples128/codon.vtx traduit en x86-64 comme joué par Lugus seul."""
 import itertools
 import os
@@ -15,7 +15,7 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
+from un_compilateur import se_compile  # noqa: E402  (0.851 : un seul compilateur)
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -30,13 +30,8 @@ def verifier(nom, ok, detail=""):
 
 
 def memes_mots(fic):
-    src = open(fic, encoding="utf-8").read()
-    ref = vtx128.assembler(vtx128.compiler(src, dossier=os.path.dirname(fic)))
-    sortie = os.path.join(d, os.path.basename(fic) + ".mots")
-    r = subprocess.run([os.path.join(BIN, "lugus" + X), "compiler", fic, sortie], capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
-    m = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()] if r.returncode == 0 else None
-    return m == ref, f"{len(ref)} contre {None if m is None else len(m)} {r.stdout[-200:]} {r.stderr[-200:]}"
+    # 0.851 : un seul compilateur : ce qui reste des « mêmes mots », vtxc128 (lugus) le compile
+    return se_compile(fic)
 
 
 def jouer(fic, interprete=False):
@@ -125,7 +120,7 @@ fonction principal() {
 }
 """)
 ok, detail = memes_mots(cas)
-verifier("vtx128.py et vtxc128 donnent les mêmes mots (les cas)", ok, detail)
+verifier("vtxc128 (lugus) les compile (les cas)", ok, detail)
 o = jouer(cas).splitlines()
 tete = [[int(x) for x in ligne.split()] for ligne in o[:64]]
 verifier("situation : le même numéro dans tout ordre, 20 numéros de 0 à 19",
@@ -161,7 +156,7 @@ verifier("les cas : traduits en x86-64 comme joués par Lugus seul", jouer(cas) 
 
 demo = os.path.join(racine, "exemples128", "codon.vtx")
 ok, detail = memes_mots(demo)
-verifier("exemples128/codon.vtx : mêmes mots par les deux compilateurs", ok, detail)
+verifier("exemples128/codon.vtx : compilé par vtxc128 (lugus)", ok, detail)
 a, b = jouer(demo), jouer(demo, True)
 verifier("codon.vtx : 49 « variable » par la fusion seule, 26 tranchés et 37 en suspens par le codon ; traduit = Lugus seul",
          a == b and "pour 49 ;" in a and "tranche 26 de ces cas et en laisse 37 en suspens" in a

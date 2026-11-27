@@ -1,11 +1,10 @@
-"""0.846 : le Druide conseiller (druide/conseiller.vtx) : les mêmes mots par vtx128.py et vtxc128 ; les mots embarqués
+"""0.846 : le Druide conseiller (druide/conseiller.vtx) : compilé par vtxc128 seul (0.851) ; les mots embarqués
 dans Lugus (vtx-rs/druide_conseiller.mots) sont ceux du texte ; « lugus druide » dit les six conseils attendus de
 tests/druide/conseils.vtx, dans l'ordre des lignes, et ce que Gutuater a appris (le nemeton)."""
 import os, subprocess, sys, tempfile
 ICI = os.path.dirname(os.path.abspath(__file__))
 R = os.path.dirname(ICI)
 sys.path.insert(0, R)
-import vtx128  # noqa: E402
 LUGUS = os.path.join(R, "vtx-rs", "target", "release", "lugus")
 ok = True
 
@@ -17,12 +16,11 @@ def dire(nom, bon, detail=""):
 
 
 src = os.path.join(R, "druide", "conseiller.vtx")
-m, _ = vtx128.assembler(vtx128.compiler(open(src, encoding="utf-8").read(), dossier=os.path.dirname(src)), True)
 with tempfile.TemporaryDirectory() as d:
     f = os.path.join(d, "c.mots")
     subprocess.run([LUGUS, "compiler", src, f], capture_output=True, text=True)
     ml = [int(x) for x in open(f).read().split(";")[0].split(",") if x.strip()]
-    dire(f"les mêmes mots par les deux compilateurs ({len(ml)} mots)", m == ml)
+    dire(f"compilé par vtxc128 ({len(ml)} mots ; 0.851 : un seul compilateur)", len(ml) > 0)
     emb = [int(x) for x in open(os.path.join(R, "vtx-rs", "druide_conseiller.mots")).read().split(";")[0].split(",") if x.strip()]
     dire("les mots embarqués sont ceux du texte (outils/druide.sh)", emb == ml)
     nem = os.path.join(d, "nemeton", "conseils")

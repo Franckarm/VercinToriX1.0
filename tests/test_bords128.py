@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Les quatre valeurs aux bords du monde (0.6, Lugus) : de_preuves, vers_logique, lire_logique, nombre_su,
 fichier_present, temoins. Une réponse vide ou incomprise reste inconnue, deux preuves contraires font variable. Mêmes
-mots par vtx128.py et vtxc128 ; chaque cas comme attendu ; exemples128/bords_du_monde.vtx au clavier, traduit en x86-64
+mots : vtxc128 seul (0.851) ; chaque cas comme attendu ; exemples128/bords_du_monde.vtx au clavier, traduit en x86-64
 et joué par Lugus seul, écrit la même chose."""
 import os
 import subprocess
@@ -11,7 +11,7 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
+from un_compilateur import se_compile  # noqa: E402  (0.851 : un seul compilateur)
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -26,13 +26,8 @@ def verifier(nom, ok, detail=""):
 
 
 def memes_mots(fic):
-    src = open(fic, encoding="utf-8").read()
-    ref = vtx128.assembler(vtx128.compiler(src, dossier=os.path.dirname(fic)))
-    sortie = fic + ".mots"
-    r = subprocess.run([os.path.join(BIN, "lugus" + X), "compiler", fic, sortie], capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
-    m = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()] if r.returncode == 0 else None
-    return m == ref, f"{len(ref)} contre {None if m is None else len(m)} {r.stderr[-200:]}"
+    # 0.851 : un seul compilateur : ce qui reste des « mêmes mots », vtxc128 (lugus) le compile
+    return se_compile(fic)
 
 
 def exe(fic, entree, interprete=False):
@@ -60,7 +55,7 @@ fonction principal() {
 }
 """)
 ok, detail = memes_mots(cas)
-verifier("vtx128.py et vtxc128 donnent les mêmes mots (les cas)", ok, detail)
+verifier("vtxc128 (lugus) les compile (les cas)", ok, detail)
 o = exe(cas, "oui\n\nles deux\nnon\n").splitlines()
 attendu = ["inconnu vrai faux variable",
            "vrai faux inconnu variable inconnu vrai faux variable",
@@ -76,7 +71,7 @@ for i, (n, a) in enumerate(zip(noms, attendu)):
 
 demo = os.path.join(racine, "exemples128", "bords_du_monde.vtx")
 ok, detail = memes_mots(demo)
-verifier("bords_du_monde : mêmes mots par les deux compilateurs", ok, detail)
+verifier("bords_du_monde : compilé par vtxc128 (lugus)", ok, detail)
 for reponses, sait in (("oui\n\nnon\n", "variable"), ("oui\noui\n\n", "vrai"), ("\n\n\n", "inconnu"), ("non\nn\nfaux\n", "faux")):
     a = exe(demo, reponses)
     b = exe(demo, reponses, interprete=True)
