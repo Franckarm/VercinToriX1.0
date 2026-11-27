@@ -886,3 +886,27 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   l'œil arrêté au milieu du vol, le soleil qui descend) ; le mode 4 (`gergovie_vergobret.vtx`) : selon `gene(1)`, les
   étages ou le noyau unique, sinon l'un et l'autre en alternance et la mesure. Ici (sans carte, au processeur) : les
   étages du soir 54 % plus rapides ; les mêmes empreintes dans tous les modes. Le C++ n'a pas de soir (à ajouter).
+
+## 0.849d (27 novembre) : le Vergobret mesure six fois ; la carte dit le temps de chaque noyau
+- Chez le créateur, la 0.849c : le C++ 32,9 / 19,5 ; vtx au processeur 21,7 / 13,4 / 11,8 (le soir) ; Taranis, le noyau
+  unique 79,8 / 38,3 / 33,4 ; les étages 38,0 / 25,3 / 27,7. **Le soir, sur sa carte, les étages coûtent 10 ms par image
+  contre 5 pour le noyau unique, même l'œil arrêté** (la matière n'y est pas refaite) : le Vergobret a appris faux, et le
+  second passage joue le noyau (33,2). Les mêmes empreintes partout.
+- Le créateur rappelle : les étages sont un cycle par image (matière, ombre, lumière, reflet, puis l'image suivante) ;
+  c'est bien ce que fait `image_etages`. Le noyau unique fait le même cycle point par point, en un passage.
+- Corrigé : le premier passage mesurait tout le soir (60 paires : 20 images par seconde au lieu de 33) et notait la
+  mesure de 948 ms (la carte préparait les noyaux de « fondre ») ; `image_soir` : CHAUFFE (8 images) puis MESURES
+  (6 paires), et le programme décide pour la fin du soir à la majorité (GLOB + 56 à 59).
+- Corrigé : **les mesures ordinaires s'additionnaient sans borne** : 177 preuves contre (au-delà de DEFINITIF, 64)
+  rendaient le choix « infidèle : tu pour toujours », que l'usure ne touche plus : le Vergobret n'aurait jamais pu
+  changer d'avis. `borne_preuves` (carnet.vtx) : jamais plus de 63 par des mesures ; un carnet de la 0.849c (un gène
+  autre que fondre au-delà de 64) redevient mesurable. `tests/test_gutuater.py`.
+- Vérifié dans le code : les étages partent déjà **en un seul envoi** quand le lot est exprimé (un envoi, une barrière
+  entre deux noyaux, une attente : `lancer_lot`) ; ce n'est donc pas le retour au processeur entre deux étages qui
+  coûte. Pour savoir où vont les 5 ms : `VTX_CARTE_TEMPS=1` (taranis_vk : un horodatage de la carte après chaque noyau,
+  `vkCmdWriteTimestamp`, timestampPeriod lu dans les limites, à 424 octets) ; à la fin du programme, par sorte de lot :
+  le temps moyen de chaque noyau, celui de la carte, et l'envoi avec l'attente vus du processeur. Pas de carte ici :
+  non essayé ; l'étape 8 de l'essai le joue.
+- Ensuite (décidé avec le créateur) : l'étage de l'ombre avec ses états (inconnu : rien à refaire ; vrai : l'ombre ;
+  variable : le bord qui bouge, puis faux, puis inconnu), la largeur de la bande donnée par la marge de chaque point,
+  vérifié à chaque image contre l'ombre complète.

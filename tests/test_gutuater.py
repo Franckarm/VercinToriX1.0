@@ -93,6 +93,19 @@ r = subprocess.run([LUGUS, GUT], input=D + "\n", capture_output=True, text=True,
 arn_t = open(os.path.join(D, "gutuater.arn"), encoding="utf-8").read()
 verifier("la paire : 15 s contre 19 s, la carte directe : vrai", "carte_directe 0 vrai" in arn_t, arn_t + r.stdout)
 
+# 0.849d : soixante mesures ordinaires (des pertes fortes) ne font pas une infidélité : le gène reste mesurable
+r, arn, carnet = digerer("mesure choix 9 10000 5000\n" * 60)
+verifier("60 pertes ordinaires : faux, mais moins de 64 preuves contre (pas « tu pour toujours »)",
+         arn.get(("choix", 9)) == "faux" and carnet.get(("choix", 9), (0, 99))[1] < 64
+         and not any("choix lieu 9" in l and "infidèle" in l for l in r.stdout.splitlines()), str(carnet) + r.stdout)
+# un carnet de la 0.849c (177 preuves contre, l'erreur) redevient mesurable : il s'use
+with open(os.path.join(D, "gutuater.carnet"), "a", encoding="utf-8") as f:
+    f.write("gene choix 1 0 177 faux\n")
+r, arn, carnet = digerer("")
+verifier("le carnet de la 0.849c réparé : 177 preuves contre ramenées sous 64, et l'usure les divise",
+         carnet.get(("choix", 1), (0, 99))[1] < 64
+         and not any("choix lieu 1 " in l and "infidèle" in l for l in r.stdout.splitlines()), str(carnet) + r.stdout)
+
 # 0.847 : le Vergobret (la carte graphique) tient son carnet avec le même moteur, sous son nom
 VER = os.path.join(racine, "vergobret", "vergobret.vtx")
 with open(os.path.join(D, "vergobret.mesures"), "w", encoding="utf-8") as f:

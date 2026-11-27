@@ -230,10 +230,20 @@ pub struct Carte {
     cpool: H,
     cb: Ptr,
     fence: H,
+    /// 0.849d : le temps de la carte, noyau par noyau (VTX_CARTE_TEMPS=1) : la réserve des horodatages, la durée d'un
+    /// tic (en nanosecondes ; 0 : la carte ne sait pas), et les durées du dernier lot (une par noyau, en ms)
+    qpool: H,
+    tic_ns: f32,
+    pub temps_noyaux: Vec<f64>,
 }
 
 static mut CARTE: Option<Box<Carte>> = None;
 static INIT: std::sync::Once = std::sync::Once::new();
+
+/// 0.849d : VTX_CARTE_TEMPS=1 : le temps de chaque noyau d'un lot, mesuré par la carte
+pub fn temps_voulu() -> bool {
+    std::env::var("VTX_CARTE_TEMPS").map(|v| v != "0").unwrap_or(false)
+}
 
 pub fn bavard() -> bool {
     std::env::var("VTX_TARANIS").map(|v| v != "0").unwrap_or(false)
@@ -269,7 +279,8 @@ unsafe fn prendre() -> Result<Carte, String> {
     };
     let mut c = Carte { gipa, instance: null_mut(), pd: null_mut(), dev: null_mut(), file: null_mut(), famille: 0,
         mp: std::mem::zeroed(), groupes_max: 65535, stockage_max: 1 << 27, nom: String::new(), int64: false, atomique64: false, dsl: 0, pl: 0,
-        pipelines: Vec::new(), dsl5: 0, pl5: 0, cpool: 0, cb: null_mut(), fence: 0 };
+        pipelines: Vec::new(), dsl5: 0, pl5: 0, cpool: 0, cb: null_mut(), fence: 0, qpool: 0, tic_ns: 0.0,
+        temps_noyaux: Vec::new() };
     let nom = b"Vercintorix Taranis\0";
     let app = ApplicationInfo { sType: ST_APPLICATION_INFO, pNext: null(), pApplicationName: nom.as_ptr() as _,
         applicationVersion: 1, pEngineName: nom.as_ptr() as _, engineVersion: 1, apiVersion: API_1_0 };
@@ -302,6 +313,8 @@ unsafe fn prendre() -> Result<Carte, String> {
     c.nom = CStr::from_ptr(b.add(20) as *const c_char).to_string_lossy().into_owned();
     c.groupes_max = *(b.add(296 + 220) as *const u32) as u64;
     c.stockage_max = *(b.add(296 + 28) as *const u32) as u64;
+    // 0.849d : VkPhysicalDeviceLimits.timestampPeriod (à 424 octets du début des limites)
+    c.tic_ns = *(b.add(296 + 424) as *const f32);
     // les noyaux de vtx calculent les entiers de 64 bits en deux mots de 32 bits : aucune option de la carte n'est
     // nécessaire ; 0.817 : si la carte sait faire les entiers de 64 bits (shaderInt64, la 41e option de
     // VkPhysicalDeviceFeatures), elle est demandée (les noyaux en pages la prennent alors)
@@ -318,6 +331,9 @@ unsafe fn prendre() -> Result<Carte, String> {
     let mut familles = vec![QueueFamilyProperties::default(); nq as usize];
     qf(c.pd, &mut nq, familles.as_mut_ptr());
     c.famille = familles.iter().position(|f| f.queueFlags & QUEUE_COMPUTE != 0).ok_or("aucune file de calcul")? as u32;
+    if familles[c.famille as usize].timestampValidBits == 0 || !(c.tic_ns > 0.0 && c.tic_ns < 1e6) {
+        c.tic_ns = 0.0;
+    }
     let prio = 1.0f32;
     let dq = DeviceQueueCreateInfo { sType: ST_DEVICE_QUEUE_CREATE_INFO, pNext: null(), flags: 0, queueFamilyIndex: c.famille,
         queueCount: 1, pQueuePriorities: &prio };
@@ -935,6 +951,18 @@ impl Carte {
         verifie(reset_pool(self.dev, self.cpool, 0), "vkResetCommandPool")?;
         let cbbi = CommandBufferBeginInfo { sType: ST_COMMAND_BUFFER_BEGIN_INFO, pNext: null(), flags: 1, pInheritanceInfo: null() };
         verifie(begin(self.cb, &cbbi), "vkBeginCommandBuffer")?;
+        // 0.849d : VTX_CARTE_TEMPS=1 : un horodatage avant le premier noyau et après chacun (la carte dit son temps,
+        // noyau par noyau, sans l'envoi ni l'attente)
+        let temps = self.tic_ns > 0.0 && envois.len() < 63 && temps_voulu() && self.preparer_horodatage().is_ok();
+        let stamp = if temps {
+            Some(vkfn!(self, "vkCmdWriteTimestamp", unsafe extern "system" fn(Ptr, u32, H, u32)))
+        } else {
+            None
+        };
+        if temps {
+            let reset_q = vkfn!(self, "vkCmdResetQueryPool", unsafe extern "system" fn(Ptr, H, u32, u32));
+            reset_q(self.cb, self.qpool, 0, 64);
+        }
         let regions: Vec<BufferCopy> = montees.iter().map(|&s| BufferCopy { srcOffset: s as u64 * 524288,
             dstOffset: s as u64 * 524288, size: 524288 }).collect();
         if !regions.is_empty() {
@@ -943,6 +971,9 @@ impl Carte {
         let b1 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_TRANSFER_WRITE,
             dstAccessMask: ACCESS_SHADER_READ | ACCESS_SHADER_WRITE };
         barrier(self.cb, STAGE_TRANSFER, STAGE_COMPUTE_SHADER, 0, 1, &b1, 0, null(), 0, null());
+        if let Some(st) = stamp {
+            st(self.cb, STAGE_BOTTOM, self.qpool, 0);
+        }
         let bc = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_SHADER_WRITE,
             dstAccessMask: ACCESS_SHADER_READ | ACCESS_SHADER_WRITE };
         for (k, &(pipeline, gx, gy)) in envois.iter().enumerate() {
@@ -952,6 +983,9 @@ impl Carte {
             bind_p(self.cb, BIND_POINT_COMPUTE, pipeline);
             bind_ds(self.cb, BIND_POINT_COMPUTE, pl, 0, 1, &r.ds, 0, null());
             dispatch(self.cb, gx as u32, gy as u32, 1);
+            if let Some(st) = stamp {
+                st(self.cb, STAGE_BOTTOM, self.qpool, k as u32 + 1);
+            }
         }
         let b2 = MemoryBarrier { sType: ST_MEMORY_BARRIER, pNext: null(), srcAccessMask: ACCESS_SHADER_WRITE,
             dstAccessMask: ACCESS_TRANSFER_READ | ACCESS_HOST_READ };
@@ -965,11 +999,37 @@ impl Carte {
         verifie(wait(self.dev, 1, &self.fence, 1, 120_000_000_000), "vkWaitForFences")?;
         verifie(reset_f(self.dev, 1, &self.fence), "vkResetFences")?;
         let t2 = std::time::Instant::now();
+        self.temps_noyaux.clear();
+        if temps {
+            let resultats = vkfn!(self, "vkGetQueryPoolResults", unsafe extern "system" fn(Ptr, H, u32, u32, usize, *mut c_void, u64, u32) -> R);
+            let nq = envois.len() + 1;
+            let mut v = vec![0u64; nq];
+            // 1 : en 64 bits ; 2 : attendre (déjà fait : la barrière d'attente est passée)
+            if resultats(self.dev, self.qpool, 0, nq as u32, nq * 8, v.as_mut_ptr() as *mut c_void, 8, 1 | 2) == 0 {
+                for k in 1..nq {
+                    self.temps_noyaux.push(v[k].wrapping_sub(v[k - 1]) as f64 * self.tic_ns as f64 * 1e-6);
+                }
+            }
+        }
         std::ptr::copy_nonoverlapping(r.vpar as *const u64, params.as_mut_ptr(), params.len());
         let mut marques = vec![0u32; nmarques];
         std::ptr::copy_nonoverlapping(r.vmar as *const u32, marques.as_mut_ptr(), nmarques);
         let ms = |a: std::time::Instant, b: std::time::Instant| (b - a).as_secs_f64() * 1e3;
         Ok(([ms(t0, t1), ms(t1, t2)], marques))
+    }
+
+    /// 0.849d : la réserve des horodatages (64), prise une fois
+    unsafe fn preparer_horodatage(&mut self) -> Result<(), String> {
+        if self.qpool != 0 {
+            return Ok(());
+        }
+        let creer = vkfn!(self, "vkCreateQueryPool", unsafe extern "system" fn(Ptr, *const QueryPoolCreateInfo, *const c_void, *mut H) -> R);
+        let ci = QueryPoolCreateInfo { sType: ST_QUERY_POOL_CREATE_INFO, pNext: null(), flags: 0, queryType: QUERY_TIMESTAMP,
+            queryCount: 64, pipelineStatistics: 0 };
+        let mut q: H = 0;
+        verifie(creer(self.dev, &ci, null(), &mut q), "vkCreateQueryPool")?;
+        self.qpool = q;
+        Ok(())
     }
 
     /// les places écrites redescendent dans le miroir ; rend les millisecondes

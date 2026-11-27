@@ -39,6 +39,19 @@ fonction dossier_lu(): texte {
     retour dossier;
 }
 
+// 0.849d : des mesures ordinaires, si nombreuses soient-elles, n'atteignent jamais DEFINITIF (le poids d'une
+// infidélité, que l'usure ne touche pas) : en 0.849c, 60 mesures du choix des étages (177 preuves) l'avaient rendu
+// « tu pour toujours », et le Vergobret n'aurait plus jamais pu changer d'avis
+fonction borne_preuves(v, p) {
+    si v >= DEFINITIF {
+        retour v;
+    }
+    si v + p >= DEFINITIF {
+        retour DEFINITIF - 1;
+    }
+    retour v + p;
+}
+
 // agent : le préfixe des fichiers (« gutuater », « vergobret ») ; nom_agent : comme il se dit
 fonction tenir_carnet(dossier: texte, agent: texte, nom_agent: texte) {
     // le carnet, en mémoire : un gène par place (son nom, son lieu, ses preuves, le dernier gain en pour mille + 1000)
@@ -144,10 +157,18 @@ fonction tenir_carnet(dossier: texte, agent: texte, nom_agent: texte) {
                     si quel == 0 {
                         vp[j] = a;
                         vc[j] = b;
+                        // 0.849d : seul « fondre » peut être infidèle ; un autre gène au-delà de DEFINITIF vient de
+                        // l'erreur de la 0.849c (des mesures qui s'additionnaient sans borne) : il redevient mesurable
+                        si nom != "fondre" && b >= DEFINITIF {
+                            vc[j] = DEFINITIF - 1;
+                        }
+                        si a >= DEFINITIF {
+                            vp[j] = DEFINITIF - 1;
+                        }
                     } sinon {
                         soit r = 1 + hasard(100);
-                        vp[j] = vp[j] + preuve_pour(a, b, r);
-                        vc[j] = vc[j] + preuve_pour(b, a, r);
+                        vp[j] = borne_preuves(vp[j], preuve_pour(a, b, r));
+                        vc[j] = borne_preuves(vc[j], preuve_pour(b, a, r));
                         si b > 0 && a <= b {
                             gains[j] = 1000 + ((b - a) * 1000) / b;
                         }
@@ -181,8 +202,8 @@ fonction tenir_carnet(dossier: texte, agent: texte, nom_agent: texte) {
                 ajouter(gains, 0);
             }
             soit rp = 1 + hasard(100);
-            vp[jp] = vp[jp] + preuve_pour(tun[kp], tzero[kp], rp);
-            vc[jp] = vc[jp] + preuve_pour(tzero[kp], tun[kp], rp);
+            vp[jp] = borne_preuves(vp[jp], preuve_pour(tun[kp], tzero[kp], rp));
+            vc[jp] = borne_preuves(vc[jp], preuve_pour(tzero[kp], tun[kp], rp));
             si tun[kp] <= tzero[kp] {
                 gains[jp] = 1000 + ((tzero[kp] - tun[kp]) * 1000) / tzero[kp];
             } sinon {

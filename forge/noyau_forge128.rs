@@ -1582,6 +1582,7 @@ fn melange(s: u128, t: u128, p: u128) -> u128 {
 
 /// Ce qui est montré à la fin : la ligne du corpus de Lugus (FORGE_LIGNE), ou les sorties et le texte.
 fn finir(c: &mut Ctx) {
+    dire_temps_carte();
     if std::env::var("FORGE_LIGNE").is_ok() {
         let l = c.m.ligne_corpus();
         // sans le nombre de pas (la forge n'exécute pas d'instructions de Lugus)
@@ -2277,6 +2278,58 @@ fn taranis_presenter_cube(c: &mut Ctx, f: u128) -> Option<u128> {
     Some(emp as u128)
 }
 
+/// 0.849d : les temps de la carte, par sorte de lot (la suite des noyaux : leur longueur en mots et leurs tours) :
+/// combien de fois, la somme de chaque noyau, la somme de l'envoi et de l'attente (vu du processeur)
+#[allow(dead_code)]
+struct TempsLot { fois: u64, noyaux: Vec<f64>, attente: f64, tours: Vec<u64>, mots: Vec<usize> }
+
+#[allow(dead_code)]
+fn temps_carte() -> &'static std::sync::Mutex<Vec<(Vec<(usize, u64)>, TempsLot)>> {
+    static T: std::sync::OnceLock<std::sync::Mutex<Vec<(Vec<(usize, u64)>, TempsLot)>>> = std::sync::OnceLock::new();
+    T.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+#[allow(dead_code)]
+fn noter_temps_carte(lot: &[(usize, usize, u64, usize)], t: &[f64], attente: f64) {
+    let cle: Vec<(usize, u64)> = lot.iter().map(|&(p, _, n, _)| (p, n)).collect();
+    let mut v = temps_carte().lock().unwrap();
+    let k = match v.iter().position(|(c, _)| *c == cle) {
+        Some(k) => k,
+        None => {
+            v.push((cle, TempsLot { fois: 0, noyaux: vec![0.0; t.len()], attente: 0.0,
+                tours: lot.iter().map(|x| x.2).collect(), mots: lot.iter().map(|x| x.1).collect() }));
+            v.len() - 1
+        }
+    };
+    let e = &mut v[k].1;
+    e.fois += 1;
+    for (a, &b) in e.noyaux.iter_mut().zip(t) {
+        *a += b;
+    }
+    e.attente += attente;
+}
+
+/// 0.849d : à la fin du programme, ce que la carte a dit de son temps (VTX_CARTE_TEMPS=1)
+#[allow(dead_code)]
+fn dire_temps_carte() {
+    if !taranis_vk::temps_voulu() {
+        return;
+    }
+    let v = temps_carte().lock().unwrap();
+    if v.is_empty() {
+        eprintln!("carte : aucun temps (pas de carte, ou elle ne sait pas horodater)");
+        return;
+    }
+    for (_, e) in v.iter() {
+        let f = e.fois.max(1) as f64;
+        let dits: Vec<String> = e.noyaux.iter().zip(e.tours.iter().zip(&e.mots)).enumerate()
+            .map(|(k, (&t, (&n, &m)))| format!("noyau {} ({} tours, {} mots) {:.2} ms", k + 1, n, m, t / f)).collect();
+        let total: f64 = e.noyaux.iter().sum::<f64>() / f;
+        eprintln!("carte : un lot de {} noyau(x), joué {} fois ; en moyenne : {} ; la carte {:.2} ms ; l'envoi et l'attente {:.2} ms",
+                  e.noyaux.len(), e.fois, dits.join(", "), total, e.attente / f);
+    }
+}
+
 /// 0.824 : vide le lot de la carte (s'il attend) : il part, ce qu'il a écrit redescend
 #[allow(dead_code)]
 fn taranis_vider(c: &mut Ctx) {
@@ -2307,6 +2360,12 @@ fn taranis_envoyer(c: &mut Ctx, g: &mut EtatTaranis, bavard: bool) -> Option<boo
         let EtatTaranis { res, .. } = &mut *g;
         carte.lancer_lot(res.as_mut().unwrap(), &items, &montees, &table, &mut params)
     };
+    // 0.849d : VTX_CARTE_TEMPS=1 : le temps de chaque noyau, dit par la carte, cumulé par sorte de lot
+    if taranis_vk::temps_voulu() && carte.temps_noyaux.len() == lot.len() {
+        if let Ok((ms_l, _)) = &lance {
+            noter_temps_carte(&lot, &carte.temps_noyaux, ms_l[1]);
+        }
+    }
     let (ms, marques) = match lance {
         Ok(x) => x,
         Err(e) => {
