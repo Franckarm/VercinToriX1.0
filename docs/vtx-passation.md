@@ -953,3 +953,16 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   le feu dans les bits 12 à 15 de l'ombre, orangé) ; les marges du soleil n'en sont pas touchées. À demi-échelle : 289
   points éclairés, dont 101 dans l'ombre du soleil. L'orage l'allume ou l'éteint au hasard (une image sur dix). Les
   mêmes empreintes, complet et à marges. Vérifié : « Tout est conforme » (en deux parts, `--depuis`), Alésia.
+
+## 0.850c (27 novembre) : le calque du soleil reste sur la carte
+- Chez le créateur, la 0.850b : **les marges perdent sur la carte** (le noyau de la clepsydre 7,2 → 53,8 ms ; le jour
+  38,6 → 15) : une vague de 32 fils attend le plus lent, et presque chaque vague a un mot de la bande ou un mot qui calcule
+  sa marge ; le noyau a doublé (22 000 → 52 000 mots). Les mêmes empreintes (zéro perte vérifié sur la carte). Conclusion :
+  les marges sont un geste du processeur ; sur la carte, la clepsydre complète. Le feu : 1,3 ms de carte une fois.
+- Trouvé dans le même journal : la clepsydre 16 ms par image, dont 7,2 de carte ; le reste : le calque du soleil
+  (fréquence 49, sous 200) redescendait au processeur après chaque calcul (650 000 mots, convertis) sans qu'il le lise.
+  `fsol()` (CALQUE = GLOB + 72) : sur la carte, le calque se range à FSOLC = 220 + t (il reste sur la carte). Les mêmes
+  empreintes (demi-échelle, la carte jouée au processeur).
+- Le créateur demande s'il faut retirer « la sécurité » qui ralentit : la vague de 32 fils n'en est pas une (c'est la
+  carte elle-même) ; à discuter avec lui ce qu'il entend par sécurité (la vérification de deux heures, les gardes ?).
+- Livraison : vtx-0.850c.zip, essai-0.850c.bat.

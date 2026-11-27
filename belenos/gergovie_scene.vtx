@@ -26,6 +26,8 @@ constante FCREUX = 110;            // les blocs creusés de la tuile t
 cube elements[16] @2 frequence 17;   // FELT + t
 cube creux[4] @2 frequence 110;      // FCREUX + t
 constante FSOL = 49;               // le calque du soleil de la tuile t (FSOL + 16 · jeu + t)
+constante FSOLC = 220;             // 0.850c : le même calque quand la carte le fait (FSOLC + t) : il reste sur la carte
+constante CALQUE = 600072;         // 0.850c : la fréquence du calque du soleil (0 : FSOL)
 constante REP = 32768;             // la réserve d'un cube : après son annuaire
 constante MER = 44 * RN / RD;      // le niveau du lac
 constante VIDE = 9223372036854775808;
@@ -1487,7 +1489,7 @@ fonction ranger_colonne(q, avec_ciel, jeu) {
                         }
                     }
                 }
-                @2[((FSOL + 16 * jeu + t) << 24) + n * 64 + w] = ms;
+                @2[((fsol() + 16 * jeu + t) << 24) + n * 64 + w] = ms;
                 si avec_ciel == 1 {
                     @2[((FCIEL + t) << 24) + n * 64 + w] = mc;
                 }
@@ -1539,7 +1541,7 @@ fonction ombrer(ox, oy, oz, dx, dy, dz, t, jeu) {
     si e0 >= 16 && e0 < (1 << 62) {
         soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
         soit dec = (iv & 7) * 8;
-        soit sb = (@2[((FSOL + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+        soit sb = (@2[((fsol() + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
         si sb >= 128 {
             connu = 1;
             vus = sb & 15;
@@ -1642,7 +1644,7 @@ fonction clarte(ox, oy, oz, dx, dy, dz, t, jeu) {
     si e0 >= 16 && e0 < (1 << 62) {
         soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
         soit dec = (iv & 7) * 8;
-        soit sb = (@2[((FSOL + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
+        soit sb = (@2[((fsol() + 16 * jeu + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> dec) & 255;
         si sb >= 128 {
             connu = 1;
             vus = sb & 15;
@@ -2033,7 +2035,7 @@ fonction ranger_mot_tnw(t, n, w, avec_ciel, jeu) {
             }
         }
     }
-    @2[((FSOL + 16 * jeu + t) << 24) + n * 64 + w] = ms;
+    @2[((fsol() + 16 * jeu + t) << 24) + n * 64 + w] = ms;
     si avec_ciel == 1 {
         @2[((FCIEL + t) << 24) + n * 64 + w] = mc;
     }
@@ -2134,7 +2136,7 @@ fonction projeter_mot(q, cx, cy, cz, lacet, tangage) {
     soit x0 = (t % TUILES) * 256 + (b >> 10) * 8;
     soit y0 = ((b >> 5) & 31) * 8;
     soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
-    soit ms = @2[((FSOL + t) << 24) + n * 64 + w];
+    soit ms = @2[((fsol() + t) << 24) + n * 64 + w];
     soit base = (FELT + t) << 24;
     // la caméra : devant, à droite, en haut (16.16), comme direction_vue
     soit sl = sin1024(lacet);
@@ -2947,7 +2949,7 @@ fonction ranger_mot_bande(t, n, w, g, am, calme, attente) {
     soit y0 = ((b >> 5) & 31) * 8;
     soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
     soit base = (FELT + t) << 24;
-    soit asol = ((FSOL + t) << 24) + n * 64 + w;
+    soit asol = ((fsol() + t) << 24) + n * 64 + w;
     soit avant = @2[asol];
     // calculer la marge : le mot est calme, et il n'attend pas ; un peu de hasard par mot (son numéro) pour que les mots
     // calmés en même temps ne la calculent pas tous à la même image
@@ -3022,6 +3024,16 @@ fonction compter_refaits(g) {
         }
     }
     retour c;
+}
+
+// 0.850c : la fréquence du calque du soleil. Sur la carte, il se range à FSOLC (200 et plus : il ne redescend pas au
+// processeur ; mesuré chez le créateur en 0.850b : la clepsydre 16 ms par image, dont 7 de carte, le reste à rendre
+// au processeur 650 000 mots qu'il ne lit pas) ; au processeur, à FSOL
+fonction fsol() {
+    si @2[CALQUE] == 0 {
+        retour FSOL;
+    }
+    retour @2[CALQUE];
 }
 
 // 0.850b : la seconde lumière (la demande du créateur : une lumière qui apparaît dans une ombre) : un feu au fond du
@@ -3255,6 +3267,11 @@ fonction epreuve_complete(vol, jour, soir, sur_carte_demande) {
     // 0.849 : sur la carte (sans l'ordre par blocs), l'image reste sur la carte et presenter_cube la montre ; elle est
     // comptée dans le temps de l'image (le temps qu'il faut pour qu'elle soit prête à l'écran : à armes égales)
     @2[OEIL + 5] = 0;
+    // 0.850c : sur la carte, le calque du soleil reste sur la carte
+    @2[CALQUE] = 0;
+    si sur_carte != 0 {
+        @2[CALQUE] = FSOLC;
+    }
     // 0.849d : la mesure du soir (OEIL + 6 à 9) recommence
     pour q dans 6..10 {
         @2[OEIL + q] = 0;
