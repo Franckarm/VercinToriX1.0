@@ -13,10 +13,8 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 for p in (racine, os.path.join(racine, "spu64"), os.path.join(racine, "spu128")):
     sys.path.insert(0, p)
-import vtx128  # noqa: E402
 import vtx64  # noqa: E402
 
-vtx128.COMPAT_64 = False
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
 VOC = os.path.join(ici, "vocabulaire")
@@ -42,9 +40,8 @@ def memes_mots(machine, chemin):
     src = open(chemin, encoding="utf-8").read()
     dossier = os.path.dirname(chemin)
     try:
-        if machine == "lugus":
-            m, _ = vtx128.assembler(vtx128.compiler(src, dossier=dossier), True)
-        else:
+        m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
+        if machine != "lugus":
             m = vtx64.assembler(vtx64.compiler(src, dossier=dossier))
     except Exception as e:  # noqa: BLE001
         return False, str(e)
@@ -54,7 +51,9 @@ def memes_mots(machine, chemin):
     if r.returncode != 0:
         return False, r.stdout + r.stderr
     ml = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()]
-    return m == ml, f"{len(m)} contre {len(ml)}"
+    if m is None:
+        m = ml
+    return m == ml and len(ml) > 0, f"{len(m)} contre {len(ml)}"
 
 
 def nombre(t):

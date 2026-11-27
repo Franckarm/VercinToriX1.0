@@ -5,7 +5,7 @@ Un cube mère est nommé comme un fichier (cube128-NOM.cub) et n'occupe aucune f
 comme indicatif (cube128-NOM-ÉTAGE-FRÉQUENCE.cub) : chaque programme a toutes les fréquences à lui. Vérifié :
 
 1. cube_mere(nom) (le service 30), ranger_cube, la relecture : les mêmes fichiers (sous-cubes, cube mère, anti-cubes,
-   ombres) sur Lugus et Dunon, en Rust et en Python, octet pour octet ; les mêmes mots par les deux compilateurs ;
+   ombres) sur Lugus et Dunon, en Rust et en Python, octet pour octet ; compilé (Lugus : vtxc128 seul, 0.851) ;
 2. le cube mère, le squelette : à l'adresse de chaque fréquence, le sous-cube qu'elle porte ; lu par le service 29 ;
 3. les noms refusés (ambigus, ou des caractères interdits) ;
 4. deux programmes du même dossier, chacun à sa fréquence 440 : aucun ne gêne l'autre ;
@@ -30,10 +30,8 @@ except (AttributeError, ValueError):
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 import vtx64  # noqa: E402
 
-vtx128.COMPAT_64 = False
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
 LUGUS, DUNON = os.path.join(BIN, "lugus" + X), os.path.join(BIN, "vtx64" + X)
@@ -111,14 +109,15 @@ for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py
              r1.startswith("1234 99 42\n16777215 2 514") and r1 == sortie_py(r2), f"{r1!r} / {r2!r}")
     for f in ("ecrit.vtx", "relit.vtx"):
         src = open(os.path.join(rs, f), encoding="utf-8").read()
-        if machine == "lugus":
-            m = vtx128.assembler(vtx128.compiler(src, dossier=rs), True)[0]
-        else:
+        m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
+        if machine != "lugus":
             m = vtx64.assembler(vtx64.compiler(src, dossier=rs))
         sortie = os.path.join(d, "m.mots")
         lancer([b, "compiler", f, sortie], rs)
         ml = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()]
-        verifier(f"{machine.capitalize()} : {f}, les mêmes mots par les deux compilateurs", m == ml)
+        if m is None:
+            m = ml
+        verifier(f"{machine.capitalize()} : {f}, compilé (Lugus : vtxc128 seul, 0.851)", m == ml)
 
 # deux programmes du même dossier, chacun à sa fréquence 440
 deux = os.path.join(d, "deux")

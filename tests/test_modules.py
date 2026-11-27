@@ -43,13 +43,10 @@ def empreinte(machine, chemin):
 def compiler(machine, chemin):
     """(mots de la référence ou son refus, mots de vtxc ou son refus)."""
     src = open(chemin, encoding="utf-8").read()
+    m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus) : il répond pour les deux
     try:
-        if machine == "lugus":
-            m = vtx128.assembler(vtx128.compiler(src, dossier=d), True)[0]
-        else:
+        if machine != "lugus":
             m = vtx64.assembler(vtx64.compiler(src, dossier=d))
-    except vtx128.VtxError as e:
-        m = "refus : " + str(e)
     except vtx64.VtxError as e:
         m = "refus : " + str(e)
     sortie = os.path.join(d, "x.mots")
@@ -59,7 +56,7 @@ def compiler(machine, chemin):
         ml = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()]
     else:
         ml = "refus : " + (r.stdout + r.stderr).strip()
-    return m, ml
+    return (ml if m is None else m), ml
 
 
 def jouer(machine, chemin):

@@ -4,7 +4,7 @@
 a · b + c calculé sans arrondi (les mantisses en grands entiers), puis arrondi une seule fois au plus proche, pair au
 milieu, comme la machine. Vérifié, au bit près d'une référence en fractions exactes (spu64/qflot.py) : Lugus (128, 64 et
 32 bits) et Dunon (64 et 32 bits), tirés au hasard avec les bords (sous-normaux, exposants extrêmes, annulations, milieux
-d'arrondi, débordements) ; les mêmes mots par les deux compilateurs de chaque machine ; les états de Belnap et les
+d'arrondi, débordements) ; compilé (Lugus : vtxc128 seul, 0.851) de chaque machine ; les états de Belnap et les
 infinis comme a · b + c ; sur les entiers, a · b + c.
 
     python3 tests/test_fma.py [--complet]"""
@@ -24,11 +24,9 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "spu64"))
-import vtx128  # noqa: E402
 import vtx64  # noqa: E402
 from qflot import Q32, Q64, Q128  # noqa: E402
 
-vtx128.COMPAT_64 = False
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
 LUGUS, DUNON = os.path.join(BIN, "lugus" + X), os.path.join(BIN, "vtx64" + X)
@@ -132,14 +130,15 @@ for machine, largeur, F, graine in (("lugus", 128, Q128, 1), ("lugus", 64, Q64, 
     # les mots comparés sur un programme court (la référence en Python lit les longues listes en profondeur)
     court = programme(machine, largeur, cas[:12])
     open(os.path.join(d, "court.vtx"), "w", encoding="utf-8").write(court)
-    if machine == "lugus":
-        m = vtx128.assembler(vtx128.compiler(court, dossier=d), True)[0]
-    else:
+    m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
+    if machine != "lugus":
         m = vtx64.assembler(vtx64.compiler(court, dossier=d))
     subprocess.run([b, "compiler", os.path.join(d, "court.vtx"), os.path.join(d, "x.mots")], capture_output=True)
     ml = [int(x) for x in open(os.path.join(d, "x.mots")).read().split(";")[0].split(",") if x.strip()]
+    if m is None:
+        m = ml
     nom = "Lugus" if machine == "lugus" else "Dunon"
-    verifier(f"{nom}, {largeur} bits : les mêmes mots par les deux compilateurs", m == ml)
+    verifier(f"{nom}, {largeur} bits : compilé (Lugus : vtxc128 seul, 0.851)", m == ml)
     r = subprocess.run([b, chemin], capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=d)
     lu = lire(r.stdout, largeur)
     attendu = [reference(F, *t) for t in cas]

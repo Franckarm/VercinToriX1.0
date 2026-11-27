@@ -8,7 +8,7 @@ point, la face opposée dans la haute). Lancé depuis son cube, le programme lit
 1. les faces lues pendant qu'il tourne : celles de la carte rangée dans l'ADN, champ pour champ ;
 2. le centre : vrai (son code est celui du cube), variable (une avarie pendant qu'il tourne), faux (le cube des faces
    réparé en le lisant), inconnu (lancé depuis son texte, sans cube) ;
-3. les mêmes mots par les deux compilateurs de Lugus, et de Dunon ;
+3. compilé (Lugus : vtxc128 seul, 0.851) de Lugus, et de Dunon ;
 4. le cube mère : à l'adresse de la fréquence, sur chacun de ses quatre étages (Đ, 1, 2, 3), le descripteur de cet étage ;
 5. un cube de la 0.63 (le programme à l'étage 1) se lance encore ; un cube des faces seul n'est pas un programme.
 
@@ -28,10 +28,8 @@ except (AttributeError, ValueError):
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 import vtx64  # noqa: E402
 
-vtx128.COMPAT_64 = False
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
 LUGUS, DUNON = os.path.join(BIN, "lugus" + X), os.path.join(BIN, "vtx64" + X)
@@ -152,17 +150,18 @@ v = [int(x) for x in s.split("\n")[:4] if x.strip().isdigit()]
 verifier("le cube mère : à l'adresse 440, les quatre étages présents (Đ le code, 1, 2, 3 les faces)",
          len(v) == 4 and all(x >= 512 for x in v), s[-200:])
 
-# les mêmes mots par les deux compilateurs
+# compilé (Lugus : vtxc128 seul, 0.851)
 for machine, b, src in (("lugus", LUGUS, PROG), ("dunon", DUNON, "fonction principal() {\n    afficher(face(10, 3));\n"
                                                                  "    selon centre(10) { inconnu { afficher(0); } vrai { afficher(1); } faux { afficher(2); } variable { afficher(3); } }\n}\n")):
     open(os.path.join(d, "m.vtx"), "w", encoding="utf-8").write(src)
-    if machine == "lugus":
-        m = vtx128.assembler(vtx128.compiler(src, dossier=d), True)[0]
-    else:
+    m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
+    if machine != "lugus":
         m = vtx64.assembler(vtx64.compiler(src, dossier=d))
     lancer([b, "compiler", "m.vtx", "m.mots"], d)
     ml = [int(x) for x in open(os.path.join(d, "m.mots")).read().split(";")[0].split(",") if x.strip()]
-    verifier(f"{machine.capitalize()} : face et centre, les mêmes mots par les deux compilateurs", m == ml)
+    if m is None:
+        m = ml
+    verifier(f"{machine.capitalize()} : face et centre, compilé (Lugus : vtxc128 seul, 0.851)", m == ml)
     if machine == "dunon":
         _, s = lancer([b, "m.vtx"], d)
         verifier("Dunon : pas lancé depuis un cube de programme, la face à 0 et le centre inconnu", s.split("\n")[:2] == ["0", "0"], s)

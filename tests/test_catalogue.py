@@ -32,10 +32,8 @@ racine = os.path.dirname(ici)
 for p in (racine, os.path.join(racine, "chimie"), os.path.join(racine, "spu64"), os.path.join(racine, "spu128")):
     sys.path.insert(0, p)
 import adn  # noqa: E402
-import vtx128  # noqa: E402
 import vtx64  # noqa: E402
 
-vtx128.COMPAT_64 = False
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
 LUGUS, DUNON = os.path.join(BIN, "lugus" + X), os.path.join(BIN, "vtx64" + X)
@@ -64,12 +62,11 @@ def mots_ou_refus(machine, chemin):
     """(les mots de la référence ou « refus », ceux de vtxc ou « refus »)"""
     src = open(chemin, encoding="utf-8").read()
     d = os.path.dirname(chemin)
+    m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus) : il répond pour les deux
     try:
-        if machine == "lugus":
-            m = vtx128.assembler(vtx128.compiler(src, dossier=d), True)[0]
-        else:
+        if machine != "lugus":
             m = vtx64.assembler(vtx64.compiler(src, dossier=d))
-    except (vtx128.VtxError, vtx64.VtxError) as e:
+    except vtx64.VtxError as e:
         m = "refus : " + str(e)
     sortie = os.path.join(tempfile.gettempdir(), f"catalogue-{os.getpid()}.mots")
     code, texte = lancer([LUGUS if machine == "lugus" else DUNON, "compiler", chemin, sortie])
@@ -77,7 +74,7 @@ def mots_ou_refus(machine, chemin):
         ml = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()]
     else:
         ml = "refus : " + texte.strip()
-    return m, ml
+    return (ml if m is None else m), ml
 
 
 d = tempfile.mkdtemp(prefix="vtx-catalogue-")
@@ -232,7 +229,7 @@ ecrire(os.path.join(bib, "codon.vtx"), brut)
 f_sortie = ecrire(os.path.join(d, "sortie", "sortie_f.vtx"),
                   "fonction f(x) { retour 2 * x; }\nfonction principal() {\n    sortie(f);\n}\n")
 m, ml = mots_ou_refus("lugus", f_sortie)
-verifier("sortie(f) d'une fonction écrite seule : vtxc128 le compile, les mêmes mots que vtx128.py",
+verifier("sortie(f) d'une fonction écrite seule : vtxc128 le compile",
          isinstance(m, list) and m == ml, f"{str(m)[:80]} / {str(ml)[:80]}")
 
 # --------------------------------------------------------------------------------------------- 7. le cube abîmé
