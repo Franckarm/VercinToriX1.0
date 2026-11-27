@@ -981,3 +981,9 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   7 minutes) remplace dans `verifier.py` les deux contrôles mot pour mot (`--deux` les joue). Chez le créateur, la
   0.850c : **le jour sur la carte 38,9 → 46,9 images par seconde, le soir 33,4 → 39,4** (le calque gardé sur la carte) ;
   la clepsydre 16,1 → 11,8 ms par image (7,2 de carte) ; le C++ 19,6 au jour.
+- **0.851f : l'étape 1 du seul compilateur est faite** (`docs/vtx-un-compilateur.md`). Tous les tests de Lugus compilent
+  par vtxc128 seul, sauf ceux du lecteur de la forge (réactions lecteur, Fischer, la forge), le lecteur d'ADN de référence
+  et le témoin (`--temoin`, la machine Python, à la main). Les réactions en deux : `test_reactions.py` (lugus, 41) et
+  `test_reactions_lecteur.py` (vtx128.py, 7). La paillasse compare à un rangement (`tests/attendus/paillasse.json`).
+  `verifier.py` : **49 minutes, « Tout est conforme »**. Prochain : l'étape 2 (vtxc128 écrit l'arbre typé, la forge le
+  lit).
