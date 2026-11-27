@@ -91,8 +91,10 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_maths128.py"), "300" if COMPLET else "60"]))
     etapes.append(("vtx128 : mêmes sorties que le SPU-64 (programmes au hasard, exemples)",
                    [sys.executable, os.path.join("tests", "test_vtx128_differentiel.py"), "300" if COMPLET else "60"]))
-    etapes.append(("les réactions (atomes, liaisons, vagues) dans vtx128 : l'ordre des lignes sans effet, la forge de Lugus",
+    etapes.append(("les réactions jouées par lugus seul : l'ordre des lignes sans effet, contrats, unités, erreurs, la forge de Lugus",
                    [sys.executable, os.path.join("tests", "test_reactions.py")]))
+    etapes.append(("les réactions, ce qu'en lit le lecteur de la forge (vtx128.py) : la molécule, les souvenirs, la provenance",
+                   [sys.executable, os.path.join("tests", "test_reactions_lecteur.py")]))
     etapes.append(("la provenance : pourquoi une liaison vaut ce qu'elle vaut (vtx128.py pourquoi)",
                    [sys.executable, os.path.join("tests", "test_provenance.py")]))
     etapes.append(("la fiabilité de l'ADN : signature, ombre, neutrons (avaries réparées, jamais de travers)",

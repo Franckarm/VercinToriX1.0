@@ -46,8 +46,13 @@ comparaisons à la machine Python des tests du catalogue, des cubes mères et du
 rien de Python ne joue un programme de Lugus. Un écart n'est pas forcément une erreur de lugus : le témoin peut être en
 retard sur un mot ajouté seulement à vtxc128.
 
-Restent : les réactions (`test_reactions.py` lit l'analyse de vtx128.py : les vagues, les souvenirs, la provenance),
-fischer, provenance, paillasse, ogmios, gobannos (flottants), adn ; les tests Lugus et Dunon qui passent `vtx128` comme
+**0.851e : les réactions.** `tests/test_reactions.py` joue tout par lugus (41 vérifications : sorties, contrats,
+exemples, unités, erreurs, tableaux, la forge) ; ce qui lit l'intérieur de vtx128.py (la molécule, ses vagues et sa
+formule ; les souvenirs et ce qu'ils épargnent ; la provenance, « vtx128.py pourquoi » ; le drapeau d'erreur) passe dans
+`tests/test_reactions_lecteur.py` : ce sont les gestes du lecteur de la forge, qui restent jusqu'à l'étape 2 (alors
+vtxc128 devra les montrer lui-même, par la carte).
+
+Restent : fischer, provenance, paillasse, ogmios, gobannos (flottants), adn ; les tests Lugus et Dunon qui passent `vtx128` comme
 module (gene, selon, vocabulaire, cubes nommés) ; et ceux qui vérifient vtx128.py lui-même (test_vtx128, son
 différentiel, maths128), qui iront avec `--deux`.
 
