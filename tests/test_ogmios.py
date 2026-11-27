@@ -17,9 +17,7 @@ import time
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 
-vtx128.COMPAT_64 = False
 EXE = os.path.join(racine, "vtx-rs", "target", "release", "vtx" + (".exe" if os.name == "nt" else ""))
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
 OGMIOS = os.path.join(racine, "ogmios", "ogmios.vtx")
@@ -47,12 +45,11 @@ def jouer(fichier, gestes, images=30):
     return time.time() - t0, r
 
 
-# 1. les deux compilateurs
+# 1. vtxc128 le compile (0.851 : un seul compilateur)
 src = open(OGMIOS, encoding="utf-8").read()
-a = vtx128.assembler(vtx128.compiler(src))
 r = subprocess.run([LUGUS, "compiler", OGMIOS, os.path.join(D, "o.mots")], capture_output=True, text=True)
 b = [int(x) for x in open(os.path.join(D, "o.mots")).read().split(";")[0].split(",") if x] if r.returncode == 0 else None
-verifier(f"ogmios.vtx : les mêmes mots par vtx128.py et vtxc128 ({len(a)} mots)", a == b, r.stdout + r.stderr)
+verifier(f"ogmios.vtx : compilé par vtxc128 ({len(b or [])} mots)", b is not None, r.stdout + r.stderr)
 
 # 2. une édition, puis Ctrl+S
 ESSAI = ("// un essai pour Ogmios\r\nreaction moyenne(a, b) -> m {\r\n    total = a + b     -> t\r\n    = t / 2           -> m\r\n"

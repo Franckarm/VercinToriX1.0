@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""La provenance (docs/vtx-reactions.md, étape 5) : « vtx128.py pourquoi » remonte chaque liaison jusqu'aux constantes et
+"""La provenance (docs/vtx-reactions.md, étape 5) : « lugus pourquoi » (0.851 : un seul compilateur ; vtxc128 avec la
+trace, puis vtx-rs/src/provenance.rs) remonte chaque liaison jusqu'aux constantes et
 aux entrées, avec sa dernière valeur, son unité, le nombre de réactions (et, pour un atome à souvenir, combien de fois
 il a vraiment réagi), et dit quand une branche n'a pas réagi. Compilée sans provenance, une réaction garde ses mots.
 
@@ -11,7 +12,8 @@ import sys
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
 
 echecs = []
 
@@ -22,10 +24,33 @@ def verifier(nom, ok, detail=""):
         echecs.append(nom)
 
 
+LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
+TEMOIN = os.environ.get("VTX_TEMOIN") == "1"
+
+
 def pourquoi(fichier, *args):
+    r = subprocess.run([LUGUS, "pourquoi", fichier] + list(args), capture_output=True, text=True, encoding="utf-8")
+    return r.stdout + r.stderr
+
+
+def pourquoi_py(fichier, *args):
+    """le témoin (la machine Python), à la main seulement"""
     r = subprocess.run([sys.executable, os.path.join(racine, "vtx128.py"), "pourquoi", fichier] + list(args),
                        capture_output=True, text=True, encoding="utf-8")
     return r.stdout + r.stderr
+
+
+def mots(src, provenance):
+    """les mots de src par vtxc128 (le compilateur embarqué), avec ou sans la trace de la provenance"""
+    d = tempfile.mkdtemp(prefix="provenance-")
+    shutil.copy(os.path.join(racine, "vtx-rs", "vtxc128.mots"), os.path.join(d, "c.mots"))
+    open(os.path.join(d, "source.vtx"), "w", encoding="utf-8").write(src)
+    subprocess.run([LUGUS, "lancer", os.path.join(d, "c.mots"), "0", "1", "1", "0", "0", str(int(provenance))],
+                   capture_output=True, cwd=d)
+    cm = os.path.join(d, "code.mots")
+    m = [int(x) for x in open(cm).read().split(";")[0].split(",") if x] if os.path.exists(cm) else None
+    shutil.rmtree(d, ignore_errors=True)
+    return m
 
 
 ex = lambda f: os.path.join(racine, "exemples128", f)  # noqa: E731
@@ -52,22 +77,16 @@ t = pourquoi(src)
 os.remove(src)
 verifier("une branche qui n'a pas réagi : « porte faux », avec la valeur calculée",
          "r porte faux (sa branche n'a pas réagi" in t and "t = 6   ← x × 3.0" in t, t)
-vtx128.COMPAT_64 = False
 panel = open(ex("panel.vtx"), encoding="utf-8").read()
-avant = vtx128.assembler(vtx128.compiler(panel))
-vtx128.PROVENANCE = True
-avec = vtx128.assembler(vtx128.compiler(panel))
-vtx128.PROVENANCE = False
-verifier("sans la provenance, les mêmes mots ; avec, la trace en plus", vtx128.assembler(vtx128.compiler(panel)) == avant
-         and len(avec) > len(avant))
-# Lugus en Rust (vtxc128 avec la trace, puis vtx-rs/src/provenance.rs) : le même arbre que vtx128.py, unités comprises
-lugus = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
-if os.path.exists(lugus):
-    import re
+avant, avec = mots(panel, False), mots(panel, True)
+verifier("sans la provenance, les mêmes mots ; avec, la trace en plus", avant is not None and mots(panel, False) == avant
+         and avec is not None and len(avec) > len(avant), f"{len(avant or [])} / {len(avec or [])}")
+if TEMOIN:
+    # le témoin : le même arbre que vtx128.py, unités comprises (à la main seulement : VTX_TEMOIN=1)
     for f in ("panel.vtx", "scene_incrementale.vtx", "chute.vtx"):
-        rs = subprocess.run([lugus, "pourquoi", ex(f)], capture_output=True, text=True, encoding="utf-8").stdout.strip()
-        py = pourquoi(ex(f)).strip()
-        verifier(f"lugus pourquoi {f} : le même arbre que vtx128.py", rs == py, "\n".join(
+        rs = pourquoi(ex(f)).strip()
+        py = pourquoi_py(ex(f)).strip()
+        verifier(f"le témoin : lugus pourquoi {f}, le même arbre que vtx128.py", rs == py, "\n".join(
             f"{a!r} / {b!r}" for a, b in zip(py.splitlines(), rs.splitlines()) if a != b)[:600])
 print("provenance : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))
 sys.exit(1 if echecs else 0)

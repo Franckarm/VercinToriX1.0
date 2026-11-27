@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """La paillasse (vtx-rs/src/paillasse.rs), au centre d'Ogmios : la surface des réactions, dans les deux sens avec le
 texte. Sans écran, par « vtx paillasse » (le même module qu'Ogmios, les gestes de la souris rejoués) :
-  1. la lecture : les atomes, leurs liaisons et leurs vagues sont ceux du compilateur (vtx128.py), sur les exemples de
-     Lugus et sur des réactions au hasard ;
+  1. la lecture : les atomes, leurs liaisons et leurs vagues sont ceux du lecteur du compilateur, sur les exemples de
+     Lugus et sur des réactions au hasard (0.851 : un seul compilateur ; ce que lit vtx128.py est rangé une fois dans
+     tests/attendus/paillasse.json ; « VTX_TEMOIN=1 » le relit en direct, « --refaire » le réécrit) ;
   2. les gestes : tirer une liaison sur une entrée libre « _ », délier, ajouter un atome (double clic), le retirer
      (Suppr), déplacer une case (sa colonne gardée dans PROG.paillasse) ; le texte réécrit compile et donne le bon
      résultat ;
@@ -19,10 +20,17 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "vtxc"))
-import vtx128  # noqa: E402
+import hashlib  # noqa: E402
+import json  # noqa: E402
 from hasard_reactions import R  # noqa: E402
 
-vtx128.COMPAT_64 = False
+TEMOIN = os.environ.get("VTX_TEMOIN") == "1" or "--refaire" in sys.argv
+REFAIRE = "--refaire" in sys.argv
+ATTENDUS = os.path.join(ici, "attendus", "paillasse.json")
+if TEMOIN:
+    import vtx128  # noqa: E402
+    vtx128.COMPAT_64 = False
+lus = {} if REFAIRE or not os.path.exists(ATTENDUS) else json.load(open(ATTENDUS, encoding="utf-8"))
 EXE = os.path.join(racine, "vtx-rs", "target", "release", "vtx" + (".exe" if os.name == "nt" else ""))
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if os.name == "nt" else ""))
 D = tempfile.mkdtemp(prefix="paillasse-")
@@ -56,6 +64,10 @@ def lecture(fichier):
 
 
 def du_compilateur(src):
+    cle = hashlib.sha256(src.encode("utf-8")).hexdigest()[:24]
+    if not TEMOIN:
+        # le rangement du témoin : (réaction, ligne) -> (vague, entrées, sorties)
+        return {(r, int(l)): tuple(v) for r, l, *v in lus.get(cle, [])} if cle in lus else {("absent du rangement", 0): (0, [], [])}
     vtx128.REACTIONS.clear()
     vtx128.compiler(src)
     out = {}
@@ -63,6 +75,7 @@ def du_compilateur(src):
         for k, v in enumerate(m.vagues):
             for a in v:
                 out[(nom, a.ligne)] = (k + 1, list(dict.fromkeys(a.entrees)), list(a.sorties))
+    lus[cle] = [[n, l, *v] for (n, l), v in out.items()]
     return out
 
 
@@ -84,7 +97,7 @@ for f in sorted(os.listdir(dex)):
         ecarts, p, c = comparer(src, f)
         verifier(f"exemples128/{f} : {len(p)} atomes lus comme le compilateur (vagues, entrées, sorties)", not ecarts,
                  str([(k, p.get(k), c.get(k)) for k in ecarts[:3]]))
-graine = random.randrange(1 << 30)
+graine = 7000   # 0.851 : une graine fixe (le rangement du témoin les connaît)
 mauvais = []
 for k in range(30):
     src = R(random.Random(graine + k)).programme()
@@ -97,6 +110,11 @@ verifier("le panel : six H, somme N, rdv C, rangement O (l'élément d'après la
          el[("principal", 15)][0] == "H" and el[("principal", 11)][0] == "N" and el[("principal", 9)][0] == "C"
          and el[("principal", 7)][0] == "O", str(el))
 
+
+if REFAIRE:
+    os.makedirs(os.path.dirname(ATTENDUS), exist_ok=True)
+    json.dump(lus, open(ATTENDUS, "w", encoding="utf-8"), ensure_ascii=False, indent=0, sort_keys=True)
+    print(f"rangement du témoin réécrit : {ATTENDUS} ({len(lus)} programmes)")
 
 # 2. les gestes
 def plan(f):

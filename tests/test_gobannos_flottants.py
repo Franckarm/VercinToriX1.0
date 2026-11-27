@@ -93,15 +93,12 @@ sys.path.insert(0, os.path.join(racine, "spu128"))
 sys.path.insert(0, os.path.join(racine, "spu64"))
 sys.path.insert(0, racine)
 import spu128  # noqa: E402
-import vtx128  # noqa: E402
 
-# 1. la bibliothèque : les mêmes mots par les deux compilateurs
-vtx128.COMPAT_64 = False
+# 1. la bibliothèque : compilée par vtxc128 (0.851 : un seul compilateur)
 texte = open(BIB_VTX, encoding="utf-8").read()
-m_py, _ = vtx128.assembler(vtx128.compiler(texte, dossier=os.path.dirname(BIB_VTX)), True)
 r = lancer([LUGUS, "compiler", BIB_VTX, BIB])
 m_l = [int(x) for x in open(BIB).read().split(";")[0].split(",") if x] if r.returncode == 0 else None
-verifier(f"gobannos/flottants.vtx : vtxc128 et vtx128.py donnent les mêmes mots ({len(m_py)})", m_l == m_py,
+verifier(f"gobannos/flottants.vtx : compilé par vtxc128 ({len(m_l or [])} mots)", m_l is not None,
          r.stdout.decode("utf-8", "replace")[-300:])
 
 # 2. la bibliothèque, jouée par Lugus, contre la machine (sa référence en Python, la même que qflot128.rs)

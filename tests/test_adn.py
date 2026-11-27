@@ -139,9 +139,8 @@ sans = adn.temoins(mots_i, adn.decouper(mots_i))
 verifier("« -> a lourd » : la molécule de freinage est un isotope lourd, ses mots gardent leurs neutrons (hors frontière)",
          len(lourdes) == 1 and not lourdes[0].frontiere and all(i in t_i["neutrons"] for i in range(lourdes[0].debut, lourdes[0].fin))
          and not any(i in sans["neutrons"] for i in range(lourdes[0].debut, lourdes[0].fin)), str(mols_i[:4]))
-import vtx128  # noqa: E402
-vtx128.COMPAT_64 = False
-m_sans = vtx128.assembler(vtx128.compiler(ISO.replace(" lourd", "")), True)[0]
+# 0.851 : le lecteur d'ADN de référence (chimie/adn.py) range lui-même, avec et sans « lourd »
+m_sans = adn.ranger_texte(ISO.replace(" lourd", ""), d)[0]
 verifier("l'isotope ne change pas le code : les mêmes mots avec ou sans « lourd »", m_sans == mots_i)
 f_iso_adn = os.path.join(d, "iso.adn")
 adn.ecrire_adn(f_iso_adn, mots_i, mols_i, t_i)
