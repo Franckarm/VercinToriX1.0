@@ -17,7 +17,7 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "spu64"))
-import vtx128 as V  # noqa: E402
+from un_compilateur import compiler_texte  # noqa: E402  (0.851 : un seul compilateur)
 from qflot import Q128  # noqa: E402
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 60
@@ -136,7 +136,7 @@ entrees = [N]
 for col in xs:
     for v in col:
         entrees += [v & M64, v >> 64]
-mots = V.assembler(V.compiler(src))
+mots = compiler_texte(src)[0]
 with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
     f.write(",".join(map(str, mots)) + ";" + ",".join(map(str, entrees)) + "\n")
     nomf = f.name
@@ -159,7 +159,7 @@ ent_p = [N]
 for x, y in paires:
     ent_p += [x & M64, x >> 64, y & M64, y >> 64]
 with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
-    f.write(",".join(map(str, V.assembler(V.compiler(src_p)))) + ";" + ",".join(map(str, ent_p)) + "\n")
+    f.write(",".join(map(str, compiler_texte(src_p, nom="p.vtx")[0])) + ";" + ",".join(map(str, ent_p)) + "\n")
     nomf = f.name
 lp = subprocess.run([EXE, "corpus", nomf], capture_output=True, text=True).stdout.strip()
 os.unlink(nomf)

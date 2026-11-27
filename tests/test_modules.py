@@ -13,10 +13,8 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 for p in (racine, os.path.join(racine, "spu64"), os.path.join(racine, "spu128")):
     sys.path.insert(0, p)
-import vtx128  # noqa: E402
 import vtx64  # noqa: E402
 
-vtx128.COMPAT_64 = False
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
 d = tempfile.mkdtemp()
@@ -67,9 +65,9 @@ def jouer(machine, chemin):
 
 OUTIL = "fonction double(x) { retour 2 * x; }\nfonction salut(): texte { retour \"Salut, Lugus !\"; }\n"
 outil = ecrire("outil.vtx", OUTIL)
-e = "%016x" % vtx128.empreinte_texte(open(outil, encoding="utf-8", newline="").read())
-verifier("l'empreinte : vtx128.py, vtx64.py, lugus empreinte et vtx64 empreinte disent la même",
-         e == "%016x" % vtx64.empreinte_texte(OUTIL) == empreinte("lugus", outil) == empreinte("vtx64", outil),
+e = "%016x" % vtx64.empreinte_texte(open(outil, encoding="utf-8", newline="").read())
+verifier("l'empreinte : vtx64.py, lugus empreinte et vtx64 empreinte disent la même",
+         e == empreinte("lugus", outil) == empreinte("vtx64", outil),
          f"{e} {empreinte('lugus', outil)} {empreinte('vtx64', outil)}")
 crlf = ecrire("outil_crlf.vtx", OUTIL, crlf=True)
 verifier("un module en \\r\\n a la même empreinte que le même en \\n", empreinte("lugus", crlf) == e)

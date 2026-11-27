@@ -85,8 +85,11 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("spu128", "test_spu128.py")]))
     etapes.append(("Lugus : les deux machines identiques (programmes aléatoires)", [sys.executable, os.path.join("spu128", "test_lugus.py"), "3000" if COMPLET else "1000"]))
     etapes.append(("Lugus : corpus de conformité", [sys.executable, os.path.join("spu128", "verifier_corpus128.py")]))
-    etapes.append(("vtx128 : le langage du SPU-64 sur Lugus (suite de vtx64, types, bibliothèque, deux machines)",
-                   [sys.executable, os.path.join("tests", "test_vtx128.py")]))
+    if DEUX:
+        # 0.851 : la suite de vtx128.py elle-même (son compilateur, sa machine Python) ; ses programmes sont rejoués par
+        # vtxc128 seul dans « vtxc128 seul »
+        etapes.append(("vtx128 : le langage du SPU-64 sur Lugus (suite de vtx64, types, bibliothèque, deux machines)",
+                       [sys.executable, os.path.join("tests", "test_vtx128.py")]))
     etapes.append(("vtx128 : la bibliothèque mathématique du flottant de 128 bits (référence à 80 chiffres)",
                    [sys.executable, os.path.join("tests", "test_maths128.py"), "300" if COMPLET else "60"]))
     etapes.append(("vtx128 : mêmes sorties que le SPU-64 (programmes au hasard, exemples)",
@@ -95,7 +98,7 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_reactions.py")]))
     etapes.append(("les réactions, ce qu'en lit le lecteur de la forge (vtx128.py) : la molécule, les souvenirs, la provenance",
                    [sys.executable, os.path.join("tests", "test_reactions_lecteur.py")]))
-    etapes.append(("la provenance : pourquoi une liaison vaut ce qu'elle vaut (vtx128.py pourquoi)",
+    etapes.append(("la provenance : pourquoi une liaison vaut ce qu'elle vaut (lugus pourquoi)",
                    [sys.executable, os.path.join("tests", "test_provenance.py")]))
     etapes.append(("la fiabilité de l'ADN : signature, ombre, neutrons (avaries réparées, jamais de travers)",
                    [sys.executable, os.path.join("tests", "test_adn.py")]))
