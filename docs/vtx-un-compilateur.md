@@ -35,7 +35,18 @@ tirés au hasard ne se jouent pas (certains tournent sans fin) : l'empreinte de 
 arrête `lugus PROG.vtx`. Ogmios pas à pas : 42/42. Environ 7 minutes. Dans `verifier.py`, il remplace les deux contrôles
 mot pour mot contre vtx128.py (19 minutes), qui ne se jouent plus qu'avec `--deux`.
 
-Ce qui reste de l'étape 1 : une quarantaine de tests compilent encore par vtx128.py (`tests/test_reactions.py`,
+**0.851c (fait)** : 21 tests compilent Lugus par vtxc128 seul (`tests/un_compilateur.py` : les gestes communs) :
+codon, bords128, logiques128, duel, quatre vérités, combat, gutuater, druide conseiller, rangées128, supposons, valeurs,
+nombres, types de fonction, promesses, reste, fma, modules, catalogue, cubes mères, faces, vocabulaire étendu. Ceux qui
+comparent encore la machine de Lugus à la machine Python (`vtx128.py run` : catalogue, cubes mères, combat avec
+« python ») gardent cette comparaison : c'est la machine, pas le compilateur ; à décider avec le créateur.
+
+Restent : les réactions (`test_reactions.py` lit l'analyse de vtx128.py : les vagues, les souvenirs, la provenance),
+fischer, provenance, paillasse, ogmios, gobannos (flottants), adn ; les tests Lugus et Dunon qui passent `vtx128` comme
+module (gene, selon, vocabulaire, cubes nommés) ; et ceux qui vérifient vtx128.py lui-même (test_vtx128, son
+différentiel, maths128), qui iront avec `--deux`.
+
+Ce qui reste de l'étape 1 (avant 0.851c) : une quarantaine de tests compilent encore par vtx128.py (`tests/test_reactions.py`,
 `test_modules.py`, `test_logiques128.py`, `test_types_fonction.py`, `test_provenance.py`…) ; ils passent à `lugus`, un
 par un. Tant qu'ils ne sont pas passés, un mot nouveau du langage doit encore aller dans vtx128.py.
 
