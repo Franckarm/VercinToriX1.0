@@ -947,3 +947,9 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   (tout est refait, plus les marges) ; recalmé en quatre à huit images ; en moyenne (9 sauts en 120 images) 99 contre 72.
 - Livraison : vtx-0.850.zip, essai-0.850.bat (étape 7 : l'orage sur la carte, le témoin puis les marges,
   `VTX_CARTE_TEMPS=1`).
+- **0.850b : le feu** (la demande du créateur : une seconde lumière dans une ombre) : au fond du cratère du grand puy
+  (`placer_feu`, `ranger_feu`, `feu_vu`, `feu_point` ; FFEU + t, FEU = GLOB + 66, portée FEU_R) ; son calque se range une
+  fois, à son premier allumage (4 à 15 ms à demi-échelle) ; l'image le lit s'il brûle (`ombrer`, `eclairer`, `clarte` :
+  le feu dans les bits 12 à 15 de l'ombre, orangé) ; les marges du soleil n'en sont pas touchées. À demi-échelle : 289
+  points éclairés, dont 101 dans l'ombre du soleil. L'orage l'allume ou l'éteint au hasard (une image sur dix). Les
+  mêmes empreintes, complet et à marges. Vérifié : « Tout est conforme » (en deux parts, `--depuis`), Alésia.
