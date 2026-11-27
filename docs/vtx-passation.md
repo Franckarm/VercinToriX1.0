@@ -976,3 +976,8 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Étape 0 (fait) : `verifier.py` saute par défaut les 20 étapes des machines gelées (`--geles` les joue) ; chaque étape
   dit son temps. Ici : **60 minutes, « Tout est conforme »** (contre plus de deux heures) ; les plus longues : le point
   fixe de vtxc128 (12 min), les réactions dans vtxc128 (7), les priorités, l'ADN, reste (4 chacune).
+- **0.851b** : `vtxc/test_vtxc128_seul.py` (vtxc128 sans Python : le point fixe depuis le compilateur embarqué, 88
+  programmes sous trois réglages contre le témoin `tests/attendus/vtxc128_seul.json`, l'exemple faux, Ogmios 42/42 ;
+  7 minutes) remplace dans `verifier.py` les deux contrôles mot pour mot (`--deux` les joue). Chez le créateur, la
+  0.850c : **le jour sur la carte 38,9 → 46,9 images par seconde, le soir 33,4 → 39,4** (le calque gardé sur la carte) ;
+  la clepsydre 16,1 → 11,8 ms par image (7,2 de carte) ; le C++ 19,6 au jour.

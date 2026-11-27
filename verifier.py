@@ -3,6 +3,7 @@
 Rust et JavaScript si cargo et node sont installés.
 Utilisation : python3 verifier.py            (rapide : moins de tirages aléatoires, sans les grands volumes)
               python3 verifier.py --complet  (tout, plusieurs dizaines de minutes)
+              python3 verifier.py --deux     (0.851 : ajoute les anciens contrôles mot pour mot contre vtx128.py)
               python3 verifier.py --geles    (0.851 : ajoute les machines gelées : le SPU-32 (Senos), le SPU-64 séparé,
                                               les machines JavaScript ; par défaut, seulement Lugus, « dunon; » compris)
 
@@ -18,6 +19,8 @@ ici = os.path.dirname(os.path.abspath(__file__))
 # Windows : sans cela, les sorties capturées sont encodées en cp1252, qui ne connaît pas « → », « ³ » ou « ≥ ».
 COMPLET = "--complet" in sys.argv
 GELES = "--geles" in sys.argv or COMPLET
+# 0.851 : « --deux » : les anciens contrôles des deux compilateurs de Lugus (mot pour mot contre vtx128.py)
+DEUX = "--deux" in sys.argv or COMPLET
 # 0.851 : les étapes des machines gelées (le SPU-32, le SPU-64 séparé, JavaScript), par le début de leur nom
 NOMS_GELES = ("tests du langage", "SPU-64 :", "vtx64 :", "vtxc64 :", "vtx128 : mêmes sorties que le SPU-64",
               "les quatre valeurs aux bords du monde sur Dunon", "Dunon fait le travail de Lugus",
@@ -107,8 +110,11 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_ogmios.py")]))
     etapes.append(("Fischer : le fil de Hilbert, la signature des molécules, le cube des molécules",
                    [sys.executable, os.path.join("tests", "test_fischer.py")]))
-    etapes.append(("vtxc128 : le compilateur écrit en vtx pour Lugus (point fixe, mêmes mots que vtx128.py)",
-                   [sys.executable, os.path.join("vtxc", "test_vtxc128.py")] + (["--complet"] if COMPLET else [])))
+    etapes.append(("vtxc128 seul : le compilateur de Lugus sans Python (point fixe, les mêmes sorties que le témoin, trois réglages)",
+                   [sys.executable, os.path.join("vtxc", "test_vtxc128_seul.py")]))
+    if DEUX:
+        etapes.append(("vtxc128 : le compilateur écrit en vtx pour Lugus (point fixe, mêmes mots que vtx128.py)",
+                       [sys.executable, os.path.join("vtxc", "test_vtxc128.py")] + (["--complet"] if COMPLET else [])))
     etapes.append(("le vocabulaire du prélude sur les trois machines : mêmes mots par les deux compilateurs de chacune",
                    [sys.executable, os.path.join("tests", "test_vocabulaire.py")]))
     etapes.append(("le débogueur de Lugus par les noms : la pile des appels, les variables, sortir d'une fonction",
@@ -177,8 +183,9 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("tests", "test_codon.py")]))
     etapes.append(("le combat : un garde à quatre réactions contre la fusion seule et deux gardes binaires (Lugus)",
                    [sys.executable, os.path.join("tests", "test_combat.py")] + (["python"] if COMPLET else [])))
-    etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
-                   [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
+    if DEUX:
+        etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
+                       [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",
                    [sys.executable, os.path.join("forge", "test_forge128.py"), "40" if COMPLET else "12"]))
     etapes.append(("Ésus : la division par une constante et les codons de 64 bits dans la forge, comme Lugus",

@@ -26,6 +26,19 @@ vocabulaire de vtxc (`vtxc/vocabulaire.py`, `vtxc/prelude128.py`) ; une cinquant
 le SPU-64 séparé, les machines JavaScript) ; `--geles` (ou `--complet`) les joue. Chaque étape dit son temps, et la fin
 nomme les cinq plus longues. Rien n'est effacé.
 
+**Étape 1, premier pas (fait, 0.851b).** `vtxc/test_vtxc128_seul.py` : vtxc128 vérifié sans Python. Le point fixe
+part du compilateur embarqué dans lugus (optimisé : il retombe sur ses 279 122 mots ; non optimisé : M1 = M2). 88
+programmes (la suite de vtx128.py, la suite de Lugus, les réactions des exemples, cinq erreurs, plus 28 programmes tirés
+au hasard à graines fixes) sont compilés sous trois réglages : la même sortie, et celle du témoin
+`tests/attendus/vtxc128_seul.json` (rangé quand les deux compilateurs donnaient encore les mêmes mots). Les programmes
+tirés au hasard ne se jouent pas (certains tournent sans fin) : l'empreinte de leurs mots est gardée. Un exemple faux
+arrête `lugus PROG.vtx`. Ogmios pas à pas : 42/42. Environ 7 minutes. Dans `verifier.py`, il remplace les deux contrôles
+mot pour mot contre vtx128.py (19 minutes), qui ne se jouent plus qu'avec `--deux`.
+
+Ce qui reste de l'étape 1 : une quarantaine de tests compilent encore par vtx128.py (`tests/test_reactions.py`,
+`test_modules.py`, `test_logiques128.py`, `test_types_fonction.py`, `test_provenance.py`…) ; ils passent à `lugus`, un
+par un. Tant qu'ils ne sont pas passés, un mot nouveau du langage doit encore aller dans vtx128.py.
+
 **Étape 1 : vtxc128, le seul qui écrit les mots.** vtx128.py ne sert plus qu'à la forge (lire, typer). Les tests « mêmes
 mots que vtx128.py » deviennent « les mêmes résultats » (la sortie de Lugus, la sortie forgée, les empreintes de
 Gergovie, l'épreuve d'Alésia) ; le point fixe de vtxc128 reste (il se compile lui-même et retombe sur ses mots). Le
