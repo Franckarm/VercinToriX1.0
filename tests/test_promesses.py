@@ -2,7 +2,7 @@
 """Les promesses (0.6r) : « touche rien | lecture | memoire | monde » dans l'en-tête d'une fonction ou d'une réaction. La
 carte constate ce que la fonction touche, elle et ses appels ; une promesse rompue arrête la compilation (et le
 rangement), avec le chemin qui la rompt. Le juge est le lecteur d'ADN écrit en vtx ; chimie/adn.py dit les mêmes mots.
-Les deux compilateurs acceptent la promesse sans changer un mot du code, et une fonction qui promet garde sa molécule
+vtxc128 accepte (0.851 : un seul compilateur) la promesse sans changer un mot du code, et une fonction qui promet garde sa molécule
 (elle n'est pas recopiée en ligne), pour que sa promesse se vérifie à part."""
 import os
 import subprocess
@@ -14,7 +14,6 @@ racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "chimie"))
 import adn  # noqa: E402
-import vtx128  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + X)
@@ -38,10 +37,6 @@ def ecrire(nom, texte):
     open(os.path.join(d, nom), "w", encoding="utf-8").write(texte)
 
 
-def mots_py(texte):
-    vtx128.COMPAT_64 = False
-    m, _ = vtx128.assembler(vtx128.compiler(texte, dossier=d), True)
-    return m
 
 
 def mots_lugus(nom):
@@ -103,16 +98,16 @@ SANS = TENU.replace(" touche rien", "").replace(" touche memoire", "").replace("
     .replace(" touche monde", "")
 ecrire("sans.vtx", SANS)
 
-# 1. les deux compilateurs : la promesse acceptée, les mêmes mots ; le programme tourne
+# 1. vtxc128 : la promesse acceptée ; le programme tourne
 m_l, err = mots_lugus("tenu.vtx")
-verifier("des promesses tenues : vtxc128 et vtx128.py donnent les mêmes mots ; aucune note",
-         m_l is not None and m_l == mots_py(TENU) and "promesse" not in err, err[-400:])
+verifier("des promesses tenues : compilé par vtxc128 (0.851 : un seul compilateur) ; aucune note",
+         m_l is not None and "promesse" not in err, err[-400:])
 r = lugus("tenu.vtx")
 verifier("le programme qui tient ses promesses tourne", r.returncode == 0 and "7" in r.stdout, r.stdout + r.stderr[-300:])
 verifier("le juge de référence (Python) : rien à redire", juge_py(TENU) == [], repr(juge_py(TENU)))
 m_s, _ = mots_lugus("sans.vtx")
 verifier("une fonction qui promet garde sa molécule (double n'est plus recopiée en ligne) ; sans promesse, recopiée",
-         m_s is not None and m_s == mots_py(SANS)
+         m_s is not None
          and "double : une fonction" in lugus("carte", "tenu.vtx").stderr
          and "double : une fonction" not in lugus("carte", "sans.vtx").stderr)
 
@@ -154,17 +149,12 @@ r = subprocess.run([VTX, "paillasse", os.path.join(d, "tenu.vtx"), "--faces", os
 verifier("Ogmios : la paillasse montre la promesse tenue, d'une fonction et d'une réaction",
          r.stdout.count("ne rien toucher (tenue)") >= 2, r.stdout[-800:])
 
-# 4. une promesse mal écrite : refusée par les deux compilateurs
+# 4. une promesse mal écrite : refusée
 MAL = TENU.replace("fonction double(x) touche rien", "fonction double(x) touche partout")
 ecrire("mal.vtx", MAL)
 m_m, err = mots_lugus("mal.vtx")
-try:
-    mots_py(MAL)
-    refus_py = False
-except vtx128.VtxError as e:
-    refus_py = "après « touche »" in str(e)
-verifier("« touche partout » : refusé par les deux compilateurs",
-         m_m is None and "après « touche »" in err and refus_py, err[-300:])
+verifier("« touche partout » : refusé par vtxc128",
+         m_m is None and "après « touche »" in err, err[-300:])
 
 # 5. sans promesse, rien ne change : les exemples de Lugus compilent comme avant, sans juge (pas de note)
 for nom in ("chute", "panel", "codon"):
