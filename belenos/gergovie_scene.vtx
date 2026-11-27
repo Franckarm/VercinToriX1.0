@@ -1558,7 +1558,12 @@ fonction ombrer(ox, oy, oz, dx, dy, dz, t, jeu) {
             etat = 3;
         }
     }
-    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8);
+    // 0.850b : le feu (0 s'il est éteint, ou pour un point hors des calques)
+    soit fe = 0;
+    si connu == 1 {
+        fe = feu_point(tt, e0, x, y, z);
+    }
+    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8) | (fe << 12);
 }
 
 // l'étage de la lumière : la couleur d'un point de terre (om : ce que l'ombre a rendu), avant la brume ; ses trois voies
@@ -1587,12 +1592,14 @@ fonction eclairer(ox, oy, oz, dx, dy, dz, t, om, jeu) {
     }
     soit vus = (om >> 4) & 15;
     soit ouverts = (om >> 8) & 15;
-    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
+    soit fe = (om >> 12) & 15;
+    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol ; le
+    // feu (0.850b), orangé
     soit ciel_part = 40 + ouverts * 30;
     soit soleil = nl * vus / 4 * 256 / 65536;
-    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
-    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
-    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
+    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20 + fe * 16;
+    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18 + fe * 9;
+    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14 + fe * 3;
     soit r = ((alb >> 16) & 255) * lr / 200;
     soit g = ((alb >> 8) & 255) * lg2 / 200;
     soit b = (alb & 255) * lb / 200;
@@ -1656,17 +1663,23 @@ fonction clarte(ox, oy, oz, dx, dy, dz, t, jeu) {
     } sinon {
         nl = 0;
     }
-    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol
+    // 0.850b : le feu (0 s'il est éteint, ou pour un point hors des calques)
+    soit fe = 0;
+    si connu == 1 {
+        fe = feu_point(tt, e0, x, y, z);
+    }
+    // la lumière : le ciel (selon ce qu'on en voit), le soleil (selon la pente et la clepsydre), un renvoi du sol ; le
+    // feu, orangé
     soit alb = couleur(x, y, z);
     soit ciel_part = 40 + ouverts * 30;
     soit soleil = nl * vus / 4 * 256 / 65536;
-    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20;
-    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18;
-    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14;
+    soit lr = 76 * ciel_part / 160 + soleil * 255 / 256 + 20 + fe * 16;
+    soit lg2 = 88 * ciel_part / 160 + soleil * 238 / 256 + 18 + fe * 9;
+    soit lb = 112 * ciel_part / 160 + soleil * 210 / 256 + 14 + fe * 3;
     soit r = ((alb >> 16) & 255) * lr / 200;
     soit g = ((alb >> 8) & 255) * lg2 / 200;
     soit b = (alb & 255) * lb / 200;
-    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8) | ((r | (g << 12) | (b << 24)) << 16);
+    retour 1 | (etat << 2) | (vus << 4) | (ouverts << 8) | (fe << 12) | ((r | (g << 12) | (b << 24)) << 16);
 }
 
 
@@ -2865,7 +2878,10 @@ fonction ranger_lumiere_marges() {
 // réessayer (le calque apprend où la marge vaut la peine). Un mot neutre dont la marge s'épuise retourne dans la bande.
 // FMARGE : (g << 32) | marge (20 bits) | calme << 20 | attente << 24 ; neutre : marge > 0 ; dans la bande : marge = 0.
 constante CALME = 3;
-constante ORAGE = 690000;          // ORAGE : le nombre d'images de l'orage ; + 1 + i : un saut ; + 300 + i : les mots refaits
+constante FFEU = 214;              // FFEU + t (0.850b) : le calque du feu, rangé comme celui du soleil (128 | 0 à 15)
+constante FEU = 600066;            // 1 : le feu brûle ; + 1, + 2, + 3 : sa place (en 1/65536 de point) ; + 4 : rangé
+constante FEU_R = 48 * RN / RD;    // la portée du feu (en points)
+constante ORAGE = 690000;          // ORAGE : le nombre d'images de l'orage ; + 1 + i : un saut ; + 300 + i : les mots refaits ; + 700 + i : le temps de la clepsydre ; + 1000 + i : le feu
 constante ATTENTE = 16;
 
 // la plus grande corde (au carré) des cinq directions du soleil entre les images ga et gb
@@ -3006,6 +3022,124 @@ fonction compter_refaits(g) {
         }
     }
     retour c;
+}
+
+// 0.850b : la seconde lumière (la demande du créateur : une lumière qui apparaît dans une ombre) : un feu au fond du
+// cratère du grand puy, que ses parois tiennent dans l'ombre du soleil presque toujours. Le feu ne bouge pas, le monde
+// non plus : son calque (ce que chaque point de surface en reçoit : sa vue du feu, sa pente, la distance) se range une
+// fois, la première fois qu'il s'allume ; ensuite, l'allumer ou l'éteindre ne coûte rien (l'image le lit, ou non). Les
+// marges du soleil n'en sont pas touchées : chaque lumière a son calque.
+fonction placer_feu() {
+    soit h = @2[HCOL + PUY_Z * MONDE + PUY_X] / 256;
+    @2[FEU + 1] = (PUY_X << 16) + 32768;
+    @2[FEU + 2] = ((h + 3) << 16) + 32768;
+    @2[FEU + 3] = (PUY_Z << 16) + 32768;
+}
+
+fonction ranger_feu() {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    pour q dans 0..total en segments {
+        ranger_mot_feu(q);
+    }
+    @2[FEU + 4] = 1;
+}
+
+fonction ranger_mot_feu(q) {
+    soit t = 0;
+    soit r = q;
+    soit cherche = 1;
+    pour k dans 0..(TUILES * TUILES) {
+        si cherche == 1 {
+            soit nk = @2[GLOB + 1 + k] * 64;
+            si r < nk {
+                t = k;
+                cherche = 0;
+            } sinon {
+                r = r - nk;
+            }
+        }
+    }
+    soit n = r >> 6;
+    soit w = r & 63;
+    soit b = @2[((FINV + t) << 24) + n];
+    soit x0 = (t % TUILES) * 256 + (b >> 10) * 8;
+    soit y0 = ((b >> 5) & 31) * 8;
+    soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
+    soit fx = @2[FEU + 1];
+    soit fy = @2[FEU + 2];
+    soit fz = @2[FEU + 3];
+    soit portee = FEU_R << 16;
+    // le bloc entier hors de portée : rien
+    soit ex = absolu(((x0 + 4) << 16) - fx);
+    soit ey = absolu(((y0 + 4) << 16) - fy);
+    soit ez = absolu(((z0 + 4) << 16) - fz);
+    soit mf = 0;
+    si ex < portee + 7 * 65536 && ey < portee + 7 * 65536 && ez < portee + 7 * 65536 {
+        soit base = (FELT + t) << 24;
+        pour j dans 0..8 {
+            soit v = w * 8 + j;
+            soit x = x0 + (v >> 6);
+            soit y = y0 + ((v >> 3) & 7);
+            soit z = z0 + (v & 7);
+            soit el = @2[base + REP + n * 512 + v];
+            si el != 0 && ((el >> 2) & 63) != EAU {
+                si expose(x, y, z) == 1 {
+                    soit nn = normale_de(el);
+                    soit nx = (nn & 255) - 128;
+                    soit ny = ((nn >> 16) & 255) - 128;
+                    soit nz = ((nn >> 32) & 255) - 128;
+                    mf = mf | ((128 | feu_vu(x, y, z, nx, ny, nz)) << (j * 8));
+                }
+            }
+        }
+    }
+    @2[((FFEU + t) << 24) + n * 64 + w] = mf;
+}
+
+// ce que le point (x, y, z) de normale n reçoit du feu : 0 à 15 (sa vue du feu, sa pente, la distance)
+fonction feu_vu(x, y, z, nx, ny, nz) {
+    soit sx = (x << 16) + 32768 + nx * 858;
+    soit sy = (y << 16) + 32768 + ny * 858;
+    soit sz = (z << 16) + 32768 + nz * 858;
+    soit lx = @2[FEU + 1] - sx;
+    soit ly = @2[FEU + 2] - sy;
+    soit lz = @2[FEU + 3] - sz;
+    soit d = racine_entiere(((lx .>> 8) * (lx .>> 8) + (ly .>> 8) * (ly .>> 8) + (lz .>> 8) * (lz .>> 8))) << 8;
+    soit portee = FEU_R << 16;
+    si d >= portee || d < 65536 {
+        retour 0;
+    }
+    soit dx = (lx * 65536) ./ d;
+    soit dy = (ly * 65536) ./ d;
+    soit dz = (lz * 65536) ./ d;
+    soit nl = (nx * dx + ny * dy + nz * dz) ./ 127;
+    si nl .<= 0 {
+        retour 0;
+    }
+    si tracer(sx, sy, sz, dx, dy, dz, d, 0) != MANQUE {
+        retour 0;
+    }
+    // (1 - (d / portée)²) · pente, borné à 15
+    soit pd = (d >> 8) * (d >> 8);
+    soit pp = (portee >> 8) * (portee >> 8);
+    soit f = (40 * (pp - pd) / pp) * nl / 65536;
+    si f > 15 {
+        f = 15;
+    }
+    retour f;
+}
+
+// le feu reçu par le point (x, y, z) de la réserve e0 (0 si le feu est éteint)
+fonction feu_point(tt, e0, x, y, z) {
+    si @2[FEU] != 1 {
+        retour 0;
+    }
+    soit iv = ((x & 7) << 6) | ((y & 7) << 3) | (z & 7);
+    soit fb = (@2[((FFEU + tt) << 24) + (e0 - 16) * 64 + (iv >> 3)] >> ((iv & 7) * 8)) & 255;
+    retour fb & 15;
 }
 
 // 0.850 : la clepsydre d'une image où le soleil bouge : à marges (MARGES, dans le programme principal : 1 ; 2 : et
@@ -3230,6 +3364,9 @@ fonction epreuve_complete(vol, jour, soir, sur_carte_demande) {
         soit az = 250 * 64;
         soit el = 45 * 64;
         soit sauts = 0;
+        soit feux = 0;
+        @2[FEU] = 0;
+        @2[FEU + 4] = 0;
         film = 14695981039346656037;
         pour i dans 0..orage {
             soit to = horloge();
@@ -3243,6 +3380,19 @@ fonction epreuve_complete(vol, jour, soir, sur_carte_demande) {
                 sauts = sauts + 1;
             }
             preparer_soleil_fin(az, el, 0);
+            // le feu s'allume ou s'éteint au hasard (une image sur dix en moyenne) ; la première fois, son calque se range
+            @2[ORAGE + 1000 + i] = 0;
+            si i > 0 && hasard(10) == 0 {
+                si @2[FEU + 4] == 0 {
+                    placer_feu();
+                    soit tf = horloge_us();
+                    ranger_feu();
+                    @2[ORAGE + 999] = horloge_us() - tf;
+                }
+                @2[FEU] = 1 - @2[FEU];
+                @2[ORAGE + 1000 + i] = 1;
+                feux = feux + 1;
+            }
             soit avant = @2[GLOB + 63];
             soit tc = horloge_us();
             clepsydre(sur_carte);
@@ -3299,7 +3449,9 @@ fonction epreuve_complete(vol, jour, soir, sur_carte_demande) {
         }
         dire_refaits("l'orage", orage);
         afficher("gergovie : l'orage" + lieu + " : le film entier, empreinte " + texte(signe64(film)) + " (" + texte(sauts)
-                 + " sauts du soleil)");
+                 + " sauts du soleil, le feu allumé ou éteint " + texte(feux) + " fois ; son calque rangé en "
+                 + texte(@2[ORAGE + 999] / 1000) + " ms, une fois)");
+        @2[FEU] = 0;
     }
 }
 
