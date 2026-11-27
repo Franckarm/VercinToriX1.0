@@ -8,6 +8,7 @@ dunon;
 constante RN = 1;
 constante RD = 1;
 constante BLOCS = 0;
+constante MARGES = 0;              // 0.850 : la clepsydre à marges (1), et compter les mots refaits (2)
 importer "gergovie_scene.vtx";
 
 fonction principal() {

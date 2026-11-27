@@ -910,3 +910,23 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Ensuite (décidé avec le créateur) : l'étage de l'ombre avec ses états (inconnu : rien à refaire ; vrai : l'ombre ;
   variable : le bord qui bouge, puis faux, puis inconnu), la largeur de la bande donnée par la marge de chaque point,
   vérifié à chaque image contre l'ombre complète.
+
+## 0.850 (27 novembre, en cours) : la clepsydre à marges (l'ombre du créateur)
+- Chez le créateur, la 0.849d (`VTX_CARTE_TEMPS`) : **l'image en un noyau 1,64 ms de carte ; la clepsydre 7,9 ms** (83 % de
+  la carte au jour et au soir) ; au vol, la carte 1,9 ms pour 12 ms par image (le reste : le processeur, l'image qui
+  redescend et se montre : la voie B) ; les étages : la carte 1,5 ms de plus seulement, mais trois envois par image (les
+  `si` d'`image_etages` coupent le lot).
+- Décidé avec le créateur : l'ombre en vrai, la lumière en inconnu, le bord en variable, le point qui sort de l'ombre
+  en faux ; la marge de chaque mot du calque dit quand le refaire ; zéro perte.
+- Fait (`MARGES` dans chaque programme principal : 0 partout ; 1 la clepsydre à marges ; 2 et compter) :
+  `preparer_voisins` (FVOIS : les 26 voisins de chaque point des blocs porteurs ; FBOITE : la boîte de leur matière),
+  `marge_libre`, `marge_bloquee`, `soleil_vu_marge`, `ranger_lumiere_marges` (HIST : les directions de chaque image,
+  GSOL ; FMARGE : (g << 32) | marge, sur la carte), `clepsydre(sur_carte)`. La preuve : un rayon tourné de la corde c
+  s'écarte de t · c ; libre, il le reste si la garde (distance sûre à la matière) dépasse t · c + EPS partout ; arrêté,
+  s'il passe encore dans la matière (la profondeur) ; la pente par |s - 127| / |n|₁.
+- Mesuré ici (demi-échelle, au processeur) : **les mêmes empreintes, film entier, au jour et au soir** ; 0 mot différent
+  sur 24 images ; 11,5 % des mots refaits par image au jour, 10,3 % au soir. **Mais trop lent** : un mot refait avec sa
+  marge coûte 40 à 60 fois un mot ordinaire (les blocs vides voisins de la surface, lus voisin par voisin) : la clepsydre
+  à marges 1000 ms contre 100. Le noyau est accepté par la carte (sans retour au milieu). Pas d'essai chez le créateur.
+- Prochain : une carte des distances (Tchebychev, bornée) près de la surface, rangée une fois : la marche de la marge
+  devient aussi simple que tracer ; sur la carte, les fils d'une vague qui gardent attendent ceux qui refont (à mesurer).
