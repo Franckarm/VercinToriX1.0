@@ -52,13 +52,18 @@ formule ; les souvenirs et ce qu'ils épargnent ; la provenance, « vtx128.py po
 `tests/test_reactions_lecteur.py` : ce sont les gestes du lecteur de la forge, qui restent jusqu'à l'étape 2 (alors
 vtxc128 devra les montrer lui-même, par la carte).
 
-Restent : fischer, provenance, paillasse, ogmios, gobannos (flottants), adn ; les tests Lugus et Dunon qui passent `vtx128` comme
-module (gene, selon, vocabulaire, cubes nommés) ; et ceux qui vérifient vtx128.py lui-même (test_vtx128, son
-différentiel, maths128), qui iront avec `--deux`.
+**0.851f : l'étape 1 est faite.** Aussi par vtxc128 seul : Ogmios, Gobannos (les flottants), l'ADN (l'isotope : le
+lecteur de référence range avec et sans « lourd »), la provenance (`lugus pourquoi`), la paillasse (ce que lit vtx128.py
+est rangé dans `tests/attendus/paillasse.json`), gène, selon, vocabulaire, cubes nommés, maths128, modules. La suite de
+vtx128.py elle-même (`test_vtx128.py`) et les deux anciens contrôles mot pour mot passent sous `--deux`.
 
-Ce qui reste de l'étape 1 (avant 0.851c) : une quarantaine de tests compilent encore par vtx128.py (`tests/test_reactions.py`,
-`test_modules.py`, `test_logiques128.py`, `test_types_fonction.py`, `test_provenance.py`…) ; ils passent à `lugus`, un
-par un. Tant qu'ils ne sont pas passés, un mot nouveau du langage doit encore aller dans vtx128.py.
+**Ce qui tient encore à vtx128.py, et pourquoi :**
+- **le lecteur de la forge** (`forge/forge128.py`, donc Taranis) : l'étape 2 ;
+- **ce que lit ce lecteur** : `test_reactions_lecteur.py` (la molécule, les souvenirs, la provenance), `test_fischer.py`
+  (chimie/fischer.py signe les molécules qu'il lit), `forge/test_forge128.py` ;
+- **le lecteur d'ADN de référence** (`chimie/adn.py`), et le prélude de vtxc (`vtxc/prelude128.py`, `vocabulaire.py`) ;
+- **le témoin** (à la main : `--temoin`) ;
+- `vtxc/test_vtxc128_seul.py` lit la liste de ses programmes de test (`vtx128.TESTS`), sans rien compiler par lui.
 
 **Étape 1 : vtxc128, le seul qui écrit les mots.** vtx128.py ne sert plus qu'à la forge (lire, typer). Les tests « mêmes
 mots que vtx128.py » deviennent « les mêmes résultats » (la sortie de Lugus, la sortie forgée, les empreintes de
