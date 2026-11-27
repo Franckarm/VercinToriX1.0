@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """selon sur plusieurs lectures (0.6l) : « selon (a, b, c) » (la place compte) et « selon {a, b, c} » (sans ordre).
 Des selon tirés au hasard (2 à 4 lectures, motifs avec _ et |, plusieurs motifs par branche, avec ou sans autre) :
-mêmes mots par vtx128.py et vtxc128 (et par vtx64.py et vtxc64 pour Dunon), et sur toutes les combinaisons de
+compilé par vtxc128 seul sur Lugus (0.851), les mêmes mots par vtx64.py et vtxc64 pour Dunon, et sur toutes les combinaisons de
 lectures, la branche jouée est celle que calcule une référence écrite ici ; les branches inatteignables refusées par
 les deux compilateurs ; un selon dans une branche ; « selon (x) » garde son sens ; et les tables du codon écrites en
 selon décident comme les tables en deux entiers, pour les 64 codons."""
@@ -15,7 +15,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx128  # noqa: E402
 import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
@@ -33,12 +32,15 @@ def verifier(nom, ok, detail=""):
 
 def compiler_les_deux(fic, machine):
     """(mots de la référence ou son erreur, mots de vtxc ou son erreur)"""
-    mod, exe = (vtx128, "lugus") if machine == "lugus" else (vtx64, "vtx64")
+    # 0.851 : sur Lugus, un seul compilateur : vtxc128 répond pour les deux
+    mod, exe = (None, "lugus") if machine == "lugus" else (vtx64, "vtx64")
     src = open(fic, encoding="utf-8").read()
-    try:
-        ref = mod.assembler(mod.compiler(src, dossier=os.path.dirname(fic)))
-    except Exception as e:  # noqa: BLE001
-        ref = "refusé : " + str(e).split(" : ", 1)[-1]
+    ref = None
+    if mod is not None:
+        try:
+            ref = mod.assembler(mod.compiler(src, dossier=os.path.dirname(fic)))
+        except Exception as e:  # noqa: BLE001
+            ref = "refusé : " + str(e).split(" : ", 1)[-1]
     sortie = fic + ".mots"
     if os.path.exists(sortie):
         os.remove(sortie)
@@ -48,7 +50,7 @@ def compiler_les_deux(fic, machine):
         m = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()]
     else:
         m = "refusé : " + (r.stdout + r.stderr)
-    return ref, m
+    return (m if ref is None else ref), m
 
 
 def jouer(fic, machine):

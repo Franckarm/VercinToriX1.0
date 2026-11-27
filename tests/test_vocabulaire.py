@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Le vocabulaire du prélude (0.5zr) sur les trois machines : chaque compilateur de référence (vtx.py, vtx64.py,
-vtx128.py) et son compilateur écrit en vtx (vtxc, vtxc64, vtxc128, embarqués dans vtx, vtx64, lugus) donnent les mêmes
-mots pour exemples/premiers/vocabulaire.vtx, et le programme écrit ce qu'on attend."""
+"""Le vocabulaire du prélude (0.5zr) sur les trois machines : Senos et Dunon, chaque compilateur de référence (vtx.py,
+vtx64.py) et son compilateur écrit en vtx (vtxc, vtxc64) donnent les mêmes mots ; Lugus, vtxc128 seul (0.851) pour exemples/premiers/vocabulaire.vtx, et le programme écrit ce qu'on attend."""
 import os
 import subprocess
 import sys
@@ -12,7 +11,6 @@ racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 import vtx  # noqa: E402
 import vtx64  # noqa: E402
-import vtx128  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -38,10 +36,11 @@ def mots_rust(exe, sortie):
 
 attendu = ["max 9 min 1 combien 9 2", "tranche 3 9 1  sans doublons 5 3 9 1 ", "[xirotégnicreV] 2",
            "[  7][ab  ][  ok  ]", "1 0 1 0", "3628800 1906884 1 0 12 1594323"]
-for nom, mod, exe in (("Senos", vtx, "vtx"), ("Dunon", vtx64, "vtx64"), ("Lugus", vtx128, "lugus")):
-    ref = mod.assembler(mod.compiler(src, dossier=os.path.dirname(PROG)))
+for nom, mod, exe in (("Senos", vtx, "vtx"), ("Dunon", vtx64, "vtx64"), ("Lugus", None, "lugus")):
     m = mots_rust(exe, os.path.join(d, nom + ".mots"))
-    verifier(f"{nom} : {mod.__name__}.py et le compilateur en vtx donnent les mêmes mots ({len(ref)})",
+    # 0.851 : sur Lugus, un seul compilateur (mod = None : vtxc128 répond seul)
+    ref = mod.assembler(mod.compiler(src, dossier=os.path.dirname(PROG))) if mod is not None else (m or [0])
+    verifier(f"{nom} : " + (f"{mod.__name__}.py et le compilateur en vtx donnent les mêmes mots" if mod else "compilé par vtxc128 seul (0.851)") + f" ({len(ref)})",
              m is not None and m[:len(ref)] == ref and len(m) == len(ref), f"{len(ref)} contre {None if m is None else len(m)}")
     r = subprocess.run([os.path.join(BIN, exe + X), PROG], capture_output=True, text=True, encoding="utf-8")
     lignes = r.stdout.splitlines()
