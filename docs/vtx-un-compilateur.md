@@ -37,9 +37,14 @@ mot pour mot contre vtx128.py (19 minutes), qui ne se jouent plus qu'avec `--deu
 
 **0.851c (fait)** : 21 tests compilent Lugus par vtxc128 seul (`tests/un_compilateur.py` : les gestes communs) :
 codon, bords128, logiques128, duel, quatre vérités, combat, gutuater, druide conseiller, rangées128, supposons, valeurs,
-nombres, types de fonction, promesses, reste, fma, modules, catalogue, cubes mères, faces, vocabulaire étendu. Ceux qui
-comparent encore la machine de Lugus à la machine Python (`vtx128.py run` : catalogue, cubes mères, combat avec
-« python ») gardent cette comparaison : c'est la machine, pas le compilateur ; à décider avec le créateur.
+nombres, types de fonction, promesses, reste, fma, modules, catalogue, cubes mères, faces, vocabulaire étendu. 
+
+**Le témoin (décidé avec le créateur, 0.851d)** : la machine Python de vtx128.py reste, petite, à la main, pour voir si
+une modification change ce que fait un programme. `tests/test_temoin_python.py` (une poignée d'exemples de Lugus joués
+par lugus et par vtx128.py, ou les programmes donnés en argument) ; `verifier.py --temoin` le joue, avec les
+comparaisons à la machine Python des tests du catalogue, des cubes mères et du combat (`VTX_TEMOIN=1`). Par défaut,
+rien de Python ne joue un programme de Lugus. Un écart n'est pas forcément une erreur de lugus : le témoin peut être en
+retard sur un mot ajouté seulement à vtxc128.
 
 Restent : les réactions (`test_reactions.py` lit l'analyse de vtx128.py : les vagues, les souvenirs, la provenance),
 fischer, provenance, paillasse, ogmios, gobannos (flottants), adn ; les tests Lugus et Dunon qui passent `vtx128` comme

@@ -4,6 +4,7 @@ Rust et JavaScript si cargo et node sont installés.
 Utilisation : python3 verifier.py            (rapide : moins de tirages aléatoires, sans les grands volumes)
               python3 verifier.py --complet  (tout, plusieurs dizaines de minutes)
               python3 verifier.py --deux     (0.851 : ajoute les anciens contrôles mot pour mot contre vtx128.py)
+              python3 verifier.py --temoin   (0.851 : ajoute le témoin, la machine Python de vtx128.py)
               python3 verifier.py --geles    (0.851 : ajoute les machines gelées : le SPU-32 (Senos), le SPU-64 séparé,
                                               les machines JavaScript ; par défaut, seulement Lugus, « dunon; » compris)
 
@@ -21,6 +22,10 @@ COMPLET = "--complet" in sys.argv
 GELES = "--geles" in sys.argv or COMPLET
 # 0.851 : « --deux » : les anciens contrôles des deux compilateurs de Lugus (mot pour mot contre vtx128.py)
 DEUX = "--deux" in sys.argv or COMPLET
+# 0.851 : « --temoin » : la machine Python de vtx128.py comme témoin (la décision du créateur : petit, à la main)
+TEMOIN = "--temoin" in sys.argv
+if TEMOIN:
+    ENV["VTX_TEMOIN"] = "1"
 # 0.851 : les étapes des machines gelées (le SPU-32, le SPU-64 séparé, JavaScript), par le début de leur nom
 NOMS_GELES = ("tests du langage", "SPU-64 :", "vtx64 :", "vtxc64 :", "vtx128 : mêmes sorties que le SPU-64",
               "les quatre valeurs aux bords du monde sur Dunon", "Dunon fait le travail de Lugus",
@@ -182,7 +187,10 @@ if shutil.which("cargo"):
     etapes.append(("le codon : trois lectures pour une contradiction en suspens, 20 situations, les trois sorties (Lugus)",
                    [sys.executable, os.path.join("tests", "test_codon.py")]))
     etapes.append(("le combat : un garde à quatre réactions contre la fusion seule et deux gardes binaires (Lugus)",
-                   [sys.executable, os.path.join("tests", "test_combat.py")] + (["python"] if COMPLET else [])))
+                   [sys.executable, os.path.join("tests", "test_combat.py")] + (["python"] if COMPLET or TEMOIN else [])))
+    if TEMOIN:
+        etapes.append(("le témoin : une poignée de programmes, joués par lugus et par la machine Python de vtx128.py",
+                       [sys.executable, os.path.join("tests", "test_temoin_python.py")]))
     if DEUX:
         etapes.append(("les réactions dans vtxc128 : les mêmes mots que vtx128.py (exemples, contrats, unités, souvenirs, hasard)",
                        [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))

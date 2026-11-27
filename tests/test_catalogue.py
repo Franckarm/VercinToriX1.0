@@ -77,6 +77,8 @@ def mots_ou_refus(machine, chemin):
     return (ml if m is None else m), ml
 
 
+# 0.851 : la machine Python (le témoin) ne joue qu'à la main (VTX_TEMOIN=1, ou verifier.py --temoin)
+TEMOIN = os.environ.get("VTX_TEMOIN") == "1"
 d = tempfile.mkdtemp(prefix="vtx-catalogue-")
 
 # --------------------------------------------------------------------------------------------- 1. lister un dossier
@@ -99,9 +101,9 @@ fonction principal() {
 """
 f_liste = ecrire(os.path.join(liste, "liste.vtx"), PROG_LISTE)
 attendu = "a.vtx\nb.txt\nliste.vtx\nsous/\nété.txt\n0\nvrai\nfaux\ninconnu\n"
-for nom, cmd in (("Lugus", [LUGUS, "liste.vtx"]), ("Dunon", [DUNON, "liste.vtx"]),
-                 ("vtx128.py", [sys.executable, os.path.join(racine, "vtx128.py"), "run", "liste.vtx"]),
-                 ("vtx64.py", [sys.executable, os.path.join(racine, "vtx64.py"), "run", "liste.vtx"])):
+for nom, cmd in (("Lugus", [LUGUS, "liste.vtx"]), ("Dunon", [DUNON, "liste.vtx"])) + (
+        (("vtx128.py", [sys.executable, os.path.join(racine, "vtx128.py"), "run", "liste.vtx"]),
+         ("vtx64.py", [sys.executable, os.path.join(racine, "vtx64.py"), "run", "liste.vtx"])) if TEMOIN else ()):
     code, texte = lancer(cmd, liste)
     lu = "".join(l + "\n" for l in texte.split("\n") if l and "instructions exécutées" not in l)
     verifier(f"lister un dossier, {nom} : les noms triés, un sous-dossier finit par « / » ; vrai, faux, inconnu",
@@ -162,11 +164,14 @@ P29 = {"lugus": f'''fonction principal() {{
 for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py")):
     f29 = ecrire(os.path.join(d, "s29", machine + ".vtx"), P29[machine])
     _, t1 = lancer([b, f29])
-    _, t2 = lancer([sys.executable, os.path.join(racine, py), "run", f29])
-    t2 = "".join(l + "\n" for l in t2.split("\n") if l and "instructions exécutées" not in l)
+    t2 = t1
+    if TEMOIN:
+        # 0.851 : le témoin (la machine Python), à la main seulement
+        _, t2 = lancer([sys.executable, os.path.join(racine, py), "run", f29])
+        t2 = "".join(l + "\n" for l in t2.split("\n") if l and "instructions exécutées" not in l)
     suivante = "393" if machine == "lugus" else "394"
-    verifier(f"le service 29 sur {machine.capitalize()}, en Rust et en Python : le cube choisi à sa fréquence, sa queue lue "
-             f"à son adresse, le second à la suivante ; pas un cube : faux",
+    verifier(f"le service 29 sur {machine.capitalize()} : le cube choisi à sa fréquence, sa queue lue "
+             f"à son adresse, le second à la suivante ; pas un cube : faux" + (" (et le témoin Python)" if TEMOIN else ""),
              t1 == t2 and t1.startswith(f"392 {adn.QUEUE_CATALOGUE} 3 {suivante} -2"), f"{t1!r} / {t2!r}")
 verifier(f"le catalogue : {len(vibs)} molécules, autant de vibrations différentes", len(set(vibs)) == len(vibs))
 h_outil = next(l.split("|")[2] for l in vtx_cat.split("\n") if l.startswith("module|outil.vtx|"))
@@ -182,7 +187,7 @@ for machine, b in (("lugus", LUGUS), ("dunon", DUNON)):
     m, ml = mots_ou_refus(machine, f_emp)
     m2, _ = mots_ou_refus(machine, f_chem)
     verifier(f"importer empreinte, {machine.capitalize()} : trouvé dans ../bibliotheque/, les mêmes mots par les deux "
-             "compilateurs, et que par son chemin", m == ml == m2 and isinstance(m, list), f"{str(m)[:80]} / {str(ml)[:80]}")
+             "compilateurs (Lugus : vtxc128 seul), et que par son chemin", m == ml == m2 and isinstance(m, list), f"{str(m)[:80]} / {str(ml)[:80]}")
     code, texte = lancer([b, f_emp])
     verifier(f"importer empreinte, {machine.capitalize()} : le programme tourne", "42" in texte and "Salut" in texte, texte)
 f_rien = ecrire(os.path.join(prog, "rien.vtx"), 'importer empreinte "0123456789abcdef";\nfonction principal() { afficher(1); }\n')

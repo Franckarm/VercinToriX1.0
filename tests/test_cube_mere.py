@@ -83,6 +83,8 @@ RELIT = {"lugus": """fonction principal() {
 }
 """}
 
+# 0.851 : la machine Python (le témoin) ne joue qu'à la main
+TEMOIN = os.environ.get("VTX_TEMOIN") == "1"
 d = tempfile.mkdtemp(prefix="vtx-cube-mere-")
 for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py")):
     t = "128" if machine == "lugus" else "64"
@@ -93,20 +95,24 @@ for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py
         open(os.path.join(x, "relit.vtx"), "w", encoding="utf-8").write(RELIT[machine])
     _, e1 = lancer([b, "ecrit.vtx"], rs)
     _, r1 = lancer([b, "relit.vtx"], rs)
-    _, e2 = lancer([sys.executable, os.path.join(racine, py), "run", "ecrit.vtx"], ref)
-    _, r2 = lancer([sys.executable, os.path.join(racine, py), "run", "relit.vtx"], ref)
     attendus = [f"cube{t}-labyrinthe.cub", f"cube{t}-labyrinthe-1-440.cub", f"cube{t}-labyrinthe-1-7.cub"]
-    f1, f2 = empreintes(rs), empreintes(ref)
+    f1 = empreintes(rs)
     verifier(f"{machine.capitalize()} : cube_mere puis ranger_cube : le cube mère et ses deux sous-cubes, chacun avec son "
              "anti-cube et son ombre", all(a in f1 for a in attendus) and len(f1) == 9, sorted(f1))
-    verifier(f"{machine.capitalize()} : les mêmes fichiers en Rust et en Python, octet pour octet", f1 == f2 and f1 != {},
-             f"{sorted(f1)} / {sorted(f2)}")
-    verifier(f"{machine.capitalize()} : la même sortie en Rust et en Python ; les noms ambigus ou interdits refusés",
-             e1 == sortie_py(e2) and r1 == sortie_py(r2) and "\n2 1\n-2 -2 -2 " in e1 and not e1.rstrip().endswith("-2"),
-             f"{e1!r} / {e2!r}")
+    verifier(f"{machine.capitalize()} : les noms ambigus ou interdits refusés",
+             "\n2 1\n-2 -2 -2 " in e1 and not e1.rstrip().endswith("-2"), f"{e1!r}")
     verifier(f"{machine.capitalize()} : relus sous le cube mère, les points reviennent ; le cube mère (service 29) dit "
              "deux sous-cubes, et à l'adresse 440 le sous-cube de l'étage 1, deux pages (5 et 70 000)",
-             r1.startswith("1234 99 42\n16777215 2 514") and r1 == sortie_py(r2), f"{r1!r} / {r2!r}")
+             r1.startswith("1234 99 42\n16777215 2 514"), f"{r1!r}")
+    if TEMOIN:
+        # 0.851 : le témoin (la machine Python), à la main seulement (VTX_TEMOIN=1, ou verifier.py --temoin)
+        _, e2 = lancer([sys.executable, os.path.join(racine, py), "run", "ecrit.vtx"], ref)
+        _, r2 = lancer([sys.executable, os.path.join(racine, py), "run", "relit.vtx"], ref)
+        f2 = empreintes(ref)
+        verifier(f"{machine.capitalize()} : le témoin : les mêmes fichiers en Rust et en Python, octet pour octet",
+                 f1 == f2 and f1 != {}, f"{sorted(f1)} / {sorted(f2)}")
+        verifier(f"{machine.capitalize()} : le témoin : la même sortie en Rust et en Python",
+                 e1 == sortie_py(e2) and r1 == sortie_py(r2), f"{e1!r} / {e2!r}")
     for f in ("ecrit.vtx", "relit.vtx"):
         src = open(os.path.join(rs, f), encoding="utf-8").read()
         m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
