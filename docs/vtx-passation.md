@@ -930,3 +930,20 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   à marges 1000 ms contre 100. Le noyau est accepté par la carte (sans retour au milieu). Pas d'essai chez le créateur.
 - Prochain : une carte des distances (Tchebychev, bornée) près de la surface, rangée une fois : la marche de la marge
   devient aussi simple que tracer ; sur la carte, les fils d'une vague qui gardent attendent ceux qui refont (à mesurer).
+
+## 0.850 (27 novembre) : la bande et le neutre ; l'orage
+- L'idée du créateur : ne calculer la marge que là où elle sert. Un mot du calque est **neutre** (sa marge tient : on
+  n'y touche pas) ou **dans la bande** (refait simplement, sans marge) ; un mot de la bande qui ne change plus depuis
+  CALME (3, plus un peu de hasard par mot) images se calme : sa marge est calculée une fois ; si elle ne tiendrait pas
+  trois images du soleil du moment, il attend ATTENTE (16) images (`ranger_mot_marges`, `ranger_mot_bande`, `corde2`).
+- **L'orage** (la demande du créateur : une lumière qui apparaît au hasard) : `epreuve_orage(vol, jour, soir, orage,
+  mode)` ; l'œil arrêté, le soleil d'un jeu (`preparer_soleil_fin` : 1/65536 de tour, un centième de degré par image),
+  qui saute au hasard (une image sur 16, la graine 1789). `belenos/gergovie_orage.vtx` (le témoin) et
+  `gergovie_orage_marges.vtx`. Le C++ n'a pas l'orage : on compare vtx complet et vtx à marges (l'empreinte du film).
+- Mesuré ici (demi-échelle, au processeur) : **les mêmes empreintes partout** (jour, soir, orage). La marge des mots qui
+  portent une surface (24 416) : 16 % sous 0,005° (le bord vrai), 84 % au-delà, 70 % au-delà de 0,35°. Le soleil de
+  Gergovie au jour bouge de 1° par image (deux cents fois un soleil de jeu) : la marge n'y paie pas. À l'orage : au
+  calme, 23 % des mots à surface refaits, la clepsydre 45,5 ms contre 69,5 (−35 %) ; à l'image d'un saut 150 contre 79
+  (tout est refait, plus les marges) ; recalmé en quatre à huit images ; en moyenne (9 sauts en 120 images) 99 contre 72.
+- Livraison : vtx-0.850.zip, essai-0.850.bat (étape 7 : l'orage sur la carte, le témoin puis les marges,
+  `VTX_CARTE_TEMPS=1`).

@@ -1144,6 +1144,28 @@ fonction preparer_soleil(az, el, jeu) {
     soit lx = (cos1024(el) * sin1024(az)) ./ 65536;
     soit ly = sin1024(el);
     soit lz = (cos1024(el) * cos1024(az)) ./ 65536;
+    poser_soleil(lx, ly, lz, jeu);
+}
+
+// 0.850b : un soleil plus fin (az, el en 1/65536 de tour, la table lue entre deux cases) : le soleil d'un jeu, qui
+// bouge d'un centième de degré par image
+fonction sin_fin(a) {
+    soit i = (a >> 6) & 1023;
+    soit s0 = @2[SINUS + i];
+    soit s1 = @2[SINUS + ((i + 1) & 1023)];
+    retour s0 + ((s1 - s0) * (a & 63)) ./ 64;
+}
+
+fonction preparer_soleil_fin(az, el, jeu) {
+    soit ce = sin_fin(el + 16384);
+    soit lx = (ce * sin_fin(az)) ./ 65536;
+    soit ly = sin_fin(el);
+    soit lz = (ce * sin_fin(az + 16384)) ./ 65536;
+    poser_soleil(lx, ly, lz, jeu);
+}
+
+fonction poser_soleil(lx, ly, lz, jeu) {
+    soit so = SOLEILS + 16 * jeu;
     @2[so + 12] = lx;
     @2[so + 13] = ly;
     @2[so + 14] = lz;
@@ -2665,7 +2687,7 @@ fonction marge_libre(ox, oy, oz, dx, dy, dz, tmax) {
                 soit gyb = y >> 3;
                 soit gzb = z >> 3;
                 soit fin = t + pas_cellule(px, py, pz, dx, dy, dz, ix, iy, iz, 8);
-                soit morceau = (2 * 65536 * 65536) / dmax;
+                soit morceau = (4 * 65536 * 65536) / dmax;
                 soit a = t;
                 soit ba = dist_blocs(px, py, pz, gx, gyb, gzb);
                 tantque a < fin && m > 0 {
@@ -2836,6 +2858,33 @@ fonction ranger_lumiere_marges() {
     @2[GSOL] = g + 1;
 }
 
+// 0.850b (l'idée du créateur) : la marge ne se calcule que là où elle sert. Un mot du calque est soit neutre (sa
+// marge tient : on n'y touche pas), soit dans la bande (le bord : refait simplement à chaque image, sans marge). Un mot
+// de la bande qui ne change plus depuis CALME images se calme : sa marge est calculée une fois, et il devient neutre ;
+// si elle ne tiendrait pas trois images du soleil d'aujourd'hui, il reste dans la bande ATTENTE images avant de
+// réessayer (le calque apprend où la marge vaut la peine). Un mot neutre dont la marge s'épuise retourne dans la bande.
+// FMARGE : (g << 32) | marge (20 bits) | calme << 20 | attente << 24 ; neutre : marge > 0 ; dans la bande : marge = 0.
+constante CALME = 3;
+constante ORAGE = 690000;          // ORAGE : le nombre d'images de l'orage ; + 1 + i : un saut ; + 300 + i : les mots refaits
+constante ATTENTE = 16;
+
+// la plus grande corde (au carré) des cinq directions du soleil entre les images ga et gb
+fonction corde2(ga, gb) {
+    soit ha = HIST + 16 * (ga & 4095);
+    soit hb = HIST + 16 * (gb & 4095);
+    soit c = 0;
+    pour k dans 0..5 {
+        soit ex = @2[hb + 3 * k] - @2[ha + 3 * k];
+        soit ey = @2[hb + 3 * k + 1] - @2[ha + 3 * k + 1];
+        soit ez = @2[hb + 3 * k + 2] - @2[ha + 3 * k + 2];
+        soit e = ex * ex + ey * ey + ez * ez;
+        si e > c {
+            c = e;
+        }
+    }
+    retour c;
+}
+
 fonction ranger_mot_marges(q, g) {
     soit t = 0;
     soit r = q;
@@ -2856,34 +2905,40 @@ fonction ranger_mot_marges(q, g) {
     soit am = ((FMARGE + t) << 24) + n * 64 + w;
     soit mg = @2[am];
     soit g0 = mg >> 32;
-    soit m = mg & 4294967295;
+    soit m = mg & 1048575;
     soit garde = 0;
-    si g - g0 < 4000 && m > 0 {
-        // la plus grande corde des cinq directions depuis l'image g0
-        soit ho = HIST + 16 * (g0 & 4095);
-        soit hn = HIST + 16 * (g & 4095);
-        garde = 1;
-        pour k dans 0..5 {
-            soit ex = @2[hn + 3 * k] - @2[ho + 3 * k];
-            soit ey = @2[hn + 3 * k + 1] - @2[ho + 3 * k + 1];
-            soit ez = @2[hn + 3 * k + 2] - @2[ho + 3 * k + 2];
-            si ex * ex + ey * ey + ez * ez >= m * m {
-                garde = 0;
-            }
+    si m > 0 && g - g0 < 4000 {
+        si corde2(g0, g) < m * m {
+            garde = 1;
         }
     }
     // (sans retour au milieu : la carte le refuse)
     si garde == 0 {
-        ranger_mot_marges_tnw(t, n, w, g, am);
+        soit calme = (mg >> 20) & 15;
+        soit attente = (mg >> 24) & 255;
+        si m > 0 {
+            // un mot neutre dont la marge s'épuise : il retourne dans la bande
+            calme = 0;
+            attente = 0;
+        }
+        ranger_mot_bande(t, n, w, g, am, calme, attente);
     }
 }
 
-fonction ranger_mot_marges_tnw(t, n, w, g, am) {
+fonction ranger_mot_bande(t, n, w, g, am, calme, attente) {
     soit b = @2[((FINV + t) << 24) + n];
     soit x0 = (t % TUILES) * 256 + (b >> 10) * 8;
     soit y0 = ((b >> 5) & 31) * 8;
     soit z0 = (t / TUILES) * 256 + (b & 31) * 8;
     soit base = (FELT + t) << 24;
+    soit asol = ((FSOL + t) << 24) + n * 64 + w;
+    soit avant = @2[asol];
+    // calculer la marge : le mot est calme, et il n'attend pas ; un peu de hasard par mot (son numéro) pour que les mots
+    // calmés en même temps ne la calculent pas tous à la même image
+    soit avec = 0;
+    si attente == 0 && calme >= CALME + ((n * 7 + w) & 3) {
+        avec = 1;
+    }
     soit ms = 0;
     soit mw = MARGE_MAX;
     pour j dans 0..8 {
@@ -2895,16 +2950,49 @@ fonction ranger_mot_marges_tnw(t, n, w, g, am) {
         si el != 0 && ((el >> 2) & 63) != EAU {
             si expose(x, y, z) == 1 {
                 soit nn = normale_de(el);
-                soit sv = soleil_vu_marge(x, y, z, (nn & 255) - 128, ((nn >> 16) & 255) - 128, ((nn >> 32) & 255) - 128);
-                ms = ms | ((128 | (sv & 255)) << (j * 8));
-                si (sv >> 8) < mw {
-                    mw = sv >> 8;
+                soit nx = (nn & 255) - 128;
+                soit ny = ((nn >> 16) & 255) - 128;
+                soit nz = ((nn >> 32) & 255) - 128;
+                si avec == 1 {
+                    soit sv = soleil_vu_marge(x, y, z, nx, ny, nz);
+                    ms = ms | ((128 | (sv & 255)) << (j * 8));
+                    si (sv >> 8) < mw {
+                        mw = sv >> 8;
+                    }
+                } sinon {
+                    ms = ms | ((128 | soleil_vu(x, y, z, nx, ny, nz, 0)) << (j * 8));
                 }
             }
         }
     }
-    @2[((FSOL + t) << 24) + n * 64 + w] = ms;
-    @2[am] = (g << 32) | mw;
+    @2[asol] = ms;
+    soit etat = 0;
+    si ms != avant {
+        // il a changé : le bord passe ici ; il reste dans la bande
+        etat = 0;
+    } sinon si avec == 1 {
+        // calme : neutre si la marge tient au moins trois images du soleil d'aujourd'hui
+        soit c1 = 0;
+        si g > 0 {
+            c1 = corde2(g - 1, g);
+        }
+        si mw > 0 && mw * mw > 9 * c1 {
+            etat = mw;
+        } sinon {
+            etat = ATTENTE << 24;
+        }
+    } sinon {
+        soit c2 = calme + 1;
+        si c2 > 15 {
+            c2 = 15;
+        }
+        soit a2 = 0;
+        si attente > 0 {
+            a2 = attente - 1;
+        }
+        etat = (c2 << 20) | (a2 << 24);
+    }
+    @2[am] = (g << 32) | etat;
 }
 
 // 0.850 : pour l'épreuve (au processeur seulement) : combien de mots du calque l'image g a refaits
@@ -3133,4 +3221,125 @@ fonction epreuve_complete(vol, jour, soir, sur_carte_demande) {
         dire_refaits("le soir", soir);
         afficher("gergovie : le soir" + lieu_soir + " : le film entier, empreinte " + texte(signe64(film)));
     }
+    // 0.850b : l'orage (la demande du créateur : une lumière qui apparaît au hasard) : l'œil arrêté, le soleil d'un jeu
+    // (lent), qui saute au hasard (une image sur 24 en moyenne, la graine fixe : le même orage pour tous) ; pour
+    // voir combien l'ombre coûte quand tout change d'un coup, et en combien d'images elle se recalme
+    soit orage = @2[ORAGE];
+    si orage > 0 {
+        graine(1789);
+        soit az = 250 * 64;
+        soit el = 45 * 64;
+        soit sauts = 0;
+        film = 14695981039346656037;
+        pour i dans 0..orage {
+            soit to = horloge();
+            // le soleil d'un jeu : deux 65536e de tour par image (un centième de degré)
+            az = az + 2;
+            @2[ORAGE + 1 + i] = 0;
+            si i > 0 && hasard(16) == 0 {
+                az = hasard(65536);
+                el = (15 + hasard(60)) * 64;
+                @2[ORAGE + 1 + i] = 1;
+                sauts = sauts + 1;
+            }
+            preparer_soleil_fin(az, el, 0);
+            soit avant = @2[GLOB + 63];
+            soit tc = horloge_us();
+            clepsydre(sur_carte);
+            @2[ORAGE + 700 + i] = horloge_us() - tc;
+            @2[ORAGE + 300 + i] = @2[GLOB + 63] - avant;
+            image_gergovie(vol / 2, vol, i * 3, sur_carte);
+            si sur_cube == 1 {
+                soit eo = presenter_cube(FECRAN);
+                @2[TEMPS + i] = horloge() - to;
+                film = ((film ^ eo) * 1099511628211) & MOT64;
+                derniere = eo;
+            } sinon {
+                @2[TEMPS + i] = horloge() - to;
+                presenter();
+                soit epo = empreinte_image();
+                film = ((film ^ epo) * 1099511628211) & MOT64;
+                derniere = epo;
+            }
+        }
+        bilan("l'orage" + lieu, orage, derniere);
+        // le temps de la clepsydre seule (à l'image d'un saut, et en moyenne) ; sur la carte, il dit l'envoi et l'attente
+        soit tt = 0;
+        soit ts = 0;
+        pour i dans 0..orage {
+            tt = tt + @2[ORAGE + 700 + i];
+            si @2[ORAGE + 1 + i] == 1 {
+                ts = ts + @2[ORAGE + 700 + i];
+            }
+        }
+        // au calme : pas de saut depuis huit images
+        soit tcal = 0;
+        soit ncal = 0;
+        pour i dans 8..orage {
+            soit sj = 0;
+            pour j dans 0..8 {
+                sj = sj + @2[ORAGE + 1 + i - j];
+            }
+            si sj == 0 {
+                tcal = tcal + @2[ORAGE + 700 + i];
+                ncal = ncal + 1;
+            }
+        }
+        soit dit_saut = "";
+        si ncal > 0 {
+            dit_saut = ", au calme (pas de saut depuis huit images) " + texte(tcal / (ncal * 100)) + " dixièmes de ms";
+        }
+        si sauts > 0 {
+            dit_saut = dit_saut + ", à l'image d'un saut " + texte(ts / (sauts * 1000)) + " ms";
+        }
+        afficher("gergovie : l'orage" + lieu + " : la clepsydre " + texte(tt / (orage * 100)) + " dixièmes de ms par image en moyenne"
+                 + dit_saut);
+        si MARGES == 2 {
+            dire_orage(orage, sauts);
+        }
+        dire_refaits("l'orage", orage);
+        afficher("gergovie : l'orage" + lieu + " : le film entier, empreinte " + texte(signe64(film)) + " (" + texte(sauts)
+                 + " sauts du soleil)");
+    }
+}
+
+// 0.850b : l'orage, après chaque saut : les mots refaits à l'image du saut, puis aux trois suivantes (pour mille)
+fonction dire_orage(orage, sauts) {
+    soit total = 0;
+    pour t dans 0..(TUILES * TUILES) {
+        total = total + @2[GLOB + 1 + t] * 64;
+    }
+    soit s0 = 0;
+    soit s1 = 0;
+    soit s2 = 0;
+    soit s3 = 0;
+    soit calme = 0;
+    soit nc = 0;
+    pour i dans 0..orage {
+        si @2[ORAGE + 1 + i] == 1 {
+            s0 = s0 + @2[ORAGE + 300 + i];
+            si i + 1 < orage { s1 = s1 + @2[ORAGE + 301 + i]; }
+            si i + 2 < orage { s2 = s2 + @2[ORAGE + 302 + i]; }
+            si i + 3 < orage { s3 = s3 + @2[ORAGE + 303 + i]; }
+        }
+    }
+    pour i dans 4..orage {
+        // une image sans saut depuis quatre images : le calme de l'orage
+        si @2[ORAGE + 1 + i] + @2[ORAGE + i] + @2[ORAGE + i - 1] + @2[ORAGE + i - 2] + @2[ORAGE + i - 3] == 0 {
+            calme = calme + @2[ORAGE + 300 + i];
+            nc = nc + 1;
+        }
+    }
+    si sauts > 0 {
+        afficher("gergovie : l'orage : la clepsydre à marges, à l'image du saut " + texte((s0 * 1000) / (sauts * total))
+                 + " pour mille des mots refaits, puis " + texte((s1 * 1000) / (sauts * total)) + ", "
+                 + texte((s2 * 1000) / (sauts * total)) + ", " + texte((s3 * 1000) / (sauts * total)) + " ; au calme "
+                 + texte((calme * 1000) / ((nc + 1) * total)));
+    }
+}
+
+// 0.850b : l'épreuve avec l'orage (n images après le soir)
+fonction epreuve_orage(vol, jour, soir, orage, sur_carte) {
+    @2[ORAGE] = orage;
+    epreuve_complete(vol, jour, soir, sur_carte);
 }

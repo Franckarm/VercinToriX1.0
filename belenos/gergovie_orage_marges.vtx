@@ -1,0 +1,15 @@
+// machine : lugus
+// Belenos : l'épreuve de Gergovie sur la carte, par Taranis (0.822) : la même scène que gergovie.vtx, chaque image
+// faite d'un coup sur la carte (un fil par point). À lancer avec VTX_EPISSAGE=rapide (Taranis ; sans : l'ancien chemin).
+// 0.850b : Gergovie sur la carte (un noyau), avec l'orage : le soleil d'un jeu qui saute au hasard
+// 0.833 : le graphique compte en 64 bits (comme Taranis et le C++ de référence) : Dunon
+dunon;
+constante RN = 1;
+constante RD = 1;
+constante BLOCS = 0;               // 0.827 : l'ordre des fils, ligne par ligne
+constante MARGES = 1;              // 0.850 : la clepsydre à marges (1), et compter les mots refaits (2)
+importer "gergovie_scene.vtx";
+
+fonction principal() {
+    epreuve_orage(240, 120, 120, 240, 1);      // 0.849 : et le soir (l'œil arrêté)
+}
