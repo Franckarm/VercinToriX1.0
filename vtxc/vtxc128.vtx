@@ -274,6 +274,8 @@ structure Ctx {
     rs_ok,              // 0.852 : 1 tant que tout le programme se traduit
     rs_boucle,          // 0.852 : le numéro de la dernière boucle (les étiquettes 'bN, 'cN)
     rs_pile: Liste,     // 0.852 : les boucles ouvertes
+    tk_alias_de, tk_alias_vers,   // 0.853 : la variable de boucle d'un étage fondu, et celle du noyau fondu
+    rs_lot_pos, rs_lot_suite, rs_lot_tete,   // 0.853 : le lot de la carte (la place, la suite, son lieu)
     lignes_bandes: Liste,   // 0.852 : les lignes des boucles « en bandes »
     rs_vnoms: Liste,    // 0.852 : les variables de la fonction en cours, dans l'ordre de son cadre
     rs_cadre,           // 0.852 : 1 si la fonction en cours tient un cadre sur la pile de Lugus
@@ -13058,8 +13060,10 @@ fonction rs_instr(c: Ctx, s: Noeud) {
     } sinon si g == N_ACCORD {
         // les notes de l'accord (toutes ses tâches, mesure après mesure) ; des segments d'une même boucle qui ne touchent
         // que le cube vont aux cœurs (les cylindres, ou les bandes) ; sinon, l'une après l'autre (comme le générateur)
-        // ce qui reste du lot de la carte part avant tout autre travail (comme la forge)
-        rs_t(c, "taranis_vider(c);\n");
+        // ce qui reste du lot de la carte part avant tout autre travail (comme la forge ; sauf une boucle du lot)
+        si !(c.rs_lot_pos > 0 || c.rs_lot_suite) {
+            rs_t(c, "taranis_vider(c);\n");
+        }
         soit an_notes = liste();
         soit an_me = s.premier;
         tantque an_me != nul {
@@ -13096,7 +13100,7 @@ fonction rs_instr(c: Ctx, s: Noeud) {
 structure Taranis { prochain, tete: Liste, decor: Liste, types: Liste, vdecl: Liste, code: Liste, c32k: Liste,
                     c64k: Liste, bloc, tvoid, tfn, tbool, t32, t64, tpaire, tpu, tpf, tp64, tpf64, tprod, fenetre,
                     parametres, table, marques, auteurs, moi, derniere, tour, demandes, region, atomique, capa,
-                    portees: Liste, appels: Liste, nappels, ok, raison, fen_ok, var }
+                    portees: Liste, appels: Liste, nappels, ok, raison, fen_ok, var, garde: Liste }
 
 constante TK_M64 = 18446744073709551615;
 constante TK_M63 = 9223372036854775808;
@@ -13435,6 +13439,33 @@ fonction tk_direct(k: Taranis, a, sortie: Liste) {
     ajouter(sortie, f32);
 }
 
+// la garde du noyau fondu : un fil ne touche aux fréquences des étages fondus qu'à sa propre case (sinon le drapeau 2)
+fonction tk_garder(k: Taranis, a, f32) {
+    si k.garde == nul || k.garde.n == 0 {
+        retour;
+    }
+    soit dans_g = 0;
+    pour i dans 0..k.garde.n {
+        soit x = tk_b(k, 170, f32, tk_c32(k, elem(k.garde, i)));
+        si i == 0 {
+            dans_g = x;
+        } sinon {
+            dans_g = tk_b(k, 166, dans_g, x);
+        }
+    }
+    soit masque = tk_64(k, 199, a, tk_cst(k, 16777215));
+    soit autre = tk_b(k, 171, masque, k.tour);
+    soit danger = tk_b(k, 167, dans_g, autre);
+    soit oui = tk_id(k);
+    soit fin = tk_id(k);
+    tk_i2(k.code, 247, fin, 0);
+    tk_i3(k.code, 250, danger, oui, fin);
+    tk_etiquette(k, oui);
+    tk_drapeau_n(k, 2);
+    tk_aller(k, fin);
+    tk_etiquette(k, fin);
+}
+
 fonction tk_lire(c: Ctx, k: Taranis, e: Noeud) {
     si e.val != 2 || e.a != nul {
         tk_refus(c, k, "une lecture hors de l'étage 2");
@@ -13443,6 +13474,7 @@ fonction tk_lire(c: Ctx, k: Taranis, e: Noeud) {
     soit a = tk_expr(c, k, e.b);
     soit d = liste();
     tk_direct(k, a, d);
+    tk_garder(k, a, elem(d, 2));
     retour tk_v1(k, 61, k.t64, tk_case64(k, k.fenetre, elem(d, 0)));
 }
 
@@ -13455,6 +13487,7 @@ fonction tk_ecrire(c: Ctx, k: Taranis, s: Noeud) {
     soit x = tk_expr(c, k, s.c);
     soit d = liste();
     tk_direct(k, a, d);
+    tk_garder(k, a, elem(d, 2));
     soit oui = tk_id(k);
     soit nn = tk_id(k);
     soit fin = tk_id(k);
@@ -13509,6 +13542,7 @@ fonction tk_garder_minimum(c: Ctx, k: Taranis, s: Noeud) {
     soit x = tk_expr(c, k, w.c);
     soit d = liste();
     tk_direct(k, a, d);
+    tk_garder(k, a, elem(d, 2));
     soit oui = tk_id(k);
     soit nn = tk_id(k);
     soit fin = tk_id(k);
@@ -13807,7 +13841,7 @@ fonction tk_expr(c: Ctx, k: Taranis, e: Noeud) {
         retour tk_cst(k, e.val);
     }
     si g == N_VAR {
-        retour tk_charger(k, tk_cherche(c, k, e.nom));
+        retour tk_charger(k, tk_cherche(c, k, tk_nom(c, e.nom)));
     }
     si g == N_LIRE {
         retour tk_lire(c, k, e);
@@ -13962,6 +13996,8 @@ fonction tk_appel(c: Ctx, k: Taranis, e: Noeud) {
         ajouter(valeurs, tk_expr(c, k, a));
         a = a.suivant;
     }
+    soit alias_avant = c.tk_alias_de;
+    c.tk_alias_de = 0;
     soit avant = tk_types_entrer(c, f);
     soit vv = c.vars;
     tantque vv != nul {
@@ -14000,6 +14036,7 @@ fonction tk_appel(c: Ctx, k: Taranis, e: Noeud) {
     k.appels.n = k.appels.n - 1;
     k.portees.n = k.portees.n - 1;
     tk_types_sortir(c, avant);
+    c.tk_alias_de = alias_avant;
     retour r;
 }
 
@@ -14265,23 +14302,31 @@ fonction tk_instr(c: Ctx, k: Taranis, s: Noeud) {
 
 // ---- le module (NoyauI64.compiler, pour NoyauTaranis : région 0, sans garde, le minimum atomique)
 // les variables lues par un morceau d'arbre (libres) et déclarées (declarees)
-fonction tk_libres(e: Noeud, l: Liste) {
+// le nom d'une variable lue : la variable de boucle d'un étage fondu devient celle du noyau fondu (renommer)
+fonction tk_nom(c: Ctx, nom) {
+    si c.tk_alias_de != 0 && egal(nom, c.tk_alias_de) {
+        retour c.tk_alias_vers;
+    }
+    retour nom;
+}
+
+fonction tk_libres(c: Ctx, e: Noeud, l: Liste) {
     si e == nul {
         retour;
     }
-    si e.genre == N_VAR && !dans_liste(l, e.nom) {
-        ajouter(l, e.nom);
+    si e.genre == N_VAR && !dans_liste(l, tk_nom(c, e.nom)) {
+        ajouter(l, tk_nom(c, e.nom));
     }
-    tk_libres(e.a, l);
-    tk_libres(e.b, l);
-    tk_libres(e.c, l);
-    tk_libres_l(e.premier, l);
-    tk_libres_l(e.deuxieme, l);
+    tk_libres(c, e.a, l);
+    tk_libres(c, e.b, l);
+    tk_libres(c, e.c, l);
+    tk_libres_l(c, e.premier, l);
+    tk_libres_l(c, e.deuxieme, l);
 }
 
-fonction tk_libres_l(s: Noeud, l: Liste) {
+fonction tk_libres_l(c: Ctx, s: Noeud, l: Liste) {
     tantque s != nul {
-        tk_libres(s, l);
+        tk_libres(c, s, l);
         s = s.suivant;
     }
 }
@@ -14333,7 +14378,7 @@ fonction tk_acces(c: Ctx, k: Taranis, e: Noeud, interieur: Liste) {
             tk_refus(c, k, "un accès hors de l'étage 2");
         }
         soit lib = liste();
-        tk_libres(e.b, lib);
+        tk_libres(c, e.b, lib);
         pour i dans 0..lib.n {
             si dans_liste(interieur, elem(lib, i)) && !egal(elem(lib, i), k.var) {
                 k.fen_ok = 0;
@@ -14358,15 +14403,40 @@ fonction tk_acces_l(c: Ctx, k: Taranis, s: Noeud, interieur: Liste) {
 }
 
 fonction tk_compiler(c: Ctx, var, corps: Noeud, dehors: Liste): Taranis {
+    soit membres = liste();
+    ajouter(membres, bits(corps));
+    soit noms = liste();
+    ajouter(noms, var);
+    retour tk_compiler_membres(c, var, membres, noms, rs_region(c), 1, nul, dehors);
+}
+
+// le noyau de plusieurs corps à la suite (le noyau fondu : chaque membre a sa variable de boucle, renommée en var)
+fonction tk_alias(c: Ctx, noms: Liste, j, var) {
+    c.tk_alias_de = 0;
+    si !egal(elem(noms, j), var) {
+        c.tk_alias_de = elem(noms, j);
+        c.tk_alias_vers = var;
+    }
+}
+
+fonction tk_compiler_membres(c: Ctx, var, membres: Liste, noms: Liste, region, atomique, garde: Liste, dehors: Liste): Taranis {
     soit k = Taranis { prochain: 1, tete: liste(), decor: liste(), types: liste(), vdecl: liste(), code: liste(),
                        c32k: liste(), c64k: liste(), portees: liste(), appels: liste(), ok: 1, fen_ok: 1, var: var,
-                       atomique: 1 };
+                       atomique: atomique, region: region, garde: garde };
     soit interieur = liste();
-    tk_declarees(corps, interieur);
+    pour j0 dans 0..membres.n {
+        soit cm: Noeud = elem(membres, j0);
+        tk_declarees(cm, interieur);
+    }
     ajouter(interieur, var);
-    tk_acces_l(c, k, corps, interieur);
     soit lib = liste();
-    tk_libres_l(corps, lib);
+    pour j1 dans 0..membres.n {
+        soit cm1: Noeud = elem(membres, j1);
+        tk_alias(c, noms, j1, var);
+        tk_acces_l(c, k, cm1, interieur);
+        tk_libres_l(c, cm1, lib);
+    }
+    c.tk_alias_de = 0;
     dehors.n = 0;
     pour i dans 0..lib.n {
         si !dans_liste(interieur, elem(lib, i)) {
@@ -14500,7 +14570,12 @@ fonction tk_compiler(c: Ctx, var, corps: Noeud, dehors: Liste): Taranis {
         soit nd = tk_nouvelle(k, elem(dehors, j3));
         tk_store(k, nd, tk_param(k, 6 + j3));
     }
-    tk_instrs(c, k, corps);
+    pour j4 dans 0..membres.n {
+        soit cm4: Noeud = elem(membres, j4);
+        tk_alias(c, noms, j4, var);
+        tk_instrs(c, k, cm4);
+    }
+    c.tk_alias_de = 0;
     tk_aller(k, fin);
     tk_etiquette(k, fin);
     tk_mot0(k.code, 253, 0);
@@ -14679,6 +14754,454 @@ fonction rs_en_cylindres(c: Ctx, notes: Liste) {
     rs_t(c, "}\n");
 }
 
+fonction rs_noeud(l: Liste, i): Noeud {
+    soit n: Noeud = elem(l, i);
+    retour n;
+}
+
+fonction rs_region(c: Ctx) {
+    si c.rs_lot_pos > 7 {
+        retour 7;
+    }
+    retour c.rs_lot_pos;
+}
+
+// le lieu d'un lot ou d'une boucle (lieu_de de la forge) : l'empreinte (FNV-1a de 32 bits, jamais 0) de la fonction et
+// de l'arbre sans ses lignes. Le Python prend le texte de son propre arbre : les deux forges n'ont pas les mêmes lieux
+// (leurs mémoires de Gutuater ne se partagent pas)
+fonction rs_empreinte(h, n: Noeud) {
+    si n == nul {
+        retour ((h ^ 7) * 16777619) & 4294967295;
+    }
+    h = ((h ^ (n.genre & 255)) * 16777619) & 4294967295;
+    h = ((h ^ (n.val & 4294967295)) * 16777619) & 4294967295;
+    si n.op != 0 {
+        pour i dans 0..longueur(n.op) {
+            h = ((h ^ car(n.op, i)) * 16777619) & 4294967295;
+        }
+    }
+    si n.nom != 0 && n.genre != N_WNOMBRE && n.genre != N_XNOMBRE && n.genre != N_PNOMBRE {
+        pour i2 dans 0..longueur(n.nom) {
+            h = ((h ^ (car(n.nom, i2) & 255)) * 16777619) & 4294967295;
+        }
+    }
+    h = rs_empreinte(h, n.a);
+    h = rs_empreinte(h, n.b);
+    soit p = n.premier;
+    tantque p != nul {
+        h = rs_empreinte(h, p);
+        p = p.suivant;
+    }
+    soit q = n.deuxieme;
+    tantque q != nul {
+        h = rs_empreinte(h, q);
+        q = q.suivant;
+    }
+    retour h;
+}
+
+fonction rs_lieu(c: Ctx, st: Noeud) {
+    soit h = 2166136261;
+    soit nom = c.fcour.nom;
+    pour i dans 0..longueur(nom) {
+        h = ((h ^ (car(nom, i) & 255)) * 16777619) & 4294967295;
+    }
+    h = ((h ^ 124) * 16777619) & 4294967295;
+    h = rs_empreinte(h, st);
+    h = h & 2147483647;
+    si h == 0 {
+        retour 1;
+    }
+    retour h;
+}
+
+// accord_carte : un accord qui peut aller à la carte dans un lot (des segments d'une même boucle, pas en bandes)
+fonction rs_accord_carte(c: Ctx, s: Noeud) {
+    si s == nul || s.genre != N_ACCORD || dans_liste_n(c.lignes_bandes, s.ligne) {
+        retour 0;
+    }
+    retour rs_cylindres_possibles(c, rs_notes(s));
+}
+
+fonction rs_notes(s: Noeud): Liste {
+    soit notes = liste();
+    soit me = s.premier;
+    tantque me != nul {
+        soit ta = me.premier;
+        tantque ta != nul {
+            ajouter(notes, bits(ta));
+            ta = ta.suivant;
+        }
+        me = me.suivant;
+    }
+    retour notes;
+}
+
+// pur (comme pur de la forge) : ni mémoire, ni effet, ni appel impur (le prélude compris)
+fonction rs_pur(c: Ctx, n: Noeud, vus: Liste) {
+    si n == nul {
+        retour 1;
+    }
+    soit g = n.genre;
+    si g == N_LIRE || g == N_ECRIRE || g == N_CHAMP || g == N_ECRIRE_CHAMP || g == N_ACCORD || g == N_RLIRE
+            || g == N_RECRIRE || g == N_ANNULER || g == N_VALIDER || g == N_DONNEES || g == N_CONSTRUIRE || g == N_NOUVEAU
+            || g == N_APPELV {
+        retour 0;
+    }
+    si g == N_APPEL {
+        si effet_nomme(n.nom) {
+            retour 0;
+        }
+        soit f = fonction_de(c, n.nom);
+        si f != nul && !est_integre(n.nom) && !dans_liste(vus, n.nom) {
+            ajouter(vus, n.nom);
+            soit cf = f.corps;
+            tantque cf != nul {
+                si !rs_pur(c, cf, vus) {
+                    retour 0;
+                }
+                cf = cf.suivant;
+            }
+        }
+    }
+    si !rs_pur(c, n.a, vus) || !rs_pur(c, n.b, vus) || !rs_pur(c, n.c, vus) {
+        retour 0;
+    }
+    soit p = n.premier;
+    tantque p != nul {
+        si !rs_pur(c, p, vus) {
+            retour 0;
+        }
+        p = p.suivant;
+    }
+    soit q = n.deuxieme;
+    tantque q != nul {
+        si !rs_pur(c, q, vus) {
+            retour 0;
+        }
+        q = q.suivant;
+    }
+    retour 1;
+}
+
+fonction rs_soit_pur(c: Ctx, s: Noeud) {
+    retour s != nul && s.genre == N_SOIT && rs_pur(c, s.a, liste());
+}
+
+// le corps d'une fonction, avec le lot de la carte (des boucles en segments qui se suivent, rien entre elles que des
+// « soit » purs, partent d'un seul envoi) et le gène « fondre » (le lot fondu en un noyau), comme fonction_rs de la forge
+fonction rs_corps_lot(c: Ctx, f: Fonction) {
+    soit corps = liste();
+    soit s0 = f.corps;
+    tantque s0 != nul {
+        ajouter(corps, bits(s0));
+        s0 = s0.suivant;
+    }
+    // les groupes du lot (groupes_du_lot) : deux accords au moins, huit au plus
+    soit gdeb = liste();
+    soit gfin = liste();
+    soit kk = 0;
+    tantque c.dunon && kk < corps.n {
+        soit sk: Noeud = elem(corps, kk);
+        si !rs_accord_carte(c, sk) {
+            kk = kk + 1;
+        } sinon {
+            soit dernier = kk;
+            soit nb = 1;
+            soit j = kk + 1;
+            soit encore = 1;
+            tantque encore && j < corps.n && nb < 8 {
+                soit sj: Noeud = elem(corps, j);
+                si rs_soit_pur(c, sj) {
+                    j = j + 1;
+                } sinon si rs_accord_carte(c, sj) {
+                    dernier = j;
+                    nb = nb + 1;
+                    j = j + 1;
+                } sinon {
+                    encore = 0;
+                }
+            }
+            si nb >= 2 {
+                ajouter(gdeb, kk);
+                ajouter(gfin, dernier);
+            }
+            kk = dernier + 1;
+        }
+    }
+    soit pos = 0;
+    soit passer_avant = 0;                 // les places d'un lot fondu, déjà écrites : k < passer_avant
+    pour k dans 0..corps.n {
+        si k < passer_avant {
+            continuer;
+        }
+        soit s: Noeud = elem(corps, k);
+        soit gi = 0 - 1;
+        pour q dans 0..gdeb.n {
+            si elem(gdeb, q) == k {
+                gi = q;
+            }
+        }
+        si gi != 0 - 1 && rs_fondre(c, corps, k, elem(gfin, gi)) {
+            passer_avant = elem(gfin, gi) + 1;
+            continuer;
+        }
+        // le suivant : par-dessus les « soit » purs
+        soit j2 = k + 1;
+        tantque j2 < corps.n && rs_soit_pur(c, rs_noeud(corps, j2)) {
+            j2 = j2 + 1;
+        }
+        soit suivant: Noeud = nul;
+        si j2 < corps.n {
+            suivant = rs_noeud(corps, j2);
+        }
+        si s.genre == N_ACCORD {
+            c.rs_lot_pos = pos;
+            c.rs_lot_suite = suivant != nul && rs_accord_carte(c, suivant) && rs_accord_carte(c, s) && pos < 7;
+        } sinon si !rs_soit_pur(c, s) {
+            c.rs_lot_pos = 0;
+            c.rs_lot_suite = 0;
+            pos = 0;
+        }
+        rs_instr(c, s);
+        si s.genre == N_ACCORD {
+            si c.rs_lot_suite {
+                pos = pos + 1;
+            } sinon {
+                pos = 0;
+            }
+        }
+    }
+    c.rs_lot_pos = 0;
+    c.rs_lot_suite = 0;
+}
+
+// deux expressions égales une fois les « soit » purs remplacés par leurs valeurs (norme de la forge)
+fonction rs_norme_egal(a: Noeud, b: Noeud, noms: Liste, vals: Liste) {
+    a = rs_norme(a, noms, vals);
+    b = rs_norme(b, noms, vals);
+    si a == nul || b == nul {
+        retour a == b;
+    }
+    si a.genre != b.genre {
+        retour 0;
+    }
+    si a.genre == N_NOMBRE && a.val != b.val {
+        retour 0;
+    }
+    si (a.op != 0) != (b.op != 0) || (a.op != 0 && !egal(a.op, b.op)) {
+        retour 0;
+    }
+    si a.genre == N_VAR || a.genre == N_APPEL {
+        si !egal(a.nom, b.nom) {
+            retour 0;
+        }
+    }
+    si !rs_norme_egal(a.a, b.a, noms, vals) || !rs_norme_egal(a.b, b.b, noms, vals) {
+        retour 0;
+    }
+    soit pa = a.premier;
+    soit pb = b.premier;
+    tantque pa != nul && pb != nul {
+        si !rs_norme_egal(pa, pb, noms, vals) {
+            retour 0;
+        }
+        pa = pa.suivant;
+        pb = pb.suivant;
+    }
+    retour pa == pb;
+}
+
+fonction rs_norme(e: Noeud, noms: Liste, vals: Liste): Noeud {
+    soit garde = 0;
+    tantque e != nul && e.genre == N_VAR && garde < 64 {
+        soit trouve = 0;
+        pour i dans 0..noms.n {
+            si trouve == 0 && egal(elem(noms, i), e.nom) {
+                e = rs_noeud(vals, i);
+                trouve = 1;
+            }
+        }
+        si trouve == 0 {
+            retour e;
+        }
+        garde = garde + 1;
+    }
+    retour e;
+}
+
+// les écritures d'un morceau (et des fonctions qu'il appelle) : chacune à une fréquence connue, « (F << 24) + x »,
+// x une variable ; rend 0 sinon ; garde reçoit les fréquences
+fonction rs_ecritures_fondues(c: Ctx, n: Noeud, garde: Liste, vus: Liste) {
+    si n == nul {
+        retour 1;
+    }
+    si n.genre == N_CHAMP || n.genre == N_ECRIRE_CHAMP {
+        retour 0;
+    }
+    si n.genre == N_ECRIRE {
+        soit adr = n.b;
+        si !(adr.genre == N_BIN && egal(adr.op, "+") && adr.a.genre == N_BIN && egal(adr.a.op, "<<")
+                && adr.a.a.genre == N_NOMBRE && adr.a.b.genre == N_NOMBRE && adr.a.b.val == 24) {
+            retour 0;
+        }
+        si adr.b.genre != N_VAR {
+            retour 0;
+        }
+        si !dans_liste_n(garde, adr.a.a.val) {
+            ajouter(garde, adr.a.a.val);
+        }
+    }
+    si n.genre == N_APPEL && !est_integre(n.nom) && !dans_liste(vus, n.nom) {
+        soit f = fonction_de(c, n.nom);
+        si f != nul {
+            ajouter(vus, n.nom);
+            soit cf = f.corps;
+            tantque cf != nul {
+                si !rs_ecritures_fondues(c, cf, garde, vus) {
+                    retour 0;
+                }
+                cf = cf.suivant;
+            }
+        }
+    }
+    si !rs_ecritures_fondues(c, n.a, garde, vus) || !rs_ecritures_fondues(c, n.b, garde, vus)
+            || !rs_ecritures_fondues(c, n.c, garde, vus) {
+        retour 0;
+    }
+    soit p = n.premier;
+    tantque p != nul {
+        si !rs_ecritures_fondues(c, p, garde, vus) {
+            retour 0;
+        }
+        p = p.suivant;
+    }
+    soit q = n.deuxieme;
+    tantque q != nul {
+        si !rs_ecritures_fondues(c, q, garde, vus) {
+            retour 0;
+        }
+        q = q.suivant;
+    }
+    retour 1;
+}
+
+// fondre (le gène « fondre » de Gutuater) : le lot de corps[deb..fin] fondu en un noyau s'ils ont tous le même
+// intervalle et n'écrivent qu'à des fréquences connues ; le vergobret choisit (gene_fondre_debut) ; 0 : rien d'écrit
+fonction rs_fondre(c: Ctx, corps: Liste, deb, fin) {
+    // les « soit » purs du lot : leurs valeurs
+    soit noms = liste();
+    soit vals = liste();
+    pour i dans 0..fin + 1 {
+        soit s: Noeud = elem(corps, i);
+        si rs_soit_pur(c, s) {
+            ajouter(noms, s.nom);
+            ajouter(vals, bits(s.a));
+        }
+    }
+    soit accords = liste();
+    pour i2 dans deb..fin + 1 {
+        soit s2: Noeud = elem(corps, i2);
+        si s2.genre == N_ACCORD {
+            ajouter(accords, bits(s2));
+        }
+    }
+    soit a0: Noeud = elem(accords, 0);
+    soit tete = rs_notes(a0);
+    soit t0: Noeud = elem(tete, 0);
+    soit td: Noeud = elem(tete, tete.n - 1);
+    soit membres = liste();
+    soit mnoms = liste();
+    soit garde = liste();
+    pour j dans 0..accords.n {
+        soit aj: Noeud = elem(accords, j);
+        soit nj = rs_notes(aj);
+        soit n0: Noeud = elem(nj, 0);
+        soit nd: Noeud = elem(nj, nj.n - 1);
+        si !rs_norme_egal(n0.a, t0.a, noms, vals) || !rs_norme_egal(nd.b, td.b, noms, vals) {
+            retour 0;
+        }
+        ajouter(membres, bits(n0.premier));
+        ajouter(mnoms, n0.nom);
+        soit cm = n0.premier;
+        tantque cm != nul {
+            si !rs_ecritures_fondues(c, cm, garde, liste()) {
+                retour 0;
+            }
+            cm = cm.suivant;
+        }
+    }
+    si garde.n == 0 {
+        retour 0;
+    }
+    // la garde rangée (sorted)
+    pour g1 dans 1..garde.n {
+        soit g2 = g1;
+        tantque g2 > 0 && elem(garde, g2) < elem(garde, g2 - 1) {
+            soit x = elem(garde, g2);
+            poser(garde, g2, elem(garde, g2 - 1));
+            poser(garde, g2 - 1, x);
+            g2 = g2 - 1;
+        }
+    }
+    soit dehors = liste();
+    soit k = tk_compiler_membres(c, t0.nom, membres, mnoms, 0, 0, garde, dehors);
+    si k.ok == 0 {
+        rs_t(c, "// taranis : le lot ne se fond pas : ");
+        rs_t(c, k.raison);
+        rs_c(c, 10);
+        retour 0;
+    }
+    soit lieu = rs_lieu(c, t0);
+    soit m = tk_mots(k);
+    // les « soit » purs du lot d'abord (les bornes des boucles), puis l'une ou l'autre forme
+    pour i3 dans deb..fin + 1 {
+        soit s3: Noeud = elem(corps, i3);
+        si s3.genre == N_SOIT {
+            rs_instr(c, s3);
+        }
+    }
+    rs_t(c, "taranis_vider(c);\n{\n// taranis : le noyau fondu du lot de la ligne ");
+    rs_n(c, t0.ligne);
+    rs_t(c, "\n#[allow(dead_code)]\nstatic SPV: [u32; ");
+    rs_n(c, m.n);
+    rs_t(c, "] = [");
+    pour i4 dans 0..m.n {
+        si i4 > 0 {
+            rs_c(c, ',');
+        }
+        rs_n(c, elem(m, i4));
+    }
+    rs_t(c, "];\nlet mut fondu = false;\nif gene_fondre_debut(");
+    rs_n(c, lieu);
+    rs_t(c, ") {\nlet ta: u128 = ");
+    rs_expr(c, t0.a);
+    rs_t(c, ";\nlet tb: u128 = ");
+    rs_expr(c, td.b);
+    rs_t(c, ";\nfondu = (tb as u64) > (ta as u64) && taranis_fondre(c, &SPV, ta, tb, &[");
+    pour j5 dans 0..dehors.n {
+        si j5 > 0 {
+            rs_t(c, ", ");
+        }
+        rs_var(c, elem(dehors, j5));
+    }
+    rs_t(c, "], ");
+    rs_n(c, lieu);
+    rs_t(c, ");\n}\nif !fondu {\n");
+    pour j6 dans 0..accords.n {
+        c.rs_lot_pos = j6;
+        c.rs_lot_suite = j6 < accords.n - 1;
+        soit a6: Noeud = elem(accords, j6);
+        rs_instr(c, a6);
+    }
+    c.rs_lot_pos = 0;
+    c.rs_lot_suite = 0;
+    rs_t(c, "}\ngene_fondre_fin(");
+    rs_n(c, lieu);
+    rs_t(c, ", fondu);\n}\n");
+    retour 1;
+}
+
 // 0.853 : vers_la_carte (l'épissage rapide) : la boucle entière sur la carte par le noyau de Taranis écrit par vtxc128 ;
 // rend la ligne de la boucle si le vergobret choisit (le mode pages : CHOIX), sinon 0. Seul un programme « dunon; » y
 // va (Taranis compte en 64 bits). Sans l'épissage rapide, ou sans entiers de 64 bits sur la carte, la boucle reste aux
@@ -14690,6 +15213,11 @@ fonction rs_vers_la_carte(c: Ctx, notes: Liste) {
     soit n0: Noeud = elem(notes, 0);
     soit nd: Noeud = elem(notes, notes.n - 1);
     soit dehors = liste();
+    // le lot : la place de cette boucle (sa région de paramètres), et le lieu du lot (sa première boucle)
+    si c.rs_lot_pos == 0 {
+        c.rs_lot_tete = rs_lieu(c, n0);
+    }
+    soit dans_lot = c.rs_lot_pos > 0 || c.rs_lot_suite;
     soit k = tk_compiler(c, n0.nom, n0.premier, dehors);
     si k.ok == 0 {
         rs_t(c, "// taranis : la boucle de la ligne ");
@@ -14721,7 +15249,11 @@ fonction rs_vers_la_carte(c: Ctx, notes: Liste) {
         rs_t(c, "if epissage_rapide() {\n");
     } sinon {
         rs_t(c, "let choix_t0 = std::time::Instant::now();\n#[allow(dead_code)]\nstatic CHOIX: Choix = Choix::neuf();\n");
-        rs_t(c, "let choix_carte = CHOIX.carte_voulue();\nif choix_carte {\n");
+        si dans_lot {
+            rs_t(c, "let choix_carte = CHOIX.carte_voulue_lot();\nif choix_carte {\n");
+        } sinon {
+            rs_t(c, "let choix_carte = CHOIX.carte_voulue();\nif choix_carte {\n");
+        }
     }
     rs_t(c, "let ta: u128 = ");
     rs_expr(c, n0.a);
@@ -14734,7 +15266,19 @@ fonction rs_vers_la_carte(c: Ctx, notes: Liste) {
         }
         rs_var(c, elem(dehors, j));
     }
-    rs_t(c, "], 0, false, 0) {\n    fait = true;\n    ");
+    rs_t(c, "], ");
+    rs_n(c, rs_region(c));
+    si c.rs_lot_suite {
+        rs_t(c, ", true, ");
+    } sinon {
+        rs_t(c, ", false, ");
+    }
+    si dans_lot {
+        rs_n(c, c.rs_lot_tete);
+    } sinon {
+        rs_c(c, '0');
+    }
+    rs_t(c, ") {\n    fait = true;\n    ");
     rs_var(c, n0.nom);
     rs_t(c, " = tb;\n}\n}\n");
     si k.fen_ok {
@@ -14934,7 +15478,7 @@ fonction rs_fonction(c: Ctx, f: Fonction) {
     }
     c.rs_boucle = 0;
     c.rs_pile = liste();
-    rs_instrs(c, f.corps);
+    rs_corps_lot(c, f);
     rs_t(c, "0\n}\n");
 }
 

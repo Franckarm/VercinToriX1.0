@@ -1009,3 +1009,6 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Le noyau de Taranis (NoyauTaranis) écrit par vtxc128 (`tk_…`), mot pour mot celui de noyau_vtx.py : Gergovie 14/14,
   les cubes 2/2, l'Auvergne 7/7 ; la fenêtre ou les pages comme la forge. Le noyau de la forge : un noyau absent
   (`&[]`) rend la boucle au processeur. Reste : le lot, « fondre », les noyaux de 32 bits.
+- **0.853b** : le lot et « fondre » écrits par vtxc128 : Gergovie 15/15 noyaux mot pour mot (régions, noyau fondu), 6 lots
+  et 1 lot fondu comme la forge Python. Essai : `lugus forger` de gergovie_carte et gergovie_etages, à comparer à la forge
+  Python sur la carte.

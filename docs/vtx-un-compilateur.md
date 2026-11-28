@@ -140,10 +140,17 @@ garde.
   les cubes sur la carte (2/2), l'Auvergne (7, et les deux mêmes boucles refusées) ; vtxc128 choisit aussi comme la
   forge la fenêtre (l'épissage rapide direct) ou les pages (le vergobret choisit, `CHOIX`). `forge/test_forge_vtx.py`
   le vérifie. Seul un programme `dunon;` va à la carte.
-- **Ce que la forge de vtxc128 n'a pas encore pour la carte** : le lot (plusieurs boucles qui se suivent parties d'un
-  seul envoi, chacune sa région) et le gène « fondre » (le lot fondu en un noyau) : chaque boucle part seule ; les
-  noyaux de deux mots de 32 bits et de la fenêtre (pour une carte sans entiers de 64 bits, ou sans l'épissage rapide :
-  la boucle reste alors aux cœurs) ; les zones et les pages de l'étage 2.
+- **0.853b : le lot et « fondre »**, comme `fonction_rs` de la forge : au premier niveau du corps d'une fonction, des
+  boucles en segments qui se suivent (rien entre elles que des « soit » purs, `rs_pur` comme `pur`) partent d'un seul
+  envoi, chacune sa région de paramètres (`lot_pos`, au plus 8) ; un lot dont toutes les boucles ont le même intervalle
+  (les « soit » purs remplacés par leurs valeurs, `norme`) et n'écrivent qu'à `(F << 24) + x` se fond aussi en un noyau
+  gardé (la garde : les fréquences écrites) ; le vergobret choisit (`gene_fondre_debut`). Gergovie et ses variantes :
+  **15/15 noyaux mot pour mot, régions et noyau fondu compris ; les mêmes 6 lots et le même lot fondu** ; les cubes,
+  l'Auvergne aussi. Les lieux (la mémoire de Gutuater et du Vergobret pour chaque lot) sont l'empreinte de l'arbre de
+  vtxc128 : pas ceux de la forge Python (le texte de son arbre) ; un Gergovie forgé par vtxc128 réapprend ses lots.
+- **Ce qui manque encore** : les noyaux de deux mots de 32 bits et de la fenêtre (une carte sans entiers de 64 bits, ou
+  sans l'épissage rapide : la boucle reste aux cœurs) ; les zones (les tableaux serrés) et les pages de l'étage 2 ; le
+  Druide et Ésus dans la forge. Puis le témoin chez le créateur : la même vitesse sur la carte que la forge Python.
 
 ## Ce qui ne change pas
 

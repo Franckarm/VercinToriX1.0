@@ -163,58 +163,44 @@ G_OK = meme_rust and meme_g
 print(("OK  " if meme_g else "ÉCART ") + f"Gergovie forgé par vtxc128 : les mêmes empreintes et les mêmes images "
       f"({len(sorties[0][1])}) que la forge Python")
 
-# 0.853 : Taranis écrit par vtxc128 : chaque noyau de la carte (NoyauTaranis, région 0) est mot pour mot celui de
-# taranis/noyau_vtx.py, et vtxc128 choisit comme la forge la fenêtre ou les pages (le vergobret) ; Gergovie et les
-# cubes (aucune carte ici : les noyaux ne se jouent pas, ils se comparent)
+# 0.853 : Taranis écrit par vtxc128 : chaque noyau de la carte (NoyauTaranis : les régions du lot, le noyau fondu et sa
+# garde) est mot pour mot celui de taranis/noyau_vtx.py, et vtxc128 fait les mêmes lots, fond les mêmes et choisit
+# comme la forge la fenêtre ou les pages ; Gergovie et les cubes (aucune carte ici : les noyaux se comparent)
 import struct  # noqa: E402
 import re  # noqa: E402
 sys.path.insert(0, os.path.join(racine, "taranis"))
 import noyau_vtx  # noqa: E402
 os.environ["VTX_EPISSAGE"] = "rapide"
 T_OK = True
-_init, _comp, _compN = noyau_vtx.NoyauTaranis.__init__, noyau_vtx.NoyauTaranis.compiler, noyau_vtx.Noyau.compiler
-py_k, fen = [], []
-
-
-def _i(self, *a, **k):
-    k["region"] = 0
-    _init(self, *a, **k)
+_comp = noyau_vtx.NoyauTaranis.compiler
+py_k = []
 
 
 def _c(self):
     r = _comp(self)
-    if self.garde is None:
-        py_k.append((repr(self.corps), tuple(struct.unpack("<%dI" % (len(r[0]) // 4), r[0]))))
+    py_k.append(tuple(struct.unpack("<%dI" % (len(r[0]) // 4), r[0])))
     return r
 
 
-def _cn(self):
-    r = _compN(self)
-    if type(self) is noyau_vtx.Noyau and not self.pages:
-        fen.append(repr(self.corps))
-    return r
-
-
-noyau_vtx.NoyauTaranis.__init__, noyau_vtx.NoyauTaranis.compiler, noyau_vtx.Noyau.compiler = _i, _c, _cn
+noyau_vtx.NoyauTaranis.compiler = _c
+LOT = r"taranis_boucle_pages\([^;]*, (?:true|false), [1-9]\d*\)"
 for nomp, chemin in (("Gergovie (l'orage)", go), ("les cubes sur la carte", os.path.join(racine, "belenos", "cubes_carte_mesure.vtx"))):
     py_k.clear()
-    fen.clear()
     s_ = open(chemin, encoding="utf-8").read()
     dd = os.path.dirname(os.path.abspath(chemin))
-    forge128.source_rust(s_, dd, "p", None)
+    code_py, _ = forge128.source_rust(s_, dd, "p", None)
     rs_, _m = forge_vtx.passer_vtxc128(s_, dd)
-    miens = [(m.group(2), tuple(int(x) for x in m.group(3).split(","))) for m in re.finditer(
-        r"// taranis : le noyau de la boucle de la ligne (\d+) \((\w+)\)\n#\[allow\(dead_code\)\]\nstatic SPV: \[u32; \d+\] = \[([0-9,]+)\];", rs_)]
-    pyd = {}
-    for corps_, w in py_k:
-        pyd.setdefault(w, []).append(corps_)
-    memes = sum(1 for _, w in miens if w in pyd)
-    choix = all((mode == "fenêtre") == any(x in fen for x in pyd.get(w, [])) for mode, w in miens)
-    bon = miens and memes == len(miens) and len(pyd) == len(set(w for _, w in miens)) and choix
-    T_OK &= bool(bon)
+    miens = [tuple(int(x) for x in m.group(1).split(",")) for m in re.finditer(r"static SPV: \[u32; \d+\] = \[([0-9,]+)\];", rs_)]
+    pyd = set(py_k)
+    memes = sum(1 for w in miens if w in pyd)
+    lots = (len(re.findall(LOT, code_py)), len(re.findall(LOT, rs_)))
+    fond = (code_py.count("gene_fondre_debut(") - 1, rs_.count("gene_fondre_debut("))
+    pages = (code_py.count("CHOIX_") // 3, rs_.count("CHOIX.carte_voulue"))
+    bon = bool(miens) and memes == len(miens) and len(pyd) == len(set(miens)) and lots[0] == lots[1] and fond[0] == fond[1]
+    T_OK &= bon
     print(("OK  " if bon else "ÉCART ") + f"Taranis écrit par vtxc128, {nomp} : {memes}/{len(miens)} noyaux mot pour mot ceux de "
-          f"noyau_vtx.py ({len(pyd)} chez la forge Python)" + ("" if choix else " ; la fenêtre ou les pages : un autre choix"))
-noyau_vtx.NoyauTaranis.__init__, noyau_vtx.NoyauTaranis.compiler, noyau_vtx.Noyau.compiler = _init, _comp, _compN
+          f"noyau_vtx.py ({len(pyd)} chez la forge Python) ; lots {lots[1]} (Python {lots[0]}), fondus {fond[1]} (Python {fond[0]})")
+noyau_vtx.NoyauTaranis.compiler = _comp
 shutil.rmtree(TMP, ignore_errors=True)
 ok = not ecarts and not memoire and queue_ok and G_OK and T_OK
 print("La forge en vtx : conforme." if ok else f"{len(ecarts)} écart(s), {len(memoire)} mémoire(s)")
