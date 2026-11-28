@@ -153,6 +153,7 @@ spu64/exemples/vitesse.s64
 spu64/qflot.py
 spu64/spu64.py
 taranis/noyau_vtx.py
+taranis/interprete.py
 taranis/spirv.py
 vtx-rs/Cargo.lock
 vtx-rs/Cargo.toml

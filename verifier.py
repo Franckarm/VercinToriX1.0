@@ -32,7 +32,13 @@ NOMS_GELES = ("tests du langage", "SPU-64 :", "vtx64 :", "vtxc64 :", "vtx128 : m
               "les fonctions passées en valeur sur Dunon", "forge du SPU-32", "type texte et afficher",
               "tableaux, dictionnaires, vocabulaire, lire_ligne", "mémoire qui se libère", "ScoR v0",
               "traduction directe pour Windows", "traduction en code natif", "machines JavaScript", "machine Rust",
-              "vtxc : le compilateur écrit en vtx se compile lui-même")
+              "vtxc : le compilateur écrit en vtx se compile lui-même",
+              # 0.854 : ce qui ne joue que Senos (vtx.py, le SPU-32, gelé) : Lugus a ses propres tests de tout cela
+              "débogueur", "partition des tâches", "logique à quatre valeurs", "logique : analyse d'initialisation",
+              "génomique : QEGAL", "réécriture des boucles en 16", "compression du cube", "bibliothèque du cube",
+              "virgule fixe et 64 bits", "correction d'erreur diamant", "mathématiques, hasard et afficher",
+              "priorités des opérateurs", "test différentiel", "flottants et longs", "flottants 64 bits",
+              "entiers de 128 bits (entier_128)", "ombre binaire du cube", "feu de camp", "flottant_petuar")
 ENV = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUTF8="1", VTX_RAPIDE="0" if COMPLET else "1")
 TEXTE = dict(capture_output=True, text=True, encoding="utf-8", errors="replace", env=ENV)
 try:
@@ -203,6 +209,8 @@ if shutil.which("cargo"):
                    [sys.executable, os.path.join("forge", "test_forge128.py"), "40" if COMPLET else "12"]))
     etapes.append(("la forge écrite en vtx : le Rust de vtxc128, mêmes sorties et même mémoire que Lugus émulé",
                    [sys.executable, os.path.join("forge", "test_forge_vtx.py"), "40" if COMPLET else "12"]))
+    etapes.append(("Taranis écrit par vtxc128, joué sur la carte de papier (les entiers de 64 bits, le quaternaire)",
+                   [sys.executable, os.path.join("tests", "test_taranis_vtx.py")]))
     etapes.append(("Ésus : la division par une constante et les codons de 64 bits dans la forge, comme Lugus",
                    [sys.executable, os.path.join("tests", "test_esus.py")]))
     etapes.append(("le Druide : le relevé d'Ésus rangé dans son cube, comparé en quatre valeurs",

@@ -277,6 +277,7 @@ structure Ctx {
     tk_alias_de, tk_alias_vers,   // 0.853 : la variable de boucle d'un étage fondu, et celle du noyau fondu
     rs_lot_pos, rs_lot_suite, rs_lot_tete,   // 0.853 : le lot de la carte (la place, la suite, son lieu)
     lignes_bandes: Liste,   // 0.852 : les lignes des boucles « en bandes »
+    rs_args_voulu,      // 0.854 : le type voulu des arguments en cours (T_LOG pour une opération logique)
     rs_vnoms: Liste,    // 0.852 : les variables de la fonction en cours, dans l'ordre de son cadre
     rs_cadre,           // 0.852 : 1 si la fonction en cours tient un cadre sur la pile de Lugus
     rs_etq: Liste,      // 0.852 : les étiquettes des textes nommés dans le Rust (ETQ_n)
@@ -12483,7 +12484,7 @@ fonction rs_args_pousses(c: Ctx, e: Noeud, ordre: Liste) {
         rs_t(c, "let a");
         rs_n(c, elem(ordre, k));
         rs_t(c, ": u128 = ");
-        rs_expr(c, rs_arg(e, elem(ordre, k)));
+        rs_expr_v(c, rs_arg(e, elem(ordre, k)), rs_voulu_arg(c, e, elem(ordre, k)));
         rs_t(c, "; ");
         soit suite = 0;
         pour k2 dans k + 1..ordre.n {
@@ -12499,6 +12500,31 @@ fonction rs_args_pousses(c: Ctx, e: Noeud, ordre: Liste) {
         }
     }
     retour np;
+}
+
+// le type voulu du k-ième argument : celui du paramètre (une fonction du programme), ou un logique (les opérations
+// logiques : vrai et faux y sont des logiques)
+fonction rs_voulu_arg(c: Ctx, e: Noeud, k) {
+    si c.rs_args_voulu != 0 {
+        retour c.rs_args_voulu;
+    }
+    si est_integre(e.nom) {
+        retour 0;
+    }
+    soit f = fonction_de(c, e.nom);
+    si f == nul {
+        retour 0;
+    }
+    soit p = f.params;
+    pour j dans 0..k {
+        si p != nul {
+            p = p.suivant;
+        }
+    }
+    si p == nul {
+        retour 0;
+    }
+    retour p.type;
 }
 
 // rend la pile : n valeurs poussées
@@ -12619,7 +12645,89 @@ fonction rs_integre(c: Ctx, e: Noeud) {
     si c.dunon {
         m64 = " & M64";
     }
-    si egal(n, "pile") && na == 0 {
+    si egal(n, "entier") && na == 1 && (typ(c, e.premier) == 0 || typ(c, e.premier) == T_LOG) {
+        rs_t(c, "{ let a0: u128 = ");
+        rs_expr(c, e.premier);
+        rs_t(c, "; a0 }");
+    } sinon si (egal(n, "logique") || egal(n, "comme_logique")) && na == 1 {
+        // 0.854 : le quaternaire (logique_rs de la forge)
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(1, 0));
+        si typ(c, e.premier) == T_LOG {
+            rs_t(c, "a0 }");
+        } sinon si egal(n, "comme_logique") {
+            rs_t(c, "((a0 as u64) & 3) as u128 }");
+        } sinon {
+            rs_t(c, "if (a0 as u64) == 0 { 1u128 } else { 2u128 } }");
+        }
+    } sinon si op_logique(n) != 0 && na == op_logique(n) {
+        soit large_e = !c.dunon && typ(c, e) == 0;
+        rs_t(c, "{ ");
+        c.rs_args_voulu = T_LOG;
+        rs_args(c, e, rs_ordre(na, 0));
+        c.rs_args_voulu = 0;
+        si egal(n, "et4") || egal(n, "ou4") {
+            rs_t(c, n);
+            si large_e {
+                rs_t(c, "_128(a0, a1) }");
+            } sinon {
+                rs_t(c, "_64(a0, a1) }");
+            }
+        } sinon si egal(n, "fusion") || egal(n, "consensus") {
+            soit o = "|";
+            si egal(n, "consensus") {
+                o = "&";
+            }
+            si large_e {
+                rs_t(c, "a0 ");
+                rs_t(c, o);
+                rs_t(c, " a1 }");
+            } sinon {
+                rs_t(c, "(((a0 as u64) ");
+                rs_t(c, o);
+                rs_t(c, " (a1 as u64)) as u128) }");
+            }
+        } sinon si egal(n, "anti") {
+            si large_e {
+                rs_t(c, "anti_128(a0) }");
+            } sinon si typ(c, e) != T_LOG {
+                rs_t(c, "anti_64(a0) }");
+            } sinon {
+                rs_t(c, "(non4_64(a0) ^ 3) }");
+            }
+        } sinon {
+            si large_e {
+                rs_t(c, "non4_128(a0) }");
+            } sinon {
+                rs_t(c, "non4_64(a0) }");
+            }
+        }
+    } sinon si (egal(n, "qegal") || egal(n, "min4") || egal(n, "max4") || egal(n, "addm4") || egal(n, "gdot")) && na == 2 {
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(2, 0));
+        si egal(n, "gdot") {
+            rs_t(c, "gdot_64(a0, a1) }");
+        } sinon si egal(n, "qegal") {
+            si c.dunon {
+                rs_t(c, "qegal_64(a0, a1) }");
+            } sinon {
+                rs_t(c, "qegal_128(a0, a1) }");
+            }
+        } sinon {
+            si c.dunon {
+                rs_t(c, "quits_64(a0, a1, ");
+            } sinon {
+                rs_t(c, "quits_128(a0, a1, ");
+            }
+            si egal(n, "min4") {
+                rs_t(c, "0) }");
+            } sinon si egal(n, "max4") {
+                rs_t(c, "1) }");
+            } sinon {
+                rs_t(c, "2) }");
+            }
+        }
+    } sinon si egal(n, "pile") && na == 0 {
         rs_t(c, "c.sp");
     } sinon si egal(n, "ecrire_car") && na == 2 {
         rs_t(c, "{ ");
@@ -12688,6 +12796,23 @@ fonction rs_integre(c: Ctx, e: Noeud) {
 }
 
 // une expression entière (u128)
+// une valeur dans le contexte d'un type voulu : vrai et faux y sont des logiques (2, 1) si l'on veut un logique
+fonction rs_expr_v(c: Ctx, e: Noeud, voulu) {
+    si e != nul && e.genre == N_BLIT && voulu == T_LOG {
+        rs_n(c, e.val);
+        rs_t(c, "u128");
+        retour;
+    }
+    rs_expr(c, e);
+}
+
+fonction rs_voulu_cmp(c: Ctx, a: Noeud, b: Noeud) {
+    si (a.genre == N_BLIT && typ(c, b) == T_LOG) || (b.genre == N_BLIT && typ(c, a) == T_LOG) {
+        retour T_LOG;
+    }
+    retour 0;
+}
+
 fonction rs_expr(c: Ctx, e: Noeud) {
     si e == nul {
         rs_t(c, "0u128");
@@ -12701,6 +12826,13 @@ fonction rs_expr(c: Ctx, e: Noeud) {
     si g == N_NOMBRE || g == N_QNOMBRE {
         rs_n(c, e.val);
         rs_t(c, "u128");
+    } sinon si g == N_BLIT {
+        // vrai, faux hors d'un contexte logique : 1, 0 (dans un contexte logique : rs_expr_v)
+        si e.val == 2 {
+            rs_t(c, "1u128");
+        } sinon {
+            rs_t(c, "0u128");
+        }
     } sinon si g == N_VAR {
         soit v = var_ou_nul(c, e.nom);
         si v == nul {
@@ -12857,21 +12989,22 @@ fonction rs_cond(c: Ctx, e: Noeud) {
             rs_pas_encore(c, "une comparaison qui n'est pas entre entiers", e.ligne);
             retour;
         }
+        soit vc = rs_voulu_cmp(c, e.a, e.b);
         si c.dunon {
             rs_t(c, "(((");
-            rs_expr(c, e.a);
+            rs_expr_v(c, e.a, vc);
             rs_t(c, ") as u64) ");
             rs_t(c, e.op);
             rs_t(c, " ((");
-            rs_expr(c, e.b);
+            rs_expr_v(c, e.b, vc);
             rs_t(c, ") as u64))");
         } sinon {
             rs_c(c, '(');
-            rs_expr(c, e.a);
+            rs_expr_v(c, e.a, vc);
             rs_c(c, ' ');
             rs_t(c, e.op);
             rs_c(c, ' ');
-            rs_expr(c, e.b);
+            rs_expr_v(c, e.b, vc);
             rs_c(c, ')');
         }
         retour;
@@ -12908,6 +13041,20 @@ fonction rs_instrs(c: Ctx, s: Noeud) {
 
 fonction rs_instr(c: Ctx, s: Noeud) {
     soit g = s.genre;
+    si g == N_SOIT && nom_de_selon(s.nom) == 1 && typ(c, s.a) == 0 && rs_type_var(c, s.nom) == T_LOG {
+        // la valeur sue (comme le générateur) : « selon » sur un entier : -1 inconnu, -2 faux, -3 variable, sinon vrai
+        rs_var(c, s.nom);
+        si c.dunon {
+            rs_t(c, " = { let x: u64 = (");
+            rs_expr(c, s.a);
+            rs_t(c, ") as u64; (if x == u64::MAX { 0 } else if x == u64::MAX - 1 { 1 } else if x == u64::MAX - 2 { 3 } else { 2 }) as u128 };\n");
+        } sinon {
+            rs_t(c, " = { let x: u128 = ");
+            rs_expr(c, s.a);
+            rs_t(c, "; if x == u128::MAX { 0u128 } else if x == u128::MAX - 1 { 1 } else if x == u128::MAX - 2 { 3 } else { 2 } };\n");
+        }
+        retour;
+    }
     si g == N_SOIT || g == N_AFFECTER {
         soit v = var_ou_nul(c, s.nom);
         si v == nul || !rs_mot(v.type) {
@@ -12916,7 +13063,7 @@ fonction rs_instr(c: Ctx, s: Noeud) {
         }
         rs_var(c, s.nom);
         rs_t(c, " = ");
-        rs_expr(c, s.a);
+        rs_expr_v(c, s.a, v.type);
         rs_t(c, ";\n");
     } sinon si g == N_ECRIRE {
         si !rs_mot(typ(c, s.c)) {
@@ -13027,7 +13174,7 @@ fonction rs_instr(c: Ctx, s: Noeud) {
         rs_t(c, "u64)) as u128;\n}\n");
     } sinon si g == N_RETOUR {
         rs_t(c, "return ");
-        rs_expr(c, s.a);
+        rs_expr_v(c, s.a, c.fcour.rtype);
         rs_t(c, ";\n");
     } sinon si g == N_ARRETER || g == N_CONTINUER {
         si c.rs_pile.n == 0 {
@@ -13416,9 +13563,15 @@ fonction tk_charger(k: Taranis, v) {
 }
 
 fonction tk_verifier_type(c: Ctx, k: Taranis, e: Noeud) {
-    si typ(c, e) != 0 {
-        tk_refus(c, k, "un type que le noyau ne connaît pas (seul l'entier)");
+    si !tk_type_ok(typ(c, e)) {
+        tk_refus(c, k, "un type que le noyau ne connaît pas (l'entier et le logique)");
     }
+}
+
+// 0.854 : le noyau sait l'entier de 64 bits et le logique (Belnap, rangé dans un mot comme sur Lugus : le quaternaire
+// sur la carte, 32 valeurs par mot de 64 bits pour les opérations sur les quits)
+fonction tk_type_ok(t) {
+    retour t == 0 || t == T_LOG;
 }
 
 // ---- la mémoire : le monde d'un seul tenant (direct)
@@ -13826,8 +13979,9 @@ fonction tk_booleen(c: Ctx, k: Taranis, e: Noeud) {
     si e.genre == N_BIN && tk_est_cmp(e.op) {
         tk_verifier_type(c, k, e.a);
         tk_verifier_type(c, k, e.b);
-        soit x = tk_expr(c, k, e.a);
-        soit y = tk_expr(c, k, e.b);
+        soit vc = rs_voulu_cmp(c, e.a, e.b);
+        soit x = tk_expr_v(c, k, e.a, vc);
+        soit y = tk_expr_v(c, k, e.b, vc);
         retour tk_comparer(k, e.op, x, y);
     }
     tk_verifier_type(c, k, e);
@@ -13835,10 +13989,28 @@ fonction tk_booleen(c: Ctx, k: Taranis, e: Noeud) {
     retour tk_non(k, tk_eq(k, v, tk_cst(k, 0)));
 }
 
+fonction rs_type_var(c: Ctx, nom) {
+    soit v = var_ou_nul(c, nom);
+    si v == nul {
+        retour 0;
+    }
+    retour v.type;
+}
+
+fonction tk_expr_v(c: Ctx, k: Taranis, e: Noeud, voulu) {
+    si e != nul && e.genre == N_BLIT && voulu == T_LOG {
+        retour tk_cst(k, e.val);
+    }
+    retour tk_expr(c, k, e);
+}
+
 fonction tk_expr(c: Ctx, k: Taranis, e: Noeud) {
     soit g = e.genre;
-    si g == N_NOMBRE {
+    si g == N_NOMBRE || g == N_QNOMBRE {
         retour tk_cst(k, e.val);
+    }
+    si g == N_BLIT {
+        retour tk_cst(k, e.val == 2);
     }
     si g == N_VAR {
         retour tk_charger(k, tk_cherche(c, k, tk_nom(c, e.nom)));
@@ -13895,6 +14067,192 @@ fonction tk_expr(c: Ctx, k: Taranis, e: Noeud) {
     retour tk_cst(k, 0);
 }
 
+// ---- 0.854 : le quaternaire sur la carte : les mêmes formules que la forge (et4_64, ou4_64, non4_64, anti_64,
+// qegal_64, quits_64, gdot_64), en entiers de 64 bits : un mot porte 32 quits, une opération les fait toutes
+constante TK_V = 12297829382473034410;     // les bits hauts des quits (0xAAAA…)
+constante TK_F = 6148914691236517205;      // les bits bas (0x5555…)
+
+fonction tk_quaternaire(nom) {
+    retour op_logique(nom) != 0 || egal(nom, "entier") || egal(nom, "logique") || egal(nom, "comme_logique") || egal(nom, "qegal")
+        || egal(nom, "min4") || egal(nom, "max4") || egal(nom, "addm4") || egal(nom, "gdot");
+}
+
+// une expression constante (des nombres et leurs opérations) : sa valeur en 64 bits
+fonction tk_constante(e: Noeud) {
+    si e == nul {
+        retour 0;
+    }
+    si e.genre == N_NOMBRE {
+        retour 1;
+    }
+    si e.genre == N_BIN && (egal(e.op, "+") || egal(e.op, "-") || egal(e.op, "*") || egal(e.op, "&") || egal(e.op, "|")
+                            || egal(e.op, "^")) {
+        retour tk_constante(e.a) && tk_constante(e.b);
+    }
+    retour 0;
+}
+
+fonction tk_valeur_constante(e: Noeud) {
+    si e.genre == N_NOMBRE {
+        retour e.val & TK_M64;
+    }
+    soit a = tk_valeur_constante(e.a);
+    soit b = tk_valeur_constante(e.b);
+    si egal(e.op, "+") {
+        retour (a + b) & TK_M64;
+    }
+    si egal(e.op, "-") {
+        retour (a + 18446744073709551616 - b) & TK_M64;
+    }
+    si egal(e.op, "*") {
+        retour (a * b) & TK_M64;
+    }
+    si egal(e.op, "&") {
+        retour a & b;
+    }
+    si egal(e.op, "|") {
+        retour a | b;
+    }
+    retour a ^ b;
+}
+
+fonction tk_compter_uns(v) {
+    soit n = 0;
+    tantque v != 0 {
+        n = n + (v & 1);
+        v = v >> 1;
+    }
+    retour n;
+}
+
+// le nombre de bits à 1 d'un mot de 64 bits, sans instruction particulière (SWAR : toute carte le fait)
+fonction tk_popcount(k: Taranis, x) {
+    soit a = tk_sub(k, x, tk_64(k, 199, tk_64(k, 194, x, tk_cst(k, 1)), tk_cst(k, TK_F)));
+    soit m3 = 3689348814741910323;
+    soit b = tk_add(k, tk_64(k, 199, a, tk_cst(k, m3)), tk_64(k, 199, tk_64(k, 194, a, tk_cst(k, 2)), tk_cst(k, m3)));
+    soit d = tk_64(k, 199, tk_add(k, b, tk_64(k, 194, b, tk_cst(k, 4))), tk_cst(k, 1085102592571150095));
+    retour tk_64(k, 194, tk_mul(k, d, tk_cst(k, 72340172838076673)), tk_cst(k, 56));
+}
+
+fonction tk_et4(k: Taranis, a, b) {
+    soit h = tk_64(k, 199, tk_64(k, 199, a, b), tk_cst(k, TK_V));
+    soit l = tk_64(k, 199, tk_64(k, 197, a, b), tk_cst(k, TK_F));
+    retour tk_64(k, 197, h, l);
+}
+
+fonction tk_ou4(k: Taranis, a, b) {
+    soit h = tk_64(k, 199, tk_64(k, 197, a, b), tk_cst(k, TK_V));
+    soit l = tk_64(k, 199, tk_64(k, 199, a, b), tk_cst(k, TK_F));
+    retour tk_64(k, 197, h, l);
+}
+
+fonction tk_non4(k: Taranis, a) {
+    soit h = tk_64(k, 194, tk_64(k, 199, a, tk_cst(k, TK_V)), tk_cst(k, 1));
+    soit l = tk_64(k, 196, tk_64(k, 199, a, tk_cst(k, TK_F)), tk_cst(k, 1));
+    retour tk_64(k, 197, h, l);
+}
+
+// min4, max4 (op 0, 1) : quit par quit ; addm4 (2) : la somme modulo 4 ; tout d'un coup, sur les 32 quits du mot
+fonction tk_quits(k: Taranis, a, b, op) {
+    soit xh = tk_64(k, 199, tk_64(k, 194, a, tk_cst(k, 1)), tk_cst(k, TK_F));
+    soit xl = tk_64(k, 199, a, tk_cst(k, TK_F));
+    soit yh = tk_64(k, 199, tk_64(k, 194, b, tk_cst(k, 1)), tk_cst(k, TK_F));
+    soit yl = tk_64(k, 199, b, tk_cst(k, TK_F));
+    si op == 2 {
+        soit lo = tk_64(k, 198, xl, yl);
+        soit ret = tk_64(k, 199, xl, yl);
+        soit hi = tk_64(k, 198, tk_64(k, 198, xh, yh), ret);
+        retour tk_64(k, 197, tk_64(k, 196, hi, tk_cst(k, 1)), lo);
+    }
+    // x < y, quit par quit : (non xh et yh) ou (xh = yh et non xl et yl)
+    soit nxh = tk_v1(k, 200, k.t64, xh);
+    soit nxl = tk_v1(k, 200, k.t64, xl);
+    soit egh = tk_v1(k, 200, k.t64, tk_64(k, 198, xh, yh));
+    soit lt = tk_64(k, 199, tk_64(k, 197, tk_64(k, 199, nxh, yh), tk_64(k, 199, tk_64(k, 199, egh, nxl), yl)), tk_cst(k, TK_F));
+    soit m2 = tk_64(k, 197, lt, tk_64(k, 196, lt, tk_cst(k, 1)));
+    soit nm2 = tk_v1(k, 200, k.t64, m2);
+    si op == 0 {
+        retour tk_64(k, 197, tk_64(k, 199, a, m2), tk_64(k, 199, b, nm2));
+    }
+    retour tk_64(k, 197, tk_64(k, 199, b, m2), tk_64(k, 199, a, nm2));
+}
+
+fonction tk_quat(c: Ctx, k: Taranis, e: Noeud) {
+    soit nom = e.nom;
+    soit na = nb_args(e.premier);
+    soit a0 = e.premier;
+    soit vq = 0;
+    si op_logique(nom) != 0 {
+        vq = T_LOG;
+    }
+    soit x = tk_expr_v(c, k, a0, vq);
+    soit y = 0;
+    si na == 2 {
+        y = tk_expr_v(c, k, a0.suivant, vq);
+    }
+    si egal(nom, "entier") {
+        retour x;
+    }
+    si egal(nom, "logique") || egal(nom, "comme_logique") {
+        si typ(c, a0) == T_LOG {
+            retour x;
+        }
+        si egal(nom, "comme_logique") {
+            retour tk_64(k, 199, x, tk_cst(k, 3));
+        }
+        // 0 : faux (1), sinon vrai (2)
+        soit z = tk_eq(k, x, tk_cst(k, 0));
+        soit un = tk_cst(k, 1);
+        soit deux = tk_cst(k, 2);
+        retour tk_sel(k, z, un, deux);
+    }
+    si egal(nom, "et4") {
+        retour tk_et4(k, x, y);
+    }
+    si egal(nom, "ou4") {
+        retour tk_ou4(k, x, y);
+    }
+    si egal(nom, "fusion") {
+        retour tk_64(k, 197, x, y);
+    }
+    si egal(nom, "consensus") {
+        retour tk_64(k, 199, x, y);
+    }
+    si egal(nom, "non4") {
+        retour tk_non4(k, x);
+    }
+    si egal(nom, "anti") {
+        // un logique : non4 ^ 3 ; un mot de quits : non4 ^ tout (comme la forge)
+        soit nx = tk_non4(k, x);
+        si typ(c, e) == T_LOG {
+            retour tk_64(k, 198, nx, tk_cst(k, 3));
+        }
+        retour tk_64(k, 198, nx, tk_cst(k, TK_M64));
+    }
+    si egal(nom, "qegal") {
+        soit d = tk_64(k, 198, x, y);
+        soit ou_ = tk_64(k, 197, d, tk_64(k, 194, d, tk_cst(k, 1)));
+        retour tk_64(k, 199, tk_v1(k, 200, k.t64, ou_), tk_cst(k, TK_F));
+    }
+    si egal(nom, "min4") {
+        retour tk_quits(k, x, y, 0);
+    }
+    si egal(nom, "max4") {
+        retour tk_quits(k, x, y, 1);
+    }
+    si egal(nom, "addm4") {
+        retour tk_quits(k, x, y, 2);
+    }
+    // gdot : quatre produits de 16 bits
+    soit s = tk_cst(k, 0);
+    pour q dans 0..4 {
+        soit xa = tk_64(k, 199, tk_64(k, 194, x, tk_cst(k, 16 * q)), tk_cst(k, 65535));
+        soit yb = tk_64(k, 199, tk_64(k, 194, y, tk_cst(k, 16 * q)), tk_cst(k, 65535));
+        s = tk_add(k, s, tk_mul(k, xa, yb));
+    }
+    retour s;
+}
+
 // ---- les appels : la fonction recopiée dans le noyau
 // les types des variables de f (comme types_de) : le contexte des variables de vtxc128 changé le temps de la lecture
 fonction tk_types_entrer(c: Ctx, f: Fonction): Var {
@@ -13937,7 +14295,15 @@ fonction tk_a_retour(s: Noeud) {
 fonction tk_appel(c: Ctx, k: Taranis, e: Noeud) {
     soit nom = e.nom;
     si egal(nom, "nb_bits") && nb_args(e.premier) == 1 {
-        retour tk_cst(k, 64);
+        // le nombre de bits à 1 ; d'une constante (nb_bits(0 - 1) : la largeur, 64), une constante, comme la forge
+        // Python ; sinon (0.854) compté sur la carte (la forge Python rendait 64 : faux pour tout autre nombre)
+        si tk_constante(e.premier) {
+            retour tk_cst(k, tk_compter_uns(tk_valeur_constante(e.premier) & TK_M64));
+        }
+        retour tk_popcount(k, tk_expr(c, k, e.premier));
+    }
+    si tk_quaternaire(nom) {
+        retour tk_quat(c, k, e);
     }
     soit f = fonction_de(c, nom);
     si f == nul || est_integre(nom) {
@@ -13953,13 +14319,13 @@ fonction tk_appel(c: Ctx, k: Taranis, e: Noeud) {
     soit p = f.params;
     soit np = 0;
     tantque p != nul {
-        si p.type != 0 {
-            tk_refus(c, k, "un paramètre qui n'est pas un entier");
+        si !tk_type_ok(p.type) {
+            tk_refus(c, k, "un paramètre qui n'est ni un entier ni un logique");
         }
         np = np + 1;
         p = p.suivant;
     }
-    si np != nb_args(e.premier) || f.rtype != 0 {
+    si np != nb_args(e.premier) || !tk_type_ok(f.rtype) {
         tk_refus(c, k, "des paramètres ou un retour qui ne sont pas des entiers");
         retour tk_cst(k, 0);
     }
@@ -14001,8 +14367,8 @@ fonction tk_appel(c: Ctx, k: Taranis, e: Noeud) {
     soit avant = tk_types_entrer(c, f);
     soit vv = c.vars;
     tantque vv != nul {
-        si vv.type != 0 {
-            tk_refus(c, k, "une fonction qui a des variables qui ne sont pas des entiers");
+        si !tk_type_ok(vv.type) {
+            tk_refus(c, k, "une fonction qui a des variables qui ne sont ni des entiers ni des logiques");
         }
         vv = vv.suivant;
     }
@@ -14227,12 +14593,29 @@ fonction tk_instr(c: Ctx, k: Taranis, s: Noeud) {
         retour;
     }
     soit g = s.genre;
+    si g == N_SOIT && nom_de_selon(s.nom) == 1 && typ(c, s.a) == 0 && rs_type_var(c, s.nom) == T_LOG {
+        // la valeur sue, sur la carte
+        tk_verifier_type(c, k, s.a);
+        soit x = tk_expr(c, k, s.a);
+        soit e1 = tk_eq(k, x, tk_cst(k, TK_M64));
+        soit e2 = tk_eq(k, x, tk_cst(k, TK_M64 - 1));
+        soit e3 = tk_eq(k, x, tk_cst(k, TK_M64 - 2));
+        soit v3 = tk_sel(k, e3, tk_cst(k, 3), tk_cst(k, 2));
+        soit v2 = tk_sel(k, e2, tk_cst(k, 1), v3);
+        soit v1 = tk_sel(k, e1, tk_cst(k, 0), v2);
+        soit vs = tk_trouve(k, s.nom);
+        si vs == 0 {
+            vs = tk_nouvelle(k, s.nom);
+        }
+        tk_store(k, vs, v1);
+        retour;
+    }
     si g == N_SOIT {
-        si s.val != 0 {
-            tk_refus(c, k, "une variable qui n'est pas un entier");
+        si !tk_type_ok(s.val) {
+            tk_refus(c, k, "une variable qui n'est ni un entier ni un logique");
         }
         tk_verifier_type(c, k, s.a);
-        soit v = tk_expr(c, k, s.a);
+        soit v = tk_expr_v(c, k, s.a, rs_type_var(c, s.nom));
         soit var = tk_trouve(k, s.nom);
         si var == 0 {
             var = tk_nouvelle(k, s.nom);
@@ -14241,7 +14624,7 @@ fonction tk_instr(c: Ctx, k: Taranis, s: Noeud) {
     } sinon si g == N_AFFECTER {
         tk_verifier_type(c, k, s.a);
         soit var2 = tk_cherche(c, k, s.nom);
-        tk_store(k, var2, tk_expr(c, k, s.a));
+        tk_store(k, var2, tk_expr_v(c, k, s.a, rs_type_var(c, s.nom)));
     } sinon si g == N_ECRIRE {
         tk_ecrire(c, k, s);
     } sinon si g == N_EXPR {
@@ -14453,12 +14836,12 @@ fonction tk_compiler_membres(c: Ctx, var, membres: Liste, noms: Liste, region, a
     }
     pour i2 dans 0..dehors.n {
         soit vd = var_ou_nul(c, elem(dehors, i2));
-        si vd != nul && vd.type != 0 {
+        si vd != nul && !tk_type_ok(vd.type) {
             tk_refus(c, k, "une variable d'avant la boucle qui n'est pas un entier");
         }
     }
     soit vb = var_ou_nul(c, var);
-    si vb != nul && vb.type != 0 {
+    si vb != nul && !tk_type_ok(vb.type) {
         tk_refus(c, k, "une variable de boucle qui n'est pas un entier");
     }
     si k.ok == 0 {

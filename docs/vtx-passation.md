@@ -1012,3 +1012,11 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - **0.853b** : le lot et « fondre » écrits par vtxc128 : Gergovie 15/15 noyaux mot pour mot (régions, noyau fondu), 6 lots
   et 1 lot fondu comme la forge Python. Essai : `lugus forger` de gergovie_carte et gergovie_etages, à comparer à la forge
   Python sur la carte.
+
+## 0.854 (28 novembre) : la carte en 64 bits, le quaternaire sur la carte, la carte de papier
+- Essai 0.853b : `lugus forger` = la forge Python sur la carte (mêmes empreintes, même vitesse).
+- Le noyau de vtxc128 : le logique et les mots de quits (et4, ou4, non4, anti, fusion, consensus, qegal, min4, max4,
+  addm4, gdot, logique, comme_logique, entier, selon, la valeur sue), nb_bits compté (bogue de noyau_vtx.py : 64
+  toujours). Les noyaux de 32 bits abandonnés (décision du créateur : la carte en 64 bits).
+- `taranis/interprete.py` (la carte de papier) et `tests/test_taranis_vtx.py` (14 boucles, comparées à Lugus).
+- `verifier.py` : 19 étapes de Senos gelées de plus.

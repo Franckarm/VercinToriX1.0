@@ -148,9 +148,28 @@ garde.
   **15/15 noyaux mot pour mot, régions et noyau fondu compris ; les mêmes 6 lots et le même lot fondu** ; les cubes,
   l'Auvergne aussi. Les lieux (la mémoire de Gutuater et du Vergobret pour chaque lot) sont l'empreinte de l'arbre de
   vtxc128 : pas ceux de la forge Python (le texte de son arbre) ; un Gergovie forgé par vtxc128 réapprend ses lots.
-- **Ce qui manque encore** : les noyaux de deux mots de 32 bits et de la fenêtre (une carte sans entiers de 64 bits, ou
-  sans l'épissage rapide : la boucle reste aux cœurs) ; les zones (les tableaux serrés) et les pages de l'étage 2 ; le
-  Druide et Ésus dans la forge. Puis le témoin chez le créateur : la même vitesse sur la carte que la forge Python.
+- **L'essai 0.853b chez le créateur** : Gergovie forgé par `lugus forger` (sans Python) donne sur la carte les mêmes
+  empreintes que la forge Python, à la même vitesse : le noyau unique 81,4 / 46,5 / 39,2 images par seconde (vol, jour,
+  soir ; Python 81,9 / 47,5 / 39,4), les étages 40,5 / 29,0 / 32,2 (Python 41,0 / 29,1 / 32,4).
+- **0.854 : la carte en 64 bits, et le quaternaire sur la carte.** Décidé avec le créateur : la carte compte en entiers
+  de 64 bits ; les noyaux de deux mots de 32 bits (Noyau, NoyauI64 en pages) ne sont pas refaits (une carte sans
+  entiers de 64 bits laisse la boucle aux cœurs). Le noyau de vtxc128 sait aussi le **logique** (Belnap, rangé dans un
+  mot) et les **mots de 32 quits** : et4, ou4, non4, anti, fusion, consensus, logique(), comme_logique(), entier(),
+  qegal, min4, max4, addm4, gdot, les vrai et faux, `selon` (et sur un entier : la valeur sue) — les formules de la
+  forge (et4_64…), en opérations de 64 bits : un mot, 32 valeurs de Belnap, une opération. La forge Python laissait ces
+  boucles au processeur. Aussi : `nb_bits(x)` compté sur la carte (la forge Python y rendait toujours 64 : juste pour
+  `nb_bits(0 - 1)`, la largeur, faux pour tout autre nombre ; une constante reste une constante, les noyaux de Gergovie
+  restent mot pour mot ceux de la forge). Le Rust de vtxc128 sait le même quaternaire au processeur.
+- **La carte de papier** (`taranis/interprete.py`) : le SPIR-V des noyaux joué fil par fil en Python, sur un monde rangé
+  comme `taranis_direct` le range ; `tests/test_taranis_vtx.py` (dans `verifier.py`) y joue 14 boucles (les entiers de
+  64 bits, les divisions, les appels et leurs retours au milieu, le minimum atomique, le quaternaire, `selon`) et compare
+  chaque mot écrit à Lugus : tout conforme. On vérifie ici ce qui va à la carte, sans carte.
+- **Ce qui manque encore** : les zones (les tableaux serrés) et les pages de l'étage 2 ; le Druide et Ésus dans la
+  forge ; les flottants sur la carte (Taranis ne compte qu'en entiers).
+- **Les tests (0.854)** : `verifier.py` ne joue plus par défaut les 19 étapes qui ne jouent que Senos (vtx.py, le SPU-32
+  gelé : le débogueur, la partition, la logique, la génomique, la compression, la bibliothèque, les maths, les
+  priorités, le différentiel, les flottants de 64 bits, l'ombre, le feu…) ; Lugus a ses propres tests de tout cela.
+  `--geles` les joue. Ils pourront partir avec les machines gelées elles-mêmes.
 
 ## Ce qui ne change pas
 

@@ -53,6 +53,16 @@ PROPRES = [
     ("textes et logiques", "fonction principal() { soit t = \"bonjour\"; afficher(longueur(t)); soit l = vrai; "
      "selon l { vrai { sortie(1); } faux { sortie(2); } inconnu { sortie(3); } variable { sortie(4); } } "
      "afficher(t); }", []),
+    ("le quaternaire (Dunon)", "dunon; fonction principal() { pour i dans 0..40 { soit a = comme_logique(i % 4); "
+     "soit b = comme_logique((i / 4) % 4); soit x = i * 11400714819323198485; soit y = (i + 7) * 14029467366897019727; "
+     "soit r = 0; selon a { vrai { r = 1; } faux { r = 2; } inconnu { r = 3; } variable { r = 4; } } "
+     "si et4(a, b) == vrai { r = r + 8; } sortie(entier(et4(a, b)) + 4 * entier(ou4(a, b)) + 16 * entier(non4(a)) "
+     "+ 64 * entier(anti(b)) + 256 * entier(fusion(a, b)) + 1024 * entier(consensus(a, b)) + 4096 * r); "
+     "sortie(min4(x, y) ^ max4(x, y) ^ addm4(x, y) ^ qegal(x, y) ^ gdot(x, y) ^ et4(x, y) ^ anti(y) ^ nb_bits(x)); } }", []),
+    ("le quaternaire (Lugus)", "fonction principal() { pour i dans 0..40 { soit a = comme_logique(i % 4); "
+     "soit b = logique(i % 3); soit x = i * 11400714819323198485 * 340282366920938463463; "
+     "sortie(entier(et4(a, b)) + 4 * entier(ou4(a, b)) + 16 * entier(non4(a)) + 64 * entier(anti(b))); "
+     "sortie(min4(x, x >> 3) ^ addm4(x, i) ^ qegal(x, 5) ^ et4(x, 7) ^ anti(x) ^ nb_bits(x)); } }", []),
     ("pas de boucle", "fonction principal() { soit s = 0; pour i dans 0..100 pas 7 { s = s + i; } sortie(s); }", []),
 ]
 
