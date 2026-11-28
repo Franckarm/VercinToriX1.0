@@ -119,11 +119,10 @@ garde.
   pour mot (les adresses de retour, les registres gardés) ; ce qu'il garde peut donc différer de Lugus émulé (et entre
   les deux forges), jamais les sorties. Le test le permet pour ses programmes « ramasse-miettes ».
 - **Ce qui reste à la forge Python (la vitesse, pas le sens)** : les tableaux serrés (zones), l'étage 2 par la carte des
-  pages (lire2, ecrire2, les liaisons des cubes), les boucles en segments sur plusieurs cœurs (cylindres, bandes) et
-  sur la carte (les noyaux SPIR-V de `taranis/noyau_vtx.py`), le Druide et Ésus (les codons de 64 bits, les relevés).
-  Sans eux, le Gergovie de vtxc128 est juste mais fait tout au processeur, sur un cœur : à demi-échelle, 12,8 s contre
-  8,9 s ici (sans carte) ; avec la carte chez le créateur, l'écart serait bien plus grand. C'est pourquoi `forge128.py`
-  reste la forge par défaut des essais ; `VTX_FORGE_VTX=1` ou `lugus forger` prennent celle de vtxc128.
+  pages (lire2, ecrire2, les liaisons des cubes), les boucles sur la carte (les noyaux SPIR-V de
+  `taranis/noyau_vtx.py`), le Druide et Ésus (les codons de 64 bits, les relevés). C'est pourquoi `forge128.py` reste la
+  forge par défaut des essais (avec la carte, l'écart est grand) ; `VTX_FORGE_VTX=1` ou `lugus forger` prennent celle de
+  vtxc128.
 - **0.852c : les segments et les bandes sur les cœurs**, comme la forge Python : un accord dont les notes sont les
   segments d'une même boucle (la même variable, le même corps) et dont le corps ne touche que le cube (`rs_sans_effet`,
   comme `sans_effet`) va aux cylindres (un par cœur, chacun son cube, puis `fusionner` ; refusé : les notes dans
