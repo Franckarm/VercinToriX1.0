@@ -276,5 +276,4 @@ tests/test_presenter_cube.py
 tests/presenter_cube/image.vtx
 belenos/gergovie_vergobret.vtx
 belenos/gergovie_orage.vtx
-belenos/gergovie_orage_marges.vtx
 mesures/coeurs_reaction.vtx
