@@ -1002,3 +1002,5 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   **`lugus forger`** : la forge sans Python (noyau et fin commune embarqués ; `forge/queue_vtx.rs`). Plus lent que la
   forge Python tant que les segments, Taranis, les zones et les pages ne sont pas refaits : la forge Python reste celle
   des essais.
+- **0.852c** : les segments (cylindres) et les bandes (l'équipe de Gutuater) écrits par vtxc128 : Gergovie à demi-échelle,
+  mêmes empreintes, 8,3 s contre 8,9 s (forge Python) ici sans carte. Reste : Taranis (les noyaux SPIR-V), les zones.

@@ -274,6 +274,7 @@ structure Ctx {
     rs_ok,              // 0.852 : 1 tant que tout le programme se traduit
     rs_boucle,          // 0.852 : le numéro de la dernière boucle (les étiquettes 'bN, 'cN)
     rs_pile: Liste,     // 0.852 : les boucles ouvertes
+    lignes_bandes: Liste,   // 0.852 : les lignes des boucles « en bandes »
     rs_vnoms: Liste,    // 0.852 : les variables de la fonction en cours, dans l'ordre de son cadre
     rs_cadre,           // 0.852 : 1 si la fonction en cours tient un cadre sur la pile de Lugus
     rs_etq: Liste,      // 0.852 : les étiquettes des textes nommés dans le Rust (ETQ_n)
@@ -3311,6 +3312,9 @@ fonction instruction(c: Ctx): Noeud {
                 nseg = avancer(c).val;
             }
             // 0.77 : « en bandes » donne les mêmes mots qu'« en segments » (la promesse est pour la forge)
+            si est_id(c, "bandes") {
+                ajouter(c.lignes_bandes, l);           // 0.852 : pour la forge écrite en vtx (comme LIGNES_BANDES)
+            }
             si !est_id(c, "segments") && !est_id(c, "bandes") {
                 erreur(c, c.tok.ligne, "« segments » attendu après « en »");
             }
@@ -13052,17 +13056,247 @@ fonction rs_instr(c: Ctx, s: Noeud) {
             dn = dn.suivant;
         }
     } sinon si g == N_ACCORD {
-        // un accord : ses mesures l'une après l'autre, et dans chacune ses tâches dans l'ordre (comme le générateur)
-        soit me = s.premier;
-        tantque me != nul {
-            rs_instrs(c, me.premier);
-            me = me.suivant;
+        // les notes de l'accord (toutes ses tâches, mesure après mesure) ; des segments d'une même boucle qui ne touchent
+        // que le cube vont aux cœurs (les cylindres, ou les bandes) ; sinon, l'une après l'autre (comme le générateur)
+        soit an_notes = liste();
+        soit an_me = s.premier;
+        tantque an_me != nul {
+            soit an_ta = an_me.premier;
+            tantque an_ta != nul {
+                ajouter(an_notes, bits(an_ta));
+                an_ta = an_ta.suivant;
+            }
+            an_me = an_me.suivant;
+        }
+        si rs_cylindres_possibles(c, an_notes) && dans_liste_n(c.lignes_bandes, s.ligne) {
+            rs_en_bandes(c, an_notes, s.ligne);
+        } sinon si rs_cylindres_possibles(c, an_notes) {
+            rs_en_cylindres(c, an_notes);
+        } sinon {
+            pour an_k dans 0..an_notes.n {
+                soit an_nt: Noeud = elem(an_notes, an_k);
+                rs_instr(c, an_nt);
+            }
         }
     } sinon si g == N_BLOC {
         rs_instrs(c, s.premier);
     } sinon {
         rs_pas_encore_de(c, "une sorte d'instruction", g, 0, s.ligne);
     }
+}
+
+// ------------------------------------------------------------------------------ 0.852 : les segments sur les cœurs
+fonction dans_liste_n(l: Liste, x) {
+    pour i dans 0..l.n {
+        si elem(l, i) == x {
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
+// comme sans_effet de la forge : ni le monde, ni le tas, ni l'assembleur, ni un accord imbriqué ; le cube est permis
+fonction rs_sans_effet(c: Ctx, n: Noeud, vus: Liste) {
+    tantque n != nul {
+        soit g = n.genre;
+        si g == N_CHAMP || g == N_ECRIRE_CHAMP || g == N_ACCORD || g == N_RLIRE || g == N_RECRIRE || g == N_CONSTRUIRE
+                || g == N_NOUVEAU || g == N_DONNEES || g == N_APPELV || g == N_ANNULER || g == N_VALIDER || g == N_FREF {
+            retour 0;
+        }
+        si g == N_APPEL {
+            si effet_nomme(n.nom) {
+                retour 0;
+            }
+            soit f = fonction_de(c, n.nom);
+            si f != nul && !est_integre(n.nom) && !dans_liste(vus, n.nom) {
+                ajouter(vus, n.nom);
+                si !rs_sans_effet(c, f.corps, vus) {
+                    retour 0;
+                }
+            }
+        }
+        si !rs_sans_effet(c, n.a, vus) || !rs_sans_effet(c, n.b, vus) || !rs_sans_effet(c, n.c, vus)
+                || !rs_sans_effet(c, n.premier, vus) || !rs_sans_effet(c, n.deuxieme, vus) {
+            retour 0;
+        }
+        n = n.suivant;
+    }
+    retour 1;
+}
+
+// au moins deux notes, toutes des segments d'une même boucle (la même variable, le même corps), qui ne touchent que le cube
+fonction rs_cylindres_possibles(c: Ctx, notes: Liste) {
+    si notes.n < 2 {
+        retour 0;
+    }
+    soit n0: Noeud = elem(notes, 0);
+    pour k dans 0..notes.n {
+        soit nk: Noeud = elem(notes, k);
+        si nk.genre != N_POUR || !egal(nk.nom, n0.nom) || nk.premier != n0.premier || nk.val != n0.val {
+            retour 0;
+        }
+    }
+    // le corps est lu avec ses appels (une seule note suffit : elles partagent le même corps)
+    soit corps = n0.premier;
+    retour rs_sans_effet(c, corps, liste());
+}
+
+// les variables de la fonction, recopiées dans le fil
+fonction rs_copier_vars(c: Ctx, de) {
+    pour k dans 0..c.rs_vnoms.n {
+        rs_t(c, "let mut ");
+        rs_var(c, elem(c.rs_vnoms, k));
+        rs_t(c, " = ");
+        si de == 0 {
+            rs_var(c, elem(c.rs_vnoms, k));
+        } sinon {
+            rs_t(c, "w_");
+            rs_ident(c, elem(c.rs_vnoms, k));
+        }
+        rs_t(c, "; ");
+    }
+    rs_c(c, 10);
+}
+
+// la part de chaque cœur (part_des_coeurs de la forge) : un fil par cœur, les notes en alternance (cylindres) ou par
+// bandes contiguës
+fonction rs_part_des_coeurs(c: Ctx, notes: Liste, bandes) {
+    soit m = notes.n;
+    rs_t(c, "let recoltes: Vec<Recolte> = std::thread::scope(|sc| {\nlet inst = &inst;\nlet fils: Vec<_> = (0..nt).map(|t| sc.spawn(move || {\n");
+    si bandes {
+        rs_t(c, "let mut c_fils = ctx_bande(inst); let c = &mut c_fils;\n");
+    } sinon {
+        rs_t(c, "let mut c_fils = ctx_cylindre(inst); let c = &mut c_fils;\n");
+    }
+    rs_copier_vars(c, 0);
+    si bandes {
+        rs_t(c, "for q in (t * ");
+        rs_n(c, m);
+        rs_t(c, " / nt)..((t + 1) * ");
+        rs_n(c, m);
+        rs_t(c, " / nt) {\n");
+    } sinon {
+        rs_t(c, "for q in (t..");
+        rs_n(c, m);
+        rs_t(c, ").step_by(nt) {\n");
+    }
+    rs_t(c, "match q {\n");
+    pour k dans 0..m {
+        rs_n(c, k);
+        rs_t(c, " => {\n");
+        soit nk: Noeud = elem(notes, k);
+        rs_instr(c, nk);
+        rs_t(c, "}\n");
+    }
+    rs_t(c, "_ => {}\n}\n}\nlet r = rendre(c); remettre_ctx(c_fils); r\n})).collect();\n");
+    rs_t(c, "fils.into_iter().map(|h| h.join().unwrap()).collect()\n});\n");
+}
+
+// notes_en_cylindres : un cylindre par cœur sur son propre cube, puis la fusion ; refusée : les notes dans l'ordre
+fonction rs_en_cylindres(c: Ctx, notes: Liste) {
+    rs_t(c, "{\nlet mut fait = false;\nif !fait { taranis_rapatrier(c); }\nif !fait && cylindres_voulus() > 1 {\n");
+    rs_t(c, "let t0 = std::time::Instant::now();\nlet inst = instantane(c);\nlet nt = cylindres_voulus().min(");
+    rs_n(c, notes.n);
+    rs_t(c, ");\n");
+    rs_part_des_coeurs(c, notes, 0);
+    rs_t(c, "let t1 = std::time::Instant::now();\nfait = fusionner(c, &inst, recoltes);\nchrono_cylindres(t0, t1);\n}\n");
+    rs_t(c, "if !fait {\n");
+    pour k dans 0..notes.n {
+        soit nk: Noeud = elem(notes, k);
+        rs_instr(c, nk);
+    }
+    rs_t(c, "}\n}\n");
+}
+
+// equipe_en_morceaux : la boucle entière coupée à l'exécution (quatre morceaux par cœur), prise par l'équipe de Gutuater
+fonction rs_equipe(c: Ctx, notes: Liste) {
+    soit n0: Noeud = elem(notes, 0);
+    soit nd: Noeud = elem(notes, notes.n - 1);
+    soit pas = n0.val & 18446744073709551615;
+    rs_t(c, "let ta: u64 = (");
+    rs_expr(c, n0.a);
+    rs_t(c, ") as u64;\nlet tb: u64 = (");
+    rs_expr(c, nd.b);
+    rs_t(c, ") as u64;\nlet compte: u64 = if tb > ta { (tb - ta + ");
+    rs_n(c, pas - 1);
+    rs_t(c, ") / ");
+    rs_n(c, pas);
+    rs_t(c, " } else { 0 };\nlet nk: u64 = ((nt as u64) * 4).min(compte).max(1);\n");
+    rs_t(c, "let suivant = std::sync::atomic::AtomicU64::new(0);\nlet recoltes: Vec<Recolte> = {\nlet inst = &inst; let suivant = &suivant;\n");
+    pour k dans 0..c.rs_vnoms.n {
+        rs_t(c, "let w_");
+        rs_ident(c, elem(c.rs_vnoms, k));
+        rs_t(c, " = ");
+        rs_var(c, elem(c.rs_vnoms, k));
+        rs_t(c, "; ");
+    }
+    rs_t(c, "\nlet tache = move |_t: usize| -> Recolte {\nlet mut c_fils = ctx_bande(inst); let c = &mut c_fils;\n");
+    rs_copier_vars(c, 1);
+    rs_t(c, "loop {\nlet q = suivant.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\nif q >= nk { break; }\n");
+    rs_t(c, "let lo = ta + compte * q / nk * ");
+    rs_n(c, pas);
+    rs_t(c, "; let hi = (ta + compte * (q + 1) / nk * ");
+    rs_n(c, pas);
+    rs_t(c, ").min(tb);\n");
+    c.rs_boucle = c.rs_boucle + 1;
+    soit kb = c.rs_boucle;
+    rs_var(c, n0.nom);
+    rs_t(c, " = lo as u128;\n'b");
+    rs_n(c, kb);
+    rs_t(c, ": loop {\nif (");
+    rs_var(c, n0.nom);
+    rs_t(c, " as u64) >= hi { break; }\n'c");
+    rs_n(c, kb);
+    rs_t(c, ": {\n");
+    ajouter(c.rs_pile, kb);
+    rs_instrs(c, n0.premier);
+    c.rs_pile.n = c.rs_pile.n - 1;
+    rs_t(c, "}\n");
+    rs_var(c, n0.nom);
+    rs_t(c, " = ((");
+    rs_var(c, n0.nom);
+    rs_t(c, " as u64).wrapping_add(");
+    rs_n(c, pas);
+    rs_t(c, "u64)) as u128;\n}\n}\n");
+    pour k2 dans 0..c.rs_vnoms.n {
+        rs_t(c, "let _ = ");
+        rs_var(c, elem(c.rs_vnoms, k2));
+        rs_t(c, "; ");
+    }
+    rs_t(c, "\nlet r = rendre(c); remettre_ctx(c_fils); r\n};\nequipe_jouer(nt, &tache)\n};\n");
+}
+
+// notes_en_bandes : chaque cœur sa bande, tous écrivent dans le cube commun ; deux cœurs sur le même mot : la promesse
+// n'est pas tenue, la machine s'arrête ; le nombre de cœurs vient du réglage de Gutuater (mesuré)
+fonction rs_en_bandes(c: Ctx, notes: Liste, ligne) {
+    // la clé du réglage (la mémoire de Gutuater) : la fonction et la ligne
+    soit h = 14695981039346656037;
+    soit cle = c.fcour.nom;
+    pour i dans 0..longueur(cle) {
+        h = ((h ^ car(cle, i)) * 1099511628211) & 18446744073709551615;
+    }
+    h = ((h ^ ligne) * 1099511628211) & 18446744073709551615;
+    rs_t(c, "{\n#[allow(dead_code)]\nstatic REGLAGE: Reglage = Reglage::neuf(");
+    rs_n(c, h);
+    rs_t(c, "u64);\nlet nt_voulu = if c.ombre.is_none() { REGLAGE.coeurs() } else { 1 };\n");
+    rs_t(c, "let t_reglage = std::time::Instant::now();\nif nt_voulu > 1 {\nlet t0 = std::time::Instant::now();\nlet inst = instantane(c);\n");
+    rs_t(c, "let nt = nt_voulu;\n");
+    rs_equipe(c, notes);
+    rs_t(c, "let t1 = std::time::Instant::now();\nif recoltes.iter().any(|r| r.danger) || bandes_touchees(&recoltes).is_some() {\n");
+    rs_t(c, "    arreter(c, \"ligne ");
+    rs_n(c, ligne);
+    rs_t(c, " : la boucle « en bandes » n'a pas tenu sa promesse : deux cœurs ont touché le même mot (l'un l'écrivait, l'autre le lisait ou l'écrivait) ; écrivez « en segments »\");\n}\n");
+    rs_t(c, "if !fusionner(c, &inst, recoltes) {\n    arreter(c, \"ligne ");
+    rs_n(c, ligne);
+    rs_t(c, " : la boucle « en bandes » n'a pas tenu sa promesse ; écrivez « en segments »\");\n}\n");
+    rs_t(c, "c.oublier_pages();\nchrono_cylindres(t0, t1);\n} else {\n");
+    pour k dans 0..notes.n {
+        soit nk: Noeud = elem(notes, k);
+        rs_instr(c, nk);
+    }
+    rs_t(c, "}\nif c.ombre.is_none() { REGLAGE.noter(nt_voulu, t_reglage.elapsed(), 1, ");
+    rs_n(c, ligne);
+    rs_t(c, "); }\n}\n");
 }
 
 fonction rs_est_param(f: Fonction, nom) {
@@ -15825,6 +16059,7 @@ fonction principal() {
     c.mode_exemples = entrée() == 1;       // 1 : compiler le calcul des exemples à la place du principal (absent : 0)
     c.rust = entrée() == 1;                // 0.852 : 1 : écrire aussi code.rs, le Rust de la forge (absent : 0)
     c.rs = liste();
+    c.lignes_bandes = liste();
     c.rs_ok = 1;
     c.rs_pile = liste();
     c.rs_manq = liste();

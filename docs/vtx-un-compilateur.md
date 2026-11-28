@@ -124,8 +124,17 @@ garde.
   Sans eux, le Gergovie de vtxc128 est juste mais fait tout au processeur, sur un cœur : à demi-échelle, 12,8 s contre
   8,9 s ici (sans carte) ; avec la carte chez le créateur, l'écart serait bien plus grand. C'est pourquoi `forge128.py`
   reste la forge par défaut des essais ; `VTX_FORGE_VTX=1` ou `lugus forger` prennent celle de vtxc128.
-- **Ensuite, dans l'ordre** : les boucles en segments sur les cœurs, puis les noyaux de la carte écrits par vtxc128
-  (Taranis), puis les zones et les pages ; alors l'ancienne forge et vtx128.py peuvent partir.
+- **0.852c : les segments et les bandes sur les cœurs**, comme la forge Python : un accord dont les notes sont les
+  segments d'une même boucle (la même variable, le même corps) et dont le corps ne touche que le cube (`rs_sans_effet`,
+  comme `sans_effet`) va aux cylindres (un par cœur, chacun son cube, puis `fusionner` ; refusé : les notes dans
+  l'ordre) ; une boucle « en bandes » (vtxc128 en garde les lignes, `lignes_bandes`) va à l'équipe de Gutuater
+  (`equipe_jouer`, quatre morceaux par cœur, le réglage `REGLAGE` mesuré ; deux cœurs sur le même mot : la machine
+  s'arrête et le dit). La clé du réglage est la fonction et la ligne (la forge Python prend le programme, la ligne et le
+  corps : leurs mémoires de Gutuater ne se partagent pas). Gergovie (l'orage, demi-échelle, deux cœurs ici) : les mêmes
+  empreintes et images, **8,3 s contre 8,9 s pour la forge Python** (12,8 s avant, sur un cœur).
+- **Ensuite** : Taranis, les noyaux de la carte écrits par vtxc128 (le travail de `taranis/noyau_vtx.py`, 1 400 lignes,
+  et de `vers_la_carte`/`fondre` dans la forge : les trois noyaux, la fenêtre et les pages, les lots, le choix du
+  vergobret) ; puis les zones et les pages de l'étage 2 ; alors l'ancienne forge et vtx128.py peuvent partir.
 
 ## Ce qui ne change pas
 
