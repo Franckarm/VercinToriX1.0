@@ -2671,8 +2671,19 @@ def forger_fichier(chemin, sortie=None, rs=None, natif=False):
     sortie = sortie or os.path.splitext(chemin)[0] + ".lugus" + ext
     dossier, nom = os.path.dirname(os.path.abspath(chemin)), os.path.splitext(os.path.basename(chemin))[0]
     code = None
-    if os.environ.get("VTX_FORGE_VTX") == "1":
+    # le Druide (VTX_DRUIDE) et Ésus demandé (VTX_ESUS=1 : son relevé .esus, ses cellules) : pas encore dans la forge
+    # en vtx ; la forge Python garde la main pour eux
+    voulu_py = druide_mode() != "" or os.environ.get("VTX_ESUS") == "1"
+    try:   # un ARN du Druide (esus, deplier) à côté de l'exécutable : le Druide suit ce programme
+        voulu_py = voulu_py or any(l.startswith(("esus ", "deplier ")) for l in open(os.path.splitext(sortie)[0] + ".arn", encoding="utf-8"))
+    except OSError:
+        pass
+    if os.environ.get("VTX_FORGE_VTX") != "0" and voulu_py:
+        print("forge en vtx : pas encore (le Druide et Ésus) : la forge Python garde la main", file=sys.stderr)
+    if os.environ.get("VTX_FORGE_VTX") != "0" and not voulu_py:
         # 0.852 : la forge écrite en vtx (forge_vtx.py) d'abord ; ce qu'elle ne sait pas encore, cette forge-ci le fait
+        # 0.856 : par défaut (décidé avec le créateur : les technologies qui marchent, ensemble) ; VTX_FORGE_VTX=0 : la
+        # forge Python seule
         sys.modules.setdefault("forge128", sys.modules[__name__])   # forge_vtx reprend ce module-ci (le même)
         if ici not in sys.path:
             sys.path.insert(0, ici)
@@ -2682,6 +2693,12 @@ def forger_fichier(chemin, sortie=None, rs=None, natif=False):
             print("forge en vtx : pas encore (" + raison + ") : la forge Python garde la main", file=sys.stderr)
         else:
             print("forge en vtx : le Rust écrit par vtxc128", file=sys.stderr)
+            if os.environ.get("VTX_TARANIS"):
+                # ce que la forge Python disait des lots fondus, vtxc128 l'écrit dans le Rust : on le redit
+                for m in re.finditer(r"// taranis : le noyau fondu du lot de la ligne (\d+) \(la garde : (\[[^\]]*\])\)"
+                                     r"[\s\S]*?gene_fondre_debut\((\d+)\)", code):
+                    print(f"taranis : le lot de la ligne {m.group(1)} (le lieu {m.group(3)}) se fond aussi en un noyau "
+                          f"(la garde : {m.group(2)})", file=sys.stderr)
             ESUS_RELEVE[0], CELLULES[0] = [], {}
     if code is None:
         code, _ = source_rust(src, dossier, nom, sortie)

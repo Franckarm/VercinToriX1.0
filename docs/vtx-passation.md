@@ -1023,3 +1023,10 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - **0.855** : les étages d'un seul envoi (le lot étendu : les boucles dans un « si », le noyau fondu dans le lot ;
   `taranis_fondre_lot`, `gene_fondre_sait` dans le noyau de la forge) ; la division de la carte en 64 bits seulement.
   À mesurer chez le créateur : gergovie_etages forgé par `lugus forger`, contre la forge Python.
+## 0.856 (28 novembre) : la forge en vtx par défaut
+- Essai 0.855 : étages vtxc128 57,4 / 36,6 / 35,7 i/s (1 % bas 25,6) contre 40,4 / 30,4 / 33,2 (8,0) ; mêmes empreintes.
+- `forge128.forger_fichier` : la forge en vtx d'abord, pour tout programme (`VTX_FORGE_VTX=0` : Python seule). Python
+  garde la main pour les réactions (plusieurs cœurs), le Druide (`VTX_DRUIDE`, ARN esus/deplier) et Ésus (`VTX_ESUS=1`).
+- `tests/test_druide.py` demande Ésus (VTX_ESUS=1) ; vtxc128 écrit la garde du lot fondu (annoncé sous VTX_TARANIS).
+- L'essai : Gergovie forgée par `lugus forger`.
+- Note : `tests/test_cylindres.py` (la promesse non tenue sur 3 cœurs) peut échouer sur une machine très chargée.

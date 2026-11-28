@@ -37,16 +37,16 @@ popd
 call :titre "2. le temoin C++ (le processeur)"
 call :cpp
 
-call :titre "3. vtx au processeur"
-python forge\forge128.py belenos\gergovie.vtx -o gergovie.exe > "%TMPS%" 2>&1
+call :titre "3. vtx au processeur (lugus forger : la forge en vtx, sans Python)"
+vtx-rs\target\release\lugus.exe forger belenos\gergovie.vtx -o gergovie.exe > "%TMPS%" 2>&1
 type "%TMPS%"
 type "%TMPS%" >> "%LOG%"
 call :jouer gergovie.exe
 
 call :titre "4. Taranis (la carte), le noyau unique"
 set VTX_EPISSAGE=rapide
-python forge\forge128.py belenos\gergovie_carte.vtx -o gergovie_carte.exe > "%TMPS%" 2>&1
-python forge\forge128.py belenos\gergovie_etages.vtx -o gergovie_etages.exe > "%TMPS%.3" 2>&1
+vtx-rs\target\release\lugus.exe forger belenos\gergovie_carte.vtx -o gergovie_carte.exe > "%TMPS%" 2>&1
+vtx-rs\target\release\lugus.exe forger belenos\gergovie_etages.vtx -o gergovie_etages.exe > "%TMPS%.3" 2>&1
 set VTX_EPISSAGE=
 type "%TMPS%"
 type "%TMPS%" >> "%LOG%"

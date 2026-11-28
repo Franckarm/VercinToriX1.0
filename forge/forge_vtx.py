@@ -5,9 +5,10 @@ qu'un assembleur : le noyau, les mots, le Rust de vtxc128, la fin commune (forge
 Ce que vtxc128 ne sait pas encore écrire, il le dit (« // pas encore : … ») : programme_rust_vtx rend alors None et la
 raison, et forge128 garde la main (son propre Rust, depuis l'arbre de vtx128.py).
 
-  VTX_FORGE_VTX=1  forge128.forger_fichier essaie d'abord cette forge
+  forge128.forger_fichier essaie d'abord cette forge (0.856 : par défaut ; VTX_FORGE_VTX=0 : la forge Python seule)
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -73,6 +74,10 @@ QUEUE = os.path.join(ici, "queue_vtx.rs")
 def source_rust_vtx(src, dossier=None, nom="programme", sortie=None):
     """le programme Rust complet (noyau compris), ou (None, la raison)"""
     import forge128
+    # 0.856 : les réactions sur plusieurs cœurs (les vagues d'atomes lourds, somme/min/max pour chaque, les souvenirs
+    # partagés) : la forge Python les sait, vtxc128 pas encore (il les traduit en fonctions ordinaires, sur un cœur)
+    if re.search(r"(?m)^\s*reaction\s", src):
+        return None, "les réactions sur plusieurs cœurs"
     prog, mots = programme_rust_vtx(src, dossier, nom)
     if prog is None:
         return None, mots

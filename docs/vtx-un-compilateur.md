@@ -174,8 +174,20 @@ garde.
   Python). La division sur la carte est de 64 bits, toujours (le détour par 32 bits quand les nombres y tenaient est
   retiré, décidé avec le créateur ; la division par une constante reste une multiplication exacte). L'entrée `rust = 2`
   du protocole garde les lots de la forge Python, pour le test qui compare les noyaux mot pour mot.
-- **Ce qui manque encore** : les zones (les tableaux serrés) et les pages de l'étage 2 ; le Druide et Ésus dans la
-  forge ; les flottants sur la carte (Taranis ne compte qu'en entiers).
+- **Essai 0.855** (chez le créateur) : les étages forgés par vtxc128, un seul envoi : 57,4 / 36,6 / 35,7 images par
+  seconde (vol / jour / nuit), le 1 % le plus lent à 25,6 en vol ; la forge Python : 40,4 / 30,4 / 33,2, et 8,0. Les
+  mêmes empreintes partout. Le lot de cinq noyaux : 6,2 ms sur la carte, 6,5 ms envoi et attente compris.
+- **0.856 : les technologies qui marchent, ensemble, par défaut.** `forge128.forger_fichier` (donc tout programme forgé,
+  pas seulement Gergovie) passe d'abord par la forge en vtx : le Rust écrit par vtxc128, Taranis écrit par vtxc128
+  (la carte en 64 bits, le quaternaire, le lot étendu, fondre dans le lot), les cylindres et les bandes.
+  `VTX_FORGE_VTX=0` : la forge Python seule. Elle garde la main, et le dit (« forge en vtx : pas encore (…) »), pour
+  ce que vtxc128 ne sait pas encore : les réactions sur plusieurs cœurs (les vagues d'atomes lourds, somme/min/max pour
+  chaque, les souvenirs partagés), le Druide (`VTX_DRUIDE`, ou un ARN `esus`/`deplier` à côté de l'exécutable) et le
+  relevé d'Ésus (`VTX_ESUS=1` : le fichier `.esus` et les cellules, que le Druide lit). Les lots fondus sont annoncés
+  comme chez la forge Python (vtxc128 écrit la garde dans le Rust). L'essai forge Gergovie par `lugus forger` (aucun
+  Python sur le chemin du programme).
+- **Ce qui manque encore** : les zones (les tableaux serrés) et les pages de l'étage 2 ; les réactions sur plusieurs
+  cœurs ; le Druide et Ésus dans la forge ; les flottants sur la carte (Taranis ne compte qu'en entiers).
 - **Les tests (0.854)** : `verifier.py` ne joue plus par défaut les 19 étapes qui ne jouent que Senos (vtx.py, le SPU-32
   gelé : le débogueur, la partition, la logique, la génomique, la compression, la bibliothèque, les maths, les
   priorités, le différentiel, les flottants de 64 bits, l'ombre, le feu…) ; Lugus a ses propres tests de tout cela.

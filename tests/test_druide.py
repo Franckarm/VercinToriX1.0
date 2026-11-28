@@ -8,6 +8,9 @@ WIN = os.name == "nt"
 LUGUS = os.path.join(racine, "vtx-rs", "target", "release", "lugus" + (".exe" if WIN else ""))
 d = tempfile.mkdtemp()
 echecs = 0
+# 0.856 : le relevé d'Ésus (.esus) et les cellules ne sont pas encore écrits par la forge en vtx (la forge par défaut) :
+# le Druide les demande (VTX_ESUS=1 : la forge Python garde la main)
+os.environ["VTX_ESUS"] = "1"
 
 
 def verifier(nom, ok, detail=""):

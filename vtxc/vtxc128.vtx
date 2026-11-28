@@ -15595,7 +15595,14 @@ fonction rs_fondre(c: Ctx, corps: Liste, deb, fin, pos, suite_apres) {
     }
     rs_t(c, "{\n// taranis : le noyau fondu du lot de la ligne ");
     rs_n(c, t0.ligne);
-    rs_t(c, "\n#[allow(dead_code)]\nstatic SPV: [u32; ");
+    rs_t(c, " (la garde : [");
+    pour g3 dans 0..garde.n {
+        si g3 > 0 {
+            rs_t(c, ", ");
+        }
+        rs_n(c, elem(garde, g3));
+    }
+    rs_t(c, "])\n#[allow(dead_code)]\nstatic SPV: [u32; ");
     rs_n(c, m.n);
     rs_t(c, "] = [");
     pour i4 dans 0..m.n {
