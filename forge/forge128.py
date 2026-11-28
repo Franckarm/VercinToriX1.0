@@ -2537,14 +2537,22 @@ def programme_rust(src, dossier=None, nom="programme"):
          f"const FIN_CODE: u128 = {etiquettes['FIN_CODE']};",
          f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n"]
     s += [x.replace(MARQUE, "") for x in fonctions]
-    s.append(code_zones(fo.plan or {}))
+    s += queue_programme(fo.plan or {}, getattr(fo, "reglages", []), getattr(fo, "choix", []), fo.noyaux)
+    return "\n".join(s), mots
+
+
+def queue_programme(plan, reglages, choix, noyaux):
+    """0.852 : ce qui suit les fonctions forgées (les zones, les réglages, les noyaux de la carte, les machines des fils
+    et des cylindres, le Druide, la membrane, lancer) : commun à cette forge et à celle de vtxc128 (forge_vtx.py)"""
+    s = []
+    s.append(code_zones(plan))
     # 0.810 : le réglage de chaque boucle « en bandes » (Gutuater mesure)
-    for r, h in sorted(set(getattr(fo, "reglages", []))):
+    for r, h in sorted(set(reglages)):
         s.append(f"#[allow(dead_code)]\nstatic {r}: Reglage = Reglage::neuf({h}u64);")
     # 0.816 : le choix de la carte ou du processeur, pour chaque boucle qui sait aller à la carte
-    for r in sorted(set(getattr(fo, "choix", []))):
+    for r in sorted(set(choix)):
         s.append(f"#[allow(dead_code)]\nstatic {r}: Choix = Choix::neuf();")
-    for k, spv in enumerate(fo.noyaux):
+    for k, spv in enumerate(noyaux):
         mots = [int.from_bytes(spv[i:i + 4], "little") for i in range(0, len(spv), 4)]
         s.append(f"#[allow(dead_code)]\nstatic SPV{k}: [u32; {len(mots)}] = [" + ",".join(map(str, mots)) + "];")
     # la machine d'un fil (les vagues sur plusieurs cœurs) : sa mémoire à elle, le programme chargé (textes et constantes)
@@ -2580,7 +2588,7 @@ def programme_rust(src, dossier=None, nom="programme"):
                   "std::process::exit(4); } } }\n")
     s.append("pub fn lancer(entrees: &[String]) {\n    nommer_programme(NOM);\n" + gardes + "    lancer_programme(f_principal, debuter_zones, vider_zones, &MOTS, FIN_CODE, "
              "NOM, entrees, druide_fin);\n}\n")
-    return "\n".join(s), mots
+    return s
 
 
 def code_druide():
@@ -2661,8 +2669,22 @@ def forger_fichier(chemin, sortie=None, rs=None, natif=False):
     src = open(chemin, encoding="utf-8").read()
     ext = ".exe" if os.name == "nt" else ""
     sortie = sortie or os.path.splitext(chemin)[0] + ".lugus" + ext
-    code, _ = source_rust(src, os.path.dirname(os.path.abspath(chemin)), os.path.splitext(os.path.basename(chemin))[0],
-                          sortie)
+    dossier, nom = os.path.dirname(os.path.abspath(chemin)), os.path.splitext(os.path.basename(chemin))[0]
+    code = None
+    if os.environ.get("VTX_FORGE_VTX") == "1":
+        # 0.852 : la forge écrite en vtx (forge_vtx.py) d'abord ; ce qu'elle ne sait pas encore, cette forge-ci le fait
+        sys.modules.setdefault("forge128", sys.modules[__name__])   # forge_vtx reprend ce module-ci (le même)
+        if ici not in sys.path:
+            sys.path.insert(0, ici)
+        import forge_vtx
+        code, raison = forge_vtx.source_rust_vtx(src, dossier, nom, sortie)
+        if code is None:
+            print("forge en vtx : pas encore (" + raison + ") : la forge Python garde la main", file=sys.stderr)
+        else:
+            print("forge en vtx : le Rust écrit par vtxc128", file=sys.stderr)
+            ESUS_RELEVE[0], CELLULES[0] = [], {}
+    if code is None:
+        code, _ = source_rust(src, dossier, nom, sortie)
     garder = rs is not None
     rs = rs or os.path.join(tempfile.mkdtemp(prefix="forge128-"), "programme.rs")
     with open(rs, "w", encoding="utf-8") as f:

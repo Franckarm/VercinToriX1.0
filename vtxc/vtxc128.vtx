@@ -269,6 +269,15 @@ structure Ctx {
     souv_place,         // la prochaine place libre des souvenirs (@3[#F00000..])
     exemples: Liste,    // les exemples écrits : l'expression, sa ligne, son texte (trois par exemple)
     mode_exemples,      // 1 : le principal est remplacé par le calcul des exemples (Lugus les rejoue)
+    rust,               // 0.852 : 1 : écrire aussi « code.rs » (la forge en vtx)
+    rs: Liste,          // 0.852 : le Rust en cours (des caractères)
+    rs_ok,              // 0.852 : 1 tant que tout le programme se traduit
+    rs_boucle,          // 0.852 : le numéro de la dernière boucle (les étiquettes 'bN, 'cN)
+    rs_pile: Liste,     // 0.852 : les boucles ouvertes
+    rs_etq: Liste,      // 0.852 : les étiquettes des textes nommés dans le Rust (ETQ_n)
+    rs_dd,              // 0.852 : la première étiquette des données (lugus())
+    rs_manq: Liste,     // 0.852 : ce que vtxc128 ne sait pas encore écrire en Rust (des caractères, une raison par ligne)
+    fin_code,           // 0.852 : l'étiquette de la fin du code (FIN_CODE de la forge)
     tramp,              // 0.6w : l'étiquette du trampoline des appels par valeur (0 : aucun appel par valeur)
     tramp_libre,        // 0.6y : 1 si un appel passe par __appeler lui-même
     tramp0, tramp1, tramp2,   // 0.6y : les trampolines promis (touche rien, lecture, memoire ; 0 : pas employé)
@@ -12178,6 +12187,754 @@ fonction choisir_registres(c: Ctx, f: Fonction) {
     retour nmax;
 }
 
+// ---------------------------------------------------------------------------------------------- 0.852 : la forge en vtx
+// (la décision du créateur, docs/vtx-un-compilateur.md, étape 2 par la forge écrite en vtx) : vtxc128 écrit lui-même le
+// Rust de chaque fonction gardée, depuis son arbre et ses types (« code.rs »), pendant qu'il en écrit les mots. Premier
+// pas : les entiers de Lugus (128 bits), soit, si, tantque, pour, retour, les appels, sortie(). Ce qui n'est pas encore
+// su s'écrit « // pas encore : … » : l'enveloppe (forge/forge_vtx.py) le voit et laisse l'ancienne forge faire.
+
+// le Rust s'écrit d'abord dans une liste de caractères (c.rs), puis dans « code.rs » à la fin
+fonction rs_c(c: Ctx, k) {
+    si c.rs_ok == 1 {
+        ajouter(c.rs, k);
+    }
+}
+
+fonction rs_t(c: Ctx, t) {
+    si c.rs_ok != 1 {
+        retour;
+    }
+    pour i dans 0..longueur(t) {
+        ajouter(c.rs, car(t, i));
+    }
+}
+
+fonction rs_n(c: Ctx, n) {
+    si c.rs_ok != 1 {
+        retour;
+    }
+    soit p = 1;
+    tantque n / p >= 10 {
+        p = p * 10;
+    }
+    tantque p > 0 {
+        ajouter(c.rs, 48 + (n / p) % 10);
+        p = p / 10;
+    }
+}
+
+// « code.rs » : le nom, la fin du code, puis les fonctions (ou ce qui manque)
+fonction ecrire_rust(c: Ctx) {
+    soit s = ouvrir_ecriture("code.rs");
+    si c.rs_ok == 1 {
+        ecrire_texte(s, "// forge par vtxc128\nconst FIN_CODE: u128 = ");
+        ecrire_nombre(s, elem(c.lugus_place, elem(c.etiq, c.fin_code)) / 2);
+        ecrire_texte(s, ";\n");
+        // les adresses des textes (comme la résolution de lugus() : une donnée en mots)
+        pour j dans 0..c.rs_etq.n {
+            soit qe = elem(c.rs_etq, j);
+            soit vu = 0;
+            pour j2 dans 0..j {
+                si elem(c.rs_etq, j2) == qe {
+                    vu = 1;
+                }
+            }
+            si vu == 0 {
+                soit ee = elem(c.etiq, qe);
+                soit cible = elem(c.lugus_place, ee);
+                si ee >= c.rs_dd {
+                    cible = (cible + 1) / 2;
+                }
+                ecrire_texte(s, "#[allow(dead_code)]\nconst ETQ_");
+                ecrire_nombre(s, qe);
+                ecrire_texte(s, ": u128 = ");
+                ecrire_nombre(s, cible);
+                ecrire_texte(s, ";\n");
+            }
+        }
+        pour i dans 0..c.rs.n {
+            ecrire_car(s, elem(c.rs, i));
+        }
+    } sinon {
+        pour i2 dans 0..c.rs_manq.n {
+            ecrire_car(s, elem(c.rs_manq, i2));
+        }
+    }
+    fermer(s);
+}
+
+fonction rs_pas_encore(c: Ctx, quoi, ligne) {
+    rs_pas_encore_de(c, quoi, 0, 0, ligne);
+}
+
+// de : un détail (un texte : l'opération, le nom ; un nombre : le genre du noeud), 0 sans détail
+fonction rs_pas_encore_de(c: Ctx, quoi, de, est_texte, ligne) {
+    // toutes les raisons sont gardées (une par ligne, la première d'abord) : ce qui manque se voit d'un coup
+    c.rs_ok = 0;
+    soit m = c.rs_manq;
+    rs_l(m, "// pas encore : ");
+    rs_l(m, quoi);
+    si de != 0 {
+        rs_l(m, " « ");
+        si est_texte {
+            rs_l(m, de);
+        } sinon {
+            rs_ln(m, de);
+        }
+        rs_l(m, " »");
+    }
+    rs_l(m, " (ligne ");
+    rs_ln(m, ligne);
+    rs_l(m, ")\n");
+}
+
+fonction rs_l(m: Liste, t) {
+    pour i dans 0..longueur(t) {
+        ajouter(m, car(t, i));
+    }
+}
+
+fonction rs_ln(m: Liste, n) {
+    soit p = 1;
+    tantque n / p >= 10 {
+        p = p * 10;
+    }
+    tantque p > 0 {
+        ajouter(m, 48 + (n / p) % 10);
+        p = p / 10;
+    }
+}
+
+// un chiffre hexadécimal
+fonction rs_hex(c: Ctx, v) {
+    soit n = 0;
+    soit p = v;
+    tantque p > 0 {
+        n = n + 1;
+        p = p >> 4;
+    }
+    si n == 0 {
+        rs_c(c, '0');
+    }
+    tantque n > 0 {
+        n = n - 1;
+        soit d = (v >> (4 * n)) & 15;
+        si d < 10 {
+            rs_c(c, 48 + d);
+        } sinon {
+            rs_c(c, 87 + d);
+        }
+    }
+}
+
+// un nom de vtx dans le Rust (comme ident() de la forge Python : ce qui n'est pas une lettre ASCII, un chiffre ou _
+// devient _uXX_)
+fonction rs_ident(c: Ctx, t) {
+    pour i dans 0..longueur(t) {
+        soit k = car(t, i);
+        si (k >= 48 && k <= 57) || (k >= 65 && k <= 90) || (k >= 97 && k <= 122) || k == 95 {
+            rs_c(c, k);
+        } sinon {
+            rs_t(c, "_u");
+            rs_hex(c, k);
+            rs_c(c, '_');
+        }
+    }
+}
+
+fonction rs_var(c: Ctx, nom) {
+    rs_t(c, "v_");
+    rs_ident(c, nom);
+}
+
+// un type qui tient dans un mot et se traite comme un entier : l'entier, une référence de structure, la poignée d'un
+// texte ou d'un tableau
+fonction rs_mot(t) {
+    retour t == 0 || est_struct(t) || t == T_T || t == T_TL || t == T_TF;
+}
+
+fonction rs_est_comparaison(o) {
+    retour egal(o, "==") || egal(o, "!=") || egal(o, "<") || egal(o, ">") || egal(o, "<=") || egal(o, ">=");
+}
+
+// une opération à deux places, sous une forme : {0} et {1} les deux valeurs (calculées dans l'ordre, a puis b)
+fonction rs_forme(c: Ctx, e: Noeud, avant, entre, apres) {
+    rs_t(c, avant);
+    rs_expr(c, e.a);
+    rs_t(c, entre);
+    rs_expr(c, e.b);
+    rs_t(c, apres);
+}
+
+// Lugus : l'entier de 128 bits (comme la forge : Lugus, L())
+fonction rs_bin128(c: Ctx, e: Noeud) {
+    soit o = e.op;
+    si egal(o, "+") {
+        rs_forme(c, e, "(", ").wrapping_add(", ")");
+    } sinon si egal(o, "-") {
+        rs_forme(c, e, "(", ").wrapping_sub(", ")");
+    } sinon si egal(o, "*") {
+        rs_forme(c, e, "(", ").wrapping_mul(", ")");
+    } sinon si egal(o, "/") {
+        rs_forme(c, e, "divu128(", ", ", ")");
+    } sinon si egal(o, "%") {
+        rs_forme(c, e, "modu128(", ", ", ")");
+    } sinon si egal(o, "./") {
+        rs_forme(c, e, "divs128l(", ", ", ")");
+    } sinon si egal(o, ".%") {
+        rs_forme(c, e, "mods128l(", ", ", ")");
+    } sinon si egal(o, ".>>") {
+        rs_forme(c, e, "sar128(", ", ", ")");
+    } sinon si egal(o, "&") {
+        rs_forme(c, e, "(", " & ", ")");
+    } sinon si egal(o, "|") {
+        rs_forme(c, e, "(", " | ", ")");
+    } sinon si egal(o, "^") {
+        rs_forme(c, e, "(", " ^ ", ")");
+    } sinon si egal(o, "<<") {
+        rs_forme(c, e, "((", ") << ((", ") & 127))");
+    } sinon si egal(o, ">>") {
+        rs_forme(c, e, "((", ") >> ((", ") & 127))");
+    } sinon {
+        rs_pas_encore_de(c, "une opération dans une valeur", o, 1, e.ligne);
+    }
+}
+
+// « dunon; » : l'entier de 64 bits sur Lugus (comme la forge sans L())
+fonction rs_bin64(c: Ctx, e: Noeud) {
+    soit o = e.op;
+    si egal(o, "+") {
+        rs_forme(c, e, "(((", ") as u64).wrapping_add((", ") as u64) as u128)");
+    } sinon si egal(o, "-") {
+        rs_forme(c, e, "(((", ") as u64).wrapping_sub((", ") as u64) as u128)");
+    } sinon si egal(o, "*") {
+        rs_forme(c, e, "(((", ") as u64).wrapping_mul((", ") as u64) as u128)");
+    } sinon si egal(o, "/") {
+        rs_forme(c, e, "divu64(", ", ", ")");
+    } sinon si egal(o, "%") {
+        rs_forme(c, e, "modu64(", ", ", ")");
+    } sinon si egal(o, "./") {
+        rs_forme(c, e, "divs64(", ", ", ")");
+    } sinon si egal(o, ".%") {
+        rs_forme(c, e, "mods64(", ", ", ")");
+    } sinon si egal(o, ".>>") {
+        rs_forme(c, e, "sar64(", ", ", ")");
+    } sinon si egal(o, "&") {
+        rs_forme(c, e, "((((", ") as u64) & ((", ") as u64)) as u128)");
+    } sinon si egal(o, "|") {
+        rs_forme(c, e, "((((", ") as u64) | ((", ") as u64)) as u128)");
+    } sinon si egal(o, "^") {
+        rs_forme(c, e, "((((", ") as u64) ^ ((", ") as u64)) as u128)");
+    } sinon si egal(o, "<<") {
+        rs_forme(c, e, "((((", ") as u64) << (((", ") as u64) & 63)) as u128)");
+    } sinon si egal(o, ">>") {
+        rs_forme(c, e, "((((", ") as u64) >> (((", ") as u64) & 63)) as u128)");
+    } sinon {
+        rs_pas_encore_de(c, "une opération dans une valeur", o, 1, e.ligne);
+    }
+}
+
+// les arguments a0, a1… d'un appel, dans l'ordre donné (ordre : une liste des places, 0 pour le premier)
+fonction rs_args(c: Ctx, e: Noeud, ordre: Liste) {
+    pour k dans 0..ordre.n {
+        soit a = e.premier;
+        pour j dans 0..elem(ordre, k) {
+            a = a.suivant;
+        }
+        rs_t(c, "let a");
+        rs_n(c, elem(ordre, k));
+        rs_t(c, ": u128 = ");
+        rs_expr(c, a);
+        rs_t(c, "; ");
+    }
+}
+
+fonction rs_ordre(n, premier_en_dernier): Liste {
+    soit l = liste();
+    si premier_en_dernier && n == 2 {
+        ajouter(l, 1);
+        ajouter(l, 0);
+    } sinon {
+        pour k dans 0..n {
+            ajouter(l, k);
+        }
+    }
+    retour l;
+}
+
+// une fonction intégrée que la forge sait déjà (comme integre() de forge128.py) : 1 si elle est écrite
+fonction rs_integre(c: Ctx, e: Noeud) {
+    soit n = e.nom;
+    soit na = nb_args(e.premier);
+    soit m64 = "";
+    si c.dunon {
+        m64 = " & M64";
+    }
+    si egal(n, "ecrire_car") && na == 2 {
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(2, 1));
+        rs_t(c, "c.m.ecrire_canal(a0, a1); 0u128 }");
+    } sinon si egal(n, "lire_car") && na == 1 {
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(1, 0));
+        rs_t(c, "c.m.lire_canal(a0)");
+        rs_t(c, m64);
+        rs_t(c, " }");
+    } sinon si (egal(n, "ouvrir_lecture") || egal(n, "ouvrir_ecriture") || egal(n, "fermer") || egal(n, "fin_de")) && na == 1 {
+        soit k = 4;
+        si egal(n, "ouvrir_lecture") {
+            k = 1;
+        } sinon si egal(n, "ouvrir_ecriture") {
+            k = 2;
+        } sinon si egal(n, "fermer") {
+            k = 3;
+        }
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(1, 0));
+        rs_t(c, "c.sys(");
+        rs_n(c, k);
+        rs_t(c, ", a0)");
+        rs_t(c, m64);
+        rs_t(c, " }");
+    } sinon si egal(n, "bruit") && na == 0 {
+        rs_t(c, "(c.sys(5, 0)");
+        rs_t(c, m64);
+        rs_c(c, ')');
+    } sinon si egal(n, "__service") && na == 2 {
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(2, 0));
+        rs_t(c, "c.sys(a0, a1)");
+        rs_t(c, m64);
+        rs_t(c, " }");
+    } sinon si egal(n, "nb_bits") && na == 1 {
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(1, 0));
+        si c.dunon {
+            rs_t(c, "(a0 as u64).count_ones() as u128 }");
+        } sinon {
+            rs_t(c, "a0.count_ones() as u128 }");
+        }
+    } sinon si egal(n, "brin") && na == 1 {
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(1, 0));
+        rs_t(c, "c.m.brin(a0) }");
+    } sinon si (egal(n, "marquer_adn") || egal(n, "marquer_arn") || egal(n, "liberer_brin")) && na == 2 {
+        soit q = 0;
+        si egal(n, "marquer_adn") {
+            q = 1;
+        } sinon si egal(n, "marquer_arn") {
+            q = 2;
+        }
+        rs_t(c, "{ ");
+        rs_args(c, e, rs_ordre(2, 0));
+        rs_t(c, "c.marquer(a0, a1, ");
+        rs_n(c, q);
+        rs_t(c, "); 0u128 }");
+    } sinon {
+        retour 0;
+    }
+    retour 1;
+}
+
+// une expression entière (u128)
+fonction rs_expr(c: Ctx, e: Noeud) {
+    si e == nul {
+        rs_t(c, "0u128");
+        retour;
+    }
+    si !rs_mot(typ(c, e)) {
+        rs_pas_encore_de(c, "une valeur qui n'est pas un entier, de type", typ(c, e), 0, e.ligne);
+        retour;
+    }
+    soit g = e.genre;
+    si g == N_NOMBRE {
+        rs_n(c, e.val);
+        rs_t(c, "u128");
+    } sinon si g == N_VAR {
+        soit v = var_ou_nul(c, e.nom);
+        si v == nul {
+            rs_pas_encore(c, "un nom qui n'est pas une variable de la fonction", e.ligne);
+            retour;
+        }
+        rs_var(c, e.nom);
+    } sinon si g == N_NON {
+        si c.dunon {
+            rs_t(c, "((!((");
+            rs_expr(c, e.a);
+            rs_t(c, ") as u64)) as u128)");
+        } sinon {
+            rs_t(c, "(!");
+            rs_expr(c, e.a);
+            rs_c(c, ')');
+        }
+    } sinon si g == N_BIN {
+        soit o = e.op;
+        si egal(o, "&&") || egal(o, "||") || rs_est_comparaison(o) || egal(o, ".<") || egal(o, ".>")
+                || egal(o, ".<=") || egal(o, ".>=") {
+            rs_t(c, "((");
+            rs_cond(c, e);
+            rs_t(c, ") as u128)");
+        } sinon si c.dunon {
+            rs_bin64(c, e);
+        } sinon {
+            rs_bin128(c, e);
+        }
+    } sinon si g == N_LIRE {
+        rs_t(c, "{ let a: u128 = ");
+        rs_adresse(c, e.val, e.a, e.b);
+        rs_t(c, "; c.lire(a) }");
+    } sinon si g == N_ETIQ {
+        // l'adresse d'un texte écrit : connue seulement quand Lugus a placé les mots (ecrire_rust la pose)
+        soit qe = etiquette_texte(c, e.nom);
+        ajouter(c.rs_etq, qe);
+        rs_t(c, "ETQ_");
+        rs_n(c, qe);
+    } sinon si g == N_APPEL && rs_integre(c, e) {
+        retour;
+    } sinon si g == N_CHAMP {
+        soit tr = typ(c, e.a);
+        si !est_struct(tr) {
+            rs_pas_encore(c, "le champ d'une valeur qui n'est pas une structure", e.ligne);
+            retour;
+        }
+        rs_t(c, "{ let r: u128 = ");
+        rs_expr(c, e.a);
+        rs_t(c, "; c.lire(r.wrapping_add(");
+        rs_n(c, position_champ(struct_numero(c, tr), e.nom));
+        rs_t(c, "u128)) }");
+    } sinon si g == N_NOUVEAU || g == N_CONSTRUIRE {
+        // comme le générateur : nouveau(le nombre de champs), puis chaque champ écrit, dans l'ordre du texte
+        soit st0 = struct_de(c, e.nom);
+        rs_t(c, "{ let r: u128 = f_nouveau(c, ");
+        rs_n(c, st0.nb);
+        rs_t(c, "u128); ");
+        si g == N_CONSTRUIRE {
+            soit p = e.premier;
+            tantque p != nul {
+                si !rs_mot(champ_de(c, st0, p.nom).type) || !rs_mot(typ(c, p.a)) {
+                    rs_pas_encore(c, "un champ qui n'est pas un entier", e.ligne);
+                    retour;
+                }
+                rs_t(c, "let x: u128 = ");
+                rs_expr(c, p.a);
+                rs_t(c, "; c.ecrire(r.wrapping_add(");
+                rs_n(c, position_champ(st0, p.nom));
+                rs_t(c, "u128), x); ");
+                p = p.suivant;
+            }
+        }
+        rs_t(c, "r }");
+    } sinon si g == N_APPEL && egal(e.nom, "entrée") && e.premier == nul {
+        rs_t(c, "c.m.entree.pop_front().unwrap_or(0)");
+    } sinon si g == N_APPEL {
+        soit f = fonction_de(c, e.nom);
+        si f == nul || f.garde != 1 || est_integre(e.nom) {
+            rs_pas_encore_de(c, "un appel d'une fonction intégrée", e.nom, 1, e.ligne);
+            retour;
+        }
+        // les arguments d'abord, de gauche à droite (un appel dans un argument emprunte aussi la machine)
+        rs_t(c, "{ ");
+        soit a = e.premier;
+        soit na = 0;
+        tantque a != nul {
+            rs_t(c, "let a");
+            rs_n(c, na);
+            rs_t(c, ": u128 = ");
+            rs_expr(c, a);
+            rs_t(c, "; ");
+            na = na + 1;
+            a = a.suivant;
+        }
+        rs_t(c, "f_");
+        rs_ident(c, e.nom);
+        rs_t(c, "(c");
+        pour k dans 0..na {
+            rs_t(c, ", a");
+            rs_n(c, k);
+        }
+        rs_t(c, ") }");
+    } sinon {
+        rs_pas_encore_de(c, "une sorte de valeur", g, 0, e.ligne);
+    }
+}
+
+// l'adresse de @etg[adr] (comme adresse() du générateur : ETG à la largeur 64 ; etg 4 : l'adresse telle quelle ; ex :
+// l'étage calculé)
+fonction rs_adresse(c: Ctx, etg, ex: Noeud, adr: Noeud) {
+    si ex == nul && etg != 4 && adr.genre == N_NOMBRE {
+        rs_n(c, (adr.val & 4611686018427387903) | (etg << 62));
+        rs_t(c, "u128");
+    } sinon si ex == nul && etg != 4 {
+        rs_t(c, "etg(");
+        rs_expr(c, adr);
+        rs_t(c, ", ");
+        rs_n(c, etg);
+        rs_c(c, ')');
+    } sinon si ex == nul {
+        rs_expr(c, adr);
+    } sinon {
+        rs_t(c, "{ let x: u128 = ");
+        rs_expr(c, adr);
+        rs_t(c, "; let e: u128 = ");
+        rs_expr(c, ex);
+        rs_t(c, "; etg(x, (e & 3) as u32) }");
+    }
+}
+
+// une condition (un booléen de Rust) : une comparaison, et, ou, sinon un entier non nul
+fonction rs_cond(c: Ctx, e: Noeud) {
+    si e.genre == N_BIN && (egal(e.op, "&&") || egal(e.op, "||")) {
+        rs_c(c, '(');
+        rs_cond(c, e.a);
+        rs_c(c, ' ');
+        rs_t(c, e.op);
+        rs_c(c, ' ');
+        rs_cond(c, e.b);
+        rs_c(c, ')');
+        retour;
+    }
+    si e.genre == N_BIN && rs_est_comparaison(e.op) {
+        si !rs_mot(typ(c, e.a)) || !rs_mot(typ(c, e.b)) {
+            rs_pas_encore(c, "une comparaison qui n'est pas entre entiers", e.ligne);
+            retour;
+        }
+        si c.dunon {
+            rs_t(c, "(((");
+            rs_expr(c, e.a);
+            rs_t(c, ") as u64) ");
+            rs_t(c, e.op);
+            rs_t(c, " ((");
+            rs_expr(c, e.b);
+            rs_t(c, ") as u64))");
+        } sinon {
+            rs_c(c, '(');
+            rs_expr(c, e.a);
+            rs_c(c, ' ');
+            rs_t(c, e.op);
+            rs_c(c, ' ');
+            rs_expr(c, e.b);
+            rs_c(c, ')');
+        }
+        retour;
+    }
+    si e.genre == N_BIN && (egal(e.op, ".<") || egal(e.op, ".>") || egal(e.op, ".<=") || egal(e.op, ".>=")) {
+        soit signe = ") as i128) ";
+        soit signe2 = ") as i128))";
+        si c.dunon {
+            signe = ") as u64 as i64) ";
+            signe2 = ") as u64 as i64))";
+        }
+        rs_t(c, "(((");
+        rs_expr(c, e.a);
+        rs_t(c, signe);
+        pour i dans 1..longueur(e.op) {
+            rs_c(c, car(e.op, i));
+        }
+        rs_t(c, " ((");
+        rs_expr(c, e.b);
+        rs_t(c, signe2);
+        retour;
+    }
+    rs_c(c, '(');
+    rs_expr(c, e);
+    rs_t(c, " != 0)");
+}
+
+fonction rs_instrs(c: Ctx, s: Noeud) {
+    tantque s != nul {
+        rs_instr(c, s);
+        s = s.suivant;
+    }
+}
+
+fonction rs_instr(c: Ctx, s: Noeud) {
+    soit g = s.genre;
+    si g == N_SOIT || g == N_AFFECTER {
+        soit v = var_ou_nul(c, s.nom);
+        si v == nul || !rs_mot(v.type) {
+            rs_pas_encore_de(c, "une variable qui n'est pas un entier, de type", v.type, 0, s.ligne);
+            retour;
+        }
+        rs_var(c, s.nom);
+        rs_t(c, " = ");
+        rs_expr(c, s.a);
+        rs_t(c, ";\n");
+    } sinon si g == N_ECRIRE {
+        si !rs_mot(typ(c, s.c)) {
+            rs_pas_encore_de(c, "une écriture qui n'est pas un entier, de type", typ(c, s.c), 0, s.ligne);
+            retour;
+        }
+        rs_t(c, "{ let a: u128 = ");
+        rs_adresse(c, s.val, s.a, s.b);
+        rs_t(c, "; let v: u128 = ");
+        rs_expr(c, s.c);
+        rs_t(c, "; c.ecrire(a, v); }\n");
+    } sinon si g == N_ECRIRE_CHAMP {
+        soit tc = typ(c, s.a);
+        si !est_struct(tc) || !rs_mot(champ_de(c, struct_numero(c, tc), s.nom).type) || !rs_mot(typ(c, s.c)) {
+            rs_pas_encore(c, "un champ qui n'est pas un entier", s.ligne);
+            retour;
+        }
+        rs_t(c, "{ let r: u128 = ");
+        rs_expr(c, s.a);
+        rs_t(c, "; let v: u128 = ");
+        rs_expr(c, s.c);
+        rs_t(c, "; c.ecrire(r.wrapping_add(");
+        rs_n(c, position_champ(struct_numero(c, tc), s.nom));
+        rs_t(c, "u128), v); }\n");
+    } sinon si g == N_EXPR {
+        soit e = s.a;
+        si e.genre == N_APPEL && egal(e.nom, "sortie") && e.premier != nul && e.premier.suivant == nul {
+            rs_t(c, "{ let x: u128 = ");
+            rs_expr(c, e.premier);
+            rs_t(c, "; c.m.sortie.push(x); }\n");
+        } sinon si e.genre == N_APPEL {
+            rs_t(c, "let _ = ");
+            rs_expr(c, e);
+            rs_t(c, ";\n");
+        } sinon {
+            rs_pas_encore(c, "une expression seule", s.ligne);
+        }
+    } sinon si g == N_SI {
+        rs_t(c, "if ");
+        rs_cond(c, s.a);
+        rs_t(c, " {\n");
+        rs_instrs(c, s.premier);
+        rs_t(c, "}");
+        si s.val == 1 {
+            rs_t(c, " else {\n");
+            rs_instrs(c, s.deuxieme);
+            rs_t(c, "}");
+        }
+        rs_c(c, 10);
+    } sinon si g == N_TANTQUE {
+        c.rs_boucle = c.rs_boucle + 1;
+        soit k = c.rs_boucle;
+        rs_t(c, "'b");
+        rs_n(c, k);
+        rs_t(c, ": loop {\nif !");
+        rs_cond(c, s.a);
+        rs_t(c, " { break; }\n'c");
+        rs_n(c, k);
+        rs_t(c, ": {\n");
+        ajouter(c.rs_pile, k);
+        rs_instrs(c, s.premier);
+        c.rs_pile.n = c.rs_pile.n - 1;
+        rs_t(c, "}\n}\n");
+    } sinon si g == N_POUR {
+        soit vp = var_ou_nul(c, s.nom);
+        si vp == nul || vp.type != 0 {
+            rs_pas_encore(c, "une variable de boucle qui n'est pas un entier", s.ligne);
+            retour;
+        }
+        c.rs_boucle = c.rs_boucle + 1;
+        soit k2 = c.rs_boucle;
+        rs_var(c, s.nom);
+        rs_t(c, " = ");
+        rs_expr(c, s.a);
+        rs_t(c, ";\n'b");
+        rs_n(c, k2);
+        rs_t(c, ": loop {\nif !(");
+        rs_var(c, s.nom);
+        rs_t(c, " < ");
+        rs_expr(c, s.b);
+        rs_t(c, ") { break; }\n'c");
+        rs_n(c, k2);
+        rs_t(c, ": {\n");
+        ajouter(c.rs_pile, k2);
+        rs_instrs(c, s.premier);
+        c.rs_pile.n = c.rs_pile.n - 1;
+        rs_t(c, "}\n");
+        // comme la forge : le pas en 64 bits (l'addition immédiate du SPU-64)
+        rs_var(c, s.nom);
+        rs_t(c, " = ((");
+        rs_var(c, s.nom);
+        rs_t(c, " as u64).wrapping_add(");
+        rs_n(c, s.val & 18446744073709551615);
+        rs_t(c, "u64)) as u128;\n}\n");
+    } sinon si g == N_RETOUR {
+        rs_t(c, "return ");
+        rs_expr(c, s.a);
+        rs_t(c, ";\n");
+    } sinon si g == N_ARRETER || g == N_CONTINUER {
+        si c.rs_pile.n == 0 {
+            rs_pas_encore(c, "arrêter ou continuer hors d'une boucle", s.ligne);
+            retour;
+        }
+        si g == N_ARRETER {
+            rs_t(c, "break 'b");
+        } sinon {
+            rs_t(c, "break 'c");
+        }
+        rs_n(c, elem(c.rs_pile, c.rs_pile.n - 1));
+        rs_t(c, ";\n");
+    } sinon si g == N_ACCORD {
+        // un accord : ses mesures l'une après l'autre, et dans chacune ses tâches dans l'ordre (comme le générateur)
+        soit me = s.premier;
+        tantque me != nul {
+            rs_instrs(c, me.premier);
+            me = me.suivant;
+        }
+    } sinon si g == N_BLOC {
+        rs_instrs(c, s.premier);
+    } sinon {
+        rs_pas_encore_de(c, "une sorte d'instruction", g, 0, s.ligne);
+    }
+}
+
+// la fonction f en Rust (appelée par fonction_code, quand ses variables sont connues)
+fonction rs_fonction(c: Ctx, f: Fonction) {
+    si !c.rust {
+        retour;
+    }
+    si !rs_mot(f.rtype) {
+        rs_pas_encore(c, "une fonction qui ne rend pas un entier", f.ligne);
+        retour;
+    }
+    rs_t(c, "#[allow(unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, unused_labels)]\nfn f_");
+    rs_ident(c, f.nom);
+    rs_t(c, "(c: &mut Ctx");
+    soit p = f.params;
+    tantque p != nul {
+        si !rs_mot(p.type) {
+            rs_pas_encore_de(c, "un paramètre qui n'est pas un entier, de type", p.type, 0, f.ligne);
+            retour;
+        }
+        rs_t(c, ", mut ");
+        rs_var(c, p.nom);
+        rs_t(c, ": u128");
+        p = p.suivant;
+    }
+    rs_t(c, ") -> u128 {\n");
+    // les variables de la fonction (sans ses paramètres)
+    soit v = c.vars;
+    tantque v != nul {
+        soit est_param = 0;
+        soit pp = f.params;
+        tantque pp != nul {
+            si egal(pp.nom, v.nom) {
+                est_param = 1;
+            }
+            pp = pp.suivant;
+        }
+        si est_param == 0 {
+            si !rs_mot(v.type) {
+                rs_pas_encore_de(c, "une variable qui n'est pas un entier, de type", v.type, 0, f.ligne);
+                retour;
+            }
+            rs_t(c, "let mut ");
+            rs_var(c, v.nom);
+            rs_t(c, ": u128 = 0;\n");
+        }
+        v = v.suivant;
+    }
+    c.rs_boucle = 0;
+    c.rs_pile = liste();
+    rs_instrs(c, f.corps);
+    rs_t(c, "0\n}\n");
+}
+
+
 fonction fonction_code(c: Ctx, f: Fonction) {
     soit debut = c.code.n;
     soit fdeb = c.fix_pos.n;
@@ -12257,6 +13014,9 @@ fonction fonction_code(c: Ctx, f: Fonction) {
     mov(c, 14, 13);
     depiler(c, 13);
     emettre(c, ins(52, 0, 0, 0, 0));
+    si c.rust {
+        rs_fonction(c, f);
+    }
     // l'épissage : pas au pas à pas, ni dans __init, ni avec des accords, des segments ou une hypothèse
     si c.optim && c.lignes_dbg != 1 && !egal(f.nom, "__init") && !sans_registres(f.corps) {
         episser(c, debut, fdeb, edeb);
@@ -13043,6 +13803,7 @@ fonction generer(c: Ctx) {
     // le brin : le code, les textes écrits et les données du programme sont de l'ADN (fixés) : une écriture dessus
     // arrête la machine au lieu de corrompre le programme
     soit fin_code = nouvelle_etiquette(c);
+    c.fin_code = fin_code;
     ldi_etiquette(c, 2, fin_code);
     emettre(c, ins(94, 0, 0, 2, 1));
     saut(c, 51, p.etiq);
@@ -13239,6 +14000,7 @@ fonction lugus(c: Ctx, debut_donnees) {
     }
     c.lugus_place = place;
     c.lugus_demis = h;
+    c.rs_dd = debut_donnees;
 }
 
 // --------------------------------------------------------------------------------------------- fichiers et importer
@@ -14823,6 +15585,12 @@ fonction principal() {
     c.lignes_dbg = entrée();               // 1 : table des lignes pour le pas à pas (absente : 0)
     c.provenance = entrée() == 1;          // 1 : la provenance (absente : 0)
     c.mode_exemples = entrée() == 1;       // 1 : compiler le calcul des exemples à la place du principal (absent : 0)
+    c.rust = entrée() == 1;                // 0.852 : 1 : écrire aussi code.rs, le Rust de la forge (absent : 0)
+    c.rs = liste();
+    c.rs_ok = 1;
+    c.rs_pile = liste();
+    c.rs_manq = liste();
+    c.rs_etq = liste();
     c.dbg = liste();
     c.marques = liste();
     constantes_predefinies(c);
@@ -14901,6 +15669,9 @@ fonction principal() {
     }
     si c.lignes_dbg == 1 {
         ecrire_symboles(c);
+    }
+    si c.rust {
+        ecrire_rust(c);
     }
     soit s = ouvrir_ecriture("code.mots");
     soit hd = c.lugus_demis;

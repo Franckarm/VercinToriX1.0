@@ -987,3 +987,13 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   `test_reactions_lecteur.py` (vtx128.py, 7). La paillasse compare à un rangement (`tests/attendus/paillasse.json`).
   `verifier.py` : **49 minutes, « Tout est conforme »**. Prochain : l'étape 2 (vtxc128 écrit l'arbre typé, la forge le
   lit).
+
+## 0.852 (28 novembre) : la forge écrite en vtx, premier morceau
+- Choix du créateur (« La forge écrite en vtx ») : vtxc128 écrit le Rust lui-même (`code.rs`, l'entrée `rust` du
+  protocole de lancer, après `exemples`), par morceaux ; l'ancienne forge garde le reste. Détail et état :
+  `docs/vtx-un-compilateur.md`, section 0.852.
+- `forge/forge_vtx.py` (l'assembleur), `forge/test_forge_vtx.py` (dans `verifier.py`), `VTX_FORGE_VTX=1` dans
+  `forge128.py` ; `forge128.queue_programme` sorti de `programme_rust` (au passage : `programme_rust` rendait les mots
+  du dernier noyau SPIR-V au lieu de ceux du programme quand il y avait des noyaux ; corrigé, personne ne s'en servait).
+- Les fluides de Belenos : forgés entièrement par vtxc128, mêmes sorties et même mémoire que la forge Python. Gergovie :
+  trois manques (pile() du ramasse-miettes, une variable logique, la recopie des données).

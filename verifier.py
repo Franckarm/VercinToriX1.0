@@ -201,6 +201,8 @@ if shutil.which("cargo"):
                        [sys.executable, os.path.join("vtxc", "test_reactions_vtxc128.py"), "40" if COMPLET else "12"]))
     etapes.append(("forge de Lugus : vtx -> Rust -> natif, mêmes sorties et même mémoire que Lugus émulé",
                    [sys.executable, os.path.join("forge", "test_forge128.py"), "40" if COMPLET else "12"]))
+    etapes.append(("la forge écrite en vtx : le Rust de vtxc128, mêmes sorties et même mémoire que Lugus émulé",
+                   [sys.executable, os.path.join("forge", "test_forge_vtx.py"), "40" if COMPLET else "12"]))
     etapes.append(("Ésus : la division par une constante et les codons de 64 bits dans la forge, comme Lugus",
                    [sys.executable, os.path.join("tests", "test_esus.py")]))
     etapes.append(("le Druide : le relevé d'Ésus rangé dans son cube, comparé en quatre valeurs",

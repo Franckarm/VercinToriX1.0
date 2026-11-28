@@ -77,6 +77,41 @@ plus qu'une fois, en vtx.
 
 **Étape 3 : la forge en vtx.** Plus de Python dans le chemin d'un programme (le Rust reste l'hôte de la machine).
 
+## 0.852 : la forge écrite en vtx (étapes 2 et 3 d'un seul geste)
+
+Décidé avec le créateur : plutôt qu'un arbre typé lu par la forge Python, **vtxc128 écrit lui-même le Rust**, depuis son
+propre arbre et ses types, pendant qu'il écrit les mots. Par morceaux : ce qu'il ne sait pas encore, l'ancienne forge le
+garde.
+
+- **Dans vtxc128** (`vtxc/vtxc128.vtx`, les fonctions `rs_…`) : une neuvième entrée du protocole, `rust` (après
+  `exemples`) ; à 1, vtxc128 écrit aussi `code.rs` : `FIN_CODE`, les adresses des textes nommés (`ETQ_n`, posées une fois
+  les mots placés), et une fonction Rust par fonction gardée (`fn f_NOM(c: &mut Ctx, mut v_x: u128) -> u128`), écrite
+  dans `fonction_code`, là où ses variables sont connues. Ce qui manque s'écrit `// pas encore : … (ligne N)`, **toutes
+  les raisons**, une par ligne : on voit d'un coup ce qu'il reste.
+- **Ce qu'il sait (0.852)** : l'entier de Lugus (128 bits) et celui de Dunon (`dunon;`, les formes de 64 bits de la
+  forge) ; références de structures, poignées de textes et de tableaux ; soit, affectation, si/sinon, tantque, pour (le
+  pas de 64 bits, comme la forge), retour, arrêter, continuer, bloc, accord (ses mesures dans l'ordre) ; nombres,
+  variables, non, les opérations (signées comprises), comparaisons, et/ou, en condition et en valeur ; `@e[a]` en lecture
+  et en écriture (étage écrit, calculé, ou aucun) ; champs, construction, `nouveau` ; les appels (arguments dans des
+  `let`, de gauche à droite) ; les textes écrits ; sortie, entrée, ecrire_car, lire_car, les fichiers, bruit, __service,
+  nb_bits, brin, marquer_adn/arn, liberer_brin.
+- **`forge/forge_vtx.py`** n'est plus qu'un assembleur : le noyau, les mots de vtxc128, son Rust, la fin commune
+  (`forge128.queue_programme`, sortie de `programme_rust`), puis rustc. `VTX_FORGE_VTX=1` : `forge128.py` essaie
+  d'abord cette forge, et dit qui a écrit le Rust.
+- **`forge/test_forge_vtx.py`** (dans `verifier.py`) : chaque programme que vtxc128 sait forger rend les mêmes sorties,
+  le même texte et la même mémoire que Lugus émulé sur ses mots ; ceux qu'il laisse sont comptés par raison.
+- **Où on en est** : les trois fluides de Belenos sont forgés entièrement par vtxc128 (fluide_tapis : les mêmes sorties
+  et la même mémoire que la forge Python). Gergovie (toutes ses variantes), les cubes, le val, le rouleau, l'Auvergne :
+  plus que trois manques, tous dans le prélude ou l'initialisation :
+  1. `pile()` : le ramasse-miettes du prélude lit la pile de Lugus ; la forge Python tient alors pour chaque fonction
+     qui peut le déclencher un cadre sur cette pile (ses variables et ses valeurs gardées, recopiées avant chaque appel) ;
+     à refaire dans vtxc128, au même endroit que ses propres `pousser` ;
+  2. une variable logique (le type de Belnap, rangé dans un mot) ;
+  3. `N_DONNEES` : la recopie des données du programme dans leur étage (`__init`).
+- **Ensuite** : la vitesse (la forge Python range les tableaux serrés, passe l'étage 2 par la carte des pages, fond
+  les molécules, envoie les boucles en segments à Taranis) ; puis les noyaux de la carte eux-mêmes (`taranis/noyau_vtx.py`)
+  ; à la fin, plus de Python dans le chemin d'un programme.
+
 ## Ce qui ne change pas
 
 - La liste du 128 (`docs/vtx-liste-128.md`) ; le Vergobret en 64 bits ; le Druide sur l'ARN et le cube, jamais l'ADN.

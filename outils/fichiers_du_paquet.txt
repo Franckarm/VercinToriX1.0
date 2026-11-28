@@ -129,6 +129,7 @@ exemples64/brin.vtx
 exemples64/cubes64.vtx
 exemples64/quaternaire64.vtx
 forge/forge128.py
+forge/forge_vtx.py
 forge/noyau_forge128.rs
 gobannos/flottants.vtx
 gobannos/gobannos.vtx
