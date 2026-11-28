@@ -13324,7 +13324,10 @@ fonction rs_vague(c: Ctx, s: Noeud) {
         n = n + 1;
         p = p.suivant;
     }
-    rs_t(c, "{\n// les atomes lourds d'une vague : chacun sur son cœur (le dernier sur ce fil)\nlet r = std::thread::scope(|sc| {\n");
+    rs_t(c, "{\n// les atomes lourds d'une vague : chacun sur son cœur (le dernier sur ce fil ; VTX_COEURS=1 : l'un après l'autre)\n");
+    rs_t(c, "static COEURS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();\nlet coeurs = *COEURS.get_or_init(|| std::env::var(\"VTX_COEURS\").ok().and_then(|v| v.parse().ok()).unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)));\nif coeurs <= 1 {\n");
+    rs_instrs(c, s.premier);
+    rs_t(c, "} else {\nlet r = std::thread::scope(|sc| {\n");
     soit k = 0;
     p = s.premier;
     tantque p != nul {
@@ -13359,7 +13362,7 @@ fonction rs_vague(c: Ctx, s: Noeud) {
         k = k + 1;
         p = p.suivant;
     }
-    rs_t(c, "}\n");
+    rs_t(c, "}\n}\n");
 }
 
 // les souvenirs d'un groupe : la tête et ses frères qui portent la même clé (op)
@@ -13569,7 +13572,8 @@ fonction rs_chaque(c: Ctx, s: Noeud) {
     rs_expr(c, boucle.a);
     rs_t(c, ") as u64; let ch_b = (");
     rs_expr(c, boucle.b);
-    rs_t(c, ") as u64;\nlet nt = std::thread::available_parallelism().map(|n| n.get() as u64).unwrap_or(1).min(64);\n");
+    rs_t(c, ") as u64;\n");
+    rs_t(c, "static COEURS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();\nlet coeurs = *COEURS.get_or_init(|| std::env::var(\"VTX_COEURS\").ok().and_then(|v| v.parse().ok()).unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)));\nlet nt = (coeurs as u64).min(64);\n");
     rs_t(c, "if ch_b.saturating_sub(ch_a) < 2048 || nt <= 1 {\n");
     rs_instrs(c, s.premier);
     rs_t(c, "} else {\nlet morceau = (ch_b - ch_a + nt - 1) / nt;\nlet parts: Vec<");

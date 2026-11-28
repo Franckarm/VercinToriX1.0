@@ -196,7 +196,9 @@ garde.
   `rs_chaque` (l'intervalle partagé, 2048 au moins, à la largeur du programme : 128 bits, ou 64 pour `dunon;`),
   `rs_souvenirs` (chacun regarde son souvenir ; ceux qui l'ont oublié réagissent ensemble, `VTX_COEURS=1` sur un fil ;
   puis chacun range le sien). Une valeur part sur un autre cœur si elle est un entier, pure, et ne réveille pas le
-  ramasse-miettes. La forge Python ne garde plus la main pour les réactions.
+  ramasse-miettes. La forge Python ne garde plus la main pour les réactions. `VTX_COEURS=1` met tout sur un fil (pour
+  comparer) ; `mesures/coeurs_reaction.vtx` le mesure (ici, deux cœurs : environ deux fois plus vite, la même sortie
+  que Lugus).
 - **Ce qui manque encore** : les zones (les tableaux serrés) et les pages de l'étage 2 ; le Druide et Ésus dans la
   forge ; les flottants sur la carte (Taranis ne compte qu'en entiers) ; `sortie(…)` comme atome d'une réaction.
 - **Les tests (0.854)** : `verifier.py` ne joue plus par défaut les 19 étapes qui ne jouent que Senos (vtx.py, le SPU-32
