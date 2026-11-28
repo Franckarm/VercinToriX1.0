@@ -17,7 +17,6 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "spu64"))
-import vtx  # noqa: E402
 import vtx64  # noqa: E402
 
 ECRIRE32 = """fonction principal() {
@@ -57,13 +56,7 @@ if cargo:
 
 
 def lancer(machine, src, d):
-    """Exécute src dans le dossier d sur la machine (py32, rs32, py64, rs64) ; rend les sorties."""
-    if machine == "py32":
-        cpu = vtx.CPU()
-        cpu.dossier_fichiers = d
-        cpu.charger(vtx.assembler(vtx.compiler(src)))
-        cpu.executer(50_000_000)
-        return list(cpu.sortie)
+    """Exécute src dans le dossier d sur la machine (rs32, py64, rs64) ; rend les sorties."""
     if machine == "py64":
         return list(vtx64.executer(src, (), max_pas=50_000_000, dossier=d)[0].sortie)
     p = os.path.join(d, "p.vtx")
@@ -127,7 +120,7 @@ CAS = [("intact", 2, True), ("copie effacée", 1, True), ("anti-copie effacée",
        ("le même bit inversé au même endroit des deux fichiers", 1, True),
        ("la même page remise à zéro dans les deux fichiers", 1, True), ("copie seule, un mot changé", 1, True),
        ("ombre effacée", 2, True), ("un mot changé, sans ombre", 3, False), ("les deux effacées", 0, None)]
-machines = ["py32", "py64"] + (["rs32", "rs64"] if cargo else [])
+machines = ["py64"] + (["rs32", "rs64"] if cargo else [])   # 0.858 : Senos en Python retiré
 ok = total = 0
 for m in machines:
     m64 = m.endswith("64")

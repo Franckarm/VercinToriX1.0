@@ -19,7 +19,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx  # noqa: E402
 import vtx64  # noqa: E402
 
 cargo = shutil.which("cargo")
@@ -81,9 +80,9 @@ for nom, src in progs.items():
     p = os.path.join(TMP, "p.vtx")
     with open(p, "w", encoding="utf-8") as f:
         f.write(src)
-    a = vtx.assembler(vtx.compiler(src, prelude=True, optim=True, partition=True))
-    subprocess.run([VTX, "compiler", p, os.path.join(TMP, "p.prog")], capture_output=True, check=True)
-    ok32 += a == mots_fichier(os.path.join(TMP, "p.prog"))
+    # 0.858 : vtx.py retiré : vtxc (Senos) compile seul
+    r_ = subprocess.run([VTX, "compiler", p, os.path.join(TMP, "p.prog")], capture_output=True)
+    ok32 += r_.returncode == 0 and len(mots_fichier(os.path.join(TMP, "p.prog"))) > 0
     try:
         b = vtx64.assembler(vtx64.compiler(src, prelude=True, optim=True, partition=True))
     except vtx64.VtxError:
@@ -93,7 +92,7 @@ for nom, src in progs.items():
         continue
     subprocess.run([VTX64, "compiler", p, os.path.join(TMP, "p.mots")], capture_output=True, check=True)
     ok64 += b == mots_fichier(os.path.join(TMP, "p.mots"))
-verifier(f"1. mêmes mots : vtx.py = vtxc {ok32}/{len(progs)}, vtx64.py = vtxc64 {ok64}/{len(progs)}",
+verifier(f"1. mêmes mots : vtxc compile {ok32}/{len(progs)}, vtx64.py = vtxc64 {ok64}/{len(progs)}",
          ok32 == ok64 == len(progs))
 
 # 2. sans fenêtre, les quatre machines
@@ -104,13 +103,12 @@ with open(p, "w", encoding="utf-8") as f:
     f.write(ESSAI)
 r32 = subprocess.run([VTX, p], capture_output=True, text=True).stdout.strip().split("\n")[-1]
 r64 = subprocess.run([VTX64, p], capture_output=True, text=True).stdout.strip().split("\n")[-1]
-py32 = vtx.executer(ESSAI, ())[0].sortie
 py64 = vtx64.executer(ESSAI, ()) if hasattr(vtx64, "executer") else None
 py64 = py64[0].sortie if py64 else None
 lisible = lambda t: [int(x) for x in t.split(",")]
-ok = lisible(r32) == attendu and lisible(r64) == attendu and list(py32) == attendu and (py64 is None or list(py64) == attendu)
+ok = lisible(r32) == attendu and lisible(r64) == attendu and (py64 is None or list(py64) == attendu)
 verifier("2. sans fenêtre : souris, touche, molette, appuyee à 0, cadence gardée, anti involutif ; Python et Rust, 32 et 64 bits",
-         ok, f"attendu {attendu}, Rust {r32} / {r64}, Python {list(py32)} / {py64}")
+         ok, f"attendu {attendu}, Rust {r32} / {r64}, Python {py64}")
 
 # 3. le GIF
 gif = os.path.join(TMP, "cube.gif")

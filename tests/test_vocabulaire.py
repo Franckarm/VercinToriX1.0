@@ -9,7 +9,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx  # noqa: E402
 import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
@@ -36,11 +35,11 @@ def mots_rust(exe, sortie):
 
 attendu = ["max 9 min 1 combien 9 2", "tranche 3 9 1  sans doublons 5 3 9 1 ", "[xirotégnicreV] 2",
            "[  7][ab  ][  ok  ]", "1 0 1 0", "3628800 1906884 1 0 12 1594323"]
-for nom, mod, exe in (("Senos", vtx, "vtx"), ("Dunon", vtx64, "vtx64"), ("Lugus", None, "lugus")):
+for nom, mod, exe in (("Senos", None, "vtx"), ("Dunon", vtx64, "vtx64"), ("Lugus", None, "lugus")):
     m = mots_rust(exe, os.path.join(d, nom + ".mots"))
-    # 0.851 : sur Lugus, un seul compilateur (mod = None : vtxc128 répond seul)
+    # 0.851 : sur Lugus, un seul compilateur (mod = None : vtxc128 répond seul) ; 0.858 : Senos aussi (vtx.py retiré)
     ref = mod.assembler(mod.compiler(src, dossier=os.path.dirname(PROG))) if mod is not None else (m or [0])
-    verifier(f"{nom} : " + (f"{mod.__name__}.py et le compilateur en vtx donnent les mêmes mots" if mod else "compilé par vtxc128 seul (0.851)") + f" ({len(ref)})",
+    verifier(f"{nom} : " + (f"{mod.__name__}.py et le compilateur en vtx donnent les mêmes mots" if mod else "compilé par le compilateur en vtx seul") + f" ({len(ref)})",
              m is not None and m[:len(ref)] == ref and len(m) == len(ref), f"{len(ref)} contre {None if m is None else len(m)}")
     r = subprocess.run([os.path.join(BIN, exe + X), PROG], capture_output=True, text=True, encoding="utf-8")
     lignes = r.stdout.splitlines()

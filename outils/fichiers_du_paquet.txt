@@ -134,16 +134,9 @@ forge/queue_vtx.rs
 forge/noyau_forge128.rs
 gobannos/flottants.vtx
 gobannos/gobannos.vtx
-natif/natif.py
-natif/socle.py
-natif/socle_windows.py
-natif/x86.py
 spu128/corpus128.txt
 spu128/corpus128_attendu.txt
 spu128/spu128.py
-spu64/corpus64.txt
-spu64/corpus64_attendu.txt
-spu64/creer_corpus64.py
 spu64/exemples/brin.mots
 spu64/exemples/brin.s64
 spu64/exemples/somme_flottants.mots
@@ -200,7 +193,6 @@ vtx-rs/taranis_sonde.spv
 vtx-rs/vtxc.mots
 vtx-rs/vtxc128.mots
 vtx-rs/vtxc64.mots
-vtx.py
 vtx128.py
 vtx64.py
 vtxc/gen_logique.py

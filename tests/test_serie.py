@@ -14,7 +14,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx  # noqa: E402
 import vtx64  # noqa: E402
 
 CAS = [
@@ -76,19 +75,18 @@ ERREURS = [
 
 ok1 = 0
 for a, b in CAS:
-    m = [vtx.assembler(vtx.compiler(s, prelude=True, optim=True)) for s in (a, b)]
     n = [vtx64.assembler(vtx64.compiler(s, prelude=True, optim=True)) for s in (a, b)]
-    ok1 += m[0] == m[1] and n[0] == n[1]
-print(f"1. {ok1}/{len(CAS)} programmes en série : mêmes mots que la forme écrite à la main (vtx.py et vtx64.py)")
+    ok1 += n[0] == n[1]
+print(f"1. {ok1}/{len(CAS)} programmes en série : mêmes mots que la forme écrite à la main (vtx64.py ; 0.858 : vtx.py retiré)")
 refus = 0
 for e in ERREURS:
-    for mod in (vtx, vtx64):
+    for mod in (vtx64,):
         try:
             mod.compiler(e)
         except mod.VtxError:
             refus += 1
-print(f"   {refus}/{2 * len(ERREURS)} formes fautives refusées")
-echec = ok1 != len(CAS) or refus != 2 * len(ERREURS)
+print(f"   {refus}/{len(ERREURS)} formes fautives refusées")
+echec = ok1 != len(CAS) or refus != len(ERREURS)
 
 cargo = shutil.which("cargo")
 if not cargo:
@@ -117,13 +115,12 @@ def mots(exe, src, sortie):
 
 ok2 = ok3 = 0
 for a, _ in CAS:
-    m32 = vtx.assembler(vtx.compiler(a, prelude=True, optim=True, partition=True))
     m64 = vtx64.assembler(vtx64.compiler(a, prelude=True, optim=True, partition=True))
-    ok2 += mots(VTX, a, "p.prog") == m32 and mots(VTX64, a, "p.mots") == m64
+    ok2 += mots(VTX64, a, "p.mots") == m64
     p = os.path.join(TMP, "p.vtx")
     s32 = subprocess.run([VTX, p], capture_output=True, text=True).stdout
     s64 = subprocess.run([VTX64, p], capture_output=True, text=True).stdout
-    r = vtx.executer(a, ())[0]
+    r = vtx64.executer(a, ())[0]
     attendu = "".join(chr(c) for c in r.texte) + (",".join(map(str, r.sortie)) + "\n" if r.sortie else "")
     ok3 += s32 == attendu and s64 == attendu
 for e in ERREURS:
