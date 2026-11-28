@@ -1709,7 +1709,7 @@ def poser(fichier, bloc):
 
 if __name__ == "__main__":
     poser("vtx128.py", bloc_lugus())
-    poser("vtx64.py", bloc_dunon())
+    # 0.858a : vtx64.py retiré : le prélude de Dunon (vtxc64) reste celui que vtxc64.mots porte
 
 
 def documenter():

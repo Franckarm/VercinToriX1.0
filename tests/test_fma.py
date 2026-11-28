@@ -24,7 +24,6 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
 sys.path.insert(0, os.path.join(racine, "spu64"))
-import vtx64  # noqa: E402
 from qflot import Q32, Q64, Q128  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
@@ -132,7 +131,7 @@ for machine, largeur, F, graine in (("lugus", 128, Q128, 1), ("lugus", 64, Q64, 
     open(os.path.join(d, "court.vtx"), "w", encoding="utf-8").write(court)
     m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
     if machine != "lugus":
-        m = vtx64.assembler(vtx64.compiler(court, dossier=d))
+        m = None   # 0.858a : vtx64.py retiré : vtxc64 compile seul
     subprocess.run([b, "compiler", os.path.join(d, "court.vtx"), os.path.join(d, "x.mots")], capture_output=True)
     ml = [int(x) for x in open(os.path.join(d, "x.mots")).read().split(";")[0].split(",") if x.strip()]
     if m is None:

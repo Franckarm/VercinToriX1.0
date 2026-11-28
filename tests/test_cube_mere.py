@@ -30,7 +30,6 @@ except (AttributeError, ValueError):
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -104,7 +103,7 @@ for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py
     verifier(f"{machine.capitalize()} : relus sous le cube mère, les points reviennent ; le cube mère (service 29) dit "
              "deux sous-cubes, et à l'adresse 440 le sous-cube de l'étage 1, deux pages (5 et 70 000)",
              r1.startswith("1234 99 42\n16777215 2 514"), f"{r1!r}")
-    if TEMOIN:
+    if TEMOIN and machine == "lugus":   # 0.858a : vtx64.py retiré
         # 0.851 : le témoin (la machine Python), à la main seulement (VTX_TEMOIN=1, ou verifier.py --temoin)
         _, e2 = lancer([sys.executable, os.path.join(racine, py), "run", "ecrit.vtx"], ref)
         _, r2 = lancer([sys.executable, os.path.join(racine, py), "run", "relit.vtx"], ref)
@@ -117,7 +116,7 @@ for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py
         src = open(os.path.join(rs, f), encoding="utf-8").read()
         m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
         if machine != "lugus":
-            m = vtx64.assembler(vtx64.compiler(src, dossier=rs))
+            m = None   # 0.858a : vtx64.py retiré : vtxc64 compile seul
         sortie = os.path.join(d, "m.mots")
         lancer([b, "compiler", f, sortie], rs)
         ml = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()]

@@ -15,7 +15,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -33,7 +32,7 @@ def verifier(nom, ok, detail=""):
 def compiler_les_deux(fic, machine):
     """(mots de la référence ou son erreur, mots de vtxc ou son erreur)"""
     # 0.851 : sur Lugus, un seul compilateur : vtxc128 répond pour les deux
-    mod, exe = (None, "lugus") if machine == "lugus" else (vtx64, "vtx64")
+    mod, exe = (None, "lugus") if machine == "lugus" else (None, "vtx64")   # 0.858a : vtx64.py retiré
     src = open(fic, encoding="utf-8").read()
     ref = None
     if mod is not None:

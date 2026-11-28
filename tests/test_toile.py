@@ -19,7 +19,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx64  # noqa: E402
 
 cargo = shutil.which("cargo")
 if not cargo:
@@ -84,8 +83,8 @@ for nom, src in progs.items():
     r_ = subprocess.run([VTX, "compiler", p, os.path.join(TMP, "p.prog")], capture_output=True)
     ok32 += r_.returncode == 0 and len(mots_fichier(os.path.join(TMP, "p.prog"))) > 0
     try:
-        b = vtx64.assembler(vtx64.compiler(src, prelude=True, optim=True, partition=True))
-    except vtx64.VtxError:
+        b = None   # 0.858a : vtx64.py retiré : vtxc64 compile seul
+    except Exception:
         b = None  # un programme écrit pour les flottants du SPU-32 peut ne pas compiler en 64 bits
     if b is None:
         ok64 += 1
@@ -103,7 +102,7 @@ with open(p, "w", encoding="utf-8") as f:
     f.write(ESSAI)
 r32 = subprocess.run([VTX, p], capture_output=True, text=True).stdout.strip().split("\n")[-1]
 r64 = subprocess.run([VTX64, p], capture_output=True, text=True).stdout.strip().split("\n")[-1]
-py64 = vtx64.executer(ESSAI, ()) if hasattr(vtx64, "executer") else None
+py64 = None   # 0.858a : vtx64.py retiré
 py64 = py64[0].sortie if py64 else None
 lisible = lambda t: [int(x) for x in t.split(",")]
 ok = lisible(r32) == attendu and lisible(r64) == attendu and (py64 is None or list(py64) == attendu)

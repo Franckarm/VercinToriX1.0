@@ -194,12 +194,10 @@ vtx-rs/vtxc.mots
 vtx-rs/vtxc128.mots
 vtx-rs/vtxc64.mots
 vtx128.py
-vtx64.py
 vtxc/gen_logique.py
 vtxc/hasard64.py
 vtxc/hasard_reactions.py
 vtxc/prelude128.py
-vtxc/prelude64.py
 vtxc/vocabulaire.py
 vtxc/vtxc.vtx
 vtxc/vtxc128.mots

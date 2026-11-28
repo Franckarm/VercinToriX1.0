@@ -2,7 +2,6 @@ set -eo pipefail
 cd $(cd "$(dirname "$0")/.." && pwd)
 python3 vtxc/vocabulaire.py
 python3 vtxc/prelude128.py
-python3 vtxc/prelude64.py
 cd vtx-rs
 ./target/release/lugus renouveler ../vtxc/vtxc128.vtx | tail -1
 cp ../vtxc/vtxc128.mots vtxc128.mots

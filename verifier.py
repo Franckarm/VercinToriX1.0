@@ -34,7 +34,6 @@ etapes = [
 ]
 if shutil.which("cargo"):
     etapes.append(("cubes sur disque en miroir inversé (anti-cube, état de Belnap, réparation ; quatre machines)", [sys.executable, os.path.join("tests", "test_miroir.py")]))
-    etapes.append(("appels en série « f(a): x, y; » (quatre compilateurs, mêmes mots)", [sys.executable, os.path.join("tests", "test_serie.py")]))
     etapes.append(("la toile interactif : souris, touches, cadence, anti-couleur, GIF (32 et 64 bits)", [sys.executable, os.path.join("tests", "test_toile.py")]))
     etapes.append(("Lugus (SPU-128) : la machine de référence (flottant de 128 bits = flottant_petuar, largeurs, matière, voies, brin, cubes)",
                    [sys.executable, os.path.join("spu128", "test_spu128.py")]))

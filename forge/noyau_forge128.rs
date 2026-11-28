@@ -497,68 +497,32 @@ impl Reglage {
     }
 }
 
-/// 0.816 : le vergobret choisit entre la carte graphique et le processeur, pour chaque boucle qui sait aller à la
-/// carte (le mode pages) : un passage sur la carte pour la chauffer (le noyau se prépare, les pages se créent), un
-/// passage sur la carte mesuré, un au processeur mesuré ; puis le plus rapide. VTX_CARTE=1 : toujours la carte ;
-/// VTX_CARTE=0 : jamais ; VTX_REGLAGE=1 : il dit son choix.
+/// 0.858a (décidé avec le créateur) : la carte et le processeur ne sont pas en compétition. Une boucle qui sait aller à
+/// la carte y va quand il y a une carte ; le processeur la joue quand il n'y en a pas (ou qu'elle refuse : le repli).
+/// Plus de passage mesuré au processeur pour comparer. VTX_CARTE=0 : jamais la carte (le processeur seul).
 #[allow(dead_code)]
 pub struct Choix {
-    etat: std::sync::Mutex<(u8, f64, f64)>, // (le passage : 0 chauffer, 1 la carte, 2 le processeur, 3 choisi ; carte ; processeur)
+    etat: std::sync::Mutex<u8>, // 0 : rien vu ; 1 : la carte a joué ; 2 : pas de carte (le processeur)
 }
 
 #[allow(dead_code)]
 impl Choix {
     pub const fn neuf() -> Choix {
-        Choix { etat: std::sync::Mutex::new((0, 0.0, 0.0)) }
+        Choix { etat: std::sync::Mutex::new(0) }
     }
     pub fn carte_voulue(&self) -> bool {
-        match std::env::var("VTX_CARTE").as_deref() {
-            Ok("0") => return false,
-            Ok("1") => return true,
-            _ => {}
-        }
-        let e = self.etat.lock().unwrap();
-        match e.0 {
-            0 | 1 => true,
-            2 => false,
-            _ => e.1 < e.2,
-        }
+        std::env::var("VTX_CARTE").map_or(true, |v| v != "0")
     }
-    /// 0.824 : une boucle d'un lot de la carte : le lot ne se coupe pas (chacune de ses boucles mesurée seule ne dit
-    /// rien : celles qui attendent ne coûtent rien, la dernière porte tout le lot) : avec Taranis, elle reste à la carte
     pub fn carte_voulue_lot(&self) -> bool {
-        match std::env::var("VTX_CARTE").as_deref() {
-            Ok("0") => return false,
-            Ok("1") => return true,
-            _ => {}
-        }
-        if epissage_rapide() && std::env::var("VTX_LOT").map_or(true, |v| v != "0") {
-            return true;
-        }
         self.carte_voulue()
     }
-    pub fn noter(&self, carte: bool, duree: std::time::Duration, ligne: u32) {
-        let t = duree.as_secs_f64();
+    pub fn noter(&self, carte: bool, _duree: std::time::Duration, ligne: u32) {
         let mut e = self.etat.lock().unwrap();
-        match (e.0, carte) {
-            (0, true) => e.0 = 1,
-            (0, false) => e.0 = 3, // pas de carte : rien à choisir
-            (1, true) => {
-                e.1 = t;
-                e.0 = 2;
-            }
-            (2, false) => {
-                e.2 = t;
-                e.0 = 3;
-                let tc = e.1;
-                let la_carte = tc < e.2 * 0.97;
-                if !la_carte {
-                    e.1 = f64::MAX;
-                }
-                dire_vergobret(format!("la boucle de la ligne {} : la carte {:.1} ms, le processeur {:.1} ms : {}", ligne,
-                                     tc * 1e3, e.2 * 1e3, if la_carte { "la carte" } else { "le processeur" }));
-            }
-            _ => {}
+        if *e == 0 {
+            let carte = carte && taranis_vk::carte().is_some();
+            *e = if carte { 1 } else { 2 };
+            dire_vergobret(format!("la boucle de la ligne {} : {}", ligne,
+                                   if carte { "sur la carte" } else { "pas de carte : le processeur" }));
         }
     }
 }

@@ -9,7 +9,6 @@ import tempfile
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -35,7 +34,7 @@ def mots_rust(exe, sortie):
 
 attendu = ["max 9 min 1 combien 9 2", "tranche 3 9 1  sans doublons 5 3 9 1 ", "[xirotégnicreV] 2",
            "[  7][ab  ][  ok  ]", "1 0 1 0", "3628800 1906884 1 0 12 1594323"]
-for nom, mod, exe in (("Senos", None, "vtx"), ("Dunon", vtx64, "vtx64"), ("Lugus", None, "lugus")):
+for nom, mod, exe in (("Senos", None, "vtx"), ("Dunon", None, "vtx64"), ("Lugus", None, "lugus")):
     m = mots_rust(exe, os.path.join(d, nom + ".mots"))
     # 0.851 : sur Lugus, un seul compilateur (mod = None : vtxc128 répond seul) ; 0.858 : Senos aussi (vtx.py retiré)
     ref = mod.assembler(mod.compiler(src, dossier=os.path.dirname(PROG))) if mod is not None else (m or [0])

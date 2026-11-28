@@ -1046,3 +1046,18 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - presenter_cube : `VTX_CARTE_TEMPS=1` dit à la fin où passe son temps (ce que la carte finit, l'image qui redescend,
   la conversion avec l'empreinte, la fenêtre) ; la conversion et l'empreinte en un seul passage. L'essai a l'étape 7.
 - La voie B (la chaîne d'échange de Vulkan : l'image de la carte copiée à l'écran sans redescendre) attend ces mesures.
+## 0.858a (28 novembre) : vtx64.py retiré ; la carte d'abord ; sortie dans une réaction ; l'étage 2 par les pages
+- Retiré : vtx64.py, vtxc/prelude64.py, outils/memes_mots64.py, outils/avant_apres.py, tests/test_serie.py. Les tests
+  qui comparaient Dunon à vtx64.py (fma, modules, vocabulaire, faces, toile, selon, gène, vocabulaire étendu,
+  catalogue, miroir, cubes mères, reste, cubes nommés, presenter_cube, valeur sue) gardent leur part de Lugus et de
+  Dunon par vtxc64 seul. vocabulaire.py ne pose plus le vocabulaire dans vtx64.py : le prélude de vtxc64 reste celui
+  que vtxc64.mots porte.
+- La carte et le processeur ne sont plus en compétition (décidé avec le créateur) : `Choix` (noyau de la forge) envoie
+  à la carte toute boucle qui sait y aller ; sans carte, le processeur ; plus de passage mesuré au processeur.
+  `VTX_CARTE=0` : le processeur seul.
+- vtxc128 : `sortie(x)` en valeur (un atome « = sortie(b) -> s ») dans la forge en vtx ; une fonction du programme qui
+  porte le nom d'une fonction du prélude (« tranche ») ne casse plus les appels du prélude (le prélude garde la sienne
+  sous « __prelude_tranche », `ombres_du_prelude`) ; l'étage 2 par la carte des pages (`lire2`, `ecrire2`, et
+  `lire2_fi`/`ecrire2_fi` pour un cube lié (F << 24) + i), comme la forge Python : Gergovie au processeur à la même
+  vitesse que la forge Python.
+- Pas encore : les zones (les tableaux serrés, `tableau t[n]`) dans la forge en vtx ; Gergovie n'en a pas.

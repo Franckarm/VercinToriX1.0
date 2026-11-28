@@ -33,8 +33,7 @@ with tempfile.TemporaryDirectory() as d:
         r = subprocess.run([os.path.join(REL, machine + EXE), f], capture_output=True, text=True)
         sortie = [l for l in r.stdout.strip().split("\n") if l]
         verifier(f"{nom} : la sortie attendue", sortie == ATTENDU, r.stdout + r.stderr)
-        m = subprocess.run([sys.executable, os.path.join(R, "outils", outil), f], capture_output=True, text=True)
-        verifier(f"{nom} : les mêmes mots par les deux compilateurs", "MEMES" in m.stdout, m.stdout + m.stderr)
+        # 0.858a : un seul compilateur par machine (vtx64.py retiré) : plus de « mêmes mots »
     # la forge : le même résultat que Lugus (en 128 et en « dunon; »)
     for nom, texte in (("forgé", src), ("forgé en dunon;", "dunon;\n" + src)):
         f = os.path.join(d, "sue_forge.vtx")

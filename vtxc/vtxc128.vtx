@@ -8077,6 +8077,11 @@ fonction programme(c: Ctx) {
                 garder = 0;
                 si !c.en_prelude {
                     erreur_nom(c, l, "fonction déjà définie :", f.nom);
+                } sinon si fonction_de(c, joindre_textes("__prelude_", f.nom)) == nul {
+                    // 0.858a : le prélude garde la sienne sous un nom caché, pour ses propres appels (ombres_du_prelude) :
+                    // un programme qui a sa fonction « tranche » ne casse plus la « tranche » dont le prélude se sert
+                    f.nom = joindre_textes("__prelude_", f.nom);
+                    garder = 1;
                 }
             }
             f.prelude = c.en_prelude;
@@ -12896,6 +12901,20 @@ fonction rs_expr(c: Ctx, e: Noeud) {
         } sinon {
             rs_bin128(c, e);
         }
+    } sinon si g == N_LIRE && e.val == 2 && e.a == nul && !rs_seul_peut(c, e.b) {
+        // 0.858a : l'étage 2 par la carte des pages (lire2, comme la forge Python) ; un cube lié ((F << 24) + i, ce
+        // qu'écrivent @nom[i] et @nom(t)[i]) : la fréquence et la place gardées séparées (lire2_fi)
+        si rs_lien(e.b) {
+            rs_t(c, "{ let f: u128 = ");
+            rs_expr(c, e.b.a.a);
+            rs_t(c, "; let x: u128 = ");
+            rs_expr(c, e.b.b);
+            rs_t(c, "; c.lire2_fi(f, x) }");
+        } sinon {
+            rs_t(c, "{ let a: u128 = ");
+            rs_expr(c, e.b);
+            rs_t(c, "; c.lire2(a) }");
+        }
     } sinon si g == N_LIRE {
         rs_t(c, "{ let a: u128 = ");
         rs_adresse(c, e.val, e.a, e.b);
@@ -12953,6 +12972,11 @@ fonction rs_expr(c: Ctx, e: Noeud) {
             rs_t(c, "c.sp = c.sp.wrapping_add(1); ");
         }
         rs_t(c, "r }");
+    } sinon si g == N_APPEL && egal(e.nom, "sortie") && e.premier != nul && e.premier.suivant == nul {
+        // 0.858a : sortie(x) en valeur (un atome d'une réaction : « = sortie(b) -> s ») : écrit x, et le rend
+        rs_t(c, "{ let x: u128 = ");
+        rs_expr(c, e.premier);
+        rs_t(c, "; c.m.sortie.push(x); x }");
     } sinon si g == N_APPEL && egal(e.nom, "entrée") && e.premier == nul {
         rs_t(c, "c.m.entree.pop_front().unwrap_or(0)");
     } sinon si g == N_APPEL {
@@ -13099,6 +13123,24 @@ fonction rs_instr(c: Ctx, s: Noeud) {
         rs_t(c, " = ");
         rs_expr_v(c, s.a, v.type);
         rs_t(c, ";\n");
+    } sinon si g == N_ECRIRE && s.val == 2 && s.a == nul && rs_mot(typ(c, s.c)) && !rs_seul_peut(c, s.b)
+            && !rs_seul_peut(c, s.c) {
+        // 0.858a : l'étage 2 par la carte des pages (ecrire2, ecrire2_fi), comme la lecture
+        si rs_lien(s.b) {
+            rs_t(c, "{ let f: u128 = ");
+            rs_expr(c, s.b.a.a);
+            rs_t(c, "; let x: u128 = ");
+            rs_expr(c, s.b.b);
+            rs_t(c, "; let v: u128 = ");
+            rs_expr(c, s.c);
+            rs_t(c, "; c.ecrire2_fi(f, x, v); }\n");
+        } sinon {
+            rs_t(c, "{ let a: u128 = ");
+            rs_expr(c, s.b);
+            rs_t(c, "; let v: u128 = ");
+            rs_expr(c, s.c);
+            rs_t(c, "; c.ecrire2(a, v); }\n");
+        }
     } sinon si g == N_ECRIRE {
         si !rs_mot(typ(c, s.c)) {
             rs_pas_encore_de(c, "une écriture qui n'est pas un entier, de type", typ(c, s.c), 0, s.ligne);
@@ -13285,6 +13327,12 @@ fonction rs_instr(c: Ctx, s: Noeud) {
 // entier, pure (ni mémoire, ni monde, ni tas : rs_pur), et ne réveille pas le ramasse-miettes (rs_peut). Chaque fil a
 // sa machine (ctx_fils) ; les liaisons ne changent pas : la même sortie que Lugus, qui les fait réagir l'une après
 // l'autre.
+// 0.858a : (F << 24) + i : la liaison d'un cube (lien_cube de la forge Python)
+fonction rs_lien(a: Noeud) {
+    retour a != nul && a.genre == N_BIN && egal(a.op, "+") && a.a != nul && a.a.genre == N_BIN && egal(a.a.op, "<<")
+        && a.a.b != nul && a.a.b.genre == N_NOMBRE && a.a.b.val == 24;
+}
+
 fonction rs_seul_peut(c: Ctx, e: Noeud) {
     si e == nul {
         retour 0;
@@ -18404,6 +18452,52 @@ fonction prendre(m: Morceau, p: Pile): Pile {
     retour Pile { m: m, suivant: p };
 }
 
+// 0.858a : une fonction du prélude cachée par celle du programme (« __prelude_NOM ») : les appels du prélude à NOM vont
+// à la sienne, ceux du programme à celle du programme
+fonction ombres_du_prelude(c: Ctx) {
+    soit ombres = liste();
+    soit f = c.fonctions;
+    tantque f != nul {
+        si f.prelude == 1 && commence(f.nom, "__prelude_") {
+            soit l = liste();
+            pour i dans 10..longueur(f.nom) {
+                ajouter(l, car(f.nom, i));
+            }
+            ajouter(ombres, texte_de(l, 0, l.n));
+        }
+        f = f.suivant;
+    }
+    si ombres.n == 0 {
+        retour;
+    }
+    f = c.fonctions;
+    tantque f != nul {
+        si f.prelude == 1 {
+            renommer_ombres(f.corps, ombres);
+        }
+        f = f.suivant;
+    }
+}
+
+fonction renommer_ombres(n: Noeud, ombres: Liste) {
+    tantque n != nul {
+        si n.genre == N_APPEL && n.nom != 0 {
+            pour i dans 0..ombres.n {
+                si egal(n.nom, elem(ombres, i)) {
+                    n.nom = joindre_textes("__prelude_", n.nom);
+                    arreter;
+                }
+            }
+        }
+        renommer_ombres(n.a, ombres);
+        renommer_ombres(n.b, ombres);
+        renommer_ombres(n.c, ombres);
+        renommer_ombres(n.premier, ombres);
+        renommer_ombres(n.deuxieme, ombres);
+        n = n.suivant;
+    }
+}
+
 fonction prelude_utile(c: Ctx, t) {
     soit n = longueur(t);
     // les morceaux : chaque « fonction » écrite en début de ligne, jusqu'à la suivante
@@ -19022,6 +19116,7 @@ fonction principal() {
         c.en_prelude = 1;
         programme(c);
         c.en_prelude = 0;
+        ombres_du_prelude(c);
         c.consts = consts;
         c.kconst = 0;
         c.tableaux = tableaux;

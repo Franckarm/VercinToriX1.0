@@ -13,7 +13,6 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 for p in (racine, os.path.join(racine, "spu64"), os.path.join(racine, "spu128")):
     sys.path.insert(0, p)
-import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -44,8 +43,8 @@ def compiler(machine, chemin):
     m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus) : il répond pour les deux
     try:
         if machine != "lugus":
-            m = vtx64.assembler(vtx64.compiler(src, dossier=d))
-    except vtx64.VtxError as e:
+            m = None   # 0.858a : vtx64.py retiré : vtxc64 compile seul
+    except Exception as e:
         m = "refus : " + str(e)
     sortie = os.path.join(d, "x.mots")
     r = subprocess.run([os.path.join(BIN, machine + X), "compiler", chemin, sortie], capture_output=True, text=True,
@@ -65,8 +64,8 @@ def jouer(machine, chemin):
 
 OUTIL = "fonction double(x) { retour 2 * x; }\nfonction salut(): texte { retour \"Salut, Lugus !\"; }\n"
 outil = ecrire("outil.vtx", OUTIL)
-e = "%016x" % vtx64.empreinte_texte(open(outil, encoding="utf-8", newline="").read())
-verifier("l'empreinte : vtx64.py, lugus empreinte et vtx64 empreinte disent la même",
+e = empreinte("lugus", outil)   # 0.858a : vtx64.py retiré : lugus donne la référence
+verifier("l'empreinte : lugus empreinte et vtx64 empreinte disent la même",
          e == empreinte("lugus", outil) == empreinte("vtx64", outil),
          f"{e} {empreinte('lugus', outil)} {empreinte('vtx64', outil)}")
 crlf = ecrire("outil_crlf.vtx", OUTIL, crlf=True)

@@ -15,7 +15,6 @@ ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 for p in (racine, os.path.join(racine, "spu64"), os.path.join(racine, "spu128")):
     sys.path.insert(0, p)
-import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -140,7 +139,7 @@ def memes_mots(machine, chemin):
     src = open(chemin, encoding="utf-8").read()
     m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
     if machine != "lugus":
-        m = vtx64.assembler(vtx64.compiler(src, dossier=d))
+        m = None   # 0.858a : vtx64.py retiré : vtxc64 compile seul
     sortie = os.path.join(d, "x.mots")
     subprocess.run([os.path.join(BIN, machine + X), "compiler", chemin, sortie], capture_output=True)
     ml = [int(x) for x in open(sortie).read().split(";")[0].split(",") if x.strip()]

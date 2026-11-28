@@ -32,7 +32,6 @@ racine = os.path.dirname(ici)
 for p in (racine, os.path.join(racine, "chimie"), os.path.join(racine, "spu64"), os.path.join(racine, "spu128")):
     sys.path.insert(0, p)
 import adn  # noqa: E402
-import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -65,8 +64,8 @@ def mots_ou_refus(machine, chemin):
     m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus) : il répond pour les deux
     try:
         if machine != "lugus":
-            m = vtx64.assembler(vtx64.compiler(src, dossier=d))
-    except vtx64.VtxError as e:
+            m = None   # 0.858a : vtx64.py retiré : vtxc64 compile seul
+    except Exception as e:
         m = "refus : " + str(e)
     sortie = os.path.join(tempfile.gettempdir(), f"catalogue-{os.getpid()}.mots")
     code, texte = lancer([LUGUS if machine == "lugus" else DUNON, "compiler", chemin, sortie])
@@ -102,8 +101,7 @@ fonction principal() {
 f_liste = ecrire(os.path.join(liste, "liste.vtx"), PROG_LISTE)
 attendu = "a.vtx\nb.txt\nliste.vtx\nsous/\nété.txt\n0\nvrai\nfaux\ninconnu\n"
 for nom, cmd in (("Lugus", [LUGUS, "liste.vtx"]), ("Dunon", [DUNON, "liste.vtx"])) + (
-        (("vtx128.py", [sys.executable, os.path.join(racine, "vtx128.py"), "run", "liste.vtx"]),
-         ("vtx64.py", [sys.executable, os.path.join(racine, "vtx64.py"), "run", "liste.vtx"])) if TEMOIN else ()):
+        (("vtx128.py", [sys.executable, os.path.join(racine, "vtx128.py"), "run", "liste.vtx"]),) if TEMOIN else ()):
     code, texte = lancer(cmd, liste)
     lu = "".join(l + "\n" for l in texte.split("\n") if l and "instructions exécutées" not in l)
     verifier(f"lister un dossier, {nom} : les noms triés, un sous-dossier finit par « / » ; vrai, faux, inconnu",
@@ -165,7 +163,7 @@ for machine, b, py in (("lugus", LUGUS, "vtx128.py"), ("dunon", DUNON, "vtx64.py
     f29 = ecrire(os.path.join(d, "s29", machine + ".vtx"), P29[machine])
     _, t1 = lancer([b, f29])
     t2 = t1
-    if TEMOIN:
+    if TEMOIN and machine == "lugus":   # 0.858a : vtx64.py retiré
         # 0.851 : le témoin (la machine Python), à la main seulement
         _, t2 = lancer([sys.executable, os.path.join(racine, py), "run", f29])
         t2 = "".join(l + "\n" for l in t2.split("\n") if l and "instructions exécutées" not in l)

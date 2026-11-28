@@ -28,7 +28,6 @@ except (AttributeError, ValueError):
 ici = os.path.dirname(os.path.abspath(__file__))
 racine = os.path.dirname(ici)
 sys.path.insert(0, racine)
-import vtx64  # noqa: E402
 
 X = ".exe" if os.name == "nt" else ""
 BIN = os.path.join(racine, "vtx-rs", "target", "release")
@@ -156,7 +155,7 @@ for machine, b, src in (("lugus", LUGUS, PROG), ("dunon", DUNON, "fonction princ
     open(os.path.join(d, "m.vtx"), "w", encoding="utf-8").write(src)
     m = None   # 0.851 : sur Lugus, un seul compilateur (vtxc128, lugus)
     if machine != "lugus":
-        m = vtx64.assembler(vtx64.compiler(src, dossier=d))
+        m = None   # 0.858a : vtx64.py retiré : vtxc64 compile seul
     lancer([b, "compiler", "m.vtx", "m.mots"], d)
     ml = [int(x) for x in open(os.path.join(d, "m.mots")).read().split(";")[0].split(",") if x.strip()]
     if m is None:

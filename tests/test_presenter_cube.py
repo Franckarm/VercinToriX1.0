@@ -35,8 +35,7 @@ with tempfile.TemporaryDirectory() as d:
                  r.stdout + r.stderr)
         if len(l) == 2:
             empreintes.add(int(l[1]) % (1 << 64))
-        m = subprocess.run([sys.executable, os.path.join(R, "outils", outil), f], capture_output=True, text=True)
-        verifier(f"{nom} : les mêmes mots par les deux compilateurs", "MEMES" in m.stdout, m.stdout + m.stderr)
+        # 0.858a : un seul compilateur par machine (vtx64.py retiré) : plus de « mêmes mots »
     for nom, texte in (("forgé", src), ("forgé en dunon;", "dunon;\n" + src)):
         f = os.path.join(d, "image_f.vtx")
         open(f, "w", encoding="utf-8").write(texte)

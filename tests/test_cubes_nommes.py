@@ -1,11 +1,11 @@
 """0.845 : les cubes nommés (« cube nom @2; », « cube f[N] @2 frequence F; », « cube x @2 arn; », « @nom[i] »,
 « @f(t)[i] ») : vtxc128 seul pour Lugus (0.851), les deux compilateurs de Dunon (vtx64.py, vtxc64) donnent les mêmes
 mots, la même sortie, et les mêmes refus."""
-import os, subprocess, sys, tempfile
+import os
+import re, subprocess, sys, tempfile
 ICI = os.path.dirname(os.path.abspath(__file__))
 R = os.path.dirname(ICI)
 sys.path[:0] = [R, os.path.join(R, "spu64")]
-import vtx64  # noqa: E402
 LUGUS = os.path.join(R, "vtx-rs", "target", "release", "lugus")
 VTX64 = os.path.join(R, "vtx-rs", "target", "release", "vtx64")
 ok = True
@@ -20,7 +20,7 @@ def dire(nom, bon, detail=""):
 EX = os.path.join(R, "exemples128", "cubes_nommes.vtx")
 ATTENDU = "relief : 9 49\ntuile 2 : 102\npassage : 151\nà la main : 49 102 151"
 with tempfile.TemporaryDirectory() as d:
-    for nom, mod, binaire in (("Lugus", None, LUGUS), ("Dunon", vtx64, VTX64)):
+    for nom, mod, binaire in (("Lugus", None, LUGUS), ("Dunon", None, VTX64)):
         src = open(EX, encoding="utf-8").read()
         f = os.path.join(d, "x.mots")
         subprocess.run([binaire, "compiler", EX, f], capture_output=True, text=True)
@@ -43,15 +43,12 @@ with tempfile.TemporaryDirectory() as d:
     for k, r in enumerate(refus):
         p = os.path.join(d, f"r{k}.vtx")
         open(p, "w", encoding="utf-8").write(r + "\n")
-        # 0.851 : Dunon par ses deux compilateurs ; Lugus par vtxc128 seul, qui doit dire le même refus
-        try:
-            vtx64.compiler(r)
-            py = "accepté"
-        except vtx64.VtxError as e:
-            py = str(e)
+        # 0.858a : vtx64.py retiré : Lugus et Dunon (vtxc128, vtxc64) disent le même refus
+        dits = []
         for nom, binaire in (("Lugus", LUGUS), ("Dunon", VTX64)):
             rs = subprocess.run([binaire, p], capture_output=True, text=True)
-            vx = (rs.stdout + rs.stderr).strip().splitlines()[0] if (rs.stdout + rs.stderr).strip() else ""
-            dire(f"{nom} : refusé de même : {py}", vx.endswith(py) and py != "accepté", (py, vx))
+            dit = (rs.stdout + rs.stderr).strip().splitlines()[0] if (rs.stdout + rs.stderr).strip() else ""
+            dits.append(re.sub(r"^erreur [^,]*\.vtx, ", "erreur ", dit))   # Dunon nomme le fichier
+        dire(f"Lugus et Dunon : refusé de même : {dits[0]}", dits[0] == dits[1] and "erreur" in dits[0], dits)
 print("Les cubes nommés : tout est conforme" if ok else "Les cubes nommés : des écarts")
 sys.exit(0 if ok else 1)
