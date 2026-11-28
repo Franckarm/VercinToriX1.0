@@ -130,6 +130,7 @@ exemples64/cubes64.vtx
 exemples64/quaternaire64.vtx
 forge/forge128.py
 forge/forge_vtx.py
+forge/queue_vtx.rs
 forge/noyau_forge128.rs
 gobannos/flottants.vtx
 gobannos/gobannos.vtx
@@ -166,6 +167,7 @@ vtx-rs/src/fenetre.rs
 vtx-rs/src/gif.rs
 vtx-rs/src/hote.rs
 vtx-rs/src/lugus.rs
+vtx-rs/src/forger.rs
 vtx-rs/src/machine128.rs
 vtx-rs/src/machine64.rs
 vtx-rs/src/main.rs

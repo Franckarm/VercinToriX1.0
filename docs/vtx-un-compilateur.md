@@ -100,17 +100,32 @@ garde.
   d'abord cette forge, et dit qui a écrit le Rust.
 - **`forge/test_forge_vtx.py`** (dans `verifier.py`) : chaque programme que vtxc128 sait forger rend les mêmes sorties,
   le même texte et la même mémoire que Lugus émulé sur ses mots ; ceux qu'il laisse sont comptés par raison.
-- **Où on en est** : les trois fluides de Belenos sont forgés entièrement par vtxc128 (fluide_tapis : les mêmes sorties
-  et la même mémoire que la forge Python). Gergovie (toutes ses variantes), les cubes, le val, le rouleau, l'Auvergne :
-  plus que trois manques, tous dans le prélude ou l'initialisation :
-  1. `pile()` : le ramasse-miettes du prélude lit la pile de Lugus ; la forge Python tient alors pour chaque fonction
-     qui peut le déclencher un cadre sur cette pile (ses variables et ses valeurs gardées, recopiées avant chaque appel) ;
-     à refaire dans vtxc128, au même endroit que ses propres `pousser` ;
-  2. une variable logique (le type de Belnap, rangé dans un mot) ;
-  3. `N_DONNEES` : la recopie des données du programme dans leur étage (`__init`).
-- **Ensuite** : la vitesse (la forge Python range les tableaux serrés, passe l'étage 2 par la carte des pages, fond
-  les molécules, envoie les boucles en segments à Taranis) ; puis les noyaux de la carte eux-mêmes (`taranis/noyau_vtx.py`)
-  ; à la fin, plus de Python dans le chemin d'un programme.
+- **0.852b : Gergovie forgé par vtxc128.** Les trois manques sont faits :
+  1. le cadre du ramasse-miettes (comme la forge Python) : les fonctions qui peuvent le lancer (celles qui lisent
+     `pile()`, et qui les appellent : un point fixe, `rs_preparer`) ; une fonction qui en appelle une garde ses
+     variables dans la pile de Lugus (l'enveloppe `f_` réserve la place, `fc_` est le corps), recopiées avant chaque
+     tel appel ; une valeur gardée pendant qu'une suite peut ramasser est poussée (`c.pousser`), comme Lugus l'empile ;
+  2. les logiques (rangés dans un mot ; vrai, faux, inconnu, variable ; `selon`) ;
+  3. la recopie des données du programme (`__init`).
+  Gergovie (l'orage, à demi-échelle) forgé par vtxc128 : **le même Rust que forge_vtx.py, les mêmes empreintes et les
+  mêmes images que la forge Python**. Toutes les variantes de Gergovie, les cubes, le val, le rouleau, l'Auvergne et
+  les fluides : rien ne manque.
+- **`lugus forger PROG.vtx [-o EXE] [--rs F.rs] [--natif]` : la forge sans Python.** Le noyau de la forge
+  (`forge/noyau_forge128.rs` et les sept modules qu'il recopie) et la fin commune (`forge/queue_vtx.rs`, copie de
+  `forge128.queue_programme` sans zones ni noyaux ; `forge_vtx.py --queue` la récrit, le test vérifie qu'elle n'a pas
+  bougé) sont embarqués dans lugus ; vtxc128 écrit le Rust, lugus assemble, rustc compile. Un programme vtx devient un
+  exécutable natif avec lugus et rustc, rien d'autre.
+- **Le ramasse-miettes et la mémoire** : il lit la pile de Lugus, que ni la forge Python ni celle-ci ne tiennent mot
+  pour mot (les adresses de retour, les registres gardés) ; ce qu'il garde peut donc différer de Lugus émulé (et entre
+  les deux forges), jamais les sorties. Le test le permet pour ses programmes « ramasse-miettes ».
+- **Ce qui reste à la forge Python (la vitesse, pas le sens)** : les tableaux serrés (zones), l'étage 2 par la carte des
+  pages (lire2, ecrire2, les liaisons des cubes), les boucles en segments sur plusieurs cœurs (cylindres, bandes) et
+  sur la carte (les noyaux SPIR-V de `taranis/noyau_vtx.py`), le Druide et Ésus (les codons de 64 bits, les relevés).
+  Sans eux, le Gergovie de vtxc128 est juste mais fait tout au processeur, sur un cœur : à demi-échelle, 12,8 s contre
+  8,9 s ici (sans carte) ; avec la carte chez le créateur, l'écart serait bien plus grand. C'est pourquoi `forge128.py`
+  reste la forge par défaut des essais ; `VTX_FORGE_VTX=1` ou `lugus forger` prennent celle de vtxc128.
+- **Ensuite, dans l'ordre** : les boucles en segments sur les cœurs, puis les noyaux de la carte écrits par vtxc128
+  (Taranis), puis les zones et les pages ; alors l'ancienne forge et vtx128.py peuvent partir.
 
 ## Ce qui ne change pas
 

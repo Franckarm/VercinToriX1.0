@@ -3,6 +3,8 @@
 //   lugus lancer FICHIER.mots [ENTRÉES…]   lance un programme (mots de 128 bits en décimal, séparés par des virgules)
 //   lugus PROG.vtx [ENTRÉES…]       compile avec vtxc128 (embarqué) puis exécute : ni Python ni étape .mots
 //   lugus compiler PROG.vtx [SORTIE.mots]   écrit seulement les mots
+//   lugus forger PROG.vtx [-o EXÉCUTABLE] [--rs FICHIER.rs] [--natif]   0.852 : la forge écrite en vtx : vtxc128 écrit
+//                                   le Rust, lugus l'assemble (noyau embarqué), rustc le compile ; sans Python
 //   lugus renouveler vtxc128.vtx    vtxc128 se recompile lui-même ; point fixe exigé avant d'écrire vtxc128.mots
 //   lugus ranger PROG.vtx [PROG.adn]        compile et range l'ADN : les mots et leurs trois témoins
 //   lugus transcrire PROG.adn [PROG.mots]   vérifie et répare l'ADN, retire les témoins : les mots (l'ARN)
@@ -42,6 +44,8 @@ mod provenance;
 mod gif;
 #[allow(dead_code)]
 mod sortie;
+#[allow(dead_code)]
+mod forger;
 /// 0.67 : un message de Lugus (sur la sortie des erreurs), gardé pour le glossaire de la fin
 macro_rules! dire {
     ($($a:tt)*) => {{
@@ -441,6 +445,29 @@ fn lugus() {
         if let Err(e) = r {
             dire!("erreur : {}", e);
             sortir(1);
+        }
+    } else if args.len() >= 3 && args[1] == "forger" {
+        let (mut sortie, mut rs, mut natif) = (None, None, false);
+        let mut k = 3;
+        while k < args.len() {
+            match args[k].as_str() {
+                "-o" if k + 1 < args.len() => { sortie = Some(args[k + 1].clone()); k += 1; }
+                "--rs" if k + 1 < args.len() => { rs = Some(args[k + 1].clone()); k += 1; }
+                "--natif" => natif = true,
+                x => { dire!("forger : argument inconnu « {} »", x); sortir(2); }
+            }
+            k += 1;
+        }
+        match forger::forger(&args[2], sortie, rs, natif) {
+            Ok(s) => println!("{} : forgé par vtxc128 (sans Python)", s),
+            Err(e) => {
+                eprint!("{}", e);
+                if !e.ends_with('\n') {
+                    eprintln!();
+                }
+                dire!("forger : pas forgé");
+                sortir(1);
+            }
         }
     } else if args.len() >= 3 && args[1] == "compiler" {
         let mots = compiler_ou_sortir(&nombres128(VTXC128), &args[2], COMPLET128);

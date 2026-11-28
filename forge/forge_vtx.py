@@ -54,11 +54,20 @@ def programme_rust_vtx(src, dossier=None, nom="programme"):
         return None, "vtxc128 a refusé le programme : " + mots[-300:]
     if rs.startswith("// pas encore"):
         return None, rs.strip().splitlines()[0][3:]
-    forge128.DRUIDE_NOMS[0], forge128.DRUIDE_OBS[0], forge128.CUBE_SUPPOSE[0] = [], [], []
     s = [f"const NOM: &str = {nom!r};".replace("'", '"'), rs,
-         f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n"]
-    s += forge128.queue_programme({}, [], [], [])
+         f"static MOTS: [u128; {len(mots)}] = [" + ",".join(str(w) for w in mots) + "];\n", queue_fixe()]
     return "\n".join(s), mots
+
+
+def queue_fixe():
+    """la fin commune d'un programme forgé par vtxc128 (sans zones, réglages ni noyaux) ; forge/queue_vtx.rs en est la
+    copie que lugus embarque (lugus forger) : test_forge_vtx.py vérifie qu'elles restent les mêmes"""
+    import forge128
+    forge128.DRUIDE_NOMS[0], forge128.DRUIDE_OBS[0], forge128.CUBE_SUPPOSE[0] = [], [], []
+    return "\n".join(forge128.queue_programme({}, [], [], []))
+
+
+QUEUE = os.path.join(ici, "queue_vtx.rs")
 
 
 def source_rust_vtx(src, dossier=None, nom="programme", sortie=None):
@@ -73,8 +82,13 @@ def source_rust_vtx(src, dossier=None, nom="programme", sortie=None):
 
 if __name__ == "__main__":
     # forge_vtx.py PROG.vtx : écrit PROG.vtx.rs (ou dit pourquoi l'ancienne forge garderait la main)
-    p = sys.argv[1]
+    # forge_vtx.py --queue : récrit forge/queue_vtx.rs (après un changement de forge128.queue_programme)
     sys.path.insert(0, ici)
+    if sys.argv[1] == "--queue":
+        open(QUEUE, "w", encoding="utf-8").write(queue_fixe() + "\n")
+        print("forge/queue_vtx.rs récrit (puis : cargo build --release, lugus l'embarque)")
+        sys.exit(0)
+    p = sys.argv[1]
     code, m = source_rust_vtx(open(p, encoding="utf-8").read(), os.path.dirname(os.path.abspath(p)),
                               os.path.splitext(os.path.basename(p))[0])
     if code is None:

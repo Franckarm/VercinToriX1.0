@@ -383,6 +383,36 @@ fn passer_vtxc128(compilateur: &[u128], source: &str, base: &str, mode: Mode128,
     }
 }
 
+/// 0.852 : la forge écrite en vtx : vtxc128 écrit aussi code.rs (l'entrée « rust », après les six drapeaux) ; rend les
+/// mots (code.mots, la table des accords comprise) et le Rust des fonctions (ou ce qui manque : « // pas encore : … »)
+pub fn passer_vtxc128_rust(compilateur: &[u128], source: &str, base: &str) -> Result<(String, String), String> {
+    let dossier = std::env::temp_dir().join(format!("vtxc128-rs-{}-{}", std::process::id(),
+                                                     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                                                         .map(|d| d.as_nanos()).unwrap_or(0)));
+    std::fs::create_dir_all(&dossier).map_err(|e| e.to_string())?;
+    std::fs::write(dossier.join("source.vtx"), source).map_err(|e| e.to_string())?;
+    let mut s = Spu128::nouveau();
+    s.dossier = Some(dossier.clone());
+    s.charger(compilateur);
+    s.entree.extend(base.chars().map(|c| c as u128));
+    s.entree.push_back(0);
+    for drapeau in [1u128, 1, 1, 0, 0, 0, 1] {
+        s.entree.push_back(drapeau);
+    }
+    let r = s.executer(200_000_000_000);
+    let code = std::fs::read_to_string(dossier.join("code.mots"));
+    let rs = std::fs::read_to_string(dossier.join("code.rs"));
+    let _ = std::fs::remove_dir_all(&dossier);
+    let messages: String = s.texte.iter().filter_map(|&v| char::from_u32((v & 0x1F_FFFF) as u32)).collect();
+    if let Err(e) = r {
+        return Err(format!("{}{}\n", messages, e));
+    }
+    match (code, rs) {
+        (Ok(m), Ok(r)) => Ok((m, r)),
+        _ => Err(messages),
+    }
+}
+
 /// les exemples rejoués (comme verifier_exemples de vtx128.py) : chaque exemple sort 1 (vrai) ou 0, puis le programme
 /// affiche ce que vaut le côté gauche d'une égalité
 fn rejouer_exemples(compilateur: &[u128], source: &str, base: &str, mode: Mode128, ex: &str) -> Result<(), String> {

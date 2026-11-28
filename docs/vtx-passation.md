@@ -997,3 +997,8 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   du dernier noyau SPIR-V au lieu de ceux du programme quand il y avait des noyaux ; corrigé, personne ne s'en servait).
 - Les fluides de Belenos : forgés entièrement par vtxc128, mêmes sorties et même mémoire que la forge Python. Gergovie :
   trois manques (pile() du ramasse-miettes, une variable logique, la recopie des données).
+- **0.852b** : Gergovie forgé entièrement par vtxc128 (le cadre du ramasse-miettes, les logiques, les données) : le même
+  Rust par lugus et par forge_vtx.py, les mêmes empreintes et images que la forge Python (l'orage à demi-échelle).
+  **`lugus forger`** : la forge sans Python (noyau et fin commune embarqués ; `forge/queue_vtx.rs`). Plus lent que la
+  forge Python tant que les segments, Taranis, les zones et les pages ne sont pas refaits : la forge Python reste celle
+  des essais.

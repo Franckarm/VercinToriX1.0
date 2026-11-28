@@ -189,7 +189,7 @@ structure Molecule { nom, params: Param, atomes: Atome, contrats: Contrat, resul
 structure Var { nom, off, type, genre, haut, reg, score, suivant: Var, vdeb, vfin }   // vdeb, vfin : sa période (les vibrations)
 structure Fonction { nom, params: Param, nb, rtype, corps: Noeud, etiq, ligne, garde, suivant: Fonction, suite: Fonction,
                      er: Liste, ew: Liste, prelude, el, el_corps: Noeud, el_sans, el_pure, el_actif, mol: Molecule,
-                     dbg_t: Liste, dbg_tt: Liste, dbg_tf: Liste, dbg_v: Var, promet, vref, gen }   // mol : la molécule d'une réaction ; dbg_ : code.sym ; promet : « touche … » (0.6r)
+                     dbg_t: Liste, dbg_tt: Liste, dbg_tf: Liste, dbg_v: Var, promet, vref, gen, rsr }   // rsr (0.852) : 1 si elle peut lancer le ramasse-miettes ; mol : la molécule d'une réaction ; dbg_ : code.sym ; promet : « touche … » (0.6r)
 structure Constante { nom, val, type, haut, suivant: Constante }
 // sorte : 0 tableau d'entiers, 1 de quits, 2 de logiques (64 par mot), 3 de structures (st : son numéro)
 structure Tableau { nom, etage, base, taille, sorte, st, suivant: Tableau }
@@ -274,6 +274,8 @@ structure Ctx {
     rs_ok,              // 0.852 : 1 tant que tout le programme se traduit
     rs_boucle,          // 0.852 : le numéro de la dernière boucle (les étiquettes 'bN, 'cN)
     rs_pile: Liste,     // 0.852 : les boucles ouvertes
+    rs_vnoms: Liste,    // 0.852 : les variables de la fonction en cours, dans l'ordre de son cadre
+    rs_cadre,           // 0.852 : 1 si la fonction en cours tient un cadre sur la pile de Lugus
     rs_etq: Liste,      // 0.852 : les étiquettes des textes nommés dans le Rust (ETQ_n)
     rs_dd,              // 0.852 : la première étiquette des données (lugus())
     rs_manq: Liste,     // 0.852 : ce que vtxc128 ne sait pas encore écrire en Rust (des caractères, une raison par ligne)
@@ -12285,6 +12287,10 @@ fonction rs_pas_encore_de(c: Ctx, quoi, de, est_texte, ligne) {
     }
     rs_l(m, " (ligne ");
     rs_ln(m, ligne);
+    si c.fcour != nul {
+        rs_l(m, ", dans ");
+        rs_l(m, c.fcour.nom);
+    }
     rs_l(m, ")\n");
 }
 
@@ -12350,7 +12356,7 @@ fonction rs_var(c: Ctx, nom) {
 // un type qui tient dans un mot et se traite comme un entier : l'entier, une référence de structure, la poignée d'un
 // texte ou d'un tableau
 fonction rs_mot(t) {
-    retour t == 0 || est_struct(t) || t == T_T || t == T_TL || t == T_TF;
+    retour t == 0 || est_struct(t) || t == T_T || t == T_TL || t == T_TF || t == T_LOG;
 }
 
 fonction rs_est_comparaison(o) {
@@ -12359,6 +12365,21 @@ fonction rs_est_comparaison(o) {
 
 // une opération à deux places, sous une forme : {0} et {1} les deux valeurs (calculées dans l'ordre, a puis b)
 fonction rs_forme(c: Ctx, e: Noeud, avant, entre, apres) {
+    si rs_peut(c, e.b) {
+        // la valeur de gauche gardée sur la pile de Lugus pendant que la droite peut ramasser
+        rs_t(c, "{ let g_: u128 = ");
+        rs_expr(c, e.a);
+        rs_t(c, "; c.pousser(g_); let d_: u128 = ");
+        rs_expr(c, e.b);
+        rs_t(c, "; c.sp = c.sp.wrapping_add(1); ");
+        rs_t(c, avant);
+        rs_t(c, "g_");
+        rs_t(c, entre);
+        rs_t(c, "d_");
+        rs_t(c, apres);
+        rs_t(c, " }");
+        retour;
+    }
     rs_t(c, avant);
     rs_expr(c, e.a);
     rs_t(c, entre);
@@ -12436,16 +12457,138 @@ fonction rs_bin64(c: Ctx, e: Noeud) {
 
 // les arguments a0, a1… d'un appel, dans l'ordre donné (ordre : une liste des places, 0 pour le premier)
 fonction rs_args(c: Ctx, e: Noeud, ordre: Liste) {
+    rs_args_pousses(c, e, ordre);
+}
+
+// le k-ième argument d'un appel
+fonction rs_arg(e: Noeud, k): Noeud {
+    soit a = e.premier;
+    pour j dans 0..k {
+        a = a.suivant;
+    }
+    retour a;
+}
+
+// les arguments dans des let ; une valeur gardée pendant qu'un argument suivant peut lancer le ramasse-miettes est
+// posée sur la pile de Lugus (c.pousser, comme Lugus l'empile) : rend le nombre de valeurs poussées
+fonction rs_args_pousses(c: Ctx, e: Noeud, ordre: Liste) {
+    soit np = 0;
     pour k dans 0..ordre.n {
-        soit a = e.premier;
-        pour j dans 0..elem(ordre, k) {
-            a = a.suivant;
-        }
         rs_t(c, "let a");
         rs_n(c, elem(ordre, k));
         rs_t(c, ": u128 = ");
-        rs_expr(c, a);
+        rs_expr(c, rs_arg(e, elem(ordre, k)));
         rs_t(c, "; ");
+        soit suite = 0;
+        pour k2 dans k + 1..ordre.n {
+            si rs_peut(c, rs_arg(e, elem(ordre, k2))) {
+                suite = 1;
+            }
+        }
+        si suite {
+            rs_t(c, "c.pousser(a");
+            rs_n(c, elem(ordre, k));
+            rs_t(c, "); ");
+            np = np + 1;
+        }
+    }
+    retour np;
+}
+
+// rend la pile : n valeurs poussées
+fonction rs_rendre(c: Ctx, n) {
+    si n > 0 {
+        rs_t(c, "c.sp = c.sp.wrapping_add(");
+        rs_n(c, n);
+        rs_t(c, "); ");
+    }
+}
+
+// avant un appel qui peut ramasser : les variables de la fonction recopiées dans son cadre (sur la pile de Lugus)
+fonction rs_recopier(c: Ctx) {
+    si c.rs_cadre {
+        pour k dans 0..c.rs_vnoms.n {
+            rs_t(c, "c.poser(fp.wrapping_add(");
+            rs_n(c, k);
+            rs_t(c, "), ");
+            rs_var(c, elem(c.rs_vnoms, k));
+            rs_t(c, "); ");
+        }
+    }
+}
+
+// l'expression e peut-elle lancer le ramasse-miettes (un appel d'une fonction qui le peut, une construction) ?
+fonction rs_peut(c: Ctx, e: Noeud) {
+    tantque e != nul {
+        soit g = e.genre;
+        si g == N_APPEL {
+            soit f = fonction_de(c, e.nom);
+            si f != nul && !est_integre(e.nom) && f.rsr == 1 {
+                retour 1;
+            }
+        }
+        si g == N_CONSTRUIRE || g == N_NOUVEAU {
+            soit fn = fonction_de(c, "nouveau");
+            si fn != nul && fn.rsr == 1 {
+                retour 1;
+            }
+        }
+        si rs_peut(c, e.a) || rs_peut(c, e.b) || rs_peut(c, e.c) || rs_peut(c, e.premier) || rs_peut(c, e.deuxieme) {
+            retour 1;
+        }
+        e = e.suivant;
+    }
+    retour 0;
+}
+
+// les fonctions qui peuvent lancer le ramasse-miettes : celles qui lisent pile(), et qui les appellent (point fixe)
+fonction rs_appelle(c: Ctx, e: Noeud, direct) {
+    tantque e != nul {
+        soit g = e.genre;
+        si g == N_APPEL {
+            si direct && egal(e.nom, "pile") {
+                retour 1;
+            }
+            soit f = fonction_de(c, e.nom);
+            si !direct && f != nul && !est_integre(e.nom) && f.rsr == 1 {
+                retour 1;
+            }
+        }
+        si !direct && (g == N_CONSTRUIRE || g == N_NOUVEAU) {
+            soit fn = fonction_de(c, "nouveau");
+            si fn != nul && fn.rsr == 1 {
+                retour 1;
+            }
+        }
+        si rs_appelle(c, e.a, direct) || rs_appelle(c, e.b, direct) || rs_appelle(c, e.c, direct)
+                || rs_appelle(c, e.premier, direct) || rs_appelle(c, e.deuxieme, direct) {
+            retour 1;
+        }
+        e = e.suivant;
+    }
+    retour 0;
+}
+
+fonction rs_preparer(c: Ctx) {
+    soit f = c.fonctions;
+    tantque f != nul {
+        f.rsr = 0;
+        si rs_appelle(c, f.corps, 1) {
+            f.rsr = 1;
+        }
+        f = f.suivant;
+    }
+    soit change = 1;
+    tantque change {
+        change = 0;
+        soit g = c.fonctions;
+        tantque g != nul {
+            si g.rsr != 1 && rs_appelle(c, g.corps, 0) {
+                g.rsr = 1;
+                change = 1;
+            }
+            g = g.suivant;
+        }
     }
 }
 
@@ -12470,7 +12613,9 @@ fonction rs_integre(c: Ctx, e: Noeud) {
     si c.dunon {
         m64 = " & M64";
     }
-    si egal(n, "ecrire_car") && na == 2 {
+    si egal(n, "pile") && na == 0 {
+        rs_t(c, "c.sp");
+    } sinon si egal(n, "ecrire_car") && na == 2 {
         rs_t(c, "{ ");
         rs_args(c, e, rs_ordre(2, 1));
         rs_t(c, "c.m.ecrire_canal(a0, a1); 0u128 }");
@@ -12547,7 +12692,7 @@ fonction rs_expr(c: Ctx, e: Noeud) {
         retour;
     }
     soit g = e.genre;
-    si g == N_NOMBRE {
+    si g == N_NOMBRE || g == N_QNOMBRE {
         rs_n(c, e.val);
         rs_t(c, "u128");
     } sinon si g == N_VAR {
@@ -12605,9 +12750,18 @@ fonction rs_expr(c: Ctx, e: Noeud) {
     } sinon si g == N_NOUVEAU || g == N_CONSTRUIRE {
         // comme le générateur : nouveau(le nombre de champs), puis chaque champ écrit, dans l'ordre du texte
         soit st0 = struct_de(c, e.nom);
-        rs_t(c, "{ let r: u128 = f_nouveau(c, ");
+        rs_t(c, "{ ");
+        soit fnv = fonction_de(c, "nouveau");
+        si fnv != nul && fnv.rsr == 1 {
+            rs_recopier(c);
+        }
+        rs_t(c, "let r: u128 = f_nouveau(c, ");
         rs_n(c, st0.nb);
         rs_t(c, "u128); ");
+        soit garde_r = g == N_CONSTRUIRE && rs_peut(c, e.premier);
+        si garde_r {
+            rs_t(c, "c.pousser(r); ");
+        }
         si g == N_CONSTRUIRE {
             soit p = e.premier;
             tantque p != nul {
@@ -12623,6 +12777,9 @@ fonction rs_expr(c: Ctx, e: Noeud) {
                 p = p.suivant;
             }
         }
+        si garde_r {
+            rs_t(c, "c.sp = c.sp.wrapping_add(1); ");
+        }
         rs_t(c, "r }");
     } sinon si g == N_APPEL && egal(e.nom, "entrée") && e.premier == nul {
         rs_t(c, "c.m.entree.pop_front().unwrap_or(0)");
@@ -12634,25 +12791,21 @@ fonction rs_expr(c: Ctx, e: Noeud) {
         }
         // les arguments d'abord, de gauche à droite (un appel dans un argument emprunte aussi la machine)
         rs_t(c, "{ ");
-        soit a = e.premier;
-        soit na = 0;
-        tantque a != nul {
-            rs_t(c, "let a");
-            rs_n(c, na);
-            rs_t(c, ": u128 = ");
-            rs_expr(c, a);
-            rs_t(c, "; ");
-            na = na + 1;
-            a = a.suivant;
+        soit na = nb_args(e.premier);
+        soit np = rs_args_pousses(c, e, rs_ordre(na, 0));
+        si f.rsr == 1 {
+            rs_recopier(c);
         }
-        rs_t(c, "f_");
+        rs_t(c, "let r_: u128 = f_");
         rs_ident(c, e.nom);
         rs_t(c, "(c");
         pour k dans 0..na {
             rs_t(c, ", a");
             rs_n(c, k);
         }
-        rs_t(c, ") }");
+        rs_t(c, "); ");
+        rs_rendre(c, np);
+        rs_t(c, "r_ }");
     } sinon {
         rs_pas_encore_de(c, "une sorte de valeur", g, 0, e.ligne);
     }
@@ -12766,8 +12919,15 @@ fonction rs_instr(c: Ctx, s: Noeud) {
         }
         rs_t(c, "{ let a: u128 = ");
         rs_adresse(c, s.val, s.a, s.b);
+        soit ga = rs_peut(c, s.c);
+        si ga {
+            rs_t(c, "; c.pousser(a)");
+        }
         rs_t(c, "; let v: u128 = ");
         rs_expr(c, s.c);
+        si ga {
+            rs_t(c, "; c.sp = c.sp.wrapping_add(1)");
+        }
         rs_t(c, "; c.ecrire(a, v); }\n");
     } sinon si g == N_ECRIRE_CHAMP {
         soit tc = typ(c, s.a);
@@ -12777,8 +12937,15 @@ fonction rs_instr(c: Ctx, s: Noeud) {
         }
         rs_t(c, "{ let r: u128 = ");
         rs_expr(c, s.a);
+        soit gr = rs_peut(c, s.c);
+        si gr {
+            rs_t(c, "; c.pousser(r)");
+        }
         rs_t(c, "; let v: u128 = ");
         rs_expr(c, s.c);
+        si gr {
+            rs_t(c, "; c.sp = c.sp.wrapping_add(1)");
+        }
         rs_t(c, "; c.ecrire(r.wrapping_add(");
         rs_n(c, position_champ(struct_numero(c, tc), s.nom));
         rs_t(c, "u128), v); }\n");
@@ -12868,6 +13035,22 @@ fonction rs_instr(c: Ctx, s: Noeud) {
         }
         rs_n(c, elem(c.rs_pile, c.rs_pile.n - 1));
         rs_t(c, ";\n");
+    } sinon si g == N_DONNEES {
+        // la recopie des données du programme dans leur étage (comme le générateur : l'adresse longue, l'étage dedans)
+        soit dn = c.blocs;
+        tantque dn != nul {
+            si dn.vals.n > 0 {
+                ajouter(c.rs_etq, dn.etiq);
+                rs_t(c, "for k in 0..");
+                rs_n(c, dn.vals.n);
+                rs_t(c, "u128 { let v = c.lire(ETQ_");
+                rs_n(c, dn.etiq);
+                rs_t(c, " + k); c.ecrire(");
+                rs_n(c, (dn.adr & 4611686018427387903) | (dn.etage << 62));
+                rs_t(c, "u128 + k, v); }\n");
+            }
+            dn = dn.suivant;
+        }
     } sinon si g == N_ACCORD {
         // un accord : ses mesures l'une après l'autre, et dans chacune ses tâches dans l'ordre (comme le générateur)
         soit me = s.premier;
@@ -12882,6 +13065,17 @@ fonction rs_instr(c: Ctx, s: Noeud) {
     }
 }
 
+fonction rs_est_param(f: Fonction, nom) {
+    soit pp = f.params;
+    tantque pp != nul {
+        si egal(pp.nom, nom) {
+            retour 1;
+        }
+        pp = pp.suivant;
+    }
+    retour 0;
+}
+
 // la fonction f en Rust (appelée par fonction_code, quand ses variables sont connues)
 fonction rs_fonction(c: Ctx, f: Fonction) {
     si !c.rust {
@@ -12891,33 +13085,74 @@ fonction rs_fonction(c: Ctx, f: Fonction) {
         rs_pas_encore(c, "une fonction qui ne rend pas un entier", f.ligne);
         retour;
     }
-    rs_t(c, "#[allow(unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, unused_labels)]\nfn f_");
-    rs_ident(c, f.nom);
-    rs_t(c, "(c: &mut Ctx");
+    // les variables (paramètres d'abord) : leur place dans le cadre
+    c.rs_vnoms = liste();
     soit p = f.params;
     tantque p != nul {
         si !rs_mot(p.type) {
             rs_pas_encore_de(c, "un paramètre qui n'est pas un entier, de type", p.type, 0, f.ligne);
             retour;
         }
-        rs_t(c, ", mut ");
-        rs_var(c, p.nom);
-        rs_t(c, ": u128");
+        ajouter(c.rs_vnoms, p.nom);
         p = p.suivant;
     }
+    soit vl = c.vars;
+    tantque vl != nul {
+        si !rs_est_param(f, vl.nom) {
+            ajouter(c.rs_vnoms, vl.nom);
+        }
+        vl = vl.suivant;
+    }
+    // 0.852 : le cadre (comme la forge) : une fonction qui appelle une fonction qui peut ramasser garde ses variables
+    // dans la pile de Lugus, recopiées avant chaque tel appel ; l'enveloppe f_ réserve la place, fc_ est le corps
+    c.rs_cadre = c.rs_vnoms.n > 0 && rs_appelle(c, f.corps, 0);
+    soit ap = "#[allow(unused_mut, unused_variables, unused_assignments, unreachable_code, unused_parens, unused_labels, unused_braces)]\n";
+    rs_t(c, ap);
+    si c.rs_cadre {
+        rs_t(c, "fn f_");
+        rs_ident(c, f.nom);
+        rs_t(c, "(c: &mut Ctx");
+        soit p2 = f.params;
+        tantque p2 != nul {
+            rs_t(c, ", ");
+            rs_var(c, p2.nom);
+            rs_t(c, ": u128");
+            p2 = p2.suivant;
+        }
+        rs_t(c, ") -> u128 {\n    let sp0 = c.sp; c.sp = sp0.wrapping_sub(");
+        rs_n(c, c.rs_vnoms.n);
+        rs_t(c, ");\n    let r = fc_");
+        rs_ident(c, f.nom);
+        rs_t(c, "(c");
+        soit p3 = f.params;
+        tantque p3 != nul {
+            rs_t(c, ", ");
+            rs_var(c, p3.nom);
+            p3 = p3.suivant;
+        }
+        rs_t(c, "); c.sp = sp0; r\n}\n");
+        rs_t(c, ap);
+        rs_t(c, "#[inline(always)]\nfn fc_");
+    } sinon {
+        rs_t(c, "fn f_");
+    }
+    rs_ident(c, f.nom);
+    rs_t(c, "(c: &mut Ctx");
+    soit p4 = f.params;
+    tantque p4 != nul {
+        rs_t(c, ", mut ");
+        rs_var(c, p4.nom);
+        rs_t(c, ": u128");
+        p4 = p4.suivant;
+    }
     rs_t(c, ") -> u128 {\n");
+    si c.rs_cadre {
+        rs_t(c, "let fp = c.sp;\n");
+    }
     // les variables de la fonction (sans ses paramètres)
     soit v = c.vars;
     tantque v != nul {
-        soit est_param = 0;
-        soit pp = f.params;
-        tantque pp != nul {
-            si egal(pp.nom, v.nom) {
-                est_param = 1;
-            }
-            pp = pp.suivant;
-        }
-        si est_param == 0 {
+        si !rs_est_param(f, v.nom) {
             si !rs_mot(v.type) {
                 rs_pas_encore_de(c, "une variable qui n'est pas un entier, de type", v.type, 0, f.ligne);
                 retour;
@@ -13804,6 +14039,9 @@ fonction generer(c: Ctx) {
     // arrête la machine au lieu de corrompre le programme
     soit fin_code = nouvelle_etiquette(c);
     c.fin_code = fin_code;
+    si c.rust {
+        rs_preparer(c);
+    }
     ldi_etiquette(c, 2, fin_code);
     emettre(c, ins(94, 0, 0, 2, 1));
     saut(c, 51, p.etiq);
