@@ -1020,3 +1020,6 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   toujours). Les noyaux de 32 bits abandonnés (décision du créateur : la carte en 64 bits).
 - `taranis/interprete.py` (la carte de papier) et `tests/test_taranis_vtx.py` (14 boucles, comparées à Lugus).
 - `verifier.py` : 19 étapes de Senos gelées de plus.
+- **0.855** : les étages d'un seul envoi (le lot étendu : les boucles dans un « si », le noyau fondu dans le lot ;
+  `taranis_fondre_lot`, `gene_fondre_sait` dans le noyau de la forge) ; la division de la carte en 64 bits seulement.
+  À mesurer chez le créateur : gergovie_etages forgé par `lugus forger`, contre la forge Python.

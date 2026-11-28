@@ -277,6 +277,8 @@ structure Ctx {
     tk_alias_de, tk_alias_vers,   // 0.853 : la variable de boucle d'un étage fondu, et celle du noyau fondu
     rs_lot_pos, rs_lot_suite, rs_lot_tete,   // 0.853 : le lot de la carte (la place, la suite, son lieu)
     lignes_bandes: Liste,   // 0.852 : les lignes des boucles « en bandes »
+    rs_lot_python,      // 0.855 : les lots comme la forge Python (sans le lot étendu des étages)
+    rs_lot_suite_var,   // 0.855 : la suite du lot est une valeur du programme (suite_f : le Vergobret mesure-t-il ?)
     rs_args_voulu,      // 0.854 : le type voulu des arguments en cours (T_LOG pour une opération logique)
     rs_vnoms: Liste,    // 0.852 : les variables de la fonction en cours, dans l'ordre de son cadre
     rs_cadre,           // 0.852 : 1 si la fonction en cours tient un cadre sur la pile de Lugus
@@ -13868,49 +13870,9 @@ fonction tk_diviser(k: Taranis, op, a, b) {
             }
         }
     }
-    soit vite_ok = 0;
-    soit op32 = 0;
-    soit conv = 113;
-    si egal(op, "/") || egal(op, "%") {
-        soit oux = tk_64(k, 197, a, b);
-        soit h = tk_64(k, 194, oux, tk_cst(k, 32));
-        soit petit = tk_eq(k, h, tk_cst(k, 0));
-        vite_ok = tk_b(k, 167, petit, tk_b(k, 171, b, tk_cst(k, 0)));
-        op32 = 134;
-        si egal(op, "%") {
-            op32 = 137;
-        }
-    } sinon {
-        soit da = tk_dans32(k, a);
-        soit db = tk_dans32(k, b);
-        soit deux = tk_b(k, 167, da, db);
-        soit nz = tk_b(k, 171, b, tk_cst(k, 0));
-        soit nm = tk_b(k, 171, b, tk_cst(k, TK_M64));
-        vite_ok = tk_b(k, 167, deux, tk_b(k, 167, nz, nm));
-        op32 = 135;
-        si egal(op, ".%") {
-            op32 = 138;
-        }
-        conv = 114;
-    }
-    soit vite = tk_id(k);
-    soit lent = tk_id(k);
-    soit fin = tk_id(k);
-    tk_i2(k.code, 247, fin, 0);
-    tk_i3(k.code, 250, vite_ok, vite, lent);
-    tk_etiquette(k, vite);
-    soit a32 = tk_v1(k, 113, k.t32, a);
-    soit b32 = tk_v1(k, 113, k.t32, b);
-    soit r32 = tk_v2(k, op32, k.t32, a32, b32);
-    soit r1 = tk_v1(k, conv, k.t64, r32);
-    soit b1 = k.bloc;
-    tk_aller(k, fin);
-    tk_etiquette(k, lent);
-    soit r2 = tk_diviser64(k, op, a, b);
-    soit b2 = k.bloc;
-    tk_aller(k, fin);
-    tk_etiquette(k, fin);
-    retour tk_v4(k, 245, k.t64, r1, b1, r2, b2);
+    // 0.855 : la carte divise en 64 bits (décidé avec le créateur : pas de détour par 32 bits ; si une carte peine, ce
+    // sera un autre travail de vtx et de Taranis) ; la division par une constante reste une multiplication exacte
+    retour tk_diviser64(k, op, a, b);
 }
 
 // ---- les expressions
@@ -15325,38 +15287,117 @@ fonction rs_corps_lot(c: Ctx, f: Fonction) {
                 gi = q;
             }
         }
-        si gi != 0 - 1 && rs_fondre(c, corps, k, elem(gfin, gi)) {
-            passer_avant = elem(gfin, gi) + 1;
-            continuer;
+        si gi != 0 - 1 {
+            soit gf = elem(gfin, gi);
+            soit nb_g = rs_accords_entre(c, corps, k, gf);
+            soit suite_g = 0;
+            si !c.rs_lot_python && pos + nb_g < 8 {
+                suite_g = rs_lotable(c, rs_suivant_lot(c, corps, gf), 0);
+            }
+            soit pos_g = pos;
+            si c.rs_lot_python {
+                pos_g = 0;
+            }
+            si rs_fondre(c, corps, k, gf, pos_g, suite_g) {
+                passer_avant = gf + 1;
+                si suite_g {
+                    pos = pos_g + nb_g;
+                } sinon {
+                    pos = 0;
+                }
+                continuer;
+            }
         }
-        // le suivant : par-dessus les « soit » purs
-        soit j2 = k + 1;
-        tantque j2 < corps.n && rs_soit_pur(c, rs_noeud(corps, j2)) {
-            j2 = j2 + 1;
-        }
-        soit suivant: Noeud = nul;
-        si j2 < corps.n {
-            suivant = rs_noeud(corps, j2);
-        }
+        soit suivant = rs_suivant_lot(c, corps, k);
         si s.genre == N_ACCORD {
             c.rs_lot_pos = pos;
-            c.rs_lot_suite = suivant != nul && rs_accord_carte(c, suivant) && rs_accord_carte(c, s) && pos < 7;
+            si c.rs_lot_python {
+                c.rs_lot_suite = suivant != nul && rs_accord_carte(c, suivant) && rs_accord_carte(c, s) && pos < 7;
+            } sinon {
+                c.rs_lot_suite = rs_accord_carte(c, s) && rs_lotable(c, suivant, 0) && pos < 7;
+            }
+        } sinon si !c.rs_lot_python && rs_lotable(c, s, pos == 0) {
+            // 0.855 : le lot étendu : une boucle de la carte dans un « si » (sans sinon) : au début du lot (sa condition
+            // est calculée quand rien n'attend), ou derrière une condition pure (elle ne lit pas la mémoire)
+            c.rs_lot_pos = pos;
+            c.rs_lot_suite = !tk_a_retour(s.premier) && rs_lotable(c, suivant, 0) && pos < 7;
         } sinon si !rs_soit_pur(c, s) {
             c.rs_lot_pos = 0;
             c.rs_lot_suite = 0;
             pos = 0;
         }
         rs_instr(c, s);
-        si s.genre == N_ACCORD {
+        si s.genre == N_SI && !c.rs_lot_python && rs_lotable(c, s, 1) {
+            si !c.rs_lot_suite {
+                // la boucle du « si » finissait le lot : si elle n'a pas été jouée, ce qui attend part ici
+                rs_t(c, "taranis_vider(c);\n");
+            }
+        }
+        si s.genre == N_ACCORD || (s.genre == N_SI && !c.rs_lot_python && rs_lotable(c, s, 1)) {
             si c.rs_lot_suite {
                 pos = pos + 1;
             } sinon {
                 pos = 0;
             }
+            c.rs_lot_pos = 0;
+            c.rs_lot_suite = 0;
         }
     }
     c.rs_lot_pos = 0;
     c.rs_lot_suite = 0;
+}
+
+// le suivant d'une place du corps, par-dessus les « soit » purs (nul à la fin)
+fonction rs_suivant_lot(c: Ctx, corps: Liste, k): Noeud {
+    soit j = k + 1;
+    tantque j < corps.n && rs_soit_pur(c, rs_noeud(corps, j)) {
+        j = j + 1;
+    }
+    si j < corps.n {
+        retour rs_noeud(corps, j);
+    }
+    retour nul;
+}
+
+fonction rs_accords_entre(c: Ctx, corps: Liste, deb, fin) {
+    soit n = 0;
+    pour i dans deb..fin + 1 {
+        si rs_noeud(corps, i).genre == N_ACCORD {
+            n = n + 1;
+        }
+    }
+    retour n;
+}
+
+// 0.855 : un élément du lot : un accord de la carte, ou un « si » sans sinon dont le corps n'a que des « soit » purs,
+// un accord de la carte et peut-être un retour ; sa condition est pure (elle ne lit pas la mémoire), sauf en tête (tete)
+fonction rs_lotable(c: Ctx, s: Noeud, tete) {
+    si s == nul {
+        retour 0;
+    }
+    si !c.dunon {
+        retour 0;
+    }
+    si rs_accord_carte(c, s) {
+        retour 1;
+    }
+    si s.genre != N_SI || (s.val == 1 && s.deuxieme != nul) {
+        retour 0;
+    }
+    si !tete && !rs_pur(c, s.a, liste()) {
+        retour 0;
+    }
+    soit nacc = 0;
+    soit p = s.premier;
+    tantque p != nul {
+        si rs_accord_carte(c, p) {
+            nacc = nacc + 1;
+        } sinon si !(rs_soit_pur(c, p) || (p.genre == N_RETOUR && p.suivant == nul && (p.a == nul || rs_pur(c, p.a, liste())))) {
+            retour 0;
+        }
+        p = p.suivant;
+    }
+    retour nacc == 1;
 }
 
 // deux expressions égales une fois les « soit » purs remplacés par leurs valeurs (norme de la forge)
@@ -15471,7 +15512,7 @@ fonction rs_ecritures_fondues(c: Ctx, n: Noeud, garde: Liste, vus: Liste) {
 
 // fondre (le gène « fondre » de Gutuater) : le lot de corps[deb..fin] fondu en un noyau s'ils ont tous le même
 // intervalle et n'écrivent qu'à des fréquences connues ; le vergobret choisit (gene_fondre_debut) ; 0 : rien d'écrit
-fonction rs_fondre(c: Ctx, corps: Liste, deb, fin) {
+fonction rs_fondre(c: Ctx, corps: Liste, deb, fin, pos, suite_apres) {
     // les « soit » purs du lot : leurs valeurs
     soit noms = liste();
     soit vals = liste();
@@ -15528,7 +15569,11 @@ fonction rs_fondre(c: Ctx, corps: Liste, deb, fin) {
         }
     }
     soit dehors = liste();
-    soit k = tk_compiler_membres(c, t0.nom, membres, mnoms, 0, 0, garde, dehors);
+    soit region_f = pos;
+    si region_f > 7 {
+        region_f = 7;
+    }
+    soit k = tk_compiler_membres(c, t0.nom, membres, mnoms, region_f, 0, garde, dehors);
     si k.ok == 0 {
         rs_t(c, "// taranis : le lot ne se fond pas : ");
         rs_t(c, k.raison);
@@ -15544,7 +15589,11 @@ fonction rs_fondre(c: Ctx, corps: Liste, deb, fin) {
             rs_instr(c, s3);
         }
     }
-    rs_t(c, "taranis_vider(c);\n{\n// taranis : le noyau fondu du lot de la ligne ");
+    // le premier du lot : ce qui attendait part d'abord (comme la forge) ; dans un lot étendu, il attend avec les autres
+    si pos == 0 {
+        rs_t(c, "taranis_vider(c);\n");
+    }
+    rs_t(c, "{\n// taranis : le noyau fondu du lot de la ligne ");
     rs_n(c, t0.ligne);
     rs_t(c, "\n#[allow(dead_code)]\nstatic SPV: [u32; ");
     rs_n(c, m.n);
@@ -15555,13 +15604,25 @@ fonction rs_fondre(c: Ctx, corps: Liste, deb, fin) {
         }
         rs_n(c, elem(m, i4));
     }
-    rs_t(c, "];\nlet mut fondu = false;\nif gene_fondre_debut(");
+    rs_t(c, "];\nlet mut fondu = false;\n");
+    // 0.855 : une boucle de la carte suit : le lot continue, sauf quand le Vergobret mesure encore ce lot fondu (sa
+    // mesure doit être la sienne)
+    si suite_apres {
+        rs_t(c, "let suite_f: bool = gene_fondre_sait(");
+        rs_n(c, lieu);
+        rs_t(c, ");\n");
+    }
+    rs_t(c, "if gene_fondre_debut(");
     rs_n(c, lieu);
     rs_t(c, ") {\nlet ta: u128 = ");
     rs_expr(c, t0.a);
     rs_t(c, ";\nlet tb: u128 = ");
     rs_expr(c, td.b);
-    rs_t(c, ";\nfondu = (tb as u64) > (ta as u64) && taranis_fondre(c, &SPV, ta, tb, &[");
+    si pos == 0 && !suite_apres {
+        rs_t(c, ";\nfondu = (tb as u64) > (ta as u64) && taranis_fondre(c, &SPV, ta, tb, &[");
+    } sinon {
+        rs_t(c, ";\nfondu = (tb as u64) > (ta as u64) && taranis_fondre_lot(c, &SPV, ta, tb, &[");
+    }
     pour j5 dans 0..dehors.n {
         si j5 > 0 {
             rs_t(c, ", ");
@@ -15570,13 +15631,24 @@ fonction rs_fondre(c: Ctx, corps: Liste, deb, fin) {
     }
     rs_t(c, "], ");
     rs_n(c, lieu);
+    si !(pos == 0 && !suite_apres) {
+        rs_t(c, ", ");
+        rs_n(c, region_f);
+        si suite_apres {
+            rs_t(c, ", suite_f");
+        } sinon {
+            rs_t(c, ", false");
+        }
+    }
     rs_t(c, ");\n}\nif !fondu {\n");
     pour j6 dans 0..accords.n {
-        c.rs_lot_pos = j6;
-        c.rs_lot_suite = j6 < accords.n - 1;
+        c.rs_lot_pos = pos + j6;
+        c.rs_lot_suite = j6 < accords.n - 1 || suite_apres;
+        c.rs_lot_suite_var = j6 == accords.n - 1 && suite_apres;
         soit a6: Noeud = elem(accords, j6);
         rs_instr(c, a6);
     }
+    c.rs_lot_suite_var = 0;
     c.rs_lot_pos = 0;
     c.rs_lot_suite = 0;
     rs_t(c, "}\ngene_fondre_fin(");
@@ -15651,7 +15723,9 @@ fonction rs_vers_la_carte(c: Ctx, notes: Liste) {
     }
     rs_t(c, "], ");
     rs_n(c, rs_region(c));
-    si c.rs_lot_suite {
+    si c.rs_lot_suite_var {
+        rs_t(c, ", suite_f, ");
+    } sinon si c.rs_lot_suite {
         rs_t(c, ", true, ");
     } sinon {
         rs_t(c, ", false, ");
@@ -18519,7 +18593,9 @@ fonction principal() {
     c.lignes_dbg = entrée();               // 1 : table des lignes pour le pas à pas (absente : 0)
     c.provenance = entrée() == 1;          // 1 : la provenance (absente : 0)
     c.mode_exemples = entrée() == 1;       // 1 : compiler le calcul des exemples à la place du principal (absent : 0)
-    c.rust = entrée() == 1;                // 0.852 : 1 : écrire aussi code.rs, le Rust de la forge (absent : 0)
+    soit rust_e = entrée();               // 0.852 : 1 : écrire aussi code.rs, le Rust de la forge (absent : 0)
+    c.rust = rust_e == 1 || rust_e == 2;
+    c.rs_lot_python = rust_e == 2;          // 0.855 : 2 : les lots comme la forge Python (le test qui compare les noyaux)
     c.rs = liste();
     c.lignes_bandes = liste();
     c.rs_ok = 1;

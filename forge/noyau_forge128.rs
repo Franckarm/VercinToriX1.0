@@ -1915,6 +1915,33 @@ fn taranis_fondre(c: &mut Ctx, spv: &'static [u32], a: u128, b: u128, ext: &[u12
     taranis_direct(c, spv, a, b, ext, 0, false)
 }
 
+/// 0.855 : le noyau fondu dans un lot plus grand (la forge écrite en vtx : les étages d'un seul envoi) : sans vider le lot,
+/// à sa place dans le lot (sa région), et différé si une autre boucle de la carte le suit
+#[allow(dead_code)]
+fn taranis_fondre_lot(c: &mut Ctx, spv: &'static [u32], a: u128, b: u128, ext: &[u128], lieu: u32, region: usize,
+                      differe: bool) -> bool {
+    match taranis_vk::carte() {
+        Some(k) if k.int64 && epissage_rapide() => {}
+        _ => return false,
+    }
+    if std::env::var("VTX_CARTE").map_or(false, |v| v == "0") {
+        return false;
+    }
+    FONDRE_LIEU.store(lieu, std::sync::atomic::Ordering::Relaxed);
+    let differe = differe && std::env::var("VTX_LOT").map_or(true, |v| v != "0");
+    taranis_direct(c, spv, a, b, ext, region, differe)
+}
+
+/// 0.855 : le Vergobret sait-il déjà s'il fond ce lot ? (sinon il mesure : le lot fondu part seul, pour que la mesure
+/// soit la sienne)
+#[allow(dead_code)]
+fn gene_fondre_sait(lieu: u32) -> bool {
+    if dossier_gutuater().is_none() {
+        return true;
+    }
+    genes_fondre().lock().unwrap().get(&lieu).map_or(false, |g| g.choisi.is_some())
+}
+
 #[allow(dead_code)]
 fn genes_fondre() -> &'static std::sync::Mutex<std::collections::HashMap<u32, GeneLot>> {
     static G: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u32, GeneLot>>> = std::sync::OnceLock::new();

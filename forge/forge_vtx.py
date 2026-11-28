@@ -24,7 +24,7 @@ def lire_mots(t):
     return [int(x) for x in t.split(";")[0].replace("\n", "").split(",") if x.strip()]
 
 
-def passer_vtxc128(src, dossier=None, compilateur=None):
+def passer_vtxc128(src, dossier=None, compilateur=None, lots_python=False):
     """vtxc128 sur src, avec l'entrée « rust » : (le texte de code.rs, les mots) ; (None, le message) s'il refuse"""
     d = tempfile.mkdtemp(prefix="forge-vtx-")
     try:
@@ -33,7 +33,7 @@ def passer_vtxc128(src, dossier=None, compilateur=None):
         base = os.path.abspath(dossier) + os.sep if dossier else ""
         # le protocole de passer_vtxc128 (machine128.rs) : le dossier des importer, 0, prélude, optim, partition,
         # lignes, provenance, exemples ; puis rust
-        entrees = [str(ord(ch)) for ch in base] + ["0", "1", "1", "1", "0", "0", "0", "1"]
+        entrees = [str(ord(ch)) for ch in base] + ["0", "1", "1", "1", "0", "0", "0", "2" if lots_python else "1"]
         # lugus lancer prend pour dossier celui des mots : le compilateur y est recopié, à côté de source.vtx
         shutil.copyfile(compilateur or VTXC128, os.path.join(d, "c.mots"))
         r = subprocess.run([LUGUS, "lancer", os.path.join(d, "c.mots")] + entrees, cwd=d, capture_output=True, text=True,

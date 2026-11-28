@@ -193,13 +193,29 @@ def _c(self):
 
 
 noyau_vtx.NoyauTaranis.compiler = _c
+# 0.855 : vtxc128 divise en 64 bits sur la carte (sans le chemin de 32 bits de noyau_vtx.py) : le noyau Python comparé
+# fait de même (la constante d'abord, puis la division de 64 bits)
+_div = noyau_vtx.NoyauTaranis.diviser
+
+
+def _d64(self, op, a, b):
+    d = self.valeur_de.get(b)
+    if d is not None and d != 0:
+        r = self.par_constante(op, a, d)
+        if r is not None:
+            return r
+    return noyau_vtx.NoyauI64.diviser(self, op, a, b)
+
+
+noyau_vtx.NoyauTaranis.diviser = _d64
 LOT = r"taranis_boucle_pages\([^;]*, (?:true|false), [1-9]\d*\)"
 for nomp, chemin in (("Gergovie (l'orage)", go), ("les cubes sur la carte", os.path.join(racine, "belenos", "cubes_carte_mesure.vtx"))):
     py_k.clear()
     s_ = open(chemin, encoding="utf-8").read()
     dd = os.path.dirname(os.path.abspath(chemin))
     code_py, _ = forge128.source_rust(s_, dd, "p", None)
-    rs_, _m = forge_vtx.passer_vtxc128(s_, dd)
+    # les lots comme la forge Python (l'entrée rust = 2) : les noyaux se comparent mot pour mot
+    rs_, _m = forge_vtx.passer_vtxc128(s_, dd, lots_python=True)
     miens = [tuple(int(x) for x in m.group(1).split(",")) for m in re.finditer(r"static SPV: \[u32; \d+\] = \[([0-9,]+)\];", rs_)]
     pyd = set(py_k)
     memes = sum(1 for w in miens if w in pyd)
@@ -211,6 +227,20 @@ for nomp, chemin in (("Gergovie (l'orage)", go), ("les cubes sur la carte", os.p
     print(("OK  " if bon else "ÉCART ") + f"Taranis écrit par vtxc128, {nomp} : {memes}/{len(miens)} noyaux mot pour mot ceux de "
           f"noyau_vtx.py ({len(pyd)} chez la forge Python) ; lots {lots[1]} (Python {lots[0]}), fondus {fond[1]} (Python {fond[0]})")
 noyau_vtx.NoyauTaranis.compiler = _comp
+noyau_vtx.NoyauTaranis.diviser = _div
+
+# 0.855 : les étages d'un seul envoi : dans le Gergovie de lugus forger, image_etages est un seul lot (les matériaux en
+# tête, dans leur « si » ; le noyau fondu ou les trois étages ; le cache, dans le sien), régions 0 à 4
+ge = open(os.path.join(racine, "belenos", "gergovie_etages.vtx"), encoding="utf-8").read()
+rs_e, _ = forge_vtx.passer_vtxc128(ge, os.path.join(racine, "belenos"))
+i0 = rs_e.find("fn f_image_etages")
+fe = rs_e[i0:rs_e.find("\nfn ", i0 + 10)]
+regions = re.findall(r"taranis_boucle_pages\(c, &\[\], &\[\], &SPV, ta, tb, &\[[^\]]*\], (\d+), (true|false|suite_f), (\d+)\)", fe)
+un_envoi = ([r[0] for r in regions[:5]] == ["0", "1", "2", "3", "4"] and regions[4][1] == "false"
+            and len({r[2] for r in regions[:5]}) == 1 and "taranis_fondre_lot(" in fe)
+T_OK &= un_envoi
+print(("OK  " if un_envoi else "ÉCART ") + "les étages d'un seul envoi : un lot de cinq places (régions "
+      + ", ".join(r[0] for r in regions[:5]) + "), le noyau fondu dedans")
 shutil.rmtree(TMP, ignore_errors=True)
 ok = not ecarts and not memoire and queue_ok and G_OK and T_OK
 print("La forge en vtx : conforme." if ok else f"{len(ecarts)} écart(s), {len(memoire)} mémoire(s)")

@@ -164,6 +164,16 @@ garde.
   comme `taranis_direct` le range ; `tests/test_taranis_vtx.py` (dans `verifier.py`) y joue 14 boucles (les entiers de
   64 bits, les divisions, les appels et leurs retours au milieu, le minimum atomique, le quaternaire, `selon`) et compare
   chaque mot écrit à Lugus : tout conforme. On vérifie ici ce qui va à la carte, sans carte.
+- **0.855 : les étages d'un seul envoi, et la carte toute en 64 bits.** Le lot étendu (vtxc128, `rs_corps_lot`) : une
+  boucle de la carte dans un « si » sans sinon entre dans le lot — en tête (sa condition est calculée quand rien
+  n'attend : les matériaux, derrière `oeil_garde`), ou derrière une condition pure, qui ne lit pas la mémoire (le cache,
+  derrière `BLOCS == 0`) ; si sa boucle n'est pas jouée et qu'elle finissait le lot, ce qui attend part juste après. Le
+  noyau fondu entre lui aussi dans le lot (`taranis_fondre_lot` : sa région, différé), sauf quand le Vergobret mesure
+  encore ce lot fondu (`gene_fondre_sait` : sa mesure doit être la sienne). Gergovie, `image_etages` : **un seul envoi**
+  de cinq places (les matériaux, le noyau fondu ou les trois étages, le cache), contre trois avant (et chez la forge
+  Python). La division sur la carte est de 64 bits, toujours (le détour par 32 bits quand les nombres y tenaient est
+  retiré, décidé avec le créateur ; la division par une constante reste une multiplication exacte). L'entrée `rust = 2`
+  du protocole garde les lots de la forge Python, pour le test qui compare les noyaux mot pour mot.
 - **Ce qui manque encore** : les zones (les tableaux serrés) et les pages de l'étage 2 ; le Druide et Ésus dans la
   forge ; les flottants sur la carte (Taranis ne compte qu'en entiers).
 - **Les tests (0.854)** : `verifier.py` ne joue plus par défaut les 19 étapes qui ne jouent que Senos (vtx.py, le SPU-32
