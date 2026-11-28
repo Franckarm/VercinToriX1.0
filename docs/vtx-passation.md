@@ -1034,3 +1034,15 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - Essai 0.856 : tout par `lugus forger` ; étages 59,0 / 37,1 / 35,9 (1 % bas 33,3) ; mêmes empreintes.
 - vtxc128 : blocs marqués (val 1 vague, 2 pour chaque, 3/4 souvenirs) ; `rs_vague`, `rs_chaque`, `rs_souvenirs`.
   forge_vtx.py ne renvoie plus les réactions à Python. test_reactions vérifie que le Rust vient de vtxc128.
+## 0.858 (28 novembre) : on retire ce qui ne sert plus ; mesurer avant la voie B
+- Essai 0.857 : les réactions sur 24 fils 141 / 130 ms contre 451 / 479 sur un seul (3,2 et 3,7 fois) ; noyau unique
+  83,0 / 47,6 / 39,4 ; étages 56,0 / 36,5 / 36,1 ; processeur 16,5 (le C++ 33,3) ; mêmes empreintes.
+- Retiré (décidé avec le créateur ; dans l'historique git) : Senos en Python (vtx.py), les machines JavaScript, le
+  corpus du SPU-32, la forge et la traduction native du SPU-32 en Python, les tests des machines gelées (SPU-32 et
+  SPU-64 séparé), `--geles`. Gardé, parce que le vivant en dépend : vtx64.py (la source du prélude de vtxc par
+  vocabulaire.py, et la référence de Dunon dans une quinzaine de tests), spu64/spu64.py et qflot.py (vtx128.py les
+  importe), les machines de Rust qu'Ogmios embarque (ses modes 32 et 64 bits).
+- Retiré : la clepsydre à marges (MARGES, ses 17 fonctions, gergovie_orage_marges.vtx) ; l'orage et le feu restent.
+- presenter_cube : `VTX_CARTE_TEMPS=1` dit à la fin où passe son temps (ce que la carte finit, l'image qui redescend,
+  la conversion avec l'empreinte, la fenêtre) ; la conversion et l'empreinte en un seul passage. L'essai a l'étape 7.
+- La voie B (la chaîne d'échange de Vulkan : l'image de la carte copiée à l'écran sans redescendre) attend ces mesures.
