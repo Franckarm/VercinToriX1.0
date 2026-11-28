@@ -131,9 +131,19 @@ garde.
   s'arrête et le dit). La clé du réglage est la fonction et la ligne (la forge Python prend le programme, la ligne et le
   corps : leurs mémoires de Gutuater ne se partagent pas). Gergovie (l'orage, demi-échelle, deux cœurs ici) : les mêmes
   empreintes et images, **8,3 s contre 8,9 s pour la forge Python** (12,8 s avant, sur un cœur).
-- **Ensuite** : Taranis, les noyaux de la carte écrits par vtxc128 (le travail de `taranis/noyau_vtx.py`, 1 400 lignes,
-  et de `vers_la_carte`/`fondre` dans la forge : les trois noyaux, la fenêtre et les pages, les lots, le choix du
-  vergobret) ; puis les zones et les pages de l'étage 2 ; alors l'ancienne forge et vtx128.py peuvent partir.
+- **0.853 : Taranis écrit par vtxc128.** Les fonctions `tk_…` de vtxc128 écrivent le noyau de la carte
+  (NoyauTaranis de `taranis/noyau_vtx.py` : les entiers de 64 bits de la carte, le monde d'un seul tenant, les divisions
+  par une constante changées en multiplications exactes, le chemin de 32 bits, le minimum atomique de la projection ;
+  les fonctions appelées recopiées dans le noyau, leurs retours au milieu changés en un drapeau), **pas pour pas comme
+  le Python : les mêmes identifiants dans le même ordre, donc les mêmes mots SPIR-V**. Vérifié mot pour mot (il n'y a
+  pas de carte ici : les noyaux se comparent, ils ne se jouent pas) : Gergovie (toutes ses variantes : 14/14 noyaux),
+  les cubes sur la carte (2/2), l'Auvergne (7, et les deux mêmes boucles refusées) ; vtxc128 choisit aussi comme la
+  forge la fenêtre (l'épissage rapide direct) ou les pages (le vergobret choisit, `CHOIX`). `forge/test_forge_vtx.py`
+  le vérifie. Seul un programme `dunon;` va à la carte.
+- **Ce que la forge de vtxc128 n'a pas encore pour la carte** : le lot (plusieurs boucles qui se suivent parties d'un
+  seul envoi, chacune sa région) et le gène « fondre » (le lot fondu en un noyau) : chaque boucle part seule ; les
+  noyaux de deux mots de 32 bits et de la fenêtre (pour une carte sans entiers de 64 bits, ou sans l'épissage rapide :
+  la boucle reste alors aux cœurs) ; les zones et les pages de l'étage 2.
 
 ## Ce qui ne change pas
 

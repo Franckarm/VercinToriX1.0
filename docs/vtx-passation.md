@@ -1004,3 +1004,8 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
   des essais.
 - **0.852c** : les segments (cylindres) et les bandes (l'équipe de Gutuater) écrits par vtxc128 : Gergovie à demi-échelle,
   mêmes empreintes, 8,3 s contre 8,9 s (forge Python) ici sans carte. Reste : Taranis (les noyaux SPIR-V), les zones.
+
+## 0.853 (28 novembre) : Taranis écrit par vtxc128
+- Le noyau de Taranis (NoyauTaranis) écrit par vtxc128 (`tk_…`), mot pour mot celui de noyau_vtx.py : Gergovie 14/14,
+  les cubes 2/2, l'Auvergne 7/7 ; la fenêtre ou les pages comme la forge. Le noyau de la forge : un noyau absent
+  (`&[]`) rend la boucle au processeur. Reste : le lot, « fondre », les noyaux de 32 bits.

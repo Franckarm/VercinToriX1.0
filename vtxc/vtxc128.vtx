@@ -13058,6 +13058,8 @@ fonction rs_instr(c: Ctx, s: Noeud) {
     } sinon si g == N_ACCORD {
         // les notes de l'accord (toutes ses tâches, mesure après mesure) ; des segments d'une même boucle qui ne touchent
         // que le cube vont aux cœurs (les cylindres, ou les bandes) ; sinon, l'une après l'autre (comme le générateur)
+        // ce qui reste du lot de la carte part avant tout autre travail (comme la forge)
+        rs_t(c, "taranis_vider(c);\n");
         soit an_notes = liste();
         soit an_me = s.premier;
         tantque an_me != nul {
@@ -13083,6 +13085,1467 @@ fonction rs_instr(c: Ctx, s: Noeud) {
     } sinon {
         rs_pas_encore_de(c, "une sorte d'instruction", g, 0, s.ligne);
     }
+}
+
+// ------------------------------------------------------------------------------ 0.853 : Taranis écrit par vtxc128
+// Le noyau de la carte (taranis/noyau_vtx.py, NoyauTaranis : les entiers de 64 bits de la carte, le monde d'un seul
+// tenant, les divisions par une constante en multiplications, le minimum atomique) écrit depuis l'arbre de vtxc128, pas
+// pour pas comme le Python : les mêmes identifiants, dans le même ordre, donc les mêmes mots SPIR-V (le test les compare).
+// Ce que le noyau ne sait pas faire : tk.ok = 0 et sa raison (la boucle reste aux cœurs, comme PasPourLaCarte).
+
+structure Taranis { prochain, tete: Liste, decor: Liste, types: Liste, vdecl: Liste, code: Liste, c32k: Liste,
+                    c64k: Liste, bloc, tvoid, tfn, tbool, t32, t64, tpaire, tpu, tpf, tp64, tpf64, tprod, fenetre,
+                    parametres, table, marques, auteurs, moi, derniere, tour, demandes, region, atomique, capa,
+                    portees: Liste, appels: Liste, nappels, ok, raison, fen_ok, var }
+
+constante TK_M64 = 18446744073709551615;
+constante TK_M63 = 9223372036854775808;
+
+fonction tk_refus(c: Ctx, k: Taranis, raison) {
+    si k.ok == 1 {
+        k.raison = raison;
+    }
+    k.ok = 0;
+}
+
+fonction tk_id(k: Taranis) {
+    k.prochain = k.prochain + 1;
+    retour k.prochain - 1;
+}
+
+fonction tk_mot0(l: Liste, op, n) {
+    ajouter(l, ((n + 1) << 16) | op);
+}
+
+fonction tk_i1(l: Liste, op, a) {
+    tk_mot0(l, op, 1);
+    ajouter(l, a);
+}
+
+fonction tk_i2(l: Liste, op, a, b) {
+    tk_mot0(l, op, 2);
+    ajouter(l, a);
+    ajouter(l, b);
+}
+
+fonction tk_i3(l: Liste, op, a, b, d) {
+    tk_mot0(l, op, 3);
+    ajouter(l, a);
+    ajouter(l, b);
+    ajouter(l, d);
+}
+
+fonction tk_i4(l: Liste, op, a, b, d, e) {
+    tk_mot0(l, op, 4);
+    ajouter(l, a);
+    ajouter(l, b);
+    ajouter(l, d);
+    ajouter(l, e);
+}
+
+fonction tk_i5(l: Liste, op, a, b, d, e, f) {
+    tk_mot0(l, op, 5);
+    ajouter(l, a);
+    ajouter(l, b);
+    ajouter(l, d);
+    ajouter(l, e);
+    ajouter(l, f);
+}
+
+fonction tk_i6(l: Liste, op, a, b, d, e, f, g) {
+    tk_mot0(l, op, 6);
+    ajouter(l, a);
+    ajouter(l, b);
+    ajouter(l, d);
+    ajouter(l, e);
+    ajouter(l, f);
+    ajouter(l, g);
+}
+
+// une valeur : son identifiant donné après ses arguments (comme v() du Python)
+fonction tk_v1(k: Taranis, op, t, a) {
+    soit r = tk_id(k);
+    tk_i3(k.code, op, t, r, a);
+    retour r;
+}
+
+fonction tk_v2(k: Taranis, op, t, a, b) {
+    soit r = tk_id(k);
+    tk_i4(k.code, op, t, r, a, b);
+    retour r;
+}
+
+fonction tk_v3(k: Taranis, op, t, a, b, d) {
+    soit r = tk_id(k);
+    tk_i5(k.code, op, t, r, a, b, d);
+    retour r;
+}
+
+fonction tk_v4(k: Taranis, op, t, a, b, d, e) {
+    soit r = tk_id(k);
+    tk_i6(k.code, op, t, r, a, b, d, e);
+    retour r;
+}
+
+fonction tk_c32(k: Taranis, v0) {
+    soit v = v0 & 4294967295;
+    pour i dans 0..k.c32k.n / 2 {
+        si elem(k.c32k, 2 * i) == v {
+            retour elem(k.c32k, 2 * i + 1);
+        }
+    }
+    soit r = tk_id(k);
+    ajouter(k.c32k, v);
+    ajouter(k.c32k, r);
+    tk_i3(k.types, 43, k.t32, r, v);
+    retour r;
+}
+
+fonction tk_cst(k: Taranis, v0) {
+    soit v = v0 & TK_M64;
+    pour i dans 0..k.c64k.n / 2 {
+        si elem(k.c64k, 2 * i) == v {
+            retour elem(k.c64k, 2 * i + 1);
+        }
+    }
+    soit r = tk_id(k);
+    ajouter(k.c64k, v);
+    ajouter(k.c64k, r);
+    tk_i4(k.types, 43, k.t64, r, v & 4294967295, v >> 32);
+    retour r;
+}
+
+// la constante que porte un identifiant (valeur_de) : 1 si c'en est une (sa valeur dans k.raison n'est pas touchée)
+fonction tk_est_cst(k: Taranis, id) {
+    pour i dans 0..k.c64k.n / 2 {
+        si elem(k.c64k, 2 * i + 1) == id {
+            retour 1;
+        }
+    }
+    retour 0;
+}
+
+fonction tk_val_cst(k: Taranis, id) {
+    pour i dans 0..k.c64k.n / 2 {
+        si elem(k.c64k, 2 * i + 1) == id {
+            retour elem(k.c64k, 2 * i);
+        }
+    }
+    retour 0;
+}
+
+fonction tk_etiquette(k: Taranis, lab) {
+    tk_i1(k.code, 248, lab);
+    k.bloc = lab;
+}
+
+fonction tk_aller(k: Taranis, lab) {
+    tk_i1(k.code, 249, lab);
+}
+
+fonction tk_64(k: Taranis, op, a, b) {
+    retour tk_v2(k, op, k.t64, a, b);
+}
+
+fonction tk_b(k: Taranis, op, a, b) {
+    retour tk_v2(k, op, k.tbool, a, b);
+}
+
+fonction tk_sel(k: Taranis, cnd, x, y) {
+    retour tk_v3(k, 169, k.t64, cnd, x, y);
+}
+
+fonction tk_add(k: Taranis, x, y) {
+    retour tk_64(k, 128, x, y);
+}
+
+fonction tk_sub(k: Taranis, x, y) {
+    retour tk_64(k, 130, x, y);
+}
+
+fonction tk_mul(k: Taranis, x, y) {
+    retour tk_64(k, 132, x, y);
+}
+
+fonction tk_eq(k: Taranis, x, y) {
+    retour tk_b(k, 170, x, y);
+}
+
+fonction tk_ult(k: Taranis, x, y, signe) {
+    si signe {
+        retour tk_b(k, 177, x, y);
+    }
+    retour tk_b(k, 176, x, y);
+}
+
+fonction tk_non(k: Taranis, x) {
+    retour tk_v1(k, 168, k.tbool, x);
+}
+
+fonction tk_comparer(k: Taranis, op, x, y) {
+    si egal(op, "==") {
+        retour tk_eq(k, x, y);
+    }
+    si egal(op, "!=") {
+        retour tk_non(k, tk_eq(k, x, y));
+    }
+    soit signe = car(op, 0) == 46;
+    soit o = op;
+    si signe {
+        o = sous_texte_tk(op);
+    }
+    si egal(o, "<") {
+        retour tk_ult(k, x, y, signe);
+    }
+    si egal(o, ">") {
+        retour tk_ult(k, y, x, signe);
+    }
+    si egal(o, "<=") {
+        retour tk_non(k, tk_ult(k, y, x, signe));
+    }
+    retour tk_non(k, tk_ult(k, x, y, signe));
+}
+
+// l'opérateur sans son point (« .< » -> « < ») : un texte fait à la main (vtxc n'a pas de + de textes)
+fonction sous_texte_tk(op) {
+    si egal(op, ".<") {
+        retour "<";
+    }
+    si egal(op, ".>") {
+        retour ">";
+    }
+    si egal(op, ".<=") {
+        retour "<=";
+    }
+    retour ">=";
+}
+
+fonction tk_decaler(k: Taranis, op, x, n) {
+    soit s = tk_64(k, 199, n, tk_cst(k, 63));
+    si egal(op, "<<") {
+        retour tk_64(k, 196, x, s);
+    }
+    si egal(op, ">>") {
+        retour tk_64(k, 194, x, s);
+    }
+    retour tk_64(k, 195, x, s);
+}
+
+fonction tk_neg(k: Taranis, x) {
+    soit z = tk_cst(k, 0);
+    retour tk_sub(k, z, x);
+}
+
+fonction tk_case(k: Taranis, tampon, i) {
+    soit z = tk_c32(k, 0);
+    retour tk_v3(k, 65, k.tpu, tampon, z, i);
+}
+
+fonction tk_case64(k: Taranis, tampon, i) {
+    soit z = tk_c32(k, 0);
+    retour tk_v3(k, 65, k.tp64, tampon, z, i);
+}
+
+fonction tk_store(k: Taranis, p, x) {
+    tk_i2(k.code, 62, p, x);
+}
+
+fonction tk_drapeau_n(k: Taranis, n) {
+    soit p = tk_case64(k, k.parametres, tk_c32(k, k.region * 64));
+    tk_store(k, p, tk_cst(k, n));
+}
+
+// ---- les variables : une par nom dans la portée du dessus
+fonction tk_locale(k: Taranis) {
+    soit v = tk_id(k);
+    tk_i3(k.vdecl, 59, k.tpf64, v, 7);
+    retour v;
+}
+
+fonction tk_var32(k: Taranis) {
+    soit v = tk_id(k);
+    tk_i3(k.vdecl, 59, k.tpf, v, 7);
+    retour v;
+}
+
+fonction tk_portee(k: Taranis): Liste {
+    soit p: Liste = elem(k.portees, k.portees.n - 1);
+    retour p;
+}
+
+fonction tk_trouve(k: Taranis, nom) {
+    soit p = tk_portee(k);
+    pour i dans 0..p.n / 2 {
+        si egal(elem(p, 2 * i), nom) {
+            retour elem(p, 2 * i + 1);
+        }
+    }
+    retour 0;
+}
+
+fonction tk_nouvelle(k: Taranis, nom) {
+    soit v = tk_locale(k);
+    soit p = tk_portee(k);
+    // un nom déjà là est remplacé (comme un dictionnaire)
+    pour i dans 0..p.n / 2 {
+        si egal(elem(p, 2 * i), nom) {
+            poser(p, 2 * i + 1, v);
+            retour v;
+        }
+    }
+    ajouter(p, nom);
+    ajouter(p, v);
+    retour v;
+}
+
+fonction tk_cherche(c: Ctx, k: Taranis, nom) {
+    soit v = tk_trouve(k, nom);
+    si v == 0 {
+        tk_refus(c, k, "une variable inconnue du noyau");
+        retour tk_locale(k);
+    }
+    retour v;
+}
+
+fonction tk_charger(k: Taranis, v) {
+    retour tk_v1(k, 61, k.t64, v);
+}
+
+fonction tk_verifier_type(c: Ctx, k: Taranis, e: Noeud) {
+    si typ(c, e) != 0 {
+        tk_refus(c, k, "un type que le noyau ne connaît pas (seul l'entier)");
+    }
+}
+
+// ---- la mémoire : le monde d'un seul tenant (direct)
+fonction tk_direct(k: Taranis, a, sortie: Liste) {
+    soit f = tk_64(k, 194, a, tk_cst(k, 24));
+    soit ok_f = tk_ult(k, f, tk_cst(k, 256), 0);
+    soit f32 = tk_v1(k, 113, k.t32, tk_64(k, 199, f, tk_cst(k, 255)));
+    soit i32 = tk_v1(k, 113, k.t32, tk_64(k, 199, a, tk_cst(k, 16777215)));
+    soit base = tk_v1(k, 61, k.t32, tk_case(k, k.table, f32));
+    soit i256 = tk_v2(k, 128, k.t32, f32, tk_c32(k, 256));
+    soit taille = tk_v1(k, 61, k.t32, tk_case(k, k.table, i256));
+    soit ok = tk_b(k, 167, ok_f, tk_b(k, 176, i32, taille));
+    soit somme = tk_v2(k, 128, k.t32, base, i32);
+    soit mot = tk_v3(k, 169, k.t32, ok, somme, tk_c32(k, 0));
+    sortie.n = 0;
+    ajouter(sortie, mot);
+    ajouter(sortie, ok);
+    ajouter(sortie, f32);
+}
+
+fonction tk_lire(c: Ctx, k: Taranis, e: Noeud) {
+    si e.val != 2 || e.a != nul {
+        tk_refus(c, k, "une lecture hors de l'étage 2");
+        retour tk_cst(k, 0);
+    }
+    soit a = tk_expr(c, k, e.b);
+    soit d = liste();
+    tk_direct(k, a, d);
+    retour tk_v1(k, 61, k.t64, tk_case64(k, k.fenetre, elem(d, 0)));
+}
+
+fonction tk_ecrire(c: Ctx, k: Taranis, s: Noeud) {
+    si s.val != 2 || s.a != nul {
+        tk_refus(c, k, "une écriture hors de l'étage 2");
+        retour;
+    }
+    soit a = tk_expr(c, k, s.b);
+    soit x = tk_expr(c, k, s.c);
+    soit d = liste();
+    tk_direct(k, a, d);
+    soit oui = tk_id(k);
+    soit nn = tk_id(k);
+    soit fin = tk_id(k);
+    tk_i2(k.code, 247, fin, 0);
+    tk_i3(k.code, 250, elem(d, 1), oui, nn);
+    tk_etiquette(k, oui);
+    tk_store(k, tk_case64(k, k.fenetre, elem(d, 0)), x);
+    soit pm = tk_case(k, k.marques, elem(d, 2));
+    tk_store(k, pm, tk_c32(k, 1));
+    tk_aller(k, fin);
+    tk_etiquette(k, nn);
+    tk_drapeau_n(k, 1);
+    tk_aller(k, fin);
+    tk_etiquette(k, fin);
+}
+
+// « si x < @2[a] { @2[a] = x; } » : garder le plus petit (OpAtomicUMin de 64 bits)
+fonction tk_minimum(c: Ctx, s: Noeud) {
+    si s.genre != N_SI || (s.val == 1 && s.deuxieme != nul) || s.premier == nul || s.premier.suivant != nul {
+        retour 0;
+    }
+    soit cn = s.a;
+    soit w = s.premier;
+    si cn.genre != N_BIN || !egal(cn.op, "<") || cn.b.genre != N_LIRE || cn.b.val != 2 || cn.b.a != nul {
+        retour 0;
+    }
+    si w.genre != N_ECRIRE || w.val != 2 || w.a != nul {
+        retour 0;
+    }
+    si !meme_expr(w.b, cn.b.b) || !meme_expr(w.c, cn.a) {
+        retour 0;
+    }
+    si tk_touche_memoire(cn.a) {
+        retour 0;
+    }
+    retour 1;
+}
+
+fonction tk_garder_minimum(c: Ctx, k: Taranis, s: Noeud) {
+    soit w = s.premier;
+    si k.capa == 0 {
+        // Int64Atomics, en tête du module
+        soit t2 = liste();
+        tk_i1(t2, 17, 12);
+        pour i dans 0..k.tete.n {
+            ajouter(t2, elem(k.tete, i));
+        }
+        k.tete = t2;
+        k.capa = 1;
+    }
+    soit a = tk_expr(c, k, w.b);
+    soit x = tk_expr(c, k, w.c);
+    soit d = liste();
+    tk_direct(k, a, d);
+    soit oui = tk_id(k);
+    soit nn = tk_id(k);
+    soit fin = tk_id(k);
+    tk_i2(k.code, 247, fin, 0);
+    tk_i3(k.code, 250, elem(d, 1), oui, nn);
+    tk_etiquette(k, oui);
+    soit p = tk_case64(k, k.fenetre, elem(d, 0));
+    soit u = tk_c32(k, 1);
+    soit z = tk_c32(k, 0);
+    tk_v4(k, 237, k.t64, p, u, z, x);
+    soit pm = tk_case(k, k.marques, elem(d, 2));
+    tk_store(k, pm, tk_c32(k, 1));
+    tk_aller(k, fin);
+    tk_etiquette(k, nn);
+    tk_drapeau_n(k, 1);
+    tk_aller(k, fin);
+    tk_etiquette(k, fin);
+}
+
+// ---- les divisions (NoyauI64, puis Taranis : les constantes, le chemin de 32 bits)
+fonction tk_diviser64(k: Taranis, op, a, b) {
+    soit zero = tk_eq(k, b, tk_cst(k, 0));
+    si egal(op, "/") || egal(op, "%") {
+        soit bb = tk_sel(k, zero, tk_cst(k, 1), b);
+        si egal(op, "/") {
+            soit m = tk_cst(k, TK_M64);
+            retour tk_sel(k, zero, m, tk_64(k, 134, a, bb));
+        }
+        retour tk_sel(k, zero, a, tk_64(k, 137, a, bb));
+    }
+    soit moins1 = tk_eq(k, b, tk_cst(k, TK_M64));
+    soit special = tk_b(k, 166, zero, moins1);
+    soit bb2 = tk_sel(k, special, tk_cst(k, 1), b);
+    si egal(op, "./") {
+        soit na = tk_neg(k, a);
+        soit q = tk_sel(k, moins1, na, tk_64(k, 135, a, bb2));
+        retour tk_sel(k, zero, tk_cst(k, TK_M64), q);
+    }
+    soit z0 = tk_cst(k, 0);
+    soit r = tk_sel(k, moins1, z0, tk_64(k, 138, a, bb2));
+    retour tk_sel(k, zero, a, r);
+}
+
+fonction tk_longueur_bits(x) {
+    soit n = 0;
+    tantque x > 0 {
+        n = n + 1;
+        x = x >> 1;
+    }
+    retour n;
+}
+
+fonction tk_haut(k: Taranis, op, x, y) {
+    si k.tprod == 0 {
+        k.tprod = tk_id(k);
+        tk_i3(k.types, 30, k.tprod, k.t64, k.t64);
+    }
+    soit p = tk_v2(k, op, k.tprod, x, y);
+    retour tk_v2(k, 81, k.t64, p, 1);
+}
+
+// par_constante : 0 s'il n'y a pas de raccourci (sinon l'identifiant du résultat)
+fonction tk_par_constante(k: Taranis, op, a, d) {
+    si egal(op, "/") || egal(op, "%") {
+        si (d & (d - 1)) == 0 {
+            soit kk = tk_longueur_bits(d) - 1;
+            si egal(op, "/") {
+                si kk != 0 {
+                    retour tk_64(k, 194, a, tk_cst(k, kk));
+                }
+                retour a;
+            }
+            retour tk_64(k, 199, a, tk_cst(k, d - 1));
+        }
+        soit l = tk_longueur_bits(d - 1);
+        soit m = ((18446744073709551616 * ((1 << l) - d)) / d + 1) & TK_M64;
+        soit t = tk_haut(k, 151, tk_cst(k, m), a);
+        soit dif = tk_64(k, 194, tk_sub(k, a, t), tk_cst(k, 1));
+        soit q = tk_64(k, 194, tk_add(k, t, dif), tk_cst(k, l - 1));
+        si egal(op, "/") {
+            retour q;
+        }
+        retour tk_sub(k, a, tk_mul(k, q, tk_cst(k, d)));
+    }
+    // signé : ds = d (de 64 bits, avec son signe)
+    soit negd = d >> 63;
+    soit ad = d;
+    si negd {
+        ad = 18446744073709551616 - d;
+    }
+    si ad == 1 {
+        retour 0;
+    }
+    soit q2 = 0;
+    si (ad & (ad - 1)) == 0 {
+        soit kk2 = tk_longueur_bits(ad) - 1;
+        soit signe = tk_64(k, 195, a, tk_cst(k, 63));
+        soit biais = tk_64(k, 194, signe, tk_cst(k, 64 - kk2));
+        q2 = tk_64(k, 195, tk_add(k, a, biais), tk_cst(k, kk2));
+    } sinon {
+        // magie_signee (Hacker's Delight 10-1)
+        soit tt = TK_M63 + negd;
+        soit anc = tt - 1 - tt % ad;
+        soit p = 63;
+        soit q1 = TK_M63 / anc;
+        soit r1 = TK_M63 - q1 * anc;
+        soit qq2 = TK_M63 / ad;
+        soit r2 = TK_M63 - qq2 * ad;
+        soit encore = 1;
+        tantque encore {
+            p = p + 1;
+            q1 = q1 * 2;
+            r1 = r1 * 2;
+            si r1 >= anc {
+                q1 = q1 + 1;
+                r1 = r1 - anc;
+            }
+            qq2 = qq2 * 2;
+            r2 = r2 * 2;
+            si r2 >= ad {
+                qq2 = qq2 + 1;
+                r2 = r2 - ad;
+            }
+            soit delta = ad - r2;
+            si !(q1 < delta || (q1 == delta && r1 == 0)) {
+                encore = 0;
+            }
+        }
+        soit m2 = qq2 + 1;
+        si negd {
+            m2 = 18446744073709551616 - m2;
+        }
+        m2 = m2 & TK_M64;
+        soit sh = p - 64;
+        q2 = tk_haut(k, 152, tk_cst(k, m2), a);
+        soit ms_neg = m2 >> 63;
+        si !negd && ms_neg {
+            q2 = tk_add(k, q2, a);
+        }
+        si negd && !ms_neg {
+            q2 = tk_sub(k, q2, a);
+        }
+        si sh != 0 {
+            q2 = tk_64(k, 195, q2, tk_cst(k, sh));
+        }
+        q2 = tk_add(k, q2, tk_64(k, 194, q2, tk_cst(k, 63)));
+    }
+    si (ad & (ad - 1)) == 0 && negd {
+        q2 = tk_neg(k, q2);
+    }
+    si egal(op, "./") {
+        retour q2;
+    }
+    retour tk_sub(k, a, tk_mul(k, q2, tk_cst(k, d)));
+}
+
+fonction tk_dans32(k: Taranis, x) {
+    soit s = tk_add(k, x, tk_cst(k, 2147483648));
+    soit h = tk_64(k, 194, s, tk_cst(k, 32));
+    retour tk_eq(k, h, tk_cst(k, 0));
+}
+
+fonction tk_diviser(k: Taranis, op, a, b) {
+    si tk_est_cst(k, b) {
+        soit d = tk_val_cst(k, b);
+        si d != 0 {
+            soit r = tk_par_constante(k, op, a, d);
+            si r != 0 {
+                retour r;
+            }
+        }
+    }
+    soit vite_ok = 0;
+    soit op32 = 0;
+    soit conv = 113;
+    si egal(op, "/") || egal(op, "%") {
+        soit oux = tk_64(k, 197, a, b);
+        soit h = tk_64(k, 194, oux, tk_cst(k, 32));
+        soit petit = tk_eq(k, h, tk_cst(k, 0));
+        vite_ok = tk_b(k, 167, petit, tk_b(k, 171, b, tk_cst(k, 0)));
+        op32 = 134;
+        si egal(op, "%") {
+            op32 = 137;
+        }
+    } sinon {
+        soit da = tk_dans32(k, a);
+        soit db = tk_dans32(k, b);
+        soit deux = tk_b(k, 167, da, db);
+        soit nz = tk_b(k, 171, b, tk_cst(k, 0));
+        soit nm = tk_b(k, 171, b, tk_cst(k, TK_M64));
+        vite_ok = tk_b(k, 167, deux, tk_b(k, 167, nz, nm));
+        op32 = 135;
+        si egal(op, ".%") {
+            op32 = 138;
+        }
+        conv = 114;
+    }
+    soit vite = tk_id(k);
+    soit lent = tk_id(k);
+    soit fin = tk_id(k);
+    tk_i2(k.code, 247, fin, 0);
+    tk_i3(k.code, 250, vite_ok, vite, lent);
+    tk_etiquette(k, vite);
+    soit a32 = tk_v1(k, 113, k.t32, a);
+    soit b32 = tk_v1(k, 113, k.t32, b);
+    soit r32 = tk_v2(k, op32, k.t32, a32, b32);
+    soit r1 = tk_v1(k, conv, k.t64, r32);
+    soit b1 = k.bloc;
+    tk_aller(k, fin);
+    tk_etiquette(k, lent);
+    soit r2 = tk_diviser64(k, op, a, b);
+    soit b2 = k.bloc;
+    tk_aller(k, fin);
+    tk_etiquette(k, fin);
+    retour tk_v4(k, 245, k.t64, r1, b1, r2, b2);
+}
+
+// ---- les expressions
+// les marcheurs de l'arbre : un noeud (ses enfants a, b, c et ses listes premier, deuxieme), ou une liste (par suivant)
+fonction tk_contient_appel(e: Noeud) {
+    si e == nul {
+        retour 0;
+    }
+    si e.genre == N_APPEL || e.genre == N_LIRE {
+        retour 1;
+    }
+    retour tk_contient_appel(e.a) || tk_contient_appel(e.b) || tk_contient_appel(e.c)
+        || tk_contient_appel_l(e.premier) || tk_contient_appel_l(e.deuxieme);
+}
+
+fonction tk_contient_appel_l(s: Noeud) {
+    tantque s != nul {
+        si tk_contient_appel(s) {
+            retour 1;
+        }
+        s = s.suivant;
+    }
+    retour 0;
+}
+
+fonction tk_touche_memoire(e: Noeud) {
+    si e == nul {
+        retour 0;
+    }
+    si e.genre == N_LIRE || e.genre == N_ECRIRE || e.genre == N_CHAMP || e.genre == N_ECRIRE_CHAMP {
+        retour 1;
+    }
+    retour tk_touche_memoire(e.a) || tk_touche_memoire(e.b) || tk_touche_memoire(e.c)
+        || tk_touche_memoire_l(e.premier) || tk_touche_memoire_l(e.deuxieme);
+}
+
+fonction tk_touche_memoire_l(s: Noeud) {
+    tantque s != nul {
+        si tk_touche_memoire(s) {
+            retour 1;
+        }
+        s = s.suivant;
+    }
+    retour 0;
+}
+
+fonction tk_est_cmp(o) {
+    retour rs_est_comparaison(o) || egal(o, ".<") || egal(o, ".>") || egal(o, ".<=") || egal(o, ".>=");
+}
+
+fonction tk_booleen(c: Ctx, k: Taranis, e: Noeud) {
+    si e.genre == N_BIN && (egal(e.op, "&&") || egal(e.op, "||")) {
+        si tk_contient_appel(e) {
+            tk_refus(c, k, "&& ou || autour d'un appel (le court-circuit)");
+        }
+        soit a = tk_booleen(c, k, e.a);
+        soit b = tk_booleen(c, k, e.b);
+        si egal(e.op, "&&") {
+            retour tk_b(k, 167, a, b);
+        }
+        retour tk_b(k, 166, a, b);
+    }
+    si e.genre == N_NONLOG {
+        retour tk_non(k, tk_booleen(c, k, e.a));
+    }
+    si e.genre == N_BIN && tk_est_cmp(e.op) {
+        tk_verifier_type(c, k, e.a);
+        tk_verifier_type(c, k, e.b);
+        soit x = tk_expr(c, k, e.a);
+        soit y = tk_expr(c, k, e.b);
+        retour tk_comparer(k, e.op, x, y);
+    }
+    tk_verifier_type(c, k, e);
+    soit v = tk_expr(c, k, e);
+    retour tk_non(k, tk_eq(k, v, tk_cst(k, 0)));
+}
+
+fonction tk_expr(c: Ctx, k: Taranis, e: Noeud) {
+    soit g = e.genre;
+    si g == N_NOMBRE {
+        retour tk_cst(k, e.val);
+    }
+    si g == N_VAR {
+        retour tk_charger(k, tk_cherche(c, k, e.nom));
+    }
+    si g == N_LIRE {
+        retour tk_lire(c, k, e);
+    }
+    si g == N_APPEL {
+        retour tk_appel(c, k, e);
+    }
+    si g == N_NONLOG || (g == N_BIN && (tk_est_cmp(e.op) || egal(e.op, "&&") || egal(e.op, "||"))) {
+        soit bo = tk_booleen(c, k, e);
+        soit un = tk_cst(k, 1);
+        soit zr = tk_cst(k, 0);
+        retour tk_sel(k, bo, un, zr);
+    }
+    si g == N_NON {
+        tk_verifier_type(c, k, e.a);
+        retour tk_v1(k, 200, k.t64, tk_expr(c, k, e.a));
+    }
+    si g == N_BIN {
+        tk_verifier_type(c, k, e);
+        soit o = e.op;
+        soit a = tk_expr(c, k, e.a);
+        soit b = tk_expr(c, k, e.b);
+        si egal(o, "+") {
+            retour tk_add(k, a, b);
+        }
+        si egal(o, "-") {
+            retour tk_sub(k, a, b);
+        }
+        si egal(o, "*") {
+            retour tk_mul(k, a, b);
+        }
+        si egal(o, "&") {
+            retour tk_64(k, 199, a, b);
+        }
+        si egal(o, "|") {
+            retour tk_64(k, 197, a, b);
+        }
+        si egal(o, "^") {
+            retour tk_64(k, 198, a, b);
+        }
+        si egal(o, "<<") || egal(o, ">>") || egal(o, ".>>") {
+            retour tk_decaler(k, o, a, b);
+        }
+        si egal(o, "/") || egal(o, "%") || egal(o, "./") || egal(o, ".%") {
+            retour tk_diviser(k, o, a, b);
+        }
+        tk_refus(c, k, "une opération que le noyau ne sait pas");
+        retour a;
+    }
+    tk_refus(c, k, "une expression que le noyau ne sait pas");
+    retour tk_cst(k, 0);
+}
+
+// ---- les appels : la fonction recopiée dans le noyau
+// les types des variables de f (comme types_de) : le contexte des variables de vtxc128 changé le temps de la lecture
+fonction tk_types_entrer(c: Ctx, f: Fonction): Var {
+    soit avant = c.vars;
+    c.vars = nul;
+    table_jeter(K_VARS);
+    placer(c, f.params, f.ligne);
+    locales(c, f.corps, 0);
+    retour avant;
+}
+
+fonction tk_types_sortir(c: Ctx, avant: Var) {
+    c.vars = avant;
+    table_jeter(K_VARS);
+    // la plus récente d'abord (la tête de la liste) : un nom déjà rangé ne l'est pas deux fois
+    soit v = avant;
+    tantque v != nul {
+        si table_lire(K_VARS, v.nom) == 0 {
+            table_poser(K_VARS, v.nom, bits(v));
+        }
+        v = v.suivant;
+    }
+}
+
+fonction tk_a_retour(s: Noeud) {
+    tantque s != nul {
+        si s.genre == N_RETOUR {
+            retour 1;
+        }
+        si s.genre == N_SI || s.genre == N_TANTQUE || s.genre == N_POUR || s.genre == N_BLOC {
+            si tk_a_retour(s.premier) || (s.genre == N_SI && tk_a_retour(s.deuxieme)) {
+                retour 1;
+            }
+        }
+        s = s.suivant;
+    }
+    retour 0;
+}
+
+fonction tk_appel(c: Ctx, k: Taranis, e: Noeud) {
+    soit nom = e.nom;
+    si egal(nom, "nb_bits") && nb_args(e.premier) == 1 {
+        retour tk_cst(k, 64);
+    }
+    soit f = fonction_de(c, nom);
+    si f == nul || est_integre(nom) {
+        tk_refus(c, k, "un appel d'une fonction qui n'est pas du programme");
+        retour tk_cst(k, 0);
+    }
+    pour i dans 0..k.appels.n {
+        si egal(elem(k.appels, i), nom) {
+            tk_refus(c, k, "une fonction qui s'appelle elle-même");
+            retour tk_cst(k, 0);
+        }
+    }
+    soit p = f.params;
+    soit np = 0;
+    tantque p != nul {
+        si p.type != 0 {
+            tk_refus(c, k, "un paramètre qui n'est pas un entier");
+        }
+        np = np + 1;
+        p = p.suivant;
+    }
+    si np != nb_args(e.premier) || f.rtype != 0 {
+        tk_refus(c, k, "des paramètres ou un retour qui ne sont pas des entiers");
+        retour tk_cst(k, 0);
+    }
+    // le dernier « retour » à part ; un retour avant la fin : le drapeau fini (sans_retours)
+    soit dernier = f.corps;
+    soit avant_dernier: Noeud = nul;
+    tantque dernier != nul && dernier.suivant != nul {
+        avant_dernier = dernier;
+        dernier = dernier.suivant;
+    }
+    soit fin: Noeud = nul;
+    soit corps_sans = f.corps;
+    si dernier != nul && dernier.genre == N_RETOUR {
+        fin = dernier;
+        si avant_dernier == nul {
+            corps_sans = nul;
+        }
+    }
+    soit fini = 0;
+    soit avec_fini = 0;
+    // les retours du corps (sans le dernier) : on les cherche sans couper la liste
+    si tk_a_retour_sauf(f.corps, fin) {
+        avec_fini = 1;
+        k.nappels = k.nappels + 1;
+        k.fen_ok = 0;                      // la fenêtre (pages=False) refusait un retour avant la fin
+    }
+    si tk_touche_memoire_l(f.corps) {
+        k.fen_ok = 0;                      // et une fonction qui touche la mémoire
+    }
+    // les valeurs des arguments, dans la portée de l'appelant
+    soit valeurs = liste();
+    soit a = e.premier;
+    tantque a != nul {
+        ajouter(valeurs, tk_expr(c, k, a));
+        a = a.suivant;
+    }
+    soit avant = tk_types_entrer(c, f);
+    soit vv = c.vars;
+    tantque vv != nul {
+        si vv.type != 0 {
+            tk_refus(c, k, "une fonction qui a des variables qui ne sont pas des entiers");
+        }
+        vv = vv.suivant;
+    }
+    ajouter(k.portees, bits(liste()));
+    ajouter(k.appels, nom);
+    soit p2 = f.params;
+    soit ip = 0;
+    tantque p2 != nul {
+        soit nv = tk_nouvelle(k, p2.nom);
+        tk_store(k, nv, elem(valeurs, ip));
+        ip = ip + 1;
+        p2 = p2.suivant;
+    }
+    soit r = 0;
+    si avec_fini {
+        soit vf = tk_nouvelle(k, "__fini");
+        tk_store(k, vf, tk_cst(k, 0));
+        soit vr = tk_nouvelle(k, "__rv");
+        tk_store(k, vr, tk_cst(k, 0));
+        // le corps entier (son dernier retour compris), sans retours : fini et rv
+        tk_sr_liste(c, k, f.corps, nul, vf, vr);
+        r = tk_charger(k, vr);
+    } sinon {
+        tk_instrs_jusqua(c, k, f.corps, fin);
+        si fin != nul && fin.a != nul {
+            r = tk_expr(c, k, fin.a);
+        } sinon {
+            r = tk_cst(k, 0);
+        }
+    }
+    k.appels.n = k.appels.n - 1;
+    k.portees.n = k.portees.n - 1;
+    tk_types_sortir(c, avant);
+    retour r;
+}
+
+// un retour dans la liste s, sans compter l'instruction « fin » (le dernier retour, s'il y en a un)
+fonction tk_a_retour_sauf(s: Noeud, fin: Noeud) {
+    tantque s != nul && s != fin {
+        si s.genre == N_RETOUR {
+            retour 1;
+        }
+        si s.genre == N_SI || s.genre == N_TANTQUE || s.genre == N_POUR || s.genre == N_BLOC {
+            si tk_a_retour(s.premier) || (s.genre == N_SI && tk_a_retour(s.deuxieme)) {
+                retour 1;
+            }
+        }
+        s = s.suivant;
+    }
+    retour 0;
+}
+
+fonction tk_instrs_jusqua(c: Ctx, k: Taranis, s: Noeud, fin: Noeud) {
+    tantque s != nul && s != fin {
+        tk_instr(c, k, s);
+        s = s.suivant;
+    }
+}
+
+fonction tk_instrs(c: Ctx, k: Taranis, s: Noeud) {
+    tk_instrs_jusqua(c, k, s, nul);
+}
+
+// pas_fini : « fini == 0 » (comme le booléen de ("bin", "==", ("var", fini), ("nombre", 0)))
+fonction tk_pas_fini(k: Taranis, vf) {
+    soit x = tk_charger(k, vf);
+    soit z = tk_cst(k, 0);
+    retour tk_eq(k, x, z);
+}
+
+// « si pas_fini { … } » (sans sinon)
+fonction tk_si_pas_fini_debut(k: Taranis, vf, sortie: Liste) {
+    soit cnd = tk_pas_fini(k, vf);
+    soit oui = tk_id(k);
+    soit fin = tk_id(k);
+    tk_i2(k.code, 247, fin, 0);
+    tk_i3(k.code, 250, cnd, oui, fin);
+    tk_etiquette(k, oui);
+    sortie.n = 0;
+    ajouter(sortie, fin);
+}
+
+fonction tk_si_pas_fini_fin(k: Taranis, fin) {
+    tk_aller(k, fin);
+    tk_etiquette(k, fin);
+}
+
+// sans_retours, écrit directement : la liste s (jusqu'à « jusqua » exclu) ; rend 1 si elle a pu finir
+fonction tk_sr_liste(c: Ctx, k: Taranis, s: Noeud, jusqua: Noeud, vf, vr) {
+    tantque s != nul && s != jusqua {
+        soit r = tk_sr_instr(c, k, s, vf, vr);
+        si r {
+            si s.suivant != nul && s.suivant != jusqua {
+                soit sp = liste();
+                tk_si_pas_fini_debut(k, vf, sp);
+                tk_sr_liste(c, k, s.suivant, jusqua, vf, vr);
+                tk_si_pas_fini_fin(k, elem(sp, 0));
+            }
+            retour 1;
+        }
+        s = s.suivant;
+    }
+    retour 0;
+}
+
+fonction tk_sr_instr(c: Ctx, k: Taranis, s: Noeud, vf, vr) {
+    soit g = s.genre;
+    si g == N_RETOUR {
+        // rv = e ; fini = 1
+        si s.a != nul {
+            tk_verifier_type(c, k, s.a);
+            tk_store(k, vr, tk_expr(c, k, s.a));
+        } sinon {
+            tk_store(k, vr, tk_cst(k, 0));
+        }
+        tk_store(k, vf, tk_cst(k, 1));
+        retour 1;
+    }
+    si g == N_SI && (tk_a_retour(s.premier) || tk_a_retour(s.deuxieme)) {
+        soit avec_sinon = s.val == 1 && s.deuxieme != nul;
+        soit cnd = tk_booleen(c, k, s.a);
+        soit oui = tk_id(k);
+        soit fin = tk_id(k);
+        soit nn = fin;
+        si avec_sinon {
+            nn = tk_id(k);
+        }
+        tk_i2(k.code, 247, fin, 0);
+        tk_i3(k.code, 250, cnd, oui, nn);
+        tk_etiquette(k, oui);
+        soit ra = tk_sr_liste(c, k, s.premier, nul, vf, vr);
+        tk_aller(k, fin);
+        soit rb = 0;
+        si avec_sinon {
+            tk_etiquette(k, nn);
+            rb = tk_sr_liste(c, k, s.deuxieme, nul, vf, vr);
+            tk_aller(k, fin);
+        }
+        tk_etiquette(k, fin);
+        retour ra || rb;
+    }
+    si g == N_TANTQUE && tk_a_retour(s.premier) {
+        // tantque_fini : la boucle s'arrête aussi quand la fonction a fini
+        soit tete = tk_id(k);
+        soit test = tk_id(k);
+        soit dedans = tk_id(k);
+        soit suite = tk_id(k);
+        soit fin2 = tk_id(k);
+        tk_aller(k, tete);
+        tk_etiquette(k, tete);
+        tk_i3(k.code, 246, fin2, suite, 0);
+        tk_aller(k, test);
+        tk_etiquette(k, test);
+        soit cnd2 = tk_booleen(c, k, s.a);
+        soit pf = tk_pas_fini(k, vf);
+        tk_i3(k.code, 250, tk_b(k, 167, cnd2, pf), dedans, fin2);
+        tk_etiquette(k, dedans);
+        tk_sr_liste(c, k, s.premier, nul, vf, vr);
+        tk_aller(k, suite);
+        tk_etiquette(k, suite);
+        tk_aller(k, tete);
+        tk_etiquette(k, fin2);
+        retour 1;
+    }
+    si g == N_POUR && tk_a_retour(s.premier) {
+        tk_pour(c, k, s, vf, vr, 1);
+        retour 1;
+    }
+    si g == N_BLOC && tk_a_retour(s.premier) {
+        retour tk_sr_liste(c, k, s.premier, nul, vf, vr);
+    }
+    tk_instr(c, k, s);
+    retour 0;
+}
+
+// une boucle pour (sr : son corps devient « si pas_fini { corps sans retours } »)
+fonction tk_pour(c: Ctx, k: Taranis, s: Noeud, vf, vr, sr) {
+    soit var = tk_trouve(k, s.nom);
+    si var == 0 {
+        var = tk_nouvelle(k, s.nom);
+    }
+    tk_verifier_type(c, k, s.a);
+    tk_store(k, var, tk_expr(c, k, s.a));
+    soit tete = tk_id(k);
+    soit test = tk_id(k);
+    soit dedans = tk_id(k);
+    soit suite = tk_id(k);
+    soit fin = tk_id(k);
+    tk_aller(k, tete);
+    tk_etiquette(k, tete);
+    tk_i3(k.code, 246, fin, suite, 0);
+    tk_aller(k, test);
+    tk_etiquette(k, test);
+    // la condition : var < fin (verifier_type sur les deux, comme booleen)
+    tk_verifier_type(c, k, s.b);
+    soit xv = tk_charger(k, tk_cherche(c, k, s.nom));
+    soit xb = tk_expr(c, k, s.b);
+    soit cnd = tk_comparer(k, "<", xv, xb);
+    tk_i3(k.code, 250, cnd, dedans, fin);
+    tk_etiquette(k, dedans);
+    si sr {
+        soit sp = liste();
+        tk_si_pas_fini_debut(k, vf, sp);
+        tk_sr_liste(c, k, s.premier, nul, vf, vr);
+        tk_si_pas_fini_fin(k, elem(sp, 0));
+    } sinon {
+        tk_instrs(c, k, s.premier);
+    }
+    tk_aller(k, suite);
+    tk_etiquette(k, suite);
+    soit cv = tk_charger(k, var);
+    soit cp = tk_cst(k, s.val);
+    tk_store(k, var, tk_add(k, cv, cp));
+    tk_aller(k, tete);
+    tk_etiquette(k, fin);
+}
+
+fonction tk_instr(c: Ctx, k: Taranis, s: Noeud) {
+    si k.atomique && tk_minimum(c, s) {
+        tk_garder_minimum(c, k, s);
+        retour;
+    }
+    soit g = s.genre;
+    si g == N_SOIT {
+        si s.val != 0 {
+            tk_refus(c, k, "une variable qui n'est pas un entier");
+        }
+        tk_verifier_type(c, k, s.a);
+        soit v = tk_expr(c, k, s.a);
+        soit var = tk_trouve(k, s.nom);
+        si var == 0 {
+            var = tk_nouvelle(k, s.nom);
+        }
+        tk_store(k, var, v);
+    } sinon si g == N_AFFECTER {
+        tk_verifier_type(c, k, s.a);
+        soit var2 = tk_cherche(c, k, s.nom);
+        tk_store(k, var2, tk_expr(c, k, s.a));
+    } sinon si g == N_ECRIRE {
+        tk_ecrire(c, k, s);
+    } sinon si g == N_EXPR {
+        si s.a.genre != N_APPEL {
+            tk_refus(c, k, "une expression seule");
+        } sinon {
+            tk_expr(c, k, s.a);
+        }
+    } sinon si g == N_SI {
+        soit avec_sinon = s.val == 1 && s.deuxieme != nul;
+        soit cnd = tk_booleen(c, k, s.a);
+        soit oui = tk_id(k);
+        soit fin = tk_id(k);
+        soit nn = fin;
+        si avec_sinon {
+            nn = tk_id(k);
+        }
+        tk_i2(k.code, 247, fin, 0);
+        tk_i3(k.code, 250, cnd, oui, nn);
+        tk_etiquette(k, oui);
+        tk_instrs(c, k, s.premier);
+        tk_aller(k, fin);
+        si avec_sinon {
+            tk_etiquette(k, nn);
+            tk_instrs(c, k, s.deuxieme);
+            tk_aller(k, fin);
+        }
+        tk_etiquette(k, fin);
+    } sinon si g == N_TANTQUE {
+        soit tete = tk_id(k);
+        soit test = tk_id(k);
+        soit dedans = tk_id(k);
+        soit suite = tk_id(k);
+        soit fin2 = tk_id(k);
+        tk_aller(k, tete);
+        tk_etiquette(k, tete);
+        tk_i3(k.code, 246, fin2, suite, 0);
+        tk_aller(k, test);
+        tk_etiquette(k, test);
+        soit cnd2 = tk_booleen(c, k, s.a);
+        tk_i3(k.code, 250, cnd2, dedans, fin2);
+        tk_etiquette(k, dedans);
+        tk_instrs(c, k, s.premier);
+        tk_aller(k, suite);
+        tk_etiquette(k, suite);
+        tk_aller(k, tete);
+        tk_etiquette(k, fin2);
+    } sinon si g == N_POUR {
+        tk_pour(c, k, s, 0, 0, 0);
+    } sinon si g == N_BLOC {
+        tk_instrs(c, k, s.premier);
+    } sinon si g == N_RETOUR {
+        tk_refus(c, k, "un retour avant la fin d'une fonction");
+    } sinon {
+        tk_refus(c, k, "une instruction que le noyau ne sait pas");
+    }
+}
+
+// ---- le module (NoyauI64.compiler, pour NoyauTaranis : région 0, sans garde, le minimum atomique)
+// les variables lues par un morceau d'arbre (libres) et déclarées (declarees)
+fonction tk_libres(e: Noeud, l: Liste) {
+    si e == nul {
+        retour;
+    }
+    si e.genre == N_VAR && !dans_liste(l, e.nom) {
+        ajouter(l, e.nom);
+    }
+    tk_libres(e.a, l);
+    tk_libres(e.b, l);
+    tk_libres(e.c, l);
+    tk_libres_l(e.premier, l);
+    tk_libres_l(e.deuxieme, l);
+}
+
+fonction tk_libres_l(s: Noeud, l: Liste) {
+    tantque s != nul {
+        tk_libres(s, l);
+        s = s.suivant;
+    }
+}
+
+fonction tk_declarees(s: Noeud, l: Liste) {
+    tantque s != nul {
+        si s.genre == N_SOIT {
+            ajouter(l, s.nom);
+        } sinon si s.genre == N_POUR {
+            ajouter(l, s.nom);
+            tk_declarees(s.premier, l);
+        } sinon si s.genre == N_SI {
+            tk_declarees(s.premier, l);
+            tk_declarees(s.deuxieme, l);
+        } sinon si s.genre == N_TANTQUE || s.genre == N_BLOC {
+            tk_declarees(s.premier, l);
+        }
+        s = s.suivant;
+    }
+}
+
+// l'ordre des textes de Python (les points de code, puis la longueur)
+fonction tk_avant(a, b) {
+    soit na = longueur(a);
+    soit nb = longueur(b);
+    soit n = na;
+    si nb < n {
+        n = nb;
+    }
+    pour i dans 0..n {
+        si car(a, i) != car(b, i) {
+            retour car(a, i) < car(b, i);
+        }
+    }
+    retour na < nb;
+}
+
+// les accès à la mémoire du corps (acces_memoire) : 0 s'il y en a un hors de l'étage 2 ou un champ de structure ;
+// fenetre : 0 si une adresse dépend d'une variable du corps ou appelle (la fenêtre de pages=False ne se calcule pas)
+fonction tk_acces(c: Ctx, k: Taranis, e: Noeud, interieur: Liste) {
+    si e == nul {
+        retour;
+    }
+    si e.genre == N_CHAMP || e.genre == N_ECRIRE_CHAMP {
+        tk_refus(c, k, "les champs de structure");
+    }
+    si e.genre == N_LIRE || e.genre == N_ECRIRE {
+        si e.val != 2 || e.a != nul {
+            tk_refus(c, k, "un accès hors de l'étage 2");
+        }
+        soit lib = liste();
+        tk_libres(e.b, lib);
+        pour i dans 0..lib.n {
+            si dans_liste(interieur, elem(lib, i)) && !egal(elem(lib, i), k.var) {
+                k.fen_ok = 0;
+            }
+        }
+        si tk_contient_appel(e.b) {
+            k.fen_ok = 0;
+        }
+    }
+    tk_acces(c, k, e.a, interieur);
+    tk_acces(c, k, e.b, interieur);
+    tk_acces(c, k, e.c, interieur);
+    tk_acces_l(c, k, e.premier, interieur);
+    tk_acces_l(c, k, e.deuxieme, interieur);
+}
+
+fonction tk_acces_l(c: Ctx, k: Taranis, s: Noeud, interieur: Liste) {
+    tantque s != nul {
+        tk_acces(c, k, s, interieur);
+        s = s.suivant;
+    }
+}
+
+fonction tk_compiler(c: Ctx, var, corps: Noeud, dehors: Liste): Taranis {
+    soit k = Taranis { prochain: 1, tete: liste(), decor: liste(), types: liste(), vdecl: liste(), code: liste(),
+                       c32k: liste(), c64k: liste(), portees: liste(), appels: liste(), ok: 1, fen_ok: 1, var: var,
+                       atomique: 1 };
+    soit interieur = liste();
+    tk_declarees(corps, interieur);
+    ajouter(interieur, var);
+    tk_acces_l(c, k, corps, interieur);
+    soit lib = liste();
+    tk_libres_l(corps, lib);
+    dehors.n = 0;
+    pour i dans 0..lib.n {
+        si !dans_liste(interieur, elem(lib, i)) {
+            // à sa place dans l'ordre (sorted)
+            ajouter(dehors, elem(lib, i));
+            soit j = dehors.n - 1;
+            tantque j > 0 && tk_avant(elem(dehors, j), elem(dehors, j - 1)) {
+                soit x = elem(dehors, j);
+                poser(dehors, j, elem(dehors, j - 1));
+                poser(dehors, j - 1, x);
+                j = j - 1;
+            }
+        }
+    }
+    pour i2 dans 0..dehors.n {
+        soit vd = var_ou_nul(c, elem(dehors, i2));
+        si vd != nul && vd.type != 0 {
+            tk_refus(c, k, "une variable d'avant la boucle qui n'est pas un entier");
+        }
+    }
+    soit vb = var_ou_nul(c, var);
+    si vb != nul && vb.type != 0 {
+        tk_refus(c, k, "une variable de boucle qui n'est pas un entier");
+    }
+    si k.ok == 0 {
+        retour k;
+    }
+    soit principal = tk_id(k);
+    soit gid = tk_id(k);
+    k.tvoid = tk_id(k);
+    k.tfn = tk_id(k);
+    k.tbool = tk_id(k);
+    k.t32 = tk_id(k);
+    k.t64 = tk_id(k);
+    k.tpaire = tk_id(k);
+    soit t_v3 = tk_id(k);
+    soit t_pv3 = tk_id(k);
+    soit t_tab = tk_id(k);
+    soit t_bloc = tk_id(k);
+    soit t_pbloc = tk_id(k);
+    k.tpu = tk_id(k);
+    k.tpf = tk_id(k);
+    soit t_tab64 = tk_id(k);
+    soit t_bloc64 = tk_id(k);
+    soit t_pbloc64 = tk_id(k);
+    k.tp64 = tk_id(k);
+    k.tpf64 = tk_id(k);
+    k.fenetre = tk_id(k);
+    k.parametres = tk_id(k);
+    k.table = tk_id(k);
+    k.marques = tk_id(k);
+    k.auteurs = tk_id(k);
+    tk_i1(k.tete, 17, 1);
+    tk_i1(k.tete, 17, 11);
+    tk_i2(k.tete, 14, 0, 1);
+    // EntryPoint GLCompute principal "main" gid
+    tk_mot0(k.tete, 15, 5);
+    ajouter(k.tete, 5);
+    ajouter(k.tete, principal);
+    ajouter(k.tete, 1852399981);          // « main »
+    ajouter(k.tete, 0);
+    ajouter(k.tete, gid);
+    tk_i5(k.tete, 16, principal, 17, 64, 1, 1);
+    tk_i3(k.decor, 71, gid, 11, 28);
+    tk_i3(k.decor, 71, t_tab, 6, 4);
+    tk_i4(k.decor, 72, t_bloc, 0, 35, 0);
+    tk_i2(k.decor, 71, t_bloc, 3);
+    tk_i3(k.decor, 71, t_tab64, 6, 8);
+    tk_i4(k.decor, 72, t_bloc64, 0, 35, 0);
+    tk_i2(k.decor, 71, t_bloc64, 3);
+    soit liaisons = liste();
+    ajouter(liaisons, k.fenetre);
+    ajouter(liaisons, k.parametres);
+    ajouter(liaisons, k.table);
+    ajouter(liaisons, k.marques);
+    ajouter(liaisons, k.auteurs);
+    pour j2 dans 0..5 {
+        tk_i3(k.decor, 71, elem(liaisons, j2), 34, 0);
+        tk_i3(k.decor, 71, elem(liaisons, j2), 33, j2);
+    }
+    tk_i1(k.types, 19, k.tvoid);
+    tk_i2(k.types, 33, k.tfn, k.tvoid);
+    tk_i1(k.types, 20, k.tbool);
+    tk_i3(k.types, 21, k.t32, 32, 0);
+    tk_i3(k.types, 21, k.t64, 64, 0);
+    tk_i3(k.types, 30, k.tpaire, k.t32, k.t32);
+    tk_i3(k.types, 23, t_v3, k.t32, 3);
+    tk_i3(k.types, 32, t_pv3, 1, t_v3);
+    tk_i2(k.types, 29, t_tab, k.t32);
+    tk_i2(k.types, 30, t_bloc, t_tab);
+    tk_i3(k.types, 32, t_pbloc, 2, t_bloc);
+    tk_i3(k.types, 32, k.tpu, 2, k.t32);
+    tk_i3(k.types, 32, k.tpf, 7, k.t32);
+    tk_i2(k.types, 29, t_tab64, k.t64);
+    tk_i2(k.types, 30, t_bloc64, t_tab64);
+    tk_i3(k.types, 32, t_pbloc64, 2, t_bloc64);
+    tk_i3(k.types, 32, k.tp64, 2, k.t64);
+    tk_i3(k.types, 32, k.tpf64, 7, k.t64);
+    tk_i3(k.types, 59, t_pv3, gid, 1);
+    tk_i3(k.types, 59, t_pbloc64, k.fenetre, 2);
+    tk_i3(k.types, 59, t_pbloc64, k.parametres, 2);
+    tk_i3(k.types, 59, t_pbloc, k.table, 2);
+    tk_i3(k.types, 59, t_pbloc, k.marques, 2);
+    tk_i3(k.types, 59, t_pbloc, k.auteurs, 2);
+    soit entree = tk_id(k);
+    ajouter(k.portees, bits(liste()));
+    k.bloc = entree;
+    soit v3 = tk_v1(k, 61, t_v3, gid);
+    soit gx = tk_v2(k, 81, k.t32, v3, 0);
+    soit gy = tk_v2(k, 81, k.t32, v3, 1);
+    soit ugx = tk_v1(k, 113, k.t64, gx);
+    soit ugy = tk_v1(k, 113, k.t64, gy);
+    soit p5 = tk_param(k, 5);
+    soit idx = tk_add(k, ugx, tk_mul(k, ugy, p5));
+    soit dans_n = tk_ult(k, idx, tk_param(k, 2), 0);
+    soit travail = tk_id(k);
+    soit fin = tk_id(k);
+    tk_i2(k.code, 247, fin, 0);
+    tk_i3(k.code, 250, dans_n, travail, fin);
+    tk_etiquette(k, travail);
+    k.demandes = tk_v1(k, 113, k.t32, tk_param(k, 3));
+    soit idx32 = tk_v1(k, 113, k.t32, idx);
+    soit et31 = tk_v2(k, 199, k.t32, idx32, tk_c32(k, 2147483647));
+    k.moi = tk_v2(k, 128, k.t32, et31, tk_c32(k, 1));
+    k.derniere = tk_var32(k);
+    tk_store(k, k.derniere, tk_c32(k, 4294967295));
+    k.tour = tk_add(k, tk_param(k, 1), idx);
+    soit nv = tk_nouvelle(k, var);
+    tk_store(k, nv, k.tour);
+    pour j3 dans 0..dehors.n {
+        soit nd = tk_nouvelle(k, elem(dehors, j3));
+        tk_store(k, nd, tk_param(k, 6 + j3));
+    }
+    tk_instrs(c, k, corps);
+    tk_aller(k, fin);
+    tk_etiquette(k, fin);
+    tk_mot0(k.code, 253, 0);
+    retour k;
+}
+
+fonction tk_param(k: Taranis, i) {
+    soit p = tk_case64(k, k.parametres, tk_c32(k, k.region * 64 + i));
+    retour tk_v1(k, 61, k.t64, p);
+}
+
+// les mots du module : l'en-tête, puis les sections, la fonction et sa fin
+fonction tk_mots(k: Taranis): Liste {
+    soit m = liste();
+    ajouter(m, 119734787);
+    ajouter(m, 65536);
+    ajouter(m, 0);
+    ajouter(m, k.prochain);
+    ajouter(m, 0);
+    soit sections = liste();
+    ajouter(sections, bits(k.tete));
+    ajouter(sections, bits(k.decor));
+    ajouter(sections, bits(k.types));
+    pour s dans 0..3 {
+        soit l: Liste = elem(sections, s);
+        pour i dans 0..l.n {
+            ajouter(m, elem(l, i));
+        }
+    }
+    // Function void principal 0 t_fn ; Label entree (le principal est l'identifiant 1, entree le premier après les types)
+    tk_mot0(m, 54, 4);
+    ajouter(m, k.tvoid);
+    ajouter(m, 1);
+    ajouter(m, 0);
+    ajouter(m, k.tfn);
+    tk_mot0(m, 248, 1);
+    ajouter(m, k.auteurs + 1);
+    pour i2 dans 0..k.vdecl.n {
+        ajouter(m, elem(k.vdecl, i2));
+    }
+    pour i3 dans 0..k.code.n {
+        ajouter(m, elem(k.code, i3));
+    }
+    ajouter(m, 65536 | 56);
+    retour m;
 }
 
 // ------------------------------------------------------------------------------ 0.852 : les segments sur les cœurs
@@ -13194,7 +14657,9 @@ fonction rs_part_des_coeurs(c: Ctx, notes: Liste, bandes) {
 
 // notes_en_cylindres : un cylindre par cœur sur son propre cube, puis la fusion ; refusée : les notes dans l'ordre
 fonction rs_en_cylindres(c: Ctx, notes: Liste) {
-    rs_t(c, "{\nlet mut fait = false;\nif !fait { taranis_rapatrier(c); }\nif !fait && cylindres_voulus() > 1 {\n");
+    rs_t(c, "{\nlet mut fait = false;\n");
+    soit choix = rs_vers_la_carte(c, notes);
+    rs_t(c, "if !fait { taranis_rapatrier(c); }\nif !fait && cylindres_voulus() > 1 {\n");
     rs_t(c, "let t0 = std::time::Instant::now();\nlet inst = instantane(c);\nlet nt = cylindres_voulus().min(");
     rs_n(c, notes.n);
     rs_t(c, ");\n");
@@ -13205,7 +14670,77 @@ fonction rs_en_cylindres(c: Ctx, notes: Liste) {
         soit nk: Noeud = elem(notes, k);
         rs_instr(c, nk);
     }
-    rs_t(c, "}\n}\n");
+    rs_t(c, "}\n");
+    si choix != 0 {
+        rs_t(c, "if c.ombre.is_none() { CHOIX.noter(choix_carte, choix_t0.elapsed(), ");
+        rs_n(c, choix);
+        rs_t(c, "); }\n");
+    }
+    rs_t(c, "}\n");
+}
+
+// 0.853 : vers_la_carte (l'épissage rapide) : la boucle entière sur la carte par le noyau de Taranis écrit par vtxc128 ;
+// rend la ligne de la boucle si le vergobret choisit (le mode pages : CHOIX), sinon 0. Seul un programme « dunon; » y
+// va (Taranis compte en 64 bits). Sans l'épissage rapide, ou sans entiers de 64 bits sur la carte, la boucle reste aux
+// cœurs (la forge Python a encore, pour ces cartes, les noyaux de deux mots de 32 bits et la fenêtre).
+fonction rs_vers_la_carte(c: Ctx, notes: Liste) {
+    si !c.dunon {
+        retour 0;
+    }
+    soit n0: Noeud = elem(notes, 0);
+    soit nd: Noeud = elem(notes, notes.n - 1);
+    soit dehors = liste();
+    soit k = tk_compiler(c, n0.nom, n0.premier, dehors);
+    si k.ok == 0 {
+        rs_t(c, "// taranis : la boucle de la ligne ");
+        rs_n(c, n0.ligne);
+        rs_t(c, " reste aux cœurs : ");
+        rs_t(c, k.raison);
+        rs_c(c, 10);
+        retour 0;
+    }
+    soit m = tk_mots(k);
+    rs_t(c, "// taranis : le noyau de la boucle de la ligne ");
+    rs_n(c, n0.ligne);
+    si k.fen_ok {
+        rs_t(c, " (fenêtre)\n");
+    } sinon {
+        rs_t(c, " (pages)\n");
+    }
+    rs_t(c, "#[allow(dead_code)]\nstatic SPV: [u32; ");
+    rs_n(c, m.n);
+    rs_t(c, "] = [");
+    pour i dans 0..m.n {
+        si i > 0 {
+            rs_c(c, ',');
+        }
+        rs_n(c, elem(m, i));
+    }
+    rs_t(c, "];\n");
+    si k.fen_ok {
+        rs_t(c, "if epissage_rapide() {\n");
+    } sinon {
+        rs_t(c, "let choix_t0 = std::time::Instant::now();\n#[allow(dead_code)]\nstatic CHOIX: Choix = Choix::neuf();\n");
+        rs_t(c, "let choix_carte = CHOIX.carte_voulue();\nif choix_carte {\n");
+    }
+    rs_t(c, "let ta: u128 = ");
+    rs_expr(c, n0.a);
+    rs_t(c, ";\nlet tb: u128 = ");
+    rs_expr(c, nd.b);
+    rs_t(c, ";\nif (tb as u64) > (ta as u64) && taranis_boucle_pages(c, &[], &[], &SPV, ta, tb, &[");
+    pour j dans 0..dehors.n {
+        si j > 0 {
+            rs_t(c, ", ");
+        }
+        rs_var(c, elem(dehors, j));
+    }
+    rs_t(c, "], 0, false, 0) {\n    fait = true;\n    ");
+    rs_var(c, n0.nom);
+    rs_t(c, " = tb;\n}\n}\n");
+    si k.fen_ok {
+        retour 0;
+    }
+    retour n0.ligne;
 }
 
 // equipe_en_morceaux : la boucle entière coupée à l'exécution (quatre morceaux par cœur), prise par l'équipe de Gutuater

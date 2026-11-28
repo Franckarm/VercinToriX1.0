@@ -1722,6 +1722,10 @@ fn taranis_boucle_pages(c: &mut Ctx, spv: &[u32], spv64: &[u32], spv64r: &'stati
         return fait;
     }
     let choisi = if k.int64 { spv64 } else { spv };
+    // 0.853 : la forge écrite en vtx ne donne que le noyau de Taranis (l'épissage rapide) : sans lui, le processeur
+    if choisi.is_empty() {
+        return false;
+    }
     taranis_boucle_pages_(c, choisi, a, b, ext, true, false)
 }
 
