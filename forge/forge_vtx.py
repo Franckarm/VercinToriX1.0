@@ -74,10 +74,6 @@ QUEUE = os.path.join(ici, "queue_vtx.rs")
 def source_rust_vtx(src, dossier=None, nom="programme", sortie=None):
     """le programme Rust complet (noyau compris), ou (None, la raison)"""
     import forge128
-    # 0.856 : les réactions sur plusieurs cœurs (les vagues d'atomes lourds, somme/min/max pour chaque, les souvenirs
-    # partagés) : la forge Python les sait, vtxc128 pas encore (il les traduit en fonctions ordinaires, sur un cœur)
-    if re.search(r"(?m)^\s*reaction\s", src):
-        return None, "les réactions sur plusieurs cœurs"
     prog, mots = programme_rust_vtx(src, dossier, nom)
     if prog is None:
         return None, mots

@@ -5818,6 +5818,22 @@ fonction corps_molecule(c: Ctx, m: Molecule, rtype): Noeud {
                 ajouter(lourds, bits(a));
             }
         }
+        // les souvenirs et les cœurs : quand plusieurs atomes lourds de la vague gardent un souvenir, chacun regarde le
+        // sien ; la forge fait réagir sur plusieurs cœurs ceux qui l'ont oublié (Lugus, l'un après l'autre : les mêmes
+        // mots). Chacun dans un bloc (val 3) qui porte la clé du groupe (op) ; le premier, « __souv_tete »
+        soit souv_vague = liste();
+        si lourds.n >= 2 {
+            pour i dans 0..lourds.n {
+                si souvenir_possible(c, m, elem_atome(lourds, i)) {
+                    ajouter(souv_vague, elem(lourds, i));
+                }
+            }
+        }
+        si souv_vague.n < 2 {
+            souv_vague = liste();
+        }
+        soit cle_souv = nom_cache("__souvg", c.souv_place);
+        soit tete_souv = 1;
         si lourds.n >= 2 {
             soit gardes = liste();
             pour i dans 0..lourds.n {
@@ -5835,11 +5851,26 @@ fonction corps_molecule(c: Ctx, m: Molecule, rtype): Noeud {
                 soit al = elem_atome(lourds, i);
                 pb = chainer(pb, Noeud { genre: N_SOIT, nom: elem(al.sorties, 0), a: al.quoi, ligne: al.ligne });
             }
-            emettre_st(m, Noeud { genre: N_BLOC, premier: pb, ligne: elem_atome(lourds, 0).ligne });
+            // val 1 : la vague d'atomes lourds (la forge les fait réagir sur plusieurs cœurs)
+            emettre_st(m, Noeud { genre: N_BLOC, premier: pb, val: 1, ligne: elem_atome(lourds, 0).ligne });
         }
         pour i dans 0..vague.n {
             soit av = elem_atome(vague, i);
-            si !contient_mot(lourds, bits(av)) {
+            si contient_mot(souv_vague, bits(av)) {
+                soit prem0 = m.prem;
+                soit der0 = m.der;
+                m.prem = nul;
+                m.der = nul;
+                atome_corps(c, m, av);
+                soit bs = Noeud { genre: N_BLOC, premier: m.prem, val: 3, op: cle_souv, ligne: av.ligne };
+                si tete_souv == 1 {
+                    bs.nom = "__souv_tete";
+                    tete_souv = 0;
+                }
+                m.prem = prem0;
+                m.der = der0;
+                emettre_st(m, bs);
+            } sinon si !contient_mot(lourds, bits(av)) {
                 atome_corps(c, m, av);
             }
         }
@@ -6195,7 +6226,8 @@ fonction atome_corps(c: Ctx, m: Molecule, a: Atome) {
         }
         soit init_n = Noeud { genre: N_SOIT, nom: sc, a: nombre(init, l), ligne: l };
         init_n.suivant = Noeud { genre: N_POUR, nom: a.var, a: a.x, b: a.y, val: 1, premier: tour, ligne: l };
-        emettre_st(m, Noeud { genre: N_BLOC, premier: init_n, ligne: l });
+        // val 2 : somme, min ou max pour chaque (op : la réduction ; la forge partage l'intervalle entre les cœurs)
+        emettre_st(m, Noeud { genre: N_BLOC, premier: init_n, val: 2, op: a.red, ligne: l });
         si garde != nul && a.sorties.n > 0 {
             poser_drapeau(m, sc, nouveau_drapeau(m, sc, garde, l));
         }
@@ -13233,11 +13265,338 @@ fonction rs_instr(c: Ctx, s: Noeud) {
                 rs_instr(c, an_nt);
             }
         }
+    } sinon si g == N_BLOC && s.val == 4 {
+        // un souvenir déjà écrit avec son groupe (rs_souvenirs)
+    } sinon si g == N_BLOC && s.val == 3 && s.nom != 0 && egal(s.nom, "__souv_tete") && rs_souvenirs_possibles(c, s) {
+        rs_souvenirs(c, s);
+    } sinon si g == N_BLOC && s.val == 1 && rs_vague_possible(c, s) {
+        rs_vague(c, s);
+    } sinon si g == N_BLOC && s.val == 2 && rs_chaque_possible(c, s) {
+        rs_chaque(c, s);
     } sinon si g == N_BLOC {
         rs_instrs(c, s.premier);
     } sinon {
         rs_pas_encore_de(c, "une sorte d'instruction", g, 0, s.ligne);
     }
+}
+
+// ------------------------------------------------------------------------------ 0.857 : les réactions sur les cœurs
+// Comme vague_parallele et chaque_parallele de la forge Python : une valeur qui peut partir sur un autre cœur est un
+// entier, pure (ni mémoire, ni monde, ni tas : rs_pur), et ne réveille pas le ramasse-miettes (rs_peut). Chaque fil a
+// sa machine (ctx_fils) ; les liaisons ne changent pas : la même sortie que Lugus, qui les fait réagir l'une après
+// l'autre.
+fonction rs_seul_peut(c: Ctx, e: Noeud) {
+    si e == nul {
+        retour 0;
+    }
+    soit s = e.suivant;
+    e.suivant = nul;
+    soit r = rs_peut(c, e);
+    e.suivant = s;
+    retour r;
+}
+
+fonction rs_part_possible(c: Ctx, e: Noeud) {
+    retour e != nul && typ(c, e) == 0 && rs_pur(c, e, liste()) && !rs_seul_peut(c, e);
+}
+
+fonction rs_vague_possible(c: Ctx, s: Noeud) {
+    soit n = 0;
+    soit p = s.premier;
+    tantque p != nul {
+        si p.genre != N_SOIT || !rs_part_possible(c, p.a) {
+            retour 0;
+        }
+        soit v = var_ou_nul(c, p.nom);
+        si v == nul || !rs_mot(v.type) {
+            retour 0;
+        }
+        n = n + 1;
+        p = p.suivant;
+    }
+    retour n >= 2;
+}
+
+fonction rs_vague(c: Ctx, s: Noeud) {
+    soit n = 0;
+    soit p = s.premier;
+    tantque p != nul {
+        n = n + 1;
+        p = p.suivant;
+    }
+    rs_t(c, "{\n// les atomes lourds d'une vague : chacun sur son cœur (le dernier sur ce fil)\nlet r = std::thread::scope(|sc| {\n");
+    soit k = 0;
+    p = s.premier;
+    tantque p != nul {
+        si k < n - 1 {
+            rs_t(c, "    let h");
+            rs_n(c, k);
+            rs_t(c, " = sc.spawn(move || { let mut c_fils = ctx_fils(); let c = &mut c_fils; (");
+            rs_expr(c, p.a);
+            rs_t(c, ") as u128 });\n");
+        } sinon {
+            rs_t(c, "    let dernier: u128 = (");
+            rs_expr(c, p.a);
+            rs_t(c, ") as u128;\n");
+        }
+        k = k + 1;
+        p = p.suivant;
+    }
+    rs_t(c, "    (");
+    pour j dans 0..n - 1 {
+        rs_t(c, "h");
+        rs_n(c, j);
+        rs_t(c, ".join().unwrap(), ");
+    }
+    rs_t(c, "dernier)\n});\n");
+    k = 0;
+    p = s.premier;
+    tantque p != nul {
+        rs_var(c, p.nom);
+        rs_t(c, " = r.");
+        rs_n(c, k);
+        rs_t(c, ";\n");
+        k = k + 1;
+        p = p.suivant;
+    }
+    rs_t(c, "}\n");
+}
+
+// les souvenirs d'un groupe : la tête et ses frères qui portent la même clé (op)
+fonction rs_groupe_souv(s: Noeud): Liste {
+    soit l = liste();
+    ajouter(l, bits(s));
+    soit f = s.suivant;
+    tantque f != nul {
+        si f.genre == N_BLOC && (f.val == 3 || f.val == 4) && f.op != 0 && egal(f.op, s.op) {
+            ajouter(l, bits(f));
+        }
+        f = f.suivant;
+    }
+    retour l;
+}
+
+// le dernier « si » d'un souvenir (souvenir()) : si la place p garde ces entrées {} sinon si la place q {s = relu}
+// sinon {s = f(…) ; ranger}
+fonction rs_souv_dernier(b: Noeud): Noeud {
+    soit d = b.premier;
+    si d == nul {
+        retour nul;
+    }
+    tantque d.suivant != nul {
+        d = d.suivant;
+    }
+    si d.genre != N_SI || d.val != 1 || d.premier != nul || d.deuxieme == nul || d.deuxieme.suivant != nul {
+        retour nul;
+    }
+    soit q = d.deuxieme;
+    si q.genre != N_SI || q.val != 1 || q.premier == nul || q.deuxieme == nul {
+        retour nul;
+    }
+    soit r = q.deuxieme;
+    si r.genre != N_AFFECTER || r.a == nul || r.a.genre != N_APPEL {
+        retour nul;
+    }
+    retour d;
+}
+
+fonction rs_souvenirs_possibles(c: Ctx, s: Noeud) {
+    soit l = rs_groupe_souv(s);
+    si l.n < 2 {
+        retour 0;
+    }
+    pour k dans 0..l.n {
+        soit b = rs_noeud(l, k);
+        soit d = rs_souv_dernier(b);
+        si d == nul {
+            retour 0;
+        }
+        soit r = d.deuxieme.deuxieme;
+        soit v = var_ou_nul(c, r.nom);
+        si v == nul || !rs_mot(v.type) || !rs_part_possible(c, r.a) {
+            retour 0;
+        }
+    }
+    retour 1;
+}
+
+fonction rs_souvenirs(c: Ctx, s: Noeud) {
+    soit l = rs_groupe_souv(s);
+    rs_t(c, "{\n// les souvenirs et les cœurs : ceux qui ont oublié réagissent ensemble, chacun sur son cœur\n");
+    pour k dans 0..l.n {
+        soit b = rs_noeud(l, k);
+        si k > 0 {
+            b.val = 4;
+        }
+        soit d = rs_souv_dernier(b);
+        rs_t(c, "let mut oub_");
+        rs_n(c, k);
+        rs_t(c, " = false;\n");
+        soit p = b.premier;
+        tantque p != d {
+            rs_instr(c, p);
+            p = p.suivant;
+        }
+        soit q = d.deuxieme;
+        rs_t(c, "if ");
+        rs_cond(c, d.a);
+        rs_t(c, " {\n} else if ");
+        rs_cond(c, q.a);
+        rs_t(c, " {\n");
+        rs_instrs(c, q.premier);
+        rs_t(c, "} else {\noub_");
+        rs_n(c, k);
+        rs_t(c, " = true;\n}\n");
+    }
+    rs_t(c, "let n_oublies = 0u32");
+    pour k2 dans 0..l.n {
+        rs_t(c, " + (oub_");
+        rs_n(c, k2);
+        rs_t(c, " as u32)");
+    }
+    rs_t(c, ";\nstatic COEURS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();\n");
+    rs_t(c, "let coeurs = *COEURS.get_or_init(|| std::env::var(\"VTX_COEURS\").ok().and_then(|v| v.parse().ok())");
+    rs_t(c, ".unwrap_or_else(|| std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)));\n");
+    rs_t(c, "if n_oublies >= 2 && coeurs > 1 {\nlet r = std::thread::scope(|sc| {\n");
+    pour k3 dans 0..l.n {
+        soit r3 = rs_souv_dernier(rs_noeud(l, k3)).deuxieme.deuxieme;
+        rs_t(c, "    let h");
+        rs_n(c, k3);
+        rs_t(c, " = if oub_");
+        rs_n(c, k3);
+        rs_t(c, " { Some(sc.spawn(move || { let mut c_fils = ctx_fils(); let c = &mut c_fils; (");
+        rs_expr(c, r3.a);
+        rs_t(c, ") as u128 })) } else { None };\n");
+    }
+    rs_t(c, "    (");
+    pour k4 dans 0..l.n {
+        rs_t(c, "h");
+        rs_n(c, k4);
+        rs_t(c, ".map(|h| h.join().unwrap()), ");
+    }
+    rs_t(c, ")\n});\n");
+    pour k5 dans 0..l.n {
+        soit r5 = rs_souv_dernier(rs_noeud(l, k5)).deuxieme.deuxieme;
+        rs_t(c, "if let Some(v) = r.");
+        rs_n(c, k5);
+        rs_t(c, " { ");
+        rs_var(c, r5.nom);
+        rs_t(c, " = v; }\n");
+    }
+    rs_t(c, "} else {\n");
+    pour k6 dans 0..l.n {
+        soit r6 = rs_souv_dernier(rs_noeud(l, k6)).deuxieme.deuxieme;
+        rs_t(c, "if oub_");
+        rs_n(c, k6);
+        rs_t(c, " {\n");
+        rs_instr(c, r6);
+        rs_t(c, "}\n");
+    }
+    rs_t(c, "}\n");
+    // puis chacun range le sien
+    pour k7 dans 0..l.n {
+        soit r7 = rs_souv_dernier(rs_noeud(l, k7)).deuxieme.deuxieme;
+        rs_t(c, "if oub_");
+        rs_n(c, k7);
+        rs_t(c, " {\n");
+        rs_instrs(c, r7.suivant);
+        rs_t(c, "}\n");
+    }
+    rs_t(c, "}\n");
+}
+
+// le corps d'un « pour chaque » marqué (val 2) : soit s = init ; pour var dans a..b { tour } ; tour : s = s + corps
+// (somme), ou soit tmp = corps ; si tmp < s (min, > pour max) { s = tmp }
+fonction rs_chaque_corps(s: Noeud): Noeud {
+    soit init_n = s.premier;
+    si init_n == nul || init_n.genre != N_SOIT || init_n.suivant == nul || init_n.suivant.genre != N_POUR {
+        retour nul;
+    }
+    soit boucle = init_n.suivant;
+    soit tour = boucle.premier;
+    si tour == nul {
+        retour nul;
+    }
+    si egal(s.op, "somme") {
+        si tour.genre != N_AFFECTER || tour.suivant != nul || tour.a == nul || tour.a.genre != N_BIN {
+            retour nul;
+        }
+        retour tour.a.b;
+    }
+    si tour.genre != N_SOIT || tour.suivant == nul || tour.suivant.genre != N_SI || tour.suivant.suivant != nul {
+        retour nul;
+    }
+    retour tour.a;
+}
+
+fonction rs_chaque_possible(c: Ctx, s: Noeud) {
+    si s.op == 0 || !(egal(s.op, "somme") || egal(s.op, "min") || egal(s.op, "max")) {
+        retour 0;
+    }
+    soit corps = rs_chaque_corps(s);
+    si corps == nul {
+        retour 0;
+    }
+    soit boucle = s.premier.suivant;
+    soit v = var_ou_nul(c, s.premier.nom);
+    soit vi = var_ou_nul(c, boucle.nom);
+    retour v != nul && vi != nul && rs_mot(v.type) && rs_part_possible(c, corps) && rs_part_possible(c, boucle.a)
+        && rs_part_possible(c, boucle.b);
+}
+
+fonction rs_chaque(c: Ctx, s: Noeud) {
+    soit corps = rs_chaque_corps(s);
+    soit boucle = s.premier.suivant;
+    // la largeur des nombres : 128 bits (Lugus), 64 (dunon;)
+    soit w = "u128";
+    si c.dunon {
+        w = "u64";
+    }
+    soit init = "0";
+    soit op = "acc.wrapping_add(x)";
+    soit pli = "a.wrapping_add(b)";
+    si egal(s.op, "min") {
+        init = "!0";
+        op = "acc.min(x)";
+        pli = "a.min(b)";
+    } sinon si egal(s.op, "max") {
+        op = "acc.max(x)";
+        pli = "a.max(b)";
+    }
+    rs_t(c, "{\n// ");
+    rs_t(c, s.op);
+    rs_t(c, " pour chaque : l'intervalle partagé entre les cœurs\nlet ch_a = (");
+    rs_expr(c, boucle.a);
+    rs_t(c, ") as u64; let ch_b = (");
+    rs_expr(c, boucle.b);
+    rs_t(c, ") as u64;\nlet nt = std::thread::available_parallelism().map(|n| n.get() as u64).unwrap_or(1).min(64);\n");
+    rs_t(c, "if ch_b.saturating_sub(ch_a) < 2048 || nt <= 1 {\n");
+    rs_instrs(c, s.premier);
+    rs_t(c, "} else {\nlet morceau = (ch_b - ch_a + nt - 1) / nt;\nlet parts: Vec<");
+    rs_t(c, w);
+    rs_t(c, "> = std::thread::scope(|sc| {\n    let fils: Vec<_> = (0..nt).map(|k| sc.spawn(move || {\n");
+    rs_t(c, "        let mut c_fils = ctx_fils(); let c = &mut c_fils;\n        let mut acc: ");
+    rs_t(c, w);
+    rs_t(c, " = ");
+    rs_t(c, init);
+    rs_t(c, "; let lo = ch_a.saturating_add(k * morceau); let hi = lo.saturating_add(morceau).min(ch_b);\n");
+    rs_t(c, "        let mut i = lo; while i < hi { let ");
+    rs_var(c, boucle.nom);
+    rs_t(c, ": u128 = i as u128; let x: ");
+    rs_t(c, w);
+    rs_t(c, " = (");
+    rs_expr(c, corps);
+    rs_t(c, ") as ");
+    rs_t(c, w);
+    rs_t(c, "; acc = ");
+    rs_t(c, op);
+    rs_t(c, "; i += 1; }\n        acc\n    })).collect();\n    fils.into_iter().map(|h| h.join().unwrap()).collect()\n});\n");
+    rs_var(c, s.premier.nom);
+    rs_t(c, " = parts.into_iter().reduce(|a, b| ");
+    rs_t(c, pli);
+    rs_t(c, ").unwrap_or(");
+    rs_t(c, init);
+    rs_t(c, ") as u128;\n}\n}\n");
 }
 
 // ------------------------------------------------------------------------------ 0.853 : Taranis écrit par vtxc128

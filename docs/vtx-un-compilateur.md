@@ -182,12 +182,23 @@ garde.
   (la carte en 64 bits, le quaternaire, le lot étendu, fondre dans le lot), les cylindres et les bandes.
   `VTX_FORGE_VTX=0` : la forge Python seule. Elle garde la main, et le dit (« forge en vtx : pas encore (…) »), pour
   ce que vtxc128 ne sait pas encore : les réactions sur plusieurs cœurs (les vagues d'atomes lourds, somme/min/max pour
-  chaque, les souvenirs partagés), le Druide (`VTX_DRUIDE`, ou un ARN `esus`/`deplier` à côté de l'exécutable) et le
+  chaque, les souvenirs partagés : faites à la 0.857), le Druide (`VTX_DRUIDE`, ou un ARN `esus`/`deplier` à côté de l'exécutable) et le
   relevé d'Ésus (`VTX_ESUS=1` : le fichier `.esus` et les cellules, que le Druide lit). Les lots fondus sont annoncés
   comme chez la forge Python (vtxc128 écrit la garde dans le Rust). L'essai forge Gergovie par `lugus forger` (aucun
   Python sur le chemin du programme).
-- **Ce qui manque encore** : les zones (les tableaux serrés) et les pages de l'étage 2 ; les réactions sur plusieurs
-  cœurs ; le Druide et Ésus dans la forge ; les flottants sur la carte (Taranis ne compte qu'en entiers).
+- **Essai 0.856** : tout forgé par `lugus forger`, sans Python ; les mêmes empreintes partout. Les étages 59,0 / 37,1 /
+  35,9 images par seconde, le 1 % le plus lent à 33,3 en vol (25,6 à la 0.855) ; le noyau unique 81,1 / 46,6 / 39,2 ;
+  le processeur 17,4 / 10,1 / 8,9 (le C++ : 34,1 / 20,6).
+- **0.857 : les réactions sur plusieurs cœurs, écrites par vtxc128.** vtxc128 marque ses blocs comme vtx128.py marque
+  les siens (`val` du bloc : 1 la vague d'atomes lourds, 2 somme/min/max pour chaque avec la réduction dans `op`, 3 un
+  souvenir d'un groupe, la clé dans `op`, la tête nommée `__souv_tete`) ; Lugus les joue l'un après l'autre (les mêmes
+  mots : le test de vtxc128 seul le confirme). Le Rust : `rs_vague` (chacun sur son cœur, le dernier sur ce fil),
+  `rs_chaque` (l'intervalle partagé, 2048 au moins, à la largeur du programme : 128 bits, ou 64 pour `dunon;`),
+  `rs_souvenirs` (chacun regarde son souvenir ; ceux qui l'ont oublié réagissent ensemble, `VTX_COEURS=1` sur un fil ;
+  puis chacun range le sien). Une valeur part sur un autre cœur si elle est un entier, pure, et ne réveille pas le
+  ramasse-miettes. La forge Python ne garde plus la main pour les réactions.
+- **Ce qui manque encore** : les zones (les tableaux serrés) et les pages de l'étage 2 ; le Druide et Ésus dans la
+  forge ; les flottants sur la carte (Taranis ne compte qu'en entiers) ; `sortie(…)` comme atome d'une réaction.
 - **Les tests (0.854)** : `verifier.py` ne joue plus par défaut les 19 étapes qui ne jouent que Senos (vtx.py, le SPU-32
   gelé : le débogueur, la partition, la logique, la génomique, la compression, la bibliothèque, les maths, les
   priorités, le différentiel, les flottants de 64 bits, l'ombre, le feu…) ; Lugus a ses propres tests de tout cela.

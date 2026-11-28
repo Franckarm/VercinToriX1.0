@@ -354,6 +354,9 @@ if shutil.which("rustc"):
     verifier("les souvenirs et les cœurs : la vague de quatre atomes à souvenir partagée entre les cœurs, le même total "
              "(émulé, forgé sur un cœur, sur plusieurs)",
              "n_oublies" in rs_txt and plusieurs == un == str(s_emu[0]), f"{s_emu} {plusieurs!r} {un!r}")
+    # 0.857 : écrit par vtxc128 (la forge en vtx, par défaut), pas par la forge Python
+    if os.environ.get("VTX_FORGE_VTX") != "0":
+        verifier("les souvenirs et les cœurs : le Rust écrit par vtxc128", "Rust écrit par vtxc128" in r.stderr, r.stderr[-300:])
     shutil.rmtree(tmp, ignore_errors=True)
 
 print("réactions : " + ("tout est conforme" if not echecs else f"{len(echecs)} échec(s)"))

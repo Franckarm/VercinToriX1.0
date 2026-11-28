@@ -1030,3 +1030,7 @@ instructions contre 28,05 G (−5 %), le C++ 19,33 G : l'écart passe de 1,45 à
 - `tests/test_druide.py` demande Ésus (VTX_ESUS=1) ; vtxc128 écrit la garde du lot fondu (annoncé sous VTX_TARANIS).
 - L'essai : Gergovie forgée par `lugus forger`.
 - Note : `tests/test_cylindres.py` (la promesse non tenue sur 3 cœurs) peut échouer sur une machine très chargée.
+## 0.857 (28 novembre) : les réactions sur plusieurs cœurs dans vtxc128
+- Essai 0.856 : tout par `lugus forger` ; étages 59,0 / 37,1 / 35,9 (1 % bas 33,3) ; mêmes empreintes.
+- vtxc128 : blocs marqués (val 1 vague, 2 pour chaque, 3/4 souvenirs) ; `rs_vague`, `rs_chaque`, `rs_souvenirs`.
+  forge_vtx.py ne renvoie plus les réactions à Python. test_reactions vérifie que le Rust vient de vtxc128.
