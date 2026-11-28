@@ -2270,7 +2270,9 @@ fn taranis_presenter_cube(c: &mut Ctx, f: u128) -> Option<u128> {
     if f < FREQ_CARTE || f >= 256 {
         return None;
     }
+    let t_vider = std::time::Instant::now();
     taranis_vider(c);
+    let d_vider = t_vider.elapsed();
     let (l, h) = (c.m.regarder((3u128 << 62) | 14_680_058), c.m.regarder((3u128 << 62) | 14_680_059));
     if !((1..=4096).contains(&l) && (1..=4096).contains(&h) && l * h <= 1 << 24) {
         return None;
@@ -2283,6 +2285,7 @@ fn taranis_presenter_cube(c: &mut Ctx, f: u128) -> Option<u128> {
     let carte = taranis_vk::carte()?;
     let (debut, nb) = g.freq[f];
     let places: Vec<u32> = (0..nb).map(|q| debut + q).collect();
+    let t_desc = std::time::Instant::now();
     let ok = {
         let EtatTaranis { res, .. } = &mut *g;
         carte.redescendre(res.as_mut().unwrap(), &places).is_ok()
@@ -2290,23 +2293,61 @@ fn taranis_presenter_cube(c: &mut Ctx, f: u128) -> Option<u128> {
     if !ok {
         return None;
     }
+    let d_desc = t_desc.elapsed();
+    let t_conv = std::time::Instant::now();
     let miroir = g.res.as_ref().unwrap().miroir as *const u64;
     let mut px = vec![0u32; l * h];
+    // 0.858 : la conversion et l'empreinte d'un seul passage
+    let mut emp: u64 = 14695981039346656037;
     for (q, morceau) in px.chunks_mut(65536).enumerate() {
         if (q as u32) < nb {
             let src = unsafe { std::slice::from_raw_parts(miroir.add((debut as usize + q) * 65536), 65536) };
             for (d, &w) in morceau.iter_mut().zip(src) {
-                *d = (w & 0xFF_FFFF) as u32;
+                let p = (w & 0xFF_FFFF) as u32;
+                *d = p;
+                emp = (emp ^ p as u64).wrapping_mul(1099511628211);
+            }
+        } else {
+            for _ in 0..morceau.len() {
+                emp = emp.wrapping_mul(1099511628211);
             }
         }
     }
     drop(g);
-    let mut emp: u64 = 14695981039346656037;
-    for &p in &px {
-        emp = (emp ^ p as u64).wrapping_mul(1099511628211);
-    }
+    let d_conv = t_conv.elapsed();
+    let t_mont = std::time::Instant::now();
     let _ = sortie::montrer(l, h, &px);
+    noter_presenter(d_vider, d_desc, d_conv, t_mont.elapsed());
     Some(emp as u128)
+}
+
+/// 0.858 : où passe le temps de presenter_cube (VTX_CARTE_TEMPS=1 : dit à la fin) : ce qui attendait sur la carte
+/// (le lot qui part), l'image qui redescend, la conversion avec l'empreinte, la fenêtre. Pour choisir la voie B.
+#[allow(dead_code)]
+fn presenter_temps() -> &'static std::sync::Mutex<[f64; 5]> {
+    static T: std::sync::OnceLock<std::sync::Mutex<[f64; 5]>> = std::sync::OnceLock::new();
+    T.get_or_init(|| std::sync::Mutex::new([0.0; 5]))
+}
+
+#[allow(dead_code)]
+fn noter_presenter(a: std::time::Duration, b: std::time::Duration, c_: std::time::Duration, d: std::time::Duration) {
+    let mut t = presenter_temps().lock().unwrap();
+    t[0] += 1.0;
+    t[1] += a.as_secs_f64() * 1e3;
+    t[2] += b.as_secs_f64() * 1e3;
+    t[3] += c_.as_secs_f64() * 1e3;
+    t[4] += d.as_secs_f64() * 1e3;
+}
+
+#[allow(dead_code)]
+fn dire_presenter() {
+    let t = presenter_temps().lock().unwrap();
+    if t[0] == 0.0 {
+        return;
+    }
+    let n = t[0];
+    eprintln!("presenter_cube : {} images ; en moyenne : la carte finit {:.2} ms, l'image redescend {:.2} ms, la conversion et \
+               l'empreinte {:.2} ms, la fenêtre {:.2} ms", n, t[1] / n, t[2] / n, t[3] / n, t[4] / n);
 }
 
 /// 0.849d : les temps de la carte, par sorte de lot (la suite des noyaux : leur longueur en mots et leurs tours) :
@@ -2346,6 +2387,7 @@ fn dire_temps_carte() {
     if !taranis_vk::temps_voulu() {
         return;
     }
+    dire_presenter();
     let v = temps_carte().lock().unwrap();
     if v.is_empty() {
         eprintln!("carte : aucun temps (pas de carte, ou elle ne sait pas horodater)");
